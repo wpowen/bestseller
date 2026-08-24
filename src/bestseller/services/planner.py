@@ -24854,7 +24854,14 @@ async def generate_novel_plan(
         )
         # Override placeholder name with LLM-designed one so the LLM book_spec
         # call sees the same protagonist name in its fallback context.
-        if isinstance(book_spec_fallback.get("protagonist"), dict):
+        # 2026-08-25：这行覆盖只对**走 LLM 的那条路**有意义。source-bound 的
+        # book_spec 是从锁定快照编译出来的，主角名就是快照里那个；无条件覆盖会把
+        # 快照绑定推翻。真机 custom-xuanhuan-1787590978：快照=纪辙 被覆盖成
+        # llm_protagonist_name=沈砚舟，cast 再从 book_spec 继承，全链与快照矛盾，
+        # 身份门正确开火把书卡在 needs_replan（已重试2次）。本文件里有**两处**。
+        if not _source_bound_cast_enabled(project) and isinstance(
+            book_spec_fallback.get("protagonist"), dict
+        ):
             book_spec_fallback["protagonist"]["name"] = llm_protagonist_name
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
@@ -27238,7 +27245,14 @@ async def generate_foundation_plan(
             if _source_bound_cast_enabled(project)
             else _fallback_book_spec(project, premise, category_key=_category_key)
         )
-        if isinstance(book_spec_fallback.get("protagonist"), dict):
+        # 2026-08-25：这行覆盖只对**走 LLM 的那条路**有意义。source-bound 的
+        # book_spec 是从锁定快照编译出来的，主角名就是快照里那个；无条件覆盖会把
+        # 快照绑定推翻。真机 custom-xuanhuan-1787590978：快照=纪辙 被覆盖成
+        # llm_protagonist_name=沈砚舟，cast 再从 book_spec 继承，全链与快照矛盾，
+        # 身份门正确开火把书卡在 needs_replan（已重试2次）。本文件里有**两处**。
+        if not _source_bound_cast_enabled(project) and isinstance(
+            book_spec_fallback.get("protagonist"), dict
+        ):
             book_spec_fallback["protagonist"]["name"] = llm_protagonist_name
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name

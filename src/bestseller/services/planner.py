@@ -23364,6 +23364,46 @@ def _promotional_brief_prompts(
     return system_prompt, user_prompt
 
 
+def source_bound_blurb(
+    project: ProjectModel,
+    *,
+    snapshot: Mapping[str, Any],
+    book_spec: Mapping[str, Any],
+    fallback_blurb: str,
+) -> str:
+    """上架简介：**优先用文案工序的冠军**，取不到才回退既有链。
+
+    2026-08-24 真机对照（5 本书）：
+
+        末日书（LLM 路径）        blurb == synopsis   ✅ 用了冠军
+        书9（source-bound）      blurb = premise 逐字复制，还带「第50章」  ❌
+        端到端书（source-bound）  blurb = 另写的一句长句，不是冠军          ❌
+
+    `copywriting_tournament` 在 5 本书上全部跑过，4 本产出冠军并写进
+    `ConceptionResult.synopsis`；而这条分支取的是
+    `snapshot.reader_promise → book_spec.logline → fallback`，从不读它。
+    reader_promise 尤其糟——它是生产口吻（「前几章给出…的反转节奏」），
+    永远不该当对外文案。
+
+    又一例「路走到了，材料没拿」：工序跑了、产出了、留了回执，取的时候取了别的。
+
+    冠军的识别是保守的：太短的、以及与 premise 逐字相同的（文案没产出时
+    synopsis 可能就是 premise）都不算文案，交还给既有链。
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    champion = str(metadata.get("synopsis") or "").strip()
+    premise = str(metadata.get("premise") or "").strip()
+    if len(champion) >= 40 and champion != premise:
+        return champion
+    return _first_non_empty_text(
+        snapshot.get("reader_promise"),
+        book_spec.get("logline"),
+        fallback_blurb,
+        default=str(getattr(project, "title", "") or ""),
+    )
+
+
 async def _generate_promotional_brief(
     session: AsyncSession,
     settings: AppSettings,
@@ -23385,11 +23425,11 @@ async def _generate_promotional_brief(
         brief_payload = {
             **fallback,
             "title": project.title,
-            "blurb": _first_non_empty_text(
-                snapshot.get("reader_promise"),
-                book_spec.get("logline"),
-                fallback.get("blurb"),
-                default=project.title,
+            "blurb": source_bound_blurb(
+                project,
+                snapshot=snapshot,
+                book_spec=book_spec,
+                fallback_blurb=str(fallback.get("blurb") or ""),
             ),
             "_meta": {
                 "source_compiler": "approved-design-promotional.v1",

@@ -124,10 +124,36 @@ class TestDoesNotPunishGoodCopy:
 
         assert detect_copy_flavor(copy).clean
 
-    def test_ordinary_chapter_reference_outside_cadence_is_allowed(self) -> None:
-        """「第三章」 in an editorial note is not the cadence smell."""
+    def test_non_chapter_ordinals_are_allowed(self) -> None:
+        """本条原本断言「他在第三章第一次动手。」应当干净，理由是「第三章不是
+        cadence 那种毛病」。**cadence 的判断仍然成立**——它确实不是「每N章」。
 
-        assert detect_copy_flavor("他在第三章第一次动手。").clean
+        但 2026-08-24 用户报「上架资料 AI 味重」，取证发现真机上架简介的结尾
+        就是「**第50章**，账本只剩最后几页，他要替真传第一人沈惊鹊还清命里
+        最后一笔债」，synopsis 里还有「上一章替他挡刀的人，下一章就得哭着求他
+        还人情」——两句都打 0.0 分。
+
+        `detect_copy_flavor` **只有一个消费方**，只跑对外文案
+        （reader_promise / selling_points，2026-08-24 起也用于简介核查）。
+        在对外文案里，「他在第三章第一次动手」和「第50章账本只剩几页」是同一件
+        事：写手在对读者讲稿件的结构。读者买书时还没有章的概念。
+
+        所以这条改为断言**真正该放行的东西**：不带章/卷的序数照旧干净。
+        原意图（别把普通序数当 cadence 误杀）完整保留。
+        """
+
+        for text in (
+            "他在第三层第一次动手。",
+            "还完第九笔，账本就合拢了。",
+            "第五个债主来的那天下了雨。",
+        ):
+            assert detect_copy_flavor(text).clean, text
+
+    def test_chapter_references_in_reader_copy_are_flagged(self) -> None:
+        """对外文案里报章号 = 生产口吻（2026-08-24 真机上架简介取证）。"""
+
+        assert not detect_copy_flavor("他在第三章第一次动手。").clean
+        assert not detect_copy_flavor("第50章，账本只剩最后几页。").clean
 
 
 class TestScoring:

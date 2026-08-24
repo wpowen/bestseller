@@ -15,7 +15,7 @@ and ``chapter_count``, eliminating the gap between quickstart and studio paths.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 import copy
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -1873,6 +1873,37 @@ def _cost_style_block_for_ctx(ctx: dict[str, Any], *, is_en: bool) -> str:
 #: to instruct the generator, so directive voice is correct there and must not
 #: be scrubbed.
 _READER_FACING_BRIEF_FIELDS: Final[tuple[str, ...]] = ("reader_promise", "selling_points")
+
+
+def prefer_cleaner_reader_copy(candidates: Sequence[Any]) -> str:
+    """在若干候选文案里挑**生产口吻最少**的那一份。不发明，只做选择。
+
+    2026-08-24 真机（custom-xuanhuan-1787543232）：去行业词通道把
+    `commercial_brief.reader_promise` 洗成了「一个连正经丹炉都没摸过的小学徒，
+    靠捡别人扔掉的药渣，一题一题扛住老狐狸的刁难……」，而**出货的**
+    `market_profile["reader_promise"]` 是「前几章给出……的爽点」，打分 14.0。
+
+    顺序是致命的：6433 行先洗 commercial_brief，7225 行再用未清洗的
+    concept_bundle 覆盖 market_profile —— **清洗在前，覆盖在后**。
+    `爽点` 一直在 trade_jargon 词表里，检测器没瞎，是它量的那份不是发出去的那份。
+    本仓库反复复发的「同一事实住两地，后写的赢」。
+
+    比较式而非清单式：分数最低者胜，**分数相同保持原顺序**（都干净时不改变
+    既有优先级）。
+    """
+
+    from bestseller.services.copy_flavor import detect_copy_flavor
+
+    best: str = ""
+    best_score: float | None = None
+    for item in candidates:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        score = float(detect_copy_flavor(text).score)
+        if best_score is None or score < best_score:
+            best, best_score = text, score
+    return best
 
 
 def _brief_copy_flavour(brief: Mapping[str, Any]) -> tuple[float, list[str]]:
@@ -7222,7 +7253,16 @@ async def run_conception_pipeline(
         market_profile = writing_profile.setdefault("market", {})
         if isinstance(market_profile, dict):
             market_profile["logline"] = concept_bundle.one_liner
-            market_profile["reader_promise"] = concept_bundle.reader_promise or concept_bundle.one_liner
+            # 出货的那份必须也是被清洗过的那份（2026-08-24 真机）：上面 6433 行
+            # 已经把 commercial_brief 洗干净，这里若直接用 concept_bundle 覆盖，
+            # 清洗就白做了。比较式挑分最低者，不发明文案。
+            market_profile["reader_promise"] = prefer_cleaner_reader_copy(
+                [
+                    (commercial_brief or {}).get("reader_promise"),
+                    concept_bundle.reader_promise,
+                    concept_bundle.one_liner,
+                ]
+            )
             market_profile["concept_lab"] = concept_bundle.model_dump(mode="json")
             market_profile["title_seed"] = (
                 concept_bundle.title_seeds[0].text

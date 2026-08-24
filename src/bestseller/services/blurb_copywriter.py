@@ -27,7 +27,7 @@ premise/writing_profile/简介，输入是全部设计 JSON，机制黑话天然
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field
 import json
 import logging
@@ -420,6 +420,42 @@ async def _polish_champion(
     return (rewritten or synopsis), completion.llm_run_id
 
 
+def demote_default_family_candidates(
+    candidates: Sequence["BlurbCandidate"],
+    *,
+    user_named_family: bool,
+) -> tuple[list["BlurbCandidate"], list["BlurbCandidate"]]:
+    """默认族（债务/账本/丧葬）的候选把冠军位让给不在族里的。降权，不是杀权。
+
+    用户 2026-08-24 报「债务这块的问题反反复复一直出现」。取证：书9 读者实际
+    看到的三行（书名+简介+一句话）合起来 `is_debt_dominated=True`、3 个子族。
+    构思终稿那道门量的是 premise+synopsis+writing_profile 的**整体 blob**，
+    **从不单独量读者会看到的那几行**——而那几行是用户唯一会看到的东西。
+
+    淘汰赛本来就有 N 个候选，所以这里做**选择**而不是事后重写。形状与同日
+    卡片层降权一致：
+
+      · 比较式：同池里有不在族里的候选才让位
+      · 全池同族 → 原样放行，**绝不清空池**（2026-08-06 定案）
+      · 用户自己点名该族 → 完全跳过
+      · 不向任何 prompt 写一个该族的词（否定式指令点名母题词＝种词）
+
+    返回 (保留, 被降权的)——被降权的要留痕，用户有权知道成稿有没有落在
+    被过度复用的族里。
+    """
+
+    from bestseller.services.anti_default_motif import is_debt_dominated
+
+    items = list(candidates)
+    if not items or user_named_family:
+        return items, []
+    clean = [c for c in items if not is_debt_dominated(str(c.synopsis or ""))]
+    if not clean or len(clean) == len(items):
+        return items, []
+    dominated = [c for c in items if c not in clean]
+    return clean, dominated
+
+
 async def run_blurb_copywriting(
     session: Any,
     settings: Any,
@@ -438,6 +474,7 @@ async def run_blurb_copywriting(
     emotion_exemplars: tuple[str, ...] = (),
     book_jargon_terms: tuple[str, ...] = (),
     reader_contract: tuple[str, ...] = (),
+    user_named_default_family: bool = False,
     config: dict[str, Any] | None = None,
     generator: GeneratorFn | None = None,
     persona_judge: Any = None,
@@ -622,6 +659,11 @@ async def run_blurb_copywriting(
         c for c in candidates
         if not c.has_fatal_pathology and not c.has_verified_contradiction
     ] or list(candidates)
+    # 默认族降权（2026-08-24）：读者看到的那几行才是用户唯一会看到的东西，
+    # 而构思终稿那道门量的是整体 blob，从不单独量它们。绝不清空池。
+    survivors, _family_demoted = demote_default_family_candidates(
+        survivors, user_named_family=user_named_default_family
+    )
 
     def _rank_key(c: BlurbCandidate) -> tuple[float, float]:
         return (

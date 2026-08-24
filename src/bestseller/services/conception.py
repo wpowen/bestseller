@@ -7848,6 +7848,12 @@ async def run_conception_pipeline(
                 # `getattr(project, ...)`，NameError 让文案淘汰赛整体失败
                 # 回退 v0（真机 custom-xuanhuan-1787407568 撞上，fail-open
                 # 掩盖了它，靠全容器错误扫描才捞出来）。
+                # 用户自己点名该族吗——判断放在**有这个信息的地方**（构思阶段
+                # 拿得到 explicit_concept_seed，淘汰赛内部拿不到）。
+                # 2026-08-24：读者看到的那几行此前从没被单独量过默认族。
+                user_named_default_family=bool(
+                    _default_debt_family_hits(str(explicit_concept_seed or ""))
+                ),
                 reader_contract=reader_contract_labels(
                     {
                         "story_enhancers": (

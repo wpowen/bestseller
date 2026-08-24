@@ -2300,14 +2300,30 @@ async def _clear_auto_resumable_project_pause(
     return True
 
 
+def project_awaits_concept_approval(project: ProjectModel) -> bool:
+    """这本书还在等用户批准创意（``stop_after_conception`` 建的）。
+
+    2026-08-24 真机：这条判据此前只以**字面形式**住在下面那个函数里，自愈
+    那边根本不知道它存在，于是把一本 conception_only 的书按
+    ``under_target_chapters`` 捞起来开写了整本；走的还是正常 autowrite 入口，
+    因此下面那个函数顺手写下 conception_approved=True —— 框架替用户按了
+    「同意」，并抹掉了自己曾在等批准的证据。做成一份，两边引同一个。
+    """
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        return False
+    return bool(
+        metadata.get("conception_only")
+        or metadata.get("planning_status") == "awaiting_concept_approval"
+    )
+
+
 def _mark_project_autowrite_started(project: ProjectModel) -> bool:
     """Clear conception-only lifecycle residue once full writing really starts."""
 
     metadata = dict(getattr(project, "metadata_json", None) or {})
-    if not (
-        metadata.get("conception_only")
-        or metadata.get("planning_status") == "awaiting_concept_approval"
-    ):
+    if not project_awaits_concept_approval(project):
         return False
     metadata.pop("conception_only", None)
     metadata["planning_status"] = "writing"

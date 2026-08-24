@@ -1178,10 +1178,17 @@ def _project_is_finished(project: ProjectModel) -> bool:
     例外：归档是用户的意思。
     """
 
+    from bestseller.services.pipelines import project_awaits_concept_approval
+
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
         metadata = {}
     if _project_is_archived(project):
+        return True
+    # 用户用 stop_after_conception 建的书在等他自己点头。自愈按
+    # under_target_chapters 捞起来开写，等于框架替用户按下「同意」
+    # （2026-08-24 真机当场抓到，见 test_self_heal_never_approves_a_concept_for_the_user）。
+    if project_awaits_concept_approval(project):
         return True
     if (getattr(project, "status", None) or "").lower() != ProjectStatus.COMPLETED.value:
         return False

@@ -12533,6 +12533,32 @@ def _source_bound_world_name(project: ProjectModel, places: list[str]) -> str:
     )
 
 
+#: 动作/状态词——出现在「地名」里就说明抽出来的是短语不是地方。
+#: 2026-08-24 真机：`extract_place_names` 从 premise 切出了「用余雷劈开宗门」，
+#: 于是五个地点全是它加后缀。代码原注释已记过「敢接镇店符→敢接镇」，
+#: 知道抽取不可靠，却只防了第二第三个，**没防第一个本身就是脏数据**。
+_NOT_A_PLACE_TOKENS: tuple[str, ...] = (
+    "用", "把", "被", "让", "使", "替", "拿", "给",
+    "劈", "打", "走", "去", "来", "跑", "烧", "接", "借", "还", "抢", "夺",
+    "是", "有", "没", "要", "会", "能", "想", "了", "着", "过",
+)
+
+
+def looks_like_place_name(text: str) -> bool:
+    """这串字看起来像个**地方**吗。
+
+    地名短、干净、不含动作词。宁可判错成「不像」退回通用模板，也不要五个
+    「用余雷劈开宗门X」——脏锚点派生出的五个地点比通用模板更糟。
+    """
+
+    name = (text or "").strip()
+    if not 2 <= len(name) <= 8:
+        return False
+    if re.search(r"[，,。；;：:！!？?、（）()【】\[\]\s]", name):
+        return False
+    return not any(tok in name for tok in _NOT_A_PLACE_TOKENS)
+
+
 def _source_bound_locations(places: list[str]) -> list[dict[str, Any]]:
     """把功能位置锚到构思里的真地名上；抽不出来才退回原模板。
 
@@ -12542,13 +12568,19 @@ def _source_bound_locations(places: list[str]) -> list[dict[str, Any]]:
 
     # 只用**第一个**地名做锚，其余从它派生。第二、第三个抽得不可靠
     # （真机从「敢接镇店符」切出过「敢接镇」），宁可派生也不用脏数据。
-    anchor = places[0] if places else ""
+    # 锚点本身也要过关：脏锚点派生出的五个地点比通用模板更糟
+    # （真机「用余雷劈开宗门」×5）。
+    _raw_anchor = places[0] if places else ""
+    anchor = _raw_anchor if looks_like_place_name(_raw_anchor) else ""
     names = (
         [
             anchor,
             f"{anchor}外围",
             f"{anchor}深处",
-            f"{anchor}的账面",
+            # 2026-08-24：原本是「{anchor}的账面」——账面不是地方，而且把债务族
+            # 的「账」直接注进了每一本 source-bound 书的世界设定。框架一边用
+            # 反默认族的门管着母题，一边在自己的世界模板里种它。改成空间词。
+            f"{anchor}左近",
             f"{anchor}之外",
         ]
         if anchor

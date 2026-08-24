@@ -27,9 +27,12 @@ chapters, and the export gate records the debt on the artifact.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final
+
+logger = logging.getLogger(__name__)
 
 # States the repair loop leaves behind when it has stopped working on a
 # chapter. Mirrors ``exports.EXPORT_SHIPPABLE_PRODUCTION_STATES`` — a book is
@@ -299,6 +302,55 @@ def _closure_quality_gate(debt_chapters: tuple[int, ...], conceded: list[str]) -
     return _gate
 
 
+async def settle_outstanding_rewrite_tasks(
+    session: Any,
+    *,
+    project_id: Any,
+    reason: str,
+) -> int:
+    """把书上还开着的重写工单一并封档，返回封掉的条数。
+
+    2026-08-24 真机（书9）：收尾 09:05 把书标记 completed，同一分钟还留着
+    12 个 pending 重写任务。自愈每 5 分钟捞一次，指纹恒为
+    ``repair|pending_rewrite_tasks||50|50`` —— 50/50 章、50 章有在架稿，
+    毫无「卡住」可言，修了 20 次全无进展，最后给一本**已完本**的书盖上
+    requires_human_review 和 production_pause_reason。
+
+    书是好的，是账没结干净。只碰 pending/queued，已完成/已失败的历史是账
+    不许改。失败不许撤销完本——完本已经成立（同该函数上方 export 的先例）。
+    """
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import RewriteTaskModel
+
+    rows = list(
+        (
+            await session.execute(
+                select(RewriteTaskModel).where(
+                    RewriteTaskModel.project_id == project_id,
+                    RewriteTaskModel.status.in_(("pending", "queued")),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    settled = 0
+    for row in rows:
+        if str(getattr(row, "status", "") or "") not in {"pending", "queued"}:
+            continue
+        row.status = "cancelled"
+        row.metadata_json = {
+            **(getattr(row, "metadata_json", None) or {}),
+            "cancelled_reason": reason,
+        }
+        settled += 1
+    if settled:
+        await session.flush()
+    return settled
+
+
 async def settle_project_status_on_closure(
     session: Any,
     project: Any,
@@ -350,12 +402,22 @@ async def settle_project_status_on_closure(
 
     project.status = "completed"
     await _promote_settled_chapter_drafts(session, project)
+    # 书封档，书上开着的工单一起封 —— 留下 pending 会让自愈把一本完本的
+    # 书当卡住的书反复修（书9 真机：20 次无进展后给它盖了「需人工介入」）。
+    try:
+        _settled_tasks = await settle_outstanding_rewrite_tasks(
+            session, project_id=project.id, reason="book_completed"
+        )
+    except Exception:  # noqa: BLE001 - 结账失败不许撤销已经成立的完本
+        _settled_tasks = 0
+        logger.warning("closure could not settle rewrite tasks", exc_info=True)
     metadata = {
         **(getattr(project, "metadata_json", None) or {}),
         "completed_at": now_iso,
         "completion_reason": verdict.reason,
         "completion_debt_chapters": list(verdict.debt_chapters),
         "completion_is_clean": verdict.is_clean,
+        "completion_settled_rewrite_tasks": _settled_tasks,
     }
 
     # Export here, where completion is decided, so the two cannot diverge.
@@ -396,5 +458,6 @@ __all__ = [
     "SETTLED_PRODUCTION_STATES",
     "BookClosureVerdict",
     "evaluate_book_closure",
+    "settle_outstanding_rewrite_tasks",
     "settle_project_status_on_closure",
 ]

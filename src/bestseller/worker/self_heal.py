@@ -797,7 +797,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     for project in projects:
         if project.id in halted:
             continue
-        if _project_is_archived(project):
+        if _project_is_finished(project):
             continue
         if _project_is_focus_paused(project):
             continue
@@ -1160,6 +1160,32 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             continue
 
     return stuck
+
+
+def _project_is_finished(project: ProjectModel) -> bool:
+    """书已封档——自愈不许把它捞回来。
+
+    2026-08-24 真机（书9）：50/50 章、50 章有在架稿、status=completed 的书被
+    每 5 分钟捞一次，指纹恒为 ``repair|pending_rewrite_tasks||50|50``，20 次
+    无进展后被盖上 requires_human_review + production_pause_reason。
+
+    这条政策此前只落在 under_target 那一条分支上（那里的注释已经写着
+    completed / archived 都不该自动续跑），入口只挡了 archived。挂在扫描
+    入口 = 所有分支的汇合点，不给自己留绕行路。
+
+    例外：``completion_export_error`` 在场时放行 —— 收尾自己写着「下一次
+    结算重试导出」，堵死它等于让导出失败的书永远导不出来。归档没有这条
+    例外：归档是用户的意思。
+    """
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if _project_is_archived(project):
+        return True
+    if (getattr(project, "status", None) or "").lower() != ProjectStatus.COMPLETED.value:
+        return False
+    return not str(metadata.get("completion_export_error") or "").strip()
 
 
 def _project_is_archived(project: ProjectModel) -> bool:

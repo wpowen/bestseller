@@ -63,3 +63,49 @@ class TestNoFalsePositives:
         """「前几章」出现但没有对稿件下令，不该单独定罪。"""
 
         assert detect_copy_flavor("前几章他还只是个杂役").score == 0
+
+
+# ── 2026-08-24 端到端验证书真机漏网 ──
+# reader_promise 产出「前五章让读者看到：主角沈渡命悬一线、头顶雷云开口说话的
+# 爆点开局，以及器灵第一次替他改写雷劫参数、反杀暗算师兄的越阶爽感」→ 打分 0.0。
+# 数词「五」在表里、锚点「前五章」也命中，但动词表
+# (必须|一定要|得先|亮出|抛出|给出|推进|证明|拉住) 里**没有「让读者看到」**。
+# 同一形状第二次：锚点对了、动词枚举太窄。
+
+
+class TestDeliveryVerbs:
+    def test_the_real_book_reader_promise_is_flagged(self) -> None:
+        r = detect_copy_flavor(
+            "前五章让读者看到：主角沈渡命悬一线、头顶雷云开口说话的爆点开局，"
+            "以及器灵第一次替他改写雷劫参数、反杀暗算师兄的越阶爽感"
+        )
+        assert r.score > 0, r
+        assert any("前五章" in s.matched for s in r.spans), [s.matched for s in r.spans]
+
+    def test_other_delivery_verbs(self) -> None:
+        for text in (
+            "开篇让读者感觉到主角的窘迫",
+            "前三章交代清楚金手指的代价",
+            "全书建立一个可复用的升级节奏",
+            "章末铺垫下一卷的对手",
+        ):
+            assert detect_copy_flavor(text).score > 0, text
+
+
+class TestDeliveryVerbsNoFalsePositives:
+    def test_narrative_using_the_same_verbs_stays_clean(self) -> None:
+        """动词单独出现永远不够——必须有瞄准稿件的锚点。"""
+
+        for text in (
+            "他让读者般的目光扫过全场",     # 无生产锚点
+            "她交代完后事就走了",
+            "两人铺垫了半天才说到正题",
+            "他建立了自己的商队",
+        ):
+            assert detect_copy_flavor(text).score == 0, text
+
+    def test_good_copy_still_scores_zero(self) -> None:
+        assert detect_copy_flavor(
+            "江湖练借力，他练还力；账本自己翻页，每还清一笔旧账，"
+            "新债主比上一笔更强——他只想烧账本躺平，账本偏把他拽进风暴中心。"
+        ).score == 0

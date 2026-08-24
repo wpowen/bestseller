@@ -13775,13 +13775,21 @@ def _compile_source_bound_volume_plan(
     ]
     plant_floor = int(bounds["planted"].floor)
     payoff_floor = int(bounds["paid_off"].floor)
-    plant_items = [
+    # 已批准的逐卷揭示排程优先；模板只用来补足门要求的下限（2026-08-24 真机
+    # 书9：这里原样写出去的是 8 条框架方法论，clues 表照单登记、全部埋第1章
+    # 收第50章 —— 不是伏笔，是把方法论当成了故事秘密）。
+    _approved_plants, _approved_payoffs = derive_source_bound_foreshadowing(
+        project, volume_count=len(ranges)
+    )
+    plant_items = list(_approved_plants[:plant_floor])
+    plant_items += [
         f"[S{idx}] {plant_templates[(idx - 1) % len(plant_templates)]}"
-        for idx in range(1, plant_floor + 1)
+        for idx in range(len(plant_items) + 1, plant_floor + 1)
     ]
-    payoff_items = [
+    payoff_items = list(_approved_payoffs[:payoff_floor])
+    payoff_items += [
         f"[S{idx}] {payoff_templates[(idx - 1) % len(payoff_templates)]}"
-        for idx in range(1, payoff_floor + 1)
+        for idx in range(len(payoff_items) + 1, payoff_floor + 1)
     ]
 
     plans: list[dict[str, Any]] = []
@@ -13964,6 +13972,56 @@ def derive_source_bound_volume_disclosure(
         "new_rules_revealed": rules,
         "faction_movements": movements,
     }
+
+
+def derive_source_bound_foreshadowing(
+    project: ProjectModel,
+    *,
+    volume_count: int,
+) -> tuple[list[str], list[str]]:
+    """把已批准的**逐卷揭示排程**编译成伏笔埋点/收口；没有排程就返回空。
+
+    2026-08-24 真机（书9）：source-bound 的 volume_plan 写出去的是
+    `["[S1] 已批准核心机制将在当下场景中第一次生效", "[S2] …", … 共8条]`，
+    clues 表照单登记 8 条、**全部埋在第1章、全部约在第50章收**。这不是伏笔，
+    是框架方法论，而且没有排程。
+
+    而 `info_reveal_strategy` 里逐卷写好了收口：「卷一揭清债者一脉守秘人，
+    卷二揭母系血脉源头，卷三揭坊市黑市与遗族守墓人，卷四揭六大宗借力协议，
+    卷五揭上古借力源头」。
+
+    **只搬运不发明**：揭示项逐字用作收口，同一项作为埋点（埋在更早的卷）。
+    材料不足时返回已有的部分，由调用方用既有模板补齐下限——不发明，也不让
+    门要求的下限落空。
+    """
+
+    metadata = _mapping(getattr(project, "metadata_json", None))
+    world = _mapping(_mapping(metadata.get("writing_profile")).get("world"))
+    schedule: list[tuple[int, str]] = []
+    for raw_num, body in _VOLUME_REVEAL_RE.findall(
+        str(world.get("info_reveal_strategy") or "")
+    ):
+        ordinal = _chapter_ordinal(raw_num)
+        text = body.strip()
+        if ordinal is None or not text:
+            continue
+        schedule.append((ordinal, text))
+    if not schedule:
+        return [], []
+    schedule.sort(key=lambda item: item[0])
+
+    plants: list[str] = []
+    payoffs: list[str] = []
+    seen: set[str] = set()
+    for ordinal, text in schedule:
+        if text in seen:
+            continue
+        seen.add(text)
+        # 埋点放在收口之前的那一卷（首卷的收口就埋在首卷内）。
+        plant_volume = max(1, min(ordinal - 1, max(1, int(volume_count or 1))))
+        plants.append(f"[卷{plant_volume}] {text}的线索落地")
+        payoffs.append(f"[卷{ordinal}] 揭示{text}")
+    return plants, payoffs
 
 
 def _compile_source_bound_world_disclosure(

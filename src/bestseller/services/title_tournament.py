@@ -334,6 +334,42 @@ def apply_arena_verdict(
         candidates[reject].arena_rejects += 1
 
 
+def demote_default_family_titles(
+    candidates: Sequence["TitleCandidate"],
+    *,
+    user_named_family: bool,
+) -> tuple[list["TitleCandidate"], list["TitleCandidate"]]:
+    """书名里带默认族（账/债/丧葬/阳寿）的，把冠军位让给不带的。降权非杀权。
+
+    用户 2026-08-24 报「债务这块的问题反反复复一直出现」。跨书量书名：
+
+        《别人借力我替他们还债》   cost_style=minimal    1 子族
+        《灶底师祖逼我翻旧账》     cost_style=standard   1 子族
+        2/6 本，**两条路径各一本**
+
+    同日 F4 只降权了简介候选；书名淘汰赛没有这道门，而**书名是读者最先看到
+    的东西**。
+
+    判据与简介层不同：书名太短，`is_debt_dominated` 够不上阈值
+    （《别人借力我替他们还债》只有 1 子族 1 次命中）。6-12 个字的书名里出现
+    族内词，母题就在书的名字上，所以**任何命中即算**。
+
+    其余约束与 F4 一致：比较式、全池同族不清空、用户点名则跳过、
+    不向任何 prompt 写族内词。
+    """
+
+    from bestseller.services.anti_default_motif import default_debt_family_hits
+
+    items = list(candidates)
+    if not items or user_named_family:
+        return items, []
+    clean = [c for c in items if not default_debt_family_hits(str(c.title or ""))]
+    if not clean or len(clean) == len(items):
+        return items, []
+    dominated = [c for c in items if c not in clean]
+    return clean, dominated
+
+
 def select_title_winner(
     candidates: Sequence[TitleCandidate],
     *,

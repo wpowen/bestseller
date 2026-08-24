@@ -681,8 +681,9 @@ async def _run_title_tournament(
     genre_label: str,
     platform_label: str,
     is_en: bool,
+    user_named_default_family: bool = False,
 ) -> tuple[str, dict[str, Any] | None, list[UUID]]:
-    """书名淘汰赛：候选 → 确定性门 → 榜单并排盲评 → 胜出。
+    """书名淘汰赛：候选 → 确定性门 → 默认族降权 → 榜单并排盲评 → 胜出。
 
     2026-08-21 真机 custom-xuanhuan-1787320762 定罪：书名此前是**单发调用**
     （`title_platform_revision` 全书仅 1 次），而概念有 16 次判官 + 4 轮候选。
@@ -708,6 +709,7 @@ async def _run_title_tournament(
         build_title_candidate_messages,
         deterministic_title_defects,
         extract_title_entities,
+        demote_default_family_titles,
         parse_title_candidates,
         select_title_winner,
         title_tournament_receipt,
@@ -761,6 +763,19 @@ async def _run_title_tournament(
         )
 
     survivors = [row for row in candidates if row.survives]
+    # 默认族降权（2026-08-24）：书名是读者最先看到的东西，而跨书量下来
+    # 2/6 本书名带债务族、两条路径各一本。比较式，全池同族不清空。
+    survivors, _title_family_demoted = demote_default_family_titles(
+        survivors, user_named_family=user_named_default_family
+    )
+    _demoted_titles = {row.title for row in _title_family_demoted}
+    if _demoted_titles:
+        for row in candidates:
+            if row.title in _demoted_titles:
+                row.rejected_by = [
+                    *(row.rejected_by or []),
+                    "default_family_in_title",
+                ]
     if len(survivors) >= 2:
         arena_system, arena_user = build_title_arena_messages(
             titles=[row.title for row in survivors],
@@ -5153,6 +5168,15 @@ async def _logline_regen_rescue(
             rewritten = str(await rewrite_fn(current_logline, current_verdict) or "").strip()
             if not rewritten:
                 break
+            # 确定性护栏（2026-08-24《废丹成神》定罪）：改写者会把整改方向
+            # 写成 400 字答辩文；prompt 已加硬上限，这里再兜一层——超长产物
+            # 不判不采纳，保住 keep-best 语义（一句卖点不可能需要 150+ 字）。
+            if len(rewritten) > 150:
+                logger.warning(
+                    "logline rescue rewrite over length cap (%d chars); discarded",
+                    len(rewritten),
+                )
+                break
             current_verdict = await judge_fn(rewritten)
             current_logline = rewritten
         except Exception:
@@ -5205,13 +5229,22 @@ async def _rewrite_logline_for_gate(
             f"[Premise — ground truth]\n{premise}\n\n[Synopsis — ground truth]\n{synopsis}\n\n"
             "Make the protagonist's irreversible action, the escalating problem "
             "chain and the opposition's counter-move visible inside the single "
-            "sentence. Output only the sentence."
+            "sentence. Hard cap: 120 characters. Fix the sentence by choosing "
+            "better story facts — never by writing an argument against the fix "
+            "notes into the sentence (no enumerating why every alternative "
+            "fails). Output only the sentence."
         )
     else:
         system_prompt = (
             "你是网文平台资深主编。下面这条一句话故事大纲没过审。请按【整改方向】重写这一句话。"
             "铁律：以【前提/简介】为事实准绳，只许把书里已有的不可逆行动、递进问题链、对手反制"
-            "在这一句里写显，【不得】发明书里没有的新设定新剧情。只输出重写后的一句话，不要解释。"
+            "在这一句里写显，【不得】发明书里没有的新设定新剧情。"
+            # 反答辩令（2026-08-24 真机《废丹成神》定罪）：改写者拿着整改方向
+            # 把「每条退路为什么走不通」逐条写进句子，产出 401 字答辩文顶着
+            # logline 的名牌流进 metadata。整改落在事实选取，不落在论证。
+            "整改的方式是换更有力的故事事实，不是把论证写进句子——禁止在句中"
+            "逐条列举退路/选项并反驳；这是一句卖点，不是答辩状。"
+            "硬上限 90 字，超出即废。只输出重写后的一句话，不要解释。"
         )
         user_prompt = (
             f"题材：{genre}（{sub_genre or ''}）\n\n【当前一句话大纲】\n{logline}\n\n"
@@ -7727,6 +7760,9 @@ async def run_conception_pipeline(
             genre_label=str(genre_intent_contract.genre_label or ""),
             platform_label=str(target_platform or ""),
             is_en=is_en,
+            user_named_default_family=bool(
+                _default_debt_family_hits(str(explicit_concept_seed or ""))
+            ),
         )
         llm_run_ids.extend(_tt_run_ids)
         if _tt_receipt:

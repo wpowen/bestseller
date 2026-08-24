@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -133,8 +133,36 @@ class CharacterEngineConfig(BaseModel):
     )
     antagonist_mode: str = Field(default="层级递进的系统性对手", min_length=1, max_length=4000)
     ensemble_mode: str = Field(default="配角围绕主角选择形成镜像与反差", min_length=1, max_length=4000)
+    # 构思**已经产出并被判官审过**的冲突势力表（2026-08-24）。此前不在字段表
+    # 里，pydantic 默认 extra="ignore" 把它整个吃掉：真机书9 的
+    # conception_snapshot 里有 7 条（杂役班借力成风同辈／内门借力网段缁衣／
+    # 坊市黑市霍帖骨…），projects.metadata 里字段消失，于是 world_spec 的派系
+    # 只能退回「主角的当前行动单元」这类戏剧功能位。构思 prompt 明确要过它
+    # （conception.py:3005），评审判官还有一条 conflict_force_review 轴专门审
+    # 它——要了、产了、审了，然后在落库那一步丢掉。与 title_tournament
+    # （2026-08-22 写进 writing_profile.market 被 extra=ignore 吃掉）同形。
+    conflict_forces: list[dict[str, Any]] = Field(default_factory=list)
 
-    @field_validator("*", mode="before")
+    @field_validator("conflict_forces", mode="before")
+    @classmethod
+    def coerce_conflict_forces(cls, value: object) -> object:
+        """只留字典条目；模型偶尔吐字符串/None，不许因此炸掉整份 profile。"""
+
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)][:24]
+
+    @field_validator(
+        "protagonist_archetype",
+        "protagonist_core_drive",
+        "golden_finger",
+        "growth_curve",
+        "romance_mode",
+        "relationship_tension",
+        "antagonist_mode",
+        "ensemble_mode",
+        mode="before",
+    )
     @classmethod
     def coerce_text_fields(cls, value: object) -> object:
         return _coerce_profile_text(value)

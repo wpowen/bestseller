@@ -12646,6 +12646,18 @@ def _tier_label(body: str) -> str:
     return label
 
 
+def _power_system_name(style: str) -> str:
+    """从力量体系描述里取一个像**名字**的短词组，取不到返回空串。"""
+
+    if not style:
+        return ""
+    m = re.search(r"[\u4e00-\u9fff]{2,8}(?:体系|之道|功法|法门|道统|系统)", style)
+    if m:
+        return m.group(0)
+    head = re.split(r"[—－\-，,。；;（(]", style.strip(), maxsplit=1)[0].strip()
+    return head if 2 <= len(head) <= 12 else ""
+
+
 def derive_source_bound_power_system(
     project: ProjectModel,
     *,
@@ -12722,7 +12734,10 @@ def derive_source_bound_power_system(
     style = str(world_profile.get("power_system_style") or "").strip()
     golden = str(metadata.get("golden_finger") or "").strip()
     return {
-        "name": _tier_label(style) if style else (tiers[0] or "力量体系"),
+        # 体系名要短。真机拿 _tier_label 切 power_system_style 得到的是
+        # 「借力体系——所有武者以借力术」这种半截话（2026-08-24 接线测试）。
+        # 优先取「XX体系/XX之道/XX法」这类自带名字的词组。
+        "name": _power_system_name(style) or f"{tiers[0]}起步的力量体系",
         "tiers": tiers,
         "tier_progression": progression,
         "acquisition_method": golden or engine,

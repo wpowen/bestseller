@@ -148,3 +148,28 @@ def test_level_format_keeps_order() -> None:
     bodies = [t["bottleneck"] for t in ps["tier_progression"]]
     assert "独居" in bodies[0]
     assert "临时秩序" in bodies[-1]
+
+
+def test_power_system_name_is_a_name_not_half_a_sentence() -> None:
+    """2026-08-24 接线测试：真机产出过「借力体系——所有武者以借力术」这种半截话。"""
+
+    ps = derive_source_bound_power_system(
+        _project(
+            growth_curve=_BOOK9_CURVE,
+            writing_profile={"world": {"power_system_style": _BOOK9_STYLE}},
+        ),
+        engine="还力兑现",
+    )
+    assert ps["name"] == "借力体系", ps["name"]
+    assert "——" not in ps["name"]
+
+
+def test_a_style_without_a_nameable_phrase_falls_back_readably() -> None:
+    ps = derive_source_bound_power_system(
+        _project(
+            growth_curve=_BOOK9_CURVE,
+            writing_profile={"world": {"power_system_style": ""}},
+        ),
+        engine="e",
+    )
+    assert ps["name"] and "确认" not in ps["name"]

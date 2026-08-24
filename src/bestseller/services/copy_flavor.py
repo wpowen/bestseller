@@ -112,8 +112,12 @@ _RULES: Final[tuple[tuple[str, str, float, str], ...]] = (
         # production orders that need no such subject. 「他必须在三天内赶到」 is
         # narrative and must stay clean — that is why the modal alone is never
         # enough, it has to be aimed at the manuscript.
+        # 2026-08-24：数词类原本漏了「几」「数」，于是「前三章给出」命中而
+        # 「前几章给出」漏网——真机书9 的 reader_promise 就是靠这个含糊数词
+        # 绕过整道门的（打分 0.0）。同一句话换个模糊量词就无罪，是词表类
+        # 检测器最常见的缺口。
         "directive_voice",
-        r"(开篇|全书|正文|章末|收尾|前\s*[一二三四五六七八九十百千万\d]+\s*[章字])"
+        r"(开篇|全书|正文|章末|收尾|前\s*[一二三四五六七八九十百千万几数\d]+\s*[章字])"
         r"[^。；！？]{0,16}?(必须|一定要|得先|亮出|抛出|给出|推进|证明|拉住)"
         r"|必须(持续|不断|连续)(兑现|推进|升级|维持)"
         r"|不允许[^。；！？]{0,12}(堆积|空转|注水|拖沓)"

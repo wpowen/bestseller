@@ -93,3 +93,51 @@ def test_the_prompt_asks_for_it_without_a_copyable_shell() -> None:
     src = Path(mod.__file__).read_text(encoding="utf-8")
     assert '"power_tiers"' in src, "构思 prompt 没有要这个字段"
     assert "境界名1" not in src and "阶名1" not in src, "占位符会被逐字抄走"
+
+
+# ── 2026-08-25 真机：契约加了字段，模型却没产出 ──
+# 新书 custom-xuanhuan-1787590978 的 power_tiers = 0，阶梯又退回框架术语。
+# 查因：`growth_curve` 在 conception.py 里出现在 **4 处 prompt + 2 处字段清单**，
+# 我只在 1 处 prompt 加了 power_tiers。这是「只挂一条分支」今天第四次。
+#
+# 逐处补容易再漏，所以这条守卫改为**结构性断言**：这两个字段必须同行同止。
+
+
+def _character_field_sites(src: str) -> list[tuple[int, str]]:
+    """列出所有「枚举角色字段」的行——prompt 模板与字段清单都算。"""
+
+    out = []
+    for no, line in enumerate(src.split("\n"), start=1):
+        if '"growth_curve"' not in line:
+            continue
+        # 只看**字段枚举**（prompt 模板行 / 字段名元组）。读写单个字段的地方
+        # 本来就只该管散文曲线：`.get("growth_curve")`、`[...] = `、`return`
+        # ——要求它们带 power_tiers 是错的（2026-08-25 守卫第一版开太宽，
+        # 误报了金手指修复通道的三处读写）。
+        stripped = line.strip()
+        if any(tok in stripped for tok in (".get(", "] =", "return ", "== ")):
+            continue
+        out.append((no, stripped))
+    return out
+
+
+def test_power_tiers_travels_with_growth_curve_everywhere() -> None:
+    """凡是列出 growth_curve 的地方，都必须同时列出 power_tiers。
+
+    两者描述同一件事（主角怎么变强）：一个是散文，一个是结构。只给其中一个，
+    要么模型不产出结构（prompt 少了），要么产出了也活不下来（字段清单少了）。
+    """
+
+    from pathlib import Path
+
+    import bestseller.services.conception as mod
+
+    src = Path(mod.__file__).read_text(encoding="utf-8")
+    lines = src.split("\n")
+    missing = []
+    for no, text in _character_field_sites(src):
+        # 在该行前后 8 行的窗口里找 power_tiers——同一个 JSON 模板/元组里即可
+        window = "\n".join(lines[max(0, no - 9) : no + 8])
+        if '"power_tiers"' not in window and "power_tiers" not in window:
+            missing.append(f"conception.py:{no}  {text[:72]}")
+    assert not missing, "这些地方列了 growth_curve 却没列 power_tiers：\n" + "\n".join(missing)

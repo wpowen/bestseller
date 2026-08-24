@@ -3222,6 +3222,7 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
         f'external cheat (wuxia/history/literary/ensemble), write \'no explicit golden finger; '
         f'the edge is X\'",\n'
         f'  "growth_curve": "character growth arc description",\n'
+        f'  "power_tiers": ["tier names the lead passes through, in order, <=8 chars each; empty array when there is no tier system"],\n'
         f'  "romance_mode": "none/slow-burn/love-triangle/harem/single etc.",\n'
         f'  "relationship_tension": "core relationship tension",\n'
         f'  "antagonist_mode": "escalating/rotating/hidden etc.",\n'
@@ -3568,6 +3569,7 @@ def _finalize_user_prompt(
         f'    "character": {{\n'
         f'      "protagonist_archetype": "...", "protagonist_core_drive": "...",\n'
         f'      "golden_finger": "...", "growth_curve": "...",\n'
+        f'      "power_tiers": ["主角依次经过的层级名，按顺序，每项≤8字；没有分层体系就给空数组"],\n'
         f'      "romance_mode": "...", "relationship_tension": "...",\n'
         f'      "antagonist_mode": "...",\n'
         f'      "conflict_forces": [{{"name": "...", "force_type": "...", "active_volumes": [...], "threat_description": "...", "escalation_path": "..."}}]\n'
@@ -3671,6 +3673,7 @@ def _finalize_user_prompt_en(
         f'    "character": {{\n'
         f'      "protagonist_archetype": "...", "protagonist_core_drive": "...",\n'
         f'      "golden_finger": "...", "growth_curve": "...",\n'
+        f'      "power_tiers": ["主角依次经过的层级名，按顺序，每项≤8字；没有分层体系就给空数组"],\n'
         f'      "romance_mode": "...", "relationship_tension": "...",\n'
         f'      "antagonist_mode": "...",\n'
         f'      "conflict_forces": [{{"name": "...", "force_type": "...", "active_volumes": [...], "threat_description": "...", "escalation_path": "..."}}]\n'
@@ -4312,7 +4315,7 @@ async def _polish_golden_finger_mechanism(
         "请重写金手指与成长曲线：保留原有代价/限制设定，但必须补上明确的获得/变强/掌控"
         "信号，让读者看到机制整体是正和的（有得有失，但净值向上）；若原本套用了豁免条款"
         "却不满足豁免资格，改为给出真实差异化优势。只输出 JSON："
-        '{"golden_finger": "...", "growth_curve": "..."}，不要解释。'
+        '{"golden_finger": "...", "growth_curve": "...", "power_tiers": [...]}，不要解释。'
     )
     fixed, ids = await _llm_call_json(
         session, settings,
@@ -9039,7 +9042,8 @@ def _ensure_complete_profile(
     # Merge character proposal fields
     char_section = profile["character"]
     for key in ("protagonist_archetype", "protagonist_core_drive", "golden_finger",
-                "growth_curve", "romance_mode", "relationship_tension", "antagonist_mode"):
+                "growth_curve", "power_tiers", "conflict_forces",
+                "romance_mode", "relationship_tension", "antagonist_mode"):
         if not char_section.get(key) and character.get(key):
             char_section[key] = character[key]
     # Also use existing_overrides as fallback
@@ -9098,6 +9102,8 @@ def _build_fallback_final(
                 "protagonist_core_drive",
                 "golden_finger",
                 "growth_curve",
+                "power_tiers",
+                "conflict_forces",
                 "romance_mode",
                 "relationship_tension",
                 "antagonist_mode",

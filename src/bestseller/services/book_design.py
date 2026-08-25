@@ -123,9 +123,46 @@ _TITLED_NAME_RE = re.compile(
 # 「重生为婴儿」被读成「重生」+「为婴儿」，把测试用例 test_name_at_the_very_start
 # 的句子解析成人名「为婴儿」。
 _OCCUPATION_NAME_RE = re.compile(
-    r"[一-鿿]{1,4}(?:师|士|者|匠|徒|官|卫|将|童|郎|娘|婆|尉|吏|监|使|修|医)"
+    r"[一-鿿]{1,4}(?:师|士|者|匠|徒|官|卫|将|童|郎|娘|婆|尉|吏|监|使|修|医|工|夫)"
     r"([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|[执持握带走来去看说做在被把与和了的])"
 )
+# 后缀字有时只是动词的一部分（开工那日 / 竣工验收 / 雨天使不出来），单靠后缀
+# 会造出「那日」「验收」「不出来」这种假人名。用**姓氏**这个封闭集收口：
+# 百家姓是有限且定义明确的类别，不是打地鼠词表。只作用于职业分支——
+# 称谓分支的既有用例「凡人沉骨」的「沉」不是姓，不能被这条波及。
+_SURNAMES = frozenset(
+    "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻"
+    "柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤"
+    "滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄穆萧尹姚邵湛汪祁毛禹狄米"
+    "贝明臧计伏戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵季贾路娄危江童颜郭梅盛林刁钟"
+    "徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪解宗丁宣贲邓郁单杭洪包诸左"
+    "石崔吉钮龚程嵇邢滑裴陆荣翁荀羊惠甄曲封芮储靳汲邴糜松井段富巫乌焦巴弓牧隗"
+    "山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾甘厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄"
+    "印宿白怀蒲邰鄂索咸籍赖卓蔺屠蒙池乔阴胥苍双闻莘党翟谭贡劳姬申扶堵冉宰郦雍"
+    "桑桂濮牛寿边扈燕冀郏浦尚农温庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终"
+    "暨居衡步耿满弘匡国文寇广禄阙欧殳沃利蔚越夔隆巩厍聂晁勾敖融冷訾辛阚简饶曾"
+    "沙乜养鞠须丰巢蒯查荆红游竺权盖益桓"
+    # 玄幻/仙侠主角高频姓（真机名册补齐：楚风/墨白/洛尘/岳川）
+    "楚墨洛岳阳商牟督鄢蓟晋佟"
+)
+_COMPOUND_SURNAMES = (
+    "欧阳", "司马", "上官", "诸葛", "东方", "独孤", "南宫", "慕容",
+    "西门", "皇甫", "尉迟", "长孙", "宇文", "夏侯", "司徒", "端木", "公孙",
+)
+# 「老/小/阿 + 姓」是中文里极常见的称呼式人名（农夫老秦）。
+_NAME_ADDRESS_PREFIXES = ("老", "小", "阿")
+
+
+def _starts_with_a_surname(name: str) -> bool:
+    if name.startswith(_COMPOUND_SURNAMES):
+        return True
+    if name and name[0] in _SURNAMES:
+        return True
+    return (
+        len(name) >= 2
+        and name[0] in _NAME_ADDRESS_PREFIXES
+        and name[1] in _SURNAMES
+    )
 # 时代/地域短语的后缀类。只对**四字**候选生效：这些字做人名尾字在 2-3 字姓名里
 # 很常见（王海、陈山），但「四字且以它结尾」几乎必是设定短语而非人名。
 # 真机：「末法乱世」被句首规则当成主角名写进快照/cast/identity_manifest。
@@ -250,12 +287,23 @@ def _protagonist_name_from_text(value: object) -> str:
     # （不让后文出场的次要角色抢名）。
     _clauses = re.split(r"[，,。；;：:!?！？\n]", text)
     _head = "，".join(c for c in _clauses[:2] if c)
-    _occupational = _OCCUPATION_NAME_RE.search(_head)
-    if _occupational and _acceptable_protagonist_name(_occupational.group(1)):
-        return _occupational.group(1)
+    for _match in _OCCUPATION_NAME_RE.finditer(_head):
+        _candidate = _match.group(1)
+        if _starts_with_a_surname(_candidate) and _acceptable_protagonist_name(
+            _candidate
+        ):
+            return _candidate
 
+    # 句首分支同样要求姓氏开头。位置本身几乎不携带信息——句首那 2-4 个字可以是
+    # 时代状语（末法乱世）、时间状语（三年前）、场景（这一夜血）、动词短语
+    # （开工那日）。靠往排除表里加后缀是无穷无尽的；要求姓氏让这条分支**构造上
+    # 安全**：真名恒以姓氏起头，动词/状语片段几乎不会。
     match = _CJK_NAME_RE.match(text)
-    if match and _acceptable_protagonist_name(match.group(1)):
+    if (
+        match
+        and _starts_with_a_surname(match.group(1))
+        and _acceptable_protagonist_name(match.group(1))
+    ):
         return match.group(1)
 
     # Name after a descriptive clause. Anchored on a role/title word rather

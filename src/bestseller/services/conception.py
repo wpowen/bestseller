@@ -7926,6 +7926,23 @@ async def run_conception_pipeline(
                     if isinstance(concept_contract, Mapping)
                     else {}
                 ),
+                # 基调断点修复（2026-08-26）：勾选此前只以「读者承诺标签词」的
+                # 身份到达简介层，是可换可丢的素材；正文语气无人约束，勾了
+                # 轻松+喜剧的书写出「拿刀架脖子/最后一条命」。同 ctx 取值，
+                # 与池层/项目卡层共用一份勾选事实。
+                tone_preference=str(
+                    (ctx.get("genre_intent_contract") or {}).get("tone_preference")
+                    or ""
+                ),
+                effect_skills=tuple(
+                    (
+                        (ctx.get("genre_intent_contract") or {}).get(
+                            "explicit_enhancers"
+                        )
+                        or {}
+                    ).get("effect_skills")
+                    or ()
+                ),
                 config=_appeal_cfg_for_cw,
             )
             _copywriting_ran = True

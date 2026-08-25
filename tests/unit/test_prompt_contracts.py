@@ -210,3 +210,59 @@ class TestOutputBudgetMatchesContract:
         # 实测 avg_out≈4300/12条，p95 撞 6000；每条完整 pitch（seed+双句 graft+
         # opening+why+3场面）需 ≥600 token 的预算才不被腰斩。
         assert cap >= batch * 600, f"pool cap {cap} too small for {batch} pitches"
+
+
+class TestBlurbToneReachesCopy:
+    """基调断点（2026-08-26 真机《我在梧城修错字》）：池层/项目卡层都带
+    「调性：轻松/故事技能：喜剧」，唯独简介层没有——勾了轻松+喜剧的书对外
+    文案写成「拿刀架他脖子/自己最后一条命」，标签行还把 reader_contract 的
+    「轻松/爽文/不虐主角」整行换成「权谋+智商在线」。"""
+
+    def test_candidate_prompt_carries_tone_and_skills(self) -> None:
+        from bestseller.services.blurb_copywriter import _build_candidate_messages
+
+        kwargs = dict(
+            spine={"who": "抄书匠"}, premise="前提", golden_finger_line="一句话",
+            title="书名", tags=["玄幻"], genre="玄幻", sub_genre="东方玄幻",
+            platform=None, persona=None, emotion_exemplars=(),
+            book_jargon_terms=(), band=(180, 260), reader_contract=("轻松", "爽文"),
+        )
+        system, _ = _build_candidate_messages(
+            "scene_hook", tone_preference="light",
+            effect_skills=("comedy_engine", "hype_satisfaction_engine"), **kwargs
+        )
+        assert "本书基调" in system
+        assert "轻松" in system and "喜剧" in system
+        # 未勾选时 prompt 逐字节不变（no-op 契约）
+        plain, _ = _build_candidate_messages("scene_hook", **kwargs)
+        assert "本书基调" not in plain
+
+    def test_polish_path_carries_tone_too(self) -> None:
+        import inspect
+
+        from bestseller.services import blurb_copywriter as w
+
+        src = inspect.getsource(w._polish_champion)
+        # 打磨必须同带基调，否则它会把基调改没（同一事实住两地，后写的赢）
+        assert "_blurb_intent_directives(tone_preference, effect_skills)" in src
+        # 「逼到墙角」的严肃默认假设已按基调条件化
+        assert "别把轻松的书写成生死局" in src
+
+    def test_reader_contract_labels_must_all_survive_into_tag_line(self) -> None:
+        import inspect
+
+        from bestseller.services import blurb_copywriter as w
+
+        src = inspect.getsource(w._build_candidate_messages)
+        assert "一条都不许丢" in src
+
+    def test_conception_passes_intent_to_blurb_stage(self) -> None:
+        import inspect
+
+        from bestseller.services import conception
+
+        src = inspect.getsource(conception)
+        idx = src.find("run_blurb_copywriting(")
+        assert idx > 0
+        call = src[idx : idx + 2600]
+        assert "tone_preference=" in call and "effect_skills=" in call

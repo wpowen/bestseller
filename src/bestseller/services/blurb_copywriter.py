@@ -189,6 +189,36 @@ def _truncate(text: str, limit: int) -> str:
     return truncate_at_sentence(text or "", limit)
 
 
+def _blurb_intent_directives(
+    tone_preference: str, effect_skills: tuple[str, ...] | list[str]
+) -> str:
+    """把建书页勾的调性/故事技能渲染成简介层的基调指令。
+
+    单一真源：直接复用生成端（concept_tournament）的同源渲染函数，简介层
+    不自写一套措辞——``render_blurb_form_reminder`` 的 docstring 记着同款
+    教训（同一事实住两地，后写的赢）。未勾选时返回空串，prompt 逐字节不变。
+    """
+
+    from bestseller.services.concept_tournament import (
+        _effect_skills_directive_line,
+        _tone_directive_line,
+    )
+
+    block = (
+        _tone_directive_line(tone_preference)
+        + _effect_skills_directive_line(effect_skills)
+    ).strip()
+    if not block:
+        return ""
+    return (
+        "\n【本书基调（建书页勾选，正文语气必须兑现，不只是标签）】\n"
+        + block
+        + "\n简介的语气本身要像这个基调：勾了轻松就不要通篇生死威胁，"
+        "勾了喜剧就要有一处让人嘴角动一下的地方。基调错位的文案会把不对的"
+        "读者拉进来，比不够刺激更伤留存。"
+    )
+
+
 def _build_candidate_messages(
     strategy: str,
     *,
@@ -205,6 +235,8 @@ def _build_candidate_messages(
     book_jargon_terms: tuple[str, ...],
     band: tuple[int, int],
     reader_contract: tuple[str, ...] = (),
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, str]:
     directive = _STRATEGY_DIRECTIVES.get(strategy, _STRATEGY_DIRECTIVES["scene_hook"])
     lo, hi = band
@@ -216,6 +248,13 @@ def _build_candidate_messages(
     system = (
         "你是顶尖中文网文详情页文案师，只写给完全不懂本书设定的陌生读者看。"
         "你的任务不是复述设定，是让人3秒内产生'这个我没见过但我秒懂'的冲动点击。"
+        # 基调断点修复（2026-08-26 真机《我在梧城修错字》定罪）：池层与项目卡层
+        # 都带「调性：轻松/故事技能：喜剧」的基调指令，唯独简介层没有——勾了
+        # 轻松+喜剧的书，对外文案写成「有人拿刀架他脖子/自己最后一条命」的
+        # 严肃权谋，标签行还把 reader_contract 的「轻松/爽文」全换成
+        # 「权谋+智商在线」。简介是读者第一眼看到的东西，基调错位=拉错人进来。
+        # 指令用生成端同源函数渲染，不在这里另写一套（同一事实不许住两地）。
+        + _blurb_intent_directives(tone_preference, effect_skills)
     )
     user = (
         f"【故事脊柱】\n{spine_block}\n\n"
@@ -243,7 +282,12 @@ def _build_candidate_messages(
         "主角蠢不蠢，这类点进去之前就想知道的事；其余可以是题材元素。"
         "全是设定关键词的标签行等于没写。"
         "【已勾选的读者承诺】给的是本书勾选项对应的说法，可以直接用，"
-        "**也可以换成更贴本书的写法**——要的是那类信息，不是那几个词。"
+        "**也可以换成更贴本书的写法**——要的是那类信息，不是那几个词；"
+        # 2026-08-26：勾了轻松+爽文+不虐主角的书，标签行整行换成
+        # 「权谋+智商在线+悬疑反转」，三条读者承诺一条没留。「可以换写法」
+        # 被当成了「可以不写」。换写法可以，整类信息丢掉不行。
+        "但**每一条已勾选的读者承诺都必须在标签行里有对应的词**（原词或同义"
+        "写法都行），一条都不许丢——这是读者点进来之前唯一能看到的避雷信息。"
         f"标签行之后是正文：{lo}-{hi} 字（不含标签行），短句分行，一句一意，"
         "6-12 行，每行都能独立成立；不写大段落；\n"
         "②【体验样本，缺失即废稿】至少一段"
@@ -376,6 +420,8 @@ async def _polish_champion(
     language: str,
     premise: str = "",
     spine: dict[str, Any] | None = None,
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
 ) -> tuple[str, Any]:
     """One bounded focused-rewrite pass on the tournament champion.
 
@@ -396,13 +442,21 @@ async def _polish_champion(
             f"【事实准绳（只许用这里的事实，一个字不许编）】\n"
             f"{premise.strip()}\n{spine_block}\n\n"
         )
-    system = "你是顶尖中文网文详情页文案编辑，专精把不达标的简介按诊断意见改到位。"
+    system = (
+        "你是顶尖中文网文详情页文案编辑，专精把不达标的简介按诊断意见改到位。"
+        # 打磨路径必须与候选生成同带基调，否则它会把基调改没——同一事实住两地、
+        # 后写的赢，正是 render_blurb_form_reminder 记录的那次事故形态。
+        + _blurb_intent_directives(tone_preference, effect_skills)
+    )
     user = (
         f"题材：{genre}（{sub_genre}）\n{anchor}当前简介：\n{synopsis}\n\n"
         f"诊断意见：\n{feedback}\n\n"
         "请按诊断意见逐条改写这段简介：先给具体冲突，再讲规则代价，最后留下一个"
         "必须继续看的选择。删掉口语凑句、设定清单、泛泛反问和任何解释给策划看的话。"
-        "读者只该看到人物正在被什么逼到墙角。\n"
+        # 「逼到墙角」是严肃向的默认假设：轻松/喜剧档照此打磨就会被推回沉重
+        # （2026-08-26 定罪）。压力要具体这条不变，形态随基调走。
+        "读者只该看到人物正在被什么具体的东西压着——压力可以是生死，也可以是"
+        "面子、饭碗、麻烦事，按本书基调选，别把轻松的书写成生死局。\n"
         f"{render_blurb_form_reminder()}\n"
         "改写只许调整表达、顺序与详略：不得新增人物/物品/数字/期限，不得改变"
         "事实准绳里的任何事实；全文只许保留一条倒计时；交稿前逐句自查任何两句"
@@ -483,6 +537,10 @@ async def run_blurb_copywriting(
     book_jargon_terms: tuple[str, ...] = (),
     reader_contract: tuple[str, ...] = (),
     user_named_default_family: bool = False,
+    # 建书页勾的调性/故事技能——生成端与项目卡层一直有，简介层此前没有
+    # （2026-08-26 基调断点）。默认空=prompt 逐字节不变。
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] = (),
     config: dict[str, Any] | None = None,
     generator: GeneratorFn | None = None,
     persona_judge: Any = None,
@@ -551,6 +609,7 @@ async def run_blurb_copywriting(
                 platform=platform, persona=persona, emotion_exemplars=emotion_exemplars,
                 book_jargon_terms=book_jargon_terms, band=band,
                 reader_contract=reader_contract,
+                tone_preference=tone_preference, effect_skills=effect_skills,
             )
             raw, run_id = await gen_fn(system, user)
             if run_id is not None:
@@ -741,6 +800,7 @@ async def run_blurb_copywriting(
                     session, settings, synopsis=champion.synopsis, feedback=feedback,
                     genre=genre, sub_genre=sub_genre, language=language,
                     premise=premise, spine=spine,
+                    tone_preference=tone_preference, effect_skills=effect_skills,
                 )
                 if run_id is not None:
                     llm_run_ids.append(run_id)

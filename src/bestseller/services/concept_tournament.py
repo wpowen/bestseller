@@ -1124,7 +1124,7 @@ def _build_engine_kernel_messages(
     if seed_support:
         support_payload = {
             key: seed_support.get(key)
-            for key in ("opening", "why_it_keeps_moving", "future_situations")
+            for key in ("graft", "opening", "why_it_keeps_moving", "future_situations")
             if seed_support.get(key)
         }
         if support_payload:
@@ -1342,71 +1342,95 @@ def _build_raw_idea_pool_messages(
         '"seed":"一句原始创意"}]}'
     )
     if prompt_arm == "author_pitch":
+        # 2026-08-24 提示词工程重构（docs/一句话创意提示词工程分析-20260824.md）。
+        # 三处结构性修复，各自的证据：
+        # ① 判据双载→生成端瘦身：旧版七条铁律与排序判官的 12 条 cap 一一同构，
+        #   换来的是防御性写作（《废丹成神》logline 用 400 字向 character_logic
+        #   轴答辩）。规则书留给判官，生成端只留三条硬约束+「好的样子」。
+        # ② 单句槽位超载→义务分字段：旧版五条铁律都写「这一句话里必须…」，
+        #   7 个语义槽挤 40-80 字，模型把「后果」和「机制演示」并成一格=
+        #   开局战力膨胀。现在 seed 只装三槽，机制因果落 graft（并新增因果桥
+        #   义务——「搬进新场景靠什么仍成立」正是断层处缺的那根梁）。
+        # ③ 冠军分布≠生成规则：嫁接从「12/12 必须、否则作废」降为默认策略
+        #   +逃生门（榜单 57% 是嫁接，把幸存者模式写成铁律=制度化拼凑）。
+        # 另：铁律二+四合并（被动开局+补一句「偏要」的表面合规是两条独立
+        # 陈述的最省力解，《别人借力我替他们还债》被动开局仍加冕的直接根因）；
+        # 悬疑段按题材条件渲染（纯玄幻里是 180 字死重）；「宁缺毋滥」替代硬凑
+        # ——短产兜底 topup 本来就在，凑数换皮才是真损失。批量 12 整池一次
+        # 生成不动（2026-08-10 单变量消融：batch=1 同族塌缩 60.4% vs batch=12
+        # 7.5%，分批=同质化复辟）。
+        _genre_blob = f"{genre}{sub_genre}"
+        _is_mystery = any(
+            token in _genre_blob
+            for token in ("悬疑", "灵异", "怪谈", "惊悚", "恐怖", "推理", "诡秘")
+        )
+        _mystery_exception = "（悬疑品类例外：悬念钩合法）" if _is_mystery else ""
+        _mystery_spread = (
+            # 异常来源多样性（2026-08-12 真机定罪：悬疑池两轮 5/5 候选同一
+            # 内容族）。纯正向类别列举，不点任何族名 token（种词铁律）。
+            "整批的**异常来源也必须彼此不同**，"
+            "从这些方向各取其一：住的地方不对劲、每天打交道的活人不对劲、"
+            "一件旧物不对劲、一条人人默守的规矩不对劲、时间或记忆不对劲、"
+            "自己的身体不对劲、一门老手艺不对劲——恐怖可以来自任何日常，"
+            "整批不许挤在同一种来源上。\n"
+            if _is_mystery
+            else ""
+        )
         return system, (
             f"为{genre}（{sub_genre}）认真构思{count}个不同的长篇小说创意。{seed}"
             f"{focus}"
             "像真正准备写书的作者一样，先把人物、开篇和故事为什么会继续想通，再提炼"
             "一句话；不要从流行设定词或反转模板开始拼装。\n"
-            # 欲望钩铁律（2026-08-11 用户逐条终审 + 百本榜单钩子分类的共同结论）：
-            # 头部钩子全是"渴望引擎"（想看他赢/翻身/兑现/清算），没有一个止于
-            # 反讽或好奇。旧要求「让人想追问」选出的是文学杂志式反讽处境。
-            "铁律一【欲望钩】：这一句话必须让目标频道读者立刻产生"
-            "『我想看他赢下这件事 / 翻这个身 / 兑现这个优势 / 清算这笔账』"
-            "其中一种渴望——读者要的是渴望，不是好奇；处境再巧妙，若读者说不出"
-            "自己想看主角接下来赢什么，这条创意作废（悬疑品类例外：悬念钩合法）。\n"
-            "铁律二【主角主动】：主角必须有自己想要的东西并已经开始动手去拿；"
-            "全程被动（被逼着、被迫、被卷入而无自己的目标）的创意作废。\n"
-            "铁律三【不写机制句】：禁止把创意写成规则说明——"
-            "『谁A，谁就B』『X多了怎样、X少了怎样』这类对称条款是设计文档腔，"
-            "把同样的内容改写成主角正在经历的具体事。\n"
-            # 铁律四（2026-08-11 三批终审）：榜单钩子是「已经发生的事+当场
-            # 兑现的后果」（预言当场应验、算命先生自己当场暴毙），我们的失败
-            # 品全是「身份+宿命+日常维持」的处境陈述——没有事件就没有故事。
-            "铁律四【事件先行】：这一句话里必须有一件**已经发生**的具体事件"
-            "和它**当场兑现**的后果（预言当场应验、身份当场戳穿、代价当场"
-            "收走这类）；只交代主角是谁、守着什么规矩、日常反复做什么的"
-            "处境陈述不是故事，作废。\n"
-            # 铁律五（2026-08-12 四批终审）：「假招其实是绝学」这类断言式
-            # 反转被判死——优势是宣称出来的，读者找不到买账的因果。
-            "铁律五【机制可信】：主角的优势必须自带读者一眼能懂的因果"
-            "（会挖矿→矿越挖越多→变强）；只宣称『其实反而最强』却给不出"
-            "当场机制的反转作废。\n"
-            # 铁律六（2026-08-19 榜单 70 本蒸馏，docs/concept-quality-system-
-            # redesign）：57% 头部=「读者熟机制×意外场景」恰好一处嫁接；孤立
-            # 新异常在榜单上不存在（≤3%）——生成端此前自由想点子，池子平庸
-            # 是冠军平庸的上限。判据前置到生成：机制与场景由你自拟，框架不
-            # 供词表（防跨书同菜单同质化）。
-            # 铁律七（2026-08-19 用户终审：「意外摸到一口井」被当场点名 AI 味）
-            # ——创意一句话层同样有动词错配病，拟人检测器管正文管不到这里。
-            "铁律七【人话动词】：一句话里的动词用最平实准确的说法"
-            "（发现、接手、得到、继承），东西只做它物理上真会做的事；"
-            "不许用文艺陌生化的动词搭配，读起来不像中国人说话的句子作废。\n"
-            "铁律六【嫁接式新鲜】：每个创意的新意必须是一次嫁接——"
-            "拿一个读者早已熟悉、不需要解释的机制或行当逻辑，放进一个"
-            "意想不到的场景或身份里；机制自带的规则（做什么→得什么→"
-            "受什么限制）必须一句话能说清。既无读者已知框架可挂载、又"
-            "说不出规则的孤立怪象不是新鲜，作废；一个创意里堆两处以上"
-            "新变量也作废（认知过载）。graft 字段写出这次嫁接："
-            "『熟机制×意外场景』各几个字。\n"
+            # 措辞去种词（2026-08-24 两轮真机定罪）：初版示例句里的「亲手」被
+            # 11/12、11/11 两轮整批复印成句式骨架，「他要的不是…是…」被 8/12
+            # 照抄——示例即模板、指令词即种词（同款已定案两次：seed 句法复印、
+            # 「卖点1：」标签照抄）。同一语义在三处必须各用不同措辞，且句式
+            # 多样性用可数规则表达（对齐场域令的集合式写法）。
+            "【一句好创意的样子】一个具体的人，为了自己想要的东西已经做成了一件"
+            "具体的事，后果当场兑现，读者立刻想看他接下来赢什么/翻什么身/兑现什么"
+            "优势/清算什么账。这是要素清单，不是句式模板。\n"
+            "整批句式令：同一个开头方式、同一个标志性短语或同一种收尾转折，"
+            "在整批里至多出现两条；把同样的要素装进彼此不同的句子里。\n"
+            "【字段分工】seed 只装三样：主角主动做出的那件已发生的事、它当场兑现的"
+            "后果、由此点燃的读者渴望。机制原理写进 graft，开篇细节写进 opening，"
+            "长期动力写进 why_it_keeps_moving——不要把所有东西塞进一句话。\n"
+            "铁律（仅此三条，违反即作废）：\n"
+            "铁律一【欲望钩】：目标频道读者必须能一秒说出想看主角接下来赢什么"
+            f"{_mystery_exception}；seed 里要能读出他想赢得、夺回、兑现或做大的"
+            "具体东西——只有阻止坏事、慷慨赴死式的自毁义举不算渴望；说不出即无"
+            "渴望，作废。\n"
+            "铁律二【主角主动·事件先行】：seed 里那件已发生的事必须出自主角自己的"
+            "决定和行动；被逼、被卷入、被砸中而没有自己目标的开局作废——先写被动"
+            "事件、再补一句主角『偏要如何』不算主动。\n"
+            "铁律三【人话·不写机制句】：动词用最平实准确的说法（发现、接手、得到、"
+            "继承），东西只做它物理上真会做的事；不把创意写成『谁A，谁就B』"
+            "『X多了怎样、X少了怎样』式规则条款；读起来不像中国人说话的句子作废。\n"
+            "【新鲜感的默认做法是嫁接】拿一个读者早已熟悉、不需要解释的机制或行当"
+            "逻辑，放进一个意想不到的场景或身份里。graft 必须写两句：这次嫁接是什么"
+            "（熟机制×意外场景，各几个字），以及机制搬进新场景后靠什么仍然成立——"
+            "写成读者一眼能懂的因果链：做什么→为什么因此得什么→所以越做越强。"
+            "这是机制可信的底线，"
+            "写不出第二句的嫁接不成立。个别创意若有比嫁接更强的成立方式也可以，"
+            "graft 里同样要写清『做什么→得什么→受什么限制』；一个创意堆两处以上"
+            "新变量作废（认知过载）。\n"
             # 欲望形态多样性（2026-08-12 四批终审）：悬疑池整批押在同一种
-            # 欲望上（全员同一种事故+同一种追查）。集合层面的令，正向列举。
+            # 欲望上。集合层面的令，正向列举；「至多两次」解掉 12 条 vs 8 种
+            # 具名形态的算术死结（旧版逼模型为后 4 条生造形态）。
             "整批多样性令：这一批创意的**欲望形态必须彼此不同**——活下来、"
             "破解规则、镇压收服、揭开身边人的不对劲、逃出去、兑现优势、"
-            "夺回属于自己的东西、把小生意做大……同一种欲望形态在整批里"
-            "最多出现一次。\n"
-            # 异常来源多样性（2026-08-12 真机定罪：悬疑池两轮 5/5 候选同一
-            # 内容族）。纯正向类别列举，不点任何族名 token（种词铁律）。
-            "若题材含悬疑/灵异/怪谈成分，整批的**异常来源也必须彼此不同**，"
-            "从这些方向各取其一：住的地方不对劲、每天打交道的活人不对劲、"
-            "一件旧物不对劲、一条人人默守的规矩不对劲、时间或记忆不对劲、"
-            "自己的身体不对劲、一门老手艺不对劲——恐怖可以来自任何日常，"
-            "整批不许挤在同一种来源上。\n"
-            "每个创意都写：一句话故事、开篇发生什么、开篇后主角为什么仍会持续行动，"
-            "以及三个彼此不同的未来场面。"
-            "这些辅助字段只用于帮助你把故事想通，不写卷纲、体系表或章数计划。"
+            "夺回属于自己的东西、把小生意做大……确实想不出新形态时，同一种"
+            "欲望形态在整批里至多出现两次。\n"
+            f"{_mystery_spread}"
+            # 产量下限（2026-08-24 真机：无下限的宁缺毋滥一轮只回 4 条，
+            # 12→4 的坑比凑数还贵）。下限=判官取样面 8，上限仍是 count。
+            f"宁缺毋滥：确实想不出{count}个真正不同的创意时可以少写，但不得少于"
+            f"8条；不要为凑数硬造换皮或生僻行当，缺的由系统另行补齐。\n"
+            "每个创意都把 seed、graft、opening、why_it_keeps_moving 和三个彼此"
+            "不同的未来场面写全；这些字段会被后续选题工序采信，不写卷纲、体系表"
+            "或章数计划。"
             "只输出JSON："
             '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
-            '"seed":"一句话故事","graft":"熟机制×意外场景",'
+            '"seed":"一句话故事","graft":"熟机制×意外场景＋机制为何仍成立",'
             '"opening":"具体开篇",'
             '"why_it_keeps_moving":"开篇后仍持续行动的自然原因",'
             '"future_situations":["未来场面1","未来场面2","未来场面3"]}]}'
@@ -1485,6 +1509,9 @@ def _parse_raw_idea_records(raw: str, *, limit: int) -> list[dict[str, Any]]:
             {
                 "lane": lane,
                 "seed": seed,
+                # 机制因果的义务落在 graft（字段分工，2026-08-24）——判官与
+                # 项目卡展开都要看它，解析层丢掉=义务白分。
+                "graft": str(item.get("graft") or "").strip(),
                 "opening": str(item.get("opening") or "").strip(),
                 "why_it_keeps_moving": str(
                     item.get("why_it_keeps_moving") or ""
@@ -1516,12 +1543,18 @@ def _build_raw_idea_rank_messages(
     sub_genre: str,
     ideas: list[tuple[str, str]],
     audience_orientation: str = "",
+    pitch_by_seed: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Rank raw ideas in one independent call before expensive card expansion.
 
     The ranker needs the channel anchor too: without it, a channel-mismatched
     seed can outrank a fitting one and the mismatch propagates into every
     downstream expansion.
+
+    ``pitch_by_seed`` carries the author_pitch support record per seed. The
+    mechanism-causality obligation moved from the seed sentence into ``graft``
+    (2026-08-24 field split), so the judge must see graft — judging the seed
+    alone would score the very field the obligation just left.
     """
 
     channel = (
@@ -1533,10 +1566,13 @@ def _build_raw_idea_rank_messages(
         "你是严苛的商业长篇选题编辑。只审原始故事胚子，不替它补设定。"
         "表达长短不加分，只输出JSON。" + channel
     )
-    rows = [
-        {"index": index, "lane": lane, "seed": seed}
-        for index, (lane, seed) in enumerate(ideas)
-    ]
+    rows = []
+    for index, (lane, seed) in enumerate(ideas):
+        row: dict[str, Any] = {"index": index, "lane": lane, "seed": seed}
+        graft = str(((pitch_by_seed or {}).get(seed) or {}).get("graft") or "").strip()
+        if graft:
+            row["graft"] = graft
+        rows.append(row)
     user = (
         f"题材={genre}（{sub_genre}）\n候选={json.dumps(rows, ensure_ascii=False)}\n\n"
         # C 层判据（2026-08-18 榜单 70 本蒸馏）：合法的新=熟机制×异场景一处
@@ -1546,6 +1582,8 @@ def _build_raw_idea_rank_messages(
         "可挂载（穿越/重生/系统面板/全民降临/获得传承/民俗或历史体系等），"
         "又复述不出一条『输入→输出→限制』的规则，那是孤立怪象不是新鲜，"
         "freshness 不得超过4；对题材默认套路的偏离≥2处=认知过载，"
+        "freshness 不得超过5；候选若带 graft（作者自报的嫁接与机制说明），"
+        "核对它与 seed 是否自洽——机制因果断裂或 graft 与 seed 对不上，"
         "freshness 不得超过5；"
         "click_seed 只问一件事：目标频道读者能否一秒说出自己想看主角接下来"
         "赢什么/翻什么身/兑现什么（悬疑品类可用悬念代替）——说不出即无渴望，"
@@ -1888,8 +1926,14 @@ def _build_hook_from_engine_messages(
         + "\n"
         "概念只使用读者能在开局场景直接看见或理解的人、物、行动与结果；"
         "抽象机制必须改写成主角当场能做的具体事情。"
-        "删除‘一步步、从此、真正的、命运齿轮、随着真相浮现’等AI概括词。不要解释500章、"
-        "不要写‘他只能/他必须/否则’，不要照抄字段名。\n"
+        # 负例种词修复（2026-08-24 全链排查）：此前这里逐字引用被禁词
+        # （一步步/命运齿轮/随着真相浮现）和被禁句式（他只能/他必须/否则）——
+        # 与 render_cliche_avoidance_block 自己写明的铁律相悖（负例也是
+        # prompt token，会被复印）。确定性执法在 blurb_appeal_gate 的正则里，
+        # 生成端只说类别。
+        "删除叙述总结腔：不概括过程、不预告命运走向、不替读者下结论，"
+        "只写当场发生的事。不要解释500章、"
+        "不要用剥夺主角选择的强制式措辞，不要照抄字段名。\n"
         # The judge KOs these before scoring; show them here so the generator
         # does not keep proposing the openings it is about to be eliminated for.
         + render_cliche_avoidance_block(banned)
@@ -3394,6 +3438,7 @@ async def run_concept_tournament(
                             sub_genre=sub_genre,
                             ideas=batch,
                             audience_orientation=audience_orientation,
+                            pitch_by_seed=raw_pitch_by_seed,
                         )
                         rank_raw, rank_run_id = await raw_idea_rank_fn(
                             rank_system, rank_user
@@ -3423,6 +3468,7 @@ async def run_concept_tournament(
                                 sub_genre=sub_genre,
                                 ideas=retry_batch,
                                 audience_orientation=audience_orientation,
+                                pitch_by_seed=raw_pitch_by_seed,
                             )
                             retry_raw, retry_run_id = await raw_idea_rank_fn(
                                 retry_system, retry_user

@@ -240,3 +240,69 @@ def test_seed_is_a_compass_not_a_template() -> None:
     )
     assert "禁止沿用它的句式" in user
     assert "保留其职业或核心发现" not in user
+
+
+def test_pool_prompt_v2_slims_rulebook_and_splits_fields() -> None:
+    """2026-08-24 提示词工程重构（docs/一句话创意提示词工程分析-20260824.md）。
+
+    ① 判据双载修复：生成端只留三条铁律，规则书归判官；② 单句槽位超载修复：
+    机制因果义务从 seed 移入 graft（含因果桥第二句）；③ 幸存者模式降级：
+    嫁接是默认做法带逃生门，不再 12/12 强制；④ 宁缺毋滥替代硬凑（短产
+    topup 兜底本来就在）；⑤ 欲望形态「至多两次」解 12 条 vs 8 形态死结。
+    """
+
+    _, user = _build_raw_idea_pool_messages(
+        genre="玄幻", sub_genre="东方玄幻", count=12,
+        audience_orientation="男频", prompt_arm="author_pitch",
+    )
+    assert "仅此三条" in user
+    assert user.count("铁律") <= 5  # 三条铁律+「铁律（仅此三条…」头，不再七条
+    assert "靠什么仍然成立" in user          # graft 因果桥义务
+    assert "比嫁接更强的成立方式也可以" in user  # 嫁接逃生门
+    assert "宁缺毋滥" in user
+    assert "至多出现两次" in user
+    assert "字段分工" in user                # seed 三槽，义务分字段
+    assert "偏要如何』不算主动" in user       # 铁律二+四合并后的表面合规封堵
+
+
+def test_pool_prompt_mystery_spread_is_genre_conditional() -> None:
+    """悬疑异常来源段与悬念钩例外只在悬疑系题材渲染——纯玄幻里是死重。"""
+
+    _, xuanhuan = _build_raw_idea_pool_messages(
+        genre="玄幻", sub_genre="东方玄幻", count=12,
+        audience_orientation="男频", prompt_arm="author_pitch",
+    )
+    assert "异常来源也必须彼此不同" not in xuanhuan
+    assert "悬疑品类例外" not in xuanhuan
+
+    _, mystery = _build_raw_idea_pool_messages(
+        genre="悬疑灵异", sub_genre="民俗怪谈", count=12,
+        audience_orientation="男频", prompt_arm="author_pitch",
+    )
+    assert "异常来源也必须彼此不同" in mystery
+    assert "悬疑品类例外" in mystery
+
+
+def test_graft_survives_parse_and_reaches_rank_judge() -> None:
+    """机制义务搬进 graft 后，解析层与判官必须都看得到它——否则义务白分：
+    判官只审 seed 就是在给刚被搬走义务的那个字段打分。"""
+
+    from bestseller.services.concept_tournament import _parse_raw_idea_records
+
+    raw = (
+        '{"ideas":[{"lane":"职业处境","seed":"张三把矿卖了",'
+        '"graft":"挖矿×修行：矿越挖越多所以越修越强",'
+        '"opening":"开篇","why_it_keeps_moving":"动力",'
+        '"future_situations":["a","b","c"]}]}'
+    )
+    records = _parse_raw_idea_records(raw, limit=12)
+    assert records and records[0]["graft"].startswith("挖矿×修行")
+
+    _, rank_user = _build_raw_idea_rank_messages(
+        genre="玄幻", sub_genre="东方玄幻",
+        ideas=[("职业处境", "张三把矿卖了")],
+        audience_orientation="男频",
+        pitch_by_seed={"张三把矿卖了": records[0]},
+    )
+    assert "挖矿×修行" in rank_user
+    assert "graft 与 seed 对不上" in rank_user

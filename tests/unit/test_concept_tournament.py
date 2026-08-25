@@ -331,7 +331,11 @@ class TestDeterministicScreens:
         assert "独立写3条最想让人点开" in hook_prompt
         assert "不要解释500章" in hook_prompt
         assert "每条30-75字" in hook_prompt
-        assert "不要写‘他只能/他必须/否则’" in hook_prompt
+        # 2026-08-24 负例种词修复：被禁词/句式不得逐字进生成 prompt
+        # （确定性执法在 blurb_appeal_gate），生成端只说类别。
+        assert "不要用剥夺主角选择的强制式措辞" in hook_prompt
+        for seeded in ("命运齿轮", "他只能/他必须/否则", "一步步"):
+            assert seeded not in hook_prompt, f"负例种词回流: {seeded}"
         assert '"hooks"' in hook_prompt
         assert '"decision_proof"' not in hook_prompt.split("只输出JSON：", 1)[1]
 
@@ -1020,7 +1024,9 @@ class TestDeterministicScreens:
         assert "不要套promise/paradox/scene模板" in prompt
         assert "一个具体主角" in prompt
         assert "允许选择并压缩" in prompt
-        assert "一步步" in prompt
+        # 2026-08-24 负例种词修复：旧断言钉的是「一步步」逐字在 prompt 里，
+        # 那正是被定罪的负例引用；现在钉类别级替代措辞。
+        assert "删除叙述总结腔" in prompt
 
     def test_native_baseline_prompt_has_no_dimension_or_long_plan_pollution(self):
         from bestseller.services.concept_tournament import (

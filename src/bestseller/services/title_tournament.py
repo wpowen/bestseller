@@ -415,6 +415,106 @@ def title_tournament_receipt(
     }
 
 
+def adjudicate_late_title(
+    tournament_title: str,
+    challenger_title: str,
+    *,
+    tags: Sequence[str] | None = None,
+    prose: str = "",
+    existing_titles: Sequence[str] | None = None,
+    user_named_default_family: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    """让**淘汰赛之后**才产生的书名与冠军做一次确定性对决。
+
+    2026-08-25 真机 custom-xuanhuan-1787625194：书名有两个互不知情的选择
+    子系统——本模块的淘汰赛（13 候选 + arena + 默认族降权），以及 appeal
+    重生循环（把 premise/简介/标签/书名当一个包重生成）。后者在末尾
+    ``report, premise, synopsis, tags, title = best`` 整包覆盖前者，出厂书名
+    《逐出师门我颠大》在淘汰赛回执里一次都没出现，冠军《擀面胖婶的三息辨火》
+    被无声丢弃。**同一事实住两地，后写的赢**——本仓库的招牌病。
+
+    这里不重跑淘汰赛、不加 LLM 调用：只让挑战者过一遍**同样的确定性门**
+    （长度带 / 接地 / 查重）与**同样的默认族降权**，再与冠军按既有排序规则
+    比一次。挑战者干净就让它赢（appeal 重生本就是为提升点击率而跑的），
+    带缺陷才退回冠军。全程 fail-open：任何一步异常都保留调用方的原书名。
+
+    Returns ``(adopted_title, receipt)``；receipt 恒非空，"没换" 也留痕，
+    这样「书名为什么是这个」永远查得到。
+    """
+
+    incumbent = _text(tournament_title)
+    challenger = _text(challenger_title)
+    if not challenger or challenger == incumbent:
+        return (incumbent or challenger), {
+            "stage": "late_title_adjudication",
+            "changed": False,
+            "reason": "no_challenger" if not challenger else "same_title",
+            "tournament_title": incumbent,
+            "challenger_title": challenger,
+            "adopted": incumbent or challenger,
+        }
+    if not incumbent:
+        # 淘汰赛没跑或没产出冠军：挑战者仍要过确定性门，但没有可退回的对手。
+        defects = deterministic_title_defects(
+            challenger, tags=tags, prose=prose, existing_titles=existing_titles
+        )
+        return challenger, {
+            "stage": "late_title_adjudication",
+            "changed": False,
+            "reason": "no_tournament_winner",
+            "challenger_defects": list(defects),
+            "tournament_title": "",
+            "challenger_title": challenger,
+            "adopted": challenger,
+        }
+
+    def _row(text: str) -> TitleCandidate:
+        return TitleCandidate(
+            title=text,
+            rejected_by=deterministic_title_defects(
+                text, tags=tags, prose=prose, existing_titles=existing_titles
+            ),
+        )
+
+    rows = [_row(incumbent), _row(challenger)]
+    # demote_default_family_titles 返回 (保留, 被降权)；同族全覆盖时原样返回，
+    # 绝不清空候选池（比较式降权，非清单式）。
+    kept, dominated = demote_default_family_titles(
+        rows, user_named_family=user_named_default_family
+    )
+    kept_titles = {row.title for row in kept}
+
+    # 规则：挑战者**过了同样的门**就让它赢——appeal 重生本就是为提升点击率
+    # 而跑的判过分的产物，压住它等于把原 bug 镜像过来。只有它带确定性缺陷
+    # 或被默认族降权时才退回冠军；冠军自己也不干净时不硬换（fail-open）。
+    challenger_row, incumbent_row = rows[1], rows[0]
+    challenger_ok = challenger_row.survives and challenger_row.title in kept_titles
+    incumbent_ok = incumbent_row.survives and incumbent_row.title in kept_titles
+    if challenger_ok:
+        adopted = challenger
+    elif incumbent_ok:
+        adopted = incumbent
+    else:
+        # 两个都带缺陷：保留冠军（它至少经过了 13 候选的淘汰赛）。
+        adopted = incumbent
+    return adopted, {
+        "stage": "late_title_adjudication",
+        "changed": adopted != incumbent,
+        "tournament_title": incumbent,
+        "challenger_title": challenger,
+        "adopted": adopted,
+        "candidates": [
+            {
+                "title": row.title,
+                "rejected_by": list(row.rejected_by),
+                "arena_score": row.arena_score,
+                "default_family_demoted": row in dominated,
+            }
+            for row in rows
+        ],
+    }
+
+
 def dumps_candidates(candidates: Sequence[TitleCandidate]) -> str:
     return json.dumps(
         [

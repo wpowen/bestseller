@@ -34,6 +34,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
+import hashlib
 import json
 import logging
 import math
@@ -169,6 +170,7 @@ class ConceptCandidate:
     judge_genre_fidelity: float | None = None
     judge_plain_language: float | None = None
     judge_story_motion: float | None = None
+    judge_protagonist_agency: float | None = None
     judge_reason: str = ""
     composite: float | None = None
     rejected_reason: str | None = None
@@ -212,6 +214,7 @@ class ConceptCandidate:
             "judge_genre_fidelity": self.judge_genre_fidelity,
             "judge_plain_language": self.judge_plain_language,
             "judge_story_motion": self.judge_story_motion,
+            "judge_protagonist_agency": self.judge_protagonist_agency,
             "judge_reason": self.judge_reason[:200],
             "composite": self.composite,
             "rejected_reason": self.rejected_reason,
@@ -238,9 +241,13 @@ class ConceptTournamentResult:
     raw_idea_rank_coverage: dict[str, Any] = field(default_factory=dict)
     raw_ideas: list[dict[str, str]] = field(default_factory=list)
     premise_cards: list[dict[str, Any]] = field(default_factory=list)
+    # 2026-08-25：追读性阶段的回执。恒非空——"跑了/只留痕/跳过" 三态可区分，
+    # 此前 seriality_judge=={} 既可能是"评了没发现"也可能是"压根没跑"。
+    seriality_stage: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "seriality_stage": dict(self.seriality_stage),
             "winner_dimension": self.winner.dimension if self.winner else None,
             "winner_concept": self.winner.concept if self.winner else None,
             "winner": self.winner.to_dict() if self.winner else None,
@@ -934,7 +941,7 @@ def _candidate_story_text(candidate: ConceptCandidate) -> str:
         "seriality_report", "seriality_judge", "judge_reason", "rejected_reason",
         "judge_freshness", "judge_click", "judge_predictable", "judge_character_logic",
         "judge_mechanism_causality", "judge_genre_fidelity", "judge_plain_language",
-        "judge_story_motion", "composite", "dimension",
+        "judge_story_motion", "judge_protagonist_agency", "composite", "dimension",
     }
 
     def _texts(value: Any) -> list[str]:
@@ -2652,6 +2659,62 @@ _FLOOR_AXIS_LABELS: tuple[tuple[str, str, float], ...] = (
 )
 
 
+_PROMPT_FAMILY_VERSION = "v2"
+
+
+def prompt_version_stamp(system_prompt: str, user_prompt: str) -> str:
+    """``v2+<内容指纹>``——版本号随 prompt 内容变化。
+
+    2026-08-25：这里原本是写死的 ``prompt_version="v2"``。当天真机上，
+    一句话创意池 prompt 做了 v2d 重构（七条铁律砍到三条、示例词全部除名），
+    ``llm_runs`` 里报的**仍然是 v2**——于是「这本书到底用的新 prompt 还是旧
+    prompt」在数据层根本查不出来，只能去比文件 mtime 和容器启动时间。
+
+    一个内容变了却不变的版本号，比没有版本号更坏：它让部署核查得出错误结论。
+    指纹取 system+user 的 sha256 前 8 位，同 prompt 恒定、改一个字就变。
+    """
+
+    digest = hashlib.sha256(
+        f"{system_prompt}\x00{user_prompt}".encode("utf-8")
+    ).hexdigest()[:8]
+    return f"{_PROMPT_FAMILY_VERSION}+{digest}"
+
+
+def seriality_stage_mode(
+    chapter_count: int,
+    cfg: Mapping[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """追读性阶段跑成哪一档：``enforcing`` / ``advisory`` / ``skipped``。
+
+    2026-08-25：此前是写死的 ``if chapter_count >= 200``。判官评的六条轴
+    （renewability / escalation / anti_reset / coherence / promise_survival /
+    unit_density）全是「读者要不要追下去」的判据，而 200 章的书在真机上几乎
+    不存在——于是它对所有正常长度的书完全空转，``seriality_judge`` 恒为 ``{}``，
+    「评了没发现」与「压根没跑」不可区分。
+
+    分档而不是一刀放开：≥ ``seriality_min_chapters`` 维持既有行为（判官带杀权）；
+    低于它但 ≥ ``seriality_advisory_min_chapters`` 时只跑判官**留痕、不发否决**。
+    config 里 2026-07-17 记着收紧概念层阈值 → 淘汰赛干涸 → 回落保底概念的教训，
+    而本仓库对新检测器的规矩就是「只挣重生和留痕，不发杀权」。
+    """
+
+    cfg = cfg or {}
+    full = int(cfg.get("seriality_min_chapters", 200))
+    advisory = int(cfg.get("seriality_advisory_min_chapters", 8))
+    if chapter_count >= full:
+        mode = "enforcing"
+    elif chapter_count >= advisory:
+        mode = "advisory"
+    else:
+        mode = "skipped"
+    return mode, {
+        "mode": mode,
+        "chapter_count": chapter_count,
+        "enforcing_min_chapters": full,
+        "advisory_min_chapters": advisory,
+    }
+
+
 def _hard_floor_failed_axes(
     scores: dict[str, float],
     hard_floors: dict[str, Any],
@@ -2763,10 +2826,16 @@ def _build_judge_messages(
         "只要读者自然追问下一次会发生什么；不强制把对手塞进一句话，对手理性改看"
         "opponent_system。若只是俏皮反差、静态世界设定、身份+秘密，必须依赖后文才知道"
         "故事怎么动，本项不得超过4分。若只是换对象平行重复、局面不积累，不得超过7分。\n"
+        + "9. protagonist_agency 主角能动性：这一句话的推进，是主角**做出取舍**"
+        "带来的，还是外部压力施加在他身上、他只做出反应？判据是能否指出他放弃了"
+        "什么、在两条都要付代价的路里选了哪条。若整句只有别人对他做了什么、"
+        "他被迫应对，本项不得超过4分；若他有行动但没有取舍、每一步都是唯一选项，"
+        "不得超过7分。\n"
         '只输出 JSON：{"freshness": 0-10, "click": 0-10, "predictable": 0-10, '
         '"character_logic": 0-10, '
         '"mechanism_causality": 0-10, '
         '"genre_fidelity": 0-10, "plain_language": 0-10, "story_motion": 0-10, '
+        '"protagonist_agency": 0-10, '
         '"reason": "20字内评语"}'
     )
     return system, user
@@ -2981,7 +3050,7 @@ async def _default_generator(
                 user_prompt=user_prompt,
                 fallback_response="{}",
                 prompt_template=template,
-                prompt_version="v2",
+                prompt_version=prompt_version_stamp(system_prompt, user_prompt),
                 max_tokens_override=max_tokens,
                 model_catalog_key=model_catalog_key,
                 metadata={
@@ -4492,6 +4561,16 @@ async def run_concept_tournament(
         w_genre = float(weights.get("genre_fidelity", 0.0))
         w_plain = float(weights.get("plain_language", 0.0))
         w_motion = float(weights.get("story_motion", 0.0))
+        # 2026-08-25 新增：主角能动性。**刻意不进 _FLOOR_AXIS_LABELS**——
+        # 只影响"谁赢"（composite 排序），不影响"谁出局"。加地板会缩小候选池，
+        # 而 config 里 2026-07-17 记着收紧概念层阈值 → 淘汰赛干涸 → 回落保底
+        # 概念（比任何被拒候选都差）。真机依据：custom-xuanhuan-1787625194 的
+        # 故事引擎是纯被动循环，正文 has_decision 0/5——判官八条轴没有一条问
+        # 「主角要不要做选择」，于是这类引擎在概念层完全无损通过。
+        # 默认 0.0 与同组其余轴一致：真值一律来自配置。给非零默认会把权重
+        # 加到**任何没声明该键的权重集**上（wild_mode 合计从 1.0 变 1.1，
+        # 全量套件当场抓到），也让"改权重"这件事有两个来源。
+        w_agency = float(weights.get("protagonist_agency", 0.0))
 
         judged: list[ConceptCandidate] = []
         for _judge_idx, candidate in enumerate(screened):
@@ -4541,6 +4620,10 @@ async def run_concept_tournament(
                     0.0,
                     min(10.0, float(verdict.get("story_motion", 0))),
                 )
+                protagonist_agency = max(
+                    0.0,
+                    min(10.0, float(verdict.get("protagonist_agency", 5))),
+                )
                 composite = (
                     fresh * w_fresh
                     + click * w_click
@@ -4550,6 +4633,7 @@ async def run_concept_tournament(
                     + genre_fidelity * w_genre
                     + plain_language * w_plain
                     + story_motion * w_motion
+                    + protagonist_agency * w_agency
                 )
                 # penalize 模式的确定性罚分（基线无罚分 → dict 空 → 值不变）。
                 composite = max(
@@ -4585,6 +4669,7 @@ async def run_concept_tournament(
                         judge_genre_fidelity=genre_fidelity,
                         judge_plain_language=plain_language,
                         judge_story_motion=story_motion,
+                        judge_protagonist_agency=protagonist_agency,
                         judge_reason=str(verdict.get("reason") or ""),
                         composite=round(composite, 2) if not failed_axes else 0.0,
                         rejected_reason=(
@@ -4946,7 +5031,22 @@ async def run_concept_tournament(
 
         for candidate in finalists:
             expanded = candidate
-            if chapter_count >= 200:
+            # 2026-08-25：这里原本写死 `chapter_count >= 200`。追读性判官评的六条轴
+            # （renewability / escalation / anti_reset / coherence / promise_survival /
+            # unit_density）**全是「读者要不要追下去」的判据**，而 200 章的书在真机上
+            # 几乎不存在——于是它对所有正常书完全空转，`seriality_judge` 恒为 {}，
+            # 既看不出「评了没发现」还是「压根没跑」。真机 custom-xuanhuan-1787625194
+            # （12 章）：has_decision 0/5、3/5 章 flat，全部只能等 12 章写完由正文层
+            # 整书质量门拦下来——先写再拦。
+            #
+            # 分档而不是一刀放开：200 章以上维持原样（判官带杀权）；以下只跑判官
+            # 并**留痕，不发否决**。理由是 config 里 2026-07-17 记着的教训——收紧
+            # 概念层阈值会让淘汰赛干涸，而干涸的下场是注入保底概念，比任何被拒
+            # 候选都差。本仓库对新检测器的规矩也是「只挣重生和留痕，不发杀权」。
+            _seriality_mode, result.seriality_stage = seriality_stage_mode(
+                chapter_count, cfg
+            )
+            if _seriality_mode != "skipped":
                 for proof_attempt in range(2):
                     has_proof = bool(
                         expanded.core_promise_invariant.strip()
@@ -4976,6 +5076,18 @@ async def run_concept_tournament(
                         expanded = await _judge_seriality_proof(expanded)
                     if expanded.rejected_reason is None or expand_fn is None:
                         break
+                if _seriality_mode == "advisory" and expanded.rejected_reason:
+                    # advisory 档只留痕不否决：把判词搬进回执，清掉杀权。
+                    # 没有这一步，一个从未在短篇上校准过的判官会直接开始毙候选，
+                    # 那正是 2026-07-17 干涸事故的形状。
+                    result.seriality_stage.setdefault("advisory_findings", []).append(
+                        {
+                            "concept": expanded.concept,
+                            "reason": expanded.rejected_reason,
+                            "scores": dict(expanded.seriality_judge or {}),
+                        }
+                    )
+                    expanded = _dc_replace(expanded, rejected_reason=None)
 
             seriality_finalists.append(expanded)
 

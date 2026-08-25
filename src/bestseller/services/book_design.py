@@ -344,12 +344,37 @@ def _identity_mismatch_is_advisory(metadata: Mapping[str, Any]) -> bool:
             break
     if not canonical:
         return True
-    concept_text = " ".join(
-        _text(metadata.get(key)) for key in _CONCEPT_TEXT_KEYS
-    ).strip()
-    if not concept_text:
+    # 2026-08-25：此前这里把三份产物**拼成一个 blob** 再判 `canonical in blob`——
+    # 任意一份命中就算写法差异。真机 custom-xuanhuan-1787625194：logline 写「阿灶」、
+    # premise 与 synopsis 通篇写「姜燎」，blob 因 logline 命中而判 advisory，书带着
+    # 两个主角出厂（上架简介介绍姜燎，正文身份骨架是阿灶，第 3 章起叙述改口）。
+    # 拼接粒度看得见「一处都不在（0/3）」，看不见「只占 1/3、另一个名字占 2/3」——
+    # 而后者恰恰就是分裂本身。改为逐产物计数：规范名在**非空产物中不足半数**即分裂。
+    present, populated = _canonical_name_coverage(metadata, canonical)
+    if not populated:
         return True
-    return canonical in concept_text
+    return present * 2 >= populated
+
+
+def _canonical_name_coverage(
+    metadata: Mapping[str, Any], canonical: str
+) -> tuple[int, int]:
+    """规范名出现在几份构思正文里 / 一共有几份非空正文。
+
+    只数**非空**产物：一份没写主角名的 premise 不该被算作「反对票」，否则
+    「三份里两份根本没提任何人名」会被误判成分裂。
+    """
+
+    present = 0
+    populated = 0
+    for key in _CONCEPT_TEXT_KEYS:
+        text = _text(metadata.get(key))
+        if not text:
+            continue
+        populated += 1
+        if canonical in text:
+            present += 1
+    return present, populated
 
 
 def _manifest_protagonist(metadata: Mapping[str, Any]) -> str:
@@ -619,6 +644,31 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
                     actual,
                 )
             )
+    # 2026-08-25：把**散文产物**纳入比对。此前这份清单只有结构化身份产物
+    # （story_spine / hook_card / identity_manifest / concept_contract.*），真机
+    # custom-xuanhuan-1787625194 上它们五个全是「阿灶」、与 expected 一致，于是
+    # `issues: []` 零检出；而「姜燎」只住在 premise / synopsis 里——**读者唯一
+    # 会看到的那两份**。检不出的分裂等于没有这道门。
+    #
+    # 不重新解析人名（那条路依赖一个刻意 fail-closed 的抽取器），只做确定性的
+    # 在场核对：规范名在非空构思正文里不足半数 → 出 issue，并把缺席的产物点名。
+    if expected_name:
+        _present, _populated = _canonical_name_coverage(metadata, expected_name)
+        if _populated and _present * 2 < _populated:
+            _absent = [
+                key
+                for key in _CONCEPT_TEXT_KEYS
+                if _text(metadata.get(key)) and expected_name not in _text(metadata.get(key))
+            ]
+            issues.append(
+                BookDesignIssue(
+                    "protagonist_identity_mismatch",
+                    "conception_prose:" + "/".join(_absent),
+                    expected_name,
+                    f"缺席 {len(_absent)}/{_populated} 份构思正文",
+                )
+            )
+
     preference = _text(
         _mapping(metadata.get("genre_intent_contract")).get("tone_preference")
     ).lower()
@@ -638,9 +688,17 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
     # A name-only disagreement between artifacts the pipeline named itself is
     # reported but does not pause the book; an explicitly chosen protagonist
     # still blocks. See BookDesignValidationReport.blocking_issues.
+    # 2026-08-25：此前这里**无条件**计算 advisory——哪怕一个 issue 都没检出，
+    # 报告里照样出现 `advisory_codes=["protagonist_identity_mismatch"]`。
+    # 真机上它与 `issues: []` 同时出现，读起来像「抓到了但放行」，实际是
+    # 「压根没抓到」。我据此得出过错误结论。一个长得像回执、实为策略标志的
+    # 字段，本身就是要消除的歧义：只在真有同码 issue 时才标 advisory。
+    _has_identity_issue = any(
+        item.code == "protagonist_identity_mismatch" for item in issues
+    )
     advisory: frozenset[str] = (
         frozenset({"protagonist_identity_mismatch"})
-        if _identity_mismatch_is_advisory(metadata)
+        if _has_identity_issue and _identity_mismatch_is_advisory(metadata)
         else frozenset()
     )
     return BookDesignValidationReport(

@@ -7753,6 +7753,13 @@ async def run_conception_pipeline(
     # 判官 + 4 轮候选。现任书名也进场比，不是无条件替换。全程 fail-open：
     # 书名工序绝不允许阻断建书。
     _title_tournament_receipt: dict[str, Any] = {}
+    # 2026-08-25：淘汰赛冠军必须留到 appeal 重生之后。真机 custom-xuanhuan-1787625194
+    # 上，appeal 重生循环把 premise/简介/标签/**书名**当一个包重新生成，末尾
+    # `report, premise, synopsis, tags, title = best` 整包覆盖了这里选出的冠军——
+    # 出厂书名《逐出师门我颠大》在淘汰赛回执里一次都没出现过（冠军是
+    # 《擀面胖婶的三息辨火》）。两个互不知情的书名子系统，后写的赢；连带把
+    # 淘汰赛的确定性门与默认族降权一起绕过了。
+    _tournament_title = ""
     try:
         _tt_title, _tt_receipt, _tt_run_ids = await _run_title_tournament(
             session,
@@ -7779,6 +7786,7 @@ async def run_conception_pipeline(
             _title_tournament_receipt = _tt_receipt
         if _tt_title.strip():
             title = _tt_title.strip()
+            _tournament_title = title
     except Exception:
         logger.warning("Title tournament failed during conception", exc_info=True)
 
@@ -8186,6 +8194,34 @@ async def run_conception_pipeline(
                     logger.warning("appeal regeneration attempt %d failed", attempts, exc_info=True)
                     break
             report, premise, synopsis, tags, title = best
+            # 2026-08-25：appeal 重生会连书名一起重做，此前这里直接整包覆盖了
+            # 书名淘汰赛的冠军（真机：冠军《擀面胖婶的三息辨火》被《逐出师门我
+            # 颠大》无声取代，后者从没进过淘汰赛，也没过确定性门和默认族降权）。
+            # 不重跑淘汰赛、不加 LLM 调用：让挑战者过一遍同样的确定性门再对决，
+            # 并且**无论换不换都留痕**。
+            try:
+                from bestseller.services.title_tournament import (
+                    adjudicate_late_title,
+                )
+
+                title, _late_title_receipt = adjudicate_late_title(
+                    _tournament_title,
+                    title,
+                    tags=tags if isinstance(tags, (list, tuple)) else (),
+                    prose=f"{premise}\n{synopsis}",
+                    user_named_default_family=bool(
+                        _default_debt_family_hits(str(explicit_concept_seed or ""))
+                    ),
+                )
+                if _late_title_receipt:
+                    _title_tournament_receipt["late_adjudication"] = (
+                        _late_title_receipt
+                    )
+            except Exception:
+                logger.warning(
+                    "late title adjudication failed; keeping appeal title",
+                    exc_info=True,
+                )
             _appeal_trace = build_appeal_regen_trace(
                 _appeal_history,
                 blurb_min=float(

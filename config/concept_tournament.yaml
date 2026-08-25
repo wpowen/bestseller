@@ -35,6 +35,12 @@ finalist_seriality_judge_max_tokens: 7000
 engine_judge_floor: 7.0   # 钩子文案生成前先审长篇机器，任一结构轴低于此线即淘汰
 finalist_pool_size: 4     # M3 初筛后只送少量候选给独立模型复核
 seriality_finalist_count: 3
+# 2026-08-25：追读性判官此前整段挂在写死的 `chapter_count >= 200` 后面，对所有
+# 正常长度的书完全空转（真机 12 章书：has_decision 0/5、3/5 章 flat，只能等
+# 正文写完由整书质量门拦）。分档而不是一刀放开——config 里 2026-07-17 记着
+# 收紧概念层阈值 → 淘汰赛干涸 → 回落保底概念（比任何被拒候选都差）的教训。
+seriality_min_chapters: 200           # ≥ 此值：判官带杀权（维持既有行为）
+seriality_advisory_min_chapters: 8    # ≥ 此值 且 < 上者：只跑判官留痕，不发否决
 raw_idea_pool_multiplier: 3
 # 2026-08-10 消融定案：跨书「殡葬/阴间」同质化的根因是**采样结构**，不是任何一条
 # prompt 措辞。多样性是集合层面的属性——一次只生成一个创意，就没有集合可言，
@@ -105,11 +111,17 @@ judge_weights:
   freshness: 0.175       # 新颖度:与榜单参照集对撞,"没见过"程度
   click: 0.2             # 想点欲:目标读者3秒想不想点进去
   unpredictability: 0.1  # 不可预测性:能否自动补全后续(可补全=平庸)
-  character_logic: 0.125 # 第一人称决策可信度:靠降智/强塞代价推进则硬淘汰
-  mechanism_causality: 0.125 # 代价必须由行为后果内生,禁止随机折寿/失忆类外置惩罚
+  character_logic: 0.1   # 第一人称决策可信度:靠降智/强塞代价推进则硬淘汰
+  mechanism_causality: 0.1 # 代价必须由行为后果内生,禁止随机折寿/失忆类外置惩罚
   genre_fidelity: 0.075  # 杂交只能改造玩法,不能替换所选题材
-  plain_language: 0.075  # 一遍就懂,禁止术语堆砌和抽象解释
-  story_motion: 0.125    # 一句话自身必须出现持续行动与可反制阻力,不能靠后文圆
+  plain_language: 0.05   # 一遍就懂,禁止术语堆砌和抽象解释
+  story_motion: 0.1      # 一句话自身必须出现持续行动与可反制阻力,不能靠后文圆
+  # 2026-08-25 新增。真机 custom-xuanhuan-1787625194:批准的故事引擎是纯被动循环
+  # 【废料→爆款→被眼红→新对头冒头→被迫再找更偏门的废料】,正文 has_decision 0/5、
+  # 3/5 章 flat。八条轴没有一条问「主角要不要做选择」,这类引擎在概念层无损通过。
+  # 权重从「写得通不通顺」那几条各匀 0.025 而来(它们此前合计 0.45,过重:一个概念
+  # 可以完全自洽、完全没意思)。**刻意不设硬地板**——只改排序不改淘汰,避免干涸。
+  protagonist_agency: 0.1  # 推进来自主角取舍,还是外部压力施加、他只做反应
 
 # 确定性筛模式(基线=eliminate 命中即出局;wild_mode 覆盖为 penalize 罚分不淘汰)。
 # 基线不设这些键 → tournament 读默认 "eliminate" → 与现状逐字节一致。
@@ -132,11 +144,12 @@ wild_mode:
     freshness: 0.25      # 更奖新颖
     click: 0.2
     unpredictability: 0.1
-    character_logic: 0.125
-    mechanism_causality: 0.1
+    character_logic: 0.1
+    mechanism_causality: 0.075
     genre_fidelity: 0.05
-    plain_language: 0.05
-    story_motion: 0.125
+    plain_language: 0.025
+    story_motion: 0.1
+    protagonist_agency: 0.1  # 与基线同步(2026-08-25);缺这条则权重合计 1.1
 
 # 历史杂交维度池：仅供隔离 A/B 实验和旧数据复盘。生产的 engine_first
 # 路由不读取它，避免法医/殡葬/器官移植等异质维度跨题材渗入新书。

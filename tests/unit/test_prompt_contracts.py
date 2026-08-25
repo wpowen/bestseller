@@ -193,3 +193,20 @@ class TestBlurbLogicAxesV2:
             "dangling", synopsis="简介文本", canon_text="正典文本" * 30
         )
         assert "正典" not in user_d
+
+
+class TestOutputBudgetMatchesContract:
+    """输出契约变长，帽必须同步变大（2026-08-26：v2d graft 因果桥义务
+    让池输出长 20%，6000 帽下截断率 1.5%→11.7%，后半池丢失）。"""
+
+    def test_raw_idea_pool_cap_fits_twelve_full_pitches(self) -> None:
+        from bestseller.services.concept_tournament import (
+            load_concept_tournament_config,
+        )
+
+        cfg = load_concept_tournament_config()
+        batch = int(cfg.get("raw_idea_generation_batch_size", 12))
+        cap = int(cfg.get("raw_idea_pool_max_tokens", 0))
+        # 实测 avg_out≈4300/12条，p95 撞 6000；每条完整 pitch（seed+双句 graft+
+        # opening+why+3场面）需 ≥600 token 的预算才不被腰斩。
+        assert cap >= batch * 600, f"pool cap {cap} too small for {batch} pitches"

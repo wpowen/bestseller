@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
@@ -471,6 +472,118 @@ def _check_min_chapter_length(
                 )
             )
 
+    return findings
+
+
+_PROTAGONIST_VARIANT_MAX_LEN = 6
+
+
+def canonical_protagonist_name(metadata: Mapping[str, Any] | None) -> str:
+    """本书的规范主角名。取名顺序与身份层一致，不重新解析。"""
+
+    meta = metadata if isinstance(metadata, Mapping) else {}
+    direct = str(meta.get("creation_protagonist_name") or "").strip()
+    if direct:
+        return direct
+    for path in (
+        ("book_design_snapshot", "protagonist", "name"),
+        ("cast_spec", "protagonist", "name"),
+        ("protagonist", "name"),
+    ):
+        cur: Any = meta
+        for key in path:
+            cur = cur.get(key) if isinstance(cur, Mapping) else None
+        if isinstance(cur, str) and cur.strip():
+            return cur.strip()
+    return ""
+
+
+_NAME_DRIFT_MIN_HITS = 3
+_NAME_DRIFT_DOMINANCE = 0.8
+
+
+def dominant_name_extension(text: str, canonical: str) -> tuple[str, int, float]:
+    """正文是否把规范名**稳定地**写成了另一个名字。
+
+    判据是**支配度**而不是"出现过更长的串"：改名时后缀每次都一样
+    （陈韭菜 / 陈韭菜 / 陈韭菜…），而正常句子里规范名后面跟的字每次都不同
+    （陈韭**把**刀、陈韭**走**出、陈韭**说**了）。第一版按"规范名+1~2字"直接算
+    变体，把后者也判成了改名——支配度这一条是分开它们的唯一可靠信号。
+
+    Returns ``(变体, 次数, 支配度)``；没有支配性后缀时返回 ``("", 0, 0.0)``。
+    """
+
+    if not text or not canonical:
+        return ("", 0, 0.0)
+    following: dict[str, int] = {}
+    total = 0
+    index = text.find(canonical)
+    while index != -1:
+        total += 1
+        after = text[index + len(canonical) : index + len(canonical) + 1]
+        if after and "\u4e00" <= after <= "\u9fff":
+            following[after] = following.get(after, 0) + 1
+        index = text.find(canonical, index + 1)
+    if total < _NAME_DRIFT_MIN_HITS or not following:
+        return ("", 0, 0.0)
+    char, hits = max(following.items(), key=lambda kv: kv[1])
+    share = hits / total
+    if share < _NAME_DRIFT_DOMINANCE:
+        return ("", 0, 0.0)
+    return (canonical + char, hits, share)
+
+
+def _check_protagonist_name_in_prose(
+    chapter_drafts: list[ChapterDraftVersionModel],
+    *,
+    canonical: str,
+    language: str | None = None,
+) -> list[ProjectConsistencyFinding]:
+    """在架正文必须叫规范主角名（2026-08-25 真机 custom-xuanhuan-1787662679）。
+
+    那本书身份骨架完全一致——premise / logline / 快照 / cast_spec /
+    identity_manifest / 全部章节大纲**352 处全是「陈韭」**，零处「陈韭菜」。
+    而写手在**前两章**把主角写成了「陈韭菜」（24 / 19 次），且这两章一次都没
+    单独用过规范名。第 6–8 章又用回了「陈韭」。
+
+    没有任何一道门发现：grep 全仓，正文 / 写手 / 草稿层的代码**没有一处**引用
+    `creation_protagonist_name`——「正文写的是不是那个人」从来没被检查过。
+    （开篇门当时报了 `weak_immersion` 具名人物过多，却没报改名；质量报告里
+    50 处「陈韭菜」全是在**引用正文**。）
+
+    判据只认**贴着规范名长出来的变体**（陈韭 ⊂ 陈韭菜），并且要求该章
+    **一次都没单独用过规范名**——只用代词、不提名字的章节是合法文风
+    （真机第 4、5 章正是如此），不该被判违规。
+
+    severity 取 medium：按本仓库规矩，新检测器只挣重生和留痕，不发杀权
+    （high 会经 attention → requires_human_review 把书钉死）。
+    """
+
+    if not canonical:
+        return []
+    _is_en = (language or "").lower().startswith("en")
+    findings: list[ProjectConsistencyFinding] = []
+    for draft in chapter_drafts:
+        variant, hits, share = dominant_name_extension(
+            draft.content_md or "", canonical
+        )
+        if not variant:
+            continue
+        ch_num = getattr(draft, "chapter_number", 0)
+        findings.append(
+            ProjectConsistencyFinding(
+                category="protagonist_name_drift",
+                severity="medium",
+                message=(
+                    f"Chapter {ch_num} renames the protagonist: the canonical "
+                    f"name '{canonical}' is written as '{variant}' in "
+                    f"{share:.0%} of its {hits} mentions."
+                    if _is_en else
+                    f"第{ch_num}章把主角改名了：规范名「{canonical}」被写成"
+                    f"「{variant}」，占该章 {hits} 次提及的 {share:.0%}。"
+                ),
+            )
+        )
     return findings
 
 
@@ -1436,7 +1549,16 @@ async def review_project_consistency(
         length_findings = _check_min_chapter_length(
             _drafts_with_num, language=project.language,
         )
-        prose_findings = opening_findings + hook_findings + length_findings
+        name_findings = _check_protagonist_name_in_prose(
+            _drafts_with_num,
+            canonical=canonical_protagonist_name(
+                getattr(project, "metadata", None)
+            ),
+            language=project.language,
+        )
+        prose_findings = (
+            opening_findings + hook_findings + length_findings + name_findings
+        )
         if prose_findings:
             review_result = review_result.model_copy(
                 update={"findings": review_result.findings + prose_findings},

@@ -56,7 +56,12 @@ raw_idea_pool_multiplier: 3
 # batch = pool_count：整池一次生成，模型必须在一次输出里给出互不重复的一组。
 # 代价是偶发短产（实测 83%），由下面的补齐兜底消化。
 raw_idea_generation_batch_size: 12
-raw_idea_pool_max_tokens: 6000  # 一次 12 条完整 pitch；3500 会截断成半池
+# 一次 12 条完整 pitch；3500 会截断成半池。2026-08-26 上调 6000→9000：v2d
+# prompt 给 graft 加了因果桥义务（嫁接是什么 + 机制搬进新场景为何仍成立，
+# 两句），单条 pitch 长约 20%，实测截断率 1.5%→11.7%（avg_out 3565→4303，
+# 撞帽那次的后半池直接丢失、还要额外 topup 补）。改输出契约就必须同步改
+# 输出预算——这是数值契约自洽的同一条规矩。A/B 验证时用的 9000 从未撞帽。
+raw_idea_pool_max_tokens: 9000
 raw_idea_pool_topup_calls: 2    # 短产时最多补几次，保住 batch=1 时代的 100% 产出率
 # focus 只在退化到「每次一个」时才有意义（那时它是唯一的区分手段）。批量生成时
 # 给一条 focus 等于把整池 8-12 条全焊死在一个维度上——实测反而更差。

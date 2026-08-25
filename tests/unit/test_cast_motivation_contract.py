@@ -108,7 +108,8 @@ def test_cast_spec_stage_cap_scales_with_roster() -> None:
     assert scaled is not None and scaled >= 16_000
 
     # Legacy behaviour without project context stays put.
-    assert planner_services._planner_stage_max_tokens("cast_spec") == 8192
+    # 2026-08-24 生产体检：cast_spec 57/277 截断（8-24 当天仍撞 8192），底提到 12288。
+    assert planner_services._planner_stage_max_tokens("cast_spec") == 12288
     # A short book keeps the compact cap.
     small = _build_project(target_chapters=12)
-    assert planner_services._planner_stage_max_tokens("cast_spec", project=small) == 8192
+    assert planner_services._planner_stage_max_tokens("cast_spec", project=small) == 12288

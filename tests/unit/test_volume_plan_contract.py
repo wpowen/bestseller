@@ -99,9 +99,9 @@ def test_volume_plan_stage_max_tokens_scales_with_volume_count() -> None:
     assert scaled is not None and scaled >= 20_000
 
     # Legacy behaviour without project context stays put.
-    assert planner_services._planner_stage_max_tokens("volume_plan") == 8192
+    assert planner_services._planner_stage_max_tokens("volume_plan") == 12288
     # Non-volume-plan stages are unaffected by the project hint.
-    assert planner_services._planner_stage_max_tokens("world_spec", project=project) == 8192
+    assert planner_services._planner_stage_max_tokens("world_spec", project=project) == 12288
 
 
 def test_volume_plan_prompt_states_count_and_coverage() -> None:

@@ -38,8 +38,9 @@ def test_planner_stage_token_policy_caps_chapter_outline() -> None:
     assert planner._planner_stage_max_tokens("volume_1_chapter_outline_batch_1_10") == 16384
     assert planner._planner_stage_max_tokens("story_design_kernel") == 16384
     assert planner._planner_stage_max_tokens("emotion_driven_kernel") == 16384
-    assert planner._planner_stage_max_tokens("volume_plan") == 8192
-    assert planner._planner_stage_max_tokens("book_spec") == 8192
+    # 2026-08-24：结构化 spec 帽 8192→12288（book/cast_spec 生产截断定罪）。
+    assert planner._planner_stage_max_tokens("volume_plan") == 12288
+    assert planner._planner_stage_max_tokens("book_spec") == 12288
 
 
 def test_planner_artifact_type_maps_outline_batches_to_volume_outline() -> None:

@@ -377,6 +377,12 @@ class LLMCompletionRequest(BaseModel):
     step_run_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     max_tokens_override: int | None = Field(default=None, ge=1)
+    #: Per-call temperature override. Role temperatures are global (planner
+    #: 0.82 / writer 0.85 / critic 0.25), which mis-serves surgical calls that
+    #: borrow a role: e.g. the golden-three readiness repair is a
+    #: change-only-flagged-fields JSON rewrite riding logical_role="planner" at
+    #: 0.82 (2026-08-24 全库体检). ``None`` = use the configured role value.
+    temperature_override: float | None = Field(default=None, ge=0.0, le=2.0)
     #: Per-call model-catalog override (a ``config/model_catalog.yaml`` entry id).
     #: When set and available, it overrides the resolved role model for THIS call —
     #: and wins over the book's per-project model. Used so the commercial judges can
@@ -1536,7 +1542,11 @@ async def _call_litellm(
     completion_kwargs: dict[str, Any] = {
         "model": role_settings.model,
         "messages": messages,
-        "temperature": role_settings.temperature,
+        "temperature": (
+            request.temperature_override
+            if request.temperature_override is not None
+            else role_settings.temperature
+        ),
         "max_tokens": max_tokens,
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,

@@ -1085,7 +1085,13 @@ async def judge_commercial_planning_readiness(
                 f"- 评测维度：{'、'.join(COMMERCIAL_PLANNING_JUDGE_DIMENSIONS)}\n"
                 "- 通过标准：overall_score ≥ 阈值，且无 critical blocking。\n"
                 "\n## 项目摘要\n"
-                f"```\n{brief_text[:3000]}\n```\n"
+                "```\n"
+                + (
+                    brief_text
+                    if len(brief_text) <= 3000
+                    else brief_text[:3000] + "\n...TRUNCATED_AFTER_3000_CHARS..."
+                )
+                + "\n```\n"
                 "\n## 黄金三章规划数据\n"
                 f"```json\n{chapters_text}\n```\n"
                 f"{det_section}\n"
@@ -1104,7 +1110,11 @@ async def judge_commercial_planning_readiness(
                 "rubric": rubric.name,
                 "sample_slot": sample_slot,
             },
-            max_tokens_override=3000,
+            # 2026-08-24 生产体检：26/169（15%）finish_reason=length，avg_out
+            # 2044 贴着 3000 帽；截断 JSON 解析失败后走 fallback——而 fallback
+            # 是 pass=True/0.76 的放行单：15% 的就绪判定实为静默假绿。判官的
+            # rewrite_plan+audit_issues 本就常超 2000 token，帽必须留出余量。
+            max_tokens_override=6000,
         ),
     )
     parsed = _parse_json_object(completion.content)

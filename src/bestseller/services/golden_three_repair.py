@@ -24,6 +24,18 @@ from bestseller.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def _clip_with_marker(text: str, limit: int) -> str:
+    """Clip long prompt payloads with an explicit marker.
+
+    A bare ``[:N]`` cuts JSON mid-structure and the model silently reads a
+    broken document as if it were complete (2026-08-24 全库体检的轻症项)。
+    """
+
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...TRUNCATED_AFTER_{limit}_CHARS..."
+
+
 def _parse_revised_chapter_list(raw: str) -> list[object]:
     """Parse a JSON-array repair response, including common LLM damage."""
 
@@ -231,7 +243,10 @@ async def repair_golden_three_outline(
     )
     user_prompt = (
         "【项目权威摘要】\n"
-        + json.dumps(project_brief or {}, ensure_ascii=False, indent=1, default=str)[:8000]
+        + _clip_with_marker(
+            json.dumps(project_brief or {}, ensure_ascii=False, indent=1, default=str),
+            8000,
+        )
         + "\n\n【整改指令（就绪判官）】\n" + "\n".join(issues) +
         "\n\n【当前黄金三章章纲】\n" + current +
         "\n\n只输出修复后的 JSON 数组。"
@@ -254,7 +269,15 @@ async def repair_golden_three_outline(
                     prompt_template="golden_three_readiness_repair",
                     prompt_version="v1",
                     project_id=getattr(project, "id", None),
-                    max_tokens_override=6000,
+                    # 2026-08-24 生产体检：该模板 18/18 finish_reason=length，
+                    # avg_out 5690 顶着 6000 帽——输出契约是「与输入完全同构的
+                    # JSON 数组」（三章全量章纲），6000 从数学上装不下，每次
+                    # 修复都被腰斩后靠 json_repair 捞碎片（静默半修）。给到
+                    # 写手级预算。
+                    max_tokens_override=16384,
+                    # 外科手术式「只改指定字段、其余同构复制」不该跑 planner
+                    # 角色的全局 0.82——高温直接助长无关字段漂移。
+                    temperature_override=0.3,
                 ),
             )
             return completion.content or ""

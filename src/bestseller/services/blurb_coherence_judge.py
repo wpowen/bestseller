@@ -33,7 +33,13 @@ logger = logging.getLogger(__name__)
 # 论点）判断成分更重，按「新检测器只挣重生和留痕」规矩先做教学轴：进
 # 打磨反馈与审计痕迹，不参与候选出局；真机验证零冤案后再提权。
 _FATAL_KINDS = frozenset({"timeline", "fact", "reference", "number"})
-_ADVISORY_KINDS = frozenset({"mechanism", "dangling", "claim_unsupported"})
+_ADVISORY_KINDS = frozenset(
+    {"mechanism", "dangling", "claim_unsupported", "effect_unexplained"}
+)
+
+# 单引文病：天然没有第二段引文（dangling=指代无着落，effect_unexplained=
+# 效果无机制——「不存在的那句」引不出来）。
+_SINGLE_QUOTE_KINDS = frozenset({"dangling", "effect_unexplained"})
 
 
 @dataclass(frozen=True)
@@ -48,7 +54,7 @@ class CoherenceFinding:
 
     kind: str        # _FATAL_KINDS | _ADVISORY_KINDS 之一
     quote_a: str
-    quote_b: str     # kind=dangling 时允许为空（单引文病：指代在全文找不到着落）
+    quote_b: str     # _SINGLE_QUOTE_KINDS 时允许为空（单引文病）
     explanation: str
     touches_synopsis: bool = True
 
@@ -225,7 +231,7 @@ def parse_and_verify(
             kind = "fact"
         # dangling 是单引文病（指代在全文找不到着落，天然没有第二段引文）；
         # 其余各类仍双引文必填。
-        if not qa or (kind != "dangling" and (not qb or qa == qb)):
+        if not qa or (kind not in _SINGLE_QUOTE_KINDS and (not qb or qa == qb)):
             dropped += 1
             continue
         if not _quote_grounded(qa, haystack) or (
@@ -266,14 +272,45 @@ _AXIS_PROSECUTIONS: dict[str, str] = {
         "代价一致，机制自洽；或文中明确交代了例外条件。\n"
         "quote_a 引机制设定原文，quote_b 引与之冲突的动作原文。"
     ),
+    # 2026-08-25《吃我一筷》定罪：「封灶签子」「宗门议灶」「第二道菜」这种
+    # 教科书级无锚，本轴 6 次调用全零发现——旧反例给了「悬念式留白」的
+    # 无条件逃生门，模型把一切无锚都自我合理化成留白。留白豁免现在必须
+    # 拿引文自证：引不出着落原文就是病。
     "dangling": (
-        "你是指代校对员。只查一种病：**无锚指代**——一句话里的比较、代词或"
-        "省略宾语在**全文**找不到着落，读者无法知道它指什么。\n"
+        "你是指代校对员。只查一种病：**无锚指代**——一句话里的比较、代词、"
+        "省略宾语，或凭空出现的物件/事件/规矩，在**全文**找不到着落，"
+        "读者无法知道它指什么、从哪来。\n"
         "正例：「三个比他早动手」——动手做什么，通篇没有说；「那件事之后他变了」"
-        "——那件事全文未提。\n"
-        "反例（不算病）：着落出现在同段或后文（哪怕隔几句）；悬念式留白但"
-        "读者能从上下文锁定所指。\n"
+        "——那件事全文未提；「把封灶签子改成入股契书」——灶几时被封、谁封的，"
+        "全文只字未提，这个物件第一次出现就在被处置；「议灶那天」——这是什么"
+        "议程，全文没有交代。\n"
+        "反例（不算病）：着落在全文任意位置能**逐字引出**（哪怕在后文）；"
+        "题材读者的公共常识（宗门、护体灵气这类通用设定词）不需要着落。\n"
+        "想按『悬念式留白』豁免一处指代？只有当你能引出上下文里锁定所指的"
+        "那句原文时才许豁免；引不出原文，它就是病，不是留白。\n"
         "quote_a 引无锚的那句原文，quote_b 留空字符串。"
+    ),
+    # 新轴（2026-08-25）：机制缺位。mechanism 轴只查「矛盾」，查不了「从未
+    # 交代」——《吃我一筷》头号病（菜为什么能崩人护体，全篇零交代）在三个
+    # 教学轴里无轴可诉。照「新检测器只挣重生和留痕」规矩进教学轴。
+    "effect_unexplained": (
+        "你是机制校对员。只查一种病：**效果无因**——文中发生了超出常理的"
+        "显著效果（一个动作让人跪下/破功/暴富/暴毙这类），而**全文**没有"
+        "任何一句交代它凭什么发生。\n"
+        "正例：普通人吃了一筷子菜「护体灵气当场炸了」——菜有什么门道，"
+        "全文只字未提；杂役做的饭让长老「护体当场崩散」——为什么他的饭有"
+        "这个威力，通篇没有一句机制。\n"
+        "反例（不算病）：全文任何位置（哪怕只有一句、哪怕在效果之后）存在"
+        "交代机制或来历的句子（一件法器、一门功法、一条阵纹、一条规矩、"
+        "一笔交易）——**只要你能逐字引出那句交代，就一律不报，无论它交代得"
+        "多简略**；简略不是病，缺席才是，你只查「有没有」不查「够不够细」。"
+        "效果本身在题材常识内（修士对轰破防不需要解释）也不报；"
+        "同一机制多次生效只报第一次。\n"
+        "报之前最后核一步：把效果句所在的整句和它前后各一句完整读一遍——"
+        "机制常常就写在同一句的前半（「刻下某某纹——一夹菜灵气就被吸走」"
+        "这种破折号连写，前半就是机制）或紧邻句里；只引后半个效果分句"
+        "而无视同句机制，属于错报。\n"
+        "quote_a 引效果发生的那句原文，quote_b 留空字符串。"
     ),
     "claim_unsupported": (
         "你是论证校对员。只查一种病：**论据撑不起论点**——文中先下一个断言，"
@@ -317,7 +354,7 @@ async def verify_blurb_coherence(
 ) -> CoherenceReport:
     """对（premise + spine + synopsis）跑引文核对式矛盾扫描。永不 raise。
 
-    ``advisory_axes=True`` 时额外为三类逻辑病各跑一次窄任务检察官调用
+    ``advisory_axes=True`` 时额外为每类教学轴逻辑病各跑一次窄任务检察官调用
     （教学轴：只留痕+喂打磨，不出局——见 ``_ADVISORY_KINDS``）。
     """
 
@@ -343,7 +380,8 @@ async def verify_blurb_coherence(
                 fallback_response='{"contradictions": []}',
                 prompt_template="blurb_coherence_judge",
                 prompt_version="v1",
-                max_tokens_override=700,
+                # 2026-08-25：700 帽真机 1/6 截断（发现被静默丢弃），提到 1400。
+                max_tokens_override=1400,
                 project_id=project_id,
             ),
         )
@@ -375,7 +413,7 @@ async def verify_blurb_coherence(
                             fallback_response='{"contradictions": []}',
                             prompt_template="blurb_logic_axis_prosecutor",
                             prompt_version=f"v1-{axis}",
-                            max_tokens_override=500,
+                            max_tokens_override=800,
                             project_id=project_id,
                         ),
                     )

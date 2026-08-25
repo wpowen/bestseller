@@ -127,3 +127,48 @@ class TestSourceBoundLoglineNotPremise:
         assert _hook_shaped_or_empty("短钩子") == "短钩子"
         assert _hook_shaped_or_empty("长" * 121) == ""
         assert _hook_shaped_or_empty(None) == ""
+
+
+class TestBlurbLogicAxesV2:
+    """2026-08-25《吃我一筷》定罪的三针（详见当日排查）：
+    检察官 18 调用全空手放行教科书病例——dangling 逃生门+机制缺位无轴可诉+
+    生成端「可以少写」把机制删光。"""
+
+    def test_dangling_escape_hatch_requires_quote(self) -> None:
+        from bestseller.services.blurb_coherence_judge import _AXIS_PROSECUTIONS
+
+        dangling = _AXIS_PROSECUTIONS["dangling"]
+        assert "引不出原文，它就是病" in dangling
+        # 旧的无条件留白豁免不得回流
+        assert "悬念式留白但" not in dangling
+
+    def test_effect_unexplained_axis_exists_and_is_single_quote(self) -> None:
+        from bestseller.services.blurb_coherence_judge import (
+            _ADVISORY_KINDS,
+            _AXIS_PROSECUTIONS,
+            _SINGLE_QUOTE_KINDS,
+            parse_and_verify,
+        )
+
+        assert "effect_unexplained" in _AXIS_PROSECUTIONS
+        assert "effect_unexplained" in _ADVISORY_KINDS  # 教学轴：留痕不杀
+        assert "effect_unexplained" in _SINGLE_QUOTE_KINDS
+        raw = (
+            '{"contradictions": [{"kind": "effect_unexplained", '
+            '"quote_a": "护体灵气当场炸了", "quote_b": "", "why": "无机制"}]}'
+        )
+        findings, dropped = parse_and_verify(
+            raw, source_texts=("横师兄第一筷还没咽下，护体灵气当场炸了。",),
+            focus_text="护体灵气当场炸了",
+        )
+        assert len(findings) == 1 and dropped == 0
+        assert not findings[0].is_fatal
+
+    def test_blurb_writer_pins_mechanism_floor_and_first_mention_anchor(self) -> None:
+        import inspect
+
+        from bestseller.services import blurb_copywriter
+
+        source = inspect.getsource(blurb_copywriter._build_candidate_messages)
+        assert "机制零交代的简介是废稿" in source  # ⑨b「可以少写」的下限
+        assert "首现带锚" in source

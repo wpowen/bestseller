@@ -114,6 +114,71 @@ _TITLED_NAME_RE = re.compile(
     )
     + r")([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|天生|醒来|发现|得到|拥有|[在被把与和了是的])"
 )
+# 2026-08-25：职业称谓的**类别级**后缀。真机 custom-xuanhuan-1787658935 的
+# premise 是「末法乱世，落纸镇上无品级测灵师余白，…」——真名在「测灵师」之后，
+# 而 _NAME_LEADING_TITLES 是逐个枚举的称谓表，没有也不可能有「测灵师」。
+# 靠往表里加词是打地鼠（本仓库 2026-08-06 定过案：词表只许类别级）。
+#
+# 刻意排除「生/员/工/客/夫」这类同时是常用动词/量词的字：含「生」会让
+# 「重生为婴儿」被读成「重生」+「为婴儿」，把测试用例 test_name_at_the_very_start
+# 的句子解析成人名「为婴儿」。
+_OCCUPATION_NAME_RE = re.compile(
+    r"[一-鿿]{1,4}(?:师|士|者|匠|徒|官|卫|将|童|郎|娘|婆|尉|吏|监|使|修|医)"
+    r"([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|[执持握带走来去看说做在被把与和了的])"
+)
+# 时代/地域短语的后缀类。只对**四字**候选生效：这些字做人名尾字在 2-3 字姓名里
+# 很常见（王海、陈山），但「四字且以它结尾」几乎必是设定短语而非人名。
+# 真机：「末法乱世」被句首规则当成主角名写进快照/cast/identity_manifest。
+_SETTING_PHRASE_SUFFIXES = (
+    "世", "纪", "代", "界", "域", "洲", "国", "城", "镇", "村",
+    "谷", "渊", "川", "林", "原", "宫", "殿", "寺", "观", "宗", "派", "盟",
+)
+
+
+# 时间状语：数词 + 时间单位同时在场。真机边界「三年前，那场大火…」此前被
+# 句首规则当成人名。只要求"两者同时在场"，所以「白十三」（有数词无单位）安全。
+_NUMERAL_CHARS = frozenset("一二三四五六七八九十百千万零两")
+_TIME_UNIT_CHARS = frozenset("年月日时夜更载岁纪世季旬")
+# 以功能词开头的不是人名。「重生为婴儿」——_NAME_LEADING_TITLES 里的「重生」
+# 后面跟的是介词短语，称谓规则把「为婴儿」当成了名字。
+_FUNCTION_WORD_HEADS = ("为", "成", "回", "到", "在", "被", "把", "与", "和", "从", "向")
+
+
+def _looks_like_setting_phrase(name: str) -> bool:
+    """四字且以时代/地域字收尾 → 是设定短语，不是人名。"""
+
+    return len(name) == 4 and name.endswith(_SETTING_PHRASE_SUFFIXES)
+
+
+def _looks_like_time_phrase(name: str) -> bool:
+    """数词与时间单位同时在场 → 时间状语，不是人名。"""
+
+    chars = set(name)
+    return bool(chars & _NUMERAL_CHARS) and bool(chars & _TIME_UNIT_CHARS)
+
+
+def _acceptable_protagonist_name(candidate: str) -> bool:
+    """人名候选的**唯一**一道守卫。
+
+    2026-08-25：此前三条抽取分支各带各的守卫——句首分支只查前缀，称谓分支查
+    三项，职业分支不存在。真机 custom-xuanhuan-1787658935 的「末法乱世」就是
+    从守卫最少的那条溜出去的，并被当成 ``original_premise`` 权威来源写进快照 /
+    cast_spec / identity_manifest。**同一判据挂在一条分支上等于给自己留了绕行路**
+    ——这是本仓库反复出现的病，所以这里收成一处，三条分支共用。
+    """
+
+    if not candidate:
+        return False
+    return (
+        not candidate.startswith(_NON_NAME_PREFIXES)
+        and not candidate.startswith(_FUNCTION_WORD_HEADS)
+        and not _is_generic_protagonist_name(candidate)
+        and not any(token in candidate for token in _NAME_DISQUALIFYING_TOKENS)
+        and not _looks_like_setting_phrase(candidate)
+        and not _looks_like_time_phrase(candidate)
+    )
+
+
 _LOW_TONE_TOKENS = ("轻松", "幽默", "明快", "温暖", "治愈", "喜剧", "cozy", "light")
 _HIGH_TONE_TOKENS = ("高压", "冷硬", "暗黑", "压抑", "沉重", "grim", "dark")
 _GENERIC_PROTAGONIST_NAMES = frozenset(
@@ -178,11 +243,20 @@ def _protagonist_name_from_text(value: object) -> str:
     text = _text(value)
     if not text:
         return ""
+
+    # 职业称谓锚定优先于句首位置。位置是最弱的证据——句首那几个字既可能是
+    # 主角名，也可能是时代/地点状语（真机「末法乱世，落纸镇上…测灵师余白」）；
+    # 而「称谓 + 名字」是强得多的信号。限定在前两个分句内，保留原设计意图
+    # （不让后文出场的次要角色抢名）。
+    _clauses = re.split(r"[，,。；;：:!?！？\n]", text)
+    _head = "，".join(c for c in _clauses[:2] if c)
+    _occupational = _OCCUPATION_NAME_RE.search(_head)
+    if _occupational and _acceptable_protagonist_name(_occupational.group(1)):
+        return _occupational.group(1)
+
     match = _CJK_NAME_RE.match(text)
-    if match:
-        candidate = match.group(1)
-        if not candidate.startswith(_NON_NAME_PREFIXES):
-            return candidate
+    if match and _acceptable_protagonist_name(match.group(1)):
+        return match.group(1)
 
     # Name after a descriptive clause. Anchored on a role/title word rather
     # than on position, because Chinese has no word boundaries and a bare
@@ -192,11 +266,7 @@ def _protagonist_name_from_text(value: object) -> str:
     titled = _TITLED_NAME_RE.search(first_clause)
     if titled:
         candidate = titled.group(1)
-        if (
-            not candidate.startswith(_NON_NAME_PREFIXES)
-            and not _is_generic_protagonist_name(candidate)
-            and not any(token in candidate for token in _NAME_DISQUALIFYING_TOKENS)
-        ):
+        if _acceptable_protagonist_name(candidate):
             return candidate
 
     latin = re.match(r"^([A-Za-z][A-Za-z' -]{1,40})(?=[,;:]|\s+(?:is|was)\b)", text)

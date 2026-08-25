@@ -34,12 +34,20 @@ logger = logging.getLogger(__name__)
 # 打磨反馈与审计痕迹，不参与候选出局；真机验证零冤案后再提权。
 _FATAL_KINDS = frozenset({"timeline", "fact", "reference", "number"})
 _ADVISORY_KINDS = frozenset(
-    {"mechanism", "dangling", "claim_unsupported", "effect_unexplained"}
+    {
+        "mechanism",
+        "dangling",
+        "claim_unsupported",
+        "effect_unexplained",
+        "invented_entity",
+    }
 )
 
 # 单引文病：天然没有第二段引文（dangling=指代无着落，effect_unexplained=
-# 效果无机制——「不存在的那句」引不出来）。
-_SINGLE_QUOTE_KINDS = frozenset({"dangling", "effect_unexplained"})
+# 效果无机制，invented_entity=正典里「不存在的那句」引不出来）。
+_SINGLE_QUOTE_KINDS = frozenset(
+    {"dangling", "effect_unexplained", "invented_entity"}
+)
 
 
 @dataclass(frozen=True)
@@ -322,7 +330,27 @@ _AXIS_PROSECUTIONS: dict[str, str] = {
         "或断言本身是人物的主观感受。\n"
         "quote_a 引断言原文，quote_b 引例证原文。"
     ),
+    # 正典对齐轴（2026-08-25《吃我一筷》定罪第二针）：「封灶签子/议灶/入股
+    # 契书」全是正典里不存在的发明实体——词表检测器（ungrounded_claims）管
+    # 亲属/数字这类封闭类别，管不了开放词汇。本轴拿正典当对照基准，是唯一
+    # 见得到正典的检察官（_CANON_AWARE_AXES）。
+    "invented_entity": (
+        "你是实体校对员。手里有两份材料：【正典】（已批准构思）和【简介】"
+        "（对外文案）。只查一种病：**发明实体**——简介里出现了承担剧情功能的"
+        "具体实体（物件、事件、制度、机构、人物），在正典里完全找不到对应物。\n"
+        "正例：正典通篇没有封灶、入股之说，简介却写「把封灶签子改成入股契书」"
+        "——签子和契书都是凭空发明的剧情道具。\n"
+        "反例（不算病）：同一事物的换称、简称或翻译（正典叫「匠修」简介叫"
+        "「刻纹师傅」）；从正典事实自然推出的场面细节（正典说他做饭，简介写"
+        "「一碗红烧肉」）；通用背景词（宗门、长老、灵气这类题材公共设定）。"
+        "只报**承担剧情转折功能**却无正典对应物的实体；拿不准算不算对应，"
+        "就不报。\n"
+        "quote_a 引简介里含该实体的那句原文，quote_b 留空字符串。"
+    ),
 }
+
+# 需要正典对照的轴（其余轴只看简介，输入保持逐字节不变）。
+_CANON_AWARE_AXES = frozenset({"invented_entity"})
 
 _AXIS_SHARED_TAIL = (
     "\n不评价文笔，不提建议。没有这种病就输出空列表，**宁缺勿滥，不要硬凑**。\n"
@@ -332,13 +360,26 @@ _AXIS_SHARED_TAIL = (
 )
 
 
-def build_axis_prosecution_messages(axis: str, *, synopsis: str) -> tuple[str, str]:
-    """(system, user) —— 单轴检察官：一次只诉一种逻辑病。"""
+def build_axis_prosecution_messages(
+    axis: str, *, synopsis: str, canon_text: str = ""
+) -> tuple[str, str]:
+    """(system, user) —— 单轴检察官：一次只诉一种逻辑病。
+
+    ``canon_text`` 只有 _CANON_AWARE_AXES 里的轴会用（拼进 user 供比对）；
+    其他轴保持纯简介输入，prompt 逐字节不变。
+    """
 
     if axis not in _AXIS_PROSECUTIONS:
         raise ValueError(f"unknown logic axis: {axis}")
     system = _AXIS_PROSECUTIONS[axis] + _AXIS_SHARED_TAIL % axis
-    user = f"【简介】\n{synopsis.strip()}\n\n只查上述这一种病。输出严格 JSON。"
+    canon_block = (
+        f"【正典（已批准构思，实体对照基准）】\n{canon_text.strip()}\n\n"
+        if axis in _CANON_AWARE_AXES and str(canon_text or "").strip()
+        else ""
+    )
+    user = (
+        f"{canon_block}【简介】\n{synopsis.strip()}\n\n只查上述这一种病。输出严格 JSON。"
+    )
     return system, user
 
 
@@ -397,10 +438,21 @@ async def verify_blurb_coherence(
         )
         all_findings = list(findings)
         if advisory_axes:
+            # invented_entity 轴的对照基准：premise+spine 拼成正典文本。
+            # 没有正典可比（自由文本调用）时该轴自动跳过——空基准下人人都是
+            # 发明实体，必然全量误报。
+            _canon_text = "\n".join(
+                t for t in (
+                    premise,
+                    "\n".join(f"{k}：{v}" for k, v in (spine or {}).items()),
+                ) if str(t or "").strip()
+            )
             for axis in sorted(_AXIS_PROSECUTIONS):
+                if axis in _CANON_AWARE_AXES and len(_canon_text.strip()) < 80:
+                    continue
                 try:
                     ax_system, ax_user = build_axis_prosecution_messages(
-                        axis, synopsis=synopsis
+                        axis, synopsis=synopsis, canon_text=_canon_text
                     )
                     ax_completion = await complete_text(
                         session,

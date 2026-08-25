@@ -172,3 +172,24 @@ class TestBlurbLogicAxesV2:
         source = inspect.getsource(blurb_copywriter._build_candidate_messages)
         assert "机制零交代的简介是废稿" in source  # ⑨b「可以少写」的下限
         assert "首现带锚" in source
+
+    def test_invented_entity_axis_is_canon_aware_and_advisory(self) -> None:
+        from bestseller.services.blurb_coherence_judge import (
+            _ADVISORY_KINDS,
+            _CANON_AWARE_AXES,
+            _SINGLE_QUOTE_KINDS,
+            build_axis_prosecution_messages,
+        )
+
+        assert "invented_entity" in _ADVISORY_KINDS  # 留痕不杀
+        assert "invented_entity" in _SINGLE_QUOTE_KINDS
+        assert _CANON_AWARE_AXES == {"invented_entity"}
+        _, user = build_axis_prosecution_messages(
+            "invented_entity", synopsis="简介文本", canon_text="正典文本" * 30
+        )
+        assert "正典" in user and "简介文本" in user
+        # 其他轴不得看见正典——输入保持逐字节不变
+        _, user_d = build_axis_prosecution_messages(
+            "dangling", synopsis="简介文本", canon_text="正典文本" * 30
+        )
+        assert "正典" not in user_d

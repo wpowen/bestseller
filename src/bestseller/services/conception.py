@@ -6204,6 +6204,21 @@ async def run_conception_pipeline(
                                 "attempt": concept_attempt,
                                 "violations": list(_unexpected_violations),
                             })
+                            # 2026-08-26：conception_log 的淘汰赛回执写在这些
+                            # 检查**之前**（本函数更早处），所以被撤销的冠军在
+                            # 回执里长得和通过的一模一样。真机排查时据此以为
+                            # attempt 1 成功、attempt 2 无故覆盖，绕了一大圈。
+                            # 回执必须记下撤销这件事。
+                            conception_log.append({
+                                "round": -1,
+                                "attempt": concept_attempt,
+                                "agent": "concept_tournament_winner_rejected",
+                                "reason": "genre_ontology_violation",
+                                "violations": list(_unexpected_violations),
+                                "concept": str(
+                                    getattr(_rejected_winner, "concept", "")
+                                )[:160],
+                            })
                             continue
                     # Defense in depth at the exact shared-context boundary.
                     # The tournament already screens candidates, but no future
@@ -6306,6 +6321,14 @@ async def run_conception_pipeline(
                                 "violations": _pollution_reasons,
                             },
                         )
+                        conception_log.append({
+                            "round": -1,
+                            "attempt": concept_attempt,
+                            "agent": "concept_tournament_winner_rejected",
+                            "reason": "default_motif_pollution",
+                            "violations": list(_pollution_reasons),
+                            "kept_as_fallback": bool(_default_family_fallback_winner),
+                        })
                         continue
                     break
                 if concept_attempt < max_concept_attempts:
@@ -6413,6 +6436,18 @@ async def run_conception_pipeline(
                 # 兜底发货（2026-08-14 真机定案）：本轮无冠军，但前面轮次有一个
                 # 只因品味门被拒的完整冠军。带案底用它，绝不因一项偏好杀书。
                 _ct_result.winner = _default_family_fallback_winner
+                # 2026-08-26：这里原本只设 high_concept，不写 description——而
+                # 下游第一轮的角色架构师读的正是 ctx["description"]（它还被明确
+                # 要求"为主角取一个名字"）。正常冠军路径两个都写，兜底路径只写
+                # 一个，于是兜底一旦触发，主角就在下游被重新发明一次。
+                # 真机 custom-xuanhuan-1787738259 的形状即此：一本书里两个主角
+                # （顾澜的厨子故事 vs 纪潮的穿越故事），身份门按分裂拦下。
+                _fb_block = str(
+                    _sanitize_forbidden_default_motifs(
+                        render_high_concept_block(_ct_result), is_en=is_en
+                    )
+                )
+                ctx["description"] = f"{ctx.get('description') or ''}\n{_fb_block}"
                 ctx["high_concept"] = _ct_result.winner.to_dict()
                 ctx["default_family_winner_advisory"] = True
                 logger.warning(

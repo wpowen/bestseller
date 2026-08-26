@@ -55,6 +55,35 @@ _TONE_INTENT_LABELS: dict[str, str] = {
 }
 
 
+def _as_mapping(value: object) -> Mapping[str, Any]:
+    """把 pydantic 模型 / dataclass / dict 统一成只读映射。
+
+    2026-08-26 定罪：``GenreIntentContract.explicit_enhancers`` 声明的是
+    **pydantic 模型** ``StoryEnhancerSelection``，而两处消费方都写着
+    ``if isinstance(enh, Mapping):``——恒不成立。后果是代价档判据自
+    2026-08-19 落地起**一次都没生效过**（恒判 standard），勾「纯爽无代价」
+    从来没被核对；本轮新加的 effect_skills 读取同样中招。
+    真机回执 ``cost_style: "standard" / cost_checked: false``，而用户勾的是
+    minimal——这就是那条 isinstance 守卫的实际产物。
+
+    本仓库已为此付过一次学费：「别用 getattr 取自家 pydantic 必需字段，
+    那会把类型错误降级成静默错误」。这里统一收口，不再让每个调用点自己判类型。
+    """
+
+    if isinstance(value, Mapping):
+        return value
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            result = dump()
+        except Exception:  # pragma: no cover
+            return {}
+        return result if isinstance(result, Mapping) else {}
+    if hasattr(value, "__dict__") and not isinstance(value, type):
+        return {k: v for k, v in vars(value).items() if not k.startswith("_")}
+    return {}
+
+
 def user_pick_intent_items(contract: Mapping[str, Any] | None) -> list[str]:
     """把**建书页的勾选**翻成可核对的中文意图项。
 
@@ -73,10 +102,11 @@ def user_pick_intent_items(contract: Mapping[str, Any] | None) -> list[str]:
     「判官读证据≠写手读证据：意图 tag 本身就是用户给的词，不构成种词」。
     """
 
-    if not isinstance(contract, Mapping):
+    contract = _as_mapping(contract)
+    if not contract:
         return []
-    genre_intent = contract.get("genre_intent")
-    source = genre_intent if isinstance(genre_intent, Mapping) else contract
+    genre_intent = _as_mapping(contract.get("genre_intent"))
+    source = genre_intent or contract
     items: list[str] = []
 
     tone = _TONE_INTENT_LABELS.get(
@@ -85,8 +115,8 @@ def user_pick_intent_items(contract: Mapping[str, Any] | None) -> list[str]:
     if tone:
         items.append(tone)
 
-    enhancers = source.get("explicit_enhancers")
-    if isinstance(enhancers, Mapping):
+    enhancers = _as_mapping(source.get("explicit_enhancers"))
+    if enhancers:
         try:
             from bestseller.services.story_effect_skills import (
                 story_effect_skill_labels,

@@ -131,3 +131,78 @@ class TestTheGateNowRuns:
         src = inspect.getsource(conception)
         assert '"agent": "intent_alignment_scope"' in src
         assert '"will_run"' in src
+
+
+class TestPydanticContractIsNotSilentlyDropped:
+    """explicit_enhancers 是 pydantic 模型，不是 dict（2026-08-26 真机定罪）。
+
+    ``GenreIntentContract.explicit_enhancers: StoryEnhancerSelection`` 是模型，
+    而两处消费方都写着 ``if isinstance(enh, Mapping):``——**恒不成立**。后果：
+
+    * 代价档判据自 2026-08-19 落地起**一次都没生效过**（恒判 standard）；
+    * 本轮新加的 effect_skills 读取同样中招。
+
+    真机 custom-xuanhuan-1787728898 回执逐字为证：
+    ``cost_style: "standard", cost_checked: false``——而用户勾的是 minimal；
+    ``pick_items: ["轻松基调"]``——缺了「喜剧」「爽点满足」。
+    基调之所以逃过一劫，只因为 tone_preference 是模型上的**普通字符串属性**，
+    不在 explicit_enhancers 里。
+
+    本仓库已为此付过一次学费：「别用 getattr 取自家 pydantic 必需字段，
+    那会把类型错误降级成静默错误」。
+    """
+
+    def _selection(self):
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        return StoryEnhancerSelection(
+            cost_style="minimal",
+            effect_skills=["comedy_engine", "hype_satisfaction_engine"],
+        )
+
+    def test_vacuity_the_old_isinstance_guard_really_was_dead(self):
+        from collections.abc import Mapping
+
+        assert not isinstance(self._selection(), Mapping), (
+            "旧守卫 `isinstance(enh, Mapping)` 对真实契约类型恒 False——"
+            "本组用例正是为它写的"
+        )
+
+    def test_the_model_is_coerced_and_its_fields_are_readable(self):
+        from bestseller.services.intent_alignment import _as_mapping
+
+        data = _as_mapping(self._selection())
+        assert data.get("cost_style") == "minimal"
+        assert list(data.get("effect_skills") or []) == [
+            "comedy_engine",
+            "hype_satisfaction_engine",
+        ]
+
+    def test_picks_survive_a_model_valued_contract(self):
+        from bestseller.services.intent_alignment import _as_mapping
+
+        contract = {
+            "genre_intent": {
+                "user_tags": ["穿越", "金手指", "升级流"],
+                "tone_preference": "light",
+                "explicit_enhancers": _as_mapping(self._selection()),
+            }
+        }
+        assert verifiable_intent_items(contract) == [
+            "穿越", "金手指", "升级流", "轻松基调", "喜剧", "爽点满足",
+        ]
+
+    def test_coercion_handles_plain_dicts_and_junk(self):
+        from bestseller.services.intent_alignment import _as_mapping
+
+        assert _as_mapping({"a": 1}) == {"a": 1}
+        assert _as_mapping(None) == {}
+        assert _as_mapping("not a contract") == {}
+
+    def test_the_call_site_no_longer_uses_a_bare_isinstance_guard(self):
+        import inspect
+
+        from bestseller.services import conception
+
+        src = inspect.getsource(conception)
+        assert "_ia_enh = _ia_map(" in src, "代价档必须走统一收口，不能再自己判类型"

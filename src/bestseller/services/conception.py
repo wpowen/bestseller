@@ -8611,10 +8611,18 @@ async def run_conception_pipeline(
                     break
         # 代价档也是用户设定的一部分（2026-08-19）：勾了「不自损」却把反噬
         # 当核心笔墨，此前无人对表。
+        # 2026-08-26：此处原本是 `if isinstance(_ia_enh, Mapping)`，而
+        # explicit_enhancers 声明的是 pydantic 模型 StoryEnhancerSelection——
+        # 恒不成立。代价档判据自 2026-08-19 落地起一次都没生效过（恒 standard），
+        # 真机回执 cost_style="standard" 而用户勾的是 minimal。改用统一收口。
+        from bestseller.services.intent_alignment import _as_mapping as _ia_map
+
         _ia_cost_style = "standard"
         if genre_intent_contract is not None:
-            _ia_enh = getattr(genre_intent_contract, "explicit_enhancers", None)
-            if isinstance(_ia_enh, Mapping):
+            _ia_enh = _ia_map(
+                getattr(genre_intent_contract, "explicit_enhancers", None)
+            )
+            if _ia_enh:
                 _ia_cost_style = str(_ia_enh.get("cost_style") or "standard")
         # 2026-08-26 定罪（真机 custom-xuanhuan-1787662679）：判官要核对的意图
         # 不只有分类标签。用户在建书页勾的**基调**与**故事技能**住在
@@ -8635,8 +8643,13 @@ async def run_conception_pipeline(
                 "tone_preference", "explicit_enhancers",
             ):
                 _val = getattr(genre_intent_contract, _field, None)
-                if _val is not None:
-                    _genre_intent_mapping[_field] = _val
+                if _val is None:
+                    continue
+                # explicit_enhancers 是 pydantic 模型，原样塞进去下游同样
+                # isinstance 判不出来——在入口就转成 dict。
+                _genre_intent_mapping[_field] = (
+                    _ia_map(_val) if _field == "explicit_enhancers" else _val
+                )
         _ia_items = verifiable_intent_items(
             {"genre_intent": _genre_intent_mapping}
             if _genre_intent_mapping

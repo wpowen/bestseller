@@ -495,6 +495,73 @@ def _canonical_name_coverage(
     return present, populated
 
 
+_PRONOUN_BY_GENDER: dict[str, str] = {"male": "他", "female": "她"}
+# 少于这个提及数不下结论：一章/一段里代词太少时比例没有意义。
+_PRONOUN_MIN_MENTIONS = 6
+# 声明性别的代词必须占多数；低于此即判不一致。
+_PRONOUN_MAJORITY = 0.5
+
+
+def declared_protagonist_gender(metadata: Mapping[str, Any]) -> str:
+    """身份层声明的主角性别（identity_manifest → cast_spec）。"""
+
+    manifest = metadata.get("identity_manifest")
+    if isinstance(manifest, Sequence) and not isinstance(manifest, (str, bytes)):
+        for row in manifest:
+            if not isinstance(row, Mapping):
+                continue
+            role = _text(row.get("role") or row.get("entity_role")).lower()
+            if role in {"protagonist", "main_character", "hero", "主角"}:
+                gender = _text(row.get("gender")).lower()
+                if gender in _PRONOUN_BY_GENDER:
+                    return gender
+    cast = _mapping(_mapping(metadata.get("cast_spec")).get("protagonist"))
+    gender = _text(cast.get("gender")).lower()
+    return gender if gender in _PRONOUN_BY_GENDER else ""
+
+
+def protagonist_pronoun_coverage(
+    metadata: Mapping[str, Any], gender: str
+) -> tuple[int, int]:
+    """构思正文里「声明性别的代词」出现次数 / 第三人称代词总次数。"""
+
+    expected = _PRONOUN_BY_GENDER.get(gender, "")
+    if not expected:
+        return (0, 0)
+    text = " ".join(_text(metadata.get(key)) for key in _CONCEPT_TEXT_KEYS)
+    if not text:
+        return (0, 0)
+    total = sum(text.count(p) for p in _PRONOUN_BY_GENDER.values())
+    return (text.count(expected), total)
+
+
+def _check_protagonist_pronoun(
+    metadata: Mapping[str, Any],
+) -> tuple[bool, str, int, int]:
+    """声明的性别与构思正文实际用的代词是否一致。
+
+    2026-08-26 真机 custom-xuanhuan-1787749718：用户勾的是**男频**，频道钢印
+    也确实盖住了结构化字段——``cast_spec.gender="male"``、
+    ``identity_manifest=('阿茸','male','他')``。而 premise/synopsis 通篇是
+    「她」（11 次 / 13 次，「他」0 次）：**结构化说男、散文写女**。
+
+    这是同一个病的第三种形态（前两种：主角改名 陈韭→陈韭菜；一本书两个主角
+    顾澜 vs 纪潮）——结构化说一套、散文写另一套，中间没有比对。此前的身份门
+    只比对**名字**，性别一路绿灯。用户看到的「男频怎么变成女主了」即此。
+
+    判据与名字检查同源：占比不足半数即不一致；提及数太少时不下结论
+    （一句话里只出现一两次代词，比例没有意义）。
+    """
+
+    gender = declared_protagonist_gender(metadata)
+    if not gender:
+        return (True, "", 0, 0)
+    hits, total = protagonist_pronoun_coverage(metadata, gender)
+    if total < _PRONOUN_MIN_MENTIONS:
+        return (True, gender, hits, total)
+    return (hits > total * _PRONOUN_MAJORITY, gender, hits, total)
+
+
 def _manifest_protagonist(metadata: Mapping[str, Any]) -> str:
     manifest = metadata.get("identity_manifest")
     if not isinstance(manifest, Sequence) or isinstance(manifest, (str, bytes)):
@@ -786,6 +853,21 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
                     f"缺席 {len(_absent)}/{_populated} 份构思正文",
                 )
             )
+
+    # 2026-08-26：性别同样要比对。频道钢印盖在结构化字段上，散文却可以完全
+    # 不理它——真机 male/「他」的声明配 premise+synopsis 24 次「她」0 次「他」。
+    _pron_ok, _pron_gender, _pron_hits, _pron_total = _check_protagonist_pronoun(
+        metadata
+    )
+    if not _pron_ok:
+        issues.append(
+            BookDesignIssue(
+                "protagonist_gender_mismatch",
+                "conception_prose:" + "/".join(_CONCEPT_TEXT_KEYS),
+                f"{_pron_gender}（{_PRONOUN_BY_GENDER.get(_pron_gender, '')}）",
+                f"正文第三人称 {_pron_hits}/{_pron_total} 与声明性别一致",
+            )
+        )
 
     preference = _text(
         _mapping(metadata.get("genre_intent_contract")).get("tone_preference")

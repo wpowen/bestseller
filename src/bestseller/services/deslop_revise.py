@@ -272,9 +272,21 @@ def _badness_components_for_test(text: str, language: str = "zh-CN") -> float:
 # escalate band): the syntax is no longer a stylistic quirk, it is the chapter's
 # dominant sentence-joining device. Human corpus max is 1.14/千字.
 _SLICE_PATHOLOGICAL = 3.0
+# 碎句独段的病态带。预算 25%（见 _content_badness），人类语料中位约 15%
+# （2026-08-24 标定）。越过这条线时，「把碎句合并回段落」就是本次重写的**主要
+# 目的**，不能再让它和其他 advisory span 按同一权重换算——真机
+# custom-xuanhuan-1787749718 的 ch3=30.0%、ch4=52.9%（已剔除对白），
+# 而 deslop 跑了两次、一个新版本都没产生：重写被 keep-better 判成「没改进」。
+_STACCATO_PATHOLOGICAL = 0.35
 
 
-def _keep_better_key(text: str, language: str, *, slice_first: bool) -> tuple:
+def _keep_better_key(
+    text: str,
+    language: str,
+    *,
+    slice_first: bool,
+    staccato_first: bool = False,
+) -> tuple:
     """Ordering key for keep-better (lower is better).
 
     Normally one scalar (:func:`_content_badness`) decides. That scalar weighs a
@@ -291,9 +303,16 @@ def _keep_better_key(text: str, language: str, *, slice_first: bool) -> tuple:
     """
 
     badness = _content_badness(text, language)
+    # 2026-08-26：碎句与切片同形——整章弥漫的病在 detector 里只折成 1-2 个
+    # span，span 计数为主的 badness 永远奖励不了一次真正清掉它的重写。切片轴
+    # 早就为此单独提前比较（slice_first），碎句轴一直没有，于是 ch3/ch4 这种
+    # 30%-53% 的章重写完照样输回原稿。同一处方，同样只在**病态带内**生效，
+    # 带外维持单标量行为不变，healthy 稿一个字都不受影响。
+    if staccato_first:
+        return (round(_staccato_ratio(text), 2), round(_moment_slice_rate(text), 2), badness)
     if not slice_first:
-        return (0.0, badness)
-    return (round(_moment_slice_rate(text), 2), badness)
+        return (0.0, 0.0, badness)
+    return (0.0, round(_moment_slice_rate(text), 2), badness)
 
 
 def _hype_survives(text: str, language: str) -> bool:
@@ -413,6 +432,7 @@ async def _revise_prose_deslop_inner(
     # _keep_better_key). Re-deciding per round would let a rewrite that dipped
     # under the band switch the comparison mid-flight.
     slice_first = _moment_slice_rate(content) >= _SLICE_PATHOLOGICAL
+    staccato_first = _staccato_ratio(content) >= _STACCATO_PATHOLOGICAL
     restore_length = False
 
     # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
@@ -442,7 +462,12 @@ async def _revise_prose_deslop_inner(
                 _seam_cleaned = True
 
     def _key(text: str) -> tuple:
-        return _keep_better_key(text, language, slice_first=slice_first)
+        return _keep_better_key(
+            text,
+            language,
+            slice_first=slice_first,
+            staccato_first=staccato_first,
+        )
 
     def _length_ok(text: str) -> bool:
         """Shippable length, measured the way the downstream gate measures it.

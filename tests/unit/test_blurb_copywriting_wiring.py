@@ -53,9 +53,17 @@ def test_copywriting_champion_is_sanitized_and_truncated():
     # 2026-08-22 又被插入的 reader_contract 参数挤破了第二次。每次插入几行
     # 就要来调一次常数，说明脆的是取样方式不是断言——改成按下一个顶层
     # 语句边界切，断言一字未动。
+    # 2026-08-26 第三次破窗：上一版按 "\n        # ── " 顶层块标记切，而那个
+    # 标记后来被删了 → find() 返回 -1 → 退回 4000 字符常数 → 目标恰好被切在
+    # 中间。docstring 里已经写过「脆的是取样方式不是断言」，所以这次不再挑
+    # 另一个注释当边界：改成切到**包住本段的 except 处理器**，那是语法结构，
+    # 不会被人顺手删掉。
     _tail = source[cw_call_pos:]
-    _next_block = _tail.find("\n        # ── ")
-    surrounding = _tail[: _next_block if _next_block > 0 else 4000]
+    _except_pos = _tail.find(
+        'logger.warning("Blurb copywriting tournament failed (non-fatal)"'
+    )
+    assert _except_pos > 0, "文案工序的 fail-open except 不见了"
+    surrounding = _tail[:_except_pos]
     assert "_sanitize_forbidden_default_motifs(_copywriting_result.champion" in surrounding
     assert "truncate_at_sentence(synopsis, 500)" in surrounding
 
@@ -72,10 +80,15 @@ def test_copywriting_call_receives_v0_synopsis_and_book_jargon_terms():
 def test_copywriting_block_is_wrapped_in_fail_open_try_except():
     source = _source()
     block_start = source.index("# ── 简介独立文案工序（T6")
-    # 窗口 6500（原 4500）：同上，正典人名校验分支加长了该块。
-    surrounding = source[block_start : block_start + 6500]
-    assert "try:" in surrounding
-    assert 'logger.warning("Blurb copywriting tournament failed (non-fatal)"' in surrounding
+    # 不再用字符窗口常数（2026-08-26：6500 被撑破，这是第三次调常数）。
+    # 断言的本意是「这一段被 fail-open 的 try/except 包住」——直接按结构验：
+    # except 处理器必须存在，且 try 必须在它之前、在本段开头之后。
+    tail = source[block_start:]
+    handler = tail.find(
+        'logger.warning("Blurb copywriting tournament failed (non-fatal)"'
+    )
+    assert handler > 0, "文案工序必须有 fail-open 的 except 处理器"
+    assert "try:" in tail[:handler], "except 之前必须有对应的 try"
 
 
 def test_tournament_report_persisted_independent_of_appeal_system_state():

@@ -8593,6 +8593,7 @@ async def run_conception_pipeline(
             audit_and_rebuild_tagline,
             build_intent_alignment_messages,
             missing_intent_tags,
+            verifiable_intent_items,
             parse_intent_alignment_verdict,
             replace_tagline,
         )
@@ -8615,7 +8616,47 @@ async def run_conception_pipeline(
             _ia_enh = getattr(genre_intent_contract, "explicit_enhancers", None)
             if isinstance(_ia_enh, Mapping):
                 _ia_cost_style = str(_ia_enh.get("cost_style") or "standard")
-        if _intent_tags:
+        # 2026-08-26 定罪（真机 custom-xuanhuan-1787662679）：判官要核对的意图
+        # 不只有分类标签。用户在建书页勾的**基调**与**故事技能**住在
+        # tone_preference / explicit_enhancers 里，而上面那段只读
+        # user_tags/tags/default_tags——分类选择器建书时这三个恒为空。于是
+        # `if _intent_tags:` 把整整 197 行「核对→定罪→修复→复核」全部跳过，
+        # 连本该独立运行的代价档检查也一起关在里面（那条判据的 docstring
+        # 自己写着「独立检查项，与上面的意图判定分开做」）。真机后果：
+        # 用户勾的每一项都没被核对过，且 metadata 里一条 intent_* 回执都没有。
+        #
+        # 分类标签与勾选项去向不同：前者可确定性补回 tags 元数据，后者不行
+        # （不是 taxonomy 公民，硬塞会污染跨书标签统计）。所以只合并**判定用**
+        # 的清单，补全仍只认 _intent_tags。
+        _genre_intent_mapping: dict[str, Any] = {}
+        if genre_intent_contract is not None:
+            for _field in (
+                "user_tags", "tags", "default_tags",
+                "tone_preference", "explicit_enhancers",
+            ):
+                _val = getattr(genre_intent_contract, _field, None)
+                if _val is not None:
+                    _genre_intent_mapping[_field] = _val
+        _ia_items = verifiable_intent_items(
+            {"genre_intent": _genre_intent_mapping}
+            if _genre_intent_mapping
+            else None
+        )
+        _ia_cost_checked = _ia_cost_style in ("minimal", "external")
+        # 回执恒写：没有回执时无法区分「跑了没发现」与「压根没跑」——
+        # 这正是本案被埋了这么久的原因。
+        conception_log.append(
+            {
+                "round": 3,
+                "agent": "intent_alignment_scope",
+                "taxonomy_tags": _intent_tags,
+                "pick_items": [i for i in _ia_items if i not in _intent_tags],
+                "cost_style": _ia_cost_style,
+                "cost_checked": _ia_cost_checked,
+                "will_run": bool(_ia_items) or _ia_cost_checked,
+            }
+        )
+        if _ia_items or _ia_cost_checked:
             _ia_missing = missing_intent_tags(_intent_tags, tags or [])
             # 确定性补全（2026-08-19 用户第二次定罪：勾了「金手指」而成品 tags
             # 里彻底没有它）。tags 是元数据不是正文，用户明确勾选的标签缺失
@@ -8634,7 +8675,7 @@ async def run_conception_pipeline(
             _ia_votes: list[dict[str, Any]] = []
             for _ia_i in range(2):
                 _ia_sys, _ia_user = build_intent_alignment_messages(
-                    intent_tags=_intent_tags,
+                    intent_tags=_ia_items,
                     genre_label=str(_ap_genre or ""),
                     premise=premise,
                     synopsis=synopsis,
@@ -8653,7 +8694,7 @@ async def run_conception_pipeline(
                 )
                 llm_run_ids.extend(_ia_ids)
                 _ia_v = parse_intent_alignment_verdict(
-                    _ia_payload, intent_tags=_intent_tags
+                    _ia_payload, intent_tags=_ia_items
                 )
                 if _ia_v is not None:
                     _ia_votes.append(_ia_v)
@@ -8671,7 +8712,7 @@ async def run_conception_pipeline(
                 {
                     "round": 3.6,
                     "agent": "intent_alignment",
-                    "intent_tags": _intent_tags,
+                    "intent_tags": _ia_items,
                     "missing_in_tags": _ia_missing,
                     "tagline_aliens": _ia_tagline.alien_tokens,
                     "tagline_rebuilt": bool(_ia_tagline.rebuilt_line),
@@ -8709,7 +8750,7 @@ async def run_conception_pipeline(
                         d for d in (v.get("revise_direction", "") for v in _ia_votes) if d
                     )
                     _ia_repair_user = (
-                        f"用户下单时勾选的题材意图：{'、'.join(_intent_tags)}\n\n"
+                        f"用户下单时勾选的题材意图：{'、'.join(_ia_items)}\n\n"
                         f"【当前前提】{premise}\n\n【当前简介】{synopsis}\n\n"
                         f"【当前故事脊柱】{json.dumps(story_spine if isinstance(story_spine, dict) else {}, ensure_ascii=False)}\n\n"
                         "【必须修正】\n" + "\n".join(_ia_fix_lines) + "\n"
@@ -8750,7 +8791,7 @@ async def run_conception_pipeline(
                     if _ia_ok:
                         # 复核一轮：定罪没减少就不采纳（改了个寂寞甚至改更坏）
                         _rc_sys, _rc_user = build_intent_alignment_messages(
-                            intent_tags=_intent_tags,
+                            intent_tags=_ia_items,
                             genre_label=str(_ap_genre or ""),
                             premise=_ia_new_premise,
                             synopsis=_ia_new_syn,
@@ -8771,7 +8812,7 @@ async def run_conception_pipeline(
                         )
                         llm_run_ids.extend(_rc_ids)
                         _rc_v = parse_intent_alignment_verdict(
-                            _rc_payload, intent_tags=_intent_tags
+                            _rc_payload, intent_tags=_ia_items
                         )
                         _rc_bad = (
                             len(_rc_v.get("failed_tags", []))

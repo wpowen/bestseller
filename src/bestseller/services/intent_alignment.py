@@ -45,6 +45,76 @@ def intent_tags_from_contract(contract: Mapping[str, Any] | None) -> list[str]:
     return []
 
 
+# 建书页那四档调性的**可核对标签**（不是写作指令——指令归生成端，
+# 这里是给判官对表用的短语）。只认这四个键，未知值忽略。
+_TONE_INTENT_LABELS: dict[str, str] = {
+    "light": "轻松基调",
+    "epic": "宏大基调",
+    "dark": "暗黑基调",
+    "hot": "热血基调",
+}
+
+
+def user_pick_intent_items(contract: Mapping[str, Any] | None) -> list[str]:
+    """把**建书页的勾选**翻成可核对的中文意图项。
+
+    2026-08-26 定罪（真机 custom-xuanhuan-1787662679）：用户勾的是
+    玄幻／男频／轻松／喜剧＋爽点满足／纯爽无代价，而
+    ``intent_tags_from_contract`` 读的是 ``user_tags / tags / default_tags``
+    ——用分类选择器建书时这三个字段**恒为空**。于是意图对表门拿到空列表，
+    调用现场那句 ``if _intent_tags:`` 把整整 197 行「核对→定罪→修复→复核」
+    全部跳过，且不留任何回执：真机 metadata 里一条 intent_* 记录都没有。
+
+    后果是用户勾的**每一项都没被核对过**——基调、故事技能，连本该「独立
+    检查」的代价档也一起被关在同一个 if 里（那条判据的 docstring 自己写着
+    「独立检查项，与上面的意图判定分开做」）。
+
+    这些短语进的是**判官** prompt 而不是写手 prompt：本模块开篇即言
+    「判官读证据≠写手读证据：意图 tag 本身就是用户给的词，不构成种词」。
+    """
+
+    if not isinstance(contract, Mapping):
+        return []
+    genre_intent = contract.get("genre_intent")
+    source = genre_intent if isinstance(genre_intent, Mapping) else contract
+    items: list[str] = []
+
+    tone = _TONE_INTENT_LABELS.get(
+        str(source.get("tone_preference") or "").strip().lower()
+    )
+    if tone:
+        items.append(tone)
+
+    enhancers = source.get("explicit_enhancers")
+    if isinstance(enhancers, Mapping):
+        try:
+            from bestseller.services.story_effect_skills import (
+                story_effect_skill_labels,
+            )
+
+            for label in story_effect_skill_labels(enhancers.get("effect_skills")):
+                if label not in items:
+                    items.append(label)
+        except Exception:  # pragma: no cover - 目录缺失不该拖垮建书
+            pass
+    return items
+
+
+def verifiable_intent_items(contract: Mapping[str, Any] | None) -> list[str]:
+    """判官要逐项找落点引文的全部用户意图 = 分类标签 + 建书页勾选。
+
+    两者来源不同、去向也不同：分类标签可以确定性补回 ``tags`` 元数据，
+    勾选项不行（它们不是 taxonomy 公民，硬塞会污染跨书标签统计）。
+    所以这里只合并**判定用**的清单，补全逻辑仍只认 ``intent_tags_from_contract``。
+    """
+
+    merged = list(intent_tags_from_contract(contract))
+    for item in user_pick_intent_items(contract):
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
 def missing_intent_tags(
     intent_tags: Iterable[str],
     final_tags: Iterable[str],

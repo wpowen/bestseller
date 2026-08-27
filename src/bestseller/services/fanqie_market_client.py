@@ -110,38 +110,119 @@ def normalize_fanqiehub_snapshot(
     )
 
 
+class FanqiehubEmptyResponseError(RuntimeError):
+    """端点返回 200 但零行——**必须报错，不许当成空快照咽下去**。
+
+    2026-08-08 本仓库已为此定过一次案（旧参数 200 空响应静默失效），
+    2026-08-27 复发：``fetch_fanqiehub_snapshot`` 传的
+    ``category / rank_type / platform`` 已不被 API 接受，端点照样回 200 +
+    ``{"data": [], "total": 0}``。于是 ``fanqie_ranking_snapshots`` 一直是
+    空表、``fanqie_competitor_profiles`` 0 行——**市场验证子系统空转，
+    而没有任何一处报错**。
+
+    「静默空成功」是这个客户端的结构性弱点：接口参数一变就无声失效。
+    所以空响应在这里是**异常**，不是数据。
+    """
+
+
+async def fetch_fanqiehub_rows(
+    *,
+    base_url: str = FANQIEHUB_BASE_URL,
+    client: httpx.AsyncClient | None = None,
+    max_pages: int = 60,
+) -> list[Mapping[str, Any]]:
+    """拉全量榜单行（分页），不传任何过滤参数。
+
+    过滤改在本地做：接口只认 ``page``，而每行自带 ``分类 / 平台 / 榜单类型``，
+    本地切分既准确又不会因为接口参数改名而无声失效。
+    """
+
+    async def _pull(c: httpx.AsyncClient) -> list[Mapping[str, Any]]:
+        first = await c.get(f"{base_url.rstrip('/')}/api/data", params={"page": 1})
+        first.raise_for_status()
+        head = first.json()
+        rows = list(head.get("data") or [])
+        total = int(head.get("total") or 0)
+        per = int(head.get("per_page") or len(rows) or 1)
+        pages = min(max_pages, (total + per - 1) // per if per else 1)
+        for page in range(2, pages + 1):
+            resp = await c.get(
+                f"{base_url.rstrip('/')}/api/data", params={"page": page}
+            )
+            resp.raise_for_status()
+            rows.extend(resp.json().get("data") or [])
+        return rows
+
+    if client is None:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as owned:
+            rows = await _pull(owned)
+    else:
+        rows = await _pull(client)
+    if not rows:
+        raise FanqiehubEmptyResponseError(
+            "FanqieHub returned zero rows; the endpoint contract likely changed."
+        )
+    return rows
+
+
+def _row_matches(
+    row: Mapping[str, Any], *, category: str, board_type: str, channel: str
+) -> bool:
+    """本地切分。空串表示不过滤该维度。"""
+
+    def _eq(field_names: tuple[str, ...], wanted: str) -> bool:
+        if not wanted:
+            return True
+        actual = _first_str(row, *field_names)
+        return wanted in actual or actual in wanted
+
+    return (
+        _eq(("分类", "category"), category)
+        and _eq(("榜单类型", "board_type", "rank_type"), board_type)
+        and _eq(("平台", "channel", "platform"), channel)
+    )
+
+
 async def fetch_fanqiehub_snapshot(
     *,
     category: str,
-    board_type: str = "reading",
-    channel: str = "fanqie",
+    board_type: str = "",
+    channel: str = "",
     base_url: str = FANQIEHUB_BASE_URL,
     client: httpx.AsyncClient | None = None,
 ) -> FanqieRankingSnapshot:
-    """Fetch and normalize one FanqieHub category snapshot.
+    """Fetch one FanqieHub slice.
 
-    The function keeps the endpoint parameters isolated here so downstream
-    services can be tested with normalized snapshots instead of live network
-    calls.
+    2026-08-27 改为「拉全量 + 本地切分」。此前把 ``category/rank_type/platform``
+    当查询参数发出去，而接口已不再接受它们——返回 200 + 空数组，调用方拿到
+    一个合法的空快照，无人报错。现在过滤在本地做，且空响应直接抛
+    :class:`FanqiehubEmptyResponseError`。
+
+    ``board_type`` / ``channel`` 默认空串＝不过滤（接口取值是中文的
+    「阅读榜/新书榜」「男频/女频」，与旧的 ``reading``/``fanqie`` 不同源，
+    默认不过滤避免又一次无声全滤光）。
     """
 
-    url = f"{base_url.rstrip('/')}/api/data"
-    params = {"category": category, "rank_type": board_type, "platform": channel}
-    if client is None:
-        async with httpx.AsyncClient(timeout=15.0) as owned_client:
-            response = await owned_client.get(url, params=params)
-            response.raise_for_status()
-            payload = response.json()
-    else:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-        payload = response.json()
+    rows = await fetch_fanqiehub_rows(base_url=base_url, client=client)
+    picked = [
+        row
+        for row in rows
+        if _row_matches(
+            row, category=category, board_type=board_type, channel=channel
+        )
+    ]
+    if not picked:
+        raise FanqiehubEmptyResponseError(
+            f"no rows matched category={category!r} "
+            f"board_type={board_type!r} channel={channel!r} "
+            f"(fetched {len(rows)} rows)"
+        )
     return normalize_fanqiehub_snapshot(
-        payload,
-        board_type=board_type,
-        category=category,
-        channel=channel,
-        source_url=str(response.url),
+        {"data": picked},
+        board_type=board_type or _first_str(picked[0], "榜单类型"),
+        category=category or _first_str(picked[0], "分类"),
+        channel=channel or _first_str(picked[0], "平台"),
+        source_url=f"{base_url.rstrip('/')}/api/data",
     )
 
 

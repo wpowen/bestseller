@@ -278,6 +278,17 @@ _SLICE_PATHOLOGICAL = 3.0
 # custom-xuanhuan-1787749718 的 ch3=30.0%、ch4=52.9%（已剔除对白），
 # 而 deslop 跑了两次、一个新版本都没产生：重写被 keep-better 判成「没改进」。
 _STACCATO_PATHOLOGICAL = 0.35
+# 具身动词词族密度（撞/烫/钻/攥/爬…）的病态带。**人类出版语料 2955 章标定**
+# （2026-08-27）：中位 6.3、p90 21.5、p95 28.8、**p99 49.3**、max 149.4。
+# 密度型且无温和合法区，按本仓库既有原则取 p99。真机 custom-xuanhuan-1787757487
+# 三章 60.0 / 101.2 / 121.5——全部越过 p99，ch3 是 p99 的 2.5 倍，而 deslop 的
+# 重写照样被丢弃（ch1/ch3 的 deslop 跑在末版之后、零新版本）。
+_VERB_TIC_PATHOLOGICAL = 50.0
+# 篇章级车轱辘的病态带。同批标定：人类中位 0.8%、p90 3.5%、p99 8.8%；
+# 检测器自己的 severe 线是 0.15，已在人类 p99 之上，直接沿用不另造数。
+# 注：同一本真机书三章 0.4% / 1.7% / 2.6%——**在人类正常区间内**，
+# 说明这条在本案不是主病；轴仍然要有，否则下次真犯时又是同样的丢弃。
+_REPETITION_PATHOLOGICAL = 0.15
 
 
 def _keep_better_key(
@@ -286,6 +297,8 @@ def _keep_better_key(
     *,
     slice_first: bool,
     staccato_first: bool = False,
+    verb_tic_first: bool = False,
+    repetition_first: bool = False,
 ) -> tuple:
     """Ordering key for keep-better (lower is better).
 
@@ -308,11 +321,20 @@ def _keep_better_key(
     # 早就为此单独提前比较（slice_first），碎句轴一直没有，于是 ch3/ch4 这种
     # 30%-53% 的章重写完照样输回原稿。同一处方，同样只在**病态带内**生效，
     # 带外维持单标量行为不变，healthy 稿一个字都不受影响。
-    if staccato_first:
-        return (round(_staccato_ratio(text), 2), round(_moment_slice_rate(text), 2), badness)
-    if not slice_first:
-        return (0.0, 0.0, badness)
-    return (0.0, round(_moment_slice_rate(text), 2), badness)
+    # 每条弥漫型病一个轴，只在**自己的病态带内**参与排序，带外恒为 0.0——
+    # 于是健康稿的比较仍然逐字节等价于单标量。轴的顺序固定，便于归因。
+    from bestseller.services.ai_flavor.detector import (  # noqa: PLC0415
+        narrative_repetition_load,
+        verb_tic_density,
+    )
+
+    return (
+        round(_staccato_ratio(text), 2) if staccato_first else 0.0,
+        round(verb_tic_density(text), 1) if verb_tic_first else 0.0,
+        round(narrative_repetition_load(text), 3) if repetition_first else 0.0,
+        round(_moment_slice_rate(text), 2) if slice_first else 0.0,
+        badness,
+    )
 
 
 def _hype_survives(text: str, language: str) -> bool:
@@ -433,6 +455,13 @@ async def _revise_prose_deslop_inner(
     # under the band switch the comparison mid-flight.
     slice_first = _moment_slice_rate(content) >= _SLICE_PATHOLOGICAL
     staccato_first = _staccato_ratio(content) >= _STACCATO_PATHOLOGICAL
+    from bestseller.services.ai_flavor.detector import (  # noqa: PLC0415
+        narrative_repetition_load as _nrl,
+        verb_tic_density as _vtd,
+    )
+
+    verb_tic_first = _vtd(content) >= _VERB_TIC_PATHOLOGICAL
+    repetition_first = _nrl(content) >= _REPETITION_PATHOLOGICAL
     restore_length = False
 
     # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
@@ -467,6 +496,8 @@ async def _revise_prose_deslop_inner(
             language,
             slice_first=slice_first,
             staccato_first=staccato_first,
+            verb_tic_first=verb_tic_first,
+            repetition_first=repetition_first,
         )
 
     def _length_ok(text: str) -> bool:

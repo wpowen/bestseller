@@ -90,5 +90,7 @@ class TestTheSliceAxisStillWorks:
             "她没有回头，只把手里的绳子又缠了两圈。\n\n"
         ) * 8
         k = _keep_better_key(text, "zh-CN", slice_first=True, staccato_first=False)
+        # 2026-08-27 加了词族/复读两条轴后，元组变成
+        # (碎句, 词族, 复读, 切片, badness)——切片下标从 1 移到 3。
         assert k[0] == 0.0, "碎句轴不参与"
-        assert k[1] > 0.0, "切片轴仍在第二位生效"
+        assert k[3] > 0.0, "切片轴仍生效（现位于第四位）"

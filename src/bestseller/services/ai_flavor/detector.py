@@ -1070,6 +1070,60 @@ _VERB_TIC_LEXICON_ZH: tuple[str, ...] = (
 _MEASURE_TIC_RE = re.compile(r"半寸|一寸|三寸|半尺|三分|半息|半分")
 
 
+def _repeated_gram_profile(
+    content_md: str,
+) -> tuple["Counter[str]", list[tuple[str, int]]]:
+    """全章四字串计数 + 重复≥5 次的实义短语。"""
+
+    grams: Counter[str] = Counter()
+    for run in re.findall(r"[一-鿿]+", content_md):
+        for i in range(len(run) - 3):
+            grams[run[i : i + 4]] += 1
+    repeated = [
+        (g, c)
+        for g, c in grams.items()
+        if c >= 5 and sum(1 for ch in g if ch in _GRAM_FUNCTION_CHARS) <= 2
+    ]
+    return grams, repeated
+
+
+def narrative_repetition_load(content_md: str) -> float:
+    """全章四字串里落在「重复≥5 次的实义短语」中的比例。
+
+    2026-08-27 抽出为公开函数：deslop 的 keep-better 需要按这个密度比较，
+    而此前它只活在 ``_detect_narrative_repetition`` 内部，外面拿不到——
+    于是「篇章级车轱辘」在采纳判据里只折成 1 个 span，一次真正收掉它的重写
+    只减 1 分，随便冒出两个新 advisory span 就输回原稿（与碎句同形）。
+
+    **口径与阈值不是新造的**：检测器自己的标定写在
+    ``_detect_narrative_repetition`` 的注释里——同一本 50 章书上干净章
+    0.0–1.2%、读不下去的章 19.8–47.6%，15 倍分离且中间没有过渡；
+    ``severe`` 线就是 ``load >= 0.15``。这里只是把同一个数暴露出来，
+    避免「同一事实住两地」。
+    """
+
+    if not content_md:
+        return 0.0
+    grams, repeated = _repeated_gram_profile(content_md)
+    total = sum(grams.values()) or 1
+    return sum(count for _, count in repeated) / total
+
+
+def verb_tic_density(content_md: str) -> float:
+    """具身动词词族的每万字密度（撞/烫/钻/攥/爬…）。
+
+    同样取自 ``_detect_verb_tic_spam`` 已有的口径：词族合计 ≥6 且
+    ≥15/万字即计一名 offender。这里返回连续密度而不是布尔，
+    让 keep-better 能比较「重写有没有真的把词族压下去」。
+    """
+
+    total = len(content_md or "")
+    if total < 1:
+        return 0.0
+    family_total = sum(content_md.count(v) for v in _VERB_TIC_LEXICON_ZH)
+    return family_total * 10000.0 / total
+
+
 def _detect_verb_tic_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
     """Chapter-level embodied-verb tic saturation — the "撞/烫/爬" AI accent.
 
@@ -1371,15 +1425,7 @@ def _detect_repetition(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
         return []
     out: list[AiFlavorSpan] = []
 
-    grams: Counter[str] = Counter()
-    for run in re.findall(r"[一-鿿]+", content_md):
-        for i in range(len(run) - 3):
-            grams[run[i : i + 4]] += 1
-    repeated = [
-        (g, c)
-        for g, c in grams.items()
-        if c >= 5 and sum(1 for ch in g if ch in _GRAM_FUNCTION_CHARS) <= 2
-    ]
+    grams, repeated = _repeated_gram_profile(content_md)
     if len(repeated) >= 4:
         top_gram, top_count = max(repeated, key=lambda kv: kv[1])
         pos = max(0, content_md.find(top_gram))

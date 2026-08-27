@@ -146,6 +146,11 @@ class ConceptCandidate:
     decision_proof: str = ""
     emotional_promise: str = ""
     core_promise_invariant: str = ""
+    # 2026-08-27：prompt 从 2026-08-19 起就在要 constraint_ladder（「无代价≠无
+    # 限制」的落点），并写明「若所有场景都在同一层次打转，项目不成立」——
+    # 但数据类**从来没有这个字段**，解析层于是整块丢弃（真机 12/12 候选零携带），
+    # 全仓零消费方。规则写了、没实现，「限制」这一维度从概念层到成书从未被审过。
+    constraint_ladder: tuple[str, ...] = ()
     role_ladder: tuple[str, ...] = ()
     world_ladder: tuple[str, ...] = ()
     repeatable_story_unit: str = ""
@@ -190,6 +195,7 @@ class ConceptCandidate:
             "decision_proof": self.decision_proof,
             "emotional_promise": self.emotional_promise,
             "core_promise_invariant": self.core_promise_invariant,
+            "constraint_ladder": list(self.constraint_ladder),
             "role_ladder": list(self.role_ladder),
             "world_ladder": list(self.world_ladder),
             "repeatable_story_unit": self.repeatable_story_unit,
@@ -244,10 +250,15 @@ class ConceptTournamentResult:
     # 2026-08-25：追读性阶段的回执。恒非空——"跑了/只留痕/跳过" 三态可区分，
     # 此前 seriality_judge=={} 既可能是"评了没发现"也可能是"压根没跑"。
     seriality_stage: dict[str, Any] = field(default_factory=dict)
+    # 2026-08-27：「无代价≠无限制」的验收回执。恒非空——没有回执就无法
+    # 区分「查了没问题」与「压根没查」，这正是 constraint_ladder 被埋了
+    # 八天的原因（prompt 从 2026-08-19 起就在要它）。
+    constraint_ladder_audit: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "seriality_stage": dict(self.seriality_stage),
+            "constraint_ladder_audit": dict(self.constraint_ladder_audit),
             "winner_dimension": self.winner.dimension if self.winner else None,
             "winner_concept": self.winner.concept if self.winner else None,
             "winner": self.winner.to_dict() if self.winner else None,
@@ -939,6 +950,7 @@ def _candidate_story_text(candidate: ConceptCandidate) -> str:
     payload = candidate.to_dict()
     control_fields = {
         "seriality_report", "seriality_judge", "judge_reason", "rejected_reason",
+        "constraint_ladder",
         "judge_freshness", "judge_click", "judge_predictable", "judge_character_logic",
         "judge_mechanism_causality", "judge_genre_fidelity", "judge_plain_language",
         "judge_story_motion", "judge_protagonist_agency", "composite", "dimension",
@@ -1083,6 +1095,58 @@ def _candidate_hard_rejection_reason(
         )
     )
     return "；".join(reasons) if reasons else None
+
+
+def audit_constraint_ladder(
+    candidate: "ConceptCandidate",
+    *,
+    chapter_count: int,
+    cost_style: str,
+) -> dict[str, Any]:
+    """「无代价≠无限制」的**验收**（2026-08-27）。
+
+    prompt 自 2026-08-19 起就要求纯爽/外置档写出 ``constraint_ladder``，
+    并写明「若所有场景都在同一层次打转，项目不成立」。但 ``ConceptCandidate``
+    从来没有这个字段——解析层整块丢弃（真机 custom-xuanhuan-1787757487
+    12/12 候选零携带），全仓零消费方。**规则写了、没实现**，于是「限制」
+    这一维度从概念层到成书从未被审过一次；用户看到的「舔一口就升级、
+    没有任何限制、故事跑不起来」正是这条的产物。
+
+    判据全部确定性，且**只留痕不发杀权**（本仓库对新检测器的规矩）：
+      * 纯爽/外置档才要求——standard 档代价本身就是发动机，不强求；
+      * 阶数不足目标值即记；
+      * 各阶互相包含或逐字重复（「同一层次打转」的可判形态）即记。
+
+    Returns 回执 dict，恒非空——没有回执就无法区分「查了没问题」与
+    「压根没查」，这正是本案埋了八天的原因。
+    """
+
+    ladder = [str(x).strip() for x in (candidate.constraint_ladder or ()) if str(x).strip()]
+    target = constraint_ladder_tier_target(chapter_count)
+    style = str(cost_style or "standard").strip().lower()
+    required = style in ("minimal", "external")
+    findings: list[str] = []
+    if required:
+        if not ladder:
+            findings.append("constraint_ladder_missing")
+        elif len(ladder) < target:
+            findings.append(f"constraint_ladder_short:{len(ladder)}/{target}")
+        # 同一层次打转的可判形态：去重后剩不到两阶，或任一阶是另一阶的子串。
+        if ladder:
+            deduped = {x for x in ladder}
+            nested = any(
+                a != b and (a in b or b in a) for a in ladder for b in ladder
+            )
+            if len(deduped) < 2 or nested:
+                findings.append("constraint_ladder_flat")
+    return {
+        "required": required,
+        "cost_style": style,
+        "tiers": len(ladder),
+        "tier_target": target,
+        "findings": findings,
+        "passed": not findings,
+    }
 
 
 def constraint_ladder_tier_target(chapter_count: int) -> int:
@@ -2014,6 +2078,7 @@ def _attach_engine_kernel(
         emotional_promise=candidate.emotional_promise
         or _text("emotional_promise"),
         core_promise_invariant=_text("reader_promise"),
+        constraint_ladder=_tuple("constraint_ladder"),
         role_ladder=_tuple("role_ladder"),
         world_ladder=_tuple("world_ladder"),
         repeatable_story_unit=str(kernel.get("deformable_loop") or "").strip(),
@@ -2613,6 +2678,7 @@ def _build_seriality_repair_messages(
     )
     current = {
         "core_promise_invariant": candidate.core_promise_invariant,
+        "constraint_ladder": list(candidate.constraint_ladder),
         "role_ladder": list(candidate.role_ladder),
         "world_ladder": list(candidate.world_ladder),
         "repeatable_story_unit": candidate.repeatable_story_unit,
@@ -3012,6 +3078,7 @@ def _apply_seriality_payload(
         candidate,
         repeatable_story_unit=repeatable_unit,
         core_promise_invariant=str(payload.get("core_promise_invariant") or "").strip(),
+        constraint_ladder=_tuple_field("constraint_ladder"),
         role_ladder=_tuple_field("role_ladder"),
         world_ladder=_tuple_field("world_ladder"),
         unit_families=_tuple_field("unit_families"),
@@ -5101,6 +5168,12 @@ async def run_concept_tournament(
             return result
         passed = _prefer_ontology_clean(passed, genre_intent_contract)
         result.winner = max(passed, key=lambda c: c.composite or 0.0)
+        # 「无代价≠无限制」验收：只留痕不改判，按本仓库对新检测器的规矩
+        # （2026-08-27）。此前 prompt 要求它、数据类没有它、零消费方——
+        # 规则写了没实现，「限制」这一维度从未被审过。
+        result.constraint_ladder_audit = audit_constraint_ladder(
+            result.winner, chapter_count=chapter_count, cost_style=cost_style
+        )
         return result
     except Exception:
         logger.warning("concept tournament failed (non-fatal); no injection", exc_info=True)

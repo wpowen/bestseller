@@ -254,14 +254,11 @@ class ConceptTournamentResult:
     # 区分「查了没问题」与「压根没查」，这正是 constraint_ladder 被埋了
     # 八天的原因（prompt 从 2026-08-19 起就在要它）。
     constraint_ladder_audit: dict[str, Any] = field(default_factory=dict)
-    # 2026-08-28：头部按 hook 决胜的回执。恒非空——换没换、换掉了谁都要可查。
-    hook_selection: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "seriality_stage": dict(self.seriality_stage),
             "constraint_ladder_audit": dict(self.constraint_ladder_audit),
-            "hook_selection": dict(self.hook_selection),
             "winner_dimension": self.winner.dimension if self.winner else None,
             "winner_concept": self.winner.concept if self.winner else None,
             "winner": self.winner.to_dict() if self.winner else None,
@@ -2749,57 +2746,6 @@ def prompt_version_stamp(system_prompt: str, user_prompt: str) -> str:
     return f"{_PROMPT_FAMILY_VERSION}+{digest}"
 
 
-def select_winner_by_hook(
-    passed: list["ConceptCandidate"],
-    *,
-    shortlist: int = 3,
-) -> tuple["ConceptCandidate", dict[str, Any]]:
-    """头部候选里按**想点欲**决胜，而不是按 composite。
-
-    2026-08-28 对标验证台定罪（scripts/concept_benchmark.py，n=12，
-    对照是 306 本已跑到 500+ 章的榜单书）：
-
-        concrete   75%   设定具体可想象   —— 框架大胜
-        sustain    58%   能持续产出       —— 框架略胜
-        escalate   50%   升级换玩法       —— 平
-        hook        8%   想不想点开       —— 12 本只赢 1 本
-
-    另一条互不相干的量具指向同一件事：简介层负对照实测框架含「我」0%、
-    含感叹号 0%（榜单 54.3% / 64.4%）。框架产出是**平铺直叙的内容提要**，
-    不是**抓人的钩子**。
-
-    机制根因就在选拔这一步：``click`` 虽然权重最高（0.2），但 composite 把它
-    和另外八轴平均，然后 ``max(composite)`` 选冠军——click 9.0/composite 6.5
-    的候选会输给 click 6.5/composite 7.0 的。**hook 就是在这里被平均掉的。**
-
-    修法刻意不动淘汰：先按 composite 取头部 ``shortlist`` 名（保住质量下限，
-    只有接近最优的才参赛），再在头部里选 click 最高的。这是「改谁赢、不改谁
-    出局」——config 里 2026-07-17 记着收紧概念层阈值 → 淘汰赛干涸 → 回落保底
-    概念（比任何被拒候选都差）的教训。
-
-    返回 ``(winner, receipt)``；receipt 恒非空，记录换没换、换掉了谁。
-    """
-
-    ranked = sorted(passed, key=lambda c: c.composite or 0.0, reverse=True)
-    by_composite = ranked[0]
-    head = ranked[: max(1, shortlist)]
-    winner = max(head, key=lambda c: (c.judge_click or 0.0, c.composite or 0.0))
-    return winner, {
-        "shortlist": len(head),
-        "changed": winner is not by_composite,
-        "picked": {
-            "click": winner.judge_click,
-            "composite": winner.composite,
-            "concept": str(winner.concept)[:60],
-        },
-        "composite_top": {
-            "click": by_composite.judge_click,
-            "composite": by_composite.composite,
-            "concept": str(by_composite.concept)[:60],
-        },
-    }
-
-
 def seriality_stage_mode(
     chapter_count: int,
     cfg: Mapping[str, Any] | None = None,
@@ -2919,19 +2865,6 @@ def _build_judge_messages(
         "后附机制写得再完整也不能救分。若可压缩成‘做一个产品，资本再封杀一次’、"
         "‘接一个任务，再解决一次’等平行重复，新颖度不得超过6分。\n"
         "2. click 想点欲：只看这个概念一句话，目标读者3秒内想不想点进去？\n"
-        # 2026-08-28 校准。click 是九轴里**唯一没有校准段**的一条（其余各轴都有
-        # 大段判例），于是它在真空里打分：内部给候选 7-8 分，而拿同样这些创意去
-        # 和 306 本已跑到 500+ 章的榜单书盲评，hook 一项 12 本输 11 本（8%）。
-        # 差异在压缩后的真爆款里一眼可见——它们是「一份即将上桌的爽点清单」，
-        # 我们的是「一个精巧的谜」。判官读证据≠写手读证据（本仓库既定规矩），
-        # 所以锚点可以进判官 prompt，但**绝不可进写手 prompt**。
-        "   校准：高分不是「写得精巧」，是**读者能预见到接下来有多少件爽事**。"
-        "榜单实抓的高分形态是一句话里并列 3-5 个具体的将发生之事——"
-        "「开餐厅／用酸辣土豆丝火锅肉夹馍征服濒死人类／菜还能解毒抗污染增护甲」"
-        "是一份清单；「重生到无鬼年代只想摆烂算命／校花同桌尸毒攻心／"
-        "红衣女孩夜敲门、空难录音、消失公交车接连成真」也是一份清单。"
-        "反过来，只给出**一个**精巧悬念（哪怕写得漂亮、细节扎实、留白讲究），"
-        "读者看不到后面还有什么等着他——click 不得超过6分。\n"
         "3. predictable 可预测性：你能不能从这一句直接猜完主要对手、阶段升级、关键"
         "反转和终局答案？能猜完=高分=坏事。注意：读者能看懂主角会反复做什么是清晰"
         "的连载承诺，不是可预测缺陷；只有后续变量、升级方式和结局也能被自动补全才扣分。\n"
@@ -5234,9 +5167,7 @@ async def run_concept_tournament(
             logger.warning("concept tournament: no seriality-qualified finalists")
             return result
         passed = _prefer_ontology_clean(passed, genre_intent_contract)
-        result.winner, result.hook_selection = select_winner_by_hook(
-            passed, shortlist=int(cfg.get("hook_shortlist", 3))
-        )
+        result.winner = max(passed, key=lambda c: c.composite or 0.0)
         # 「无代价≠无限制」验收：只留痕不改判，按本仓库对新检测器的规矩
         # （2026-08-27）。此前 prompt 要求它、数据类没有它、零消费方——
         # 规则写了没实现，「限制」这一维度从未被审过。

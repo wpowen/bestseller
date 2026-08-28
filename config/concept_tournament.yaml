@@ -82,11 +82,6 @@ raw_idea_rank_max_tokens: 8000  # M2.7实测4500仍可能全部耗在隐藏推�
 premise_judge_max_tokens: 8000  # 四张项目卡结构较长，必须为隐藏推理和JSON正文同时留预算
 n_candidates: 6          # 六路题材原生故事发动机候选
 control_candidates: 2    # 兼容旧配置；engine_first 不再从全局异质池抽样
-# 2026-08-28 对标验证台定罪：hook 只赢 12 本里的 1 本（concrete 75%/sustain 58%），
-# 而冠军是按 composite 选的——click 权重虽最高(0.2)仍被另外八轴平均掉。
-# 头部 N 名按 composite 取（保住质量下限），再在头部里选 click 最高的：改谁赢、
-# 不改谁出局，避开 2026-07-17 收紧阈值致淘汰赛干涸的教训。
-hook_shortlist: 3
 winner_min: 5.5          # 冠军综合分低于此线 → 不注入(宁可回落现状,不硬塞烂概念)
 judge_hard_floors:       # 任何单轴不达标直接出局，禁止用其他高分平均掉硬伤
   # 2026-08-01 两轮真实轻松玄幻：最佳干净候选题材/表达/运动均达 7-9，仍因

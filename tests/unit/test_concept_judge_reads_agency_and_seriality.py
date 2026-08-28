@@ -99,11 +99,41 @@ class TestProtagonistAgencyAxis:
 
 
 class TestSerialityStageTiering:
-    def test_long_serials_keep_the_enforcing_behaviour(self):
-        """≥200 章维持既有行为，一个字节都不改。"""
+    def test_the_veto_is_withheld_by_default_because_the_judge_judges_backwards(self):
+        """反相关的判官不许握杀权。
+
+        scripts/seriality_judge_validation.py 两轮独立实测（真榜单书走生产
+        展开 + 生产判官）：强侧=已跑到 ≥500 章且 ≥30 万在读，弱侧=<120 章且
+        <2 万在读，排序能力 AUC = 0.37 / 0.38。低于 0.5 意味着它**判反了**
+        ——给真写下去的书打分反而更低，强侧判失败率 86%/92%。
+        而它在 ≥200 章时握有否决权，真机日志已见
+        "concept tournament: no seriality-qualified finalists"。
+        """
         mode, receipt = seriality_stage_mode(200, {})
+        assert mode == "advisory"
+        assert receipt["veto_withheld"] is True
+        assert receipt["enforcing_allowed"] is False
+
+    def test_the_veto_can_be_restored_once_the_judge_passes_a_validity_bar(self):
+        """收刀不是删刀——过了效度线要能一行配置放回去。"""
+        cfg = {"seriality_enforcing_enabled": True}
+        mode, receipt = seriality_stage_mode(200, cfg)
         assert mode == "enforcing"
         assert receipt["enforcing_min_chapters"] == 200
+        assert receipt["veto_withheld"] is False
+
+    def test_the_shipped_config_withholds_the_veto(self):
+        """默认值住在 yaml 里，别只在代码里为真——这类「两处不一致」是本仓库常见病。"""
+        import pathlib as _pathlib
+
+        import yaml
+
+        cfg = yaml.safe_load(
+            (_pathlib.Path(__file__).resolve().parents[2] / "config" / "concept_tournament.yaml")
+            .read_text(encoding="utf-8")
+        )
+        assert cfg["seriality_enforcing_enabled"] is False
+        assert seriality_stage_mode(500, cfg)[0] == "advisory"
 
     def test_a_normal_book_now_reaches_the_judge_in_advisory_mode(self):
         """真机那本 12 章书此前整段跳过；现在跑判官但不发否决。"""
@@ -116,10 +146,36 @@ class TestSerialityStageTiering:
 
     def test_thresholds_are_configurable_not_hardcoded(self):
         """写死的魔数不可校准也不可回滚。"""
-        cfg = {"seriality_min_chapters": 30, "seriality_advisory_min_chapters": 5}
+        cfg = {
+            "seriality_min_chapters": 30,
+            "seriality_advisory_min_chapters": 5,
+            "seriality_enforcing_enabled": True,
+        }
         assert seriality_stage_mode(30, cfg)[0] == "enforcing"
         assert seriality_stage_mode(29, cfg)[0] == "advisory"
         assert seriality_stage_mode(4, cfg)[0] == "skipped"
+
+    def test_only_the_llm_judge_loses_its_veto_not_the_deterministic_screen(self):
+        """收刀必须挑源头——一刀切会把好闸门一起废掉。
+
+        两个否决源共用 ``rejected_reason``，靠前缀区分：
+          「长篇承载失败: …」 = _audit_seriality_proof，字段缺失/容量不足，
+                               确定性可复算，从未被证伪 → 继续发否决
+          「长篇质量门失败: …」= _judge_seriality_proof，六轴 LLM 打分，
+                               实测 AUC 0.37/0.38 与现实反相关 → 收刀
+        本条锁住这个区分：第一版补丁把两者一起清了，被
+        test_candidate_without_capacity_proof_rejected_for_long_target 抓出。
+        """
+        import inspect as _inspect
+
+        from bestseller.services import concept_tournament as ct
+
+        src = _inspect.getsource(ct)
+        assert "_veto_is_from_judge" in src
+        assert '"长篇质量门失败"' in src
+        # 确定性筛的否决串必须仍然存在且不被同一分支清掉
+        assert '"长篇承载失败: " + audit' in src or 'f"长篇承载失败: {audit}"' in src
+        assert 'if _seriality_mode == "advisory" and _veto_is_from_judge:' in src
 
     def test_the_receipt_is_always_written(self):
         """三态都要留痕——此前 seriality_judge=={} 分不清没跑还是没发现。"""
@@ -127,6 +183,9 @@ class TestSerialityStageTiering:
             _mode, receipt = seriality_stage_mode(chapters, {})
             assert receipt["mode"] in {"enforcing", "advisory", "skipped"}
             assert receipt["chapter_count"] == chapters
+            # 「本可杀但被收了刀」必须和「本来就够不着杀权档」分得开，
+            # 否则下次又要重查它到底有没有开过火。
+            assert receipt["veto_withheld"] is (chapters >= 200)
 
     def test_vacuity_the_old_hardcoded_gate_would_fail_this_suite(self):
         """空转检验：还原写死的 200 判定，确认本套件抓得住它。"""

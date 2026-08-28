@@ -189,22 +189,29 @@ async def judge(client, left: str, right: str, *, temperature: float) -> dict:
     return _json_of(await _call(client, _JUDGE_SYSTEM, user, temperature=temperature))
 
 
-async def run_placement(*, n_pairs: int, seed: int, repeats: int) -> None:
-    """把框架产出放到判官**有分辨率**的那把尺子上。
+async def run_placement(*, n_pairs: int, seed: int, repeats: int, concurrency: int = 5) -> None:
+    """把**真正的生产淘汰赛**产出，放到判官有分辨率的那把尺子上。
 
-    2026-08-28 效度检验结论：判官在「成功长篇 vs 扑街断更书」上区分力
-    73-80%（sustain/escalate/concrete），而在「成功长篇 vs 成功长篇」上只有
-    52-54%——等于没有分辨率。此前对标台把框架产出拿去和成功长篇比，正落在
-    没有分辨率的那一段，所以「框架赢 63%」什么都不说明。
+    2026-08-28 两处修正，对应此前翻车的两个原因：
 
-    改成拿框架产出对**扑街书**，并以真成功长篇的战绩作为刻度：
+    ① 走生产路径。此前用 `_build_raw_idea_pool_messages` 取 ideas[0]，
+       `run_concept_tournament` 一次都没跑过，于是任何淘汰赛层的改动都验证不了
+       （我据此改过一次选拔逻辑，已 revert）。现改为经 TournamentDriver 跑完整
+       淘汰赛，并用 driver.assert_ran() 强制自证真的调到了被测代码。
 
-        真成功长篇 vs 扑街书 = 75%（已实测，这是「达到榜单水平」的刻度线）
-        框架产出   vs 扑街书 = ?   落在 75% 附近 → 达标；落在 50% → 与扑街同级
+    ② 对手换成扑街书。效度检验结论：判官在「成功长篇 vs 成功长篇」区间四轴
+       52-54%（等于抛硬币），在「成功长篇 vs 扑街断更书」区间 73-80%。
+       此前对标台全程在无分辨率区间比较，读数无意义。
 
-    框架用扑街书自己的题材/标签/频道生成，保证两边同题材，题材偏好不混进来。
+    同一批扑街书上跑两条臂，刻度线与被测同批同判官，消除批次差异：
+
+        刻度线臂  真成功长篇（≥500 章 且 ≥30 万在读）vs 扑街书
+        被测臂    框架淘汰赛冠军（用扑街书自己的题材/频道生成）vs 扑街书
+
+    框架落在刻度线附近 = 达到榜单水平；落在 50% = 与扑街书无法区分。
     """
-    from concept_benchmark import generate_concept  # noqa: PLC0415
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    from concept_tournament_driver import TournamentDriver, run_production_tournament
 
     rows = json.loads(RANK_JSON.read_text(encoding="utf-8"))
     weak = [
@@ -213,48 +220,147 @@ async def run_placement(*, n_pairs: int, seed: int, repeats: int) -> None:
         and 0 < float(b.get("在读人数_数值") or 0) < 20_000
         and len(_blurb(b)) >= 60
     ]
+    strong = [
+        b for b in rows
+        if _chapters(b) >= 500
+        and float(b.get("在读人数_数值") or 0) >= 300_000
+        and len(_blurb(b)) >= 60
+    ]
     rng = random.Random(seed)
     rng.shuffle(weak)
+    rng.shuffle(strong)
     sample = weak[:n_pairs]
-    print(f"扑街对照 {len(sample)} 本（<120 章 且 在读<2 万），框架用同书题材/标签生成")
-    print("刻度线：真成功长篇打同一批扑街书 = 73-80%（sustain/escalate/concrete）\n")
+    by_ch: dict[str, list[dict]] = {}
+    for b in strong:
+        by_ch.setdefault(str(b.get("平台") or "?"), []).append(b)
+
+    print(f"扑街对照 {len(sample)} 本（<120 章 且 在读<2 万）")
+    print("  刻度线臂：真成功长篇 vs 扑街书    被测臂：框架完整淘汰赛冠军 vs 扑街书")
+    print(f"  每本：左右各判一次 × {repeats} 轮；框架侧走 run_concept_tournament\n")
 
     OUT_DIR.mkdir(exist_ok=True)
     records: list[dict] = []
+    dry: list[dict] = []
+    lock = asyncio.Lock()
+    done = 0
+
     async with httpx.AsyncClient(timeout=300.0, headers={"Authorization": "Bearer " + _key()}) as c:
-        for idx, book in enumerate(sample, 1):
-            try:
-                ours = await generate_concept(c, book)
-            except Exception as exc:  # noqa: BLE001
-                print(f"  [{idx}] 生成失败 {type(exc).__name__}")
-                continue
-            if not ours:
-                continue
-            theirs = _blurb(book)
-            for rep in range(repeats):
+        # 每轮淘汰赛实测 ~35 次模型调用、单调用 ~30s；不放宽并发跑不完
+        driver = TournamentDriver(c, concurrency=14)
+        sem = asyncio.Semaphore(concurrency)
+
+        async def one(idx: int, book: dict) -> None:
+            nonlocal done
+            async with sem:
+                theirs = _blurb(book)
+                channel = str(book.get("平台") or "男频")
+                genre = str(book.get("分类") or "玄幻")
+                arms: dict[str, str] = {}
+                # 被测臂：真生产淘汰赛
                 try:
-                    fwd, rev = await asyncio.gather(
-                        judge(c, ours, theirs, temperature=1.0),   # 框架在 A
-                        judge(c, theirs, ours, temperature=1.0),   # 框架在 B
+                    out = await run_production_tournament(
+                        driver,
+                        genre=genre,
+                        sub_genre=genre,
+                        chapter_count=500,
+                        audience_orientation=channel,
+                        seed=seed + idx,
                     )
+                    arms["框架"] = out.get("concept") or out.get("high_concept") or ""
+                    if not arms["框架"]:
+                        # 干涸必须留痕。静默跳过会让「跑了但没产出」和「压根没跑」
+                        # 长得一样——2026-08-28 基线跑批里框架臂 0 条记录，
+                        # 差点被读成「脚本坏了」，其实是 12/12 全部干涸。
+                        dry.append({"idx": idx, "book": str(book["书名"]), "genre": genre})
                 except Exception as exc:  # noqa: BLE001
-                    print(f"  [{idx}] 判定失败 {type(exc).__name__}")
-                    continue
-                if not fwd or not rev:
-                    continue
-                records.append({
-                    "temp": 1.0, "pair": idx, "rep": rep,
-                    "hi": "框架", "lo": str(book["书名"]), "ratio": 1.0,
-                    "fwd": {a: (fwd.get(a) == "A") for a in AXES if fwd.get(a) in ("A", "B")},
-                    "rev": {a: (rev.get(a) == "B") for a in AXES if rev.get(a) in ("A", "B")},
-                })
-            print(f"  {idx}/{len(sample)} vs {str(book['书名'])[:16]}", end="\r")
-    print(" " * 78, end="\r")
-    _report(records, 1.0)
+                    print(f"  [{idx}] 淘汰赛失败 {type(exc).__name__}: {str(exc)[:90]}", flush=True)
+                    dry.append({"idx": idx, "book": str(book["书名"]), "error": type(exc).__name__})
+                # 刻度线臂：同频道真成功长篇
+                pool = by_ch.get(channel) or []
+                if pool:
+                    arms["榜单"] = _blurb(pool[idx % len(pool)])
+
+                for arm, ours in arms.items():
+                    if not ours:
+                        continue
+                    for rep in range(repeats):
+                        try:
+                            fwd, rev = await asyncio.gather(
+                                judge(c, ours, theirs, temperature=1.0),
+                                judge(c, theirs, ours, temperature=1.0),
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            print(f"  [{idx}] {arm} 判定失败 {type(exc).__name__}", flush=True)
+                            continue
+                        if not fwd or not rev:
+                            continue
+                        async with lock:
+                            records.append({
+                                "temp": 1.0, "arm": arm, "pair": idx, "rep": rep,
+                                "hi": arm, "lo": str(book["书名"]), "ratio": 1.0,
+                                "ours": ours[:300],
+                                "fwd": {a: (fwd.get(a) == "A") for a in AXES if fwd.get(a) in ("A", "B")},
+                                "rev": {a: (rev.get(a) == "B") for a in AXES if rev.get(a) in ("A", "B")},
+                            })
+                done += 1
+                print(f"  {done}/{len(sample)} 完成（淘汰赛累计 {driver.calls} 次调用）", flush=True)
+
+        await asyncio.gather(*(one(i, b) for i, b in enumerate(sample, 1)))
+
+        # 铁律自证：这次必须能证明真的跑到了被测代码
+        driver.assert_ran(at_least=len(sample))
+        print(f"\n✅ 生产淘汰赛确认执行：{driver.calls} 次模型调用，阶段 {driver.stages}")
+        if driver.failures:
+            print(f"   （其中 {driver.failures} 次取模型失败走了兜底，与生产同构）")
+
+    print(f"\n  框架淘汰赛干涸 {len(dry)}/{len(sample)} 本"
+          + ("（干涸=一条候选都没通过闸门，生产上会回落保底概念）" if dry else ""))
+    for d in dry[:6]:
+        print(f"    · {d.get('book')}（{d.get('genre') or d.get('error')}）")
+
+    _report_arms(records)
     (OUT_DIR / "judge-placement.json").write_text(
         json.dumps(records, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     print("已存 .benchmark/judge-placement.json")
+
+
+def _report_arms(records: list[dict]) -> None:
+    """两条臂并排——刻度线是「达到榜单水平」的那条线，不是 100%。"""
+    from math import comb
+
+    def stat(arm: str, ax: str) -> tuple[float, int] | None:
+        v = [
+            (r["fwd"][ax], r["rev"][ax])
+            for r in records
+            if r.get("arm") == arm and ax in r["fwd"] and ax in r["rev"]
+        ]
+        if not v:
+            return None
+        return sum(f + b for f, b in v) / (2 * len(v)), 2 * len(v)
+
+    def fisher(a: int, b: int, c: int, d: int) -> float:
+        n = a + b + c + d
+        f = lambda x: comb(a + b, x) * comb(c + d, a + c - x) / comb(n, a + c)  # noqa: E731
+        o = f(a)
+        lo, hi = max(0, a + c - (c + d)), min(a + b, a + c)
+        return sum(f(x) for x in range(lo, hi + 1) if f(x) <= o + 1e-12)
+
+    print("\n═══ 打同一批扑街书的战绩 ═══")
+    print(f"  {'轴':<10}{'刻度线(榜单)':>13}{'框架':>8}{'差':>8}{'p':>9}")
+    for ax in AXES:
+        a, b = stat("榜单", ax), stat("框架", ax)
+        if not a or not b:
+            continue
+        ka, na = round(a[0] * a[1]), a[1]
+        kb, nb = round(b[0] * b[1]), b[1]
+        p = fisher(ka, na - ka, kb, nb - kb)
+        note = "" if ax != "hook" else "  ←该轴效度不足"
+        print(f"  {ax:<10}{a[0] * 100:>12.0f}%{b[0] * 100:>7.0f}%{(b[0] - a[0]) * 100:>+7.0f}pt{p:>9.3f}{note}")
+    n_a = stat("榜单", "sustain")
+    n_b = stat("框架", "sustain")
+    print(f"\n  样本：刻度线 {n_a[1] if n_a else 0} 次判定 / 框架 {n_b[1] if n_b else 0} 次判定")
+    print("  50% = 与扑街书无法区分；刻度线 = 真榜单成功长篇的战绩\n")
 
 
 async def run(

@@ -2767,7 +2767,27 @@ def seriality_stage_mode(
     cfg = cfg or {}
     full = int(cfg.get("seriality_min_chapters", 200))
     advisory = int(cfg.get("seriality_advisory_min_chapters", 8))
-    if chapter_count >= full:
+    # 2026-08-28：杀权默认关闭，因为这个判官已被实测证明与现实**反相关**。
+    # 证据（scripts/seriality_judge_validation.py，两轮独立跑）：拿真榜单书
+    # 走生产展开 + 生产判官打分，
+    #     强侧 ≥500 章且 ≥30 万在读（确实写下去了）
+    #     弱侧 <120 章且 <2 万在读（确实没写下去）
+    #     排序能力 AUC = 0.37 / 0.38（0.5 才是抛硬币，低于 0.5 = 判反了）
+    #     六轴无一例外全为负；强侧判失败率 86% / 92%
+    # 也就是说：它给真跑到 500 章的书打的分，比给断更扑街书打的还低，而
+    # 它在 ≥200 章时握有否决权——真机日志里已能看到它的后果：
+    #     "concept tournament: no seriality-qualified finalists"
+    # 整轮候选被清空，随后回落保底概念（比任何被拒候选都差，见 2026-07-17）。
+    #
+    # 按本仓库既定规矩（新检测器只挣重生和留痕，不发杀权），一个反相关的
+    # 判官更不该握杀权。改为默认只留痕：judge 照常跑、判词照常入回执，
+    # 但不否决候选。config 显式置 True 才恢复杀权——等它先过效度线。
+    #
+    # 不删判官、不改它的 prompt：信息不是它一个人弄丢的（展开层把成对判官
+    # 在同批书上的 sustain 区分力从 80% 削到 62%），两层要分别修，
+    # 而这一步只做「止血」——把已证明会伤人的那把刀收起来。
+    enforcing_allowed = bool(cfg.get("seriality_enforcing_enabled", False))
+    if chapter_count >= full and enforcing_allowed:
         mode = "enforcing"
     elif chapter_count >= advisory:
         mode = "advisory"
@@ -2778,6 +2798,10 @@ def seriality_stage_mode(
         "chapter_count": chapter_count,
         "enforcing_min_chapters": full,
         "advisory_min_chapters": advisory,
+        # 回执要能区分「本可杀但被收了刀」和「本来就够不着杀权档」——
+        # 否则下次又要重新查一遍它到底有没有开过火。
+        "enforcing_allowed": enforcing_allowed,
+        "veto_withheld": chapter_count >= full and not enforcing_allowed,
     }
 
 
@@ -5143,7 +5167,19 @@ async def run_concept_tournament(
                         expanded = await _judge_seriality_proof(expanded)
                     if expanded.rejected_reason is None or expand_fn is None:
                         break
-                if _seriality_mode == "advisory" and expanded.rejected_reason:
+                # 只收 **LLM 判官** 那把刀，确定性结构筛的牙必须留着。
+                # 两个否决源的前缀不同，这是唯一能把它们分开的现成标记：
+                #   「长篇承载失败: …」= _audit_seriality_proof，字段缺失/容量不足，
+                #                        确定性可复算，从未被证伪，继续发否决；
+                #   「长篇质量门失败: …」= _judge_seriality_proof，六轴 LLM 打分，
+                #                        实测 AUC 0.37/0.38（与现实反相关），收刀。
+                # 2026-08-28 第一版补丁把两者一起清了，被
+                # test_candidate_without_capacity_proof_rejected_for_long_target
+                # 当场抓出——那正是「一刀切会连好闸门一起废掉」的形状。
+                _veto_is_from_judge = str(expanded.rejected_reason or "").startswith(
+                    "长篇质量门失败"
+                )
+                if _seriality_mode == "advisory" and _veto_is_from_judge:
                     # advisory 档只留痕不否决：把判词搬进回执，清掉杀权。
                     # 没有这一步，一个从未在短篇上校准过的判官会直接开始毙候选，
                     # 那正是 2026-07-17 干涸事故的形状。

@@ -39,8 +39,19 @@ seriality_finalist_count: 3
 # 正常长度的书完全空转（真机 12 章书：has_decision 0/5、3/5 章 flat，只能等
 # 正文写完由整书质量门拦）。分档而不是一刀放开——config 里 2026-07-17 记着
 # 收紧概念层阈值 → 淘汰赛干涸 → 回落保底概念（比任何被拒候选都差）的教训。
-seriality_min_chapters: 200           # ≥ 此值：判官带杀权（维持既有行为）
-seriality_advisory_min_chapters: 8    # ≥ 此值 且 < 上者：只跑判官留痕，不发否决
+seriality_min_chapters: 200           # ≥ 此值 且 下面那条为 true 时：判官带杀权
+seriality_advisory_min_chapters: 8    # ≥ 此值：只跑判官留痕，不发否决
+# 2026-08-28 杀权收回。scripts/seriality_judge_validation.py 两轮独立实测：
+# 拿真榜单书走生产展开 + 生产连载性判官打分，强侧（≥500 章且 ≥30 万在读，
+# 确实写下去了）对弱侧（<120 章且 <2 万在读，确实没写下去），
+#     排序能力 AUC = 0.37 / 0.38    ← 0.5 才是抛硬币，低于 0.5 表示判反了
+#     六轴全为负；强侧判失败率 86% / 92%
+# 它给真跑到 500 章的书打分反而更低，却在 ≥200 章时握有否决权。真机日志
+# 已见后果："concept tournament: no seriality-qualified finalists" —— 整轮
+# 候选清空，回落保底概念，正是 2026-07-17 干涸事故的形状。
+# 判官继续跑、判词继续入回执，只是不再否决。等它过了效度线（AUC ≥ 0.70）
+# 再置回 true，别凭「读起来很有道理」就恢复。
+seriality_enforcing_enabled: false
 raw_idea_pool_multiplier: 3
 # 2026-08-10 消融定案：跨书「殡葬/阴间」同质化的根因是**采样结构**，不是任何一条
 # prompt 措辞。多样性是集合层面的属性——一次只生成一个创意，就没有集合可言，

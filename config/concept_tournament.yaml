@@ -49,8 +49,17 @@ seriality_advisory_min_chapters: 8    # ≥ 此值：只跑判官留痕，不发
 # 它给真跑到 500 章的书打分反而更低，却在 ≥200 章时握有否决权。真机日志
 # 已见后果："concept tournament: no seriality-qualified finalists" —— 整轮
 # 候选清空，回落保底概念，正是 2026-07-17 干涸事故的形状。
-# 判官继续跑、判词继续入回执，只是不再否决。等它过了效度线（AUC ≥ 0.70）
-# 再置回 true，别凭「读起来很有道理」就恢复。
+# 判官继续跑、判词继续入回执，只是不再否决。
+# 2026-08-28 续案：真凶找到了——展开 prompt 的例词被整批复印，强弱两侧被
+# 填成同一形状（详见 _build_seriality_messages 注释）。去掉种词后：
+#     改前(种词在)        AUC 0.37 / 0.38   六轴全为负
+#     改后·样本内          AUC 0.75          六轴全为正
+#     改后·样本外(换seed)   AUC 0.58          六轴全为正
+# **符号翻转复现了（六根独立轴在新一批书上仍全为正），量级没复现。**
+# 所以只能说：去种词把它从「有害」修成了「弱有用」，不能说它已经合格。
+# 恢复杀权的门槛仍是**多批次 AUC 稳定 ≥0.70**，不是单次读数——同一判官
+# 在 n=14 上两批书能给出 0.82 和 0.41（见 judge_hard_floors 段），
+# 单次 AUC 不构成效度证据。
 seriality_enforcing_enabled: false
 raw_idea_pool_multiplier: 3
 # 2026-08-10 消融定案：跨书「殡葬/阴间」同质化的根因是**采样结构**，不是任何一条
@@ -99,23 +108,55 @@ judge_hard_floors:       # 任何单轴不达标直接出局，禁止用其他�
   # freshness=4、mechanism=6、predictable=6 三个软缺陷被独立终审全灭。4 分本身
   # 不是题材错位或逻辑灾难；污染与题材漂移另有确定性门，下游还有长篇承载和
   # logline 终审。
-  catastrophe_floor: 4.0
-  soft_miss_allowance: 3
+  # 2026-08-28 按**真榜单书的实测分布**重标定。scripts/hook_gate_validation.py：
+  # 强侧=≥500 章且 ≥30 万在读的真爆款，弱侧=<120 章且 <2 万在读的真扑街书，
+  # 两侧同走生产判官 _build_judge_messages 与本段地板。改前实测：
+  #     强侧通过 0/13 = 0%   弱侧通过 0/14 = 0%   分离度 +0pt
+  # 这道门毙掉 100% 的真榜单爆款，退化成恒为假的函数、零信息量——而它坐在
+  # 一个 AUC 0.82 的好判官上面（七轴全为正，是本仓库测过最好的判官）。
+  # 病不在判官，在地板离判官的实际分布太远：
+  #     轴                   旧地板   真爆款均分
+  #     freshness             6.0      3.00     ← 地板是均分两倍
+  #     mechanism_causality   7.0      3.62
+  #     character_logic       7.0      5.00
+  #     story_motion          7.0      5.00
+  #     genre_fidelity        7.0      5.00
+  #     click                 7.0      6.23
+  #     plain_language        7.0      7.77     ← 唯一一根强侧过得去的
+  # 且 freshness 有 9/13 的真爆款跌破 4.0 灾难线——真爆款本来就俗
+  # （战神赘婿/重生/系统），新颖度轴惩罚的正是最好卖的东西。
+  # 新地板取「强侧 p10，且不低于弱侧中位」，让约九成真爆款过关而仍能拦住扑街。
+  catastrophe_floor: 2.0
+  soft_miss_allowance: 2
   # 2026-07-17 校准(五轮真机E2E取证):freshness 7.0/click 7.5 在脑洞关闭的默认
   # 建书下=淘汰赛干涸常态(16+候选零通过;click 8.0/motion 8.0 的候选因 fresh 6.0
   # 被整个丢弃)。而干涸的下场是注入【保底概念】——比任何被拒候选都弱,2/3 直接死
   # 在 logline 门。硬地板的职责是拦灾难(纯俗套),不是完美主义:俗套灾难另有
   # cliche_seeds 一票否决兜底,新颖度的精调交给 composite 加权与下游 logline 门。
-  freshness: 6.0
-  click: 7.0
-  predictable_max: 5.5
-  character_logic: 7.0
-  mechanism_causality: 7.0
-  genre_fidelity: 7.0
+  freshness: 2.0
+  click: 4.0
+  predictable_max: 9.0
+  character_logic: 4.0
+  mechanism_causality: 3.0
+  genre_fidelity: 3.0
   plain_language: 7.0
   # 2026-07-17 第7轮取证:判官打分聚在7.0,7.5地板造成"8轴过7轴、motion差0.5单轴死"
   # (矿工骨片候选 plain 9.0/mech 8.0/genre 8.0 仍出局)。与 freshness/click 同理由校准。
-  story_motion: 7.0
+  story_motion: 4.0
+  # ⚠️ 标定效果必须分「样本内」「样本外」两栏看，否则会把噪声当成果：
+  #                        样本内(seed 828)      样本外(seed 20260828)
+  #     旧地板              强   0% 弱   0% +0pt   强  0% 弱  0% +0pt
+  #     新地板 allowance 2  强 100% 弱  50% +50pt  强 86% 弱 79% +7pt
+  #     判官排序能力 AUC        0.82                  0.41
+  # 结论只能下到这里，不能再多：
+  #   ① **旧地板毙光 100% 真爆款、零信息量**——两批独立书完美复现，是硬事实。
+  #      回滚等于把一个见谁杀谁的门放回去，比现状更糟。
+  #   ② **新地板会挑人这一条没有复现**（+50pt 是样本内拟合，样本外只剩 +7pt）。
+  #      新地板真正做到的只是「不再见谁杀谁」，不是「会挑出好的」。
+  #   ③ 判官本身的区分力**未被证明**：同一判官两批书 AUC 0.82 / 0.41，
+  #      n=14 时方差极大。单次 AUC 读数不可作为效度证据。
+  # 因此这道门当前的定位是「放行灾难以外的一切」，不是质量筛。要它重新担起
+  # 筛选职责，先得把判官的效度做到可复现（多批次 AUC 稳定 ≥0.70），再重标地板。
 seriality_hard_floors:
   renewability: 7.5
   escalation: 7.5

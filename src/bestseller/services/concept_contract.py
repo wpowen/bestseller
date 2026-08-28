@@ -58,6 +58,24 @@ def _stable_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _mapping(value: object) -> Mapping[str, Any]:
+    """把 dataclass/pydantic/dict 统一成只读映射；取不到就是空。
+
+    不用 getattr 直接取自家字段——2026-07-21 记着那会把类型错误降级成静默错误。
+    """
+
+    if isinstance(value, Mapping):
+        return value
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            data = dump()
+        except Exception:  # noqa: BLE001
+            return {}
+        return data if isinstance(data, Mapping) else {}
+    return {}
+
+
 def build_concept_contract(
     *,
     winner: object,
@@ -191,6 +209,15 @@ def build_concept_contract(
         "mystery_ladder": question_ladder,
         "endgame_direction": endgame_direction,
         "capacity_report": capacity_report,
+        # 2026-08-28：连载性**判官**的判词此前在这里被整块丢掉——只搬了确定性的
+        # capacity_report。真机《破庙里我把玉玺摔成四瓣》实录：
+        # concept_tournament_finalist_seriality_judge 跑了 3 次，落库后
+        # metadata.seriality_proof.seriality_judge 却是 null。
+        # 这让 advisory 档失去全部意义：收了杀权之后它唯一的职责就是留痕，
+        # 而痕迹恰恰在组装契约这一步没了，「评了没发现」与「压根没跑」再次
+        # 不可区分——正是本仓库反复吃的「回执不落库等于没检测」。
+        # 恒写（取不到就是空 dict），空与缺失同样是信息。
+        "seriality_judge": dict(_mapping(selected.get("seriality_judge"))),
     }
     layered_spine = {
         **dict(story_spine),

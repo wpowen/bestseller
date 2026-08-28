@@ -245,3 +245,56 @@ class TestSerialityExpansionDoesNotSeedTheAnswer:
     def test_the_lower_bound_survives(self):
         """去种词必须留下限——2026-08-24 记着：无下限一轮只回 4 条。"""
         assert "至少4类" in self._prompt()
+
+
+class TestSerialityJudgeVerdictIsPersisted:
+    """判官判词必须落进契约——收了杀权之后，留痕是它唯一的职责。
+
+    2026-08-28 真机《破庙里我把玉玺摔成四瓣》实录：
+    concept_tournament_finalist_seriality_judge 跑了 3 次，落库后
+    metadata.seriality_proof.seriality_judge 却是 null——组装契约时
+    只搬了确定性的 capacity_report，六轴判词被整块丢掉。
+    「评了没发现」与「压根没跑」于是再次不可区分。
+    """
+
+    def _contract(self, judge: dict | None):
+        from bestseller.services.concept_contract import build_concept_contract
+        from bestseller.services.concept_tournament import ConceptCandidate
+
+        winner = ConceptCandidate(
+            dimension="bench",
+            concept="一句话",
+            mechanism="机制",
+            hook_question="问题",
+            repeatable_story_unit="每轮循环",
+            unit_families=("甲", "乙", "丙", "丁"),
+            unit_frequency="2-4章一次",
+            unit_count_estimate=170,
+            renewal_sources=("来源甲", "来源乙", "来源丙"),
+            accumulation_tracks=("积累甲", "积累乙"),
+            phase_transitions=("第1-250章", "第251-500章"),
+            opposing_ecology=("势力甲", "势力乙"),
+            question_ladder=("问一", "问二"),
+            endgame_direction="终局",
+            core_promise_invariant="承诺",
+            seriality_judge=dict(judge or {}),
+        )
+        return build_concept_contract(
+            winner=winner,
+            story_spine={},
+            target_chapters=500,
+            genre="玄幻",
+            sub_genre="东方玄幻",
+        )
+
+    def test_the_verdict_survives_into_the_contract(self):
+        scores = {"renewability": 5.0, "escalation": 4.0, "reason": "单元易枯竭"}
+        proof = self._contract(scores)["seriality_proof"]
+        assert proof["seriality_judge"]["renewability"] == 5.0
+        assert proof["seriality_judge"]["reason"] == "单元易枯竭"
+
+    def test_the_key_exists_even_when_the_judge_said_nothing(self):
+        """恒写：空与缺失同样是信息，但两者不能长得一样。"""
+        proof = self._contract(None)["seriality_proof"]
+        assert "seriality_judge" in proof
+        assert proof["seriality_judge"] == {}

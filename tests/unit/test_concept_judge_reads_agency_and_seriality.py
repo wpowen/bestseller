@@ -197,3 +197,51 @@ class TestSerialityStageTiering:
         assert seriality_stage_mode(12, {})[0] == "advisory", (
             "修复前 12 章书整段跳过，本套件第二条断言正是为它写的"
         )
+
+
+class TestSerialityExpansionDoesNotSeedTheAnswer:
+    """展开 prompt 不许把答案写进去——种词会被整批复印成骨架。
+
+    2026-08-28 定案。原先两处把答案写死：
+        指令  「unit_families 至少4类不同冲突语法，例如发现、交易、关系选择、
+              公开博弈、建设、反制、内部裂变」
+        模板  '"unit_families":["发现","交易","关系选择","公开博弈"]'
+              —— 这个 JSON 模板里每个字段都是占位形状（"来源1"/"势力1"/"盘面1"），
+                 唯独它填了真答案。
+    实测（scripts/seriality_judge_validation.py，14 本真书走生产展开+生产判官）：
+        7 个种词的平均复印数  强侧 6.3/7  弱侧 5.8/7
+        八个结构字段的强弱差  全部 ±0.5 以内（1706 章爆款与 88 章断更书同形）
+        判官排序能力 AUC      0.37（低于 0.5 = 判反了）
+    去掉两处种词后，同 seed 同批书重跑：
+        六轴全部由负转正（+0.91 ~ +1.81），AUC 0.37 → 0.75
+    判官从来就不瞎，是种词把它的输入抹平了。
+    """
+
+    _SEEDS = ("关系选择", "公开博弈", "内部裂变")
+
+    def _prompt(self) -> str:
+        from bestseller.services.concept_tournament import (
+            ConceptCandidate,
+            _build_seriality_messages,
+        )
+
+        system, user = _build_seriality_messages(
+            candidate=ConceptCandidate(dimension="bench", concept="测试"),
+            genre="玄幻",
+            chapter_count=500,
+        )
+        return system + "\n" + user
+
+    def test_no_conflict_family_seed_words_in_the_prompt(self):
+        text = self._prompt()
+        leaked = [w for w in self._SEEDS if w in text]
+        assert not leaked, f"冲突家族种词回流到展开 prompt：{leaked}"
+
+    def test_the_json_template_keeps_unit_families_as_a_placeholder(self):
+        """模板里它必须和其他字段一样是占位形状，不能是可抄的真答案。"""
+        text = self._prompt()
+        assert '"unit_families":["冲突家族1"' in text.replace(" ", "")
+
+    def test_the_lower_bound_survives(self):
+        """去种词必须留下限——2026-08-24 记着：无下限一轮只回 4 条。"""
+        assert "至少4类" in self._prompt()

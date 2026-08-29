@@ -139,3 +139,65 @@ class TestContractIsShownToTheModel:
         src = inspect.getsource(planner)
         assert "_seriality_contract_block" in src
         assert "render_seriality_volume_contract_block" in src
+
+
+class TestUnitFamilyRepeatIsAdvisory:
+    """相邻卷同家族=审美重复度，留痕不毙书。
+
+    2026-08-29 真机《十日补碑》：phase_reference_invalid 墙拆掉后，整本书
+    死在单独一条 unit_family_repeated——修复重生成一次没修好，foundation
+    直接 failed。审美缺陷挣重生和留痕，不发杀权（仓库既定规矩）。
+    """
+
+    def test_consecutive_family_reuse_alone_does_not_fail_the_plan(self):
+        plan = [
+            _volume(1, 250, seriality_phase_id="phase-01", unit_family_ref=FAMILIES[0]),
+            _volume(2, 250, seriality_phase_id="phase-02", unit_family_ref=FAMILIES[0]),
+        ]
+        contract = {
+            "seriality_proof": {
+                "phase_transitions": PHASES[:2],
+                "unit_families": FAMILIES[:2],
+                "accumulation_tracks": TRACKS,
+                "capacity_report": {"target_chapters": 500, "capacity_tier": "long"},
+            }
+        }
+        for i, v in enumerate(plan):
+            v["accumulation_track_deltas"] = [
+                {"track_ref": TRACKS[j], "delta": f"卷{i+1}轴{j}从甲态永久转为乙态"}
+                for j in range(len(TRACKS))
+            ]
+        # 家族覆盖不足是另一条阻断码，这里让覆盖恰好等于卷数以隔离被测行为
+        plan[1]["unit_family_ref"] = FAMILIES[0]
+        plan = canonicalize_seriality_volume_refs(plan, contract)
+        report = evaluate_seriality_volume_mapping(plan, contract)
+        codes = [f.code for f in report.findings]
+        assert "unit_family_repeated" in codes          # 照常检出、留痕
+        assert "unit_family_repeated" not in report.blocking_codes
+        assert "unit_family_repeated" in report.advisory_codes
+        # 若除它外无阻断项则放行（本例还有 coverage 阻断与否取决于家族数，
+        # 上面把批准家族压到 2 个、实际覆盖 1 个 → coverage 会阻断，
+        # 所以这里只断言分级本身；整体放行由下一条测试证明）
+
+    def test_a_plan_whose_only_finding_is_the_advisory_passes(self):
+        plan = [
+            _volume(1, 250, seriality_phase_id="phase-01", unit_family_ref=FAMILIES[0]),
+            _volume(2, 250, seriality_phase_id="phase-02", unit_family_ref=FAMILIES[0]),
+        ]
+        contract = {
+            "seriality_proof": {
+                "phase_transitions": PHASES[:2],
+                "unit_families": [FAMILIES[0]],   # 只有一个批准家族 → 覆盖天然满足
+                "accumulation_tracks": TRACKS,
+                "capacity_report": {"target_chapters": 500, "capacity_tier": "long"},
+            }
+        }
+        for i, v in enumerate(plan):
+            v["accumulation_track_deltas"] = [
+                {"track_ref": TRACKS[j], "delta": f"卷{i+1}轴{j}从甲态永久转为乙态"}
+                for j in range(len(TRACKS))
+            ]
+        plan = canonicalize_seriality_volume_refs(plan, contract)
+        report = evaluate_seriality_volume_mapping(plan, contract)
+        assert report.advisory_codes == ("unit_family_repeated",)
+        assert report.passed, [f.code for f in report.findings]

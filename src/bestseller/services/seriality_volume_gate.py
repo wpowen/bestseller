@@ -13,6 +13,16 @@ class SerialityVolumeFinding:
     message: str
 
 
+# 2026-08-29 真机《十日补碑》定案：phase_reference_invalid 墙拆掉后，这本书
+# 死在了单独一条 unit_family_repeated（相邻两卷同冲突家族）。那是**审美
+# 重复度**问题，不是容量证明失败——容量证明问的是阶段有没有映射完、家族
+# 有没有覆盖、积累是否不可逆；相邻卷体验重复归卷间差异化约束管。它在修复
+# 循环里已经挣到过一次重生（重生成整份卷计划），重生没修好不该赔上整本书。
+# 按仓库规矩（审美/软缺陷只挣重生和留痕，不发杀权）降为 advisory：照常
+# 检出、照常进修复反馈与落库回执，但不再单独否决。
+ADVISORY_CODES: frozenset[str] = frozenset({"unit_family_repeated"})
+
+
 @dataclass(frozen=True, slots=True)
 class SerialityVolumeReport:
     passed: bool
@@ -20,12 +30,21 @@ class SerialityVolumeReport:
 
     @property
     def blocking_codes(self) -> tuple[str, ...]:
-        return tuple(item.code for item in self.findings)
+        return tuple(
+            item.code for item in self.findings if item.code not in ADVISORY_CODES
+        )
+
+    @property
+    def advisory_codes(self) -> tuple[str, ...]:
+        return tuple(
+            item.code for item in self.findings if item.code in ADVISORY_CODES
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "passed": self.passed,
             "blocking_codes": list(self.blocking_codes),
+            "advisory_codes": list(self.advisory_codes),
             "findings": [
                 {"code": item.code, "message": item.message} for item in self.findings
             ],
@@ -429,7 +448,9 @@ def evaluate_seriality_volume_mapping(
                 "The same permanent state delta is copied across volumes.",
             )
         )
-    return SerialityVolumeReport(passed=not findings, findings=tuple(findings))
+    # passed 只看阻断级；advisory 照常留在 findings 里进回执与修复反馈。
+    blocking = [f for f in findings if f.code not in ADVISORY_CODES]
+    return SerialityVolumeReport(passed=not blocking, findings=tuple(findings))
 
 
 __all__ = ["SerialityVolumeReport", "evaluate_seriality_volume_mapping"]

@@ -7944,6 +7944,15 @@ async def _repair_seriality_volume_mapping_if_needed(
     )
     if contract is None:
         return volume_plan_payload, None
+    # 先做确定性规范化：ref 由 id/章号区间推导，近似引用归一到批准原文。
+    # 规范化本身常常就足够——LLM 抄不准 100 字长句不是缺陷，是不该派的活。
+    from bestseller.services.seriality_volume_gate import (
+        canonicalize_seriality_volume_refs,
+    )
+
+    volume_plan_payload = canonicalize_seriality_volume_refs(
+        volume_plan_payload, contract
+    )
     report = evaluate_seriality_volume_mapping(volume_plan_payload, contract)
     if report.passed:
         return volume_plan_payload, None
@@ -7989,6 +7998,7 @@ async def _repair_seriality_volume_mapping_if_needed(
     except Exception:
         logger.warning("Seriality volume mapping repair failed", exc_info=True)
         return volume_plan_payload, None
+    repaired = canonicalize_seriality_volume_refs(repaired, contract)
     repaired_report = evaluate_seriality_volume_mapping(repaired, contract)
     return (repaired, run_id) if repaired_report.passed else (volume_plan_payload, run_id)
 
@@ -18510,6 +18520,25 @@ def _volume_plan_prompts(
     _contract_volume_count = int(
         compute_linear_hierarchy(_contract_chapters).get("volume_count") or 1
     )
+    # 2026-08-29 真机《破庙》定案：下方 prompt 命令模型「逐字引用批准的
+    # seriality_phase_ref」，而批准列表从没渲染进任何 prompt（含修复循环）——
+    # 模型被要求抄它看不见的文本，10/10 卷 phase_reference_invalid，建书死在
+    # foundation。契约必须先给模型看；配套的确定性规范化见
+    # seriality_volume_gate.canonicalize_seriality_volume_refs。
+    from bestseller.services.concept_contract import require_valid_concept_contract as _rvcc
+    from bestseller.services.seriality_volume_gate import (
+        render_seriality_volume_contract_block as _rsvcb,
+    )
+
+    try:
+        _seriality_contract_block = _rsvcb(
+            _rvcc(
+                project.metadata_json if isinstance(project.metadata_json, dict) else {},
+                target_chapters=int(project.target_chapters or 0),
+            )
+        )
+    except Exception:  # noqa: BLE001
+        _seriality_contract_block = ""
     _coverage_contract_line = (
         (
             f"HARD CONTRACT: output EXACTLY {_contract_volume_count} volume(s); the sum of all "
@@ -18591,6 +18620,7 @@ def _volume_plan_prompts(
             f"{_character_drama_block}\n"
             f"{_pp_volume_plan}"
             f"{_coverage_contract_line}"
+            f"{_seriality_contract_block}"
             "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
             "conflict_phase（冲突类型：survival/political_intrigue/betrayal/faction_war/existential_threat/internal_reckoning）、"
@@ -24363,6 +24393,13 @@ def _enforce_seriality_volume_mapping(
     )
     if contract is None:
         return None
+    from bestseller.services.seriality_volume_gate import (
+        canonicalize_seriality_volume_refs,
+    )
+
+    volume_plan_payload = canonicalize_seriality_volume_refs(
+        volume_plan_payload, contract
+    )
     report = evaluate_seriality_volume_mapping(volume_plan_payload, contract)
     report_payload = report.to_dict()
     metadata = dict(project.metadata_json or {})

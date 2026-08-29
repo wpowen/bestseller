@@ -254,7 +254,24 @@ async def run_placement(*, n_pairs: int, seed: int, repeats: int, concurrency: i
             async with sem:
                 theirs = _blurb(book)
                 channel = str(book.get("平台") or "男频")
-                genre = str(book.get("分类") or "玄幻")
+                # 2026-08-29 测量台失真修正：此前把番茄平台的原始分类名（战神赘婿/
+                # 古风世情等）直接塞给淘汰赛当 genre，而这些对框架词表 genre_key=None
+                # ——生产上建书页只让用户从框架自己的题材列表选，这种标签永远不会
+                # 出现。E1 那轮 5 本干涸里 3 本（战神赘婿×2、古风世情）源于此。
+                # 按生产路径过 resolve_selection 取 genre_str；解析不出的回落到
+                # 频道保底题材，并在行里留痕。
+                raw_genre = str(book.get("分类") or "玄幻")
+                try:
+                    from bestseller.services.genre_taxonomy import resolve_selection
+
+                    resolved = resolve_selection(channel, raw_genre, None, [])
+                    genre = str(resolved.genre_str or "") or (
+                        "都市" if channel == "男频" else "现代言情"
+                    )
+                except Exception:  # noqa: BLE001
+                    genre = "都市" if channel == "男频" else "现代言情"
+                if genre != raw_genre:
+                    print(f"  [{idx}] 题材映射 {raw_genre} → {genre}", flush=True)
                 arms: dict[str, str] = {}
                 # 被测臂：真生产淘汰赛
                 try:

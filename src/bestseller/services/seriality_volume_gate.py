@@ -80,6 +80,163 @@ def _is_concrete_delta(track_ref: str, delta: str) -> bool:
     return len(remainder) >= 4 and remainder.casefold() not in generic
 
 
+def _best_match(candidate: str, approved: Sequence[str]) -> str | None:
+    """把模型写的近似引用规范化成批准原文；对不上就返回 None。
+
+    LLM 逐字复现 80-120 字长句的成功率接近零——这不是它该干的活。
+    匹配只做保守归一：完全相等 / 一方是另一方前缀 / 字符集 Jaccard ≥ 0.6。
+    """
+
+    cand = candidate.strip()
+    if not cand:
+        return None
+    for text in approved:
+        if cand == text:
+            return text
+    for text in approved:
+        if text.startswith(cand) or cand.startswith(text):
+            return text
+    cset = set(cand)
+    best: tuple[float, str] | None = None
+    for text in approved:
+        tset = set(text)
+        if not tset:
+            continue
+        j = len(cset & tset) / len(cset | tset)
+        if j >= 0.6 and (best is None or j > best[0]):
+            best = (j, text)
+    return best[1] if best else None
+
+
+def _phase_chapter_range(phase_text: str) -> tuple[int, int] | None:
+    import re as _re
+
+    m = _re.search(r"第\s*(\d+)\s*[至到\-—~]\s*(\d+)\s*章", phase_text)
+    if not m:
+        return None
+    lo, hi = int(m.group(1)), int(m.group(2))
+    return (lo, hi) if lo <= hi else None
+
+
+def canonicalize_seriality_volume_refs(
+    volume_plan: Sequence[Mapping[str, Any]] | Mapping[str, Any],
+    concept_contract: Mapping[str, Any] | None,
+) -> Any:
+    """在验收前做确定性规范化——引用由键推导，不指望 LLM 抄准长句。
+
+    2026-08-29 真机《破庙里我把玉玺摔成四瓣》死因：卷计划 prompt 命令模型
+    「逐字引用批准的 seriality_phase_ref」，但整条 prompt 链（含修复循环）
+    从没把批准列表渲染给模型看，10/10 卷 phase_reference_invalid，建书死在
+    foundation。这是「验收端验模型看不见的契约」（2026-08-04 写手欠产案、
+    2026-08-24 契约表整张没实现案的同族）。
+
+    规范化规则（全部确定性、幂等，只归一不发明）：
+      · phase：有合法 phase_id → ref 直接由 id 查表覆盖（id 是键，ref 是
+        推导值）；没有 id 但 ref 能保守匹配上批准原文 → 反推 id；两者都
+        没有但卷的章数累计区间落在某阶段的「第X至Y章」内 → 按区间中点推断
+        （阶段原文自带章号区间，这是比让模型抄句子可靠得多的信号源）。
+      · unit_family_ref / track_ref：保守匹配（相等/前缀/Jaccard≥0.6）到
+        批准原文则替换为原文；匹配不上保持原样，留给门与修复循环。
+    """
+
+    if not isinstance(concept_contract, Mapping):
+        return volume_plan
+    proof = concept_contract.get("seriality_proof")
+    if not isinstance(proof, Mapping):
+        return volume_plan
+    raw = (
+        volume_plan.get("volumes")
+        if isinstance(volume_plan, Mapping)
+        else volume_plan
+    )
+    if not isinstance(raw, Sequence):
+        return volume_plan
+    phases = _items(proof.get("phase_transitions"))
+    families = _items(proof.get("unit_families"))
+    tracks = _items(proof.get("accumulation_tracks"))
+    id_to_ref = {_phase_id(i): text for i, text in enumerate(phases, start=1)}
+    ranges = {pid: _phase_chapter_range(text) for pid, text in id_to_ref.items()}
+
+    out: list[dict[str, Any]] = []
+    cursor = 0
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        row = dict(item)
+        try:
+            n_ch = int(row.get("chapter_count_target") or 0)
+        except (TypeError, ValueError):
+            n_ch = 0
+        mid = cursor + max(n_ch, 1) / 2
+        cursor += max(n_ch, 0)
+
+        pid = _text(row.get("seriality_phase_id"))
+        if pid in id_to_ref:
+            row["seriality_phase_ref"] = id_to_ref[pid]
+        else:
+            matched = _best_match(_text(row.get("seriality_phase_ref")), phases)
+            if matched is None and ranges:
+                for cand_id, rng in ranges.items():
+                    if rng and rng[0] <= mid <= rng[1]:
+                        matched = id_to_ref[cand_id]
+                        break
+            if matched is not None:
+                row["seriality_phase_ref"] = matched
+                row["seriality_phase_id"] = next(
+                    k for k, v in id_to_ref.items() if v == matched
+                )
+
+        fam = _best_match(_text(row.get("unit_family_ref")), families)
+        if fam is not None:
+            row["unit_family_ref"] = fam
+        deltas = row.get("accumulation_track_deltas")
+        if isinstance(deltas, Sequence) and not isinstance(deltas, (str, bytes)):
+            fixed = []
+            for d in deltas:
+                if not isinstance(d, Mapping):
+                    continue
+                dd = dict(d)
+                t = _best_match(_text(dd.get("track_ref")), tracks)
+                if t is not None:
+                    dd["track_ref"] = t
+                fixed.append(dd)
+            row["accumulation_track_deltas"] = fixed
+        out.append(row)
+    if isinstance(volume_plan, Mapping):
+        merged = dict(volume_plan)
+        merged["volumes"] = out
+        return merged
+    return out
+
+
+def render_seriality_volume_contract_block(
+    concept_contract: Mapping[str, Any] | None,
+) -> str:
+    """把批准列表渲染成 prompt 块——验收端要求逐字引用的文本必须先给模型看。"""
+
+    if not isinstance(concept_contract, Mapping):
+        return ""
+    proof = concept_contract.get("seriality_proof")
+    if not isinstance(proof, Mapping):
+        return ""
+    phases = _items(proof.get("phase_transitions"))
+    families = _items(proof.get("unit_families"))
+    tracks = _items(proof.get("accumulation_tracks"))
+    if not phases and not families and not tracks:
+        return ""
+    lines = ["【已批准的长篇容量证明——引用必须逐字取自本清单】"]
+    if phases:
+        lines.append("阶段（每卷引用一个 phase_id，ref 为该行原文）：")
+        lines += [f"  {_phase_id(i)}: {t}" for i, t in enumerate(phases, start=1)]
+    if families:
+        lines.append("故事单元家族（unit_family_ref 逐字取自下列）：")
+        lines += [f"  - {t}" for t in families]
+    if tracks:
+        lines.append("永久积累轴（track_ref 逐字取自下列）：")
+        lines += [f"  - {t}" for t in tracks]
+    return "\n".join(lines) + "\n"
+
+
 def evaluate_seriality_volume_mapping(
     volume_plan: Sequence[Mapping[str, Any]] | Mapping[str, Any],
     concept_contract: Mapping[str, Any] | None,

@@ -840,6 +840,9 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         "abstract_evaluation_density",
         "crowd_reaction_beat",
         "negative_action_filler",
+        # 沉默应答族（没答话/没吭声）与 negative_action_filler 同族：单处是
+        # 正常克制，密度才是病，故同样 advisory-capped；清理走 deslop 触发集。
+        "silent_reply_spam",
         "face_emotion_label",
         "empty_reaction_shot",
         # Density-gated translationese-adjacent tells (anti-vibe-writing fusion,
@@ -1101,6 +1104,9 @@ def detect(
     # ── Embodied-verb tic saturation (撞/烫/爬 复读) ─────────────────────
     spans.extend(_detect_verb_tic_spam(content_md, lang=lang))
 
+    # ── 沉默应答族复读 (没答话/没接话/没吭声 万能反应镜头) ──────────────
+    spans.extend(_detect_silent_reply_spam(content_md, lang=lang))
+
     # ── 无生命主语拟人动词过密 (凿子吃进/石头拱 万物皆动腔) ─────────────
     spans.extend(_detect_inanimate_agency(content_md, lang=lang))
     spans.extend(_detect_dialogue_starvation(content_md, lang=lang))
@@ -1175,6 +1181,71 @@ _VERB_TIC_LEXICON_ZH: tuple[str, ...] = (
 )
 
 _MEASURE_TIC_RE = re.compile(r"半寸|一寸|三寸|半尺|三分|半息|半分")
+
+# ── 沉默应答族 (没答话/没接话/没说话/没吭声/没回应) ──────────────────────
+# 真机病灶（2026-08-13 用户终审「没答话/没xx 的ai味描述还是有」）：写手模型
+# 用「没答话」当万能反应镜头，每逢对话回合就让人物沉默一次。
+# 校准（2026-08-30 本仓复核，scripts/deai_fusion_calibrate.py 同口径语料）：
+#   人类出版章 1042 章 mean=0.049/万字、p99=1.86、max=4.59
+#   我们的稿   在架 1.357（27.7×）/ 淘汰稿 1.236（25×）
+# 门槛取 rate ≥2.0/万字（正好压在人类 p99 之上）且绝对次数 ≥2：
+# 人类过门槛 0.19%（2/1042），我们的稿 11-13% 章过门槛。
+# 与既有 negative_action_filler 的分工：那条只抓「他/她/它没X」句尾形态且
+# 是绝对计数，「陈默没答话」这类具名主语全漏；本 pass 按每万字率判定。
+_SILENT_REPLY_RE = re.compile(r"没答话|没接话|没说话|没吭声|没回应")
+_SILENT_REPLY_MIN_CHARS = 800  # 防折叠计数量级失明：短片段不评速率
+_SILENT_REPLY_MIN_COUNT = 2
+_SILENT_REPLY_RATE_PER_10K = 2.0
+
+
+def silent_reply_rate(content_md: str) -> float:
+    """沉默应答族每万字密度（公开量具，与检测器同口径）。"""
+
+    if not content_md:
+        return 0.0
+    return len(_SILENT_REPLY_RE.findall(content_md)) * 10000.0 / max(1, len(content_md))
+
+
+def _detect_silent_reply_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:
+    """沉默应答族复读（没答话/没接话/没吭声…）—— 章级 rate 规则，CJK only。
+
+    单处沉默是正常的人类克制写法（人类 p99=1.86/万字），密度才是病：
+    一章一个 advisory span，经 deslop 触发集整段重写换成具体反应。
+    """
+
+    if lang != "zh" or not content_md:
+        return []
+    total = len(content_md)
+    if total < _SILENT_REPLY_MIN_CHARS:
+        return []
+    matches = list(_SILENT_REPLY_RE.finditer(content_md))
+    count = len(matches)
+    if count < _SILENT_REPLY_MIN_COUNT:
+        return []
+    rate = count * 10000 / total
+    if rate < _SILENT_REPLY_RATE_PER_10K:
+        return []
+    variants = Counter(m.group() for m in matches)
+    detail = "、".join(f"{v}×{c}" for v, c in variants.most_common())
+    first = matches[0]
+    return [
+        AiFlavorSpan(
+            start=first.start(),
+            end=first.end(),
+            matched_text=first.group(),
+            rule_id="zh.tic.silent_reply_spam",
+            category="silent_reply_spam",
+            severity="warn",
+            suggestions=(),
+            sentence_span=_sentence_bounds(content_md, first.start(), lang),
+            why=(
+                f"沉默应答族复读（{detail}，{rate:.1f}/万字，人类出版章≈0.05/万字）"
+                "——「没答话/没吭声」是写手模型的万能反应镜头，全章最多留 1 处，"
+                "其余改成具体反应：一个动作、一句短对白、或一个转开的视线。"
+            ),
+            remove_sentence_on_block=False,
+        )
+    ]
 
 
 def _repeated_gram_profile(

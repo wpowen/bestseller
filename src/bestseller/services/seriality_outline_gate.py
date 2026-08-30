@@ -86,7 +86,29 @@ def canonicalize_chapter_seriality_refs(
             j = len(cs & ts) / len(cs | ts)
             if j >= 0.6 and (best is None or j > best[0]):
                 best = (j, t)
-        return best[1] if best else None
+        if best:
+            return best[1]
+        # 方向性覆盖（2026-08-30 真机《十日补碑》第 7 败引文定案）：模型把
+        # 整句长的批准轴缩成短名（'海眼认迹层数' vs '海眼永久认下宋潮生笔迹，
+        # 封印层数与笔债笔数只升不降…'），对称 Jaccard 用并集做分母，短对长
+        # 永远 6/20≈0.3 过不了线。改判据：短名字符 ≥85% 落进某条批准项、
+        # 且最优与次优差 ≥0.15（歧义不归一，留给门）。
+        best_cov = None
+        second = 0.0
+        for t in approved:
+            ts = set(t)
+            if not ts or not cs:
+                continue
+            cov = len(cs & ts) / len(cs)
+            if best_cov is None or cov > best_cov[0]:
+                if best_cov is not None:
+                    second = max(second, best_cov[0])
+                best_cov = (cov, t)
+            else:
+                second = max(second, cov)
+        if best_cov and best_cov[0] >= 0.85 and best_cov[0] - second >= 0.15:
+            return best_cov[1]
+        return None
 
     out: list[dict[str, object]] = []
     for ch in chapters:

@@ -667,9 +667,20 @@ def _detect_discourse(
         rule_id = str(rule.get("id") or f"{lang}.discourse.{category}")
         why = str(rule.get("why") or "")
 
+        # ``tail_chars``：只统计落在章末窗口内的命中（收尾类判据的位置门控，
+        # 2026-08-30 去AI味融合引入）。「章末预告/盖章收尾」只有出现在结尾才是
+        # 收尾腔——同一句话出现在章中是叙述，全篇扫会把误杀率放大一个量级
+        # （slop-guard closing_aphorism 与 oh-story trailer 轴的共同实现纪律）。
+        raw_tail = rule.get("tail_chars")
+        tail_floor = (
+            total_chars - int(raw_tail) if raw_tail is not None else None
+        )
+
         hits: list[tuple[int, int]] = []
         for m in pattern.finditer(content_md):
             if _is_in_ranges(m.start(), dialogue_ranges):
+                continue
+            if tail_floor is not None and m.start() < tail_floor:
                 continue
             hits.append((m.start(), m.end()))
         if not hits:
@@ -714,6 +725,85 @@ def _detect_discourse(
                 hit_count=len(hits),
             )
         )
+    return out
+
+
+# ── 相邻句结构指纹（连续同构句串）────────────────────────────────────────
+# 2026-08-30 去AI味融合（lieflat-less-ai-tone 283 万字对照研究移植）：
+# 「相邻句结构同款」在其非虚构语料实测 AI 2.0×；指纹 = (逗号数, 有无冒号,
+# 有无括号, 长度档)。本仓小说语料复标（1135 真实出版章 vs 60 在架 AI 章 vs
+# 245 被淘汰稿，scripts/deai_fusion_calibrate.py 2026-08-30）：
+# 人类命中 **0/1135**，AI 在架稿 35% 章命中、淘汰稿 16%——本轮全部候选轴中
+# 区分度最高的一条（人类侧密度为 0，命中即指纹）。
+# 判据：同一段内、过滤掉 <8 字碎片后，连续 3 句 signature 相同且各含 ≥1 逗号。
+# advisory（进 _ADVISORY_STRUCTURAL 封顶 + deslop 触发集），不发杀权
+# ——新检测器只挣重生和留痕（2026-08-15 规矩）。
+_SIG_RUN_MIN_SENT_CHARS = 8
+_SIG_RUN_LEN_BUCKET = 15
+_SIG_RUN_LEN = 3
+
+
+def _detect_sentence_signature_run(
+    content_md: str,
+    *,
+    lang: str,
+    dialogue_ranges: list[tuple[int, int]],
+) -> list[AiFlavorSpan]:
+    if lang == "en" or len(content_md) < 600:
+        return []
+    # 对白掩码成空格（保 offset）——与校准台同一口径，叙述层判据不看对白。
+    chars = list(content_md)
+    for start, end in dialogue_ranges:
+        for i in range(start, min(end, len(chars))):
+            if chars[i] != "\n":
+                chars[i] = " "
+    masked = "".join(chars)
+
+    out: list[AiFlavorSpan] = []
+    for para in re.finditer(r"[^\n]+", masked):
+        base = para.start()
+        sents: list[tuple[int, int, tuple[int, bool, bool, int]]] = []
+        for m in re.finditer(r"[^。！？!?]+[。！？!?]?", para.group(0)):
+            body = m.group(0)
+            if len(body.strip()) < _SIG_RUN_MIN_SENT_CHARS:
+                continue  # 碎片不成句，不参与也不打断指纹比较（与校准同口径）
+            sig = (
+                body.count("，"),
+                "：" in body,
+                "（" in body or "(" in body,
+                len(body) // _SIG_RUN_LEN_BUCKET,
+            )
+            sents.append((base + m.start(), base + m.end(), sig))
+        run = 1
+        run_start = 0
+        for i in range(1, len(sents)):
+            if sents[i][2] == sents[i - 1][2] and sents[i][2][0] >= 1:
+                run += 1
+                if run == _SIG_RUN_LEN:
+                    span_start = sents[run_start][0]
+                    span_end = sents[i][1]
+                    out.append(
+                        AiFlavorSpan(
+                            start=span_start,
+                            end=span_end,
+                            matched_text=content_md[span_start : span_start + 30],
+                            rule_id="cn.structure.sentence_signature_run",
+                            category="sentence_signature_run",
+                            severity="warn",
+                            suggestions=(),
+                            sentence_span=(span_start, span_end),
+                            why=(
+                                "连续 3 句结构同构（逗号数/长度档/标点形状全同）——"
+                                "真实出版章 1135 章零命中的模板腔。改法不是换词，"
+                                "是改变其中一句的信息进入方式：拆并句、换主语位置、"
+                                "调整信息重心，让句形跟着内容走"
+                            ),
+                            remove_sentence_on_block=False,
+                        )
+                    )
+            else:
+                run = 1
+                run_start = i
     return out
 
 
@@ -784,6 +874,16 @@ def _score(spans: tuple[AiFlavorSpan, ...]) -> float:
         # 语料级词频放大同族：章级可读性提示，靠 deslop 触发集拿定向重写，
         # 不靠分数——单独推高分数会把一本正当反复使用核心物件的书推进 block。
         "corpus_overamplified",
+        # ── 2026-08-30 去AI味融合批（外部 skill 调研 + 本仓语料校准准入）──
+        # 全部 advisory 起步（新检测器只挣重生和留痕）：每条的人类/AI 读数见
+        # patterns_zh.json 对应规则的 why 与 scripts/deai_fusion_calibrate.py。
+        "stock_reaction",          # 罐头反应镜头（AI/人类密度 6.5×）
+        "micro_action_tic",        # 「了一下」尾巴（2.6×）
+        "reverse_contrast",        # 反序对比排比 是X不是Y（11×，收紧版）
+        "voice_contrast",          # 音量反差腔（5.6×，人类低频合法→聚集才报）
+        "trailer_ending",          # 章末预告腔（末600字窗口，绊线）
+        "trailer_summary",         # 章末盖章腔（末600字窗口，人类0命中）
+        "sentence_signature_run",  # 相邻句同构（人类 0/1135）
     }
     _STRUCTURAL_CAP = 24.0
 
@@ -1013,6 +1113,13 @@ def detect(
     # ── Chapter-level repetition (车轱辘内心戏 / 感觉词堆叠) ─────────────
     spans.extend(_detect_repetition(content_md, lang=lang))
 
+    # ── 相邻句结构指纹 (连续3句同构——真人出版章零命中的模板腔) ──────────
+    spans.extend(
+        _detect_sentence_signature_run(
+            content_md, lang=lang, dialogue_ranges=dialogue_ranges
+        )
+    )
+
     # ── 明喻过密 / 跨模态通感病句 (什么都像什么 / 响湿得像) ──────────────
     spans.extend(_detect_simile_overrun(content_md, lang=lang))
 
@@ -1122,6 +1229,61 @@ def verb_tic_density(content_md: str) -> float:
         return 0.0
     family_total = sum(content_md.count(v) for v in _VERB_TIC_LEXICON_ZH)
     return family_total * 10000.0 / total
+
+
+@lru_cache(maxsize=8)
+def _compiled_discourse_pattern(rule_id: str) -> re.Pattern[str] | None:
+    """按 id 从 patterns_zh.json 取 discourse 规则并编译（单一真源）。
+
+    2026-08-30 融合批的公开量具走这条路而不是在本文件复刻正则：
+    moment_slice/staccato 当年各自复刻了一份「deterministic twin」，
+    是「同一事实住两地」的历史层；新轴不再添新的两地事实。
+    """
+
+    rules = _load_rules("zh", str(DEFAULT_DATA_DIR))
+    for rule in rules.discourse_rules:
+        if str(rule.get("id")) == rule_id:
+            raw = rule.get("pattern")
+            if raw:
+                try:
+                    return re.compile(str(raw))
+                except re.error:  # pragma: no cover - 数据文件损坏时静默为 None
+                    return None
+    return None
+
+
+def _discourse_rate(content_md: str, rule_id: str) -> float:
+    """指定 discourse 规则的叙述层每千字密度——与 ``_detect_discourse`` 同口径。
+
+    供 deslop keep-better 用：弥漫型病在 detector 里折成 1 个 span，
+    span 计数看不见「重写把密度压掉一半」这件事，必须有连续量具
+    （2026-08-15 起 slice/staccato/verb_tic/repetition 四轴同形教训）。
+    """
+
+    if not content_md:
+        return 0.0
+    pattern = _compiled_discourse_pattern(rule_id)
+    if pattern is None:
+        return 0.0
+    dialogue_ranges = _find_dialogue_ranges(content_md, _QUOTE_PAIRS_CN)
+    hits = sum(
+        1
+        for m in pattern.finditer(content_md)
+        if not _is_in_ranges(m.start(), dialogue_ranges)
+    )
+    return hits / max(1, len(content_md)) * 1000.0
+
+
+def stock_reaction_rate(content_md: str) -> float:
+    """罐头反应镜头每千字密度（公开量具，阈值见 patterns_zh.json 规则 why）。"""
+
+    return _discourse_rate(content_md, "cn.discourse.stock_reaction")
+
+
+def micro_action_rate(content_md: str) -> float:
+    """「了一下」微动作尾巴每千字密度（公开量具）。"""
+
+    return _discourse_rate(content_md, "cn.discourse.micro_action_tic")
 
 
 def _detect_verb_tic_spam(content_md: str, *, lang: str) -> list[AiFlavorSpan]:

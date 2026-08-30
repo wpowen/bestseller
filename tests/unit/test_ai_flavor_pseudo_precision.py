@@ -55,7 +55,7 @@ def test_dialogue_exempt() -> None:
 
 def test_deslop_self_check_mentions_pseudo_precision() -> None:
     assert "伪精确计量" in _EXTRA_SELF_CHECK
-    assert "15 条" in _EXTRA_SELF_CHECK
+    assert "18 条" in _EXTRA_SELF_CHECK
 
 
 def test_pseudo_precision_triggers_deslop_rewrite() -> None:

@@ -10583,10 +10583,10 @@ async def run_chapter_pipeline(
                 # (advisory) 却恰是 deslop 专治、span patcher 改不掉的，必须也触发。
                 from bestseller.services.ai_flavor_gate import needs_deslop_revise
 
-                def needs_debt_leak_ai_flavor(
-                    outcome: object,
-                ) -> bool:
-                    return has_category_issue(outcome, "debt_metaphor_leak")
+                # 2026-08-30 死链清理：debt_metaphor_leak 检测器 2026-08-02 退役
+                # （恒返回 []，见 detector._detect_debt_metaphor_leak docstring），
+                # 这里原有的「命中即强制硬 block」分支与 metadata 键永不可能触发，
+                # 已随触发集/引文豁免集一并拆除——留着只会误导审读。
 
                 if needs_deslop_revise(ai_flavor_outcome) and getattr(
                     _af_gates_cfg.ai_flavor, "deslop_revise_enabled", True
@@ -10657,21 +10657,13 @@ async def run_chapter_pipeline(
                             "ai_flavor_gate: deslop revise failed (non-fatal)",
                             exc_info=True,
                         )
-                if ai_flavor_outcome.decision == "block" or needs_debt_leak_ai_flavor(
-                    ai_flavor_outcome
-                ):
+                if ai_flavor_outcome.decision == "block":
                     logger.warning(
                         "ai_flavor_gate ch%d: residual score %.1f >= threshold, "
                         "routing to machine repair",
                         chapter_number,
                         ai_flavor_outcome.after_score,
                     )
-                    if needs_debt_leak_ai_flavor(ai_flavor_outcome):
-                        logger.warning(
-                            "ai_flavor_gate ch%d: debt_metaphor_leak detected, "
-                            "force hard block for AI-flavor contamination",
-                            chapter_number,
-                        )
                     chapter.status = ChapterStatus.REVISION.value
                     chapter.production_state = "blocked"
                     scene_requires_human_review = True
@@ -10680,9 +10672,6 @@ async def run_chapter_pipeline(
                         "blocked_by_ai_flavor_gate": True,
                         "ai_flavor_before_score": ai_flavor_outcome.before_score,
                         "ai_flavor_after_score": ai_flavor_outcome.after_score,
-                        "blocked_by_ai_flavor_debt_metaphor_leak": needs_debt_leak_ai_flavor(
-                            ai_flavor_outcome
-                        ),
                     }
                 # Only record a workflow step when the gate actually
                 # detected something. Clean-pass no-ops would otherwise

@@ -39,5 +39,8 @@ def test_still_blocking_improvement_updates_outcome():
 
 def test_block_routing_survives():
     # 改进被采纳不等于放行：仍 block 的章照样进机器修复
+    # （2026-08-30 起不再有 needs_debt_leak 强制分支——那条链的检测器
+    # 2026-08-02 已退役恒返回 []，死链一并拆除。）
     src = inspect.getsource(pipelines)
-    assert 'if ai_flavor_outcome.decision == "block" or needs_debt_leak_ai_flavor(' in src
+    assert 'if ai_flavor_outcome.decision == "block":' in src
+    assert "needs_debt_leak_ai_flavor" not in src

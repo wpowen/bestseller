@@ -93,7 +93,35 @@ _EXTRA_SELF_CHECK = (
     "东西只做它物理上真会做的事：声音是「响」的、影子是「晃」的、光是「亮」的、"
     "石头是「动了一下」的——平实动词是常态，拟人化动词是重锤，"
     "全章至多保留 1-2 处最关键的，其余一律改回平实说法。\n"
-    "改写后请自己再过一遍上面 15 条，确认一句不剩。"
+    "16) 罐头反应镜头（部位+轻微动作的通用情绪尾巴：指节发白、喉结滚动、声音发紧、"
+    "眼眶发红、'语气平静得像在念'——成片出现时是在用通用零件拼情绪，只负责提示读者"
+    "『这里该感动』）→ 删掉不推进任何事的反应镜头，或换成绑定当下情境、有物理后果的"
+    "具体反应（他手里的秤杆歪了，砝码滚到沟里）。禁止换成同族另一个零件"
+    "（眼眶发红→鼻子一酸不算修）。有不可替代叙事功能的停顿保留（交代对话中断、"
+    "关系变化、后续行动的那种）。\n"
+    "17) 反序对比排比（'是X，不是Y'/'是X，不是Y，不是Z'品鉴式否定连排）与"
+    "音量反差腔（'声音不大，却…'）→ 全章最多留一处真正有辨认张力的对比，其余直接写"
+    "它是什么、凭什么认出来的（气味来源/口感细节/来路）；音量铺垫删掉，直接写这句话"
+    "落进场子的具体效果。\n"
+    "18) 章末收尾腔：预告式（'谁也没想到…'/'一切才刚刚开始'/'大战即将来临'）与"
+    "盖章式（'这一夜注定无人入眠'/'这一切都结束了'）→ 收章停在具体的动作、物件、"
+    "后果或悬着的对话上，让场景自己收束——具体的未解决事实比旁白预告钩得住人。\n"
+    "改写后请自己再过一遍上面 18 条，确认一句不剩。"
+    "\n\n【禁改清单——以下是人类正常写法，语料实证「改了反而更像 AI」，一律保留】：\n"
+    "· 设问句（真实出版章的正文设问密度是 AI 文的 17 倍——删设问是反向操作）；\n"
+    "· 比喻本身（人类比喻密度是 AI 的 2.4 倍——只治比喻复读与跨模态病句，不治比喻）；\n"
+    "· 句内排比（'提升效率，降低成本'式——人类用得不比 AI 少）；\n"
+    "· 引号内对话一字不改（对白里的粗糙、重复、口头禅是人物声口）；\n"
+    "· 推进叙事的节奏性重复（'第一个月没人退订。第二个月没人退订。'是设计不是冗余，"
+    "判据：重复有没有在推进叙事）；\n"
+    "· 限定词与让步不升级为断言（'可能提升'不得改成'提升'，'不能归因于不努力'"
+    "不得改成'一直很努力'）。\n"
+    "【假人味黑名单——严禁在改写时往稿子里加这些（它们本身就是新一代 AI 腔）】：\n"
+    "· 假坦白起手（'说真的/老实说/讲白了'式开场报备）；\n"
+    "· 硬造金句、对仗收束、格言式总结；\n"
+    "· 表演不确定（硬加'我也说不清'式收尾）；\n"
+    "· 表演口语（机械撒语气词、网感词、口头禅）。\n"
+    "人味来自具体信息与节奏，不来自表演性人格道具。"
 )
 
 
@@ -103,9 +131,10 @@ _EXTRA_SELF_CHECK = (
 # the quote hands the model the very skeleton to copy (种词铁律). Live A/B on
 # ch25, same code, per-sentence quotes vs none: {8.63, 4.42} vs {0.29, 2.20,
 # 2.35}/千字. These categories get category + fix instruction only.
+# （debt_metaphor_leak 曾在此集合：检测器 2026-08-02 退役恒返回 []，
+#  2026-08-30 死链清理时一并移除。）
 _QUOTE_FREE_CATEGORIES = frozenset(
     {
-        "debt_metaphor_leak",
         "moment_slice",
         "moment_slice_train",
         # 母题饱和同理：引用一句带「账簿」的原文＝把这个词再喂给写手一次。
@@ -115,16 +144,20 @@ _QUOTE_FREE_CATEGORIES = frozenset(
         # 万物拟人：引「石头自己拱了一下」＝把错误搭配的骨架再喂一次；
         # why 里已带主语×动词计数与平实动词正例，够写手定位。
         "inanimate_agency",
+        # ── 2026-08-30 融合批的模板型轴（同一判据：引病句=喂模板）──────
+        # 罐头反应/「了一下」/「是X不是Y」连排/同构句串都是**句式模板病**，
+        # matched_text 就是模板本体；why 已按 fix-first 写好改法。
+        # 位置型轴（trailer_ending/trailer_summary/voice_contrast，1-2 处、
+        # 需要定位那一行）保留引文，不进此集合。
+        "stock_reaction",
+        "micro_action_tic",
+        "reverse_contrast",
+        "sentence_signature_run",
     }
 )
 
 
 def _finding_line(span) -> str:
-    if span.category == "debt_metaphor_leak":
-        return (
-            f"- [{span.category}] 删除无事实来源的修辞体系，"
-            "只保留章纲已授权的具体动作和状态变化。"
-        )
     if span.category in _QUOTE_FREE_CATEGORIES:
         # why[:60] used to truncate mid-description and drop the 改法 entirely —
         # the writer was told a disease exists, shown an example of it, and never
@@ -289,6 +322,15 @@ _VERB_TIC_PATHOLOGICAL = 50.0
 # 注：同一本真机书三章 0.4% / 1.7% / 2.6%——**在人类正常区间内**，
 # 说明这条在本案不是主病；轴仍然要有，否则下次真犯时又是同样的丢弃。
 _REPETITION_PATHOLOGICAL = 0.15
+# 罐头反应镜头与「了一下」微动作的病态带（2026-08-30 去AI味融合批标定，
+# scripts/deai_fusion_calibrate.py：1135 真实出版章 vs 245 被淘汰 AI 稿）。
+# stock_reaction 人类 p99=0.59/千字、max=0.93，AI 淘汰稿密度 6.5×——带线取
+# 门槛同值 0.7；micro_action（收窄版正则，排除趋向补语等）人类 p99=2.98，
+# AI 3.2×、max 17.4——取 3.0 与门同源。
+# 两轴都是弥漫型（detector 折成 1 span），照四轴同形教训接进 keep-better；
+# 带外恒 0.0，healthy 稿的比较逐字节等价于旧行为。
+_STOCK_REACTION_PATHOLOGICAL = 0.7
+_MICRO_ACTION_PATHOLOGICAL = 3.0
 
 
 def _keep_better_key(
@@ -299,6 +341,8 @@ def _keep_better_key(
     staccato_first: bool = False,
     verb_tic_first: bool = False,
     repetition_first: bool = False,
+    stock_first: bool = False,
+    micro_first: bool = False,
 ) -> tuple:
     """Ordering key for keep-better (lower is better).
 
@@ -324,7 +368,9 @@ def _keep_better_key(
     # 每条弥漫型病一个轴，只在**自己的病态带内**参与排序，带外恒为 0.0——
     # 于是健康稿的比较仍然逐字节等价于单标量。轴的顺序固定，便于归因。
     from bestseller.services.ai_flavor.detector import (  # noqa: PLC0415
+        micro_action_rate,
         narrative_repetition_load,
+        stock_reaction_rate,
         verb_tic_density,
     )
 
@@ -333,6 +379,8 @@ def _keep_better_key(
         round(verb_tic_density(text), 1) if verb_tic_first else 0.0,
         round(narrative_repetition_load(text), 3) if repetition_first else 0.0,
         round(_moment_slice_rate(text), 2) if slice_first else 0.0,
+        round(stock_reaction_rate(text), 2) if stock_first else 0.0,
+        round(micro_action_rate(text), 2) if micro_first else 0.0,
         badness,
     )
 
@@ -456,12 +504,16 @@ async def _revise_prose_deslop_inner(
     slice_first = _moment_slice_rate(content) >= _SLICE_PATHOLOGICAL
     staccato_first = _staccato_ratio(content) >= _STACCATO_PATHOLOGICAL
     from bestseller.services.ai_flavor.detector import (  # noqa: PLC0415
+        micro_action_rate as _mar,
         narrative_repetition_load as _nrl,
+        stock_reaction_rate as _srr,
         verb_tic_density as _vtd,
     )
 
     verb_tic_first = _vtd(content) >= _VERB_TIC_PATHOLOGICAL
     repetition_first = _nrl(content) >= _REPETITION_PATHOLOGICAL
+    stock_first = _srr(content) >= _STOCK_REACTION_PATHOLOGICAL
+    micro_first = _mar(content) >= _MICRO_ACTION_PATHOLOGICAL
     restore_length = False
 
     # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
@@ -498,6 +550,8 @@ async def _revise_prose_deslop_inner(
             staccato_first=staccato_first,
             verb_tic_first=verb_tic_first,
             repetition_first=repetition_first,
+            stock_first=stock_first,
+            micro_first=micro_first,
         )
 
     def _length_ok(text: str) -> bool:

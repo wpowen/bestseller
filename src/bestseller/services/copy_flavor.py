@@ -34,8 +34,20 @@ Four families, all evidenced by real output from custom-xuanhuan-1785980083:
   what happens to a person.
 
 Deliberately narrow. Copy is allowed to be punchy, exaggerated, even trashy —
-those are genre registers, not defects. Only the four families above are
-flagged, and each carries the matched span so a verdict can be checked.
+those are genre registers, not defects. Only the families above are flagged,
+and each carries the matched span so a verdict can be checked.
+
+2026-08-30 去AI味融合批追加五族（17 个外部仓库调研，判据在 2218 条真实
+番茄榜单简介上校准，误报率标注在各规则 why 里；粗形词表被否决的教训值得
+记录：「很简单：」「评论区见」「未来可期」在真实平台简介里是**人类常态**
+——自媒体腔在平台语境不是缺陷，收窄到助手腔/擂鼓帽句/饱和密度才是）：
+
+* ``colon_hat`` — 句首「答案：/真相：/结论是：」擂鼓宣告（0/2218 人类命中）。
+* ``fake_interaction`` — 「你觉得呢/建议收藏/一文读懂」助手式假互动（0/2218）。
+* ``uplift_closer`` — 「未来可期/拭目以待」万金油升华（1/2218）。
+* ``milestone_hype`` — 「标志着/里程碑/范式转移」意义拔高（0/2218）。
+* ``contrast_saturation`` — 「不是A而是B」翻案腔 **≥2 次**才报：单次是人类
+  合法钩子修辞（2.30% 真实简介在用），饱和才是模板（≥2 仅 0.05%）。
 """
 
 from __future__ import annotations
@@ -78,10 +90,11 @@ class CopyFlavorReport:
         }
 
 
-#: (category, pattern, weight, why). Weights differ because the families are not
-#: equally damning: a framework directive in the shop window is worse than one
-#: piece of trade jargon.
-_RULES: Final[tuple[tuple[str, str, float, str], ...]] = (
+#: (category, pattern, weight, why[, min_count]). Weights differ because the
+#: families are not equally damning: a framework directive in the shop window is
+#: worse than one piece of trade jargon. ``min_count``（缺省 1）：命中次数达到
+#: 该值才报——给「单次合法、饱和才是病」的族用（contrast_saturation）。
+_RULES: Final[tuple[tuple, ...]] = (
     (
         "meta_cadence",
         r"每\s*\d*\s*[-–~至到]?\s*\d*\s*章|每卷|每一章|章章|每回合",
@@ -143,10 +156,55 @@ _RULES: Final[tuple[tuple[str, str, float, str], ...]] = (
         6.0,
         "在命令生成器该怎么写，而不是在告诉读者会看到什么——这话的听众是写手，不是读者",
     ),
+    # ── 2026-08-30 去AI味融合批（校准语料：2218 条真实番茄榜单简介）──────
+    (
+        "colon_hat",
+        r"(?:^|[。！？\n])\s*(?:答案|真相|结论|关键|重点)(?:是|在于)?[：:]",
+        6.0,
+        "擂鼓帽句：在内容前敲锣（答案：/真相：/结论是：）——重点不需要宣告自己"
+        "是重点。真实平台简介 0/2218 命中；注意「目标很简单：吃睡变强」是人物"
+        "目标的合法叙述，不在此列",
+    ),
+    (
+        "fake_interaction",
+        r"你觉得呢|是不是很有启发|建议收藏|一文读懂|点个(?:赞|关注)|欢迎点赞",
+        8.0,
+        "助手式假互动——这是聊天机器人和自媒体教程的收束话术，不是小说简介"
+        "（0/2218 真实简介命中；「评论区见/欢迎催更」是平台人类常态，不收）",
+    ),
+    (
+        "uplift_closer",
+        r"未来可期|前景光明|拭目以待|砥砺前行|注入了?新的活力|激动人心的时代",
+        4.0,
+        "万金油升华收尾——放到任何简介结尾都成立的话等于没说（1/2218 真实简介"
+        "命中）。停在最后一个具体的钩子事实上",
+    ),
+    (
+        "milestone_hype",
+        r"标志着|里程碑式?|范式转移",
+        4.0,
+        "里程碑腔：给普通事实颁奖（0/2218 真实简介命中；「见证了她的堕落」是"
+        "叙事动词用法，刻意不收）",
+    ),
+    (
+        "contrast_saturation",
+        r"(?:不是|并非|不在于)[^，。！？\n]{1,20}[，,]?(?:而是|而在于)",
+        6.0,
+        "翻案腔饱和：「不是A而是B」出现 ≥2 次。单次是人类合法钩子修辞"
+        "（2.30% 真实简介在用，不收），连用才是骨架依赖（≥2 仅 0.05%）",
+        2,
+    ),
 )
 
-_COMPILED: Final[tuple[tuple[str, re.Pattern[str], float, str], ...]] = tuple(
-    (cat, re.compile(pat), weight, why) for cat, pat, weight, why in _RULES
+_COMPILED: Final[tuple[tuple[str, re.Pattern[str], float, str, int], ...]] = tuple(
+    (
+        rule[0],
+        re.compile(rule[1]),
+        float(rule[2]),
+        rule[3],
+        int(rule[4]) if len(rule) > 4 else 1,
+    )
+    for rule in _RULES
 )
 
 
@@ -159,8 +217,11 @@ def detect_copy_flavor(text: str | None) -> CopyFlavorReport:
 
     spans: list[CopyFlavorSpan] = []
     score = 0.0
-    for category, pattern, weight, why in _COMPILED:
-        for match in pattern.finditer(content):
+    for category, pattern, weight, why, min_count in _COMPILED:
+        matches = list(pattern.finditer(content))
+        if len(matches) < min_count:
+            continue
+        for match in matches:
             spans.append(
                 CopyFlavorSpan(category=category, matched=match.group(0), why=why)
             )

@@ -1364,9 +1364,11 @@ def _set_project_model_payload(
         if entry is None:
             raise ValueError(f"Unknown model id: {normalized}")
         if not entry.available:
+            reason = entry.unavailable_reason or (
+                f"set its API key ({entry.api_key_env})."
+            )
             raise ValueError(
-                f"Model '{entry.display_name}' is not available — set its API key "
-                f"({entry.api_key_env})."
+                f"Model '{entry.display_name}' is not available — {reason}"
             )
 
     async def _apply() -> bool:
@@ -5042,8 +5044,13 @@ class WebTaskManager:
             from bestseller.services.model_catalog import get_model_catalog_entry
 
             _entry = get_model_catalog_entry(_model_id)
-            if _entry is None or not _entry.available:
-                raise ValueError(f"Unknown or unavailable llm_model_id: {_model_id}")
+            if _entry is None:
+                raise ValueError(f"Unknown llm_model_id: {_model_id}")
+            if not _entry.available:
+                raise ValueError(
+                    f"Unavailable llm_model_id: {_model_id} — "
+                    f"{_entry.unavailable_reason or 'unavailable'}"
+                )
             autowrite_payload["llm_model_id"] = _model_id
 
         # Freeze the complete creation request once, at the UI boundary.  The

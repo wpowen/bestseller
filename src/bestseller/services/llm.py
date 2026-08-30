@@ -212,6 +212,47 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     return False
 
 
+def _is_model_gone_error(exc: BaseException) -> bool:
+    """Detect a permanently-dead model endpoint (upstream removed the model).
+
+    HTTP 410 Gone is always permanent (e.g. NVIDIA NIM after a model EOL).
+    404 counts only when it looks like a model/function-level miss (NIM's
+    "Function Not Found", OpenAI-style "model ... does not exist") — a plain
+    404 from a misconfigured path stays a generic, retryable failure.
+    Retrying a gone model burns the retry budget and poisons the shared
+    circuit breaker for healthy models, so callers fail fast on this.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    message = str(exc).lower()
+    if isinstance(status, int) and status == 410:
+        return True
+    if "410" in message and "gone" in message:
+        return True
+    is_404 = (
+        (isinstance(status, int) and status == 404)
+        or type(exc).__name__.endswith("NotFoundError")
+        or "404" in message
+    )
+    if not is_404:
+        return False
+    model_miss_markers = (
+        "function not found",
+        "function_not_found",
+        "model not found",
+        "model_not_found",
+        "does not exist",
+        "unknown model",
+        "no such model",
+        "invalid model",
+    )
+    if any(marker in message for marker in model_miss_markers):
+        return True
+    # NVIDIA NIM names the missing model a "Function" and splits the phrase:
+    #   404 {'title': 'Not Found', 'detail': "Function '<uuid>': Not found
+    #   for account '<id>'"}  (live-probed 2026-08-08)
+    return "function" in message and "not found" in message
+
+
 def _extract_retry_after_seconds(exc: BaseException) -> float | None:
     """Extract a ``Retry-After`` hint from a provider exception, if present.
 
@@ -1691,6 +1732,24 @@ async def _call_litellm_with_retry(
             _llm_breaker.record_success()
             return result
         except Exception as exc:
+            if _is_model_gone_error(exc):
+                # Permanent: the upstream removed this model (410 Gone /
+                # 404 model-not-found).  No retry can help, and counting it
+                # into the shared breaker would open it for healthy models,
+                # so report the model dead and fail fast.
+                from bestseller.services.model_catalog import mark_model_runtime_dead
+
+                mark_model_runtime_dead(
+                    role_settings.model, f"{type(exc).__name__}: {exc}"
+                )
+                logger.error(
+                    "LLM model %s is gone upstream (%s: %s) — failing fast "
+                    "without retry",
+                    role_settings.model,
+                    type(exc).__name__,
+                    exc,
+                )
+                raise
             if _is_rate_limit_error(exc):
                 rate_limit_attempt += 1
                 if rate_limit_attempt >= rl_max_attempts:
@@ -1882,19 +1941,34 @@ async def complete_text(
         role_settings = _apply_model_override(role_settings, _project_model_entry)
     # A per-call model-catalog override (e.g. a capable commercial-judge model) wins
     # over the book's per-project model so judging quality is independent of the
-    # writer tier. Falls back silently when the entry is missing/unavailable.
+    # writer tier. A missing/unavailable entry falls back to the role default,
+    # but loudly: the skip is logged and recorded in llm_run metadata so a dead
+    # model never degrades silently (only visible in worker logs otherwise).
     # When neither a per-call key nor a project override applies (the
     # conception phase, where no project row exists yet), fall back to the
     # conception-bound model so the chosen model is used across the whole flow.
     _effective_catalog_key = request.model_catalog_key
     if _effective_catalog_key is None and request.project_id is None:
         _effective_catalog_key = _conception_model_var.get()
+    _override_unavailable_reason: str | None = None
     if _effective_catalog_key:
         from bestseller.services.model_catalog import get_model_catalog_entry
 
         _override_entry = get_model_catalog_entry(_effective_catalog_key)
         if _override_entry is not None and _override_entry.available:
             role_settings = _apply_model_override(role_settings, _override_entry)
+        else:
+            _override_unavailable_reason = (
+                "unknown catalog key"
+                if _override_entry is None
+                else (_override_entry.unavailable_reason or "unavailable")
+            )
+            logger.warning(
+                "Requested model_catalog_key=%s is not usable (%s) — "
+                "proceeding with the already-resolved model settings.",
+                _effective_catalog_key,
+                _override_unavailable_reason,
+            )
     _warn_language_system_mismatch(request)
     _validate_prompt_template_name(request)
     if request.model_tier == "strong" and role_settings.model_override:
@@ -1913,6 +1987,9 @@ async def complete_text(
     )
     prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
     metadata = dict(request.metadata)
+    if _override_unavailable_reason is not None:
+        metadata["model_catalog_override_key"] = _effective_catalog_key
+        metadata["model_catalog_override_unavailable"] = _override_unavailable_reason
     if request.cache_system:
         metadata["cache_system"] = True
     if request.max_tokens_override is not None:
@@ -2020,6 +2097,10 @@ async def complete_text(
                 metadata["configured_model"] = role_settings.model
                 metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
                 metadata["retry_exhausted"] = True
+                if _is_model_gone_error(exc):
+                    # Make dead-model fallbacks queryable in llm_runs instead
+                    # of only visible in worker logs.
+                    metadata["model_gone"] = True
                 finish_reason = "fallback"
                 logger.error(
                     "LLM call FAILED for role=%s model=%s template=%s — using fallback content. "

@@ -5,7 +5,11 @@
 # project.metadata.llm_model_id and the LLM layer applies it (model + api_base
 # + api_key_env + api_key_header) to every role for that book only.
 #
-# All entries below were live-probed against their endpoints (2026-06).
+# Entries were live-probed against their endpoints when added (2026-06).
+# Upstream removals since then are marked `retired: true` (with reason) —
+# retired entries stay listed so books that already selected them get an
+# explicit "已下线" instead of a mystery "unknown id", but they are never
+# available and every selection gate rejects them.
 models:
   # ── MiniMax (direct) ──
   - id: minimax-m2.7-highspeed
@@ -64,7 +68,9 @@ models:
     model: "openai/deepseek-ai/deepseek-v4-pro"
     api_base: "https://integrate.api.nvidia.com/v1"
     api_key_env: NVIDIA_API_KEY
-    notes: "DeepSeek V4 Pro（比 Flash 更强），实测 ~2.7s。"
+    retired: true
+    retired_reason: "上游 2026-08-07 EOL，端点返回 410 Gone。"
+    notes: "已下线（2026-08-07 上游 EOL，410 Gone）。曾实测 ~2.7s。"
   - id: nim-kimi-k2.6
     display_name: "NVIDIA · Kimi K2.6"
     vendor: "NVIDIA NIM"
@@ -72,7 +78,9 @@ models:
     model: "openai/moonshotai/kimi-k2.6"
     api_base: "https://integrate.api.nvidia.com/v1"
     api_key_env: NVIDIA_API_KEY
-    notes: "月之暗面 Kimi K2.6，实测 ~1.8s。"
+    retired: true
+    retired_reason: "上游已移除，端点返回 404 Function Not Found（2026-08-08 实测）。"
+    notes: "已下线（上游 404 Function Not Found）。曾实测 ~1.8s。"
   - id: nim-mistral-large-3
     display_name: "NVIDIA · Mistral Large 3 (675B)"
     vendor: "NVIDIA NIM"

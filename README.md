@@ -1227,6 +1227,7 @@ bestseller/
 | [债务残留清剿+守卫盲区补网 记录与验证](docs/新建创作-债务残留清剿-记录与验证-20260710.md) | 清 7 个题材中性面的"账/欠账"残留（方法论卡/generic 语料/悬疑镜书 DNA/母题/规划节点树）+ 守卫扩到 `data/methodology_sources` 等盲区；L1 非空转 + 231 测零回归 + L3-lite 真实编译块零债务 |
 | [脑洞全开开关（wild_concept） 记录与验证](docs/新建创作-脑洞全开开关-记录与验证-20260710.md) | 建书勾选「脑洞全开」松开概念淘汰赛三道收敛闸门（俗套/审计 eliminate→penalize、winner_min 5.5→4.0、偏新颖）；默认不勾字节级不变；44 测 + 352 集成零回归 + L3-lite 端到端标志翻转行为 |
 | [纯正爽文·代价强度三档（cost_style） 记录与验证](docs/新建创作-纯正爽文代价档-记录与验证-20260710.md) | 建书选代价强度 standard/external(外置,主角不自损)/minimal(极简)，贯穿意识形态内核派生+渲染脊柱；默认 standard 字节级不变；6 测(含 no-op) + L3-lite 端到端脊柱翻转；番茄硬毙门 additive 防误伤 |
+| [lean 字数带·写手可见下限修复 记录与验证](docs/lean字数带-写手可见下限修复-记录与验证-20260804.md) | lean prompt 曾把下限/目标全砍（门禁在验模型看不见的契约→稳定欠产21%）；补一行与门禁同源的极简字数带；L1/L2 零回归 + 真书同章 A/B |
 | [创意面板重设计（选项 C）设计+实施](docs/plans/2026-07-10-creative-panels-redesign.md) | 三个"活代码死UI"面板(CSS特性bug隐藏)：复活 conceptLab 为「手动指定概念·覆写淘汰赛」入口(后端零改动已就绪)，删 creativeLab+hookLab(能力已被自动化覆盖)；node --check + 残留/保留 grep 结构验证 |
 | [架构设计](docs/architecture.md) | 系统架构详解（真值源、分层、事务边界） |
 | [Story Design 集成计划](docs/plans/2026-05-12-story-design-core-capability-integration.md) | 剧情设计内核与规划链集成 |

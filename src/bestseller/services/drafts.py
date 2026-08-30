@@ -9856,6 +9856,22 @@ def build_chapter_first_draft_prompts(
         "节点不是可见场景，也不要求平均篇幅。段落数量、长短和转折位置服从事件本身，"
         "禁止为了满足固定段落模板而制造连续短句、机械排比或单句成段。"
     )
+    # Lean keeps a one-sentence band with the same numbers the
+    # length_stability_gate enforces. Dropping the whole block left the floor
+    # prompt-invisible: 11 drafts (5 first-chapter runs clustered at 2000±70)
+    # underproduced ~21% against a contract the model never saw, and every
+    # draft then paid a full repair loop (2026-08-04).
+    lean_word_band_rule = (
+        "[word count and structure]\n"
+        f"Write the chapter body in {hard_min_words}-{hard_max_words} words, "
+        f"aiming for about {hard_target_words}."
+        if is_en
+        else (
+            "【字数与结构】\n"
+            f"本章正文 {hard_min_words}-{hard_max_words} 个汉字，"
+            f"目标约 {hard_target_words} 字。"
+        )
+    )
     output_scene_rules = (
         "【隐藏节点执行规则】\n"
         "弱场景地图只约束顺序与状态变化，不是待扩写的微型正文；"
@@ -10027,7 +10043,7 @@ def build_chapter_first_draft_prompts(
             "【弱场景逻辑地图】\n" + _render_chapter_first_scene_cards(scenes),
             "【检索补充】\n" + retrieval_context_block,
             *output_rules_sections,
-            output_word_count_rules if _keep("word_count_rules") else "",
+            output_word_count_rules if _keep("word_count_rules") else lean_word_band_rule,
             *hard_writer_tail_blocks,
         ]
     system_prompt = _redact_front10_prompt_leaks(system_prompt, chapter, scenes)

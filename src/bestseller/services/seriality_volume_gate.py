@@ -124,7 +124,28 @@ def _best_match(candidate: str, approved: Sequence[str]) -> str | None:
         j = len(cset & tset) / len(cset | tset)
         if j >= 0.6 and (best is None or j > best[0]):
             best = (j, text)
-    return best[1] if best else None
+    if best:
+        return best[1]
+    cs = cset
+    # 方向性覆盖（2026-08-30《十日补碑》第 7 败引文定案）：模型把整句长的
+    # 批准轴缩成短名，对称 Jaccard 短对长永远过不了线。判据：短名字符
+    # ≥85% 落进某条批准项、且最优与次优差 ≥0.15（歧义不归一，留给门）。
+    best_cov = None
+    second = 0.0
+    for t in approved:
+        ts = set(t)
+        if not ts or not cs:
+            continue
+        cov = len(cs & ts) / len(cs)
+        if best_cov is None or cov > best_cov[0]:
+            if best_cov is not None:
+                second = max(second, best_cov[0])
+            best_cov = (cov, t)
+        else:
+            second = max(second, cov)
+    if best_cov and best_cov[0] >= 0.85 and best_cov[0] - second >= 0.15:
+        return best_cov[1]
+    return None
 
 
 def _phase_chapter_range(phase_text: str) -> tuple[int, int] | None:

@@ -3107,11 +3107,25 @@ def _validate_generated_volume_outline_or_raise(
     )
     if _concept_contract:
         from bestseller.services.seriality_outline_gate import (
+            canonicalize_chapter_seriality_refs,
             evaluate_seriality_outline_batch,
         )
 
-        _seriality_report = evaluate_seriality_outline_batch(
+        # 2026-08-29《十日补碑》第三关：章级 phase_id/unit_family_ref 对每章
+        # 只有一个合法值（=所属卷的），先确定性推导再验收；并且必须**回写进
+        # 章对象**——此前传给门的是 model_dump 一次性副本，规范化不落库等于
+        # 没规范化（「回执不落库等于没检测」的镜像病）。
+        _canon_chapters = canonicalize_chapter_seriality_refs(
             [chapter.model_dump(mode="json") for chapter in batch.chapters],
+            volume_entry,
+        )
+        for _ch_obj, _ch_canon in zip(batch.chapters, _canon_chapters):
+            try:
+                _ch_obj.seriality_contract = _ch_canon.get("seriality_contract")
+            except (AttributeError, ValueError, TypeError):
+                pass
+        _seriality_report = evaluate_seriality_outline_batch(
+            _canon_chapters,
             _concept_contract,
             volume_entry,
         )

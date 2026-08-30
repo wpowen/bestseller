@@ -45,6 +45,77 @@ def _track_deltas(value: object) -> list[tuple[str, str]]:
     return rows
 
 
+def canonicalize_chapter_seriality_refs(
+    chapters: Sequence[Mapping[str, object]],
+    volume_entry: Mapping[str, object] | None,
+) -> list[dict[str, object]]:
+    """章级引用规范化——只有一个合法值的字段由卷上下文直接推导。
+
+    2026-08-29 真机《十日补碑》第三关死因：章纲修复循环 3 轮全败于
+    chapter_unit_family_mismatch / chapter_accumulation_track_mismatch。
+    本门要求每章 seriality_contract 的 phase_id 与 unit_family_ref 与
+    **当前卷**逐字相等——对每章它们各自只有一个合法值，要模型回声一遍
+    50 字长句纯属仪式（且去种词修复后家族名更长更专属，回声更不可能）。
+    与卷级 canonicalize_seriality_volume_refs 同方子：推导代替回声，
+    只归一不发明。track_ref 保守匹配（相等/前缀/字符 Jaccard≥0.6）到
+    本卷批准轴；匹配不上保持原样留给门。幂等。
+    """
+
+    if not isinstance(volume_entry, Mapping):
+        return [dict(c) for c in chapters if isinstance(c, Mapping)]
+    vol_phase = _text(volume_entry.get("seriality_phase_id"))
+    vol_family = _text(volume_entry.get("unit_family_ref"))
+    approved = [
+        track for track, _d in _track_deltas(volume_entry.get("accumulation_track_deltas"))
+    ]
+
+    def _match(cand: str) -> str | None:
+        cand = cand.strip()
+        if not cand:
+            return None
+        for t in approved:
+            # 包含也算：模型常把「已并拢的玺瓣数」缩写成「玺瓣数」。
+            if cand == t or (len(cand) >= 3 and (cand in t or t in cand)):
+                return t
+        cs = set(cand)
+        best = None
+        for t in approved:
+            ts = set(t)
+            if not ts:
+                continue
+            j = len(cs & ts) / len(cs | ts)
+            if j >= 0.6 and (best is None or j > best[0]):
+                best = (j, t)
+        return best[1] if best else None
+
+    out: list[dict[str, object]] = []
+    for ch in chapters:
+        if not isinstance(ch, Mapping):
+            continue
+        row = dict(ch)
+        raw = row.get("seriality_contract")
+        contract = dict(raw) if isinstance(raw, Mapping) else {}
+        if vol_phase:
+            contract["phase_id"] = vol_phase
+        if vol_family:
+            contract["unit_family_ref"] = vol_family
+        deltas = contract.get("accumulation_track_deltas")
+        if isinstance(deltas, Sequence) and not isinstance(deltas, (str, bytes)):
+            fixed = []
+            for d in deltas:
+                if not isinstance(d, Mapping):
+                    continue
+                dd = dict(d)
+                m = _match(_text(dd.get("track_ref")))
+                if m is not None:
+                    dd["track_ref"] = m
+                fixed.append(dd)
+            contract["accumulation_track_deltas"] = fixed
+        row["seriality_contract"] = contract
+        out.append(row)
+    return out
+
+
 def evaluate_seriality_outline_batch(
     chapters: Sequence[Mapping[str, object]],
     concept_contract: Mapping[str, object] | None,
@@ -149,10 +220,14 @@ def evaluate_seriality_outline_batch(
                 )
             )
         if _text(contract.get("unit_family_ref")) != volume_family:
+            # 判词必须带引文（2026-08-24「重复否决却不给引文」定案）：
+            # 没有「写了什么 vs 该是什么」，修复循环和排障都只能瞎猜。
             findings.append(
                 SerialityOutlineFinding(
                     "chapter_unit_family_mismatch",
-                    f"Chapter {index} does not reference the current volume unit family exactly.",
+                    f"Chapter {index} unit_family_ref="
+                    f"'{_text(contract.get('unit_family_ref'))[:40]}' != volume "
+                    f"'{volume_family[:40]}'.",
                 )
             )
         raw_track_deltas = contract.get("accumulation_track_deltas")
@@ -170,7 +245,8 @@ def evaluate_seriality_outline_batch(
                 findings.append(
                     SerialityOutlineFinding(
                         "chapter_accumulation_track_mismatch",
-                        f"Chapter {index} references a track outside the current volume contract.",
+                        f"Chapter {index} track_ref='{track_ref[:40]}' not in volume "
+                        f"approved={sorted(t[:24] for t in approved_tracks)}.",
                     )
                 )
             else:

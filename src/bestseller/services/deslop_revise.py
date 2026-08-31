@@ -514,6 +514,16 @@ async def _revise_prose_deslop_inner(
     repetition_first = _nrl(content) >= _REPETITION_PATHOLOGICAL
     stock_first = _srr(content) >= _STOCK_REACTION_PATHOLOGICAL
     micro_first = _mar(content) >= _MICRO_ACTION_PATHOLOGICAL
+    # 这一章是不是「带着某条弥漫型病进来的」。下面的「短而干净的稿先留下、
+    # 下一轮补长度」救援只对这类章开——健康章的短稿仍然照旧丢弃，行为不变。
+    entered_pathological = (
+        slice_first
+        or staccato_first
+        or verb_tic_first
+        or repetition_first
+        or stock_first
+        or micro_first
+    )
     restore_length = False
 
     # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
@@ -687,22 +697,27 @@ async def _revise_prose_deslop_inner(
         if revised and len(revised) >= length_floor:
             content = revised
             restore_length = False
-        elif (
-            revised
-            and slice_first
-            and _moment_slice_rate(revised) < _moment_slice_rate(content) - 1.0
-        ):
-            # 注水在保护自己，第三次复发（2026-08-15 ch26 实测）：一份把切片链
-            # 并回正常叙述的改稿必然变短（2773→1733 字，floor 1819），旧逻辑判它
-            # "太短"并 break，于是整轮预算作废、发布的是那份注水原稿。
-            # 短而干净的稿不该丢：留下它，下一轮改用"只许加新事件/对白/后果、
+        elif revised and entered_pathological and _key(revised) < _key(content):
+            # 注水在保护自己，第四次复发（2026-08-31 真机《攥着残页》定罪）：
+            # 一份把弥漫型病清干净的改稿必然变短，旧逻辑判它"太短"并 break，
+            # 于是整轮预算作废、发布的是那份注水原稿。
+            #
+            # ⚠️ 2026-08-15 那次只给 **moment_slice 一条轴**开了救援
+            # （`slice_first and 切片率下降>1.0`），其余病态轴的干净稿照旧被丢。
+            # 真机 39 次终轮拒绝里 9 次（23%）是这么丢的，其中一例
+            # stock_reaction 1.29→0.00（完全清干净）、badness 9.04→4.55（腰斩），
+            # 只因为短就整份作废——与 keep-better「弥漫型病折 1 span」是同一
+            # 个坑的第四次同形复发。改判据为 keep-better 键整体变优，
+            # 于是每条病态轴自动同权，不必再逐轴补丁。
+            #
+            # 短而干净的稿不该丢：留下它，下一轮用"只许加新事件/对白/后果、
             # 不许加分解镜头"的补字数指令把长度补回来——和 LENGTH_UNDER 修复轮
-            # 用的是同一条疫苗。仅对病态档生效，且要求切片确有实质下降。
+            # 用的是同一条疫苗。仅对**带病进来**的章生效，健康章行为不变。
             logger.info(
-                "deslop_revise: keeping short-but-cleaner draft (%.2f→%.2f/千字, "
-                "%d→%d chars); next round restores length",
-                _moment_slice_rate(content),
-                _moment_slice_rate(revised),
+                "deslop_revise: keeping short-but-cleaner draft "
+                "(key %s→%s, %d→%d chars); next round restores length",
+                _key(content),
+                _key(revised),
                 len(content),
                 len(revised),
             )
@@ -719,13 +734,33 @@ async def _revise_prose_deslop_inner(
     # lexical span count happened to tie.
     if content is not best_content:
         final_key = _key(content)
-        if best_key is not None and (not _length_ok(content) or final_key > best_key):
-            logger.info(
-                "deslop_revise: final rewrite regressed (key %s→%s); keeping best draft",
-                best_key,
-                final_key,
-            )
-            content = best_content
+        if best_key is not None:
+            too_short = not _length_ok(content)
+            got_worse = final_key > best_key
+            if too_short or got_worse:
+                # 两种拒绝原因必须分开记：旧代码一律打印 "regressed"，于是
+                # 「更干净但太短」被误读成「改差了」——2026-08-31 排障时 39 条
+                # 日志里有 9 条属于前者，逐条解析 key 才发现（日志自己在骗人）。
+                # 「同一条日志承载两种事实」与「同一事实住两地」是同族缺陷。
+                if too_short and not got_worse:
+                    logger.info(
+                        "deslop_revise: final rewrite is CLEANER but too short "
+                        "(key %s→%s, %d 汉字 < floor %d); keeping best draft "
+                        "—— 这份改稿在质量上更好，是长度地板把它挡下的",
+                        best_key,
+                        final_key,
+                        count_zh_chars(content),
+                        int(target_chars * 0.7),
+                    )
+                else:
+                    logger.info(
+                        "deslop_revise: final rewrite regressed (key %s→%s%s); "
+                        "keeping best draft",
+                        best_key,
+                        final_key,
+                        "，且长度不足" if too_short else "",
+                    )
+                content = best_content
     return content
 
 

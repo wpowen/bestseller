@@ -23724,19 +23724,43 @@ def _resolve_promotional_brief_blurb(
     *, converged_synopsis: str, llm_blurb: str, premise_fallback: str
 ) -> str:
     """T7 简介单一真源：converged_synopsis 非空时直接消费(只裁剪不重生)；
-    否则用 LLM 产的 blurb，命中致命病理才退到 premise 兜底。"""
+    否则用 LLM 产的 blurb，命中致命病理才退到 premise 兜底。
+
+    2026-08-31 补 AI 腔过滤：此前简介定稿这条路**完全没有** copy_flavor
+    （planner.py 全文 0 引用，book_listing 同），于是「第50章…」「必须持续兑现」
+    「一文读懂/建议收藏」这类生产口吻与助手腔可以直接印到上架页上——
+    正文层查得再细，读者第一眼看到的那段反而不查。
+
+    语义严格照 ``pick_reader_facing``：**只过滤不重排**。按既有优先级依次取，
+    第一个 copy_flavor 干净的胜出；全都不干净时返回**优先级最高**的那份
+    （= 旧行为），所以这层只会把脏文案换成干净文案，不会把次选顶上来。
+    """
 
     from bestseller.services.blurb_pathology import detect_blurb_pathology, truncate_at_sentence
+    from bestseller.services.copy_flavor import detect_copy_flavor
 
     converged_synopsis = converged_synopsis.strip()
-    if converged_synopsis:
-        return truncate_at_sentence(converged_synopsis, 500)
-
     llm_blurb = llm_blurb.strip()
-    fatal = [f for f in detect_blurb_pathology(llm_blurb) if f.severity == "fatal"]
-    if fatal:
+
+    # 候选只取两份**按读者文案写的**稿：收敛简介与 LLM 简介。
+    # premise_fallback 仍然只在「LLM 简介有致命病理且没有收敛简介」时出场——
+    # 它是前提句不是文案，不能因为「AI 腔更少」就被顶上来（干净≠适合当简介）。
+    ordered: list[str] = []
+    if converged_synopsis:
+        ordered.append(truncate_at_sentence(converged_synopsis, 500))
+    llm_fatal = bool(llm_blurb) and any(
+        f.severity == "fatal" for f in detect_blurb_pathology(llm_blurb)
+    )
+    if llm_blurb and not llm_fatal:
+        ordered.append(llm_blurb)
+
+    if not ordered:
         return premise_fallback.strip()
-    return llm_blurb
+
+    for candidate in ordered:
+        if detect_copy_flavor(candidate).clean:
+            return candidate
+    return ordered[0]
 
 
 async def _run_prewrite_readiness_gate(

@@ -10572,6 +10572,12 @@ async def run_chapter_pipeline(
                     config=_af_gates_cfg.ai_flavor,
                     project_output_dir=_af_output_dir,
                 )
+                # 进门时的原始分。deslop 采纳后 ``ai_flavor_outcome`` 会被
+                # ``_recheck`` 整个替换，而 recheck 的 before/after 都测在**已重写**
+                # 的稿子上——于是 step 记录里 before==after，DB 上看永远是「零改善」
+                # （2026-08-31 排障：我据此差点把「修复通道有效」误判成「完全失效」）。
+                # 单独留一份进门分，改善幅度才可查。
+                _af_entry_score = ai_flavor_outcome.before_score
                 if ai_flavor_outcome.patched_text is not None:
                     chapter_draft.content_md = ai_flavor_outcome.patched_text
                     resync_draft_word_count(chapter_draft, language=_af_lang)
@@ -10692,6 +10698,12 @@ async def run_chapter_pipeline(
                             "before_score": ai_flavor_outcome.before_score,
                             "after_score": ai_flavor_outcome.after_score,
                             "edits": len(ai_flavor_outcome.edits),
+                            # 进门原始分 vs 最终分：deslop 的真实战果只能从这一对
+                            # 读出来（见上方 _af_entry_score 注释）。
+                            "entry_score": _af_entry_score,
+                            "improvement": round(
+                                _af_entry_score - ai_flavor_outcome.after_score, 1
+                            ),
                         },
                     )
                     step_order += 1

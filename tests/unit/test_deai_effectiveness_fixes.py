@@ -30,9 +30,45 @@ def test_short_but_cleaner_rescue_covers_every_pathological_axis() -> None:
     src = inspect.getsource(dr._revise_prose_deslop_inner)
     # 救援条件必须挂在「带病进来」的合取旗标上，而不是单独的 slice_first
     assert "entered_pathological" in src
-    assert "_key(revised) < _key(content)" in src
+    # 判据是全轴合取（_rescue_worthwhile），不是字典序——见下面那条测试
+    assert "_rescue_worthwhile" in src
     # 旧的单轴判据不得复活
     assert "slice_first\n            and _moment_slice_rate(revised)" not in src
+
+
+def test_rescue_requires_no_axis_to_regress() -> None:
+    """救援判据必须全轴合取，不能用 keep-better 的字典序。
+
+    真实反例（2026-08-31 ch27）：staccato 0.43→0.15 改好，但 verb_tic
+    96.2→142.8（恶化 48%）、micro 5.92→7.79。字典序只看第一位就判「更干净」，
+    收下后补完长度总分 60→61 反而更差。
+    """
+
+    cur = {"staccato": 0.43, "verb_tic": 96.2, "micro": 5.92}
+    ch27 = {"staccato": 0.15, "verb_tic": 142.8, "micro": 7.79}
+    assert dr._rescue_worthwhile(cur, ch27) is False, "有轴恶化就不该救援"
+
+    # 全轴不倒退且至少一条变好 → 该救
+    better = {"staccato": 0.15, "verb_tic": 90.0, "micro": 5.92}
+    assert dr._rescue_worthwhile(cur, better) is True
+
+    # 一模一样（没变好）→ 不救，免得白白多跑一轮补字数
+    assert dr._rescue_worthwhile(cur, dict(cur)) is False
+
+
+def test_rescue_criterion_is_not_lexicographic() -> None:
+    # 源码层面确认：救援用 _rescue_worthwhile，不再是 _key 比较
+    src = inspect.getsource(dr._revise_prose_deslop_inner)
+    assert "_rescue_worthwhile(_axes(content), _axes(revised))" in src
+    assert "_key(revised) < _key(content)" not in src
+
+
+def test_pathological_measures_only_reports_active_axes() -> None:
+    # 带外的轴不参与判断（与 keep-better「带外恒 0.0」同一条纪律）
+    text = "他把担子放下来，往灶膛里添了一把柴。" * 40
+    only_verb = dr._pathological_measures(text, verb_tic_first=True)
+    assert set(only_verb) == {"verb_tic"}
+    assert dr._pathological_measures(text) == {}
 
 
 def test_entered_pathological_includes_all_six_axes() -> None:

@@ -385,6 +385,64 @@ def _keep_better_key(
     )
 
 
+def _pathological_measures(
+    text: str,
+    *,
+    slice_first: bool = False,
+    staccato_first: bool = False,
+    verb_tic_first: bool = False,
+    repetition_first: bool = False,
+    stock_first: bool = False,
+    micro_first: bool = False,
+) -> dict[str, float]:
+    """进门时越线的那几条病态轴，各自在 ``text`` 上的连续读数（越小越好）。
+
+    只收**活跃**轴：带外的轴不参与判断，与 :func:`_keep_better_key` 的
+    「带外恒 0.0」是同一条纪律，免得拿一条本就健康的轴否决救援。
+    """
+
+    from bestseller.services.ai_flavor.detector import (  # noqa: PLC0415
+        micro_action_rate,
+        narrative_repetition_load,
+        stock_reaction_rate,
+        verb_tic_density,
+    )
+
+    out: dict[str, float] = {}
+    if staccato_first:
+        out["staccato"] = _staccato_ratio(text)
+    if verb_tic_first:
+        out["verb_tic"] = verb_tic_density(text)
+    if repetition_first:
+        out["repetition"] = narrative_repetition_load(text)
+    if slice_first:
+        out["slice"] = _moment_slice_rate(text)
+    if stock_first:
+        out["stock"] = stock_reaction_rate(text)
+    if micro_first:
+        out["micro"] = micro_action_rate(text)
+    return out
+
+
+def _rescue_worthwhile(
+    current: dict[str, float], candidate: dict[str, float]
+) -> bool:
+    """「短而干净」救援的判据：所有活跃病态轴都不倒退，且至少一条真的变好。
+
+    ⚠️ 不能用 ``_keep_better_key`` 的元组比较来做这件事——那是**字典序**，
+    第一位（碎句）一改好就整体判「更干净」。2026-08-31 真机 ch27 就这么
+    收下了一份 staccato 0.43→0.15 但 verb_tic 96.2→142.8（恶化 48%）、
+    micro 5.92→7.79 的稿，补完长度后总分 60→61 反而更差。
+    排序用字典序（要的是稳定的归因优先级），**采纳**要用全轴合取。
+    """
+
+    if not current or not candidate:
+        return False
+    if any(candidate.get(k, 0.0) > v for k, v in current.items()):
+        return False
+    return any(candidate.get(k, 0.0) < v for k, v in current.items())
+
+
 def _hype_survives(text: str, language: str) -> bool:
     """正文里还读得出爽点结算吗（复用盖戳同一分类器，口径一致）。
 
@@ -564,6 +622,19 @@ async def _revise_prose_deslop_inner(
             micro_first=micro_first,
         )
 
+    def _axes(text: str) -> dict[str, float]:
+        """本章活跃病态轴的读数——救援判据用它做全轴合取（见 _rescue_worthwhile）。"""
+
+        return _pathological_measures(
+            text,
+            slice_first=slice_first,
+            staccato_first=staccato_first,
+            verb_tic_first=verb_tic_first,
+            repetition_first=repetition_first,
+            stock_first=stock_first,
+            micro_first=micro_first,
+        )
+
     def _length_ok(text: str) -> bool:
         """Shippable length, measured the way the downstream gate measures it.
 
@@ -697,7 +768,11 @@ async def _revise_prose_deslop_inner(
         if revised and len(revised) >= length_floor:
             content = revised
             restore_length = False
-        elif revised and entered_pathological and _key(revised) < _key(content):
+        elif (
+            revised
+            and entered_pathological
+            and _rescue_worthwhile(_axes(content), _axes(revised))
+        ):
             # 注水在保护自己，第四次复发（2026-08-31 真机《攥着残页》定罪）：
             # 一份把弥漫型病清干净的改稿必然变短，旧逻辑判它"太短"并 break，
             # 于是整轮预算作废、发布的是那份注水原稿。
@@ -715,9 +790,9 @@ async def _revise_prose_deslop_inner(
             # 用的是同一条疫苗。仅对**带病进来**的章生效，健康章行为不变。
             logger.info(
                 "deslop_revise: keeping short-but-cleaner draft "
-                "(key %s→%s, %d→%d chars); next round restores length",
-                _key(content),
-                _key(revised),
+                "(病态轴 %s→%s, %d→%d chars); next round restores length",
+                _axes(content),
+                _axes(revised),
                 len(content),
                 len(revised),
             )

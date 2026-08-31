@@ -10196,6 +10196,34 @@ async def _try_localized_chapter_first_ending_repair(
 _HARD_UNUSABLE_VIOLATION_CODES = frozenset({"AI_FLAVOR_REGRESSION"})
 
 
+# 在架稿要比挑战者差**至少**这么多条 POV 不匹配，才撤销它的「干净」保护。
+# 取 3 与 POVLockCheck 的 close_third 报告下限一致：低于它的差异属于
+# 自由间接引语噪声，不足以判定「明确更差」。
+_POV_TAKEOVER_MARGIN = 3
+
+
+def _pov_mismatch_count(text: str, project: ProjectModel) -> int:
+    """这份稿在叙述层用错人称的抽样句数（POVLockCheck 的同一把尺）。"""
+
+    if not text:
+        return 0
+    from bestseller.services import chapter_validator as _cv
+
+    lang = getattr(project, "language", None) or "zh-CN"
+    check = _cv.POVLockCheck()
+    narrative = _cv._strip_quoted_dialogue(text, lang)
+    sentences = _cv._split_sentences(narrative, lang)
+    if not sentences:
+        return 0
+    half = check.sample_size // 2
+    sample = sentences[:half] + (sentences[-half:] if len(sentences) > check.sample_size else [])
+    return sum(
+        1
+        for sent in sample
+        if check._is_first(_cv._tokens_for_pov(sent, lang), lang)
+    )
+
+
 def challenger_takes_current(
     *,
     challenger_blocked: bool,
@@ -10204,6 +10232,7 @@ def challenger_takes_current(
     deterministic_audit_failed: bool,
     violation_codes: tuple[str, ...] = (),
     incumbent_audit_failed: bool = False,
+    incumbent_structurally_worse: bool = False,
 ) -> bool:
     """重写稿是否取代在架稿成为 current。
 
@@ -10238,6 +10267,18 @@ def challenger_takes_current(
     if any(code in _HARD_UNUSABLE_VIOLATION_CODES for code in violation_codes):
         return False
     if incumbent_gate_outcome is not None and incumbent_gate_outcome != "blocked":
+        # 2026-08-31 真机《攥着残页从渡口骂到寨里》定罪：这条保护的注释写着
+        # 「在架稿自己是干净的」，而它实际检查的只是「没有**阻断级**违规」。
+        # POV_DRIFT 在 config/quality_gates.yaml 里是 audit_only，于是一份
+        # 叙述层 13 句用错人称的稿子照样算 "ok"，凭这条保护挡住了干净的挑战者。
+        # 三章实录：第1章 7 稿有 5 稿 POV 干净、第13章 6 稿有 5 稿干净、
+        # 第14章最新稿 0 条不匹配——每次都是**坏的那份**留在架上，重写反复
+        # 修好又反复被丢弃。这不是「POV 检测器不够凶」，是它不该享有的保护。
+        #
+        # 只撤销保护，**不给 POV_DRIFT 任何杀权**（audit_only 保持原样）：
+        # 在架稿在某条结构轴上明确比挑战者差时，它就不再算「干净」。
+        if incumbent_structurally_worse:
+            return True
         # 在架稿自己是干净的：不合格的挑战者不许顶掉它（原有保护）。
         return False
     # 两边都不合格时，确定性审计只有在**挑战者比在架差**时才否决。
@@ -11397,8 +11438,24 @@ async def rewrite_chapter_from_task(
             )
 
     # 回执与实际状态共用同一个决定值。
+    # 在架稿 vs 挑战者的结构轴对比（当前只有 POV：它是唯一被实测证明会
+    # 「反复修好又被丢弃」的 audit_only 轴）。纯正则、无 LLM，与上面那次
+    # 确定性审计同级开销。任一侧算不出就退回 False = 保持旧行为，不放宽。
+    _incumbent_structurally_worse = False
+    if current_draft is not None:
+        try:
+            _incumbent_structurally_worse = _pov_mismatch_count(
+                current_draft.content_md or "", project
+            ) >= _POV_TAKEOVER_MARGIN + _pov_mismatch_count(content_md, project)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "chapter %d: POV comparison unavailable before takeover decision",
+                chapter.chapter_number,
+                exc_info=True,
+            )
     _took_current = challenger_takes_current(
         challenger_blocked=quality_gate_rejected_current_promotion,
+        incumbent_structurally_worse=_incumbent_structurally_worse,
         incumbent_gate_outcome=_incumbent_gate_outcome,
         has_duplicate_findings=bool(duplicate_gate_findings),
         deterministic_audit_failed=bool(

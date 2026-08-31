@@ -1265,6 +1265,58 @@ def _repeated_gram_profile(
     return grams, repeated
 
 
+# 叙述层自我介绍（2026-08-31 真机《攥着残页从渡口骂到寨里》）。
+# 形态：章首若干段的**叙述层**出现「我叫X，某某身份，正在做某事」——
+# 把人物档案念给读者听，而不是让他在场景里被认出来。
+_SELF_INTRO_RE = re.compile(
+    r"[我他她](?:叫|是)([\u4e00-\u9fff]{2,4})[，,]([^。！？\n]{2,26})[。，]"
+)
+# 只看开头几段：中段的「他是沈鹊」多半是合法的身份确认（认人、指认、揭穿）。
+_SELF_INTRO_HEAD_PARAGRAPHS = 5
+# 名字须在本章反复出现，确认它是主要人物而不是路人甲的一次性提及。
+_SELF_INTRO_MIN_NAME_FREQ = 5
+
+
+def narrator_self_introduction(content_md: str, language: str = "zh-CN") -> list[str]:
+    """章首叙述层的自我介绍片段（人类出版语料里为 0）。
+
+    语料校准（.distillation_private，随机 4000 章真实出版正文）：
+
+        剥对白前   人类 0.15%（6/4000）  本书 4.8%（2/42）
+        剥对白后   人类 0.00%（0/4000）  本书 4.8%（2/42）
+
+    剥对白是决定性的一刀：人类那 6 例**全在引号内**——角色向另一个角色
+    自报家门（「我叫羽泽，你应该听说过我吧」）是完全合法的对白。
+    而叙述层自我介绍在 4000 章真书里一次都没出现过。
+
+    本书两例：
+        章1  「我叫沈鹊，沈家镖局学徒，今天跟师父走这趟镖……」
+        章15 「他是沈鹊，行船说书人，靠甩句定罪算命的落魄书生」
+    （章15 那句还与构思设定的「末等镖师」自相矛盾——念档案念错了。）
+
+    按本仓规矩，新检测器只挣留痕，不发杀权：返回证据串，由调用方决定用途。
+    """
+
+    if not content_md or not str(language or "").lower().startswith("zh"):
+        return []
+    try:
+        from bestseller.services.chapter_validator import _strip_quoted_dialogue
+    except Exception:  # noqa: BLE001
+        return []
+    narrative = _strip_quoted_dialogue(content_md, "zh-CN")
+    paragraphs = [p for p in narrative.split("\n") if p.strip()]
+    head = "\n".join(paragraphs[:_SELF_INTRO_HEAD_PARAGRAPHS])
+    found: list[str] = []
+    for match in _SELF_INTRO_RE.finditer(head):
+        name, descriptor = match.group(1), match.group(2)
+        if content_md.count(name) < _SELF_INTRO_MIN_NAME_FREQ:
+            continue
+        if not re.search(r"[\u4e00-\u9fff]{2}", descriptor):
+            continue
+        found.append(match.group(0)[:60])
+    return found
+
+
 def narrative_repetition_load(content_md: str) -> float:
     """全章四字串里落在「重复≥5 次的实义短语」中的比例。
 

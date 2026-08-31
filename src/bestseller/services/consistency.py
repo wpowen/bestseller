@@ -533,11 +533,75 @@ def dominant_name_extension(text: str, canonical: str) -> tuple[str, int, float]
     return (canonical + char, hits, share)
 
 
+# 同姓串里属于宗族/敬称而非人名的尾字（沈氏/沈家/沈爷/沈老/沈门/沈府…）。
+# 只列**结构性**称谓类别，不列任何具体人名——种词规矩。
+_CLAN_HONORIFIC_SUFFIXES: frozenset[str] = frozenset(
+    "氏家姓爷老门府宅族公母翁婆叔伯姑姨嫂妹兄弟父子女郎"
+)
+
+
+def substituted_given_name(
+    text: str,
+    canonical: str,
+    *,
+    known_names: "frozenset[str] | set[str] | None" = None,
+) -> tuple[str, int, float]:
+    """正文有没有把主角换成**同姓不同名**的另一个人（沈鹊 → 沈髵）。
+
+    2026-08-31 真机《攥着残页从渡口骂到寨里》第 20 章开篇即写「沈髵右手食指
+    ……」，全书 16 次，而规范名沈鹊 1183 次。`dominant_name_extension` 拦不住
+    它——那条只认**贴着规范名长出来的**变体（陈韭 ⊂ 陈韭菜），而这里姓相同、
+    名被整个替换，规范名根本不是它的前缀。同一个「正文把主角改名了」的病，
+    换一种形态就绕过了唯一的检测器。
+
+    误伤防线（本书就有现成的反例：师父叫沈鸢，99 次，是合法角色）：
+      · 只看与规范名**同姓、同长度**的串；
+      · 该串必须**不在设定里**（cast/premise/大纲……任何 metadata 文本）——
+        真角色一定在设定里出现过，正文自造的名字不会；
+      · 该章必须**同时大量用过规范名**，否则那是别人的视角章，不是改名；
+      · 出现次数需达 ``_NAME_DRIFT_MIN_HITS``，避免一次手误就报。
+
+    Returns ``(变体, 次数, 占比)``；没有则 ``("", 0, 0.0)``。
+    """
+
+    if not text or not canonical or len(canonical) < 2:
+        return ("", 0, 0.0)
+    surname = canonical[0]
+    if not ("\u4e00" <= surname <= "\u9fff"):
+        return ("", 0, 0.0)
+    canon_hits = text.count(canonical)
+    # 刻意**不要求**该章也用过规范名。第一版加了这条守卫（想排除「别人的
+    # 视角章」），结果恰好放掉了最严重的形态：真机第 20 章「沈鹊」0 次、
+    # 「沈髵」16 次——整章都改了名，正是 canon_hits 为 0 的那种。
+    # 排除「别人」靠的是设定白名单，不是靠本章有没有提规范名。
+    known = {n for n in (known_names or set()) if n}
+    pattern = re.compile(
+        re.escape(surname) + r"[\u4e00-\u9fff]{" + str(len(canonical) - 1) + r"}"
+    )
+    counts: dict[str, int] = {}
+    for m in pattern.finditer(text):
+        name = m.group(0)
+        if name == canonical or name in known:
+            continue
+        # 宗族/敬称不是人名：沈氏（宗族）、沈家、沈爷、沈老……真机把
+        # 「沈氏」误报成主角改名，因为它同姓同长度且不在花名册里。
+        if name[1:] and name[1] in _CLAN_HONORIFIC_SUFFIXES:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+    if not counts:
+        return ("", 0, 0.0)
+    variant, hits = max(counts.items(), key=lambda kv: kv[1])
+    if hits < _NAME_DRIFT_MIN_HITS:
+        return ("", 0, 0.0)
+    return (variant, hits, hits / (hits + canon_hits))
+
+
 def _check_protagonist_name_in_prose(
     chapter_drafts: list[ChapterDraftVersionModel],
     *,
     canonical: str,
     language: str | None = None,
+    known_names: "frozenset[str] | set[str] | None" = None,
 ) -> list[ProjectConsistencyFinding]:
     """在架正文必须叫规范主角名（2026-08-25 真机 custom-xuanhuan-1787662679）。
 
@@ -564,9 +628,14 @@ def _check_protagonist_name_in_prose(
     _is_en = (language or "").lower().startswith("en")
     findings: list[ProjectConsistencyFinding] = []
     for draft in chapter_drafts:
-        variant, hits, share = dominant_name_extension(
-            draft.content_md or "", canonical
-        )
+        body = draft.content_md or ""
+        variant, hits, share = dominant_name_extension(body, canonical)
+        if not variant:
+            # 同一个病的第二种形态：同姓换名（沈鹊 → 沈髵）。扩展式检测器
+            # 看不见它，因为规范名不是它的前缀。
+            variant, hits, share = substituted_given_name(
+                body, canonical, known_names=known_names
+            )
         if not variant:
             continue
         ch_num = getattr(draft, "chapter_number", 0)
@@ -1549,12 +1618,32 @@ async def review_project_consistency(
         length_findings = _check_min_chapter_length(
             _drafts_with_num, language=project.language,
         )
+        # 设定里出现过的名字一律不算改名——师父沈鸢与主角沈鹊同姓，
+        # 少了这道白名单，合法角色会被误判成主角的错别字。
+        _meta_text = ""
+        try:
+            import json as _json
+
+            _meta_text = _json.dumps(
+                getattr(project, "metadata", None) or {}, ensure_ascii=False
+            )
+        except Exception:  # noqa: BLE001
+            _meta_text = str(getattr(project, "metadata", None) or "")
+        _canon = canonical_protagonist_name(getattr(project, "metadata", None))
+        _known = set()
+        if _canon:
+            _known = {
+                n
+                for n in re.findall(
+                    re.escape(_canon[0]) + r"[\u4e00-\u9fff]{" + str(max(1, len(_canon) - 1)) + r"}",
+                    _meta_text,
+                )
+            }
         name_findings = _check_protagonist_name_in_prose(
             _drafts_with_num,
-            canonical=canonical_protagonist_name(
-                getattr(project, "metadata", None)
-            ),
+            canonical=_canon,
             language=project.language,
+            known_names=_known,
         )
         prose_findings = (
             opening_findings + hook_findings + length_findings + name_findings

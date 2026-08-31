@@ -10196,34 +10196,6 @@ async def _try_localized_chapter_first_ending_repair(
 _HARD_UNUSABLE_VIOLATION_CODES = frozenset({"AI_FLAVOR_REGRESSION"})
 
 
-# 在架稿要比挑战者差**至少**这么多条 POV 不匹配，才撤销它的「干净」保护。
-# 取 3 与 POVLockCheck 的 close_third 报告下限一致：低于它的差异属于
-# 自由间接引语噪声，不足以判定「明确更差」。
-_POV_TAKEOVER_MARGIN = 3
-
-
-def _pov_mismatch_count(text: str, project: ProjectModel) -> int:
-    """这份稿在叙述层用错人称的抽样句数（POVLockCheck 的同一把尺）。"""
-
-    if not text:
-        return 0
-    from bestseller.services import chapter_validator as _cv
-
-    lang = getattr(project, "language", None) or "zh-CN"
-    check = _cv.POVLockCheck()
-    narrative = _cv._strip_quoted_dialogue(text, lang)
-    sentences = _cv._split_sentences(narrative, lang)
-    if not sentences:
-        return 0
-    half = check.sample_size // 2
-    sample = sentences[:half] + (sentences[-half:] if len(sentences) > check.sample_size else [])
-    return sum(
-        1
-        for sent in sample
-        if check._is_first(_cv._tokens_for_pov(sent, lang), lang)
-    )
-
-
 def challenger_takes_current(
     *,
     challenger_blocked: bool,
@@ -11395,6 +11367,7 @@ async def rewrite_chapter_from_task(
     # （preserved_current_quality_gate_outcome），只是算得太晚、用不上。
     # 提前到决策点之前算一次，后面那处直接复用，不重复调用。
     _incumbent_gate_outcome: str | None = None
+    _incumbent_audit_codes: set[str] = set()
     if quality_gate_rejected_current_promotion and current_draft is not None:
         try:
             _incumbent_gate_outcome = await _evaluate_chapter_quality_gate(
@@ -11402,6 +11375,7 @@ async def rewrite_chapter_from_task(
                 project=project,
                 chapter_number=chapter_number,
                 content=current_draft.content_md or "",
+                audit_only_codes_out=_incumbent_audit_codes,
             )
         except Exception:
             logger.debug(
@@ -11438,18 +11412,38 @@ async def rewrite_chapter_from_task(
             )
 
     # 回执与实际状态共用同一个决定值。
-    # 在架稿 vs 挑战者的结构轴对比（当前只有 POV：它是唯一被实测证明会
-    # 「反复修好又被丢弃」的 audit_only 轴）。纯正则、无 LLM，与上面那次
-    # 确定性审计同级开销。任一侧算不出就退回 False = 保持旧行为，不放宽。
+    # 在架稿 vs 挑战者的 **audit_only 轴** 对比。
+    #
+    # 2026-09-01 自我更正：首版只量 POV 一条轴——而 config 的 l6_gate
+    # default 就是 audit_only、显式 audit_only 另有 22 条
+    # （NAMING_OUT_OF_POOL / CLIFFHANGER_REPEAT / OPENING_ENTITY_OVERLOAD /
+    #  FRONT10_* / GOLDEN_THREE_WEAK …）。它们全都落在同一个洞里：在架稿在
+    # 这些轴上再脏，production_state 照样算 "ok"，照样白拿「我是干净的」保护。
+    # 只捞 POV 一条 = 「逐轴补丁」的又一次复发（本仓已记录四次），这次是我自己。
+    # 改为整套 audit_only 码集合比较，每条轴自动同权、新增检测器自动纳入。
+    #
+    # 判据要求**单向更差**：在架稿有而挑战者没有的轴 ≥1，且反向为空。
+    # 双方各有各的脏时不动（谁更差无从判定，保持旧行为）。
     _incumbent_structurally_worse = False
-    if current_draft is not None:
+    _incumbent_worse_axes: tuple[str, ...] = ()
+    if current_draft is not None and _incumbent_gate_outcome is not None:
         try:
-            _incumbent_structurally_worse = _pov_mismatch_count(
-                current_draft.content_md or "", project
-            ) >= _POV_TAKEOVER_MARGIN + _pov_mismatch_count(content_md, project)
+            _challenger_audit_codes: set[str] = set()
+            await _evaluate_chapter_quality_gate(
+                session=session,
+                project=project,
+                chapter_number=chapter_number,
+                content=content_md,
+                audit_only_codes_out=_challenger_audit_codes,
+            )
+            _worse = _incumbent_audit_codes - _challenger_audit_codes
+            _better = _challenger_audit_codes - _incumbent_audit_codes
+            if _worse and not _better:
+                _incumbent_structurally_worse = True
+                _incumbent_worse_axes = tuple(sorted(_worse))
         except Exception:  # noqa: BLE001
             logger.debug(
-                "chapter %d: POV comparison unavailable before takeover decision",
+                "chapter %d: audit-only comparison unavailable before takeover decision",
                 chapter.chapter_number,
                 exc_info=True,
             )
@@ -11653,6 +11647,14 @@ async def rewrite_chapter_from_task(
             # 2026-08-24 我拿离线重算去核对时把 has_duplicate_findings 假设成
             # False，结论「修复没生效」因此站不住——真机上它可能正是否决的那一条。
             "takeover_had_duplicate_findings": bool(duplicate_gate_findings),
+            # 2026-08-31 新增的第六个输入：在架稿是不是**结构性更差**（POV 不匹配
+            # 句数比挑战者多出 margin）。它能单独推翻「在架稿没被阻断就算干净」
+            # 那条保护，所以同样必须落回执——否则又要靠离线重算才能解释换稿原因。
+            "takeover_incumbent_structurally_worse": _incumbent_structurally_worse,
+            # 「更差」是结论，「差在哪几条轴」才是证据。回执只带 bool 时，
+            # 事后只能复述判决、解释不了原因——2026-08-24 立的那条契约
+            # （回执必须自带判据的全部输入）要的就是这个。
+            "takeover_incumbent_worse_axes": list(_incumbent_worse_axes),
             "takeover_violation_codes": [
                 str(v.get("code") or "")
                 for v in (quality_gate_violations or ())

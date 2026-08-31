@@ -2071,6 +2071,7 @@ async def _evaluate_chapter_quality_gate(
     content: str,
     extra_blocking_codes: tuple[str, ...] = (),
     extra_report_payload: dict[str, Any] | None = None,
+    audit_only_codes_out: set[str] | None = None,
 ) -> str | None:
     """Run L4 + L5 validators + L6 gate resolution on an assembled chapter draft.
 
@@ -2296,6 +2297,16 @@ async def _evaluate_chapter_quality_gate(
         ),
     )
     blocking = filter_blocking(report, effective_l6_gate, chapter_no=chapter_number)
+    # 2026-09-01：把「查到了但不阻断」的码带出去。调用方需要它才能做**相对**
+    # 比较——闸门只回答「这一份合不合格」，回答不了「两份里哪份更差」，而
+    # config 里 default 就是 audit_only、显式 audit_only 又有 22 条，
+    # 于是一份在这些轴上很脏的稿子照样算 "ok"（POV_DRIFT 只是其中一条）。
+    # 纯出参，不改返回值签名，现有调用方零影响。
+    if audit_only_codes_out is not None:
+        _blocking_ids = {id(v) for v in blocking}
+        audit_only_codes_out.update(
+            v.code for v in report.violations if id(v) not in _blocking_ids
+        )
 
     # ── Phase C1 — auto-sign override contracts for soft blockers ──
     # When Phase C is enabled and every blocking violation's code lives in

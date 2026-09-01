@@ -1,0 +1,20 @@
+{
+  "engine_id": "fixture-mystery-001",
+  "version": 1,
+  "initial_state": {
+    "clue": {"category": "clue", "value": 0},
+    "danger": {"category": "exposure", "value": 0}
+  },
+  "chapters": [
+    {"chapter": 1, "choice_id": "m01", "fingerprint": "inspect|room|clue", "transitions": [{"key": "clue", "category": "clue", "before": 0, "operator": "set", "after": 1, "evidence": "他检查锁眼里的纤维"}], "opponent_counteraction": "凶手清空隔壁房间", "future_obligations": ["查清纤维来源"]},
+    {"chapter": 2, "choice_id": "m02", "fingerprint": "question|porter|danger", "transitions": [{"key": "danger", "category": "exposure", "before": 0, "operator": "set", "after": 1, "evidence": "他询问夜班门卫"}], "opponent_counteraction": "门卫收到匿名警告", "future_obligations": ["保护门卫"]},
+    {"chapter": 3, "choice_id": "m03", "fingerprint": "map|route|clue", "transitions": [{"key": "clue", "category": "clue", "before": 1, "operator": "set", "after": 2, "evidence": "他标出失踪者路线"}], "opponent_counteraction": "有人撕走地图一角", "future_obligations": ["复原地图缺口"]},
+    {"chapter": 4, "choice_id": "m04", "fingerprint": "follow|signal|danger", "transitions": [{"key": "danger", "category": "exposure", "before": 1, "operator": "set", "after": 2, "evidence": "他追随窗边信号"}], "opponent_counteraction": "假信号引他进入陷阱", "future_obligations": ["识别假信号"]},
+    {"chapter": 5, "choice_id": "m05", "fingerprint": "decode|note|clue", "transitions": [{"key": "clue", "category": "clue", "before": 2, "operator": "set", "after": 3, "evidence": "他解出便笺暗码"}], "opponent_counteraction": "对手更换密码本", "future_obligations": ["寻找旧密码本"]},
+    {"chapter": 6, "choice_id": "m06", "fingerprint": "save|witness|danger", "transitions": [{"key": "danger", "category": "exposure", "before": 2, "operator": "set", "after": 3, "evidence": "他救出目击者"}], "opponent_counteraction": "对手公开目击者住址", "future_obligations": ["转移目击者"]},
+    {"chapter": 7, "choice_id": "m07", "fingerprint": "compare|ink|clue", "transitions": [{"key": "clue", "category": "clue", "before": 3, "operator": "set", "after": 4, "evidence": "他比对两份墨迹"}], "opponent_counteraction": "鉴定人突然失联", "future_obligations": ["找到替代鉴定人"]},
+    {"chapter": 8, "choice_id": "m08", "fingerprint": "bait|mirror|danger", "transitions": [{"key": "danger", "category": "exposure", "before": 3, "operator": "set", "after": 4, "evidence": "他用假线索设饵"}], "opponent_counteraction": "凶手反过来利用假线索", "future_obligations": ["解释诱饵漏洞"]},
+    {"chapter": 9, "choice_id": "m09", "fingerprint": "enter|tunnel|clue", "transitions": [{"key": "clue", "category": "clue", "before": 4, "operator": "set", "after": 5, "evidence": "他进入废弃地道"}], "opponent_counteraction": "地道出口被提前封死", "future_obligations": ["找到第二出口"]},
+    {"chapter": 10, "choice_id": "m10", "fingerprint": "reveal|ledger|danger", "transitions": [{"key": "danger", "category": "exposure", "before": 4, "operator": "set", "after": 5, "evidence": "他公开关键账册"}], "opponent_counteraction": "凶手发布最后通牒", "future_obligations": ["保护所有证人"]}
+  ]
+}

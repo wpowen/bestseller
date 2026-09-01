@@ -150,6 +150,7 @@ from bestseller.services.story_design_kernel import (
     render_story_design_kernel_prompt_block,
     story_design_kernel_from_dict,
 )
+from bestseller.services.story_engine import persist_legacy_story_engine_shadow
 from bestseller.services.story_effect_skills import (
     STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
     render_selected_story_effect_skill_contracts,
@@ -22437,6 +22438,62 @@ async def _generate_entry_system_kernel_artifacts(
     return payload
 
 
+async def _persist_story_engine_shadow_advisory(
+    session: AsyncSession,
+    *,
+    settings: AppSettings,
+    project: ProjectModel,
+    story_design_kernel: dict[str, Any] | None,
+    workflow_run_id: UUID,
+    artifact_records: list[PlanningArtifactRecord],
+) -> PlanningArtifactVersionModel | None:
+    """Persist StoryEngine V2 telemetry without changing planner authority."""
+
+    if (
+        not settings.pipeline.enable_story_engine_shadow
+        or not isinstance(story_design_kernel, dict)
+        or not story_design_kernel
+    ):
+        return None
+    try:
+        artifact = await persist_legacy_story_engine_shadow(
+            session,
+            project=project,
+            kernel=story_design_kernel,
+            source_run_id=workflow_run_id,
+        )
+    except Exception:  # noqa: BLE001 - shadow evidence must never block planning
+        logger.warning("StoryEngine V2 shadow persistence failed", exc_info=True)
+        project.metadata_json = {
+            **(project.metadata_json or {}),
+            "story_engine_shadow": {
+                "status": "shadow_error",
+                "can_drive_generation": False,
+            },
+        }
+        return None
+
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.STORY_ENGINE_V2,
+            artifact_id=artifact.id,
+            version_no=artifact.version_no,
+        )
+    )
+    content = artifact.content if isinstance(artifact.content, dict) else {}
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "story_engine_shadow": {
+            "artifact_id": str(artifact.id),
+            "version_no": artifact.version_no,
+            "status": content.get("projection_status") or artifact.status,
+            "blocking_codes": list(content.get("blocking_codes") or []),
+            "can_drive_generation": False,
+        },
+    }
+    return artifact
+
+
 def _fallback_emotion_driven_kernel(
     project: ProjectModel,
     premise: str,
@@ -25732,6 +25789,14 @@ async def generate_novel_plan(
                 workflow_run_id=workflow_run.id,
                 current_step=current_step_name,
                 artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
+            )
+            await _persist_story_engine_shadow_advisory(
+                session,
+                settings=settings,
+                project=project,
+                story_design_kernel=story_design_payload,
+                workflow_run_id=workflow_run.id,
+                artifact_records=artifact_records,
             )
             step_order += 2
 

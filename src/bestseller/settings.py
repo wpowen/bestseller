@@ -699,6 +699,20 @@ class PipelineSettings(BaseModel):
     # reverse-outline verification.  Enabled for telemetry/injection by default;
     # strict blocking remains opt-in until canary books prove low false positives.
     enable_story_design_kernel: bool = True
+    # Persist StoryEngine V2 projections beside the legacy planner as advisory
+    # evidence only.  The shadow artifact can never authorize generation, and
+    # persistence failures must not interrupt the established planning path.
+    enable_story_engine_shadow: bool = True
+    # Rollout authority. Only explicit project overrides to canary/canonical
+    # may let a validated rolling window reach chapter materialization.
+    story_engine_mode: str = "shadow"
+    # Canary activation is fail-closed: a project id must be explicitly listed.
+    # When genres are listed, the project must also belong to one of them.
+    story_engine_canary_project_ids: list[str] = Field(default_factory=list)
+    story_engine_canary_genres: list[str] = Field(default_factory=list)
+    # Canonical cutover additionally requires live reader evidence by default.
+    story_engine_require_reader_validation_for_cutover: bool = True
+    story_engine_rolling_window_size: int = 10
     story_design_kernel_candidate_count: int = 3
     enable_emotion_driven_kernel: bool = True
     enable_emotion_kernel_backfill: bool = True

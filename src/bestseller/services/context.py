@@ -14,6 +14,7 @@ from bestseller.domain.context import (
     ParticipantCanonFactContext,
     RecentSceneSummary,
     SceneWriterContextPacket,
+    StoryEngineCreativeCore,
     TimelineEventContext,
 )
 from bestseller.domain.narrative import (
@@ -93,6 +94,37 @@ from bestseller.services.story_bible import load_scene_story_bible_context, stab
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+
+
+def story_engine_creative_core_from_metadata(
+    *,
+    chapter_metadata: Mapping[str, Any] | None,
+    contract_metadata: Mapping[str, Any] | None,
+    chapter_number: int,
+) -> StoryEngineCreativeCore | None:
+    """Read one authoritative chapter projection without exposing its window."""
+
+    chapter_payload = (
+        chapter_metadata.get("story_engine_projection")
+        if isinstance(chapter_metadata, Mapping)
+        else None
+    )
+    contract_payload = (
+        contract_metadata.get("story_engine_projection")
+        if isinstance(contract_metadata, Mapping)
+        else None
+    )
+    payload = contract_payload if isinstance(contract_payload, Mapping) else chapter_payload
+    if not isinstance(payload, Mapping):
+        return None
+    if payload.get("can_drive_generation") is not True:
+        return None
+    if int(payload.get("chapter_number") or 0) != int(chapter_number):
+        return None
+    try:
+        return StoryEngineCreativeCore.model_validate(dict(payload))
+    except ValueError:
+        return None
 
 
 def _adaptive_lookback_window(
@@ -1109,7 +1141,9 @@ async def build_scene_writer_context_from_models(
         item
         for item in await session.scalars(scene_query)
         if _is_before_current_position(
-            chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else None,
+            chapters[item.chapter_id].chapter_number
+            if item.chapter_id in chapters
+            else None,
             item.scene_number,
             current_chapter_number=chapter.chapter_number,
             current_scene_number=scene.scene_number,
@@ -1117,7 +1151,9 @@ async def build_scene_writer_context_from_models(
     ]
     previous_scenes.sort(
         key=lambda item: (
-            chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else 0,
+            chapters[item.chapter_id].chapter_number
+            if item.chapter_id in chapters
+            else 0,
             item.scene_number,
         ),
         reverse=True,
@@ -1247,7 +1283,11 @@ async def build_scene_writer_context_from_models(
     lookback_from_order = float(f"{max(1, chapter.chapter_number - lookback)}.00")
     recent_timeline_events = [
         TimelineEventContext(
-            chapter_number=chapters.get(item.chapter_id).chapter_number if item.chapter_id in chapters else None,
+            chapter_number=(
+                chapters[item.chapter_id].chapter_number
+                if item.chapter_id in chapters
+                else None
+            ),
             scene_number=(
                 item.metadata_json.get("scene_number")
                 if isinstance(item.metadata_json.get("scene_number"), int)
@@ -1741,6 +1781,15 @@ async def build_scene_writer_context_from_models(
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
         participant_knowledge_states=_knowledge_states,
+        creative_core=story_engine_creative_core_from_metadata(
+            chapter_metadata=chapter.metadata_json,
+            contract_metadata=(
+                chapter_contract_row.metadata_json
+                if isinstance(chapter_contract_row, ChapterContractModel)
+                else None
+            ),
+            chapter_number=chapter.chapter_number,
+        ),
         arc_summaries=arc_summaries,
         world_snapshot=world_snapshot,
         # Phase-1 wiring
@@ -2138,7 +2187,9 @@ async def build_chapter_writer_context(
         item
         for item in await session.scalars(ch_scene_query)
         if _is_before_current_position(
-            chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else None,
+            chapters[item.chapter_id].chapter_number
+            if item.chapter_id in chapters
+            else None,
             item.scene_number,
             current_chapter_number=chapter.chapter_number,
             current_scene_number=1,
@@ -2146,7 +2197,9 @@ async def build_chapter_writer_context(
     ]
     previous_scenes.sort(
         key=lambda item: (
-            chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else 0,
+            chapters[item.chapter_id].chapter_number
+            if item.chapter_id in chapters
+            else 0,
             item.scene_number,
         ),
         reverse=True,
@@ -2205,7 +2258,11 @@ async def build_chapter_writer_context(
     ch_lookback_from_order = float(f"{ch_lookback_start}.00")
     recent_timeline_events = [
         TimelineEventContext(
-            chapter_number=chapters.get(item.chapter_id).chapter_number if item.chapter_id in chapters else None,
+            chapter_number=(
+                chapters[item.chapter_id].chapter_number
+                if item.chapter_id in chapters
+                else None
+            ),
             scene_number=(
                 item.metadata_json.get("scene_number")
                 if isinstance(item.metadata_json.get("scene_number"), int)
@@ -2323,11 +2380,11 @@ async def build_chapter_writer_context(
             _ch_structure_beat_desc = _ab_meta.get("structure_beat_description")
             break
 
-    chapter_participants = {
+    chapter_participants: set[str] = {
         participant
         for scene in scenes
         for participant in scene.participants
-        if participant
+        if isinstance(participant, str) and participant
     }
     emotion_track_rows = list(
         await session.scalars(
@@ -2415,7 +2472,7 @@ async def build_chapter_writer_context(
         session,
         project=project,
         chapter=chapter,
-        participant_names=chapter_participants,
+        participant_names=tuple(sorted(chapter_participants)),
     )
 
     # ── Phase-1 wiring: query five previously orphaned narrative models (chapter level) ──
@@ -2656,6 +2713,15 @@ async def build_chapter_writer_context(
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
         participant_knowledge_states=participant_knowledge_states,
+        creative_core=story_engine_creative_core_from_metadata(
+            chapter_metadata=chapter.metadata_json,
+            contract_metadata=(
+                chapter_contract_row.metadata_json
+                if isinstance(chapter_contract_row, ChapterContractModel)
+                else None
+            ),
+            chapter_number=chapter.chapter_number,
+        ),
         # Phase-1 wiring
         pacing_target=_ch_pacing_target,
         subplot_schedule=_ch_subplot_schedule,

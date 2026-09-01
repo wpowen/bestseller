@@ -113,12 +113,18 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "idempotency_key",
             unique=True,
             postgresql_where=text(
-                "artifact_type IN ('creation_intent','conception_snapshot') "
-                "AND scope_ref_id IS NULL AND idempotency_key IS NOT NULL"
+                "artifact_type IN ('creation_intent','conception_snapshot','story_engine_v2',"
+                "'story_engine_window_v2') AND scope_ref_id IS NULL "
+                "AND idempotency_key IS NOT NULL OR "
+                "artifact_type = 'story_transition_receipt_v1' "
+                "AND scope_ref_id IS NOT NULL AND idempotency_key IS NOT NULL"
             ),
             sqlite_where=text(
-                "artifact_type IN ('creation_intent','conception_snapshot') "
-                "AND scope_ref_id IS NULL AND idempotency_key IS NOT NULL"
+                "artifact_type IN ('creation_intent','conception_snapshot','story_engine_v2',"
+                "'story_engine_window_v2') AND scope_ref_id IS NULL "
+                "AND idempotency_key IS NOT NULL OR "
+                "artifact_type = 'story_transition_receipt_v1' "
+                "AND scope_ref_id IS NOT NULL AND idempotency_key IS NOT NULL"
             ),
         ),
     )
@@ -138,6 +144,125 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     idempotency_key: Mapped[str | None] = mapped_column(Text())
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'system'"))
+
+
+class StoryEngineCanaryCampaignModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Frozen E1/E2 manifest plus its auditable aggregate evidence."""
+
+    __tablename__ = "story_engine_canary_campaigns"
+    __table_args__ = (
+        CheckConstraint(
+            "experiment IN ('E1','E2')",
+            name="story_engine_canary_campaign_experiment",
+        ),
+        CheckConstraint(
+            "status IN ('planned','running','blocked','fixture_validated','canary_validated')",
+            name="story_engine_canary_campaign_status",
+        ),
+        Index("idx_story_engine_canary_campaign_status", "status", "created_at"),
+    )
+
+    campaign_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    experiment: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default=text("'planned'"),
+    )
+    evidence_source: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'pending'"),
+    )
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
+    report_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    source_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+
+
+class StoryEngineReaderStudyModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Frozen blind-reader study linked to one validated canary campaign."""
+
+    __tablename__ = "story_engine_reader_studies"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned','collecting','insufficient_data','reader_validated','blocked')",
+            name="story_engine_reader_study_status",
+        ),
+        CheckConstraint(
+            "evidence_source IN ('pending','fixture','live','mixed','unavailable')",
+            name="story_engine_reader_study_evidence_source",
+        ),
+        Index("idx_story_engine_reader_study_status", "status", "created_at"),
+    )
+
+    study_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    canary_campaign_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("story_engine_canary_campaigns.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default=text("'planned'"),
+    )
+    evidence_source: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'pending'"),
+    )
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
+    report_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    source_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+
+
+class StoryEngineReaderResponseModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """One pseudonymous, append-only response from a blind reader study."""
+
+    __tablename__ = "story_engine_reader_responses"
+    __table_args__ = (
+        CheckConstraint(
+            "assigned_order IN ('baseline_first','engine_first')",
+            name="story_engine_reader_response_assigned_order",
+        ),
+        CheckConstraint(
+            "preferred_variant IN ('baseline','engine','tie')",
+            name="story_engine_reader_response_preferred_variant",
+        ),
+        CheckConstraint(
+            "evidence_source IN ('fixture','live')",
+            name="story_engine_reader_response_evidence_source",
+        ),
+        UniqueConstraint(
+            "study_id",
+            "response_key",
+            name="uq_story_engine_reader_response_key",
+        ),
+        UniqueConstraint(
+            "study_id",
+            "participant_hash",
+            name="uq_story_engine_reader_participant",
+        ),
+        Index("idx_story_engine_reader_response_cell", "study_id", "cell_key"),
+    )
+
+    study_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("story_engine_reader_studies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    response_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    participant_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    cell_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    assigned_order: Mapped[str] = mapped_column(String(32), nullable=False)
+    preferred_variant: Mapped[str] = mapped_column(String(16), nullable=False)
+    engine_recall_accurate: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    baseline_recall_accurate: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    engine_severe_abandonment: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    baseline_severe_abandonment: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    evidence_source: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
 class FanqieRankingSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

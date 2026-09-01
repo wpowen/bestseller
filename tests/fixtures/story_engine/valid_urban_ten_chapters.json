@@ -1,0 +1,20 @@
+{
+  "engine_id": "fixture-urban-001",
+  "version": 1,
+  "initial_state": {
+    "pressure": {"category": "exposure", "value": 0},
+    "trust": {"category": "relationship", "value": 5}
+  },
+  "chapters": [
+    {"chapter": 1, "choice_id": "u01", "fingerprint": "audit|file|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 0, "operator": "set", "after": 1, "evidence": "她调取旧审计文件"}], "opponent_counteraction": "公司冻结她的权限", "future_obligations": ["找到原始账本"]},
+    {"chapter": 2, "choice_id": "u02", "fingerprint": "call|source|trust", "transitions": [{"key": "trust", "category": "relationship", "before": 5, "operator": "set", "after": 4, "evidence": "她向前同事求证"}], "opponent_counteraction": "对手发出律师函", "future_obligations": ["保护线人"]},
+    {"chapter": 3, "choice_id": "u03", "fingerprint": "follow|truck|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 1, "operator": "set", "after": 2, "evidence": "她跟踪异常货车"}], "opponent_counteraction": "保安调换监控硬盘", "future_obligations": ["恢复监控证据"]},
+    {"chapter": 4, "choice_id": "u04", "fingerprint": "trade|badge|trust", "transitions": [{"key": "trust", "category": "relationship", "before": 4, "operator": "set", "after": 6, "evidence": "她交出工牌换取证词"}], "opponent_counteraction": "中间人临时改口", "future_obligations": ["核验改口原因"]},
+    {"chapter": 5, "choice_id": "u05", "fingerprint": "publish|memo|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 2, "operator": "set", "after": 3, "evidence": "她发布内部备忘录"}], "opponent_counteraction": "公司公开她的旧处分", "future_obligations": ["回应旧处分"]},
+    {"chapter": 6, "choice_id": "u06", "fingerprint": "shelter|witness|trust", "transitions": [{"key": "trust", "category": "relationship", "before": 6, "operator": "set", "after": 7, "evidence": "她为证人安排住处"}], "opponent_counteraction": "对手跟踪证人家属", "future_obligations": ["转移家属"]},
+    {"chapter": 7, "choice_id": "u07", "fingerprint": "leak|ledger|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 3, "operator": "set", "after": 4, "evidence": "她泄露一页账本"}], "opponent_counteraction": "对手伪造完整账本", "future_obligations": ["证明账本真伪"]},
+    {"chapter": 8, "choice_id": "u08", "fingerprint": "refuse|deal|trust", "transitions": [{"key": "trust", "category": "relationship", "before": 7, "operator": "set", "after": 5, "evidence": "她拒绝私下和解"}], "opponent_counteraction": "投资人撤回支持", "future_obligations": ["寻找新担保"]},
+    {"chapter": 9, "choice_id": "u09", "fingerprint": "enter|archive|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 4, "operator": "set", "after": 5, "evidence": "她进入封存档案室"}], "opponent_counteraction": "对手提前销毁副本", "future_obligations": ["带出原始副本"]},
+    {"chapter": 10, "choice_id": "u10", "fingerprint": "testify|court|trust", "transitions": [{"key": "trust", "category": "relationship", "before": 5, "operator": "set", "after": 3, "evidence": "她在听证会上作证"}], "opponent_counteraction": "公司申请临时禁令", "future_obligations": ["应对临时禁令"]}
+  ]
+}

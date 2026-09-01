@@ -159,6 +159,7 @@ from bestseller.services.regen_loop import (
     regenerate_until_valid,
 )
 from bestseller.services.story_bible import load_scene_story_bible_context
+from bestseller.services.story_engine import render_story_engine_creative_core_block
 from bestseller.services.word_targets import (
     model_output_token_ceiling,
     model_reasoning_token_reserve,
@@ -2985,9 +2986,11 @@ def _estimate_tokens(text: str) -> int:
 _LAST_PROMPT_ASSEMBLY_REPORT: dict[str, Any] | None = None
 
 # Priority tiers for context budget enforcement.
+# Tier 0: the current chapter's canonical creative state; never trimmed.
 # Tier 1: structural contracts & safety — always included.
 # Tier 2: recent narrative state — included when budget allows.
 # Tier 3: background & enrichment — only when ample room.
+_CONTEXT_TIER_0 = frozenset({"creative_core_line"})
 _CONTEXT_TIER_1 = frozenset({
     "contract_section",
     "story_principle_line",
@@ -3196,7 +3199,9 @@ def _budget_context_sections(
     # carry binding constraints). They are bounded instead by the tier budget
     # passes below, and Tier 1 additionally by the F1 soft cap. (CD5 + the
     # F2-over-truncation regression, 2026-06-03.)
-    _tiered_keys = _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
+    _tiered_keys = (
+        _CONTEXT_TIER_0 | _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
+    )
     for key in list(result.keys()):
         if key in _tiered_keys:
             continue
@@ -3204,7 +3209,7 @@ def _budget_context_sections(
             result.get(key, ""), per_block_token_cap
         )
 
-    used = 0
+    used = sum(_estimate_tokens(result.get(k, "")) for k in _CONTEXT_TIER_0)
     _tier1_total = sum(_estimate_tokens(result.get(k, "")) for k in _CONTEXT_TIER_1)
     _tier1_ceiling = max(0, int(budget_tokens * _TIER_1_BUDGET_FRACTION))
 
@@ -3261,7 +3266,7 @@ def _budget_context_sections(
     # is the lowest priority. Process cheapest-first so a few small advanced
     # blocks can still ride along, while large ones (voice_dna, l3_prompt, ...)
     # are blanked once the budget is exhausted.
-    _tiered = _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
+    _tiered = _CONTEXT_TIER_0 | _CONTEXT_TIER_1 | _CONTEXT_TIER_2 | _CONTEXT_TIER_3
     _remaining = [key for key in result if key not in _tiered]
     _remaining.sort(key=lambda k: _estimate_tokens(result.get(k, "")))
     for key in _remaining:
@@ -5362,6 +5367,7 @@ def _compile_rendered_writer_prompt(
         "word_count_rules",
         "prewrite_contract",
         "prewrite_plan",
+        "creative_core_line",
         "whole_chapter_logic_contract",
     }
     required_section_names = {
@@ -5372,6 +5378,7 @@ def _compile_rendered_writer_prompt(
         "closing_hook",
         "acceptance_contract",
         "character_safety",
+        "creative_core_line",
     }
     craft_markers = (
         "methodology",
@@ -6511,6 +6518,7 @@ def build_scene_draft_prompts(
     active_emotion_tracks: list[dict[str, Any]] | None = None,
     active_antagonist_plans: list[dict[str, Any]] | None = None,
     hard_fact_snapshot: dict[str, Any] | None = None,
+    creative_core: Mapping[str, Any] | None = None,
     contradiction_warnings: list[str] | None = None,
     query_brief: str | None = None,
     participant_knowledge_states: list[dict[str, Any]] | None = None,
@@ -6645,6 +6653,12 @@ def build_scene_draft_prompts(
         raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
     language = _project_language(project)
     is_en = is_english_language(language)
+    _creative_core_line = render_story_engine_creative_core_block(
+        creative_core,
+        language=language,
+    )
+    if _creative_core_line:
+        _creative_core_line += "\n\n"
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     _project_meta = getattr(project, "metadata_json", None)
@@ -7477,6 +7491,7 @@ def build_scene_draft_prompts(
     # then unpack back into local variables.  This keeps Tier 1 sections
     # intact while trimming Tier 2/3 when the combined context is too large.
     _sections_before_budget = {
+        "creative_core_line": _creative_core_line,
         "contract_section": contract_section,
         "volume_contract_line": _volume_contract_line,
         "story_principle_line": story_principle_line,
@@ -7573,6 +7588,7 @@ def build_scene_draft_prompts(
     except Exception:
         _LAST_PROMPT_ASSEMBLY_REPORT = None
     # Unpack budgeted sections back into local variables
+    _creative_core_line = _ctx["creative_core_line"]
     contract_section = _ctx["contract_section"]
     _volume_contract_line = _ctx["volume_contract_line"]
     story_principle_line = _ctx["story_principle_line"]
@@ -7683,6 +7699,7 @@ def build_scene_draft_prompts(
             # signature obligations) leads the prompt, before every other
             # constraint block.
             f"{_scene_word_budget_line}"
+            f"{_creative_core_line}"
             # Story Integrity whitelists — these MUST come first so the
             # LLM treats them as inviolable constraints, not later
             # afterthoughts. Order: timeline → scene → character → length.
@@ -7799,6 +7816,7 @@ def build_scene_draft_prompts(
             # signature obligations) leads the prompt, before every other
             # constraint block.
             f"{_scene_word_budget_line}"
+            f"{_creative_core_line}"
             # Story Integrity whitelists — these MUST come first so the
             # LLM treats them as inviolable constraints, not later
             # afterthoughts. Order: timeline → scene → character → length.
@@ -9399,6 +9417,7 @@ async def _render_chapter_first_character_safety_block(
 
 def _chapter_first_compiler_section_name(text: str, index: int) -> str:
     marker_map = (
+        (("【StoryEngine 本章创意核心", "[StoryEngine creative core"), "creative_core_line"),
         (("AI套话黑名单", "BANNED AI CLICH"), "slop_blacklist"),
         (("黄金三章", "GOLDEN THREE", "前十章留存", "FRONT-TEN"), "opening_retention"),
         (("【字数与结构】", "[WORD COUNT", "word count"), "word_count_rules"),
@@ -9499,6 +9518,13 @@ def build_chapter_first_draft_prompts(
     )
     language = _project_language(project)
     is_en = is_english_language(language)
+    context_creative_core = getattr(context_packet, "creative_core", None)
+    creative_core_block = render_story_engine_creative_core_block(
+        context_creative_core.model_dump(mode="json")
+        if context_creative_core
+        else None,
+        language=language,
+    )
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     writing_profile_section = render_writing_profile_prompt_block(
         writing_profile,
@@ -9806,6 +9832,7 @@ def build_chapter_first_draft_prompts(
     hard_writer_tail_blocks = [
         block
         for block in (
+            creative_core_block,
             whole_chapter_logic_block,
             opening_retention_rules
             if _prose_section_enabled("opening_retention", prose_prompt_profile)
@@ -10106,6 +10133,7 @@ def build_chapter_first_draft_prompts(
 # tier-aware trim must protect them by anchoring the cut to the last
 # boundary *before* the first must-keep section.
 _MUST_KEEP_TAIL_MARKERS_ZH: tuple[str, ...] = (
+    "【StoryEngine 本章创意核心",
     "【字数与结构】",
     "【整章逻辑合同·隐藏硬事实】",
     "【黄金三章·开篇硬契约】",
@@ -10124,6 +10152,7 @@ _MUST_KEEP_TAIL_MARKERS_ZH: tuple[str, ...] = (
     "【硬约束与门禁】",
 )
 _MUST_KEEP_TAIL_MARKERS_EN: tuple[str, ...] = (
+    "[StoryEngine creative core",
     "[word count and structure]",
     "[WHOLE-CHAPTER LOGIC CONTRACT",
     "[GOLDEN THREE CHAPTERS — OPENING HARD CONTRACT]",
@@ -11816,6 +11845,17 @@ async def generate_scene_draft(
             _packet_emotion_tracks(context_packet),
             _packet_antagonist_plans(context_packet),
             hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
+            creative_core=(
+                context_packet_creative_core.model_dump(mode="json")
+                if (
+                    context_packet_creative_core := getattr(
+                        context_packet,
+                        "creative_core",
+                        None,
+                    )
+                )
+                else None
+            ),
             contradiction_warnings=getattr(context_packet, "contradiction_warnings", None) if context_packet else None,
             query_brief=(context_packet.query_brief if context_packet else None),
             participant_knowledge_states=getattr(context_packet, "participant_knowledge_states", None) if context_packet else None,

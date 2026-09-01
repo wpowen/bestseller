@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from bestseller.domain.narrative import (
     AntagonistPlanRead,
@@ -98,6 +98,31 @@ class ChapterStateSnapshotContext(BaseModel):
     chapter_time_span: str | None = None
 
 
+class StoryEngineCreativeCore(BaseModel):
+    """Minimal current-chapter projection allowed to reach a prose writer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    engine_artifact_id: UUID
+    engine_version: int = Field(ge=1)
+    window_artifact_id: UUID
+    chapter_number: int = Field(ge=1)
+    choice_id: str = Field(min_length=1)
+    pre_state: dict[str, Any] = Field(default_factory=dict)
+    pre_state_hash: str = Field(min_length=1)
+    known_facts: list[str] = Field(default_factory=list)
+    pressure: str = Field(min_length=1)
+    options: list[dict[str, str]] = Field(min_length=2)
+    chosen_path: str = Field(min_length=1)
+    alternative_costs: list[str] = Field(default_factory=list)
+    opponent_strategy: str = ""
+    due_obligations: list[str] = Field(default_factory=list)
+    required_state_changes: list[dict[str, Any]] = Field(min_length=1)
+    expected_post_state_hash: str = Field(min_length=1)
+    projection_hash: str = Field(min_length=1)
+    can_drive_generation: Literal[True]
+
+
 class SceneWriterContextPacket(BaseModel):
     project_id: UUID
     project_slug: str = Field(min_length=1)
@@ -125,6 +150,7 @@ class SceneWriterContextPacket(BaseModel):
     query_brief: str | None = None
     query_trace: list[dict[str, Any]] = Field(default_factory=list)
     participant_knowledge_states: list[dict[str, Any]] = Field(default_factory=list)
+    creative_core: StoryEngineCreativeCore | None = None
     arc_summaries: list[dict[str, Any]] = Field(default_factory=list)
     world_snapshot: dict[str, Any] | None = None
 
@@ -361,6 +387,7 @@ class ChapterWriterContextPacket(BaseModel):
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
     hard_fact_snapshot: ChapterStateSnapshotContext | None = None
     participant_knowledge_states: list[dict[str, Any]] = Field(default_factory=list)
+    creative_core: StoryEngineCreativeCore | None = None
 
     # ── Phase-1 wiring: previously orphaned narrative models ──
     pacing_target: PacingCurvePointRead | None = None

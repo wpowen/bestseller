@@ -99,8 +99,32 @@ def _inputs(language: str, chapter_number: int):
         planned_payoffs=[],
         recent_timeline_events=[],
         retrieval_chunks=[{"text": long_context}],
+        creative_core=None,
     )
     return project, chapter, scene, packet
+
+
+def _creative_core(chapter_number: int) -> dict[str, object]:
+    return {
+        "engine_version": 2,
+        "chapter_number": chapter_number,
+        "choice_id": "publish",
+        "pre_state": {"pressure": 3},
+        "pre_state_hash": "pre-hash",
+        "known_facts": ["档案室今晚封存"],
+        "pressure": "对手正在销毁证据",
+        "options": [
+            {"choice_id": "publish", "label": "立即公开"},
+            {"choice_id": "hide", "label": "暂时隐藏"},
+        ],
+        "chosen_path": "立即公开并保护证人",
+        "alternative_costs": ["隐藏会失去最后窗口"],
+        "opponent_strategy": "冻结权限并追查证人",
+        "due_obligations": ["保护证人"],
+        "required_state_changes": [{"key": "pressure", "after": 4}],
+        "expected_post_state_hash": "post-hash",
+        "can_drive_generation": True,
+    }
 
 
 @pytest.mark.parametrize("prose_prompt_profile", ["full", "lean"])
@@ -190,6 +214,31 @@ def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:
     assert "【主角决策落地·不得把本清单写进正文】" in user
     assert "显然更安全的选项：立刻撤离并等待支援" in user
     assert "止损/退路/后手：周禾在楼梯口拉保险绳" in user
+
+
+def test_compiled_chapter_prompt_keeps_story_engine_creative_core_as_required() -> None:
+    project, chapter, scene, packet = _inputs("zh-CN", 4)
+    payload = _creative_core(chapter.chapter_number)
+    packet.creative_core = SimpleNamespace(model_dump=lambda mode: payload)
+
+    compiled = build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        packet,
+        target_word_count=2_600,
+        prompt_mode="compiled",
+        prose_prompt_profile="lean",
+    )
+
+    assert isinstance(compiled, CompiledPrompt)
+    assert (
+        "chapter_first.section.creative_core_line"
+        in compiled.report.required_blocks_kept
+    )
+    assert compiled.user.count("【StoryEngine 本章创意核心") == 1
+    assert "立即公开并保护证人" in compiled.user
 
 
 def test_chapter_writer_gets_one_weak_scene_map_without_scene_prose_duplication() -> None:

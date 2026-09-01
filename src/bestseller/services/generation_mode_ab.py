@@ -93,6 +93,8 @@ class GeneratedSample:
     output_tokens: int | None = None
     component_count: int = 1
     fallback_used: bool = False
+    hard_integrity_failure_count: int = 0
+    stitched_or_repeated_climax_count: int = 0
 
     @classmethod
     def fake(
@@ -471,7 +473,9 @@ def parse_pairwise_judgement(
         payload = _parse_json_object(raw_text)
     except (json.JSONDecodeError, ValueError):
         payload = _recover_pairwise_payload(raw_text)
-    raw_scores = payload.get("scores") if isinstance(payload.get("scores"), Mapping) else {}
+    raw_scores: Mapping[str, Any] = (
+        payload["scores"] if isinstance(payload.get("scores"), Mapping) else {}
+    )
     a_scores = _normalise_scores(raw_scores.get("A"))
     b_scores = _normalise_scores(raw_scores.get("B"))
     if swapped:
@@ -639,6 +643,26 @@ def summarize_experiment(
             )
             if any((case.case_id, mode) in sample_by_key for case in cases)
             else 0.0,
+            "hard_integrity_failure_count": sum(
+                sample_by_key[(case.case_id, mode)].hard_integrity_failure_count
+                for case in cases
+                if (case.case_id, mode) in sample_by_key
+            ),
+            "stitched_or_repeated_climax_rate": round(
+                mean(
+                    float(
+                        sample_by_key[
+                            (case.case_id, mode)
+                        ].stitched_or_repeated_climax_count
+                        > 0
+                    )
+                    for case in cases
+                    if (case.case_id, mode) in sample_by_key
+                ),
+                4,
+            )
+            if any((case.case_id, mode) in sample_by_key for case in cases)
+            else 0.0,
         }
         for mode in MODES
     }
@@ -653,15 +677,58 @@ def summarize_experiment(
     required_judgement_count = len(cases) * 4
     enough_judgements = len(judgements) >= required_judgement_count
     decision = "inconclusive"
+    distinct_judge_paths = sorted({item.judge_model for item in judgements})
     if (
         not missing_samples
         and enough_judgements
-        and position_agreement >= 0.75
+        and len(distinct_judge_paths) >= 2
+        and position_agreement >= 0.80
         and abs(score_delta) >= 0.30
         and case_wins[candidate] >= 2
         and coverage_ok
     ):
         decision = candidate
+
+    e2_blockers: list[str] = []
+    if missing_samples:
+        e2_blockers.append("E2_PAIRED_SAMPLES_INCOMPLETE")
+    if not enough_judgements or len(distinct_judge_paths) < 2:
+        e2_blockers.append("E2_INDEPENDENT_REVIEW_PATHS_INSUFFICIENT")
+    if position_agreement < 0.80:
+        e2_blockers.append("E2_POSITION_SWAP_AGREEMENT_INSUFFICIENT")
+    chapter_length_passed = (
+        deterministic[MODE_CHAPTER_FIRST]["length_pass_rate"] >= 0.90
+    )
+    hard_failure_guard_passed = (
+        deterministic[MODE_CHAPTER_FIRST]["hard_integrity_failure_count"]
+        <= deterministic[MODE_SCENE_BY_SCENE]["hard_integrity_failure_count"]
+    )
+    stitched_delta = (
+        deterministic[MODE_SCENE_BY_SCENE]["stitched_or_repeated_climax_rate"]
+        - deterministic[MODE_CHAPTER_FIRST]["stitched_or_repeated_climax_rate"]
+    )
+    stitched_guard_passed = stitched_delta >= 0.10
+    if not chapter_length_passed:
+        e2_blockers.append("E2_CHAPTER_FIRST_LENGTH_RATE_INSUFFICIENT")
+    if not hard_failure_guard_passed:
+        e2_blockers.append("E2_CHAPTER_FIRST_HARD_FAILURE_REGRESSION")
+    if not stitched_guard_passed:
+        e2_blockers.append("E2_STITCHED_OR_REPEATED_CLIMAX_NOT_REDUCED")
+
+    evidence_blockers = {
+        "E2_PAIRED_SAMPLES_INCOMPLETE",
+        "E2_INDEPENDENT_REVIEW_PATHS_INSUFFICIENT",
+        "E2_POSITION_SWAP_AGREEMENT_INSUFFICIENT",
+    }
+    if any(code in evidence_blockers for code in e2_blockers) or decision == "inconclusive":
+        e2_release_status = "INCONCLUSIVE_E2"
+        e2_recommended_mode = "inconclusive"
+    elif decision == MODE_CHAPTER_FIRST and not e2_blockers:
+        e2_release_status = "PASS_E2_CHAPTER_FIRST"
+        e2_recommended_mode = MODE_CHAPTER_FIRST
+    else:
+        e2_release_status = "PASS_E2_KEEP_SCENE"
+        e2_recommended_mode = MODE_SCENE_BY_SCENE
 
     return {
         "decision": decision,
@@ -680,6 +747,18 @@ def summarize_experiment(
         "required_judgement_count": required_judgement_count,
         "enough_judgements": enough_judgements,
         "coverage_guard_passed": coverage_ok,
+        "distinct_judge_paths": distinct_judge_paths,
+        "e2_gate": {
+            "release_status": e2_release_status,
+            "recommended_mode": e2_recommended_mode,
+            "blocking_codes": list(dict.fromkeys(e2_blockers)),
+            "chapter_first_length_passed": chapter_length_passed,
+            "hard_failure_guard_passed": hard_failure_guard_passed,
+            "stitched_or_repeated_climax_guard_passed": stitched_guard_passed,
+            "stitched_or_repeated_climax_rate_delta": round(stitched_delta, 4),
+            "position_swap_agreement_required": 0.80,
+            "independent_review_paths_required": 2,
+        },
     }
 
 

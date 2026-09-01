@@ -1,0 +1,21 @@
+{
+  "engine_id": "fixture-xianxia-001",
+  "version": 1,
+  "initial_state": {
+    "trust_mentor": {"category": "relationship", "value": 10},
+    "exposure": {"category": "exposure", "value": 0}
+  },
+  "chapters": [
+    {"chapter": 1, "choice_id": "c01-hide", "fingerprint": "hide|mentor|exposure", "transitions": [{"key": "exposure", "category": "exposure", "before": 0, "operator": "set", "after": 1, "evidence": "他烧掉了名册"}], "opponent_counteraction": "巡夜人封锁后门", "future_obligations": ["查明名册来源"]},
+    {"chapter": 2, "choice_id": "c02-trade", "fingerprint": "trade|token|trust", "transitions": [{"key": "trust_mentor", "category": "relationship", "before": 10, "operator": "set", "after": 8, "evidence": "他用师门信物换路"}], "opponent_counteraction": "对手扣留信物", "future_obligations": ["取回信物"]},
+    {"chapter": 3, "choice_id": "c03-follow", "fingerprint": "follow|clue|exposure", "transitions": [{"key": "exposure", "category": "exposure", "before": 1, "operator": "set", "after": 2, "evidence": "他跟踪送信人"}], "opponent_counteraction": "送信人留下假线索", "future_obligations": ["验证假线索"]},
+    {"chapter": 4, "choice_id": "c04-break", "fingerprint": "break|seal|trust", "transitions": [{"key": "trust_mentor", "category": "relationship", "before": 8, "operator": "set", "after": 6, "evidence": "他强行拆封师父的信"}], "opponent_counteraction": "师父得知后撤回援手", "future_obligations": ["独自偿还人情"]},
+    {"chapter": 5, "choice_id": "c05-confess", "fingerprint": "confess|truth|exposure", "transitions": [{"key": "exposure", "category": "exposure", "before": 2, "operator": "set", "after": 3, "evidence": "他在堂审中承认看过残页"}], "opponent_counteraction": "审判者改换证词顺序", "future_obligations": ["找到缺失证人"]},
+    {"chapter": 6, "choice_id": "c06-save", "fingerprint": "save|witness|trust", "transitions": [{"key": "trust_mentor", "category": "relationship", "before": 6, "operator": "set", "after": 7, "evidence": "他救下唯一证人"}], "opponent_counteraction": "对手转而追捕证人家属", "future_obligations": ["保护证人家属"]},
+    {"chapter": 7, "choice_id": "c07-leak", "fingerprint": "leak|rumor|exposure", "transitions": [{"key": "exposure", "category": "exposure", "before": 3, "operator": "set", "after": 4, "evidence": "他放出半真相"}], "opponent_counteraction": "敌方公开另一半真相", "future_obligations": ["证明半真相的出处"]},
+    {"chapter": 8, "choice_id": "c08-refuse", "fingerprint": "refuse|oath|trust", "transitions": [{"key": "trust_mentor", "category": "relationship", "before": 7, "operator": "set", "after": 5, "evidence": "他拒绝师父的命令"}], "opponent_counteraction": "师父宣布断绝关系", "future_obligations": ["承担断关系后果"]},
+    {"chapter": 9, "choice_id": "c09-enter", "fingerprint": "enter|vault|exposure", "transitions": [{"key": "exposure", "category": "exposure", "before": 4, "operator": "set", "after": 5, "evidence": "他进入封存库"}], "opponent_counteraction": "对手提前启动封存阵", "future_obligations": ["带出封存库证据"]},
+    {"chapter": 10, "choice_id": "c10-publish", "fingerprint": "publish|evidence|trust", "transitions": [{"key": "trust_mentor", "category": "relationship", "before": 5, "operator": "set", "after": 4, "evidence": "他公开师门罪证"}], "opponent_counteraction": "师门悬赏追杀", "future_obligations": ["面对追杀令"]}
+  ],
+  "reader_validation": null
+}

@@ -194,6 +194,16 @@ from bestseller.services.reviews import (
     rewrite_scene_from_task,
 )
 from bestseller.services.scorecard import compute_scorecard, save_scorecard
+from bestseller.services.story_engine import (
+    resolve_story_engine_rollout_decision_from_db,
+)
+from bestseller.services.story_engine_review import (
+    StoryEngineReceiptRejected,
+    StoryEngineReceiptVerdict,
+    extract_story_engine_receipt_observation,
+    promote_chapter_draft_with_story_engine_receipt,
+    review_story_engine_transition,
+)
 from bestseller.services.summarization import compress_knowledge_window
 from bestseller.services.truth_version import (
     TruthVersionStaleError,
@@ -1121,6 +1131,11 @@ def _chapter_first_full_regeneration_reason(
         _normalize_chapter_first_block_code(code) for code in block_codes if code
     }
     original_codes = {str(code or "").strip().upper() for code in block_codes if code}
+    story_engine_hits = {
+        code for code in original_codes if code.startswith("STORY_ENGINE_RECEIPT_")
+    }
+    if story_engine_hits:
+        return "story_engine_receipt_block:" + ",".join(sorted(story_engine_hits))
     word_count = 0
     if chapter_draft is not None:
         try:
@@ -6147,6 +6162,7 @@ async def _chapter_source_mode_is_promotable(
 async def _promote_reviewed_chapter_draft(
     session: AsyncSession,
     *,
+    settings: AppSettings,
     project: ProjectModel,
     chapter: ChapterModel,
     draft: ChapterDraftVersionModel,
@@ -6163,6 +6179,135 @@ async def _promote_reviewed_chapter_draft(
     )
     if not source_ok:
         return False, source_mode
+    story_engine_decision = await resolve_story_engine_rollout_decision_from_db(
+        session,
+        project,
+        settings,
+        chapter_number=chapter.chapter_number,
+    )
+    story_engine_mode = story_engine_decision.effective_mode
+    if story_engine_mode == "dual_write":
+        chapter_metadata = (
+            chapter.metadata_json if isinstance(chapter.metadata_json, Mapping) else {}
+        )
+        shadow_core = chapter_metadata.get("story_engine_shadow_projection")
+        if isinstance(shadow_core, Mapping) and workflow_run_id is not None:
+            try:
+                shadow_observation = await extract_story_engine_receipt_observation(
+                    session,
+                    settings,
+                    creative_core=shadow_core,
+                    draft_content_md=draft.content_md,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    draft_version_id=draft.id,
+                    workflow_run_id=workflow_run_id,
+                )
+                shadow_review = review_story_engine_transition(
+                    creative_core=shadow_core,
+                    observation=shadow_observation,
+                    draft_content_md=draft.content_md,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    draft_version_id=draft.id,
+                    workflow_run_id=workflow_run_id,
+                    allow_non_authoritative=True,
+                )
+                draft.promotion_metadata = {
+                    **(draft.promotion_metadata or {}),
+                    "story_engine_shadow_review": {
+                        "verdict": shadow_review.verdict.value,
+                        "blocking_codes": list(shadow_review.blocking_codes),
+                        "replay_passed": shadow_review.replay_passed,
+                        "post_state_hash": str(
+                            shadow_review.content.get("post_state_hash") or ""
+                        ),
+                        "projection_hash": str(
+                            shadow_review.content.get("_meta", {}).get(
+                                "projection_hash"
+                            )
+                            or ""
+                        ),
+                        "workflow_run_id": str(workflow_run_id),
+                        "canonical_receipt_appended": False,
+                    },
+                }
+            except Exception as exc:  # noqa: BLE001 - shadow must not block legacy
+                draft.promotion_metadata = {
+                    **(draft.promotion_metadata or {}),
+                    "story_engine_shadow_review": {
+                        "verdict": "unavailable",
+                        "blocking_codes": ["STORY_ENGINE_SHADOW_REVIEW_ERROR"],
+                        "error": str(exc)[:500],
+                        "workflow_run_id": str(workflow_run_id),
+                        "canonical_receipt_appended": False,
+                    },
+                }
+    if story_engine_mode in {"canary", "canonical"}:
+        if workflow_run_id is None:
+            raise StoryEngineReceiptRejected(
+                "StoryEngine-controlled promotion requires workflow lineage",
+                blocking_codes=("STORY_ENGINE_RECEIPT_WORKFLOW_MISSING",),
+            )
+        chapter_metadata = (
+            chapter.metadata_json if isinstance(chapter.metadata_json, Mapping) else {}
+        )
+        creative_core = chapter_metadata.get("story_engine_projection")
+        if not isinstance(creative_core, Mapping) or (
+            creative_core.get("can_drive_generation") is not True
+        ):
+            raise StoryEngineReceiptRejected(
+                "StoryEngine-controlled promotion requires a current-chapter creative projection",
+                blocking_codes=("STORY_ENGINE_RECEIPT_PROJECTION_MISSING",),
+            )
+        draft_metadata = (
+            draft.promotion_metadata
+            if isinstance(draft.promotion_metadata, Mapping)
+            else {}
+        )
+        observation = draft_metadata.get("story_engine_observation")
+        if not isinstance(observation, Mapping):
+            observation = await extract_story_engine_receipt_observation(
+                session,
+                settings,
+                creative_core=creative_core,
+                draft_content_md=draft.content_md,
+                project_id=project.id,
+                chapter_id=chapter.id,
+                draft_version_id=draft.id,
+                workflow_run_id=workflow_run_id,
+            )
+        receipt_review = review_story_engine_transition(
+            creative_core=creative_core,
+            observation=observation,
+            draft_content_md=draft.content_md,
+            project_id=project.id,
+            chapter_id=chapter.id,
+            draft_version_id=draft.id,
+            workflow_run_id=workflow_run_id,
+        )
+        if receipt_review.verdict is not StoryEngineReceiptVerdict.MATCHED:
+            raise StoryEngineReceiptRejected(
+                "StoryEngine transition receipt rejected the chapter draft",
+                review=receipt_review,
+            )
+        await promote_chapter_draft_with_story_engine_receipt(
+            session,
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter.chapter_number,
+            draft=draft,
+            quality_score_id=quality.id,
+            judge_key=str(quality.judge_key or "").strip(),
+            workflow_run_id=workflow_run_id,
+            review=receipt_review,
+        )
+        draft.promotion_metadata = {
+            **(draft.promotion_metadata or {}),
+            "source_mode": source_mode,
+            "story_engine_mode": story_engine_mode,
+        }
+        return True, source_mode
     await session.flush()
     if draft.promotion_state != DraftPromotionState.PROMOTED.value:
         await mark_candidate_under_review(
@@ -11568,12 +11713,118 @@ async def run_chapter_pipeline(
                 try:
                     chapter_promoted, chapter_source_mode = await _promote_reviewed_chapter_draft(
                         session,
+                        settings=settings,
                         project=project,
                         chapter=chapter,
                         draft=chapter_draft,
                         quality=chapter_quality,
                         workflow_run_id=workflow_run_id,
                     )
+                except StoryEngineReceiptRejected as exc:
+                    block_codes = tuple(
+                        exc.blocking_codes
+                        or ("STORY_ENGINE_RECEIPT_REJECTED",)
+                    )
+                    chapter_source_mode = "story_engine_receipt_rejected"
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "story_engine_receipt_rejected": True,
+                        "story_engine_receipt_block_codes": list(block_codes),
+                        "auto_repair_block_codes": list(block_codes),
+                        "requires_full_chapter_regeneration": True,
+                    }
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "story_engine_receipt_rejected": True,
+                        "story_engine_receipt_block_codes": list(block_codes),
+                        "story_engine_receipt_chapter": chapter_number,
+                        "story_engine_receipt_draft_id": str(chapter_draft.id),
+                    }
+                    await create_workflow_step_run(
+                        session,
+                        workflow_run_id=workflow_run.id,
+                        step_name=f"story_engine_receipt_rejected_v{chapter_review_iterations}",
+                        step_order=step_order,
+                        status=WorkflowStatus.FAILED,
+                        input_ref={
+                            "chapter_id": str(chapter.id),
+                            "chapter_draft_id": str(chapter_draft.id),
+                        },
+                        output_ref={"blocking_codes": list(block_codes)},
+                        error_message=str(exc),
+                    )
+                    step_order += 1
+                    full_regen_reason = None
+                    if use_chapter_first:
+                        full_regen_reason = _chapter_first_full_regeneration_reason(
+                            project,
+                            chapter,
+                            chapter_draft,
+                            block_codes,
+                            attempt_number=chapter_rewrite_iterations + 1,
+                        )
+                    if (
+                        full_regen_reason
+                        and chapter_rewrite_iterations
+                        < settings.quality.max_chapter_revisions
+                    ):
+                        chapter_rewrite_iterations += 1
+                        current_step_name = (
+                            "story_engine_full_chapter_regeneration_"
+                            f"{chapter_rewrite_iterations}"
+                        )
+                        workflow_run.current_step = current_step_name
+                        chapter.metadata_json = {
+                            **(chapter.metadata_json or {}),
+                            "chapter_first_full_regeneration_instead_of_patch": True,
+                            "chapter_first_full_regeneration_reason": full_regen_reason,
+                            "chapter_first_full_regeneration_count": int(
+                                (chapter.metadata_json or {}).get(
+                                    "chapter_first_full_regeneration_count", 0
+                                )
+                                or 0
+                            )
+                            + 1,
+                        }
+                        chapter_draft = await generate_chapter_draft_once(
+                            session,
+                            project_slug,
+                            chapter_number,
+                            settings=settings,
+                            workflow_run_id=workflow_run.id,
+                            context_packet=chapter_first_context_packet,
+                        )
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name=current_step_name,
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            input_ref={
+                                "blocking_codes": list(block_codes),
+                                "rejected_draft_id": str(
+                                    workflow_run.metadata_json[
+                                        "story_engine_receipt_draft_id"
+                                    ]
+                                ),
+                            },
+                            output_ref={
+                                "chapter_draft_id": str(chapter_draft.id),
+                                "chapter_draft_version_no": chapter_draft.version_no,
+                                "generation_mode": (
+                                    "story_engine_full_chapter_regeneration"
+                                ),
+                            },
+                        )
+                        step_order += 1
+                        continue
+                    requires_human_review = True
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "story_engine_receipt_machine_blocked"
+                    workflow_run.error_message = str(exc)
+                    break
                 except (ValueError, RuntimeError) as exc:
                     logger.warning(
                         "Chapter %d promotion evidence was not eligible: %s",

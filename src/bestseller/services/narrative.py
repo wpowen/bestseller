@@ -125,6 +125,12 @@ def _chapter_contract_metadata_from_chapter(chapter: ChapterModel) -> dict[str, 
     )
     if chapter_methodology_contract:
         metadata["methodology_contract"] = chapter_methodology_contract
+    story_engine_projection = chapter_metadata.get("story_engine_projection")
+    if (
+        isinstance(story_engine_projection, dict)
+        and story_engine_projection.get("can_drive_generation") is True
+    ):
+        metadata["story_engine_projection"] = dict(story_engine_projection)
     if is_methodology_v2_enabled():
         for key in (
             "causal_contract",
@@ -138,6 +144,20 @@ def _chapter_contract_metadata_from_chapter(chapter: ChapterModel) -> dict[str, 
         lineage = chapter_metadata.get(METHODOLOGY_LINEAGE_METADATA_KEY)
         if isinstance(lineage, dict):
             metadata[METHODOLOGY_LINEAGE_METADATA_KEY] = lineage
+    return metadata
+
+
+def _scene_contract_metadata_from_scene(scene: SceneCardModel) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    scene_metadata = scene.metadata_json or {}
+    methodology_contract = normalize_scene_overlay(
+        scene_metadata.get("methodology_contract")
+    )
+    if methodology_contract:
+        metadata["methodology_contract"] = methodology_contract
+    projection_ref = scene_metadata.get("story_engine_projection_ref")
+    if isinstance(projection_ref, dict) and projection_ref:
+        metadata["story_engine_projection_ref"] = dict(projection_ref)
     return metadata
 
 
@@ -1863,9 +1883,6 @@ async def rebuild_narrative_graph(
                     or (payoff.target_scene_number is None and scene.scene_number == last_scene_number)
                 )
             ]
-            scene_methodology_contract = normalize_scene_overlay(
-                (scene.metadata_json or {}).get("methodology_contract")
-            )
             session.add(
                 SceneContractModel(
                     project_id=project.id,
@@ -1921,11 +1938,7 @@ async def rebuild_narrative_graph(
                         for beat in scene_beats
                         if str(beat.metadata_json.get("arc_code")) not in (set(primary_arc_codes[:1]) | {"main_plot"})
                     ])[:5],
-                    metadata_json=(
-                        {"methodology_contract": scene_methodology_contract}
-                        if scene_methodology_contract
-                        else {}
-                    ),
+                    metadata_json=_scene_contract_metadata_from_scene(scene),
                 )
         )
 

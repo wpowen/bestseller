@@ -81,6 +81,29 @@ def _models(language: str, chapter_number: int, scene_number: int):
     return project, chapter, scene
 
 
+def _creative_core(chapter_number: int) -> dict[str, object]:
+    return {
+        "engine_version": 2,
+        "chapter_number": chapter_number,
+        "choice_id": "publish",
+        "pre_state": {"pressure": 3},
+        "pre_state_hash": "pre-hash",
+        "known_facts": ["档案室今晚封存"],
+        "pressure": "对手正在销毁证据",
+        "options": [
+            {"choice_id": "publish", "label": "立即公开"},
+            {"choice_id": "hide", "label": "暂时隐藏"},
+        ],
+        "chosen_path": "立即公开并保护证人",
+        "alternative_costs": ["隐藏会失去最后窗口"],
+        "opponent_strategy": "冻结权限并追查证人",
+        "due_obligations": ["保护证人"],
+        "required_state_changes": [{"key": "pressure", "after": 4}],
+        "expected_post_state_hash": "post-hash",
+        "can_drive_generation": True,
+    }
+
+
 @pytest.mark.parametrize(("language", "chapter_number", "scene_number"), _CASES)
 def test_compiled_scene_prompt_matrix_stays_complete_unique_and_within_budget(
     language: str,
@@ -146,6 +169,24 @@ def test_scene_compiler_dedupes_an_injected_semantic_blacklist_family() -> None:
     assert "另一份较弱黑名单" not in compiled.system
     assert compiled.report.duplicates == ("test.duplicate_blacklist",)
     assert compiled.report.conflicts == ()
+
+
+def test_compiled_scene_prompt_keeps_story_engine_creative_core_as_required() -> None:
+    project, chapter, scene = _models("zh-CN", 4, 1)
+
+    compiled = build_scene_draft_prompts(
+        project,
+        chapter,
+        scene,
+        None,
+        creative_core=_creative_core(chapter.chapter_number),
+        prompt_mode="compiled",
+    )
+
+    assert isinstance(compiled, CompiledPrompt)
+    assert "scene.section.creative_core_line" in compiled.report.required_blocks_kept
+    assert compiled.user.count("【StoryEngine 本章创意核心") == 1
+    assert "立即公开并保护证人" in compiled.user
 
 
 def test_compiler_keeps_every_hard_canon_section_and_fails_closed_if_they_do_not_fit() -> None:

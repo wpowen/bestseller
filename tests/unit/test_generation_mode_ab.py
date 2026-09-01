@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 
 from bestseller.services.generation_mode_ab import (
@@ -161,13 +162,17 @@ def test_summary_requires_case_wins_margin_position_stability_and_coverage() -> 
     judgements: list[PairwiseJudgement] = []
     for case in cases:
         for mode, coverage in ((MODE_SCENE_BY_SCENE, 0.9), (MODE_CHAPTER_FIRST, 1.0)):
-            samples.append(
-                GeneratedSample.fake(
-                    case_id=case.case_id,
-                    mode=mode,
-                    deterministic_coverage=coverage,
-                )
+            sample = GeneratedSample.fake(
+                case_id=case.case_id,
+                mode=mode,
+                deterministic_coverage=coverage,
             )
+            if mode == MODE_SCENE_BY_SCENE:
+                sample = replace(
+                    sample,
+                    stitched_or_repeated_climax_count=1,
+                )
+            samples.append(sample)
         for judge in ("j1", "j2"):
             for swapped in (False, True):
                 judgements.append(
@@ -191,3 +196,53 @@ def test_summary_requires_case_wins_margin_position_stability_and_coverage() -> 
     assert result["judgement_count"] == 12
     assert result["required_judgement_count"] == 12
     assert result["enough_judgements"] is True
+    assert result["e2_gate"]["release_status"] == "PASS_E2_CHAPTER_FIRST"
+
+
+def test_e2_gate_is_inconclusive_below_eighty_percent_position_agreement() -> None:
+    cases = build_default_cases()
+    samples = [
+        GeneratedSample.fake(
+            case_id=case.case_id,
+            mode=mode,
+            deterministic_coverage=1.0,
+        )
+        for case in cases
+        for mode in (MODE_SCENE_BY_SCENE, MODE_CHAPTER_FIRST)
+    ]
+    judgements: list[PairwiseJudgement] = []
+    for case_index, case in enumerate(cases):
+        for judge in ("j1", "j2"):
+            judgements.append(
+                PairwiseJudgement.fake(
+                    case_id=case.case_id,
+                    judge_model=judge,
+                    swapped=False,
+                    winner=MODE_CHAPTER_FIRST,
+                    chapter_first_score=8.2,
+                    scene_by_scene_score=7.2,
+                )
+            )
+            judgements.append(
+                PairwiseJudgement.fake(
+                    case_id=case.case_id,
+                    judge_model=judge,
+                    swapped=True,
+                    winner=(
+                        MODE_SCENE_BY_SCENE
+                        if case_index == 0
+                        else MODE_CHAPTER_FIRST
+                    ),
+                    chapter_first_score=8.2,
+                    scene_by_scene_score=7.2,
+                )
+            )
+
+    result = summarize_experiment(cases, samples, judgements)
+
+    assert result["position_agreement_rate"] == 0.6667
+    assert result["decision"] == "inconclusive"
+    assert result["e2_gate"]["release_status"] == "INCONCLUSIVE_E2"
+    assert "E2_POSITION_SWAP_AGREEMENT_INSUFFICIENT" in result["e2_gate"][
+        "blocking_codes"
+    ]

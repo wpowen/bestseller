@@ -456,6 +456,14 @@ pipeline:
   # contract before downstream chapter planning.  Reverse-outline checks stay
   # warn-only until canary projects prove the false-positive rate is acceptable.
   enable_story_design_kernel: true
+  # Advisory StoryEngine V2 shadow persistence. Artifacts remain
+  # non-authoritative and failures never block the legacy planner.
+  enable_story_engine_shadow: true
+  story_engine_mode: shadow
+  story_engine_canary_project_ids: []
+  story_engine_canary_genres: []
+  story_engine_require_reader_validation_for_cutover: true
+  story_engine_rolling_window_size: 10
   story_design_kernel_candidate_count: 3
   enable_emotion_driven_kernel: true
   enable_emotion_kernel_backfill: true

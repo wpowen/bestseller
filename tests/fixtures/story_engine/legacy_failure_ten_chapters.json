@@ -1,0 +1,17 @@
+{
+  "engine_id": "fixture-legacy-anonymous-001",
+  "version": 1,
+  "initial_state": {"pressure": {"category": "exposure", "value": 0}},
+  "chapters": [
+    {"chapter": 1, "choice_id": "c01", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 0, "operator": "set", "after": 1, "evidence": "主角留下行动痕迹"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 2, "choice_id": "c02", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 1, "operator": "set", "after": 2, "evidence": "主角再次留下行动痕迹"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 3, "choice_id": "c03", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 2, "operator": "set", "after": 3, "evidence": "主角继续行动"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 4, "choice_id": "c04", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 3, "operator": "set", "after": 4, "evidence": "主角重复行动"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 5, "choice_id": "c05", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 4, "operator": "set", "after": 0, "evidence": "状态被旧模板重置"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 6, "choice_id": "c06", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 0, "operator": "set", "after": 1, "evidence": "主角重新开始"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 7, "choice_id": "c07", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 1, "operator": "set", "after": 2, "evidence": "主角继续重复行动"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 8, "choice_id": "c08", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 2, "operator": "set", "after": 3, "evidence": "主角继续重复行动"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 9, "choice_id": "c09", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 3, "operator": "set", "after": 4, "evidence": "主角继续重复行动"}], "opponent_counteraction": null, "future_obligations": []},
+    {"chapter": 10, "choice_id": "c10", "fingerprint": "act|scene|pressure", "transitions": [{"key": "pressure", "category": "exposure", "before": 4, "operator": "set", "after": 0, "evidence": "状态再次被重置"}], "opponent_counteraction": null, "future_obligations": []}
+  ]
+}

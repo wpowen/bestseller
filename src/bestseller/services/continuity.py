@@ -32,6 +32,8 @@ Design notes
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from copy import deepcopy
 import json
 import logging
 import re
@@ -545,9 +547,10 @@ async def extract_chapter_state_snapshot(
         )
     )
 
-    stored_facts = {
-        **_facts_to_storage(facts),
-        "snapshot_contract": {
+    stored_facts = _merge_snapshot_storage(
+        existing_facts=(existing.facts if existing is not None else {}),
+        extracted_facts=_facts_to_storage(facts),
+        snapshot_contract={
             "source_chapter_draft_version_id": (
                 str(source_chapter_draft_version_id)
                 if source_chapter_draft_version_id is not None
@@ -556,7 +559,7 @@ async def extract_chapter_state_snapshot(
             "source_promotion_state": "promoted" if source_is_promoted else "legacy_unverified",
             "is_usable": extraction_status == "ok_promoted",
         },
-    }
+    )
 
     if existing is None:
         snapshot = ChapterStateSnapshotModel(
@@ -582,6 +585,25 @@ async def extract_chapter_state_snapshot(
 
     await session.flush()
     return snapshot
+
+
+def _merge_snapshot_storage(
+    *,
+    existing_facts: Mapping[str, Any] | object,
+    extracted_facts: Mapping[str, Any],
+    snapshot_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Refresh extracted facts without erasing a canonical Engine fold."""
+
+    existing = dict(existing_facts) if isinstance(existing_facts, Mapping) else {}
+    merged = {
+        **dict(extracted_facts),
+        "snapshot_contract": dict(snapshot_contract),
+    }
+    story_engine_state = existing.get("story_engine")
+    if isinstance(story_engine_state, Mapping):
+        merged["story_engine"] = deepcopy(dict(story_engine_state))
+    return merged
 
 
 def validate_fact_monotonicity(

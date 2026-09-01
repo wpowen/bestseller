@@ -105,6 +105,20 @@ def test_unknown_future_section_does_not_bypass_budget() -> None:
     assert not result["some_future_block_line"], "untiered section bypassed budget"
 
 
+@pytest.mark.unit
+def test_story_engine_creative_core_is_tier_zero_and_never_trimmed() -> None:
+    sections = {
+        "creative_core_line": "CURRENT-CHAPTER-ENGINE-CONTEXT",
+        "contract_section": _big(200),
+        "some_future_block_line": _big(9000),
+    }
+
+    result = _budget_context_sections(sections, budget_tokens=1)
+
+    assert result["creative_core_line"] == "CURRENT-CHAPTER-ENGINE-CONTEXT"
+    assert not result["some_future_block_line"]
+
+
 # ---------------------------------------------------------------------------
 # F2: per-block hard cap.  A single bloated block must not eat the entire
 # budget on its own — it gets head+tail truncated to the configured cap.

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 import copy
+from datetime import datetime, timezone
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete as _sa_delete
@@ -88,6 +89,17 @@ from bestseller.services.story_bible import (
     upsert_volume_plan,
     upsert_world_spec,
 )
+from bestseller.services.story_engine import (
+    apply_story_engine_projection_to_chapter,
+    chapter_creative_core_from_window_content,
+    chapter_observation_core_from_window_content,
+    resolve_latest_story_engine_window_artifact,
+    resolve_story_engine_mode,
+    resolve_story_engine_rollout_decision_from_db,
+)
+from bestseller.services.story_engine_window_planner import (
+    generate_story_engine_shadow_window,
+)
 from bestseller.services.truth_version import truth_metadata_for_workflow
 from bestseller.services.word_targets import (
     allocate_scene_word_targets,
@@ -113,6 +125,144 @@ _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES = {
     ChapterStatus.PLANNED.value,
     ChapterStatus.OUTLINING.value,
 }
+
+
+async def _load_story_engine_materialization_projections(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    settings: Any,
+    chapter_numbers: set[int],
+) -> dict[int, dict[str, Any]]:
+    """Load a complete canary window or leave the legacy materializer untouched."""
+
+    decision = await resolve_story_engine_rollout_decision_from_db(
+        session,
+        project,
+        settings,
+        chapter_number=min(chapter_numbers) if chapter_numbers else None,
+    )
+    mode = decision.effective_mode
+    if mode not in {"canary", "canonical"}:
+        return {}
+    artifact = await resolve_latest_story_engine_window_artifact(
+        session,
+        project_id=project.id,
+    )
+    if artifact is None:
+        raise ValueError("story engine materialization requires an active window artifact")
+    projections: dict[int, dict[str, Any]] = {}
+    for chapter_number in sorted(chapter_numbers):
+        creative_core = chapter_creative_core_from_window_content(
+            artifact.content,
+            chapter_number=chapter_number,
+            window_artifact_id=artifact.id,
+        )
+        if creative_core is not None:
+            projections[chapter_number] = creative_core
+    missing = sorted(chapter_numbers.difference(projections))
+    if missing:
+        raise ValueError(
+            "story engine window missing chapters: "
+            + ", ".join(str(number) for number in missing)
+        )
+    return projections
+
+
+async def _load_story_engine_shadow_observation_projections(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    settings: Any,
+    chapter_numbers: set[int],
+) -> dict[int, dict[str, Any]]:
+    """Load dual-write rows for review only; never attach them to writer context."""
+
+    if resolve_story_engine_mode(
+        project,
+        settings,
+        chapter_number=min(chapter_numbers) if chapter_numbers else None,
+    ) != "dual_write":
+        return {}
+    artifact = await resolve_latest_story_engine_window_artifact(
+        session,
+        project_id=project.id,
+        require_generation_authority=False,
+    )
+    if artifact is None:
+        return {}
+    projections: dict[int, dict[str, Any]] = {}
+    for chapter_number in sorted(chapter_numbers):
+        core = chapter_observation_core_from_window_content(
+            artifact.content,
+            chapter_number=chapter_number,
+            window_artifact_id=artifact.id,
+        )
+        if core is not None:
+            projections[chapter_number] = core
+    return projections
+
+
+async def _ensure_dual_write_story_engine_window(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    settings: Any,
+    chapter_outlines: Sequence[Any],
+    workflow_run_id: UUID,
+) -> PlanningArtifactVersionModel | None:
+    """Generate a missing dual-write window without blocking legacy materialization."""
+
+    requested_numbers = {
+        int(getattr(outline, "chapter_number", 0) or 0)
+        for outline in chapter_outlines
+    }
+    if resolve_story_engine_mode(
+        project,
+        settings,
+        chapter_number=min(requested_numbers) if requested_numbers else None,
+    ) != "dual_write":
+        return None
+    existing = await resolve_latest_story_engine_window_artifact(
+        session,
+        project_id=project.id,
+        require_generation_authority=False,
+    )
+    if existing is not None:
+        window = existing.content.get("window") if isinstance(existing.content, Mapping) else None
+        projections = window.get("projections") if isinstance(window, Mapping) else None
+        covered = {
+            int(item.get("chapter_number") or 0)
+            for item in (projections or [])
+            if isinstance(item, Mapping)
+        }
+        if requested_numbers.issubset(covered):
+            return existing
+
+    metadata = project.metadata_json if isinstance(project.metadata_json, Mapping) else {}
+    shadow_meta = metadata.get("story_engine_shadow")
+    engine_artifact_id = (
+        str(shadow_meta.get("artifact_id") or "").strip()
+        if isinstance(shadow_meta, Mapping)
+        else ""
+    )
+    if not engine_artifact_id:
+        return None
+    try:
+        artifact_uuid = UUID(engine_artifact_id)
+    except ValueError:
+        return None
+    engine_artifact = await session.get(PlanningArtifactVersionModel, artifact_uuid)
+    if engine_artifact is None:
+        return None
+    return await generate_story_engine_shadow_window(
+        session,
+        settings,
+        project_id=project.id,
+        engine_artifact=engine_artifact,
+        chapter_outlines=chapter_outlines,
+        workflow_run_id=workflow_run_id,
+    )
 _MATERIALIZATION_MUTABLE_SCENE_STATUSES = {
     SceneStatus.PLANNED.value,
 }
@@ -2471,6 +2621,91 @@ async def materialize_chapter_outline_batch(
                 "chapter_number_normalization": _chapter_number_normalization,
             }
         outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
+        if resolve_story_engine_mode(project, settings) == "dual_write":
+            try:
+                _dual_write_window = await _ensure_dual_write_story_engine_window(
+                    session,
+                    project=project,
+                    settings=settings,
+                    chapter_outlines=batch.chapters,
+                    workflow_run_id=workflow_run.id,
+                )
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "story_engine_dual_write_window": {
+                        "status": (
+                            "ready" if _dual_write_window is not None else "unavailable"
+                        ),
+                        "artifact_id": (
+                            str(_dual_write_window.id)
+                            if _dual_write_window is not None
+                            else None
+                        ),
+                        "writer_authority": False,
+                    },
+                }
+            except Exception as exc:  # noqa: BLE001 - shadow cannot block legacy
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "story_engine_dual_write_window": {
+                        "status": "error",
+                        "error": str(exc)[:500],
+                        "writer_authority": False,
+                    },
+                }
+        _story_engine_projections = await _load_story_engine_materialization_projections(
+            session,
+            project=project,
+            settings=settings,
+            chapter_numbers=outlined_chapter_numbers,
+        )
+        _story_engine_shadow_projections = (
+            await _load_story_engine_shadow_observation_projections(
+                session,
+                project=project,
+                settings=settings,
+                chapter_numbers=outlined_chapter_numbers,
+            )
+        )
+        if _story_engine_projections:
+            _materialization_rollout = (
+                await resolve_story_engine_rollout_decision_from_db(
+                    session,
+                    project,
+                    settings,
+                    chapter_number=(
+                        min(outlined_chapter_numbers)
+                        if outlined_chapter_numbers
+                        else None
+                    ),
+                )
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "story_engine_materialization": {
+                    "mode": _materialization_rollout.effective_mode,
+                    "chapter_numbers": sorted(_story_engine_projections),
+                    "projection_hashes": {
+                        str(chapter_number): projection["projection_hash"]
+                        for chapter_number, projection in _story_engine_projections.items()
+                    },
+                },
+            }
+        if _story_engine_shadow_projections:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "story_engine_shadow_materialization": {
+                    "mode": "dual_write",
+                    "chapter_numbers": sorted(_story_engine_shadow_projections),
+                    "projection_hashes": {
+                        str(chapter_number): projection["projection_hash"]
+                        for chapter_number, projection in (
+                            _story_engine_shadow_projections.items()
+                        )
+                    },
+                    "writer_authority": False,
+                },
+            }
         _existing_project_chapters = list(
             await session.scalars(
                 select(ChapterModel)
@@ -3158,6 +3393,26 @@ async def materialize_chapter_outline_batch(
                     },
                 )
                 step_order += 1
+
+            _story_engine_projection = _story_engine_projections.get(
+                chapter_outline.chapter_number
+            )
+            if _story_engine_projection is not None:
+                apply_story_engine_projection_to_chapter(
+                    chapter,
+                    scenes=materialized_scenes_for_chapter,
+                    creative_core=_story_engine_projection,
+                )
+            _story_engine_shadow_projection = _story_engine_shadow_projections.get(
+                chapter_outline.chapter_number
+            )
+            if _story_engine_shadow_projection is not None:
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "story_engine_shadow_projection": dict(
+                        _story_engine_shadow_projection
+                    ),
+                }
 
             # ── Normalize chapter + scene target_word_count to the shared budget ──
             # Defensive pass for legacy call sites that may bypass the outline

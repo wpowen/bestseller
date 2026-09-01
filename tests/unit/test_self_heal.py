@@ -1704,6 +1704,20 @@ def test_local_gate_exhaustion_does_not_block_resume() -> None:
     assert _project_resume_is_blocked(project) is False
 
 
+def test_needs_replan_project_cannot_be_resurrected_by_self_heal() -> None:
+    project = _FakeProject(
+        id=uuid4(),
+        slug="story-capacity-blocked-book",
+        status="needs_replan",
+        metadata_json={
+            "planning_status": "needs_replan",
+            "production_pause_reason": "story_capacity_insufficient",
+        },
+    )
+
+    assert _project_resume_is_blocked(project) is True
+
+
 @pytest.mark.asyncio
 async def test_find_stuck_projects_detects_under_target_chapters(
     now: _dt.datetime,

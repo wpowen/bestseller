@@ -1644,6 +1644,12 @@ async def _clear_auto_resumable_generation_gate_pause(
 
 
 def _project_resume_is_blocked(project: ProjectModel) -> bool:
+    # Self-heal is another prose-generation entry point.  It must honor the
+    # same project-level planning stop as API/worker pipelines; otherwise a
+    # restart can resurrect an old autowrite job and overwrite a freshly
+    # persisted ``needs_replan`` design while the public UI still says paused.
+    if project_blocks_all_prose_generation(project):
+        return True
     if _project_has_stale_auto_resumable_generation_gate(project):
         return False
     metadata = getattr(project, "metadata_json", None) or {}

@@ -31,6 +31,26 @@ _GENERIC_LOOP_VALUES = {
     "继续发展",
     "下一件事",
 }
+STORY_ARCHITECTURE_VERSION = "story-architecture.v1"
+_ARCHITECTURE_UNIT_FIELDS = (
+    *LOOP_FIELDS,
+    "id",
+    "choice_mode",
+    "mechanism_family",
+    "counter_mode",
+    "cost_mode",
+    "state_axis",
+)
+_ADAPTATION_FIELDS = (
+    "after_unit",
+    "actor",
+    "learned",
+    "strategy_change",
+    "forces_new_choice",
+)
+_GENRE_CONTRACT_FIELDS = ("rule", "observable_state", "failure_consequence")
+_EFFECT_CONTRACT_FIELDS = ("skill_key", "mechanism", "consequence")
+_COMEDY_EFFECT_FIELDS = ("setup", "misalignment", "reaction", "situation_change")
 
 
 def _text(value: Any) -> str:
@@ -49,6 +69,21 @@ def _items(value: Any) -> list[Any]:
 
 def _canonical_loop(loop: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(_text(loop.get(field)).lower() for field in LOOP_FIELDS)
+
+
+def _mechanism_signature(loop: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the causal role fingerprint, deliberately ignoring surface nouns."""
+
+    return tuple(
+        _text(loop.get(field)).lower()
+        for field in (
+            "choice_mode",
+            "mechanism_family",
+            "counter_mode",
+            "cost_mode",
+            "state_axis",
+        )
+    )
 
 
 def _validate_loops(raw: Any) -> dict[str, Any]:
@@ -160,6 +195,178 @@ def _is_seriality_proof(story: Mapping[str, Any]) -> bool:
     )
 
 
+def _is_story_architecture(story: Mapping[str, Any]) -> bool:
+    return _text(story.get("schema_version")) == STORY_ARCHITECTURE_VERSION
+
+
+def _complete_mapping_count(raw: Any, fields: Sequence[str]) -> int:
+    return sum(
+        1
+        for item in _items(raw)
+        if isinstance(item, Mapping) and all(_text(item.get(field)) for field in fields)
+    )
+
+
+def _evaluate_story_architecture(
+    story: Mapping[str, Any], *, requested: int
+) -> dict[str, Any]:
+    """Validate one executable architecture contract before planning starts.
+
+    This contract proves that a premise can generate changing choices, learned
+    opposition, relationship movement, genre-native state, and selected reader
+    effects. It is structural evidence only, never a claim of popularity.
+    """
+
+    causal_units = [
+        dict(item) for item in _items(story.get("causal_units")) if isinstance(item, Mapping)
+    ]
+    # Architecture prototypes prove that the engine can change shape; the
+    # seriality capacity report separately proves full requested length.  Do
+    # not demand hundreds of hand-written prototype loops or pretend four
+    # examples alone prove 500 chapters.
+    structural_horizon = min(requested, 96) if requested > 0 else 0
+    normalized = dict(story)
+    normalized.pop("schema_version", None)
+    normalized.pop("causal_units", None)
+    normalized["chapter_loop"] = causal_units
+    base = evaluate_story_viability(normalized, target_chapters=structural_horizon)
+    # The legacy gate's axes are management-specific Chinese labels.  The
+    # architecture contract proves crossover through causal families,
+    # progression, opposition, relationships, genre contracts and effects,
+    # so it must not force suspense/science-fiction/political stories to lie
+    # that they are all "经营/升级" engines.
+    codes = [
+        code
+        for code in (base.get("blocking_codes") or [])
+        if code != "INSUFFICIENT_ENGINE_CROSSOVER"
+    ]
+
+    required_units = 4 if requested >= 36 else 3
+    complete_units = [
+        unit
+        for unit in causal_units
+        if all(_text(unit.get(field)) for field in _ARCHITECTURE_UNIT_FIELDS)
+    ]
+    if len(complete_units) < required_units:
+        codes.append("INCOMPLETE_STORY_ARCHITECTURE")
+
+    signatures = [_mechanism_signature(unit) for unit in complete_units]
+    distinct_signatures = len(set(signatures))
+    if signatures and (
+        distinct_signatures < min(3, len(signatures))
+        or len(signatures) - distinct_signatures > len(signatures) / 2
+    ):
+        codes.append("STATIC_LOOP_REPETITION")
+    choice_modes = {
+        _text(unit.get("choice_mode")).lower()
+        for unit in complete_units
+        if _text(unit.get("choice_mode"))
+    }
+    if requested >= 36 and len(choice_modes) < 3:
+        codes.append("INSUFFICIENT_CHOICE_VARIETY")
+
+    unit_ids = [_text(unit.get("id")) for unit in complete_units]
+    seen: set[str] = set()
+    disconnected = len(unit_ids) != len(set(unit_ids))
+    for index, unit in enumerate(complete_units):
+        unit_id = _text(unit.get("id"))
+        caused_by = _text(unit.get("caused_by"))
+        if index == 0:
+            if caused_by:
+                disconnected = True
+        elif not caused_by or caused_by not in seen:
+            disconnected = True
+        if unit_id:
+            seen.add(unit_id)
+    if requested >= 36 and (len(complete_units) < required_units or disconnected):
+        codes.append("CAUSAL_CHAIN_DISCONNECTED")
+
+    adaptations = [
+        item for item in _items(story.get("opponent_adaptations")) if isinstance(item, Mapping)
+    ]
+    complete_adaptations = [
+        item
+        for item in adaptations
+        if all(_text(item.get(field)) for field in _ADAPTATION_FIELDS)
+        and _text(item.get("after_unit")) in set(unit_ids)
+    ]
+    if requested >= 36 and len(complete_adaptations) < 2:
+        codes.append("MISSING_OPPONENT_ADAPTATION")
+
+    grammar = story.get("grammar")
+    grammar = grammar if isinstance(grammar, Mapping) else {}
+    required_contracts = [
+        _text(item) for item in _items(grammar.get("required_contracts")) if _text(item)
+    ]
+    genre_contracts = story.get("genre_contracts")
+    genre_contracts = genre_contracts if isinstance(genre_contracts, Mapping) else {}
+    missing_genre_contracts = [
+        key
+        for key in required_contracts
+        if not isinstance(genre_contracts.get(key), Mapping)
+        or not all(
+            _text(genre_contracts[key].get(field))
+            for field in _GENRE_CONTRACT_FIELDS
+        )
+    ]
+    if requested >= 36 and (not required_contracts or missing_genre_contracts):
+        codes.append("MISSING_GENRE_CONTRACT_IMPLEMENTATION")
+
+    selected_effects = {
+        _text(item) for item in _items(story.get("selected_effect_skills")) if _text(item)
+    }
+    effect_contracts = [
+        item for item in _items(story.get("effect_contracts")) if isinstance(item, Mapping)
+    ]
+    effect_by_key = {
+        _text(item.get("skill_key")): item
+        for item in effect_contracts
+        if all(_text(item.get(field)) for field in _EFFECT_CONTRACT_FIELDS)
+        and len([value for value in _items(item.get("variation_sources")) if _text(value)]) >= 2
+        and len([value for value in _items(item.get("phase_payoffs")) if _text(value)]) >= 3
+    }
+    if selected_effects - set(effect_by_key):
+        codes.append("MISSING_SELECTED_EFFECT_CONTRACT")
+    comedy = effect_by_key.get("comedy_engine")
+    if "comedy_engine" in selected_effects and (
+        not isinstance(comedy, Mapping)
+        or not all(_text(comedy.get(field)) for field in _COMEDY_EFFECT_FIELDS)
+    ):
+        codes.append("MISSING_SELECTED_EFFECT_CONTRACT")
+
+    report = dict(base.get("report") or {})
+    report.update(
+        {
+            "mode": STORY_ARCHITECTURE_VERSION,
+            "architecture": {
+                "requested_chapters": requested,
+                "structural_horizon_chapters": structural_horizon,
+                "input_units": len(causal_units),
+                "complete_units": len(complete_units),
+                "distinct_mechanism_signatures": distinct_signatures,
+                "choice_modes": sorted(choice_modes),
+                "complete_opponent_adaptations": len(complete_adaptations),
+                "required_genre_contracts": required_contracts,
+                "missing_genre_contracts": missing_genre_contracts,
+                "selected_effect_skills": sorted(selected_effects),
+                "implemented_effect_skills": sorted(effect_by_key),
+            },
+            "evidence_boundary": (
+                "This proves minimum executable story architecture only; it does not prove "
+                "reader appeal, ranking performance, or commercial success."
+            ),
+        }
+    )
+    unique_codes = list(dict.fromkeys(codes))
+    ceiling = int(base.get("estimated_chapter_ceiling") or 0)
+    return {
+        "passed": not unique_codes and ceiling >= structural_horizon,
+        "blocking_codes": unique_codes,
+        "estimated_chapter_ceiling": ceiling,
+        "report": report,
+    }
+
+
 def _evaluate_seriality_proof(
     story: Mapping[str, Any], *, requested: int
 ) -> dict[str, Any]:
@@ -241,6 +448,8 @@ def evaluate_story_viability(
         requested = max(0, int(requested))
     except (TypeError, ValueError):
         requested = 0
+    if _is_story_architecture(story):
+        return _evaluate_story_architecture(story, requested=requested)
     if _is_seriality_proof(story):
         return _evaluate_seriality_proof(story, requested=requested)
     loop_report = _validate_loops(story.get("chapter_loop", story.get("causal_loop")))

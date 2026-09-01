@@ -273,6 +273,9 @@ def _flatten_metadata_text(value: object) -> list[str]:
 
 
 _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
+    "异世界": "otherworld-cross-system",
+    "异世大陆": "otherworld-cross-system",
+    "异世": "otherworld-cross-system",
     "异界": "otherworld-cross-system",
     "otherworld": "otherworld-cross-system",
     "cross-system": "otherworld-cross-system",

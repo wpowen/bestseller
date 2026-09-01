@@ -59,6 +59,12 @@ def test_resolve_story_design_grammar_by_key_and_genre_text() -> None:
     assert resolve_story_design_grammar(category_key="base-building").key == "base-building"
     assert resolve_story_design_grammar(genre="悬疑推理").key == "suspense-mystery"
     assert resolve_story_design_grammar(genre="异界穿越").key == "otherworld-cross-system"
+    assert (
+        resolve_story_design_grammar(
+            genre="异世界", sub_genre="异世大陆经营升级"
+        ).key
+        == "otherworld-cross-system"
+    )
     assert resolve_story_design_grammar(genre="仙侠升级").key == "action-progression"
     assert (
         resolve_story_design_grammar(genre="女频", sub_genre="言情成长").key

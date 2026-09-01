@@ -93,8 +93,14 @@ premise_card_count: 4
 # 项目卡初审是便宜的排序层，不是最终故事门。真实运行中 4 张已付费生成的完整卡
 # 被单模型一次性压到 2 张，其中 1 张又命中尸体母题，最终只剩 1 个项目方向撞
 # 八轴硬门。保留最多 4 张干净近失卡进入钩子终审；污染卡仍在更早的确定性门淘汰。
-premise_card_min_survivors: 4
-engine_kernel_max_tokens: 3500  # M3项目卡较长；给完整JSON与一次结构修复留出正文预算
+# 单模型项目卡评分仍可用于排序，但不再把判定失败的卡为了凑数量重新放回。
+# 结构能力由下面的可复算 story_architecture 闸门负责；候选干涸必须回到创意层
+# 重生，不能拿已失败候选冒充晋级者。
+premise_card_min_survivors: 0
+story_architecture_contract_enabled: true
+# story_architecture.v1 增加四组因果原型、对手学习、题材合同与效果合同；3500 会把
+# JSON 截在 causal_units 中间，截断就等于整张卡无效。预算覆盖完整卡，不降低门禁。
+engine_kernel_max_tokens: 8000
 raw_idea_floor: 7.0
 raw_idea_progression_floor: 5.0  # 仅获 premise card 展开资格；不代表通过最终生产门禁
 raw_idea_rank_batch_size: 4  # M2.7 每批6项实测仍会打满4500 token截断

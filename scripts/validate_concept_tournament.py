@@ -31,17 +31,62 @@ async def _run(args: argparse.Namespace) -> int:
     if args.prompt_mode:
         config["candidate_prompt_mode"] = args.prompt_mode
     async with session_scope(settings) as session:
-        result = await run_concept_tournament(
-            session,
-            settings,
-            genre=args.genre,
-            sub_genre=args.sub_genre,
-            chapter_count=args.chapters,
-            seed_concept=args.seed,
-            config=config,
-        )
+        if args.architecture_only:
+            from bestseller.services.concept_tournament import (
+                _build_engine_kernel_messages,
+                _default_generator,
+                _parse_json_object,
+                _story_architecture_audit,
+            )
 
-    payload = result.to_dict()
+            system, user = _build_engine_kernel_messages(
+                genre=args.genre,
+                sub_genre=args.sub_genre,
+                lane="生产架构验证",
+                chapter_count=args.chapters,
+                seed_concept=args.seed,
+                audience_orientation=args.audience,
+                tone_preference=args.tone,
+                effect_skills=tuple(args.effect_skill),
+            )
+            generator = await _default_generator(
+                session,
+                settings,
+                template="concept_tournament_engine_kernel",
+                max_tokens=int(config.get("engine_kernel_max_tokens", 8000)),
+                model_catalog_key=str(config.get("generation_model_key") or "") or None,
+            )
+            raw, llm_run_id = await generator(system, user)
+            card = _parse_json_object(raw) or {}
+            audit = _story_architecture_audit(
+                card,
+                genre=args.genre,
+                sub_genre=args.sub_genre,
+                chapter_count=args.chapters,
+                effect_skills=tuple(args.effect_skill),
+            )
+            payload = {
+                "mode": "architecture_only",
+                "llm_run_id": str(llm_run_id) if llm_run_id else None,
+                "card": card,
+                "audit": audit,
+            }
+            passed = bool(audit.get("passed"))
+        else:
+            result = await run_concept_tournament(
+                session,
+                settings,
+                genre=args.genre,
+                sub_genre=args.sub_genre,
+                chapter_count=args.chapters,
+                seed_concept=args.seed,
+                audience_orientation=args.audience,
+                tone_preference=args.tone,
+                effect_skills=tuple(args.effect_skill),
+                config=config,
+            )
+            payload = result.to_dict()
+            passed = result.winner is not None
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output:
         output = Path(args.output)
@@ -50,7 +95,7 @@ async def _run(args: argparse.Namespace) -> int:
         print(output.resolve())
     else:
         print(rendered)
-    return 0 if result.winner is not None else 2
+    return 0 if passed else 2
 
 
 def main() -> int:
@@ -59,6 +104,10 @@ def main() -> int:
     parser.add_argument("--sub-genre", default="")
     parser.add_argument("--chapters", type=int, default=500)
     parser.add_argument("--seed", default="")
+    parser.add_argument("--audience", default="")
+    parser.add_argument("--tone", default="")
+    parser.add_argument("--effect-skill", action="append", default=[])
+    parser.add_argument("--architecture-only", action="store_true")
     parser.add_argument("--generation-model", help="model_catalog id for candidates/expansion")
     parser.add_argument("--judge-model", help="model_catalog id for both strict judge stages")
     parser.add_argument(

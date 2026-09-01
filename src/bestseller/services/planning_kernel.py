@@ -910,9 +910,13 @@ def build_project_planning_kernel(
     )
     legacy_viability = bool(metadata.get("legacy_story_viability"))
     if not viability_input and isinstance(raw_contract, Mapping):
-        viability_input = _as_mapping(
-            _as_mapping(raw_contract).get("seriality_proof")
-        )
+        contract_mapping = _as_mapping(raw_contract)
+        # New conceptions carry one canonical executable architecture.  The
+        # seriality proof remains a compatibility fallback for pre-migration
+        # projects, not a parallel source of truth.
+        viability_input = _as_mapping(contract_mapping.get("story_architecture"))
+        if not viability_input:
+            viability_input = _as_mapping(contract_mapping.get("seriality_proof"))
     story_viability = (
         evaluate_story_viability(
             viability_input,

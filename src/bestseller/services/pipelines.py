@@ -14770,6 +14770,64 @@ async def _drive_repair_to_closure(
     return result
 
 
+def _prepare_story_architecture_migration_metadata(
+    current_metadata: Mapping[str, Any] | None,
+    replacement_metadata: Mapping[str, Any] | None,
+    *,
+    target_chapters: int,
+    operation: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate and audit a reconception cutover before touching project truth."""
+
+    from bestseller.services.concept_contract import (
+        require_conception_contract_for_target,
+    )
+
+    previous_meta = dict(current_metadata or {})
+    migration_meta = dict(replacement_metadata or {})
+    fresh_contract = require_conception_contract_for_target(
+        migration_meta.get("concept_contract"),
+        target_chapters=int(target_chapters),
+    )
+    if fresh_contract is None:
+        raise ValueError(
+            "structural reconception completed without a promotable concept contract"
+        )
+    previous_contract = previous_meta.get("concept_contract")
+    previous_contract = (
+        dict(previous_contract) if isinstance(previous_contract, Mapping) else {}
+    )
+    migration_history = previous_meta.get("story_architecture_migration_history")
+    migration_history = (
+        [dict(item) for item in migration_history if isinstance(item, Mapping)]
+        if isinstance(migration_history, Sequence)
+        and not isinstance(migration_history, (str, bytes))
+        else []
+    )
+    migration_history.append(
+        {
+            "migrated_at": _dt.datetime.now(_dt.UTC).isoformat(),
+            "operation": operation,
+            "previous_champion_id": str(previous_contract.get("champion_id") or ""),
+            "previous_input_hash": str(previous_contract.get("input_hash") or ""),
+            "new_champion_id": str(fresh_contract.get("champion_id") or ""),
+            "new_input_hash": str(fresh_contract.get("input_hash") or ""),
+            "schema_version": "story-architecture.v1",
+        }
+    )
+    return (
+        {
+            **previous_meta,
+            **migration_meta,
+            "concept_contract_version": "2",
+            "concept_contract": fresh_contract,
+            "story_architecture_migration_history": migration_history[-10:],
+            "story_architecture_migration_status": "validated",
+        },
+        fresh_contract,
+    )
+
+
 async def run_autowrite_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -14915,6 +14973,56 @@ async def run_autowrite_pipeline(
                 )
         project_payload = project_payload.model_copy(update={"metadata": _meta})
 
+    # Existing projects that predate story-architecture.v1 need an explicit
+    # reconception migration before any structural repair.  Merely running the
+    # conception pre-pass used to mutate only the transient ProjectCreate
+    # payload; because the project row already existed, the approved contract
+    # was then discarded and the repair lane rearranged the same thin premise.
+    # Persist the newly validated conception truth before routing into either
+    # planning implementation.
+    if use_conception and (allow_outline_replan or force_foundation_replan):
+        existing_project = await get_project_by_slug(session, project_payload.slug)
+        if existing_project is not None:
+            operation = (
+                "foundation_rebuild" if force_foundation_replan else "outline_replan"
+            )
+            merged_meta, fresh_contract = (
+                _prepare_story_architecture_migration_metadata(
+                    existing_project.metadata_json,
+                    project_payload.metadata,
+                    target_chapters=int(existing_project.target_chapters),
+                    operation=operation,
+                )
+            )
+            existing_project.metadata_json = merged_meta
+            existing_project.title = project_payload.title
+            existing_project.genre = project_payload.genre
+            existing_project.sub_genre = project_payload.sub_genre
+            existing_project.audience = project_payload.audience
+            await import_planning_artifact(
+                session,
+                existing_project.slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.PREMISE,
+                    content={"premise": premise},
+                    notes=(
+                        "story-architecture.v1 reconception migration; "
+                        f"champion_id={fresh_contract.get('champion_id')}"
+                    ),
+                ),
+            )
+            await _checkpoint_commit(session)
+            _emit_progress(
+                progress,
+                "story_architecture_migrated",
+                {
+                    "project_slug": existing_project.slug,
+                    "schema_version": "story-architecture.v1",
+                    "champion_id": fresh_contract.get("champion_id"),
+                    "requires_foundation_replan": True,
+                },
+            )
+
     if project_payload.project_type == ProjectType.FANQIE_SHORT:
         from bestseller.services.fanqie_short_pipeline import run_fanqie_short_pipeline
 
@@ -14961,6 +15069,20 @@ async def run_autowrite_pipeline(
         )
     if await _clear_auto_resumable_project_pause(session, project):
         await _checkpoint_commit(session)
+    if allow_outline_replan or force_foundation_replan:
+        from bestseller.services.concept_contract import (
+            require_story_architecture_for_operation,
+        )
+
+        require_story_architecture_for_operation(
+            project.metadata_json,
+            target_chapters=int(project.target_chapters),
+            operation=(
+                "foundation_rebuild"
+                if force_foundation_replan
+                else "outline_replan"
+            ),
+        )
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project.slug,
@@ -15423,6 +15545,20 @@ async def run_progressive_autowrite_pipeline(
         _emit_progress(progress, "project_creation_completed", {"project_slug": project.slug, "project_id": str(project.id)})
     if await _clear_auto_resumable_project_pause(session, project):
         await _checkpoint_commit(session)
+    if allow_outline_replan or force_foundation_replan:
+        from bestseller.services.concept_contract import (
+            require_story_architecture_for_operation,
+        )
+
+        require_story_architecture_for_operation(
+            project.metadata_json,
+            target_chapters=int(project.target_chapters),
+            operation=(
+                "foundation_rebuild"
+                if force_foundation_replan
+                else "outline_replan"
+            ),
+        )
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project.slug,

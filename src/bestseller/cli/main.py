@@ -1737,6 +1737,24 @@ def planning_import(
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            if artifact_type in {
+                ArtifactType.BOOK_SPEC,
+                ArtifactType.VOLUME_PLAN,
+                ArtifactType.CHAPTER_OUTLINE_BATCH,
+                ArtifactType.VOLUME_CHAPTER_OUTLINE,
+            }:
+                from bestseller.services.concept_contract import (
+                    require_story_architecture_for_operation,
+                )
+
+                require_story_architecture_for_operation(
+                    project.metadata_json,
+                    target_chapters=int(project.target_chapters),
+                    operation=f"planning_import:{artifact_type.value}",
+                )
             artifact = await import_planning_artifact(
                 session,
                 project_slug,

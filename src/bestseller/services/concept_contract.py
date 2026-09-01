@@ -14,6 +14,7 @@ from bestseller.services.seriality_capacity import (
 )
 
 CONCEPT_CONTRACT_VERSION = "concept-contract.v2"
+STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS = 36
 
 
 class ConceptContractError(RuntimeError):
@@ -97,6 +98,15 @@ def build_concept_contract(
     phase_transitions = _items(selected.get("phase_transitions"))
     opposing_ecology = _items(selected.get("opposing_ecology"))
     endgame_direction = _text(selected.get("endgame_direction"))
+    raw_architecture = selected.get("story_architecture")
+    story_architecture = (
+        copy.deepcopy(dict(raw_architecture))
+        if isinstance(raw_architecture, Mapping)
+        else {}
+    )
+    if story_architecture:
+        story_architecture["schema_version"] = "story-architecture.v1"
+        story_architecture["target_chapters"] = int(target_chapters)
     unit_frequency = _text(selected.get("unit_frequency"))
     unit_count_estimate = _nonnegative_int(selected.get("unit_count_estimate"))
     source = {
@@ -129,6 +139,7 @@ def build_concept_contract(
         "opposing_ecology": opposing_ecology,
         "mystery_ladder": question_ladder,
         "endgame_direction": endgame_direction,
+        "story_architecture": story_architecture,
     }
     input_hash = _stable_hash(source)
     champion_id = f"concept-{input_hash[:16]}"
@@ -238,15 +249,25 @@ def build_concept_contract(
         "phase_desire_ladder": phase_transitions,
         "world_faction_evolution": opposing_ecology,
     }
+    layered_architecture = (
+        {
+            **story_architecture,
+            **common,
+        }
+        if story_architecture
+        else {}
+    )
     return {
         "schema_version": CONCEPT_CONTRACT_VERSION,
         **common,
         "genre": source["genre"],
         "sub_genre": source["sub_genre"],
         "quality_evidence": quality_evidence,
+        "story_architecture_required": bool(layered_architecture),
         "hook_card": hook_card,
         "seriality_proof": seriality_proof,
         "story_spine": layered_spine,
+        "story_architecture": layered_architecture,
     }
 
 
@@ -259,6 +280,13 @@ def _concept_contract_hash_source(
     proof = contract.get("seriality_proof")
     if not isinstance(hook, Mapping) or not isinstance(proof, Mapping):
         return None
+    architecture = contract.get("story_architecture")
+    architecture_source: dict[str, Any] = {}
+    if isinstance(architecture, Mapping) and architecture:
+        architecture_source = copy.deepcopy(dict(architecture))
+        for key in ("champion_id", "input_hash"):
+            architecture_source.pop(key, None)
+        architecture_source["target_chapters"] = int(target_chapters)
     return {
         "concept": _text(hook.get("one_liner")),
         "mechanism": _text(hook.get("story_motion")),
@@ -284,6 +312,7 @@ def _concept_contract_hash_source(
         "opposing_ecology": _items(proof.get("opposing_ecology")),
         "mystery_ladder": _items(proof.get("mystery_ladder")),
         "endgame_direction": _text(proof.get("endgame_direction")),
+        "story_architecture": architecture_source,
     }
 
 
@@ -311,9 +340,9 @@ def reseal_concept_contract_lineage(
             "target_chapters": int(target_chapters),
         }
     )
-    for key in ("hook_card", "seriality_proof", "story_spine"):
+    for key in ("hook_card", "seriality_proof", "story_spine", "story_architecture"):
         child = result.get(key)
-        if not isinstance(child, Mapping):
+        if not isinstance(child, Mapping) or (key == "story_architecture" and not child):
             continue
         result[key] = {
             **dict(child),
@@ -355,6 +384,32 @@ def validate_concept_contract(
             violations.append(f"concept_contract.{key}.input_hash 不一致")
         if int(child.get("target_chapters") or 0) != int(target_chapters):
             violations.append(f"concept_contract.{key}.target_chapters 不一致")
+    architecture_required = bool(contract.get("story_architecture_required"))
+    architecture = contract.get("story_architecture")
+    if architecture_required:
+        if not isinstance(architecture, Mapping) or not architecture:
+            violations.append("concept_contract.story_architecture 缺失")
+        else:
+            if _text(architecture.get("champion_id")) != champion_id:
+                violations.append("concept_contract.story_architecture.champion_id 不一致")
+            if _text(architecture.get("input_hash")) != input_hash:
+                violations.append("concept_contract.story_architecture.input_hash 不一致")
+            if int(architecture.get("target_chapters") or 0) != int(target_chapters):
+                violations.append("concept_contract.story_architecture.target_chapters 不一致")
+            from bestseller.services.story_viability import evaluate_story_viability
+
+            architecture_report = evaluate_story_viability(
+                architecture,
+                target_chapters=target_chapters,
+            )
+            if not architecture_report.get("passed"):
+                violations.append(
+                    "story_architecture 能力不足: "
+                    + "/".join(
+                        str(item)
+                        for item in architecture_report.get("blocking_codes", [])
+                    )
+                )
     hook = contract.get("hook_card")
     if isinstance(hook, Mapping):
         if not hook.get("approved") or not _text(hook.get("one_liner")):
@@ -388,10 +443,14 @@ def validate_concept_contract(
     # after a full conception run (verified 2026-07-25 across 51/54/100/108/
     # 180/199; three shipped presets sit in that band). The measurement
     # function is intentionally left untouched — it is a ruler, not a policy.
-    if (
-        isinstance(proof, Mapping)
-        and int(target_chapters) >= SERIALITY_PROOF_REQUIRED_MIN_CHAPTERS
-    ):
+    requires_fresh_capacity = bool(
+        int(target_chapters) >= SERIALITY_PROOF_REQUIRED_MIN_CHAPTERS
+        or (
+            architecture_required
+            and int(target_chapters) >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS
+        )
+    )
+    if isinstance(proof, Mapping) and requires_fresh_capacity:
         fresh_report = evaluate_seriality_capacity(
             proof,
             target_chapters=target_chapters,
@@ -436,17 +495,61 @@ def require_conception_contract_for_target(
     """Fail closed before project creation for newly conceived long books."""
 
     if not contract:
-        if int(target_chapters) >= 200:
+        if int(target_chapters) >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS:
             raise ConceptContractError(
                 [
                     f"目标为 {int(target_chapters)} 章，但没有候选通过一句话钩子与"
-                    "长篇容量证明；禁止进入书籍规划"
+                    "可执行故事架构证明；禁止进入书籍规划"
                 ]
             )
         return None
     violations = validate_concept_contract(contract, target_chapters=target_chapters)
+    if (
+        int(target_chapters) >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS
+        and not contract.get("story_architecture_required")
+    ):
+        violations.append(
+            "新构思的长篇缺少 story_architecture.v1；旧 seriality_proof 不能代替"
+            "可执行因果架构"
+        )
     if violations:
         raise ConceptContractError(violations)
+    return dict(contract)
+
+
+def require_story_architecture_for_operation(
+    metadata: Mapping[str, Any] | None,
+    *,
+    target_chapters: int,
+    operation: str,
+) -> dict[str, Any] | None:
+    """Require the executable contract on structural mutation/recovery paths.
+
+    Ordinary legacy prose resume remains compatible.  Any operation that can
+    replace foundation or outline truth must first prove that it is rebuilding
+    from a valid architecture, otherwise "replan" merely rearranges a thin
+    premise and recreates the same failure.
+    """
+
+    if int(target_chapters) < STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS:
+        return None
+    meta = metadata if isinstance(metadata, Mapping) else {}
+    contract = meta.get("concept_contract")
+    if not isinstance(contract, Mapping) or not contract.get(
+        "story_architecture_required"
+    ):
+        raise ConceptContractError(
+            [
+                f"{operation} 要求 story_architecture.v1；禁止用旧连载说明或薄前提"
+                "直接重排卷章"
+            ]
+        )
+    violations = validate_concept_contract(
+        contract,
+        target_chapters=target_chapters,
+    )
+    if violations:
+        raise ConceptContractError([f"{operation}: {item}" for item in violations])
     return dict(contract)
 
 
@@ -498,6 +601,9 @@ def apply_concept_contract_to_book_spec(
     ):
         engine[key] = _items(proof.get(key))
     engine["endgame_direction"] = _text(proof.get("endgame_direction"))
+    architecture = contract.get("story_architecture")
+    if isinstance(architecture, Mapping) and architecture:
+        engine["story_architecture"] = copy.deepcopy(dict(architecture))
     result["series_engine"] = engine
     result["concept_contract_lineage"] = {
         key: contract.get(key)
@@ -524,6 +630,47 @@ def render_concept_contract_block(
     if not all(isinstance(item, Mapping) for item in (hook, proof, spine)):
         return ""
     assert isinstance(hook, Mapping) and isinstance(proof, Mapping) and isinstance(spine, Mapping)
+    architecture = contract.get("story_architecture")
+    architecture_lines = ""
+    if isinstance(architecture, Mapping) and architecture:
+        raw_units = architecture.get("causal_units")
+        units = (
+            [item for item in raw_units if isinstance(item, Mapping)]
+            if isinstance(raw_units, Sequence)
+            and not isinstance(raw_units, (str, bytes))
+            else []
+        )
+        raw_adaptations = architecture.get("opponent_adaptations")
+        adaptations = (
+            [item for item in raw_adaptations if isinstance(item, Mapping)]
+            if isinstance(raw_adaptations, Sequence)
+            and not isinstance(raw_adaptations, (str, bytes))
+            else []
+        )
+        raw_effects = architecture.get("effect_contracts")
+        effects = (
+            [item for item in raw_effects if isinstance(item, Mapping)]
+            if isinstance(raw_effects, Sequence)
+            and not isinstance(raw_effects, (str, bytes))
+            else []
+        )
+        genre_contracts = architecture.get("genre_contracts")
+        genre_contract_keys = (
+            [str(key) for key in genre_contracts]
+            if isinstance(genre_contracts, Mapping)
+            else []
+        )
+        architecture_lines = (
+            "Executable causal units: "
+            + json.dumps(units, ensure_ascii=False, separators=(",", ":"))
+            + "\nOpponent learning: "
+            + json.dumps(adaptations, ensure_ascii=False, separators=(",", ":"))
+            + "\nRequired genre contracts: "
+            + ", ".join(genre_contract_keys)
+            + "\nSelected effect contracts: "
+            + json.dumps(effects, ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        )
     if language.startswith("en"):
         return (
             "[Approved concept contract — preserve lineage]\n"
@@ -534,6 +681,7 @@ def render_concept_contract_block(
             f"Unit families: {'; '.join(_items(proof.get('unit_families')))}\n"
             f"Permanent accumulation: {'; '.join(_items(proof.get('accumulation_tracks')))}\n"
             f"Phase transformations: {' -> '.join(_items(proof.get('phase_transitions')))}\n"
+            f"{architecture_lines}"
             f"Terminal question: {_text(spine.get('terminal_question'))}\n"
         )
     return (
@@ -545,9 +693,10 @@ def render_concept_contract_block(
         f"单元家族：{'；'.join(_items(proof.get('unit_families')))}\n"
         f"永久积累：{'；'.join(_items(proof.get('accumulation_tracks')))}\n"
         f"阶段质变：{'→'.join(_items(proof.get('phase_transitions')))}\n"
+        f"{architecture_lines}"
         f"终局问题：{_text(spine.get('terminal_question'))}\n"
-        "钩子只约束开篇承诺；中后期必须通过故事单元、永久积累和阶段质变生长，"
-        "禁止机械重复同一代价或误解。\n"
+        "钩子只约束开篇承诺；卷章规划必须消费上面的因果单元、对手学习、题材合同"
+        "和用户选定效果，禁止机械重复同一代价或误解。\n"
     )
 
 
@@ -607,7 +756,8 @@ def render_volume_seriality_execution_block(
         f"不可逆积累目标：{'；'.join(track_deltas)}\n"
         "每章必须输出 `seriality_contract`：逐字匹配本卷的 phase_id、unit_family_ref，以及"
         "unit_instance_id、unit_variant_contribution、phase_progress、prior_state_refs、"
-        "irreversible_state_after、no_reset_evidence、accumulation_track_deltas [{track_ref, delta}]。"
+        "irreversible_state_after、no_reset_evidence、"
+        "accumulation_track_deltas [{track_ref, delta}]。"
         "单章铺垫变化时 accumulation_track_deltas 可以为空数组，但整个批次必须"
         "让全部目标发生可见推进；禁止重启开篇钩子、清零关系/资源/认知状态。\n"
     )
@@ -615,6 +765,7 @@ def render_volume_seriality_execution_block(
 
 __all__ = [
     "CONCEPT_CONTRACT_VERSION",
+    "STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS",
     "ConceptContractError",
     "apply_concept_contract_to_book_spec",
     "build_concept_contract",
@@ -622,6 +773,7 @@ __all__ = [
     "render_volume_seriality_execution_block",
     "reseal_concept_contract_lineage",
     "require_conception_contract_for_target",
+    "require_story_architecture_for_operation",
     "require_valid_concept_contract",
     "validate_concept_contract",
 ]

@@ -1836,8 +1836,23 @@ async def run_outline_replan_task(
         source_contract_requires_repair = bool(
             minimal_cost_source_contract_violations(project, premise)
         )
+        from bestseller.services.concept_contract import (
+            STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS,
+        )
+
+        current_contract = dict(project.metadata_json or {}).get("concept_contract")
+        architecture_rebuild_required = bool(
+            int(project.target_chapters)
+            >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS
+            and (
+                not isinstance(current_contract, dict)
+                or not current_contract.get("story_architecture_required")
+            )
+        )
         force_foundation_replan = bool(
-            payload.get("repair_foundation") or source_contract_requires_repair
+            payload.get("repair_foundation")
+            or source_contract_requires_repair
+            or architecture_rebuild_required
         )
         if force_foundation_replan:
             from bestseller.domain.enums import ArtifactType
@@ -1935,6 +1950,7 @@ async def run_outline_replan_task(
                     premise=premise,
                     requested_by="worker_outline_replan",
                     progress=make_sync_callback(reporter),
+                    use_conception=architecture_rebuild_required,
                     allow_outline_replan=True,
                     force_foundation_replan=force_foundation_replan,
                 )

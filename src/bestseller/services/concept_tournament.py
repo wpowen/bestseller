@@ -165,6 +165,10 @@ class ConceptCandidate:
     phase_transitions: tuple[str, ...] = ()
     opposing_ecology: tuple[str, ...] = ()
     endgame_direction: str = ""
+    # Executable architecture proof produced with the premise card.  This is
+    # the single promotion credential used by conception and planning; scene
+    # lists and seriality prose alone are not accepted as a substitute.
+    story_architecture: dict[str, Any] = field(default_factory=dict)
     seriality_report: dict[str, Any] = field(default_factory=dict)
     seriality_judge: dict[str, Any] = field(default_factory=dict)
     judge_freshness: float | None = None
@@ -210,6 +214,7 @@ class ConceptCandidate:
             "phase_transitions": list(self.phase_transitions),
             "opposing_ecology": list(self.opposing_ecology),
             "endgame_direction": self.endgame_direction,
+            "story_architecture": dict(self.story_architecture),
             "seriality_report": dict(self.seriality_report),
             "seriality_judge": dict(self.seriality_judge),
             "judge_freshness": self.judge_freshness,
@@ -1272,6 +1277,107 @@ def _build_engine_kernel_messages(
         if str(creation_intent_block or "").strip()
         else ""
     )
+    from bestseller.services.story_design_grammars import resolve_story_design_grammar
+
+    grammar = resolve_story_design_grammar(genre=genre, sub_genre=sub_genre)
+    required_genre_contracts = list(grammar.required_contracts)
+    selected_effect_keys = [str(item).strip() for item in effect_skills if str(item).strip()]
+    effect_templates: list[dict[str, Any]] = []
+    for skill_key in selected_effect_keys:
+        template: dict[str, Any] = {
+            "skill_key": skill_key,
+            "mechanism": "这个效果如何从人物行动和规则冲突中反复产生",
+            "variation_sources": ["变化来源1", "变化来源2", "变化来源3"],
+            "consequence": "每次兑现后如何改变关系、资源或局势",
+            "phase_payoffs": ["前期兑现", "中期变形", "后期升级"],
+        }
+        if skill_key == "comedy_engine":
+            template.update(
+                {
+                    "setup": "正常行动的具体铺垫",
+                    "misalignment": "人物、身份或规则的错位",
+                    "reaction": "角色基于自身利益作出的真实反应",
+                    "situation_change": "笑点如何改变局势并制造下一轮压力",
+                }
+            )
+        effect_templates.append(template)
+    architecture_template = {
+        "schema_version": "story-architecture.v1",
+        "target_chapters": int(chapter_count),
+        "grammar": {
+            "key": grammar.key,
+            "required_contracts": required_genre_contracts,
+        },
+        "genre_contracts": {
+            key: {
+                "rule": "本书中可执行、可违反的具体规则",
+                "observable_state": "读者可观察的状态变量",
+                "failure_consequence": "违反后如何改变后续局势",
+            }
+            for key in required_genre_contracts
+        },
+        "selected_effect_skills": selected_effect_keys,
+        "effect_contracts": effect_templates,
+        "causal_units": [
+            {
+                "id": f"u{index}",
+                "input": "本轮由上一轮状态变化产生的输入",
+                "goal": "可观察目标",
+                "choice": "主角在两条有代价路径间的具体选择",
+                "choice_mode": "本轮选择的因果类型",
+                "mechanism_family": "本轮与其他轮不同的故事机制家族",
+                "counter": "对手或规则的有效反制",
+                "counter_mode": "反制的因果类型",
+                "cost": "本轮实际失去或暴露的筹码",
+                "cost_mode": "代价类型",
+                "state_change": "至少一个状态变量从什么变成什么",
+                "state_axis": "被改变的状态变量",
+                "payoff": "当轮兑现的读者承诺",
+                "next_pressure": "新状态如何必然制造下一轮压力",
+                "caused_by": "" if index == 1 else f"u{index - 1}",
+            }
+            for index in range(1, 5)
+        ],
+        "progression": [
+            {"name": "成长轨1", "from": "初始可观察状态", "to": "目标状态"},
+            {"name": "成长轨2", "from": "初始可观察状态", "to": "目标状态"},
+        ],
+        "relationships": [
+            {
+                "a": "主角",
+                "b": "关键关系人",
+                "tension": "双方长期矛盾",
+                "initial_state": "初始关系状态",
+                "turning_choice": "改变关系的主角选择",
+                "changed_state": "选择后的新关系状态",
+                "change": "关系变化摘要",
+            }
+        ],
+        "conflicts": [
+            {"actor": "阻力主体1", "goal": "独立目标", "tactics": ["策略1", "策略2"]},
+            {"actor": "阻力主体2", "goal": "独立目标", "tactics": ["策略1", "策略2"]},
+        ],
+        "opponent_adaptations": [
+            {
+                "after_unit": "u1",
+                "actor": "学习型对手1",
+                "learned": "从主角上一轮行为学到了什么",
+                "strategy_change": "因此从旧策略改成什么新策略",
+                "forces_new_choice": "新策略迫使主角作出什么不同选择",
+            },
+            {
+                "after_unit": "u2",
+                "actor": "学习型对手2",
+                "learned": "从主角上一轮行为学到了什么",
+                "strategy_change": "因此从旧策略改成什么新策略",
+                "forces_new_choice": "新策略迫使主角作出什么不同选择",
+            },
+        ],
+        "story_engine": {
+            "endgame_direction": "终局必须解决的价值选择，而非只写打败谁"
+        },
+    }
+    architecture_json = json.dumps(architecture_template, ensure_ascii=False)
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
@@ -1299,6 +1405,11 @@ def _build_engine_kernel_messages(
         "查同一个真相、找同类证据或等新事件上门，项目不成立。"
         "deformable_loop 只写一个会因前轮后果而变形的"
         "循环；expansion_axes 只写未来可向哪三种方向深化，不做章数承诺。\n"
+        "story_architecture 是本项目能否晋级的唯一结构通行证：四个 causal_units "
+        "必须是四种不同的选择/反制/代价/状态变化机制，并按 caused_by 串成因果链；"
+        "opponent_adaptations 必须证明对手会学习并换策略；genre_contracts 必须逐项实现"
+        "本题材 required_contracts；用户选中的每个 effect skill 都必须有可反复变形、"
+        "会改变局势的 effect_contract，只有标签或一句『轻松幽默』不算实现。\n"
         "只输出JSON：{"
         "\"protagonist_identity\":\"身份与失衡处境\","
         "\"protagonist_private_desire\":\"真正想保住或得到什么\","
@@ -1317,7 +1428,8 @@ def _build_engine_kernel_messages(
         "\"expansion_axes\":[\"深化方向1\",\"深化方向2\",\"深化方向3\"],"
         "\"constraint_ladder\":[\"第一阶：解锁范围+该阶卷级场景\",\"…（按容量铁律的阶数给足，各属不同层次）\"],"
         "\"opposing_ecology\":[\"自主阻力1\",\"自主阻力2\"],"
-        "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\"}"
+        "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\","
+        f"\"story_architecture\":{architecture_json}" + "}"
         # opening_crisis + core_abnormality are where the death/relic default
         # gets baked; steer them here, upstream of the hook sentence.
         + "\n" + render_cliche_avoidance_block(banned)
@@ -2073,6 +2185,8 @@ def _attach_engine_kernel(
         )
         if part
     )
+    architecture = kernel.get("story_architecture")
+    architecture = dict(architecture) if isinstance(architecture, Mapping) else {}
     return replace(
         candidate,
         mechanism=candidate.mechanism or _text("deformable_loop"),
@@ -2105,6 +2219,7 @@ def _attach_engine_kernel(
         phase_transitions=_tuple("phase_transitions"),
         opposing_ecology=_tuple("opposing_ecology"),
         endgame_direction=str(kernel.get("endgame_direction") or "").strip(),
+        story_architecture=architecture,
     )
 
 
@@ -2418,6 +2533,46 @@ def _premise_card_audit(card: dict[str, Any]) -> list[str]:
         ):
             missing.append(key)
     return missing
+
+
+def _story_architecture_audit(
+    card: Mapping[str, Any],
+    *,
+    genre: str,
+    sub_genre: str,
+    chapter_count: int,
+    effect_skills: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Rebind model output to authoritative intent, then run the hard gate."""
+
+    from bestseller.services.story_design_grammars import resolve_story_design_grammar
+    from bestseller.services.story_viability import evaluate_story_viability
+
+    raw = card.get("story_architecture")
+    if not isinstance(raw, Mapping):
+        return {
+            "passed": False,
+            "blocking_codes": ["MISSING_STORY_ARCHITECTURE"],
+            "estimated_chapter_ceiling": 0,
+            "report": {"reason": "story_architecture_missing"},
+        }
+    grammar = resolve_story_design_grammar(genre=genre, sub_genre=sub_genre)
+    architecture = dict(raw)
+    architecture.update(
+        {
+            "schema_version": "story-architecture.v1",
+            "target_chapters": int(chapter_count),
+            "grammar": {
+                "key": grammar.key,
+                "required_contracts": list(grammar.required_contracts),
+            },
+            "selected_effect_skills": [
+                str(item).strip() for item in effect_skills if str(item).strip()
+            ],
+        }
+    )
+    result = evaluate_story_viability(architecture, target_chapters=chapter_count)
+    return {**result, "architecture": architecture}
 
 
 _STORY_LAYER_AXES = (
@@ -4254,6 +4409,98 @@ async def run_concept_tournament(
                             else:
                                 card_record["expansion_editor"]["revised"] = False
 
+                    if bool(cfg.get("story_architecture_contract_enabled", False)):
+                        architecture_audit = _story_architecture_audit(
+                            kernel,
+                            genre=genre,
+                            sub_genre=sub_genre,
+                            chapter_count=chapter_count,
+                            effect_skills=effect_skills,
+                        )
+                        card_record["story_architecture_audit"] = architecture_audit
+                        if architecture_audit.get("passed"):
+                            kernel = {
+                                **kernel,
+                                "story_architecture": dict(
+                                    architecture_audit.get("architecture") or {}
+                                ),
+                            }
+                            card_record["card"] = kernel
+                        if not architecture_audit.get("passed"):
+                            architecture_repair_user = (
+                                engine_user
+                                + "\n\n【STORY_ARCHITECTURE_REPAIR】当前项目卡不得改换主角、"
+                                "异常、读者承诺或题材，只修复 story_architecture 后重新输出"
+                                "完整 JSON。确定性失败码："
+                                + "/".join(
+                                    str(item)
+                                    for item in architecture_audit.get(
+                                        "blocking_codes", []
+                                    )
+                                )
+                                + "\n原项目卡："
+                                + json.dumps(kernel, ensure_ascii=False)
+                            )
+                            result.candidate_generation_calls += 1
+                            result.candidate_prompt_chars += len(
+                                engine_system
+                            ) + len(architecture_repair_user)
+                            try:
+                                architecture_raw, architecture_run_id = await engine_fn(
+                                    engine_system, architecture_repair_user
+                                )
+                            except Exception:
+                                architecture_raw, architecture_run_id = "", None
+                            if architecture_run_id is not None:
+                                result.llm_run_ids.append(architecture_run_id)
+                            architecture_repaired = _parse_json_object(
+                                architecture_raw
+                            )
+                            repaired_audit = _story_architecture_audit(
+                                architecture_repaired or {},
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                chapter_count=chapter_count,
+                                effect_skills=effect_skills,
+                            )
+                            card_record["story_architecture_repair"] = {
+                                "run_id": str(architecture_run_id)
+                                if architecture_run_id is not None
+                                else None,
+                                "audit": repaired_audit,
+                            }
+                            if architecture_repaired is not None and repaired_audit.get(
+                                "passed"
+                            ):
+                                card_record.setdefault("initial_card", kernel)
+                                kernel = {
+                                    **architecture_repaired,
+                                    "story_architecture": dict(
+                                        repaired_audit.get("architecture") or {}
+                                    ),
+                                }
+                                card_record["card"] = kernel
+                                architecture_audit = repaired_audit
+                            else:
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": dimension,
+                                        "scores": {},
+                                        "reason": "故事架构能力门失败: "
+                                        + "/".join(
+                                            str(item)
+                                            for item in repaired_audit.get(
+                                                "blocking_codes", []
+                                            )
+                                        ),
+                                        "failed_axes": ["story_architecture"],
+                                        "blocking_codes": list(
+                                            repaired_audit.get("blocking_codes", [])
+                                        ),
+                                    }
+                                )
+                                continue
+
                     kernel_guard = _candidate_hard_rejection_reason(
                         _attach_engine_kernel(
                             ConceptCandidate(
@@ -4471,6 +4718,48 @@ async def run_concept_tournament(
                                 }
                             )
                             continue
+                        if bool(
+                            cfg.get("story_architecture_contract_enabled", False)
+                        ):
+                            architecture_audit = _story_architecture_audit(
+                                kernel,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                chapter_count=chapter_count,
+                                effect_skills=effect_skills,
+                            )
+                            result.premise_cards[-1][
+                                "story_architecture_audit"
+                            ] = architecture_audit
+                            if architecture_audit.get("passed"):
+                                kernel = {
+                                    **kernel,
+                                    "story_architecture": dict(
+                                        architecture_audit.get("architecture") or {}
+                                    ),
+                                }
+                                result.premise_cards[-1]["card"] = kernel
+                            if not architecture_audit.get("passed"):
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": dimension,
+                                        "scores": {},
+                                        "reason": "故事架构能力门失败: "
+                                        + "/".join(
+                                            str(item)
+                                            for item in architecture_audit.get(
+                                                "blocking_codes", []
+                                            )
+                                        ),
+                                        "failed_axes": ["story_architecture"],
+                                        "blocking_codes": list(
+                                            architecture_audit.get(
+                                                "blocking_codes", []
+                                            )
+                                        ),
+                                    }
+                                )
+                                continue
                     if not batch_review_complete and (
                         premise_judge_fn is not None or seriality_judge_fn is not None
                     ):

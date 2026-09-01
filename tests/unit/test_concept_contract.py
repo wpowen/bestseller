@@ -1,6 +1,8 @@
 # ruff: noqa: RUF001
 from __future__ import annotations
 
+import pytest
+
 from bestseller.services.concept_contract import (
     apply_concept_contract_to_book_spec,
     build_concept_contract,
@@ -322,7 +324,10 @@ def test_long_conception_cannot_continue_without_approved_contract() -> None:
     else:
         raise AssertionError("500-chapter conception must fail closed without a contract")
 
-    assert require_conception_contract_for_target({}, target_chapters=80) is None
+    with pytest.raises(Exception) as medium_exc:
+        require_conception_contract_for_target({}, target_chapters=80)
+    assert "可执行故事架构证明" in str(medium_exc.value)
+    assert require_conception_contract_for_target({}, target_chapters=20) is None
 
 
 def test_new_long_project_marker_cannot_bypass_contract_validation() -> None:

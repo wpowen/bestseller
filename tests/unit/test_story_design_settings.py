@@ -7,7 +7,7 @@ from bestseller.settings import PipelineSettings
 pytestmark = pytest.mark.unit
 
 
-def test_story_design_capability_flags_default_to_warn_only_rollout() -> None:
+def test_story_design_capability_flags_fail_closed_before_drafting() -> None:
     settings = PipelineSettings()
 
     assert settings.enable_story_design_kernel is True
@@ -28,5 +28,5 @@ def test_story_design_capability_flags_default_to_warn_only_rollout() -> None:
     assert settings.story_design_require_kernel_for_new_projects is False
     assert settings.enable_distilled_design_reference is True
     assert settings.enable_prewrite_readiness_gate is True
-    assert settings.prewrite_readiness_gate_mode == "warn"
+    assert settings.prewrite_readiness_gate_mode == "block"
     assert settings.prewrite_readiness_block_on_failure is False

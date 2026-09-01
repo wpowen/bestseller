@@ -450,7 +450,7 @@ pipeline:
   # points. Mode supports off/warn/block_on_critical/block; legacy
   # block_on_failure=true still forces strict blocking for production canaries.
   enable_prewrite_readiness_gate: true
-  prewrite_readiness_gate_mode: warn
+  prewrite_readiness_gate_mode: block
   prewrite_readiness_block_on_failure: false
   # Story design kernel rollout.  Generates and injects a structured plot
   # contract before downstream chapter planning.  Reverse-outline checks stay

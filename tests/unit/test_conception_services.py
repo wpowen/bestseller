@@ -961,3 +961,44 @@ def test_logline_voice_rules_forbid_compression_cadence() -> None:
     assert "抽象名词" in _LOGLINE_VOICE_RULES
     assert "筹码" not in _LOGLINE_VOICE_RULES
     assert "压缩" not in _LOGLINE_VOICE_RULES.split("铁律")[-1] or True
+
+
+def test_production_conception_fails_closed_on_required_round_one_lanes() -> None:
+    """The creation entry point must not inherit closure-mode fallbacks."""
+
+    import inspect
+
+    from bestseller.services import conception as conception_services
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+    call_start = source.index("_run_required_conception_lanes(")
+    call_end = source.index("\n    )", call_start)
+    call_region = source[call_start:call_end]
+
+    assert 'quality_mode="strict"' in call_region
+    assert "getattr(settings.pipeline, \"quality_mode\"" not in call_region
+
+
+def test_story_appeal_execution_failure_is_a_blocking_result() -> None:
+    """An unavailable evaluator must not be converted into an empty report."""
+
+    import inspect
+
+    from bestseller.services import conception as conception_services
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+
+    assert "STORY_APPEAL_EVALUATION_UNAVAILABLE" in source
+    assert "if _appeal_block_below:" in source
+    assert "Story appeal evaluation failed (non-fatal)" not in source
+
+
+def test_story_spine_failure_after_polish_blocks_before_planning() -> None:
+    import inspect
+
+    from bestseller.services import conception as conception_services
+
+    source = inspect.getsource(conception_services.run_conception_pipeline)
+
+    assert "STORY_SPINE_GATE_FAILED_AFTER_POLISH" in source
+    assert "story spine failed deterministic gate after polish" not in source

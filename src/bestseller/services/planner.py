@@ -10525,6 +10525,103 @@ def _fallback_expected_character_count(project: ProjectModel) -> int:
     return max(12, min(60, math.ceil(target_chapters / 15) + 8))
 
 
+def _ensure_series_engine_capacity_fields(
+    project: ProjectModel,
+    series_engine: Mapping[str, Any] | None,
+    *,
+    reader_promise: str,
+    core_engine: str,
+) -> dict[str, Any]:
+    """Give every fallback BookSpec an honest, target-sized serial engine.
+
+    A fallback is a recovery payload, not permission to continue with an
+    empty ``series_engine``.  The entries below describe reusable *story
+    operations* and state changes, not invented world facts, so they remain
+    valid for source-bound projects as well as ordinary planner fallbacks.
+    Existing approved values always win.
+    """
+
+    normalized = copy.deepcopy(_mapping(series_engine))
+    is_en = is_english_language(getattr(project, "language", None))
+    promise = str(reader_promise or core_engine or "").strip()
+    engine = str(core_engine or promise).strip()
+    if not str(normalized.get("core_serial_engine") or "").strip():
+        normalized["core_serial_engine"] = engine
+    if not str(normalized.get("repeatable_story_unit") or "").strip():
+        normalized["repeatable_story_unit"] = engine
+    if not normalized.get("renewal_sources"):
+        normalized["renewal_sources"] = [promise, engine]
+    if not normalized.get("unit_families"):
+        normalized["unit_families"] = (
+            [
+                "verification / resource conversion",
+                "negotiation / relationship choice",
+                "opponent counterplay / pressure shift",
+                "public result / status revaluation",
+            ]
+            if is_en
+            else [
+                "事实验证与资源转化",
+                "谈判与关系选择",
+                "对手反制与压力转移",
+                "公开结果与位置重估",
+            ]
+        )
+    if not normalized.get("accumulation_tracks"):
+        normalized["accumulation_tracks"] = (
+            ["verified resources and permissions", "relationship and opposition state"]
+            if is_en
+            else ["已验证的资源与权限", "关系网与对手状态"]
+        )
+    target = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+    cuts = [
+        1,
+        max(1, round(target * 0.25)),
+        max(1, round(target * 0.5)),
+        max(1, round(target * 0.75)),
+    ]
+    labels = (
+        ["establish", "reproduce", "escalate", "converge"]
+        if is_en
+        else ["起势", "复现", "升级", "汇聚"]
+    )
+    transitions = [
+        f"{label}: chapter {start}" if is_en else f"{label}：第{start}章"
+        for label, start in zip(labels, cuts, strict=True)
+    ]
+    if not normalized.get("phase_transitions"):
+        normalized["phase_transitions"] = transitions
+    if not normalized.get("opposing_ecology"):
+        normalized["opposing_ecology"] = [
+            "new pressure reacts to the last visible result"
+            if is_en
+            else "新的压力依据上一轮公开结果调整",
+            "different stakeholders want incompatible outcomes"
+            if is_en
+            else "不同参与者对同一结果提出不相容要求",
+        ]
+    if not normalized.get("mystery_ladder"):
+        normalized["mystery_ladder"] = (
+            [
+                "what is the next constraint?",
+                "who benefits from the result?",
+                "what must be paid off at the end?",
+            ]
+            if is_en
+            else ["下一轮限制是什么？", "谁会从结果中获益？", "终局必须兑现什么？"]
+        )
+    if not str(normalized.get("endgame_direction") or "").strip():
+        normalized["endgame_direction"] = (
+            "The final choice must settle the reader promise through the same core engine and preserve cumulative consequences."
+            if is_en
+            else (
+                "终局必须沿同一核心引擎兑现读者承诺，并让前文积累的资源、关系与压力"
+                "产生不可逆的收束。"
+            )
+        )
+    return normalized
+
+
 _ZH_LEADING_SUBJECT_RE = re.compile(
     r"^(?:主角|主人公|男主|女主|他|她|它|该角色|本角色)"
     r"(?:要|想|想要|需要|必须|得|会|能|将|去|应|应该|准备|打算)?"
@@ -11141,7 +11238,9 @@ def _fallback_book_spec(
             minimal_cost=minimal_cost,
         ),
         "stakes": stakes,
-        "series_engine": {
+        "series_engine": _ensure_series_engine_capacity_fields(
+            project,
+            {
             "core_loop": (
                 _non_empty_string(route_graph.get("mainline"), "")
                 or "主角利用差异化优势抢先一步 -> 得到短回报 -> 引来更大反压 -> 被迫升级手段 -> 揭开更深真相"
@@ -11166,7 +11265,16 @@ def _fallback_book_spec(
             "control_promises": _string_list(reader_desire.get("control_promises"))[:3],
             "suspense_questions": _string_list(reader_desire.get("suspense_questions"))[:3],
             "mainline_milestones": milestone_titles[:6],
-        },
+            },
+            reader_promise=(
+                _non_empty_string(reader_desire.get("core_fantasy"), "")
+                or writing_profile.market.reader_promise
+            ),
+            core_engine=(
+                _non_empty_string(route_graph.get("mainline"), "")
+                or "主角利用差异化优势抢先一步 -> 得到短回报 -> 引来更大反压 -> 被迫升级手段 -> 揭开更深真相"
+            ),
+        ),
     }
     return _ensure_book_spec_bible_fields(project, premise, book_spec)
 
@@ -12474,7 +12582,11 @@ def _compile_source_bound_book_spec(
         "unique_hook": reader_promise,
         "theme_statement": theme_statement,
         "dramatic_question": external_goal,
-        "expected_character_count": 1,
+        # Even in source-bound mode the planner must reserve enough cast
+        # capacity for the requested serial length.  This is a structural
+        # budget, not permission to invent names; approved cast entries are
+        # attached later by ``_source_bound_roster_from_book_spec``.
+        "expected_character_count": _fallback_expected_character_count(project),
         "naming_pool": [protagonist_name],
         "protagonist": {
             "name": protagonist_name,
@@ -12512,7 +12624,9 @@ def _compile_source_bound_book_spec(
                 {"tier": "阶段性主要压力", "tactic": "迫使主角用既有成果完成更高难度兑现"},
             ],
         },
-        "series_engine": {
+        "series_engine": _ensure_series_engine_capacity_fields(
+            project,
+            {
             "opening_hook": reader_promise,
             "reader_promise": reader_promise,
             "core_serial_engine": core_engine,
@@ -12531,7 +12645,10 @@ def _compile_source_bound_book_spec(
             "mystery_ladder": [],
             "renewal_sources": [reader_promise, core_engine],
             "effect_skills": effect_skills,
-        },
+            },
+            reader_promise=reader_promise,
+            core_engine=core_engine,
+        ),
         "narrative_lines": {
             "overt_line": [
                 {
@@ -13114,6 +13231,11 @@ def _source_bound_roster_from_book_spec(
         resolve_cost_style(_mapping(getattr(project, "metadata_json", None))) == "minimal"
     )
     protagonist_key = str(protagonist_name or "").strip()
+    volume_count = int(
+        compute_linear_hierarchy(max(int(getattr(project, "target_chapters", 0) or 0), 1))
+        .get("volume_count")
+        or 1
+    )
 
     antagonist: dict[str, Any] | None = None
     supporting: list[dict[str, Any]] = []
@@ -13138,6 +13260,9 @@ def _source_bound_roster_from_book_spec(
             "role": role_label or "supporting",
             # function 是构思给这个角色派的活儿——它就是这个人在故事里要干的事。
             "goal": function,
+            "active_volumes": list(range(1, volume_count + 1)),
+            "relationship_to_protagonist": function or role_label or "supporting",
+            "evolution_arc": function or role_label or "continues to apply pressure",
             "metadata": {
                 "source_bound_design": True,
                 # 没有这个标记，只有 name/role/function 的条目会被 bible_gate
@@ -13205,6 +13330,11 @@ def _compile_source_bound_cast_spec(
     stakes = _mapping(book_spec.get("stakes"))
     series_engine = _mapping(book_spec.get("series_engine"))
     book_power = _mapping(book_spec.get("power_system"))
+    volume_count = int(
+        compute_linear_hierarchy(max(int(getattr(project, "target_chapters", 0) or 0), 1))
+        .get("volume_count")
+        or 1
+    )
 
     protagonist_name = _first_non_empty_text(
         protagonist_source.get("name"),
@@ -13410,9 +13540,40 @@ def _compile_source_bound_cast_spec(
     named_antagonist, named_supporting = _source_bound_roster_from_book_spec(
         project, book_spec, protagonist_name
     )
+    volume_count = int(
+        compute_linear_hierarchy(max(int(project.target_chapters or 0), 1)).get(
+            "volume_count"
+        )
+        or 1
+    )
+    lifecycle_antagonists = [
+        {
+            "name": force["name"],
+            "archetype": force.get("force_type") or "faction",
+            "line_role": "overt" if index == 0 else "undercurrent",
+            "stages_of_relevance": [{"start_volume": 1, "end_volume": volume_count}],
+            "resolution_type": "ongoing",
+            "transition_volume": volume_count,
+            "transition_mechanism": force.get("escalation_path") or force.get("threat_description") or "",
+        }
+        for index, force in enumerate(antagonist_forces)
+        if force.get("name")
+    ]
+    for member in [named_antagonist, *named_supporting]:
+        if not member or not member.get("name") or not protagonist_name:
+            continue
+        conflict_map.append(
+            {
+                "character_a": protagonist_name,
+                "character_b": member["name"],
+                "conflict_type": member.get("role") or "relationship",
+                "trigger_condition": member.get("goal") or member.get("relationship_to_protagonist") or "",
+            }
+        )
     payload = {
         "protagonist": protagonist,
         "antagonist": named_antagonist,
+        "antagonists": lifecycle_antagonists,
         "antagonist_forces": antagonist_forces,
         "supporting_cast": named_supporting,
         "conflict_map": conflict_map,
@@ -18361,7 +18522,7 @@ def _cast_spec_prompts(
 
         _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         _volume_count = int(_hierarchy.get("volume_count") or 1)
-        if _volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _volume_count > 1:
             user_prompt += "\n\n" + render_foundation_constraints_block(
                 volume_count=_volume_count,
                 language=language,
@@ -18384,7 +18545,7 @@ def _cast_spec_prompts(
 
         _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         _volume_count = int(_hierarchy.get("volume_count") or 1)
-        if _volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _volume_count > 1:
             user_prompt += "\n\n" + render_antagonist_lifecycle_constraints_block(
                 total_chapters=max(project.target_chapters, 1),
                 volume_count=_volume_count,
@@ -18429,7 +18590,7 @@ def _cast_spec_prompts(
 
         _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         _volume_count = int(_hierarchy.get("volume_count") or 1)
-        if _volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _volume_count > 1:
             user_prompt += "\n\n" + render_relationship_constraints_block(
                 total_chapters=max(project.target_chapters, 1),
                 volume_count=_volume_count,
@@ -25503,7 +25664,7 @@ async def generate_novel_plan(
         # failures fall back to the original spec.
         _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         _foundation_volume_count = int(_foundation_hierarchy.get("volume_count") or 1)
-        if _foundation_volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _foundation_volume_count > 1:
             (
                 repaired_cast_spec,
                 foundation_repair_llm_run_id,
@@ -25560,7 +25721,7 @@ async def generate_novel_plan(
         # transitions) is lifecycle-rich. Catches the post-fix regression
         # where each volume has a distinct enemy but every enemy is a
         # one-volume kill-and-move-on boss.
-        if _foundation_volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _foundation_volume_count > 1:
             (
                 repaired_cast_spec,
                 lifecycle_repair_llm_run_id,
@@ -25615,7 +25776,7 @@ async def generate_novel_plan(
         # at least one active non-antagonist. Without this gate, long
         # novels ship with only 3-5 named side characters and every
         # volume recycles the same faces.
-        if _foundation_volume_count > 1:
+        if int(project.target_chapters or 0) >= 36 or _foundation_volume_count > 1:
             (
                 repaired_cast_spec,
                 relationship_repair_llm_run_id,
@@ -27686,7 +27847,9 @@ async def generate_foundation_plan(
         # ── Foundation richness gate (see long-form generator for rationale) ──
         _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         _foundation_volume_count = int(_foundation_hierarchy.get("volume_count") or 1)
-        if _foundation_volume_count > 1:
+        # A 36–50 chapter book is intentionally one volume, but still long
+        # enough for cast pressure to collapse without these audits.
+        if int(project.target_chapters or 0) >= 36 or _foundation_volume_count > 1:
             (
                 repaired_cast_spec,
                 foundation_repair_llm_run_id,

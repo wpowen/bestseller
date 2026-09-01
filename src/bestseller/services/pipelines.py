@@ -122,6 +122,7 @@ from bestseller.services.drafts import (
     _prompt_safe_forbidden_actions,
     _redact_front10_prompt_leaks,
     assemble_chapter_draft,
+    audit_persisted_story_effect_realization,
     authoritative_word_count_for_language,
     generate_chapter_draft_once,
     generate_scene_draft,
@@ -6173,6 +6174,30 @@ async def _promote_reviewed_chapter_draft(
 
     if not isinstance(quality, QualityScoreModel):
         return True, "test_stub"
+    effect_report = audit_persisted_story_effect_realization(
+        project,
+        chapter,
+        draft.content_md or "",
+    )
+    if effect_report.get("selected_effects"):
+        draft.promotion_metadata = {
+            **(draft.promotion_metadata or {}),
+            "effect_realization_gate": effect_report,
+        }
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "effect_realization_gate": effect_report,
+            "effect_realization_blocked": effect_report.get("passed") is not True,
+        }
+        if not effect_report.get("passed"):
+            # A candidate may have been created by an older path with
+            # ``is_current=True``.  Remove that pointer before returning so a
+            # failed effect cannot silently ship; the report remains attached
+            # to the candidate and the chapter for audit/retry.
+            draft.is_current = False
+            chapter.production_state = "blocked"
+            await session.flush()
+            return False, "story_effect_realization_blocked"
     source_ok, source_mode = await _chapter_source_mode_is_promotable(
         session,
         chapter_draft=draft,
@@ -11720,6 +11745,17 @@ async def run_chapter_pipeline(
                         quality=chapter_quality,
                         workflow_run_id=workflow_run_id,
                     )
+                    if chapter_source_mode == "story_effect_realization_blocked":
+                        requires_human_review = True
+                        chapter.status = ChapterStatus.REVISION.value
+                        chapter.production_state = "blocked"
+                        workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                        workflow_run.current_step = "story_effect_realization_blocked"
+                        workflow_run.metadata_json = {
+                            **(workflow_run.metadata_json or {}),
+                            "effect_realization_blocked": True,
+                            "effect_realization_draft_id": str(chapter_draft.id),
+                        }
                 except StoryEngineReceiptRejected as exc:
                     block_codes = tuple(
                         exc.blocking_codes
@@ -11878,7 +11914,18 @@ async def run_chapter_pipeline(
                     exc_info=True,
                 )
 
-            if (chapter_review_result.verdict == "pass" and chapter_promoted) or accept_chapter_on_stall:
+            effect_realization_blocked = (
+                chapter_source_mode == "story_effect_realization_blocked"
+                or bool(
+                    (getattr(chapter, "metadata_json", None) or {}).get(
+                        "effect_realization_blocked"
+                    )
+                )
+            )
+            if (
+                (chapter_review_result.verdict == "pass" and chapter_promoted)
+                or (accept_chapter_on_stall and not effect_realization_blocked)
+            ):
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
                     logger.info(

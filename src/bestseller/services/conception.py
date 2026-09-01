@@ -62,6 +62,7 @@ from bestseller.services.planning_concurrency import run_in_isolated_session
 from bestseller.services.platform_title_workflow import (
     build_story_dna_fallback_title,
     build_title_revision_messages,
+    evaluate_platform_title_candidate,
     finalize_revised_title,
     is_bare_taxonomy_title,
     select_primary_platform_title,
@@ -761,6 +762,20 @@ async def _run_title_tournament(
         row.rejected_by = deterministic_title_defects(
             row.title, tags=tags, prose=prose
         )
+        # The tournament's deterministic defects protect syntax/grounding, but
+        # that alone is not enough to promote a title.  A candidate that fails
+        # reader attraction or story transmission must remain a revision item;
+        # otherwise the arena can crown a readable-but-unmarketable title and
+        # replace a previously reviewed primary with it.
+        platform_evaluation = evaluate_platform_title_candidate(
+            title_profile,
+            row.title,
+            target_platform=platform_label,
+        )
+        if platform_evaluation.get("decision") != "pass":
+            row.rejected_by = tuple(
+                [*row.rejected_by, "platform_title_not_publishable"]
+            )
 
     survivors = [row for row in candidates if row.survives]
     # 默认族降权（2026-08-24）：书名是读者最先看到的东西，而跨书量下来
@@ -796,7 +811,21 @@ async def _run_title_tournament(
             run_ids.append(arena_run_id)
         apply_arena_verdict(survivors, _safe_extract_json(arena_raw))
 
-    winner = select_title_winner(candidates, incumbent=incumbent)
+    incumbent_evaluation = evaluate_platform_title_candidate(
+        title_profile,
+        incumbent,
+        target_platform=platform_label,
+    )
+    winner = select_title_winner(
+        candidates,
+        # ``select_title_winner`` preserves the incumbent when the pool is
+        # empty.  Pass an empty incumbent when the current title itself failed
+        # the platform review, so a weak title cannot be resurrected as the
+        # tournament's implicit fallback.
+        incumbent=incumbent
+        if incumbent_evaluation.get("decision") == "pass"
+        else "",
+    )
     receipt = title_tournament_receipt(candidates, winner)
     receipt["entities"] = entities.to_dict()
     receipt["incumbent"] = incumbent
@@ -6650,7 +6679,11 @@ async def run_conception_pipeline(
             "world_builder": (_existing.get("world", {}), []),
         },
         tracker=degradation_tracker,
-        quality_mode=getattr(settings.pipeline, "quality_mode", "closure"),
+        # A newly created book may not inherit a fabricated market, cast, or
+        # world merely because a required conception lane failed.  The helper
+        # keeps closure mode for explicit legacy callers, while the production
+        # creation entry point is fail-closed.
+        quality_mode="strict",
     )
     market_proposal, _market_ids = _round_one["market_strategist"]
     character_proposal, _character_ids, _cra_ids = _round_one["character_architect"]
@@ -7503,9 +7536,16 @@ async def run_conception_pipeline(
         "violations": _spine_violations,
     })
     if _spine_violations:
-        logger.warning(
-            "story spine failed deterministic gate after polish: %s", _spine_violations
+        from bestseller.services.concept_contract import ConceptContractError
+
+        _spine_exc = ConceptContractError(
+            [
+                "STORY_SPINE_GATE_FAILED_AFTER_POLISH",
+                *[str(item) for item in _spine_violations],
+            ]
         )
+        _spine_exc.conception_log = list(conception_log)
+        raise _spine_exc
 
     # ── Unified concept contract: champion → HookCard + SerialityProof + Spine v2 ──
     concept_contract: dict[str, Any] = {}
@@ -8051,6 +8091,7 @@ async def run_conception_pipeline(
     # fail-open ``except`` below cannot swallow the block (product line "低于blurb_min不通过"，见 config/story_appeal.yaml)。
     _appeal_block_below = False
     _appeal_blocked_feedback = ""
+    _appeal_cfg: dict[str, Any] = {}
     # Which gate(s) actually rejected. Several can raise the same
     # AppealBarNotMetError; without the name the operator-facing message
     # misdirects (a field block reported the blurb/title scores as the cause
@@ -8349,9 +8390,19 @@ async def run_conception_pipeline(
                 _appeal_block_below = True
                 _appeal_blocked_by.append("meets_bar")
                 _appeal_blocked_feedback = build_improvement_feedback(report, _appeal_cfg)
-    except Exception:
-        logger.warning("Story appeal evaluation failed (non-fatal)", exc_info=True)
-        story_appeal_report = {}
+    except Exception as exc:
+        logger.exception("Story appeal evaluation failed; blocking conception")
+        story_appeal_report = {
+            "passed": False,
+            "status": "blocked",
+            "blocking_code": "STORY_APPEAL_EVALUATION_UNAVAILABLE",
+            "error_type": type(exc).__name__,
+        }
+        _appeal_block_below = True
+        _appeal_blocked_by.append("story_appeal_execution")
+        _appeal_blocked_feedback = (
+            "故事吸引力评估未能完成，未创建书籍、未进入规划。"
+        )
 
     # 一句话故事大纲是建项/规划的独立前置条件，不能被简介、书名或画像评估的
     # fail-open 容错跳过。只有明确 EXPAND 才放行；闸门自身异常同样故障关闭。
@@ -8595,7 +8646,7 @@ async def run_conception_pipeline(
     # 产品硬线"低于blurb_min不通过"(config/story_appeal.yaml 校准为68)的真拦截：
     # 简介/书名经有界重生仍不达标 → 抛 AppealBarNotMetError。
     # 调用方(web)捕获后把项目置为可见拦截态(带分数+整改建议)，不静默进规划、不留 running 僵尸。
-    if _appeal_block_below and story_appeal_report:
+    if _appeal_block_below:
         from bestseller.services.story_appeal import AppealBarNotMetError
 
         _b = (story_appeal_report.get("blurb") or {}).get("total")

@@ -201,13 +201,16 @@ def _bool_or_none(value: object | None) -> bool | None:
 
 
 def _report_passed(report: Mapping[str, Any]) -> bool | None:
+    """Read only an explicit gate verdict.
+
+    Reader-facing lifecycle labels such as ``ready`` and ``verified`` are not
+    evidence.  They can be stale, copied from a previous artifact version, or
+    authored by an upstream model.  Every lifecycle sub-report must therefore
+    expose the boolean verdict produced by its own gate.
+    """
+
     if "passed" in report:
         return _bool_or_none(report.get("passed"))
-    status = str(report.get("status") or report.get("readiness_level") or "").lower()
-    if status in {"passed", "pass", "ready", "success", "verified"}:
-        return True
-    if status in {"failed", "fail", "blocked", "repairable", "partial"}:
-        return False
     return None
 
 

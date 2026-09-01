@@ -113,9 +113,28 @@ class StoryEnhancerSelection(BaseModel):
 def resolve_story_enhancers(
     metadata: Mapping[str, Any] | None,
 ) -> StoryEnhancerSelection:
-    """Read the book-level enhancer selection from project metadata (tolerant)."""
+    """Read the book-level enhancer selection from project metadata (tolerant).
 
-    raw = (metadata or {}).get(STORY_ENHANCERS_METADATA_KEY)
+    Creation persists the same choice in the immutable genre-intent contract
+    before the project-level metadata snapshot exists.  The old reader only
+    looked at the later top-level key, so planner/writer calls silently saw the
+    default selection even though the creation contract still contained
+    ``explicit_enhancers``.  Prefer the materialized top-level key, then use
+    the two contract shapes as read-only projections of the same authority.
+    """
+
+    container = metadata or {}
+    raw = container.get(STORY_ENHANCERS_METADATA_KEY)
+    if raw is None:
+        creation = container.get("creation_intent_contract")
+        if isinstance(creation, Mapping):
+            raw = creation.get(STORY_ENHANCERS_METADATA_KEY)
+    if raw is None:
+        genre_contract = container.get("genre_intent_contract")
+        if isinstance(genre_contract, Mapping):
+            raw = genre_contract.get(STORY_ENHANCERS_METADATA_KEY)
+            if raw is None:
+                raw = genre_contract.get("explicit_enhancers")
     if not isinstance(raw, Mapping):
         return StoryEnhancerSelection()
     try:

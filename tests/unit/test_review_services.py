@@ -3763,12 +3763,7 @@ def test_evaluate_scene_draft_skips_duplication_finding_with_empty_message() -> 
     assert dup_finding_objs[0].message == "有效的重复提示。"
 
 
-def test_load_scene_context_promotes_latest_when_no_current_draft(monkeypatch):
-    """A scene whose rewrite loop hit its revision limit without promoting a
-    draft (no is_current) must NOT crash chapter assembly / the whole book.
-    _load_scene_context falls back to the latest draft and promotes it
-    (accept-best-on-stall). Only zero drafts is a genuine error.
-    """
+def test_load_scene_context_rejects_latest_when_no_draft_passed_promotion(monkeypatch):
     from types import SimpleNamespace
 
     scene = SimpleNamespace(id=uuid4(), scene_number=2)
@@ -3778,8 +3773,6 @@ def test_load_scene_context_promotes_latest_when_no_current_draft(monkeypatch):
 
     # scalar() returns, in order: chapter, scene, current-draft(None), latest-draft
     scalar_queue = [chapter, scene, None, latest_draft]
-    flushed = {"n": 0}
-
     class FakeSession:
         async def scalar(self, _stmt):
             return scalar_queue.pop(0) if scalar_queue else None
@@ -3788,20 +3781,17 @@ def test_load_scene_context_promotes_latest_when_no_current_draft(monkeypatch):
             return None
 
         async def flush(self):
-            flushed["n"] += 1
+            raise AssertionError("an unpromoted draft must never be flushed as current")
 
     async def fake_get_project(_session, _slug):
         return project
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project)
 
-    proj, chap, sc, _sg, draft = asyncio.run(
-        review_services._load_scene_context(FakeSession(), "demo", 1, 2)
-    )
+    with pytest.raises(ValueError, match="no draft passed promotion"):
+        asyncio.run(review_services._load_scene_context(FakeSession(), "demo", 1, 2))
 
-    assert draft is latest_draft
-    assert latest_draft.is_current is True  # promoted
-    assert flushed["n"] >= 1
+    assert latest_draft.is_current is False
 
 
 def test_load_scene_context_raises_only_when_zero_drafts(monkeypatch):

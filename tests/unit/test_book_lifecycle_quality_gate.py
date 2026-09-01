@@ -75,6 +75,23 @@ def test_lifecycle_gate_passes_complete_ready_evidence() -> None:
     }
 
 
+def test_lifecycle_gate_does_not_treat_status_labels_as_gate_evidence() -> None:
+    inputs = _ready_inputs()
+    planning = dict(inputs["planning_report"])  # type: ignore[arg-type]
+    planning["prewrite_readiness_report"] = {
+        "status": "verified",
+        "readiness_level": "ready",
+    }
+    inputs["planning_report"] = planning
+
+    report = evaluate_book_lifecycle_quality(**inputs)  # type: ignore[arg-type]
+
+    assert report.passed is False
+    assert "prewrite_readiness_not_passed" in {
+        finding.code for finding in report.findings
+    }
+
+
 def test_lifecycle_gate_blocks_current_historical_incomplete_shape() -> None:
     closure = {
         "slug": "exorcist-detective-1778051012",

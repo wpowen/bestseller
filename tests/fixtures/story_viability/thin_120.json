@@ -1,0 +1,11 @@
+{
+  "target_chapters": 120,
+  "premise": "城主靠收过路费经营废城，每章都收一次新费用。",
+  "story_engine": {"core": "收过路费"},
+  "chapter_loop": [
+    {"input": "新商队进城", "goal": "收过路费", "choice": "开价", "counter": "讨价还价", "cost": "无", "state_change": "多收一笔", "payoff": "商队进城", "next_pressure": "下一支商队"}
+  ],
+  "progression": ["收费更多"],
+  "relationships": [],
+  "conflicts": ["商队不愿交钱"]
+}

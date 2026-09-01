@@ -1221,7 +1221,12 @@ def _matrix_candidate_is_usable(
     decision = _clean_text(evaluation.get("decision")) if isinstance(evaluation, Mapping) else ""
     if strict_story_anchor:
         return decision == "pass" and _passes_story_anchor_contract(profile, title)
-    return decision != "reject"
+    # A matrix candidate is a reader-facing title, not a revision queue.  The
+    # previous ``!= reject`` policy let ``revise`` rows fill every platform's
+    # five-slot quota, after which downstream callers treated the matrix as an
+    # approved candidate pool.  Keep weak rows in the evaluation index/receipt,
+    # but never expose them as usable candidates.
+    return decision == "pass"
 
 
 def _apply_platform_scope(
@@ -1992,12 +1997,16 @@ def _provisional_primary_candidate(
             "fit_notes": _fit_notes(fallback, style, signals),
         }
         _apply_title_evaluation(candidate, profile, style)
-        return candidate
+        # A story-DNA fallback is an input for the revision pass only.  It must
+        # not become the recommended primary when its reader-attraction or
+        # story-transmission review still says ``revise``.
+        if candidate.get("title_evaluation", {}).get("decision") == "pass":
+            return candidate
     chosen = _select_primary_candidate(candidates)
-    if chosen:
-        chosen = dict(chosen)
-        chosen["provisional"] = True
-        chosen["requires_llm_revision"] = True
+    # ``_select_primary_candidate`` only returns evaluated ``pass`` rows.  Do
+    # not relabel that approved row as provisional: provisional is reserved for
+    # a fallback that still needs revision, and a provisional row must never be
+    # exported as the primary title.
     return chosen
 
 
@@ -2939,7 +2948,21 @@ def _evaluate_title_quality(
     # 「不是内部标签…拼接」。改为按故事接地判：标题里用到的分类标签，
     # 只要在故事正文里一次都没出现，就是拼接。
     ungrounded = ungrounded_title_tokens(title, tags, prose)
-    bad = bare or bool(ungrounded) or _is_low_quality_title(title, signals)
+    # A repeated selected token is the deterministic signature of a template
+    # that substituted the same tag into multiple slots (for example
+    # ``开局穿越，我用穿越证道``).  A tag appearing once may be a legitimate
+    # narrative trope; repeating it is a keyword-pile failure regardless of
+    # whether the prose happens to mention that trope.
+    repeated_tags = tuple(
+        dict.fromkeys(
+            str(tag).strip()
+            for tag in (tags or ())
+            if str(tag).strip()
+            and len(str(tag).strip()) >= 2
+            and str(title or "").count(str(tag).strip()) >= 2
+        )
+    )
+    bad = bare or bool(ungrounded) or bool(repeated_tags) or _is_low_quality_title(title, signals)
     result: dict[str, Any] = {
         "passed": not bad,
         "score": 100 if not bad else 35,
@@ -2956,6 +2979,13 @@ def _evaluate_title_quality(
             + "），这些词在故事正文里一次都没出现。"
         )
         result["ungrounded_tokens"] = list(ungrounded)
+    if repeated_tags and not bare:
+        result["reason"] = (
+            "标题重复使用同一分类/营销词，像模板槽位拼接（"
+            + "、".join(repeated_tags)
+            + "）。"
+        )
+        result["repeated_tag_tokens"] = list(repeated_tags)
     if bare:
         # Pure taxonomy names (题材名 = 书名) are a product red line → hard reject,
         # so selection can never ship them and downstream LLM revision must fire.

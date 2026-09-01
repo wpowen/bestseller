@@ -3421,6 +3421,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
+    project.metadata_json["benchmark_works"] = ["边境航路经营结构对标"]
 
     async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
         assert slug == "my-story"
@@ -3457,6 +3458,16 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         **kwargs: object,
     ):
         prompts_by_logical_name[logical_name] = user_prompt
+        if logical_name == "book_spec" and isinstance(fallback_payload, dict):
+            payload = json.loads(json.dumps(fallback_payload, ensure_ascii=False))
+            payload["series_engine"] = {
+                **dict(payload.get("series_engine") or {}),
+                "reader_promise": "每批章节兑现一次航线修复、证据反转或关系重组。",
+                "first_three_chapter_hook": "星图失踪、航标熄灭与巡逻船封锁在前三章连续升级。",
+                "chapter_ending_hook_strategy": "以新坐标、敌方动作或资源缺口收尾。",
+                "payoff_rhythm": "每3章小兑现，卷末完成一次航线状态质变。",
+            }
+            return payload, uuid4()
         if "chapter_outline" in logical_name and isinstance(fallback_payload, dict):
             payload = json.loads(json.dumps(fallback_payload, ensure_ascii=False))
             for chapter in payload.get("chapters", []):

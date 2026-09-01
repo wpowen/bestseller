@@ -692,7 +692,7 @@ class PipelineSettings(BaseModel):
     # entry points and records whether benchmark alignment, unique hook,
     # series engine, long-arc capacity, and genre-specific engines are present.
     enable_prewrite_readiness_gate: bool = True
-    prewrite_readiness_gate_mode: str = "warn"
+    prewrite_readiness_gate_mode: str = "block"
     prewrite_readiness_block_on_failure: bool = False
     # Story design kernel rollout.  This is the new project-level plot design
     # contract: shape routing, category grammar, plot tree, beat schedule, and

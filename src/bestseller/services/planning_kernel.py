@@ -15,6 +15,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from bestseller.services.compliance_boundary_kernel import (
+    evaluate_compliance_boundary_kernel,
+)
 from bestseller.services.distilled_strategy_gate import (
     distilled_strategy_gate_snapshot,
     evaluate_distilled_strategy_consumption,
@@ -23,9 +26,6 @@ from bestseller.services.emotion_driven_kernel import (
     emotion_driven_kernel_from_dict,
     evaluate_emotion_contracts,
 )
-from bestseller.services.compliance_boundary_kernel import (
-    evaluate_compliance_boundary_kernel,
-)
 from bestseller.services.public_emotion_kernel import (
     evaluate_public_emotion_kernel,
 )
@@ -33,6 +33,7 @@ from bestseller.services.ranking_capability_profile import (
     load_ranking_capability_profile_text,
 )
 from bestseller.services.story_design_kernel import story_design_kernel_from_dict
+from bestseller.services.story_viability import evaluate_story_viability
 
 _KERNEL_VERSION = 1
 _BLOCKING_SEVERITIES = {"critical", "high"}
@@ -41,6 +42,7 @@ _ALWAYS_BLOCK_CODES = {
     "concept_contract_missing",
     "concept_contract_invalid",
     "seriality_volume_mapping_invalid",
+    "story_capacity_insufficient",
 }
 
 _PROGRESSION_MARKERS = (
@@ -114,6 +116,7 @@ _REPAIR_ACTIONS = {
     "bomb_contract_not_consumed": "补齐桌下炸弹：读者已知、角色盲区、触发条件、倒计时、严重后果和兑现窗口。",
     "antagonist_moral_contract_thin": "补齐反派的真实善行、隐秘欲望、裂缝、自我辩护和崩塌伤口。",
     "ending_texture_missing": "补齐 HE/BE 结局纹理：核心兑现、不可逆代价、主题回答、未来打开或美感回收。",
+    "story_capacity_insufficient": "返回构思层重建故事引擎：补齐主动选择、对手反制、真实代价、状态变化、关系变化、升级轨道和终局方向。",
     # concept_contract_missing / concept_contract_invalid are TERMINAL blocks:
     # they cannot be auto-repaired inside planning (they require returning to the
     # conception stage), so they carry a block reason (see _BLOCK_REASONS) but no
@@ -150,6 +153,7 @@ _DIRECTIVE_TEMPLATES_ZH = {
     "bomb_contract_not_consumed": "当前情绪合同缺少可执行炸弹；章节必须写清信息差、触发条件、倒计时、严重后果和兑现窗口。",
     "antagonist_moral_contract_thin": "反派道德面具过薄；必须写出真实善行、核心欲望、细小裂缝、自我辩护和崩塌伤口。",
     "ending_texture_missing": "结局纹理不完整；必须提前锁定幸福/悲剧兑现方式、不可逆代价、主题回答和回收物。",
+    "story_capacity_insufficient": "当前设定不能支撑目标篇幅；停止生成正文，先重建可重复且会改变状态的故事循环。",
 }
 
 _DIRECTIVE_TEMPLATES_EN = {
@@ -183,6 +187,7 @@ _DIRECTIVE_TEMPLATES_EN = {
     "concept_contract_missing": "Return to conception and approve one shared-lineage hook, seriality proof, and story spine.",
     "concept_contract_invalid": "Repair ConceptContract lineage, target length, and child-contract integrity.",
     "seriality_volume_mapping_invalid": "Rebuild volumes so every phase, renewable-unit variant, and accumulation track is mapped.",
+    "story_capacity_insufficient": "Return to conception and build a renewable causal engine with choices, countermoves, costs, state changes, relationship movement, progression, and an endgame.",
 }
 
 
@@ -894,6 +899,39 @@ def build_project_planning_kernel(
             distilled_strategy["required_state_variables"] = required_states
             distilled_strategy["required_state_variable_count"] = len(required_states)
 
+    viability_input = _as_mapping(metadata.get("story_viability_input"))
+    # A v2 ConceptContract is the new-project boundary. Once declared, a
+    # project may not silently fall back to pre-viability behavior merely
+    # because a separate rollout flag was omitted from metadata.
+    strict_viability = bool(
+        contract_declared
+        or metadata.get("strict_story_viability")
+        or metadata.get("story_viability_required")
+    )
+    legacy_viability = bool(metadata.get("legacy_story_viability"))
+    if not viability_input and isinstance(raw_contract, Mapping):
+        viability_input = _as_mapping(
+            _as_mapping(raw_contract).get("seriality_proof")
+        )
+    story_viability = (
+        evaluate_story_viability(
+            viability_input,
+            target_chapters=int(
+                _project_attr(project, "target_chapters", None)
+                or metadata.get("target_chapters")
+                or viability_input.get("target_chapters")
+                or 0
+            ),
+        )
+        if viability_input
+        else ({
+            "passed": False,
+            "report": {"reason": "viability_input_missing"},
+            "blocking_codes": ["MISSING_STORY_VIABILITY_INPUT"],
+            "estimated_chapter_ceiling": 0,
+        } if strict_viability and not legacy_viability else {})
+    )
+
     return {
         "version": _KERNEL_VERSION,
         "project_slug": project_slug,
@@ -955,6 +993,9 @@ def build_project_planning_kernel(
         "compliance_boundary": compliance_boundary,
         "distilled_strategy": distilled_strategy,
         "concept_contract": concept_contract,
+        "story_viability": story_viability,
+        "strict_story_viability": strict_viability,
+        "legacy_story_viability": legacy_viability,
     }
 
 
@@ -1037,7 +1078,43 @@ def evaluate_prewrite_readiness(
     compliance_boundary = _as_mapping(kernel.get("compliance_boundary"))
     distilled_strategy = _as_mapping(kernel.get("distilled_strategy"))
     concept_contract = _as_mapping(kernel.get("concept_contract"))
+    story_viability = _as_mapping(kernel.get("story_viability"))
+    strict_viability = bool(
+        kernel.get("strict_story_viability")
+        or kernel.get("story_viability_required")
+    )
+    legacy_viability = bool(kernel.get("legacy_story_viability"))
+
+    if strict_viability and not legacy_viability and not story_viability:
+        findings.append(
+            _finding(
+                "story_capacity_insufficient",
+                "critical",
+                "Strict story viability is enabled but no viability input was supplied.",
+                "story_viability",
+                evidence={"blocking_codes": ["MISSING_STORY_VIABILITY_INPUT"]},
+            )
+        )
     target = int(target_chapters or kernel.get("target_chapters") or 0)
+
+    if story_viability and story_viability.get("passed") is not True:
+        findings.append(
+            _finding(
+                "story_capacity_insufficient",
+                "critical",
+                "The setting lacks a renewable causal engine for the requested length.",
+                "story_viability",
+                evidence={
+                    "blocking_codes": _string_list(
+                        story_viability.get("blocking_codes")
+                    ),
+                    "estimated_chapter_ceiling": story_viability.get(
+                        "estimated_chapter_ceiling"
+                    ),
+                    "requested_chapters": target,
+                },
+            )
+        )
 
     if concept_contract.get("declared"):
         if not concept_contract.get("present"):
@@ -1534,6 +1611,9 @@ def evaluate_prewrite_readiness(
                 concept_contract.get("valid")
                 and _as_mapping(concept_contract.get("volume_mapping_report")).get("passed")
             )
+        ),
+        "story_viability": bool(
+            not story_viability or story_viability.get("passed") is True
         ),
         "volume_differentiation": not any(
             finding.code

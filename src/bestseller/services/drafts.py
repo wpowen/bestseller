@@ -159,6 +159,7 @@ from bestseller.services.regen_loop import (
     regenerate_until_valid,
 )
 from bestseller.services.story_bible import load_scene_story_bible_context
+from bestseller.services.story_effect_realization import audit_story_effect_realization
 from bestseller.services.story_engine import render_story_engine_creative_core_block
 from bestseller.services.word_targets import (
     model_output_token_ceiling,
@@ -196,6 +197,129 @@ _RETENTION_PERSONA_GATE_CODES = frozenset(
         "PAYOFF_HOOK_ONLY",
     }
 )
+
+_EFFECT_REALIZATION_METADATA_KEY = "effect_realization_gate"
+
+
+def _effect_realization_payload(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    content: str,
+    *,
+    scenes: Sequence[SceneCardModel] = (),
+    scene_drafts: Sequence[SceneDraftVersionModel] = (),
+) -> dict[str, Any]:
+    """Build the auditable effect input from persisted planning + prose.
+
+    Effect selection is normally copied to ``chapter.metadata_json`` by the
+    outline materializer.  Keep a project-level fallback for chapters written
+    before that copy existed, and include scene metadata for scene-assembly
+    projects.  No effect is synthesized: an empty selection remains a
+    no-op for legacy books.
+    """
+
+    chapter_metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    project_metadata = dict(getattr(project, "metadata_json", None) or {})
+    payload: dict[str, Any] = dict(chapter_metadata)
+    for field in ("selected_effect_skills", "story_effect_skill_selection", "effect_skills"):
+        if field not in payload and field in project_metadata:
+            payload[field] = project_metadata[field]
+    if "story_enhancers" not in payload and isinstance(
+        project_metadata.get("story_enhancers"), Mapping
+    ):
+        payload["story_enhancers"] = project_metadata["story_enhancers"]
+    payload["prose"] = content or ""
+
+    draft_by_scene_id = {
+        getattr(draft, "scene_card_id", None): draft for draft in scene_drafts
+    }
+    scene_payloads: list[dict[str, Any]] = []
+    for scene in scenes:
+        scene_metadata = dict(getattr(scene, "metadata_json", None) or {})
+        scene_draft = draft_by_scene_id.get(getattr(scene, "id", None))
+        scene_payloads.append(
+            {
+                **scene_metadata,
+                "prose": getattr(scene_draft, "content_md", "") or "",
+            }
+        )
+        for field in ("selected_effect_skills", "story_effect_skill_selection", "effect_skills"):
+            if field not in payload and field in scene_metadata:
+                payload[field] = scene_metadata[field]
+        if "comedy_contract" not in payload and "comedy_contract" in scene_metadata:
+            payload["comedy_contract"] = scene_metadata["comedy_contract"]
+    if scene_payloads:
+        payload["scenes"] = scene_payloads
+    return payload
+
+
+def audit_persisted_story_effect_realization(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    content: str,
+    *,
+    scenes: Sequence[SceneCardModel] = (),
+    scene_drafts: Sequence[SceneDraftVersionModel] = (),
+) -> dict[str, Any]:
+    """Audit selected effects against the exact candidate prose.
+
+    The returned JSON-safe report is suitable for both chapter metadata and
+    draft promotion metadata.  ``passed=True`` with no selected effects is a
+    deliberate compatibility result for legacy projects.
+    """
+
+    return audit_story_effect_realization(
+        _effect_realization_payload(
+            project,
+            chapter,
+            content,
+            scenes=scenes,
+            scene_drafts=scene_drafts,
+        )
+    )
+
+
+def _stamp_effect_realization_report(
+    chapter: ChapterModel,
+    report: Mapping[str, Any],
+) -> None:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    metadata[_EFFECT_REALIZATION_METADATA_KEY] = dict(report)
+    if report.get("selected_effects"):
+        metadata["effect_realization_blocked"] = report.get("passed") is not True
+    chapter.metadata_json = metadata
+
+
+def _persist_effect_contract_context(
+    project: ProjectModel,
+    chapter: ChapterModel,
+    *,
+    scenes: Sequence[SceneCardModel] = (),
+) -> None:
+    """Pin scene-derived effect contracts at chapter scope.
+
+    Scene assembly used to understand a scene-level selection while the later
+    reviewed-draft promotion path could only see project/chapter metadata.  A
+    failed scene effect could therefore disappear between the two gates.  Pin
+    the exact selected-effects and comedy contract used by assembly so every
+    later promotion re-audits the same promise.  Existing chapter-authored
+    values remain authoritative.
+    """
+
+    payload = _effect_realization_payload(project, chapter, "", scenes=scenes)
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    changed = False
+    for field in (
+        "selected_effect_skills",
+        "story_effect_skill_selection",
+        "effect_skills",
+        "comedy_contract",
+    ):
+        if field not in metadata and field in payload:
+            metadata[field] = payload[field]
+            changed = True
+    if changed:
+        chapter.metadata_json = metadata
 
 
 def _effective_l6_gate_config(
@@ -10865,6 +10989,27 @@ async def generate_chapter_draft_once(
         and not deterministic_audit_report.passed
     ):
         quality_gate_outcome = "blocked"
+    _persist_effect_contract_context(project, chapter, scenes=scenes)
+    effect_realization_report = audit_persisted_story_effect_realization(
+        project,
+        chapter,
+        content_md,
+        scenes=scenes,
+    )
+    effect_realization_blocked = bool(
+        effect_realization_report.get("selected_effects")
+        and not effect_realization_report.get("passed")
+    )
+    if effect_realization_report.get("selected_effects"):
+        _stamp_effect_realization_report(chapter, effect_realization_report)
+        if effect_realization_blocked:
+            quality_gate_outcome = "blocked"
+            logger.warning(
+                "Chapter %d: selected story effect was not realized; candidate will "
+                "not become current (missing=%s)",
+                chapter_number,
+                effect_realization_report.get("missing") or (),
+            )
 
     word_count = authoritative_word_count_for_language(
         content_md,
@@ -10932,6 +11077,8 @@ async def generate_chapter_draft_once(
         )
         if _prior_current is not None:
             _keeps_prior_draft = True
+    if effect_realization_blocked and _prior_current is not None:
+        _keeps_prior_draft = True
     if _keeps_prior_draft:
         logger.warning(
             "chapter %s %d regeneration produced degenerate output "
@@ -10968,27 +11115,42 @@ async def generate_chapter_draft_once(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=[f"chapter_first_scene:{scene.id}" for scene in scenes],
-        is_current=not _keeps_prior_draft,
+        is_current=not _keeps_prior_draft and not effect_realization_blocked,
         promotion_reason_codes=draft_supersession_codes(
             origin="chapter_first",
-            took_current=not _keeps_prior_draft,
+            took_current=not _keeps_prior_draft and not effect_realization_blocked,
             chars=len(content_md or ""),
             supersedes_version=next_version - 1 if next_version > 1 else None,
-            hold_reason="prior_draft_kept",
+            hold_reason=(
+                "effect_realization_blocked"
+                if effect_realization_blocked
+                else "prior_draft_kept"
+            ),
         ),
         llm_run_id=completion.llm_run_id,
     )
     session.add(chapter_draft)
     # The chapter's own counters must describe the draft it is shipping. When
     # the stub was rejected above, that is still the prior draft.
-    chapter.current_word_count = _prior_words if _keeps_prior_draft else word_count
+    chapter.current_word_count = (
+        _prior_words
+        if _keeps_prior_draft
+        else (0 if effect_realization_blocked else word_count)
+    )
     chapter.status = (
         ChapterStatus.REVISION.value
         if previous_chapter_status == ChapterStatus.REVISION.value
         else ChapterStatus.DRAFTING.value
     )
-    if not _keeps_prior_draft:
+    if effect_realization_blocked:
+        chapter.production_state = "blocked"
+    elif not _keeps_prior_draft:
         chapter.production_state = quality_gate_outcome or "ok"
+    if effect_realization_report.get("selected_effects"):
+        chapter_draft.promotion_metadata = {
+            **(chapter_draft.promotion_metadata or {}),
+            _EFFECT_REALIZATION_METADATA_KEY: effect_realization_report,
+        }
     try:
         from bestseller.services.chapter_generation_input_builder import (
             build_chapter_generation_input_bundle,
@@ -12733,11 +12895,6 @@ async def assemble_chapter_draft(
             )
         )
         if draft is None:
-            # No draft flagged is_current — a scene whose rewrite loop hit its
-            # revision limit can end without a promoted draft. Fall back to its
-            # latest draft and promote it (accept-best-on-stall) instead of
-            # failing the WHOLE chapter/book at assembly. Only a scene with ZERO
-            # drafts is genuinely un-assemblable.
             latest = await session.scalar(
                 select(SceneDraftVersionModel)
                 .where(SceneDraftVersionModel.scene_card_id == scene.id)
@@ -12746,16 +12903,10 @@ async def assemble_chapter_draft(
             if latest is None:
                 missing_scenes.append(scene.scene_number)
                 continue
-            logger.warning(
-                "Chapter %d scene %d had no current draft during assembly; "
-                "promoting latest draft v%s (accept-best-on-stall).",
-                chapter_number,
-                scene.scene_number,
-                latest.version_no,
+            raise ValueError(
+                f"Chapter {chapter_number} scene {scene.scene_number} has draft "
+                f"v{latest.version_no} but no draft passed promotion."
             )
-            latest.is_current = True
-            await session.flush()
-            draft = latest
         scene_drafts.append(draft)
 
     if missing_scenes:
@@ -13005,6 +13156,29 @@ async def assemble_chapter_draft(
         )
         _stamp_duplicate_content_block(chapter, duplicate_gate_findings)
 
+    _persist_effect_contract_context(project, chapter, scenes=scenes)
+    effect_realization_report = audit_persisted_story_effect_realization(
+        project,
+        chapter,
+        content_md,
+        scenes=scenes,
+        scene_drafts=scene_drafts,
+    )
+    effect_realization_blocked = bool(
+        effect_realization_report.get("selected_effects")
+        and not effect_realization_report.get("passed")
+    )
+    if effect_realization_report.get("selected_effects"):
+        _stamp_effect_realization_report(chapter, effect_realization_report)
+        if effect_realization_blocked:
+            quality_gate_outcome = "blocked"
+            logger.warning(
+                "Chapter %d: selected story effect was not realized during scene "
+                "assembly; assembled candidate will not become current (missing=%s)",
+                chapter_number,
+                effect_realization_report.get("missing") or (),
+            )
+
     previous_chapter_texts: tuple[tuple[int, str], ...] = ()
     try:
         previous_chapter_texts = await _collect_previous_current_chapter_texts(
@@ -13135,14 +13309,23 @@ async def assemble_chapter_draft(
         or 0
     ) + 1
 
-    await session.execute(
-        update(ChapterDraftVersionModel)
+    prior_current_draft = await session.scalar(
+        select(ChapterDraftVersionModel)
         .where(
             ChapterDraftVersionModel.chapter_id == chapter.id,
             ChapterDraftVersionModel.is_current.is_(True),
         )
-        .values(is_current=False)
+        .limit(1)
     )
+    if not effect_realization_blocked:
+        await session.execute(
+            update(ChapterDraftVersionModel)
+            .where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .values(is_current=False)
+        )
 
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
@@ -13151,19 +13334,29 @@ async def assemble_chapter_draft(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=[str(scene_draft.id) for scene_draft in scene_drafts],
-        is_current=True,
+        is_current=not effect_realization_blocked,
         promotion_reason_codes=draft_supersession_codes(
             origin="scene_assembly",
-            took_current=True,
+            took_current=not effect_realization_blocked,
             chars=len(content_md or ""),
             supersedes_version=next_version - 1 if next_version > 1 else None,
+            hold_reason=("effect_realization_blocked" if effect_realization_blocked else None),
         ),
     )
     session.add(chapter_draft)
-    chapter.current_word_count = word_count
+    chapter.current_word_count = (
+        int(getattr(prior_current_draft, "word_count", 0) or 0)
+        if effect_realization_blocked
+        else word_count
+    )
     chapter.status = ChapterStatus.DRAFTING.value
     if quality_gate_outcome is not None:
         chapter.production_state = quality_gate_outcome
+    if effect_realization_report.get("selected_effects"):
+        chapter_draft.promotion_metadata = {
+            **(chapter_draft.promotion_metadata or {}),
+            _EFFECT_REALIZATION_METADATA_KEY: effect_realization_report,
+        }
 
     # 落库逻辑已抽成 stamp_chapter_hype()，整章路径同样调用它。
     # 2026-08-16 定罪：这段原本只活在场景装配路径里，而整章生成

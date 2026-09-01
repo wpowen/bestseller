@@ -123,6 +123,35 @@ def test_no_cast_in_book_spec_keeps_the_old_shape() -> None:
     assert cast["supporting_cast"] == []
 
 
+def test_source_bound_book_spec_has_target_scaled_serial_engine() -> None:
+    """A 50-chapter source-bound book must not compile as a one-character shell.
+
+    The old compiler hard-coded ``expected_character_count=1`` and emitted
+    empty seriality fields.  That allowed a single-volume plan to reach prose
+    with no reusable unit families, accumulation tracks, or phase transitions.
+    """
+    project = build_project()
+    project.target_chapters = 50
+    project.title = "回声航线"
+    premise = "巡航员沈砚发现封锁航线会回应他的导航脉冲。"
+    lock_design_snapshot(
+        project,
+        protagonist_name="沈砚",
+        reader_promise=premise,
+        core_story_engine="每轮用导航脉冲确认一段航路并面对升级的阻力。",
+    )
+
+    book = planner_services._compile_source_bound_book_spec(project, premise)
+
+    assert book["expected_character_count"] >= 4
+    engine = book["series_engine"]
+    assert len(engine["unit_families"]) >= 4
+    assert len(engine["accumulation_tracks"]) >= 2
+    assert len(engine["phase_transitions"]) >= 3
+    assert len(engine["renewal_sources"]) >= 2
+    assert engine["endgame_direction"]
+
+
 # ── 每个搬来的角色要带一条与主角的关系 ────────────────────────────────────
 #
 # 2026-08-22 真机（custom-xuanhuan-1787383584）：契约修好后 book_spec.cast=12、

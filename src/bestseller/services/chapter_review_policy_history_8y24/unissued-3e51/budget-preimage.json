@@ -1,0 +1,11 @@
+{
+  "alias_authority": false,
+  "file_pins": {
+    "src/bestseller/services/planning_surgical_budget.py": "cecd04653c244f9c4013730aef948df11d5a4c7a17d20b289301d50ace2cd13c"
+  },
+  "manifest_sha256": "78c202ca2204c2c12477558b2f590c294e2ee8f79d2e3de62dc19d1107e7e7c6",
+  "policy_hash": "3e51eb1808c2f9970d6b668a5e27643a096c7522b59cc98fa464cc313022f40f",
+  "runtime_audit_only": true,
+  "schema": "native-unissued-budget-preimage.v1",
+  "source": "Exact original_bytes == a296_bytes; fixed original 3e51 manifest SHA; no live capture"
+}

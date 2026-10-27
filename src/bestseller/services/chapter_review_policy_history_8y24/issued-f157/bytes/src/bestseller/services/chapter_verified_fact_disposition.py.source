@@ -1,0 +1,824 @@
+"""Deny acceptance for a bound native factual action; never grant acceptance.
+
+The caller authenticates current sources, paid origins and review/cycle custody.
+This pure boundary reuses the native retained action verifier, including raw
+slot lineage and the original/projected payload hashes. It performs no IO.
+"""
+
+from collections.abc import Mapping
+from copy import deepcopy
+import hashlib
+import json
+import math
+import statistics
+from uuid import UUID
+
+from bestseller.domain.llm_quality_judge import (
+    LLMQualityIssue,
+    LLMQualityJudgeResult,
+    quality_judge_result_from_mapping,
+)
+from bestseller.domain.review import ChapterReviewFinding, ChapterReviewResult
+from bestseller.services.chapter_draft_candidate_eligibility import (
+    _proof_sha,
+    _verified_commercial_actions,
+)
+from bestseller.services.commercial_action_projection import (
+    _decode,
+    _json,
+    _missing_submission_errors,
+    _result,
+    _slot,
+    _typed,
+)
+from bestseller.services.commercial_review_wire import (
+    ADAPTER_VERSION,
+    WIRE_VERSION,
+    parse_commercial_wire,
+)
+from bestseller.services.commercial_source_evidence import (
+    CommercialSources,
+    commercial_judge_unavailable,
+)
+
+SCHEMA = "chapter-verified-fact-disposition.v1"
+EVIDENCE_KEY = "verified_fact_disposition"
+FACT_KINDS = frozenset({"current_fact_conflict", "prior_fact_conflict", "constraint_violation"})
+UNKNOWN_CODE = "COMMERCIAL_FACT_EVIDENCE_UNVERIFIED"
+_DIRECTION_MARKER = "VERIFIED_FACT_REPAIR_PROPOSAL:\n"
+
+
+def _need(value: object) -> None:
+    if not value:
+        raise ValueError("commercial_action_proof_unverified")
+
+
+def _digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _compact_quarantine(
+    result: LLMQualityJudgeResult,
+    envelope: Mapping,
+    slot: Mapping,
+    binding: Mapping,
+) -> Mapping:
+    """Check retained neutral identity, never authenticate DB quarantine custody.
+
+    The complete closure is deliberately not retained in this compact receipt.
+    Native fresh/retained callers must still load it; no proof is reconstructed
+    or marked approved here. The neutral slot supplies no score or issue.
+    """
+    keys = {
+        "sample_slot",
+        "status",
+        "abstains",
+        "domain_issues_contributed",
+        "actions_contributed",
+        "scores_contributed",
+        "quarantine_proof_sha256",
+        "original_report_sha256",
+        "source_binding",
+        "scope_id",
+        "cohort_key",
+        "round",
+        "evaluation_contract",
+    }
+    round_no = slot.get("round")
+    _need(type(round_no) is int and round_no in (1, 2))
+    if round_no == 2:
+        keys.add("round2_input_binding_sha256")
+        _need(_digest(slot.get("round2_input_binding_sha256")))
+    _need(
+        set(slot) == keys
+        and slot["status"] == "unknown"
+        and slot["abstains"] is True
+        and all(
+            type(slot[k]) is int and slot[k] == 0
+            for k in ("domain_issues_contributed", "actions_contributed", "scores_contributed")
+        )
+        and slot["source_binding"] == binding
+        and isinstance(slot["scope_id"], str)
+        and bool(slot["scope_id"])
+        and _digest(slot["cohort_key"])
+        and _digest(slot["quarantine_proof_sha256"])
+        and slot["original_report_sha256"] == _proof_sha(result.model_dump(mode="json"))
+    )
+    _need(
+        set(envelope) == {"schema", "operation_key", "sample_slot", "attempt", "proof_sha256"}
+        and envelope["schema"] == "commercial-slot-quarantine.v1"
+        and _digest(envelope["operation_key"])
+        and envelope["sample_slot"] == slot["sample_slot"]
+        and type(envelope["attempt"]) is int
+        and envelope["attempt"] == round_no
+        and envelope["proof_sha256"] == slot["quarantine_proof_sha256"]
+    )
+    # Exact producer protocol: this is an unavailable report, not a passing
+    # wrapper or an inference that the original remote operation completed.
+    neutral = LLMQualityJudgeResult.model_validate(
+        {
+            "scope": "chapter",
+            "passed": False,
+            "overall_score": 0,
+            "dimension_scores": {},
+            "llm_run_id": None,
+            "blocking_issues": [
+                {
+                    "code": "CHAPTER_JUDGE_UNAVAILABLE",
+                    "severity": "critical",
+                    "evidence": "Paid slot quarantined with unknown remote outcome; no grade.",
+                    "required_fix": (
+                        "Retain the charged slot; no replay, replacement sample or prose rewrite."
+                    ),
+                }
+            ],
+            "rewrite_plan": {
+                "scope": "judge",
+                "instructions": "No retry or chapter rewrite is authorized.",
+            },
+            "raw_excerpt": result.raw_excerpt,
+        }
+    )
+    _need(result.model_dump(mode="json") == neutral.model_dump(mode="json"))
+    return slot["evaluation_contract"]
+
+
+def _ordinary_abstention(
+    result: LLMQualityJudgeResult,
+    report: Mapping,
+    envelope: Mapping,
+    slot: Mapping,
+    binding: Mapping,
+) -> Mapping:
+    """Bind an unavailable return without replaying source-resolution errors.
+
+    Its complete catalog is not retained here. Native callers validate those
+    errors with full current sources; a reduced action catalog must not invent
+    new errors. This path verifies only the original neutral report/envelope,
+    hashes, source audit, contract and submission identity. It emits no action.
+    """
+    _need(
+        result.infrastructure_failure
+        and isinstance(result.llm_run_id, str)
+        and str(UUID(result.llm_run_id)) == result.llm_run_id
+        and envelope.get("schema_version") == "commercial-slot-evidence.v1"
+        and envelope.get("sample_slot") == slot["sample_slot"]
+        and type(envelope.get("attempt")) is int
+        and envelope["attempt"] in (1, 2)
+        and envelope.get("source_binding") == binding
+    )
+    raw, errors = envelope.get("raw_report"), envelope.get("validation_errors")
+    _need(
+        isinstance(raw, str)
+        and envelope.get("raw_report_sha256") == hashlib.sha256(raw.encode()).hexdigest()
+        and isinstance(errors, list)
+        and bool(errors)
+        and all(isinstance(error, str) and bool(error) for error in errors)
+        and envelope.get("original_overall_score") == result.overall_score
+        and envelope.get("original_dimension_scores") == dict(result.dimension_scores)
+    )
+    adapter, contract, audit = (
+        envelope.get(k) for k in ("adapter_receipt", "evaluation_contract", "exact_source_audit")
+    )
+    _need(
+        all(isinstance(value, Mapping) for value in (adapter, contract, audit))
+        and contract.get("schema") == "commercial-evaluation-contract.v1"
+        and adapter.get("wire_version") == contract.get("wire_version")
+        and adapter.get("adapter_version") == contract.get("adapter_version")
+    )
+    source = adapter.get("source_binding")
+    _need(
+        isinstance(source, Mapping)
+        and all(source.get(k) == v for k, v in binding.items())
+        and all(
+            _digest(audit.get(k)) and audit[k] == source.get(k)
+            for k in ("body_sha256", "previous_sha256", "source_sha256", "assembled_source_sha256")
+        )
+        and audit["body_sha256"] == binding["body_sha256"]
+        and audit["previous_sha256"] == binding["previous_sha256"]
+    )
+    status, submission = adapter.get("status"), adapter.get("submission")
+    _need(
+        status in {"rejected", "rejected_submission", "not_run_output_truncated"}
+        and isinstance(submission, Mapping)
+    )
+    truncated = status == "not_run_output_truncated"
+    rejected = status == "rejected_submission"
+    if truncated:
+        _need(
+            errors == ["output: truncated at structured-review reserve"]
+            and set(adapter)
+            == {"adapter_version", "wire_version", "source_binding", "status", "submission"}
+        )
+    else:
+        _need(
+            adapter.get("raw_report_sha256") == envelope["raw_report_sha256"]
+            and adapter.get("scores_modified") is False
+            and type(adapter.get("issues_dropped")) is int
+            and adapter["issues_dropped"] == 0
+        )
+    if rejected or (truncated and submission.get("status") == "rejected"):
+        missing = _missing_submission_errors(submission)
+        if rejected:
+            _need(
+                errors[: len(missing)] == list(missing)
+                and adapter.get("wire_validation_status") in {"verified", "rejected"}
+            )
+    else:
+        _need(
+            submission.get("policy") == "commercial-report-submission.v1"
+            and submission.get("status") == "received"
+            and type(submission.get("calls_received")) is int
+            and submission["calls_received"] == 1
+            and type(submission.get("tools_executed")) is int
+            and submission["tools_executed"] == 0
+            and _digest(submission.get("tool_calls_sha256"))
+        )
+    neutral = commercial_judge_unavailable(
+        diagnostic=result.blocking_issues[0].evidence, result=result
+    )
+    _need(_typed(neutral) == _typed(result))
+    expected = {
+        "sample_slot": slot["sample_slot"],
+        "status": "unknown",
+        "raw_report_sha256": envelope["raw_report_sha256"],
+        "envelope_sha256": _proof_sha(envelope),
+        "evaluation_contract": deepcopy(contract),
+    }
+    if rejected or truncated:
+        expected.update(
+            abstains=True,
+            domain_issues_contributed=0,
+            llm_run_id=result.llm_run_id,
+            validation_errors=deepcopy(errors),
+            adapter_receipt=deepcopy(adapter),
+            exact_source_audit=deepcopy(audit),
+            original_report=deepcopy(report),
+        )
+        if truncated:
+            expected.update(actions_contributed=0, scores_contributed=0)
+    _need(expected == slot)
+    return contract
+
+
+def _answered_rule_pass(
+    result: LLMQualityJudgeResult,
+    envelope: Mapping,
+    slot: Mapping,
+    sources: CommercialSources,
+    wire: dict,
+    domains: dict,
+) -> tuple[LLMQualityJudgeResult, Mapping]:
+    """Verify action domains when uncited RULE PASS text was not retained.
+
+    Original bytes/hashes and the full caller-authenticated adapter stay intact.
+    Only unquoted PASS checks are omitted from a detached action-parse view;
+    their truth is neither re-proved nor made into acceptance authority here.
+    A FAIL check or cited rule is never omitted, and no source quote is invented.
+    """
+    binding = {
+        key: sources.receipt[key]
+        for key in (
+            "body_sha256",
+            "semantic_source_sha256",
+            "previous_sha256",
+            "source_protocol_sha256",
+        )
+    }
+    contract, adapter, audit = (
+        envelope[k] for k in ("evaluation_contract", "adapter_receipt", "exact_source_audit")
+    )
+    raw = envelope["raw_report"]
+    _need(
+        not result.infrastructure_failure
+        and isinstance(result.llm_run_id, str)
+        and str(UUID(result.llm_run_id)) == result.llm_run_id
+        and envelope.get("schema_version") == "commercial-slot-evidence.v1"
+        and envelope.get("sample_slot") == slot["sample_slot"]
+        and type(envelope.get("attempt")) is int
+        and envelope["attempt"] in (1, 2)
+        and envelope.get("source_binding") == binding
+        and envelope.get("validation_errors") == []
+        and isinstance(raw, str)
+        and envelope.get("raw_report_sha256") == hashlib.sha256(raw.encode()).hexdigest()
+        and envelope.get("original_overall_score") == result.overall_score
+        and envelope.get("original_dimension_scores") == dict(result.dimension_scores)
+        and all(isinstance(value, Mapping) for value in (contract, adapter, audit))
+    )
+    _need(
+        contract.get("schema") == "commercial-evaluation-contract.v1"
+        and contract.get("wire_version") == WIRE_VERSION
+        and contract.get("adapter_version") == ADAPTER_VERSION
+        and contract.get("source_protocol_sha256") == binding["source_protocol_sha256"]
+        and all(
+            _digest(contract.get(key))
+            for key in (
+                "model_catalog_sha256",
+                "system_prompt_sha256",
+                "instruction_prefix_sha256",
+                "tools_sha256",
+                "critic_configuration_sha256",
+            )
+        )
+    )
+    minimum, thresholds = contract["min_overall"], contract["min_dimensions"]
+    _need(
+        type(minimum) in (int, float)
+        and math.isfinite(minimum)
+        and 0 <= minimum <= 1
+        and isinstance(thresholds, dict)
+        and all(
+            isinstance(k, str) and type(v) in (int, float) and math.isfinite(v) and 0 <= v <= 1
+            for k, v in thresholds.items()
+        )
+    )
+    source, submission = adapter["source_binding"], adapter["submission"]
+    _need(
+        adapter.get("status") == "verified"
+        and adapter.get("wire_version") == WIRE_VERSION
+        and adapter.get("adapter_version") == ADAPTER_VERSION
+        and adapter.get("raw_report_sha256") == envelope["raw_report_sha256"]
+        and adapter.get("scores_modified") is False
+        and type(adapter.get("issues_dropped")) is int
+        and adapter["issues_dropped"] == 0
+        and _digest(adapter.get("domain_mapping_sha256"))
+        and isinstance(source, Mapping)
+        and all(source.get(k) == v for k, v in binding.items())
+        and all(
+            _digest(audit.get(k)) and audit[k] == source.get(k)
+            for k in ("body_sha256", "previous_sha256", "source_sha256", "assembled_source_sha256")
+        )
+        and audit["body_sha256"] == binding["body_sha256"]
+        and audit["previous_sha256"] == binding["previous_sha256"]
+        and submission.get("policy") == "commercial-report-submission.v1"
+        and submission.get("status") == "received"
+        and type(submission.get("calls_received")) is int
+        and submission["calls_received"] == 1
+        and type(submission.get("tools_executed")) is int
+        and submission["tools_executed"] == 0
+        and _digest(submission.get("tool_calls_sha256"))
+    )
+    quoted_rules = {key for key, value in sources.catalog.items() if value["kind"] == "constraint"}
+    checks = wire["checks"]
+    _need(isinstance(checks, Mapping) and quoted_rules <= checks.keys())
+    omitted = set(checks) - quoted_rules
+    _need(
+        bool(omitted)
+        and all(
+            isinstance(checks[key], Mapping)
+            and set(checks[key]) == {"result", "body_id", "reason"}
+            and checks[key]["result"] == "PASS"
+            and isinstance(checks[key]["body_id"], str)
+            and isinstance(checks[key]["reason"], str)
+            and bool(checks[key]["reason"].strip())
+            for key in omitted
+        )
+    )
+    action_wire = deepcopy(wire)
+    if quoted_rules:
+        action_wire["checks"] = {k: deepcopy(v) for k, v in checks.items() if k in quoted_rules}
+    else:
+        action_wire.pop("checks")
+    parsed, action_adapter, errors = parse_commercial_wire(_json(action_wire), sources)
+    _need(
+        not errors
+        and all(
+            adapter.get(key) == action_adapter.get(key)
+            for key in (
+                "source_resolution",
+                "issue_order_preserved_within_severity_group",
+                "issue_counts",
+                "derived_issues_added",
+                "derived_issue_rule_ids",
+            )
+        )
+    )
+    rebuilt = quality_judge_result_from_mapping(
+        parsed,
+        scope="chapter",
+        min_overall=minimum,
+        min_dimensions=thresholds,
+        llm_run_id=result.llm_run_id,
+    )
+    _need(_typed(rebuilt) == _typed(result))
+    raw_keys = set()
+    for group in ("blocking_issues", "audit_issues"):
+        for index, issue in enumerate(parsed[group]):
+            key = _json(LLMQualityIssue.model_validate(issue).model_dump(mode="json"))
+            raw_keys.add(key)
+            domains.setdefault(key, []).append(
+                {
+                    "sample_slot": slot["sample_slot"],
+                    "mapped_group": group,
+                    "mapped_index": index,
+                    "raw_report_sha256": envelope["raw_report_sha256"],
+                    "issue": deepcopy(issue),
+                }
+            )
+    for issue in rebuilt.blocking_issues:
+        typed = issue.model_dump(mode="json")
+        key = _json(typed)
+        if key not in raw_keys:
+            domains.setdefault(key, []).append(
+                {
+                    "sample_slot": slot["sample_slot"],
+                    "mapped_group": "blocking_issues",
+                    "mapped_index": None,
+                    "raw_report_sha256": envelope["raw_report_sha256"],
+                    "derivation": "retained_contract_threshold_normalization",
+                    "issue": {**typed, "assessment_kind": "retained_threshold_policy"},
+                }
+            )
+    expected = {
+        "sample_slot": slot["sample_slot"],
+        "status": "verified",
+        "llm_run_id": result.llm_run_id,
+        "raw_report_sha256": envelope["raw_report_sha256"],
+        "envelope_sha256": _proof_sha(envelope),
+        "evaluation_contract": deepcopy(contract),
+        "raw_pass": wire["pass"],
+        "original_source_audit": deepcopy(audit),
+    }
+    _need(expected == slot)
+    return result, contract
+
+
+def _quorum_actions(evidence: Mapping, body_sha: str) -> list[dict]:
+    """Verify the native projected quorum, with unknown slots contributing zero.
+
+    Answered wires are replayed by the actual native `_slot`. Unknown wires
+    retain their native unavailable identity without resolving missing sources.
+    Quarantine receipts can prove only their compact identity here; physical
+    authority remains the native caller's job for every answered/unknown slot.
+    The stricter fact-only-edit verifier is intentionally unchanged.
+    """
+    _need(isinstance(evidence, Mapping))
+    proof, view, raw = (
+        evidence[key]
+        for key in (
+            "commercial_action_projection",
+            "llm_commercial_judge",
+            "llm_commercial_judge_original",
+        )
+    )
+    _need(all(isinstance(value, Mapping) for value in (proof, view, raw)))
+    _need(
+        proof.get("schema") == "commercial-action-projection.v1"
+        and proof.get("status") == "projected"
+        and all(
+            proof.get(k) is False
+            for k in ("scores_modified", "raw_cohort_modified", "grants_slots", "authorizes_replay")
+        )
+    )
+    binding = proof.get("source_binding")
+    _need(
+        isinstance(binding, Mapping)
+        and all(
+            _digest(binding.get(k))
+            for k in (
+                "body_sha256",
+                "previous_sha256",
+                "semantic_source_sha256",
+                "source_protocol_sha256",
+            )
+        )
+        and binding["body_sha256"] == body_sha
+        and _digest(proof.get("source_text_sha256"))
+        and proof.get("projection_sha256") == _proof_sha(view)
+    )
+    original = _result(raw)
+    projected = LLMQualityJudgeResult.model_validate(view)
+    _need(
+        not original.infrastructure_failure
+        and bool(original.llm_run_id)
+        and proof.get("original_aggregate_sha256") == _proof_sha(original.model_dump(mode="json"))
+        and all(
+            getattr(original, key) == getattr(projected, key)
+            for key in (
+                "scope",
+                "passed",
+                "overall_score",
+                "dimension_scores",
+                "raw_excerpt",
+                "llm_run_id",
+                "rewrite_plan",
+            )
+        )
+    )
+    aggregate = _decode(original.raw_excerpt)
+    n, samples, slots = (
+        aggregate.get("requested_samples"),
+        aggregate.get("samples"),
+        proof.get("slots"),
+    )
+    _need(
+        aggregate.get("schema_version") == "chapter-quality-aggregation.v1"
+        and aggregate.get("status") == "aggregated"
+        and type(n) is int
+        and n > 1
+        and isinstance(samples, list)
+        and isinstance(slots, list)
+        and len(samples) == len(slots) == n
+    )
+    names = [f"chapter-quality.independent-v2:{i}" for i in range(n)]
+    _need(
+        [s.get("sample_slot") for s in samples] == names
+        and [s.get("sample_slot") for s in slots] == names
+    )
+    actions = proof.get("issue_actions")
+    _need(isinstance(actions, list))
+    catalog = {}
+    for action in actions:
+        _need(isinstance(action, Mapping) and isinstance(action.get("lineage"), list))
+        for origin in action["lineage"]:
+            _need(isinstance(origin, Mapping) and isinstance(origin.get("issue"), Mapping))
+            for key in ("body_citations", "source_citations"):
+                citations = origin["issue"].get(key, [])
+                _need(isinstance(citations, list))
+                for citation in citations:
+                    _need(
+                        isinstance(citation, Mapping)
+                        and isinstance(citation.get("id"), str)
+                        and isinstance(citation.get("quote"), str)
+                    )
+                    entry = {"kind": citation.get("kind"), "text": citation["quote"]}
+                    _need(citation["id"] not in catalog or catalog[citation["id"]] == entry)
+                    catalog[citation["id"]] = entry
+    domains, rebuilt_slots, results, contracts, quarantine_contexts = {}, [], [], [], set()
+    for sample, retained_slot in zip(samples, slots, strict=True):
+        result = _result(sample["report"])
+        _need(
+            type(sample.get("valid")) is bool
+            and sample["valid"] == (not result.infrastructure_failure)
+        )
+        envelope = _decode(result.raw_excerpt)
+        if envelope.get("schema") == "commercial-slot-quarantine.v1":
+            _need(sample["valid"] is False)
+            contract = _compact_quarantine(result, envelope, retained_slot, binding)
+            rebuilt_slots.append(deepcopy(retained_slot))
+            quarantine_contexts.add((retained_slot["scope_id"], retained_slot["cohort_key"]))
+        elif result.infrastructure_failure:
+            contract = _ordinary_abstention(
+                result, sample["report"], envelope, retained_slot, binding
+            )
+            rebuilt_slots.append(deepcopy(retained_slot))
+        else:
+            _need(envelope.get("source_binding") == binding)
+            sources = CommercialSources(
+                text="", catalog=catalog, receipt=envelope["adapter_receipt"]["source_binding"]
+            )
+            raw = envelope["raw_report"].strip()
+            wire = _decode(raw[8:-4] if raw.startswith("```json\n") else raw)
+            missing_rules = set(wire.get("checks", {})) - {
+                key for key, row in catalog.items() if row["kind"] == "constraint"
+            }
+            if missing_rules:
+                result, contract = _answered_rule_pass(
+                    result, envelope, retained_slot, sources, wire, domains
+                )
+                rebuilt_slots.append(deepcopy(retained_slot))
+            else:
+                result, contract = _slot(
+                    sample["report"], sample["sample_slot"], sources, domains, rebuilt_slots
+                )
+        results.append(result)
+        contracts.append(contract)
+    _need(
+        rebuilt_slots == slots
+        and len(quarantine_contexts) <= 1
+        and all(contract == contracts[0] for contract in contracts)
+        and proof.get("old_policy") == contracts[0]
+    )
+    unknown = [names[i] for i, result in enumerate(results) if result.infrastructure_failure]
+    _need(bool(unknown) and proof.get("unknown_sample_slots") == unknown)
+    answered = [r for r in results if not r.infrastructure_failure]
+    quorum = n // 2 + 1
+    _need(
+        len(answered) >= quorum
+        and type(aggregate.get("valid_samples")) is int
+        and aggregate["valid_samples"] == len(answered)
+        and type(aggregate.get("required_valid_samples")) is int
+        and aggregate["required_valid_samples"] == quorum
+    )
+    overall = statistics.median(r.overall_score for r in answered)
+    dimensions = {
+        k: statistics.median(r.dimension_scores[k] for r in answered if k in r.dimension_scores)
+        for k in set().union(*(r.dimension_scores for r in answered))
+    }
+    representative = min(answered, key=lambda r: abs(r.overall_score - overall))
+    critical = [
+        names[i] for i, r in enumerate(results) if not r.infrastructure_failure and r.has_critical
+    ]
+    blockers = list(representative.blocking_issues)
+    for result in answered:
+        for issue in result.blocking_issues:
+            if issue.severity == "critical" and issue not in blockers:
+                blockers.append(issue)
+    minimum, thresholds = contracts[0]["min_overall"], contracts[0]["min_dimensions"]
+    passed = (
+        overall >= minimum - 1e-6
+        and all(dimensions.get(k, 0.0) >= v - 1e-6 for k, v in thresholds.items())
+        and not critical
+    )
+    expected = representative.model_copy(
+        update={
+            "passed": passed,
+            "overall_score": float(overall),
+            "dimension_scores": dimensions,
+            "blocking_issues": tuple(blockers),
+        }
+    )
+    _need(
+        _typed(expected) == _typed(original)
+        and original.llm_run_id == representative.llm_run_id
+        and aggregate.get("min_overall") == minimum
+        and aggregate.get("min_dimensions") == thresholds
+        and aggregate.get("representative_sample_slot")
+        == names[next(i for i, r in enumerate(results) if r is representative)]
+        and aggregate.get("critical_sample_slots") == critical
+        and aggregate.get("median_overall") == overall
+        and aggregate.get("median_dimensions") == dimensions
+        and aggregate.get("passed") is passed
+    )
+    entries = [
+        (group, index, issue.model_dump(mode="json"))
+        for group in ("blocking_issues", "audit_issues")
+        for index, issue in enumerate(getattr(original, group))
+    ]
+    represented = {_json(issue) for _, _, issue in entries}
+    entries.extend((None, None, json.loads(key)) for key in domains if key not in represented)
+    _need(len(entries) == len(actions))
+    indexed = {}
+    for group, effective in (("blocking_issues", "block"), ("audit_issues", "audit_only")):
+        _need(isinstance(view.get(group), list))
+        for issue in view[group]:
+            _need(isinstance(issue, Mapping))
+            index = issue.get("action_receipt_index")
+            _need(type(index) is int and 0 <= index < len(actions) and index not in indexed)
+            indexed[index] = (issue, effective)
+    _need(
+        len(indexed) == len(actions)
+        and type(proof.get("effective_blocking_count")) is int
+        and proof["effective_blocking_count"] == len(view["blocking_issues"])
+    )
+    authorities = {
+        **dict.fromkeys(FACT_KINDS, "verified_source"),
+        "narrative_quality": "craft_only",
+        "retained_threshold_policy": "retained_evaluation_policy",
+    }
+    for index, (group, aggregate_index, typed) in enumerate(entries):
+        action = actions[index]
+        issue, effective = indexed[index]
+        kind, lineage = action.get("assessment_kind"), domains.get(_json(typed))
+        _need(
+            kind in authorities
+            and action.get("authority") == authorities[kind]
+            and action.get("effective_action") == effective
+            and all(action.get(k) == issue.get(k) for k in ("code", "severity", "assessment_kind"))
+            and bool(lineage)
+            and action.get("lineage") == lineage
+            and action.get("aggregate_group") == group
+            and action.get("aggregate_index") == aggregate_index
+            and all(
+                row["sample_slot"] not in unknown and row["issue"]["assessment_kind"] == kind
+                for row in lineage
+            )
+            and lineage[0]["issue"]
+            == {k: v for k, v in issue.items() if k != "action_receipt_index"}
+        )
+        if kind != "narrative_quality" and group == "blocking_issues":
+            _need(effective == "block")
+    return deepcopy(actions)
+
+
+def decide_verified_fact_disposition(*, content_md: str, evidence: Mapping) -> dict:
+    """Classify only verified factual denials, independently of model PASS.
+
+    A missing projection preserves legacy behavior. A declared projection must
+    retain its original aggregate and exact action proof; corruption is Unknown,
+    not permission to rejudge or dispatch. Clear means no factual denial here.
+    """
+    receipt = {
+        "schema": SCHEMA,
+        "scores_modified": False,
+        "raw_model_modified": False,
+        "acceptance_authorized": False,
+        "adoption_authorized": False,
+        "dispatch_authorized": False,
+        "grants_credit": False,
+        "authorizes_replay": False,
+        "physical_source_authentication": "required_from_native_caller",
+    }
+    result = {
+        "schema": SCHEMA,
+        "status": "unknown",
+        "blocking_codes": [],
+        "instructions": "",
+        "receipt": receipt,
+    }
+    if isinstance(evidence, Mapping) and "commercial_action_projection" not in evidence:
+        result["status"] = "no_projection"
+        receipt["reason"] = "native_projection_absent_legacy_behavior_unchanged"
+        return result
+    try:
+        if not isinstance(content_md, str) or not content_md.strip():
+            raise ValueError("current_body_missing")
+        body_sha = hashlib.sha256(content_md.encode("utf-8")).hexdigest()
+        receipt["body_sha256"] = body_sha
+        projection = (
+            evidence.get("commercial_action_projection") if isinstance(evidence, Mapping) else None
+        )
+        if isinstance(projection, Mapping) and projection.get("unknown_sample_slots") != []:
+            actions = _quorum_actions(evidence, body_sha)
+        else:
+            actions = _verified_commercial_actions((evidence,), {"digest": body_sha})
+        proof = evidence["commercial_action_projection"]
+        view = evidence["llm_commercial_judge"]
+        issues = {issue["action_receipt_index"]: issue for issue in view["blocking_issues"]}
+        blockers = []
+        for index, action in enumerate(actions):
+            if (
+                action["assessment_kind"] in FACT_KINDS
+                and action["authority"] == "verified_source"
+                and action["effective_action"] == "block"
+            ):
+                issue = issues[index]
+                fix = issue.get("required_fix")
+                if not isinstance(fix, str) or not fix.strip():
+                    raise ValueError("fact_repair_direction_missing")
+                blockers.append(
+                    {
+                        "action_receipt_index": index,
+                        "code": action["code"],
+                        "assessment_kind": action["assessment_kind"],
+                        "required_fix": fix,
+                    }
+                )
+        receipt.update(
+            projection_sha256=proof["projection_sha256"],
+            action_proof_sha256=_proof_sha(proof),
+            original_aggregate_sha256=proof["original_aggregate_sha256"],
+            source_binding=deepcopy(proof["source_binding"]),
+            factual_actions=deepcopy(blockers),
+        )
+        result["status"] = "blocked" if blockers else "clear"
+        result["blocking_codes"] = list(dict.fromkeys(row["code"] for row in blockers))
+        result["instructions"] = "\n".join(
+            f"{row['code']}: {row['required_fix']}" for row in blockers
+        )
+        receipt["reason"] = "verified_source_fact_block" if blockers else "no_verified_fact_block"
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
+        result.update(status="unknown", blocking_codes=[UNKNOWN_CODE], instructions="")
+        receipt["reason"] = "commercial_action_proof_unverified"
+    return result
+
+
+def apply_verified_fact_disposition(
+    review_result: ChapterReviewResult,
+    *,
+    content_md: str,
+) -> ChapterReviewResult:
+    """Return a derived review; keep scores and all native model evidence intact.
+
+    Unknown must not create a prose task. The caller keeps original reports and
+    paid attempts immutable and handles task budget/idempotency independently.
+    """
+    decision = decide_verified_fact_disposition(
+        content_md=content_md, evidence=review_result.evidence_summary
+    )
+    if decision["status"] == "no_projection":
+        return review_result.model_copy(deep=True)
+    evidence = deepcopy(review_result.evidence_summary)
+    evidence[EVIDENCE_KEY] = decision
+    updates = {"evidence_summary": evidence}
+    if decision["status"] in {"blocked", "unknown"}:
+        unknown = review_result.verdict == "unknown" or decision["status"] == "unknown"
+        category = "verified_commercial_fact_evidence" if unknown else "verified_commercial_fact"
+        finding = ChapterReviewFinding(
+            category=category,
+            severity="critical",
+            message="COMMERCIAL_FACT_EVIDENCE_UNVERIFIED"
+            if decision["status"] == "unknown"
+            else "Verified source factual blockers: " + ", ".join(decision["blocking_codes"]),
+        )
+        findings = list(review_result.findings)
+        if finding not in findings:
+            findings.append(finding)
+        instructions = review_result.rewrite_instructions or ""
+        if unknown:
+            instructions = ""
+        else:
+            direction = _DIRECTION_MARKER + decision["instructions"]
+            if not instructions.endswith(direction):
+                instructions += ("\n\n" if instructions else "") + direction
+        updates.update(
+            verdict="unknown" if unknown else "rewrite",
+            severity_max="critical",
+            findings=findings,
+            rewrite_instructions=instructions,
+        )
+    return review_result.model_copy(update=updates, deep=True)

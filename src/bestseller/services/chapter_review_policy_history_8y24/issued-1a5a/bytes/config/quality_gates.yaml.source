@@ -1,0 +1,478 @@
+l1_invariants:
+  enabled: true
+
+judge_rubrics:
+  chapter_window:
+    system_prompt: |
+      你是连载小说滑窗留存审稿人，只输出严格 JSON。
+      你必须基于 rubric 评估章节窗口的留存表现，重点检查钩子健康、节奏呼吸、角色标签连续性、承接断裂和模板化重复。
+    rubric:
+      hook_health:
+        threshold: 0.70
+        weight: 0.35
+        description: 每章末必须有未解钩子或已推进旧钩子。
+      rhythm_balance:
+        threshold: 0.60
+        weight: 0.25
+        description: 连续高压后需要低压呼吸，不得机械重复同一压力。
+      character_tag_continuity:
+        threshold: 0.80
+        weight: 0.40
+        description: 出场角色的标签动作、声线和主动性不能漂移。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  volume_checkpoint:
+    system_prompt: |
+      你是长篇商业小说卷级主编，只输出严格 JSON。
+      你必须判断当前章节窗口是否仍服务于本卷目标、阻碍、高潮、解决和揭示预算；不得要求当前章节提前兑现未来章节职责。
+    rubric:
+      volume_alignment:
+        threshold: 0.80
+        weight: 0.50
+        description: 当前窗口必须推进本卷阶段目标。
+      escalation:
+        threshold: 0.70
+        weight: 0.25
+        description: 阻碍与信息释放需要递进，不能横向原地打转。
+      payoff_budget:
+        threshold: 0.70
+        weight: 0.25
+        description: 揭示与偿付不能透支卷尾预算。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  chapter_commercial:
+    system_prompt: |
+      你是中文商业小说平台终审编辑，只输出严格 JSON。
+      根据正文、生成输入和最近章节上下文，判断本章是否达到商业榜单可用标准；必须指出影响留存的具体问题。
+    rubric:
+      opening_pull:
+        threshold: 0.82
+        weight: 0.16
+      commercial_pull:
+        threshold: 0.82
+        weight: 0.20
+      scene_execution:
+        threshold: 0.80
+        weight: 0.16
+      methodology_compliance:
+        threshold: 0.80
+        weight: 0.15
+      hook_strength:
+        threshold: 0.80
+        weight: 0.13
+      decision_intelligence:
+        threshold: 0.84
+        weight: 0.20
+        description: 主角关键选择必须符合有限认知、人格、目标和趋利避害；若放弃显而易见的安全方案，正文必须给出足够的压力、收益、价值取舍或后手。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  outline_commercial:
+    system_prompt: |
+      你是商业小说总编，只输出严格 JSON。
+      基于项目设定和卷/章/场景大纲，判断是否足以进入正文生成；不要改写正文，只裁判可执行性、吸引力、逻辑一致性、角色认知边界和明确批准的效果契约执行质量。提示词包的默认技法、剧情或数值未被采用不应扣分。模型评审不构成人类读者或榜单验证。
+    rubric:
+      opening_pull:
+        threshold: 0.80
+        weight: 0.17
+      front_ten_retention:
+        threshold: 0.80
+        weight: 0.16
+      scene_executability:
+        threshold: 0.80
+        weight: 0.17
+      methodology_compliance:
+        threshold: 0.80
+        weight: 0.15
+      logic_consistency:
+        threshold: 0.82
+        weight: 0.15
+      decision_intelligence:
+        threshold: 0.84
+        weight: 0.20
+        description: 主角关键选择必须符合有限认知、人格、目标和趋利避害，并解释为何不采用显而易见的低成本安全方案。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+  commercial_planning:
+    system_prompt: |
+      你是商业小说总编，只输出严格 JSON。
+      任务：综合评判黄金三章章节规划是否足以支撑榜单级正文生成；确定性门禁发现仅供参考，最终结论必须基于规划数据的实质商业化质量。
+    rubric:
+      concrete_conflict:
+        threshold: 0.70
+        weight: 0.25
+      hook_quality:
+        threshold: 0.65
+        weight: 0.20
+      scene_executability:
+        threshold: 0.70
+        weight: 0.20
+      protagonist_entry_logic:
+        threshold: 0.70
+        weight: 0.15
+      decision_intelligence:
+        threshold: 0.80
+        weight: 0.20
+        description: 对照正常人基线和角色基线，排除只为让冲突发生而制造的降智选择。
+    output_schema:
+      type: object
+      required: [pass, overall_score, dimension_scores, blocking_issues]
+
+l2_bible_gate:
+  enabled: true
+  regen_budget: 3
+  # When set, per-chapter stance/resurrection checks are treated as audit_only
+  # for chapters finalized before the first run — prevents historical projects
+  # from becoming un-shippable the moment L2 enforcement turns on.
+  only_enforce_from_chapter: null
+  checks:
+    quirk_slot_requirement:
+      min_quirks: 3
+    tag_memory_requirement:
+      enabled: true
+    independent_life_requirement:
+      enabled: true
+    contrast_design_requirement:
+      enabled: true
+    antagonist_motive_ledger:
+      jaccard_threshold: 0.4
+    world_taxonomy_uniqueness:
+      enabled: true
+    naming_pool_size:
+      multiplier: 2.0
+    stance_flip_justification:
+      enabled: true
+
+l3_prompt_constructor:
+  enabled: true
+  prior_chapter_tail_chars: 800
+  hot_vocab_window_chapters: 5
+  hot_vocab_top_n: 20
+
+l4_output_validator:
+  enabled: true
+  checks:
+    language_signature:
+      cjk_in_en_ratio_max: 0.02
+      latin_in_zh_ratio_max: 0.10
+    length_envelope:
+      enabled: true
+    naming_consistency:
+      enabled: true
+      # Rogue names must appear >= frequency_floor times before flagging; the
+      # floor suppresses false positives from rare regex hits on place/title
+      # words that happen to start with a surname character.
+      frequency_floor: 2
+    entity_density:
+      enabled: true
+      # Chapter 1 only — head_lines of text scanned for distinct named
+      # entities; above max_entities the opening is flagged as overloading
+      # reader memory.
+      head_lines: 150
+      max_entities: 5
+
+l4_5_regen_loop:
+  enabled: true
+  budget_per_chapter: 3
+  global_regen_total_budget: 12
+
+l5_chapter_validator:
+  enabled: true
+  checks:
+    dialog_integrity:
+      enabled: true
+    pov_lock:
+      enabled: true
+      # Sampled sentences — first half from chapter head, second half from
+      # chapter tail. Higher sample_size = slower but catches drift that
+      # only appears mid-chapter.
+      sample_size: 40
+      min_drift_sentences: 3
+    repeated_beat:
+      enabled: true
+    canon_guardrails:
+      enabled: true
+    # CliffhangerRotationCheck is deferred until DiversityBudget lands
+    # (Phase 3).  Leaving the block here for forward compatibility.
+    cliffhanger_rotation:
+      enabled: true
+      no_repeat_within: 3
+
+narrative_richness:
+  enabled: true
+  prompt_injection_enabled: true
+  default_mode: warn
+  strict_categories:
+    - 历史架空
+    - 古典权谋
+    - 武侠群像
+    - 史诗
+    - wuxia-jianghu
+    - history-strategy
+    - western_fantasy
+
+l6_write_gate:
+  enabled: true
+  default: audit_only
+  mode_by_violation:
+    LANG_LEAK_CJK_IN_EN: block
+    LANG_LEAK_LATIN_IN_ZH: block
+    LENGTH_UNDER: block
+    LENGTH_OVER: block
+    DIALOG_UNPAIRED: block
+    REPEATED_EVENT_BEAT: block
+    CANON_FORBIDDEN_TERM: block
+    CANON_STATE_REGRESSION: block
+    CHAPTER_GAP: block
+    QUIRK_SLOT_MISSING: block
+    TAG_MEMORY_MISSING: block
+    CHARACTER_CONTRAST_MISSING: block
+    CORE_WOUND_MISSING: block
+    CHARACTER_PERSONHOOD_INCOMPLETE: block
+    ANTAGONIST_MOTIVE_OVERLAP: block
+    WORLD_TAXONOMY_BOILERPLATE: block
+    NAMING_POOL_UNDERSIZED: block
+    OPENING_SCENE_DRIFT: block
+    FRONT10_FORBIDDEN_SIGNAL: audit_only
+    FRONT10_SCENE_FORBIDDEN_ACTION: audit_only
+    FRONT10_RULE_LECTURE_DENSITY: audit_only
+    NAMING_OUT_OF_POOL: audit_only
+    OPENING_ENTITY_OVERLOAD: audit_only
+    POV_DRIFT: audit_only
+    CLIFFHANGER_REPEAT: audit_only
+    # Hype Engine — Phase 2. All audit_only at the gate layer; the
+    # EndingSentenceImpactCheck itself emits severity="block" for the
+    # first 3 chapters, which the write_gate respects via
+    # violation_is_blocking (per-violation severity override).
+    HYPE_MISSING: audit_only
+    HYPE_REPEAT: audit_only
+    ENDING_SENTENCE_WEAK: audit_only
+    GOLDEN_THREE_WEAK: audit_only
+    PLEASURE_HYPE_GAP: audit_only
+    # 书级爽点覆盖率低于人类分位（双档：全语料 p10=0.14 / 爽文组 p10=0.29）。
+    # audit_only —— 最强的爽文单指标 AUC 也只有 0.72，不配拥有杀权。
+    PLEASURE_HYPE_COVERAGE_LOW: audit_only
+    PLEASURE_COMEDIC_BEAT_STARVED: audit_only
+    PLEASURE_SETUP_PAYOFF_DEBT: audit_only
+    # Phase B 软启动（榜单对标闭环 P3.1）：code 默认 LINE_GAP_OVER=block，但
+    # Phase C Override 契约未上线时 block 无软化出口 → 显式降为 audit_only。
+    # Phase C 启用后可移除这两行恢复 code 默认。
+    LINE_GAP_OVER: audit_only
+    LINE_GAP_WARN: audit_only
+    # Character lifecycle — Phase A. Deceased speakers and stance flips
+    # without a turning-point beat must block; power-tier drift is advisory.
+    CHARACTER_RESURRECTION: block
+    STANCE_FLIP_UNJUSTIFIED: block
+    POWER_TIER_REGRESSION: audit_only
+    STANCE_FLIP_NO_ARC_BEAT: block
+    CHARACTER_NAME_MISMATCH: block
+    NUMERICAL_CONTRADICTION: block
+    STATE_TRANSITION_UNEXPLAINED: block
+    WORD_COUNT_METADATA_MISMATCH: block
+    CHAPTER_OPENING_REPETITION: block
+    CROSS_CHAPTER_REPETITION: block
+    PERSONA_ABANDON_RATE_HIGH: block
+    PERSONA_WEIGHTED_SCORE_LOW: block
+    PERSONA_PAYOFF_DENSITY_LOW: block
+    PAYOFF_LEDGER_LOW: block
+    PAYOFF_HOOK_ONLY: block
+    CRITIC_MISSING_BODY_EVIDENCE: block
+    CRITIC_EMPTY_REVIEW: block
+    MILESTONE_CONSISTENCY_FAIL: block
+    STORY_BIBLE_INCOMPLETE: block
+    STORY_BIBLE_MISSING_FILE: block
+
+story_principle_gate:
+  enabled: true
+  default: audit_only
+  block_on_failure: false
+  # Event six-step is evaluated across an event unit or outline batch, not
+  # required in every chapter. These thresholds catch homogeneous chapter
+  # roles while keeping the gate advisory.
+  min_event_cycle_roles_per_batch: 3
+  max_same_role_streak: 3
+
+methodology_framework:
+  enabled: true
+  profile_id: plova_structured_writing_v1
+  cards:
+    enabled: true
+    data_dir: data/methodology_sources/plova
+  opening_three_function:
+    enabled: true
+    default: audit_only
+    block_until_chapter: 3
+  action_scene_structure:
+    enabled: true
+    default: audit_only
+  chekhov_emphasis:
+    enabled: true
+    default: audit_only
+    overdue_window_default: 8
+  longform_chaos:
+    enabled: true
+    start_after_chapter: 30
+
+l7_continuous_audit:
+  enabled: true
+  auto_repair: false
+  schedule_cron: "0 */6 * * *"
+
+l8_scorecard:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Phase flags for the 2026-Q2 webnovel-writer adoption (plan:
+# shimmying-soaring-gadget). Each phase is shippable independently and
+# defaults OFF so historical projects are unaffected until explicitly
+# enabled per-project. Toggle a flag to ``true`` to opt that project into
+# the new validators / ledgers.
+# ---------------------------------------------------------------------------
+# 榜单对标闭环 P3.1（2026-06-10）：激活叙事线追踪（主导线分类 + 断线检测）。
+# 软启动：LINE_GAP_OVER 在 l6 mode_by_violation 显式路由为 audit_only —— 在
+# Phase C（Override 契约）上线前 block 没有软化出口，hard block 会复刻
+# "闸门自伤拍死整本书" 的自主跑回归。中后期章位 Arena win-rate 稳定后再评估升档。
+phase_b_line_tracker:
+  enabled: true
+  # Chapters before this number stay in audit_only regardless of gap
+  # threshold — a project needs history before the gap check is meaningful.
+  warmup_until_chapter: 10
+
+phase_c_overrides:
+  enabled: false
+  # Default compound interest applied to active ChaseDebtModel balances
+  # on every chapter accrual tick.
+  default_interest_rate: 0.10
+  # Default payback window (chapters) for a new override contract when
+  # the caller doesn't specify one.
+  payback_window_default: 10
+  # Gray-out: when enabling Phase C on a project that already has history,
+  # set this to the next chapter to be written so early/in-flight chapters
+  # are not retroactively auto-signed or charged interest. ``null`` enforces
+  # from chapter 1. Recommended when flipping ``enabled`` to true mid-run.
+  only_enforce_from_chapter: null
+
+phase_d_time:
+  enabled: true
+  # When true, TimeRegressionCheck emits soft CheckerIssue with can_override=True;
+  # when false, the check is skipped entirely.
+  regression_check_enabled: true
+  # CountdownArithmeticCheck is hard by design — flipping this to false
+  # disables the validator; it never downgrades severity.
+  countdown_arithmetic_enabled: true
+
+# ---------------------------------------------------------------------------
+# AI-flavor gate — span-level "AI 味" detection + localized fixes.
+# Runs after bible_gate, before signing_gate. Only patches the spans it
+# flags; never rewrites unrelated prose. See
+# src/bestseller/services/ai_flavor_gate.py for the full contract.
+# ---------------------------------------------------------------------------
+ai_flavor_gate:
+  enabled: true
+  # Optional advice only: no scoring, calls or additional rewrite rounds.
+  expression_guidance_enabled: true
+  expression_guidance_max_tokens: 900
+  # Below the warn score the gate is silent; between warn and block it
+  # records soft findings; at-or-above block it auto-patches, then if the
+  # post-patch score still >= block, routes the chapter to human review.
+  block_score:
+    cn: 38
+    en: 45
+  warn_score:
+    cn: 25
+    en: 30
+  # ≥ threshold occurrences of any single cluster (e.g. weak-adverb family)
+  # trigger excess-removal; first hit per phrase always survives.
+  cluster_threshold: 3
+  llm_rewrite:
+    # When enabled, severity=block spans without a static suggestion are
+    # handed to a single-sentence LLM rewrite (max max_spans_per_chapter
+    # calls). If the rewrite fails or is disabled, the gate falls back to
+    # deleting the whole sentence — the local prose stays intact either way.
+    enabled: true
+    max_spans_per_chapter: 8
+  audit:
+    enabled: true
+    # Audit md written to <project-output>/<dir_relative>/ai-flavor-ch{N}.md
+    dir_relative: "audits"
+  # Pattern + replacement JSON. Edit these files (not the gate code) to
+  # tune which phrases are flagged.
+  data_dir: "data/ai_flavor"
+  # When true (recommended), a chapter that can't be patched below the
+  # block threshold is routed to human review. Flip to false only when
+  # you want the gate to be advisory-only.
+  block_on_residual: true
+  # When residual score is in the warn band (or higher), force one
+  # whole-passage deslop pass even if decision stayed "pass".
+  deslop_on_warn: true
+
+# ---------------------------------------------------------------------------
+# Anti-slop prose system — prompt sanitization + scene beats + structure gates.
+# Keeps planning/market language out of prose prompts, then blocks chapter
+# boundary narration and out-of-scene endings after draft assembly.
+# ---------------------------------------------------------------------------
+# Reader-quality hard gates (persona simulation, payoff ledger, body-truth).
+reader_quality_gate:
+  enabled: true
+  block_on_persona_failure: true
+  # 2026-09-10 (W4-2)：合成 reader persona 的失败**不得独立授权**阻断/重写
+  # （计划 §3 W4-2：纯合成偏好不应自动拥有换故事或整章改写权）。
+  # true 时：persona 失败只有在与独立证据（retention gate 自身的阻断 finding）
+  # 相互印证时才升级为阻断；否则记为 advisory——可见、可审计，但不夺创作权。
+  # 这不关闭任何事实/状态检查：retention gate 自身的判定完全不变。
+  persona_block_requires_corroboration: true
+  min_weighted_score: 0.62
+  max_abandon_rate: 0.35
+  min_payoff_density: 0.22
+  block_below_target_length: false
+  block_word_count_metadata_mismatch: true
+  block_chapter_duplicates: true
+  block_payoff_ledger: false
+  opening_similarity_threshold: 0.82
+  body_similarity_threshold: 0.88
+  require_critic_body_evidence: true
+  # P2 LLM reader-judge.
+  # audit_only=true → write metadata only; do not feed persona prose_quality.
+  # enforce_reader_judge_voice_axes=true → hard-block ai_taste/human_voice floors.
+  #
+  # 2026-07-24 (plan B1, §11.5 P0-P step 5): judging is ON but strictly in
+  # SHADOW — audit_only + enforce=false means it can neither block a chapter
+  # nor move a score; it only records ai_taste/human_voice into chapter
+  # metadata. That recording is the prerequisite for calibration: with the
+  # judge off there is no distribution, and picking the 0.55 floor without one
+  # is how the retention gate ended up with a 0.62 bar above the writer's ~0.51
+  # ceiling, turning every chapter into a rewrite loop.
+  #
+  # Read the projection before flipping enforce:
+  #   python scripts/reader_judge_shadow_calibration.py
+  # Cost: one extra critic call per chapter.
+  enable_llm_reader_judge: true
+  reader_judge_audit_only: true
+  reader_judge_text_cap_chars: 8000
+  enforce_reader_judge_voice_axes: false
+  min_ai_taste: 0.55
+  min_human_voice: 0.55
+  reader_judge_voice_rewrite_stall_after: 2
+
+prose_quality:
+  sanitize_prompt: true
+  beat_planner:
+    enabled: true
+    beats_per_chapter: [4, 7]
+    cliff_type_distribution:
+      action: 0.4
+      image: 0.35
+      reveal: 0.25
+  gates:
+    anti_meta:
+      enabled: true
+      severity: block
+    show_dont_tell:
+      enabled: true
+      severity: warn
+    in_scene_ending:
+      enabled: true
+      severity: warn

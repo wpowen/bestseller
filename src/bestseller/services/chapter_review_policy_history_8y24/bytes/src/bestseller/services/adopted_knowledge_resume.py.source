@@ -1,0 +1,324 @@
+"""Resume missing knowledge for one exact adopted body without writing prose."""
+
+from asyncio import CancelledError
+from collections.abc import Awaitable, Callable, Mapping, Set
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy import inspect, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterModel,
+    ChapterStateSnapshotModel,
+    ProjectModel,
+    WorkflowRunModel,
+)
+from bestseller.services.chapter_knowledge_state import adopted_bible_status, adopted_knowledge_status
+from bestseller.services.feedback import KNOWLEDGE_SOURCE_KEYS, validate_adopted_knowledge_source
+from bestseller.settings import AppSettings
+
+
+async def resume_project_adopted_knowledge(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    chapter_numbers: Set[int] | None = None,
+    before_chapter_number: int | None = None,
+    require_adopted_prefix: bool = False,
+) -> dict[int, dict[str, Any]]:
+    """Close adopted knowledge before a normal resume advances its frontier.
+
+    This is the same exact-body recovery used by execution windows. It does
+    not review, rewrite, promote, or initialize an execution scope. Planned
+    and candidate chapters stay in the writing queue; when guarding the
+    preceding prefix they instead prevent a later chapter from starting.
+    Each successful knowledge item remains durable on interruption.
+    """
+    from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+
+    # A failed item rolls back its transaction and expires ORM instances.
+    # The same caller may resume with that object; never trigger implicit IO.
+    if inspect(project).expired_attributes:
+        await session.refresh(project)
+    project_id = project.id
+    query = select(ChapterModel).where(ChapterModel.project_id == project_id)
+    if chapter_numbers is not None:
+        query = query.where(ChapterModel.chapter_number.in_(sorted(chapter_numbers)))
+    if before_chapter_number is not None:
+        query = query.where(ChapterModel.chapter_number < before_chapter_number)
+    chapters = list(await session.scalars(
+        query.order_by(ChapterModel.chapter_number).execution_options(populate_existing=True)
+    ))
+    numbers = [chapter.chapter_number for chapter in chapters]
+    if len(numbers) != len(set(numbers)):
+        raise ValueError("adopted_knowledge_duplicate_chapter_number")
+    if require_adopted_prefix:
+        if before_chapter_number is None:
+            raise ValueError("adopted_knowledge_prefix_boundary_required")
+        if numbers != list(range(1, before_chapter_number)):
+            raise ValueError("adopted_knowledge_prefix_missing_chapter")
+
+    closed: dict[int, dict[str, Any]] = {}
+    for chapter in chapters:
+        number = chapter.chapter_number
+        draft, _ = await select_adopted_chapter_source(session, chapter=chapter, lock=False)
+        if draft is None or not (draft.content_md or "").strip():
+            if require_adopted_prefix:
+                raise ValueError("adopted_knowledge_prefix_not_adopted")
+            continue
+        source, knowledge = await read_adopted_knowledge(
+            session, project_id=project_id, chapter_id=chapter.id,
+            source_chapter_draft_version_id=draft.id, chapter_md=draft.content_md,
+            require_bible=True,
+        )
+        if not knowledge["closed"]:
+            knowledge = await resume_adopted_knowledge(
+                session, settings, project=project, chapter=chapter, draft=draft,
+                expected_source=source, workflow_type="project_adopted_knowledge_resume",
+                require_bible=True,
+            )
+        if not knowledge["closed"]:
+            raise ValueError("adopted_knowledge_resume_incomplete")
+        closed[number] = {"source": source, "knowledge": knowledge}
+    if closed:
+        # A historical successful extraction may predate derived read views.
+        # Repair those views before advancing the adopted chapter frontier.
+        from bestseller.services.story_bible_read_views import ensure_story_bible_read_views
+
+        current_project = await session.get(ProjectModel, project_id)
+        if current_project is None:
+            raise ValueError("story_bible_read_views_project_missing")
+        await ensure_story_bible_read_views(session, settings, project=current_project)
+    return closed
+
+
+async def read_adopted_knowledge(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_id: UUID,
+    source_chapter_draft_version_id: UUID,
+    chapter_md: str,
+    expected_source: Mapping[str, Any] | None = None,
+    require_bible: bool = False,
+) -> tuple[dict[str, Any], dict[str, bool]]:
+    """Revalidate ownership/body and current dependencies, bypassing cached rows."""
+    from bestseller.services.continuity import snapshot_evidence_current
+
+    lineage, rejection = await validate_adopted_knowledge_source(
+        session,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        source_chapter_draft_version_id=source_chapter_draft_version_id,
+        chapter_md=chapter_md,
+        lock=False,
+    )
+    if rejection or (
+        expected_source is not None
+        and any(
+            lineage.get(key) is None or lineage.get(key) != expected_source.get(key)
+            for key in KNOWLEDGE_SOURCE_KEYS
+        )
+    ):
+        raise ValueError("adopted_knowledge_source_changed")
+    chapter = await session.get(ChapterModel, chapter_id)
+    draft = await session.get(ChapterDraftVersionModel, source_chapter_draft_version_id)
+    snapshot = await session.scalar(
+        select(ChapterStateSnapshotModel)
+        .where(
+            ChapterStateSnapshotModel.project_id == project_id,
+            ChapterStateSnapshotModel.chapter_id == chapter_id,
+        )
+        .execution_options(populate_existing=True)
+    )
+    status = adopted_knowledge_status(chapter, draft, snapshot, lineage,
+        require_bible=require_bible)
+    if adopted_bible_status(chapter, lineage) == 'closed':
+        from bestseller.services.story_bible_projection import adopted_bible_projection_statuses
+
+        projections = await adopted_bible_projection_statuses(
+            session, project_id=project_id, source_lineages={chapter_id: lineage},
+        )
+        status['bible_complete'] = projections[chapter_id] in {'current', 'legacy_current'}
+    if status["snapshot_complete"]:
+        status["snapshot_complete"] = await snapshot_evidence_current(
+            session,
+            project_id=project_id,
+            chapter_number=chapter.chapter_number,
+            source_lineage=lineage,
+        )
+    status["closed"] = all(
+        status[key]
+        for key in (
+            "feedback_complete",
+            "snapshot_complete",
+            "bible_complete",
+        )
+    )
+    return lineage, status
+
+
+async def resume_adopted_knowledge(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    expected_source: Mapping[str, Any] | None = None,
+    assert_runnable: Callable[[], Awaitable[None]] | None = None,
+    workflow_type: str = "adopted_knowledge_resume",
+    require_bible: bool = False,
+) -> dict[str, bool]:
+    """Persist each successful item; keep failed/cancelled recovery auditable.
+
+    The real chapter-scoped workflow retains the project's existing execution
+    scope. No ledger, guard or call counters are initialized/reset here. Service
+    extraction calls own their DB-only savepoints; payment stays outside them.
+    """
+    from bestseller.services import continuity, feedback, story_bible
+
+    # A previous failed/cancelled attempt may have expired the caller's rows.
+    for row in (project, chapter, draft):
+        if inspect(row).expired_attributes:
+            await session.refresh(row)
+    # Capture values before source checks or a gateway commit refreshes them.
+    project_id, chapter_id, draft_id = project.id, chapter.id, draft.id
+    body = draft.content_md
+    if (
+        chapter.project_id != project_id
+        or draft.project_id != project_id
+        or draft.chapter_id != chapter_id
+    ):
+        raise ValueError("adopted_knowledge_source_changed")
+
+    async def guard() -> None:
+        from bestseller.services.gate_registry import (
+            project_blocks_all_prose_generation,
+            project_resume_is_terminally_blocked,
+        )
+        from bestseller.services.production_control import load_control_state
+
+        current = await session.get(ProjectModel, project_id, populate_existing=True)
+        if (
+            current is None
+            or project_blocks_all_prose_generation(current)
+            or project_resume_is_terminally_blocked(current.metadata_json)
+        ):
+            raise ValueError("adopted_knowledge_structurally_blocked")
+        control = await load_control_state(session, project_id)
+        if control.halted or current.status in {"paused", "cancelled", "archived"}:
+            raise ValueError("adopted_knowledge_halted")
+        if assert_runnable is not None:
+            await assert_runnable()
+
+    async def read_status() -> tuple[dict[str, Any], dict[str, bool]]:
+        return await read_adopted_knowledge(
+            session,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            source_chapter_draft_version_id=draft_id,
+            chapter_md=body,
+            expected_source=expected,
+            require_bible=require_bible,
+        )
+
+    expected = dict(expected_source) if expected_source is not None else None
+    await guard()
+    lineage, knowledge = await read_status()
+    expected = {key: lineage[key] for key in KNOWLEDGE_SOURCE_KEYS}
+    if knowledge["closed"]:
+        return knowledge
+    if not knowledge["feedback_complete"] and not settings.pipeline.enable_chapter_feedback:
+        raise ValueError("adopted_knowledge_requires_feedback")
+    if session.in_nested_transaction():
+        raise ValueError("adopted_knowledge_resume_requires_outer_transaction")
+    # Keep identity even if registration commits durably but its await is cancelled.
+    workflow_id = uuid4()
+    try:
+        workflow = WorkflowRunModel(
+            id=workflow_id,
+            project_id=project_id,
+            workflow_type=workflow_type,
+            scope_type="chapter",
+            scope_id=chapter_id,
+            status="running",
+            metadata_json={"source_draft_id": str(draft_id), "source_lineage": lineage},
+        )
+        session.add(workflow)
+        await session.flush()
+        await session.commit()
+        for key in ("feedback_complete", "snapshot_complete", "bible_complete"):
+            await guard()
+            _, knowledge = await read_status()
+            if knowledge[key]:
+                continue
+            if session.in_nested_transaction():
+                raise ValueError("adopted_knowledge_resume_requires_outer_transaction")
+            kwargs = {"source_chapter_draft_version_id": draft_id, "workflow_run_id": workflow_id}
+            if key == "feedback_complete":
+                await feedback.extract_chapter_feedback(
+                    session,
+                    settings,
+                    project_id=project_id,
+                    chapter=chapter,
+                    chapter_md=body,
+                    **kwargs,
+                )
+            elif key == "snapshot_complete":
+                await continuity.extract_chapter_state_snapshot(
+                    session,
+                    settings,
+                    project_id=project_id,
+                    chapter=chapter,
+                    chapter_md=body,
+                    **kwargs,
+                )
+            else:
+                await story_bible.update_story_bible_from_chapter(
+                    session,
+                    settings,
+                    project=project,
+                    chapter=chapter,
+                    chapter_text=body,
+                    **kwargs,
+                )
+            await session.flush()
+            _, knowledge = await read_status()
+            workflow.metadata_json = {
+                **workflow.metadata_json,
+                "knowledge_resume_progress": knowledge,
+            }
+            await session.commit()
+            if not knowledge[key]:
+                raise ValueError("adopted_knowledge_resume_incomplete")
+        await guard()
+        _, knowledge = await read_status()
+        if not knowledge["closed"]:
+            raise ValueError("adopted_knowledge_resume_incomplete")
+        workflow.status = "completed"
+        await session.commit()
+        return knowledge
+    except (Exception, CancelledError) as exc:
+        await session.rollback()
+        workflow = await session.scalar(
+            select(WorkflowRunModel)
+            .where(
+                WorkflowRunModel.id == workflow_id,
+                WorkflowRunModel.project_id == project_id,
+                WorkflowRunModel.workflow_type == workflow_type,
+                WorkflowRunModel.scope_type == "chapter",
+                WorkflowRunModel.scope_id == chapter_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        if workflow is None:
+            # Failed uncommitted registration has no receipt to update or replace.
+            raise
+        workflow.status = "cancelled" if isinstance(exc, CancelledError) else "machine_blocked"
+        workflow.metadata_json = {**workflow.metadata_json, "error_type": type(exc).__name__}
+        await session.commit()
+        raise

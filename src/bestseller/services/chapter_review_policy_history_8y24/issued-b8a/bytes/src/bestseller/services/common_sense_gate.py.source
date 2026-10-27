@@ -1,0 +1,833 @@
+"""Genre-aware common-sense consistency gate for generated prose.
+
+The gate is intentionally narrow. It does not reject supernatural, xianxia,
+fantasy, or horror premises for violating real-world physics. It only reports
+local textual contradictions that should hold inside any genre unless the prose
+itself supplies a visible cause, rule, or cost.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+Severity = Literal["low", "medium", "high"]
+
+
+class CommonSenseFinding(BaseModel):
+    code: str
+    severity: Severity
+    message: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    blocking: bool = True
+
+
+class CommonSenseGateReport(BaseModel):
+    passed: bool
+    genre_mode: str = "default"
+    findings: list[CommonSenseFinding] = Field(default_factory=list)
+
+
+def evaluate_common_sense_gate(
+    text: str,
+    *,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+    chapter_number: int | None = None,
+    known_rule_terms_by_character: Mapping[str, Sequence[str]] | None = None,
+) -> CommonSenseGateReport:
+    content = text or ""
+    findings: list[CommonSenseFinding] = []
+    genre_mode = _genre_mode(genre, sub_genre)
+
+    findings.extend(_find_unexplained_bleeding(content, chapter_number=chapter_number))
+    findings.extend(_find_ambiguous_or_conflicting_countdown(content))
+    findings.extend(_find_remaining_time_arithmetic(content))
+    findings.extend(_find_object_state_jump(content))
+    findings.extend(_find_impossible_body_action_sounds(content))
+    findings.extend(_find_stitched_chapter_markers(content, chapter_number=chapter_number))
+    findings.extend(_find_unintroduced_mentor_reference(content, chapter_number=chapter_number))
+    findings.extend(_find_repeated_rescue_or_debt_beat(content, chapter_number=chapter_number))
+    findings.extend(_find_early_chapter_character_crowding(content, chapter_number=chapter_number))
+    findings.extend(_find_rule_term_onboarding_failure(content, chapter_number=chapter_number))
+    findings.extend(_find_late_night_delivery_order(content, chapter_number=chapter_number))
+    findings.extend(
+        _find_object_signal_overuse(
+            content, chapter_number=chapter_number, genre=genre, sub_genre=sub_genre
+        )
+    )
+    findings.extend(
+        _find_lay_character_rule_knowledge_leak(
+            content,
+            chapter_number=chapter_number,
+            known_rule_terms_by_character=known_rule_terms_by_character,
+        )
+    )
+    findings.extend(_find_era_anachronism(content, genre=genre, sub_genre=sub_genre))
+
+    blocking = [finding for finding in findings
+                if finding.blocking and finding.severity in {"high", "medium"}]
+    return CommonSenseGateReport(
+        passed=not blocking,
+        genre_mode=genre_mode,
+        findings=findings,
+    )
+
+
+# ── Era / anachronism detection ──────────────────────────────────────────────
+# A book whose setting is archaic (古代/仙侠/武侠/历史…) must not casually use
+# modern-technology nouns; a 民国 book must not use post-digital nouns. The
+# check is label-driven and deliberately conservative: any modern-setting or
+# time-travel marker in the genre label exempts the book entirely (穿越/重生
+# protagonists legitimately reference modern objects).
+
+_ANCIENT_SETTING_MARKERS = (
+    "古代", "古典", "古言", "历史", "王朝", "宫斗", "宅斗",
+    "武侠", "江湖", "仙侠", "修仙", "修真", "玄幻",
+)
+_REPUBLICAN_SETTING_MARKERS = ("民国", "民初", "北洋", "租界")
+_ERA_EXEMPTION_MARKERS = (
+    "都市", "现代", "当代", "末世", "科幻", "未来", "星际", "赛博",
+    "灵气复苏", "高武", "穿越", "重生", "系统", "无限", "游戏",
+    "直播", "网游", "二次元", "校园", "职场",
+)
+_MODERN_TOKENS_FOR_ANCIENT = (
+    "手机", "电脑", "网络", "上网", "微信", "短信", "视频", "直播间",
+    "汽车", "火车", "高铁", "地铁", "飞机", "电梯", "摄像头", "空调",
+    "电视", "充电", "电池", "银行卡", "身份证", "派出所", "公交",
+    "出租车", "打车", "朋友圈", "红绿灯", "超市", "塑料",
+)
+_MODERN_TOKENS_FOR_REPUBLICAN = (
+    "手机", "电脑", "网络", "上网", "微信", "短信", "视频", "直播间",
+    "高铁", "地铁", "空调", "电视", "充电", "电池", "银行卡",
+    "身份证", "朋友圈", "红绿灯", "超市", "摄像头",
+)
+
+
+def _era_forbidden_tokens(genre: str | None, sub_genre: str | None) -> tuple[str, ...]:
+    label = f"{genre or ''} {sub_genre or ''}"
+    if any(marker in label for marker in _ERA_EXEMPTION_MARKERS):
+        return ()
+    if any(marker in label for marker in _REPUBLICAN_SETTING_MARKERS):
+        return _MODERN_TOKENS_FOR_REPUBLICAN
+    if any(marker in label for marker in _ANCIENT_SETTING_MARKERS):
+        return _MODERN_TOKENS_FOR_ANCIENT
+    return ()
+
+
+def _find_era_anachronism(
+    text: str,
+    *,
+    genre: str | None,
+    sub_genre: str | None,
+) -> list[CommonSenseFinding]:
+    forbidden = _era_forbidden_tokens(genre, sub_genre)
+    if not forbidden:
+        return []
+    present = [token for token in forbidden if token in text]
+    if not present:
+        return []
+    total_hits = sum(text.count(token) for token in present)
+    # One stray token is advisory (could be a simile or reviewer note);
+    # two distinct tokens or three total hits mean the setting is drifting.
+    severity = "medium" if len(present) >= 2 or total_hits >= 3 else "low"
+    return [
+        CommonSenseFinding(
+            code="era_anachronism",
+            severity=severity,
+            message=(
+                "正文出现与本书时代设定不符的现代名词——古代/民国背景不得"
+                "出现这些物件，除非题材本身是穿越/现代向。"
+            ),
+            evidence={"tokens": present, "total_hits": total_hits},
+        )
+    ]
+
+
+def _genre_mode(genre: str | None, sub_genre: str | None) -> str:
+    raw = f"{genre or ''} {sub_genre or ''}".lower()
+    if any(token in raw for token in ("玄幻", "仙侠", "fantasy", "xianxia", "奇幻")):
+        return "speculative"
+    if any(token in raw for token in ("灵异", "horror", "supernatural", "惊悚")):
+        return "supernatural"
+    return "default"
+
+
+def _find_unexplained_bleeding(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    findings: list[CommonSenseFinding] = []
+    for match in re.finditer(r"(鼻血|流血|渗血|出血|血滴|血顺着)", text):
+        if _is_non_body_blood_marker(text, match):
+            continue
+        window = text[max(0, match.start() - 220) : match.end() + 90]
+        if _is_continued_prior_chapter_bleeding(window, chapter_number=chapter_number):
+            continue
+        if _has_bleeding_cause(window):
+            continue
+        findings.append(
+            CommonSenseFinding(
+                code="unexplained_body_state",
+                severity="high",
+                message="出现出血/鼻血，但附近没有伤口、撞击、术法反噬或代价来源。",
+                evidence={"marker": match.group(1), "window": window.strip()},
+            )
+        )
+    return findings
+
+
+def _is_non_body_blood_marker(text: str, match: re.Match[str]) -> bool:
+    """Ignore blood-colored glyphs/marks that are not a body state."""
+
+    marker = match.group(1)
+    suffix = text[match.end() : match.end() + 2]
+    prefix = text[max(0, match.start() - 8) : match.start()]
+    if marker == "出血" and suffix.startswith(("字", "线", "印", "纹", "光", "色")):
+        return True
+    if marker in {"渗血", "血滴"} and any(token in suffix for token in ("珠", "字", "线")):
+        return True
+    if marker in {"流血", "渗血", "出血", "血滴", "血顺着"} and any(
+        token in prefix for token in ("门缝", "门框", "镜面", "墙上", "地面")
+    ):
+        return True
+    if "门框" in prefix or "镜面" in prefix or "墙上" in prefix:
+        return suffix.startswith(("字", "线", "印", "纹"))
+    return False
+
+
+def _is_continued_prior_chapter_bleeding(
+    window: str,
+    *,
+    chapter_number: int | None,
+) -> bool:
+    if chapter_number is None or chapter_number <= 1:
+        return False
+    return any(marker in window for marker in ("还在", "仍在", "继续", "没止住")) and any(
+        body_part in window for body_part in ("拇指", "手指", "掌心", "手掌", "鼻血", "伤口", "旧伤")
+    )
+
+
+def _has_bleeding_cause(window: str) -> bool:
+    return any(
+        token in window
+        for token in (
+            # Physical wounds / impacts (genre-neutral).
+            "割",
+            "划",
+            "咬",
+            "撞",
+            "砸",
+            "磕",
+            "硌",
+            "刺",
+            "裂",
+            "伤",
+            # Accident / trauma / crash context. A car-crash or fall victim's
+            # bleeding is self-evidently explained by the wreck; these words let
+            # an 都市/现实 accident scene pass without inventing a "cause" clause.
+            "车祸",
+            "事故",
+            "戳穿",
+            "贯穿",
+            "穿透",
+            "气囊",
+            "车窗",
+            "碎玻璃",
+            "玻璃碴",
+            "翻起",
+            "摔",
+            "跌",
+            "扎进",
+            "骨折",
+            "断裂",
+            # Speculative / power cost (xianxia, 都市异能, supernatural).
+            "反噬",
+            "代价",
+            "异能",
+            "能力",
+            "典当",
+            "符",
+            "咒",
+            "阴气",
+            "灵压",
+            "术法",
+        )
+    )
+
+
+def _find_remaining_time_arithmetic(text: str) -> list[CommonSenseFinding]:
+    checkpoints: list[tuple[int, str, int]] = []
+    for match in re.finditer(
+        r"(还剩|剩余|只剩下|只剩)\s*([零〇一二两三四五六七八九十百\d半个半\s]+)\s*(分钟|分|小时|个小时)",
+        text,
+    ):
+        minutes = _parse_duration_minutes(match.group(2), match.group(3))
+        if minutes is not None:
+            checkpoints.append((match.start(), "remaining", minutes))
+    for match in re.finditer(
+        r"(过了|用了|耗了|骑了|骑|走了|跑了|车程|路上|赶路|赶了|对话)"
+        r"[^零〇一二两三四五六七八九十百\d]{0,12}"
+        r"([零〇一二两三四五六七八九十百\d半个半\s]+)\s*(分钟|分|小时|个小时)",
+        text,
+    ):
+        minutes = _parse_duration_minutes(match.group(2), match.group(3))
+        if minutes is not None:
+            checkpoints.append((match.start(), "elapsed", minutes))
+    checkpoints.sort(key=lambda item: item[0])
+
+    findings: list[CommonSenseFinding] = []
+    for index, (pos, kind, minutes) in enumerate(checkpoints):
+        if kind != "remaining":
+            continue
+        elapsed = 0
+        for _next_pos, next_kind, next_minutes in checkpoints[index + 1 :]:
+            if next_kind == "elapsed":
+                elapsed += next_minutes
+                continue
+            if next_kind != "remaining":
+                continue
+            expected_max = minutes - elapsed
+            if elapsed > 0 and next_minutes > expected_max + 2:
+                findings.append(
+                    CommonSenseFinding(
+                        code="remaining_time_arithmetic_conflict",
+                        severity="high",
+                        message="剩余时间与已消耗时间算不平。",
+                        evidence={
+                            "first_remaining_minutes": minutes,
+                            "elapsed_minutes": elapsed,
+                            "later_remaining_minutes": next_minutes,
+                            "first_position": pos,
+                            "later_position": _next_pos,
+                        },
+                    )
+                )
+            break
+    return findings
+
+
+def _find_ambiguous_or_conflicting_countdown(text: str) -> list[CommonSenseFinding]:
+    findings: list[CommonSenseFinding] = []
+    prior_small_remaining = bool(
+        re.search(
+            r"(十五分钟|十四分钟|两分钟|二分钟|还剩\s*[一二两三四五六七八九十\d]+\s*分钟)",
+            text,
+        )
+    )
+    for match in re.finditer(r"\b(\d{1,2}):(\d{2}):(\d{2})\b", text):
+        window = text[max(0, match.start() - 32) : match.end() + 32]
+        if "倒计时" not in window:
+            continue
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        total_minutes = hours * 60 + minutes
+        if prior_small_remaining and total_minutes > 120:
+            findings.append(
+                CommonSenseFinding(
+                    code="countdown_scale_conflict",
+                    severity="high",
+                    message="正文先给出分钟级剩余时间，后续倒计时却显示小时级数值。",
+                    evidence={"countdown": match.group(0), "window": window.strip()},
+                )
+            )
+    return findings
+
+
+def _parse_duration_minutes(raw_value: str, unit: str) -> int | None:
+    value = raw_value.strip().replace(" ", "")
+    if not value:
+        return None
+    if value in {"半", "半个"}:
+        number = 0.5
+    elif value.isdigit():
+        number = int(value)
+    else:
+        parsed = _parse_chinese_number(value)
+        if parsed is None:
+            return None
+        number = parsed
+    multiplier = 60 if "小时" in unit else 1
+    return int(number * multiplier)
+
+
+def _parse_chinese_number(value: str) -> int | None:
+    digits = {
+        "零": 0,
+        "〇": 0,
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if value in digits:
+        return digits[value]
+    if "十" in value:
+        left, _, right = value.partition("十")
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        return tens * 10 + ones
+    return None
+
+
+# Continuity contradiction over ANY small object (was hardcoded to one
+# detective book's 康熙铜钱): an object is pressed/stuck onto a surface, then
+# drawn from a pocket again within the same beat without being retrieved.
+# The backreference (?P=obj) requires the SAME token in both halves, so this
+# stays genre-neutral and has a very low false-positive rate.
+_OBJECT_STATE_JUMP_RE = re.compile(
+    r"(?:把|将|拿起)?(?P<obj>[一-龥]{2,4})[^。！？\n]{0,18}(?:按|嵌|压|扣|贴)在"
+    r"[^。！？\n]{0,18}[。！？\n][^。！？\n]{0,80}"
+    r"(?:从口袋里?|又从口袋里?|摸出|掏出)(?:那枚|那块|那张|那个)?(?P=obj)",
+    flags=re.S,
+)
+_OBJECT_STATE_JUMP_STOP = {"自己", "对方", "起来", "出来", "进去", "过来", "下来", "一下"}
+
+
+def _find_object_state_jump(text: str) -> list[CommonSenseFinding]:
+    for match in _OBJECT_STATE_JUMP_RE.finditer(text):
+        obj = match.group("obj")
+        if obj in _OBJECT_STATE_JUMP_STOP:
+            continue
+        return [
+            CommonSenseFinding(
+                code="object_state_jump",
+                severity="medium",
+                message=f"{obj}刚被放置/嵌入后，又在未取回的情况下从口袋摸出。",
+                evidence={"window": match.group(0).strip()},
+            )
+        ]
+    return []
+
+
+def _find_impossible_body_action_sounds(text: str) -> list[CommonSenseFinding]:
+    findings: list[CommonSenseFinding] = []
+    pattern = r"(点了点头|点头|摇了摇头|摇头|颔首|眨眼)(?:的)?(声音|声响|声)"
+    for match in re.finditer(pattern, text):
+        window = text[max(0, match.start() - 60) : match.end() + 80]
+        findings.append(
+            CommonSenseFinding(
+                code="impossible_body_action_sound",
+                severity="medium",
+                message="身体动作被直接写成声音来源，例如点头/摇头本身不会发出声音。",
+                evidence={"phrase": match.group(0), "window": window.strip()},
+            )
+        )
+    return findings
+
+
+def _find_stitched_chapter_markers(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    findings: list[CommonSenseFinding] = []
+    if chapter_number is not None and chapter_number <= 3:
+        abrupt_markers = (
+            "外卖小哥被拖进墙里后",
+            "当前存活",
+            "已淘汰",
+            "剩余时间",
+        )
+        found = [marker for marker in abrupt_markers if marker in text]
+        if found:
+            findings.append(
+                CommonSenseFinding(
+                    code="early_chapter_game_or_stitch_marker",
+                    severity="medium",
+                    message="前三章出现游戏化 UI 或未铺垫的拼接式事件标记。",
+                    evidence={"markers": found},
+                )
+            )
+    return findings
+
+
+def _find_unintroduced_mentor_reference(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 3:
+        return []
+    match = re.search(r"师父.{0,8}(教|说|留下|交代)", text)
+    if not match:
+        return []
+    prior = text[: match.start()]
+    if "师父" in prior:
+        return []
+    # A relationship can be introduced with a role phrase rather than the
+    # exact word ``师父``.  Accept only a locally bound introduction.  A
+    # relation attached to another named person must not whitelist this
+    # speaker's later authority reference.
+    prior_sentence = prior[max(prior.rfind("。"), prior.rfind("！"), prior.rfind("？")) + 1 :]
+    relation_match = re.search(
+        r"(?P<learner>[一-鿿]{2,4})(?:拜|认)[一-鿿]{0,4}为师"
+        r"|[一-鿿]{2,4}收(?P<learner_by_mentor>[一-鿿]{2,4})为徒",
+        prior_sentence,
+    )
+    if relation_match:
+        learner = relation_match.group("learner") or relation_match.group("learner_by_mentor")
+        after_relation = prior_sentence[relation_match.end() :]
+        named_speaker = re.search(r"([一-鿿]{2,4})说", after_relation)
+        if not named_speaker or not learner or named_speaker.group(1) == learner:
+            return []
+    return [
+        CommonSenseFinding(
+            code="unintroduced_authority_reference",
+            severity="medium",
+            message="前三章突然使用未铺垫的师父/权威来源解释动作。",
+            evidence={"window": text[max(0, match.start() - 40) : match.end() + 40].strip()},
+        )
+    ]
+
+
+def _find_repeated_rescue_or_debt_beat(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 5:
+        return []
+    rescue_hits = re.findall(r"[一-鿿]{2,4}的身体[^。！？\n]{0,24}(弹|滚|摔|滑脱)", text)
+    debt_push_hits = re.findall(r"(替.{0,8}押|账印|押上|替.{0,8}认)", text)
+    if len(rescue_hits) >= 2 and len(debt_push_hits) >= 3:
+        return [
+            CommonSenseFinding(
+                code="repeated_rescue_or_debt_beat",
+                severity="medium",
+                message="同一章内救人/押账节拍重复出现，疑似多版片段拼接。",
+                evidence={
+                    "rescue_hit_count": len(rescue_hits),
+                    "debt_push_hit_count": len(debt_push_hits),
+                },
+            )
+        ]
+    return []
+
+
+def _find_early_chapter_character_crowding(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 3:
+        return []
+    role_markers = (
+        "眼镜男",
+        "眼镜男生",
+        "女白领",
+        "老太太",
+        "情侣",
+        "外卖小哥",
+        "保安",
+        "店员",
+        "邻居",
+        "路人",
+    )
+    present = [marker for marker in role_markers if marker in text]
+    if len(present) < 5:
+        return []
+    onboarding_markers = ("走进", "进来", "出现", "介绍", "叫", "名叫", "是", "身份", "为什么")
+    weakly_onboarded = []
+    for marker in present:
+        first = text.find(marker)
+        window = text[max(0, first - 60) : first + len(marker) + 80]
+        if not any(token in window for token in onboarding_markers):
+            weakly_onboarded.append(marker)
+    if len(weakly_onboarded) < 3:
+        return []
+    return [
+        CommonSenseFinding(
+            code="early_character_crowding",
+            severity="medium",
+            message="前三章一次性涌入过多人物，且多名人物缺少入场来源、身份或剧情功能说明。",
+            evidence={
+                "characters_or_roles": present,
+                "weakly_onboarded": weakly_onboarded,
+            },
+        )
+    ]
+
+
+_QUOTED_RULE_TERM_RE = re.compile(r"[「『“]([一-鿿]{2,6})[」』”]")
+
+# Common quoted words that are ordinary speech emphasis, not invented rule jargon.
+_QUOTED_TERM_STOPWORDS = frozenset(
+    {"不是", "没有", "可以", "不能", "知道", "真的", "现在", "自己", "我们", "他们"}
+)
+
+
+def _derive_rule_terms(text: str) -> list[str]:
+    """Derive this book's own rule-system jargon from the chapter itself.
+
+    A rule term is a short Han compound the text quote-marks at least once
+    (「认账」/“回响”) and then keeps reusing — whatever the genre or the
+    book's private vocabulary is. No single book's noun list is baked in.
+    """
+    counts: dict[str, int] = {}
+    for match in _QUOTED_RULE_TERM_RE.finditer(text):
+        term = match.group(1)
+        if term in _QUOTED_TERM_STOPWORDS:
+            continue
+        counts[term] = counts.get(term, 0) + 1
+    return [term for term in counts if text.count(term) >= 3]
+
+
+def _find_rule_term_onboarding_failure(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 3:
+        return []
+    rule_terms = _derive_rule_terms(text)
+    present = [term for term in rule_terms if term in text]
+    total_hits = sum(text.count(term) for term in rule_terms)
+    if len(present) < 4 and total_hits < 10:
+        return []
+    weak_terms = []
+    for term in present:
+        first = text.find(term)
+        window = text[max(0, first - 100) : first + len(term) + 140]
+        if not _has_rule_onboarding(window):
+            weak_terms.append(term)
+    if len(weak_terms) < 2 and total_hits < 14 and len(present) < 7:
+        return []
+    return [
+        CommonSenseFinding(
+            code="rule_term_onboarding_failure",
+            severity="medium",
+            message="前三章规则术语密度过高，且缺少面向读者的定义、例子或可见代价台阶。",
+            evidence={
+                "rule_terms": present,
+                "total_hits": total_hits,
+                "weak_terms": weak_terms,
+            },
+        )
+    ]
+
+
+def _find_late_night_delivery_order(
+    text: str,
+    *,
+    chapter_number: int | None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 10:
+        return []
+    pattern = (
+        r"(快递单|配送单|寄件单|运单)[^。！？\n]{0,80}"
+        r"(晚上|夜里|深夜|凌晨|子时|23[:：]\d{2}|零点|00[:：]\d{2})"
+    )
+    reverse_pattern = (
+        r"(晚上|夜里|深夜|凌晨|子时|23[:：]\d{2}|零点|00[:：]\d{2})"
+        r"[^。！？\n]{0,80}(快递单|配送单|寄件单|运单)"
+    )
+    match = re.search(pattern, text) or re.search(reverse_pattern, text)
+    if not match:
+        return []
+    window = text[max(0, match.start() - 120) : match.end() + 160]
+    if any(
+        marker in window
+        for marker in (
+            "不可能",
+            "伪造",
+            "假的",
+            "系统延迟",
+            "自助柜",
+            "预录",
+            "预生成",
+            "提前寄",
+            "无人柜",
+            "超时",
+            "异常",
+        )
+    ):
+        return []
+    return [
+        CommonSenseFinding(
+            code="late_night_delivery_plausibility",
+            severity="medium",
+            message="前十章使用深夜快递/配送单作为现实证据，但没有解释夜间寄送流程为什么成立。",
+            evidence={"window": window.strip()},
+        )
+    ]
+
+
+def _find_object_signal_overuse(
+    text: str,
+    *,
+    chapter_number: int | None,
+    genre: str | None = None,
+    sub_genre: str | None = None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 10:
+        return []
+    # Object terms: detective defaults + THIS genre's own signal objects, so the
+    # "single repeated sensory shortcut" anti-pattern is caught across genres — not
+    # only for 铜钱/罗盘/青囊 books. Sensory verbs broadened beyond 发烫 to the universal
+    # single-sensory-tic set (发凉/刺痛/心头一跳/眩晕…).
+    # 2026-06-25 去通用性污染：原 default_objects 硬编码一本悬疑书的私货物件
+    # (铜钱/青囊/罗盘/账页)，给每本书(含科幻/言情)按它的物件查"物件信号过度"——
+    # 单本书污染通用门。改为【通用】检测：不认具体物件，只数"任意物件(2-4字)紧跟
+    # 同类感官信号(发烫/发凉…)"的搭配在本章出现次数；≥3 次即过度依赖单一感官捷径
+    # (题材无关、零单本书/单题材词)。
+    sensory_alt = "烫|发烫|烫得|炭火|发热|滚烫|发凉|冰凉|刺痛|一颤|一跳|眩晕|发麻"
+    _obj_stop = {"他", "她", "它", "我", "你", "他们", "自己", "这里", "那里", "起来", "已经"}
+    candidate_re = re.compile(rf"([一-龥]{{2,4}})[^。！？\n]{{0,8}}(?:{sensory_alt})")
+    matches = [m for m in candidate_re.finditer(text) if m.group(1) not in _obj_stop]
+    if len(matches) < 3:
+        return []
+    # NOTE: 单字「是」曾被加入此表(07-11 批次),但它太泛滥——发烫匹配窗口的
+    # ±80 字里只要有任意「…是…」句(如「认账是不是要拿命填」)就会被误判为
+    # 「物件信号已给出稳定含义」,使 3 处发烫过度依赖整体哑火(explained>=2)。
+    # 表内其余词(代表/说明/边界/代价/不能/只有/而是)才真正表示给出了含义或边界,
+    # 保留;「是」移除,避免误消解本检测器。
+    explanatory_markers = (
+        "这次",
+        "代表",
+        "说明",
+        "只有",
+        "而是",
+        "边界",
+        "代价",
+        "不能",
+    )
+    windows = [text[max(0, match.start() - 50) : match.end() + 80] for match in matches]
+    explained = sum(1 for window in windows if any(marker in window for marker in explanatory_markers))
+    if explained >= 2:
+        return []
+    return [
+        CommonSenseFinding(
+            code="object_signal_overuse",
+            severity="medium",
+            message="物件异常过度依赖“发烫”等同类信号，但没有给出稳定含义或边界。",
+            evidence={"hit_count": len(matches), "windows": [w.strip() for w in windows[:4]]},
+        )
+    ]
+
+
+def _find_lay_character_rule_knowledge_leak(
+    text: str,
+    *,
+    chapter_number: int | None,
+    known_rule_terms_by_character: Mapping[str, Sequence[str]] | None = None,
+) -> list[CommonSenseFinding]:
+    if chapter_number is None or chapter_number > 3:
+        return []
+    # Generic quoted-speaker detector (a short Han name before speech punctuation),
+    # NOT one detective book's hardcoded cast (王建业/张建军/小雨/陈默/周雪) — that only
+    # ever fired for that one book. The rule-term requirement below gates false
+    # positives, so a loose speaker match is acceptable and now works for any book.
+    # Only inspect an actual speech opener / speaker label.  Including closing
+    # quotes here made ordinary prose such as ``落在“灵印”二字后面`` look like
+    # a character named ``灵印`` speaking a rule term, which blocked otherwise
+    # valid xianxia openings.  A closing quote by itself is never evidence that
+    # a lay character uttered the term.
+    speaker_pattern = r"([一-鿿]{2,4})[^。！？\n]{0,12}(?:：|:|“|「|『|\"|')"
+    # Rule terms are derived from the book's own quoted jargon — not a
+    # hardcoded noun list from any single book's rule system.
+    derived_terms = _derive_rule_terms(text)
+    if not derived_terms:
+        return []
+    read_terms: set[str] = set()
+    for match in re.finditer(speaker_pattern, text):
+        # A quoted rule written on a wall/sign is narration, not a character
+        # speaking. Keep scanning for a real speaker later in the paragraph.
+        if any(
+            marker in match.group(0)
+            for marker in ("墙上", "门上", "纸上", "牌上", "桌上", "屏幕上", "簿页")
+        ):
+            continue
+        paragraph_end = text.find("\n\n", match.start())
+        if paragraph_end < 0:
+            paragraph_end = len(text)
+        window = text[match.start() : min(match.end() + 80, paragraph_end)]
+        if not any(term in window for term in derived_terms):
+            continue
+        # Reading an explicitly indicated written clause is an on-page source
+        # of its wording, not unexplained expertise. This exempts only this
+        # speech opener; later claims of understanding are checked separately.
+        opener = match.group(0)
+        visible_clause = re.search(r"第[一二三四五六七八九十百0-9]+[行条款]|条款|协议|合同|纸上|告示", opener)
+        reading_aloud = re.search(r"念出声|念道|读出声|读道|宣读|逐字读", opener)
+        current_terms = {term for term in derived_terms if term in window}
+        if visible_clause and reading_aloud:
+            read_terms.update(current_terms)
+            continue
+        # A line-by-line explanation may repeat wording just read aloud.
+        # This is textual reference, not a general expertise exemption.
+        pointed_wording = re.search(r"(?:指|笔)[^。！？\n]{0,8}(?:点|划|按|指)", opener)
+        literal_wording = any(
+            re.search(re.escape(term) + r"[”’\"'](?:[一二三四五六七八九十0-9]+个?)?[字词]", window)
+            for term in current_terms
+        )
+        if (current_terms and current_terms <= read_terms
+                and ((visible_clause and "关键词" in window)
+                     or (pointed_wording and literal_wording))):
+            continue
+        speaker = match.group(1)
+        known_terms: set[str] = set()
+        for character_name, terms in (known_rule_terms_by_character or {}).items():
+            # Require the regex speaker token to equal the approved name. A
+            # substring match would let ``张三丰`` inherit ``张三``'s state;
+            # action-tailed or otherwise ambiguous openers remain unverified.
+            if str(character_name).strip() == speaker:
+                known_terms.update(str(term).strip() for term in terms if str(term).strip())
+        current_terms = {term for term in derived_terms if term in window}
+        if current_terms and current_terms <= known_terms:
+            continue
+        lead_window = text[max(0, match.start() - 160) : match.start()]
+        if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "刚解释过")):
+            continue
+        return [
+            CommonSenseFinding(
+                code="lay_character_rule_knowledge_leak",
+                severity="medium",
+                blocking=False,
+                message="重复术语附近存在疑似发言；说话者身份与知识来源未核验，"
+                "不能据此认定角色无知或知识冲突，仅供编辑参考。",
+                evidence={"window": window.strip(), "terms": sorted(current_terms),
+                          "authority": "heuristic_only", "speaker_candidate": speaker,
+                          "actor_status": "unverified", "knowledge_status": "unknown"},
+            )
+        ]
+    return []
+
+
+def _has_rule_onboarding(window: str) -> bool:
+    return any(
+        marker in window
+        for marker in (
+            "意思是",
+            "也就是说",
+            "规则",
+            "如果",
+            "就会",
+            "不是",
+            "而是",
+            "代价",
+            "先",
+            "再",
+            "所以",
+            "例如",
+            "比如",
+            "因为",
+        )
+    )
+
+
+__all__ = [
+    "CommonSenseFinding",
+    "CommonSenseGateReport",
+    "evaluate_common_sense_gate",
+]

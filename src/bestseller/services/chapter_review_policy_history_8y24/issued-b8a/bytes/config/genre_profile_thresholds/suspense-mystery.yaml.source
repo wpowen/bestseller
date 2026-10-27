@@ -1,0 +1,51 @@
+# Detective / horror / rule-based / infinite-flow — suspense density trumps
+# cool-point density; readers forgive pacing dips for a good reveal.
+id: suspense-mystery
+name: 悬疑/推理/规则怪谈
+
+hook_config:
+  preferred_types:
+    - 悬念
+    - 危机
+    - 选择
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns:
+    - 扮猪吃虎
+    - 反派翻车
+    - 身份掉马
+    - 打脸权威
+  density_per_chapter: medium
+  combo_interval: 6
+  milestone_interval: 12        # reveals need to land tighter
+
+micropayoff_config:
+  preferred_types:
+    - 微线索揭示
+    - 小推理胜利
+    - 关键目击
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2       # mystery books can't sit still
+  strand_max_gap:
+    overt: 4
+    undercurrent: 8
+    hidden: 12                  # hidden line is the mystery itself; tighter
+    core_axis: 20
+  transition_max_consecutive: 1
+
+override_config:
+  allowed_rationale_types:
+    - LOGIC_INTEGRITY           # primary: puzzles must hold up
+    - WORLD_RULE_CONSTRAINT
+    - TRANSITIONAL_SETUP
+    - ARC_TIMING
+    - EDITORIAL_INTENT
+  debt_multiplier: 1.3          # broken reveals cost more
+  payback_window_default: 4
+  interest_rate_per_chapter: 0.12

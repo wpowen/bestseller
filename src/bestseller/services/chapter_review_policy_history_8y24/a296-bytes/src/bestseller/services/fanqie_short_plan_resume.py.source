@@ -1,0 +1,323 @@
+"""Read an existing complete plan; a missing proof never authorizes generation."""
+
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
+from types import SimpleNamespace
+from typing import Literal
+from uuid import UUID
+
+from pydantic import Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bestseller.domain.fanqie_short import FanqieShortBeatSheet
+from bestseller.domain.planning import AutowriteResult
+from bestseller.domain.workflow import ChapterOutlineBatchInput
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterModel,
+    PlanningArtifactVersionModel,
+    ProjectModel,
+    SceneCardModel,
+    WorkflowRunModel,
+)
+from bestseller.services.prompt_source_policy import content_hash
+from bestseller.settings import AppSettings
+
+
+class MaterializedFanqiePlanPendingError(ValueError):
+    """A retained plan needs source repair, not a generation cache miss."""
+
+    code = "source_repair_pending"
+
+
+class ReusedFanqieAutowriteResult(AutowriteResult):
+    """Counters describe this invocation; original workflow IDs are retained."""
+
+    planning_reused: Literal[True] = True
+    materialization_reused: Literal[True] = True
+    chapters_created: Literal[0] = 0
+    scenes_created: Literal[0] = 0
+    plan_reuse_receipt: dict = Field(default_factory=dict)
+
+
+def _need(condition: object, reason: str) -> None:
+    if not condition:
+        raise MaterializedFanqiePlanPendingError("source_repair_pending:" + reason)
+
+
+def _legacy_unlock(
+    project: SimpleNamespace, artifacts: Sequence[SimpleNamespace], candidate: Mapping,
+    foundation: Mapping,
+) -> dict:
+    """An exact deterministic typed match can supply UI/routing, never approval."""
+    from bestseller.services.fanqie_short_planner import build_fanqie_segment_outline_batch
+    from bestseller.services.planner import _without_planning_meta
+
+    expected = ChapterOutlineBatchInput.model_validate(candidate).model_dump(mode="json")
+    # The literal compiler deliberately does not inject unlock-placement facts
+    # into scenes. Equal chapter projections alone therefore cannot distinguish
+    # two Beats whose unlock numbers differ. Missing custody remains UI-unknown.
+    projection_meta = (candidate.get("_meta") or {}).get("segment_projection") or {}
+    expected_beat_hash = projection_meta.get("typed_beat_sheet_sha256")
+    matches = []
+    for artifact in artifacts:
+        if (
+            artifact.project_id != project.id
+            or artifact.artifact_type != "fanqie_beat_sheet"
+            or artifact.status != "approved"
+            or artifact.scope_ref_id is not None
+        ):
+            continue
+        try:
+            sheet = FanqieShortBeatSheet.model_validate(_without_planning_meta(artifact.content))
+            if (not isinstance(expected_beat_hash, str)
+                    or content_hash(sheet.model_dump(mode="json")) != expected_beat_hash):
+                continue
+            rebuilt = build_fanqie_segment_outline_batch(
+                project, sheet, book_spec=foundation["book_spec"].content,
+                cast_spec=foundation["cast_spec"].content,
+            )
+            typed = ChapterOutlineBatchInput.model_validate(rebuilt).model_dump(mode="json")
+            if (
+                content_hash(typed) == content_hash(expected)
+                and type(sheet.unlock_milestone_segment) is int
+                and 1 <= sheet.unlock_milestone_segment <= project.target_chapters
+            ):
+                matches.append((artifact, sheet.unlock_milestone_segment))
+        except (ValueError, TypeError, KeyError, AttributeError):
+            # Legacy Beat is optional UI information. Its absence grants nothing.
+            continue
+    unlocks = {number for _, number in matches}
+    _need(len(unlocks) <= 1, "ambiguous_legacy_unlock")
+    return {
+        # Without a bound Beat, route an unlock finding across the full existing
+        # plan. Do not invent an unlock milestone or borrow the latest Beat.
+        "unlock_segment": next(iter(unlocks)) if unlocks else project.target_chapters,
+        "legacy_beat_artifact_ids": sorted(str(row.id) for row, _ in matches),
+        "legacy_beat_bound": bool(matches),
+        "unbound_unlock_routing": None if matches else "all_existing_chapters",
+        "beat_paid_or_source_approval_asserted": False,
+    }
+
+
+async def read_existing_complete_fanqie_plan(
+    session: AsyncSession, settings: AppSettings, *, project: ProjectModel,
+) -> dict | None:
+    """Return None for fresh or unfinished, unmaterialized foundation planning.
+
+    All reads are fresh columns and suppress autoflush. No workflow, import,
+    grade, Beat, file or materialization is created. The caller then enters its
+    existing segment recovery and adopted-source publication boundaries.
+    """
+    from bestseller.services.foundation_selection import HISTORY, KINDS, POINTER, WORKFLOW_TYPES
+    from bestseller.services.materialized_outline_admission_read import (
+        SCHEMA,
+        admission_workflow_id,
+        require_materialized_outline_source_admission,
+    )
+    from bestseller.services.materialized_outline_source_recovery import _read_sources
+    from bestseller.services.retained_planning_generation import _Reader
+
+    source_types = (
+        ProjectModel, PlanningArtifactVersionModel, ChapterModel, SceneCardModel, WorkflowRunModel,
+        ChapterDraftVersionModel,
+    )
+    _need(
+        not any(
+            isinstance(row, source_types)
+            and (row in session.new or row in session.deleted
+                 or session.is_modified(row, include_collections=True))
+            for row in tuple(session.new) + tuple(session.dirty) + tuple(session.deleted)
+        ),
+        "pending_source_state",
+    )
+    with session.no_autoflush:
+        reader = _Reader(session)
+        current = await reader.get(ProjectModel, project.id)
+        _need(current is not None and current.slug == project.slug, "project_missing_or_changed")
+        artifacts = await reader.rows(
+            PlanningArtifactVersionModel, PlanningArtifactVersionModel.project_id == current.id,
+        )
+        chapters = await reader.rows(ChapterModel, ChapterModel.project_id == current.id)
+        owners = await reader.rows(
+            WorkflowRunModel, WorkflowRunModel.project_id == current.id,
+            WorkflowRunModel.workflow_type == "materialize_chapter_outline_batch",
+        )
+        retained_kinds = {*KINDS, "chapter_outline_batch", "fanqie_beat_sheet"}
+        if (
+            not chapters and not owners
+            and not any(a.artifact_type in retained_kinds for a in artifacts)
+            and POINTER not in (current.metadata_json or {})
+        ):
+            return None
+        for key in (
+            "slug", "title", "genre", "sub_genre", "language", "project_type",
+            "target_chapters", "target_word_count", "status", "metadata_json",
+        ):
+            _need(
+                content_hash(getattr(project, key)) == content_hash(getattr(current, key)),
+                "caller_project_stale:" + key,
+            )
+        # Foundation assets are durable checkpoints, not chapter materialization.
+        # Enter the normal foundation planner with its existing paid/source
+        # replay checks; this branch grants neither reuse nor draft eligibility.
+        if (
+            not chapters and not owners
+            and current.status == "planning"
+            and type(current.target_chapters) is int and current.target_chapters > 0
+            and not any(a.artifact_type in {
+                            "chapter_outline_batch", "fanqie_beat_sheet", "volume_chapter_outline"}
+                        for a in artifacts)
+            and POINTER not in (current.metadata_json or {})
+            and HISTORY not in (current.metadata_json or {})
+        ):
+            downstream_owners = await reader.rows(
+                WorkflowRunModel, WorkflowRunModel.project_id == current.id,
+                WorkflowRunModel.workflow_type.in_({
+                    "materialize_story_bible", "materialize_narrative_graph",
+                    "materialize_narrative_tree", "materialized_outline_source_admission",
+                }),
+            )
+            _need(not downstream_owners, "retained_downstream_materialization")
+            scenes = await reader.rows(SceneCardModel, SceneCardModel.project_id == current.id)
+            drafts = await reader.rows(
+                ChapterDraftVersionModel, ChapterDraftVersionModel.project_id == current.id,
+            )
+            _need(not scenes and not drafts, "orphan_materialization")
+            foundation_owners = await reader.rows(
+                WorkflowRunModel, WorkflowRunModel.project_id == current.id,
+                WorkflowRunModel.workflow_type.in_(WORKFLOW_TYPES),
+            )
+            _need(all(row.status in {"failed", "cancelled", "machine_blocked"}
+                      for row in foundation_owners), "foundation_owner_not_terminal_failure")
+            return None
+        _need(type(current.target_chapters) is int and current.target_chapters > 0, "target_range")
+        target = list(range(1, current.target_chapters + 1))
+        _need(
+            all(type(ch.chapter_number) is int for ch in chapters)
+            and sorted(ch.chapter_number for ch in chapters) == target,
+            "incomplete_or_extra_chapters",
+        )
+        pin = (current.metadata_json or {}).get(POINTER)
+        _need(isinstance(pin, Mapping) and pin.get("status") == "completed", "foundation_pin")
+        candidates = []
+        for artifact in artifacts:
+            if (
+                artifact.artifact_type != "chapter_outline_batch"
+                or artifact.status != "approved"
+                or artifact.scope_ref_id is not None
+                or not isinstance(artifact.content, Mapping)
+            ):
+                continue
+            expected = artifact.content.get("chapters")
+            if not isinstance(expected, list) or not all(
+                isinstance(ch, Mapping) for ch in expected
+            ):
+                continue
+            numbers = [ch.get("chapter_number") for ch in expected]
+            if all(type(n) is int for n in numbers) and numbers == target:
+                candidates.append(artifact)
+        from bestseller.services.outline_full_source_reconciliation import MARKER_KEY
+        markers = [(c.metadata_json or {}).get(MARKER_KEY) for c in chapters]
+        if any(marker is not None for marker in markers):
+            fields = {"artifact_id", "workflow_run_id", "projection_hash", "source_content_sha256"}
+            _need(all(isinstance(marker, Mapping) and set(marker) == fields
+                for marker in markers), "full_source_selection_marker_coverage")
+            identities = {marker["artifact_id"] for marker in markers}
+            _need(len(identities) == 1, "full_source_selection_marker_conflict")
+            selected = next(iter(identities))
+            candidates = [a for a in candidates if str(a.id) == selected]
+        _need(len(candidates) == 1, "complete_outline_missing_or_ambiguous")
+        artifact = candidates[0]
+        stable_id = admission_workflow_id(current.id, artifact.id)
+        if any(marker is not None for marker in markers):
+            _need(all(marker["workflow_run_id"] == str(stable_id)
+                and marker["source_content_sha256"] == content_hash(artifact.content)
+                for marker in markers), "full_source_selection_marker_binding")
+        admission = await reader.get(WorkflowRunModel, stable_id)
+        _need(
+            admission is not None
+            and admission.project_id == current.id
+            and admission.workflow_type == "materialized_outline_source_admission"
+            and admission.status == "completed"
+            and admission.scope_type == "planning_artifact"
+            and admission.scope_id == artifact.id,
+            "complete_hard_admission_required",
+        )
+        state = admission.metadata_json
+        _need(isinstance(state, Mapping) and state.get("schema") == SCHEMA, "admission_metadata")
+        owner_id = UUID(str(state.get("materialization_workflow_run_id")))
+        _need(
+            any(owner.id == owner_id for owner in owners), "materialization_owner_missing",
+        )
+        fresh, source, candidate, foundation, binding = await _read_sources(
+            session, settings, project_slug=current.slug, artifact_id=artifact.id,
+            materialization_workflow_id=owner_id,
+        )
+        _need(set(foundation) == set(KINDS), "four_current_foundation_required")
+        _need(
+            all(
+                content_hash(state.get(key)) == content_hash(value)
+                for key, value in binding.items()
+            ),
+            "hard_admission_dependency_changed",
+        )
+        if any(marker is not None for marker in markers):
+            _need(all(marker["projection_hash"] == binding["chapter_projection_hashes"].get(str(ch.id))
+                for ch, marker in zip(chapters, markers, strict=True)),
+                "full_source_selection_projection_changed")
+        all_scenes = await reader.rows(SceneCardModel, SceneCardModel.project_id == current.id)
+        chapter_ids = {ch.id for ch in chapters}
+        _need(
+            bool(all_scenes) and all(scene.chapter_id in chapter_ids for scene in all_scenes),
+            "orphan_scene_or_missing_projection",
+        )
+        first_chapter = min(chapters, key=lambda c: c.chapter_number)
+        verified = await require_materialized_outline_source_admission(
+            session, settings, project=fresh, artifact=source, chapter=first_chapter,
+            scenes=sorted([s for s in all_scenes if s.chapter_id == first_chapter.id],
+                key=lambda s: s.scene_number),
+        )
+        _need(
+            isinstance(verified, Mapping)
+            and verified.get("workflow_run_id") == str(stable_id)
+            and verified.get("source_admission", {}).get("draft_eligible") is True,
+            "verified_full_hard_admission_required",
+        )
+        _need(
+            all(
+                content_hash(verified.get(key)) == content_hash(value)
+                for key, value in binding.items()
+            ),
+            "verified_source_binding_changed",
+        )
+        return {
+            "schema": "fanqie-materialized-plan-reuse.v1",
+            "planning_workflow_run_id": UUID(str(pin["workflow_id"])),
+            "outline_workflow_run_id": owner_id,
+            "hard_admission_workflow_run_id": stable_id,
+            # No matching historical receipts were supplied for these optional
+            # stages. None is truthful; do not fabricate IDs or rerun them.
+            "story_bible_workflow_run_id": None,
+            "narrative_graph_workflow_run_id": None,
+            "source_artifact_id": str(source.id),
+            "foundation_artifact_ids": {kind: str(row.id) for kind, row in foundation.items()},
+            "source_binding": deepcopy(binding),
+            "planning_reused": True,
+            "materialization_reused": True,
+            "chapters_created": 0,
+            "scenes_created": 0,
+            **_legacy_unlock(fresh, artifacts, candidate, foundation),
+        }
+
+
+async def require_or_read_existing_complete_fanqie_plan(
+    session: AsyncSession, settings: AppSettings, *, project: ProjectModel,
+) -> dict | None:
+    """Convert only source-proof failures; cancellation and runtime faults propagate."""
+    try:
+        return await read_existing_complete_fanqie_plan(session, settings, project=project)
+    except MaterializedFanqiePlanPendingError:
+        raise
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        raise MaterializedFanqiePlanPendingError("source_repair_pending:" + str(exc)) from exc

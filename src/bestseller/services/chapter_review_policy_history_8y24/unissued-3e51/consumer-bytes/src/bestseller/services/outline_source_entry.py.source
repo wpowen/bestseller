@@ -1,0 +1,49 @@
+"""Common source-admission entry for current chapter prose and review context."""
+from sqlalchemy import select
+
+from bestseller.domain.enums import ArtifactType
+from bestseller.infra.db.models import SceneCardModel
+
+
+async def current_outline_artifact(session, *, project, chapter):
+    """Select the admitted source, rather than a later unrelated approved row."""
+    from uuid import UUID
+    from bestseller.infra.db.models import ChapterModel, PlanningArtifactVersionModel
+    from bestseller.services.retained_planning_generation import _Reader
+    from bestseller.services.rewrite_outline_binding import validate_source_plan_binding
+    from bestseller.services.workflows import get_latest_approved_planning_artifact
+
+    fresh = await _Reader(session).get(ChapterModel, chapter.id)
+    if fresh is None or fresh.project_id != project.id or chapter.project_id != project.id:
+        raise ValueError("outline_source_admission_required:current_chapter_owner")
+    metadata, cached = fresh.metadata_json or {}, chapter.metadata_json or {}
+    if ("outline_source_admission" in metadata) != ("outline_source_admission" in cached):
+        raise ValueError("outline_source_admission_required:current_marker_changed")
+    if "outline_source_admission" not in metadata:
+        return await get_latest_approved_planning_artifact(
+            session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH)
+    marker = validate_source_plan_binding(metadata["outline_source_admission"])
+    if cached["outline_source_admission"] != marker:
+        raise ValueError("outline_source_admission_required:current_marker_changed")
+    artifact = await _Reader(session).get(PlanningArtifactVersionModel, UUID(marker["artifact_id"]))
+    if (artifact is None or artifact.project_id != project.id or artifact.status != "approved"
+            or artifact.artifact_type != ArtifactType.CHAPTER_OUTLINE_BATCH.value):
+        raise ValueError("outline_source_admission_required:selected_artifact_missing")
+    return artifact
+
+
+async def require_current_outline_source_admission(session, settings, *, project, chapter, scenes=None):
+    from bestseller.services.materialized_outline_admission_read import (
+        require_materialized_outline_source_admission,
+    )
+    with session.no_autoflush:
+        artifact = await current_outline_artifact(session, project=project, chapter=chapter)
+        if artifact is None:
+            return None
+        if scenes is None:
+            scenes = list(await session.scalars(select(SceneCardModel).where(
+                SceneCardModel.project_id == project.id, SceneCardModel.chapter_id == chapter.id,
+            ).order_by(SceneCardModel.scene_number)))
+        return await require_materialized_outline_source_admission(
+            session, settings, project=project, artifact=artifact, chapter=chapter, scenes=scenes,
+        )

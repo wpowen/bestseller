@@ -1,0 +1,11 @@
+{
+  "alias_authority": false,
+  "file_pins": {
+    "src/bestseller/services/fanqie_short_planner.py": "2e3475f459af2dd622cec591f8ff66eb57e38d259415d9f776f338d573c844c3"
+  },
+  "manifest_sha256": "78c202ca2204c2c12477558b2f590c294e2ee8f79d2e3de62dc19d1107e7e7c6",
+  "policy_hash": "3e51eb1808c2f9970d6b668a5e27643a096c7522b59cc98fa464cc313022f40f",
+  "runtime_audit_only": true,
+  "schema": "native-unissued-planner-preimage.v1",
+  "source": "Exact original_bytes == a296_bytes; original 3e51 manifest SHA; user explicitly supplied original SHA; no live capture"
+}

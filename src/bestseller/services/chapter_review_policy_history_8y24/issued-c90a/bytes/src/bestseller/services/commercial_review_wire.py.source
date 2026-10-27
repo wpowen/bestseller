@@ -1,0 +1,228 @@
+"""Resolve explicit immutable source IDs before mapping a new review wire.
+
+The model judges meaning and scores. The service owns source text and severity
+routing. Legacy reports are never repaired, rescored, or silently promoted.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from copy import deepcopy
+import hashlib
+import json
+from typing import Any
+
+from bestseller.services.commercial_source_evidence import (
+    CommercialSources,
+    validate_commercial_evidence,
+)
+
+# ruff: noqa: ANN401
+WIRE_VERSION = "commercial-review-wire.v2"
+ADAPTER_VERSION = "commercial-review-adapter.v2"
+
+
+def parse_commercial_wire(
+    raw: str, sources: CommercialSources
+) -> tuple[dict[str, Any], dict[str, Any], tuple[str, ...]]:
+    """Verify ID existence and authority; derive evidence from supplied source only."""
+    text = raw.strip()
+    if text.startswith("```json\n") and text.endswith("\n```"):
+        text = text[8:-4]
+    receipt: dict[str, Any] = {
+        "adapter_version": ADAPTER_VERSION,
+        "wire_version": WIRE_VERSION,
+        "raw_report_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+        "source_binding": dict(sources.receipt),
+        "status": "rejected",
+        "scores_modified": False,
+        "issues_dropped": 0,
+    }
+
+    def unique_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate wire field")
+            value[key] = item
+        return value
+
+    try:
+        parsed = json.loads(text, object_pairs_hook=unique_fields)
+    except (ValueError, TypeError):
+        return {}, receipt, ("wire: raw output is not strict JSON",)
+    if not isinstance(parsed, dict):
+        return {}, receipt, ("wire: report must be a JSON object",)
+    if parsed.get("wire_version") != WIRE_VERSION:
+        return (
+            parsed,
+            receipt,
+            ("wire: explicit current wire_version required; legacy reports rejected",),
+        )
+    required = {
+        "wire_version",
+        "pass",
+        "overall_score",
+        "dimension_scores",
+        "issues",
+        "rewrite_plan",
+    }
+    rules = {key: entry for key, entry in sources.catalog.items() if entry["kind"] == "constraint"}
+    if rules:
+        required.add("checks")
+    errors: list[str] = []
+    if set(parsed) != required:
+        errors.append("wire: missing or unexpected report fields")
+    if not isinstance(parsed.get("rewrite_plan"), Mapping):
+        errors.append("wire: rewrite_plan must be an object")
+
+    def cite(identifier: Any, allowed: set[str], path: str) -> dict[str, Any] | None:
+        entry = sources.catalog.get(identifier) if isinstance(identifier, str) else None
+        if entry is None or entry.get("kind") not in allowed:
+            errors.append(f"{path}: unknown or incorrectly typed source ID")
+            return None
+        value = entry.get("text")
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{path}: immutable source text unavailable")
+            return None
+        return {"id": identifier, "kind": entry["kind"], "quote": value}
+
+    kinds = {
+        "narrative_quality": None,
+        "current_fact_conflict": {"current"},
+        "prior_fact_conflict": {"prior", "observation"},
+        "constraint_violation": {"constraint"},
+    }
+    issues = parsed.get("issues")
+    if not isinstance(issues, list):
+        errors.append("issues: must be a list")
+        issues = []
+    resolved = []
+    for index, issue in enumerate(issues):
+        path = f"issues/{index}"
+        if not isinstance(issue, Mapping):
+            errors.append(f"{path}: not an issue object")
+            continue
+        kind = issue.get("assessment_kind")
+        if not isinstance(kind, str) or kind not in kinds:
+            errors.append(f"{path}: unknown assessment_kind")
+            continue
+        fields = {"code", "severity", "assessment_kind", "body_id", "reason", "required_fix"}
+        if kind != "narrative_quality":
+            fields.add("source_id")
+        if kind in {"current_fact_conflict", "prior_fact_conflict"}:
+            fields.add("temporal_relation")
+        if set(issue) != fields:
+            errors.append(f"{path}: missing/unexpected fields; redundant legacy fields forbidden")
+        for field in ("code", "reason", "required_fix"):
+            if not isinstance(issue.get(field), str) or not issue[field].strip():
+                errors.append(f"{path}: nonempty {field} required")
+        if issue.get("severity") not in ("critical", "high", "medium", "low"):
+            errors.append(f"{path}: invalid severity")
+        body = cite(issue.get("body_id"), {"current"}, path + "/body_id")
+        origin = (
+            None
+            if kind == "narrative_quality"
+            else cite(issue.get("source_id"), kinds[kind], path + "/source_id")
+        )
+        if kind in {"current_fact_conflict", "prior_fact_conflict"} and issue.get(
+            "temporal_relation"
+        ) not in {"same_event_or_state", "unexplained_transition"}:
+            errors.append(f"{path}: explicit temporal_relation required; progress is not a cap")
+        resolved.append((issue, body, origin))
+    checks = parsed.get("checks", {})
+    resolved_checks = {}
+    if rules:
+        if not isinstance(checks, Mapping) or set(checks) != set(rules):
+            errors.append("checks: exactly the applicable catalog RULE IDs are required")
+        else:
+            for rule_id, check in checks.items():
+                path = "checks/" + rule_id
+                if not isinstance(check, Mapping) or set(check) != {"result", "body_id", "reason"}:
+                    errors.append(f"{path}: requires result, body_id and reason only")
+                    continue
+                if check.get("result") not in {"PASS", "FAIL"}:
+                    errors.append(f"{path}: result must be PASS or FAIL")
+                if not isinstance(check.get("reason"), str) or not check["reason"].strip():
+                    errors.append(f"{path}: nonempty reason required")
+                resolved_checks[rule_id] = cite(
+                    check.get("body_id"), {"current"}, path + "/body_id"
+                )
+    if errors:
+        return parsed, receipt, tuple(errors)
+
+    domain = {
+        key: deepcopy(parsed[key])
+        for key in ("pass", "overall_score", "dimension_scores", "rewrite_plan")
+    }
+    domain.update(blocking_issues=[], audit_issues=[], binary_checklist={})
+    for issue, body, origin in resolved:
+        mapped = {
+            key: deepcopy(issue[key])
+            for key in ("code", "severity", "assessment_kind", "required_fix")
+        }
+        mapped.update(body_citations=[body], evidence=body["quote"])
+        if issue["assessment_kind"] == "narrative_quality":
+            mapped["reader_impact"] = issue["reason"]
+        else:
+            mapped.update(
+                source_citations=[origin],
+                source_assertion=origin["quote"],
+                current_assertion=body["quote"],
+                conflict_reason=issue["reason"],
+            )
+        if "temporal_relation" in issue:
+            mapped["temporal_relation"] = issue["temporal_relation"]
+        # Severity has a single meaning: a serious issue cannot hide in audit.
+        group = "blocking_issues" if issue["severity"] in {"critical", "high"} else "audit_issues"
+        domain[group].append(mapped)
+    added_rules = []
+    for rule_id, check in checks.items():
+        body = resolved_checks[rule_id]
+        origin = {"id": rule_id, "kind": "constraint", "quote": rules[rule_id]["text"]}
+        domain["binary_checklist"][rule_id] = {
+            "result": check["result"],
+            "evidence": body["quote"],
+            "body_citations": [body],
+            "source_citations": [origin],
+        }
+        if check["result"] != "FAIL" or any(
+            i["assessment_kind"] == "constraint_violation"
+            and i["severity"] == "critical"
+            and i["source_citations"][0]["id"] == rule_id
+            for i in domain["blocking_issues"]
+        ):
+            continue
+        domain["blocking_issues"].append(
+            {
+                "code": "EXPLICIT_RULE_VIOLATION",
+                "severity": "critical",
+                "path": rule_id,
+                "assessment_kind": "constraint_violation",
+                "evidence": body["quote"],
+                "body_citations": [body],
+                "source_citations": [origin],
+                "source_assertion": origin["quote"],
+                "current_assertion": body["quote"],
+                "conflict_reason": check["reason"],
+                "required_fix": (
+                "Repair only the cited explicit-rule violation, preserving established facts."
+            ),
+            }
+        )
+        added_rules.append(rule_id)
+    errors = list(validate_commercial_evidence(domain, sources))
+    if errors:
+        return parsed, receipt, tuple(errors)
+    receipt.update(
+        status="verified",
+        derived_issues_added=len(added_rules),
+        derived_issue_rule_ids=added_rules,
+        domain_mapping_sha256=hashlib.sha256(
+            json.dumps(domain, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        source_resolution="immutable-catalog-id.v1",
+        issue_order_preserved_within_severity_group=True,
+        issue_counts={group: len(domain[group]) for group in ("blocking_issues", "audit_issues")},
+    )
+    return domain, receipt, ()

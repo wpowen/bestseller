@@ -1,0 +1,1260 @@
+"""Evidence-bound working-pointer and non-evaluation code reconciliation.
+
+This never reviews, grades, adopts, replenishes attempts, or commits. A retained
+available review can survive bounded selection/control fixes only when its
+original policy bytes and unchanged evaluation/data dependencies are proven.
+"""
+from __future__ import annotations
+
+import ast
+from copy import deepcopy
+from datetime import UTC, datetime
+import hashlib
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel, ChapterModel, ProjectModel, SceneCardModel, WorkflowRunModel,
+)
+
+
+_SELECTION_FUNCTION = "_promote_best_scoring_chapter_draft_on_stall"
+_SELECTION_POLICY_FILE = "chapter_draft_candidate_eligibility.py"
+_PREFLIGHT_POLICY_FILE = "chapter_review_preflight.py"
+_CONTEXT_POLICY_FILE = "context.py"
+_ROUTING_POLICY_FILE = "config/model_catalog.yaml"
+_EDITOR_CONTROL_POLICY_FILES = {"chapter_rewrite_outcome.py", "rewrite_candidate_evidence.py", "rewrite_repair_source.py", "lossless_rewrite_prompt.py", "lossless_source_encoding.py", "lossless_adopted_span_encoding.py"}
+# Frozen physical modules: only the final editor overflow raise becomes the
+# existing complete-source delegate (original system/task/source/reserve,
+# tools=None) plus derived receipt fields. Normal, V1 and span paths stay exact.
+# Whole-file pins also bind every import, helper, protocol and budget reference;
+# this is never a license to ignore arbitrary editor-function changes.
+_EDITOR_SOURCE_TRANSPORT_SHA_TRANSITIONS = {
+    "lossless_rewrite_prompt.py": (
+        "481367d4bcbb7e6436416410ba359696811f98d4c009e61a04d68b8e3768fda0",
+        "a705c7bd87fa10345d30ca554fa98786a98c7510e3fba8eb2208e0423ececd7e",
+    ),
+}
+_FAILED_REWRITE_GUARD = '''
+if chapter_rewrite_task.status == "failed":
+    from bestseller.services.chapter_rewrite_outcome import retain_failed_chapter_rewrite_outcome
+    await retain_failed_chapter_rewrite_outcome(
+        session, workflow=workflow_run, chapter=chapter,
+        current_draft=chapter_draft, rewrite_task=chapter_rewrite_task,
+    )
+    requires_human_review = True
+    await _checkpoint_commit(session)
+    break
+'''
+_REWRITE_RETURN_CHECKPOINT = '''
+from bestseller.services.chapter_rewrite_outcome import retain_failed_chapter_rewrite_outcome
+rejected_rewrite_outcome = await retain_failed_chapter_rewrite_outcome(
+    session, workflow=workflow_run, chapter=chapter,
+    current_draft=chapter_draft, rewrite_task=chapter_rewrite_task,
+)
+step_order += 1
+await _checkpoint_commit(session)
+if rejected_rewrite_outcome is not None:
+    requires_human_review = True
+    break
+'''
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _editor_source_transport_compatibility(name: str, previous: bytes, current: bytes) -> dict[str, Any]:
+    approved = _EDITOR_SOURCE_TRANSPORT_SHA_TRANSITIONS.get(name)
+    if approved is None or not isinstance(previous, bytes) or not isinstance(current, bytes):
+        raise ValueError("review_compatibility_editor_source_file_unverified")
+    if (_digest(previous), _digest(current)) != approved:
+        raise ValueError("review_compatibility_editor_source_delta_unverified")
+    return {
+        "schema": "editor-source-transport-compatibility.v1", "file": name,
+        "function": "prepare_source_complete_prompt",
+        "transition": "editor-final-overflow-complete-source-delegate.v1",
+        "previous_source_sha256": approved[0], "current_source_sha256": approved[1],
+        "all_other_editor_code_ast_unchanged": True,
+        "normal_and_lossless_encoding_paths_unchanged": True,
+        "original_system_task_source_output_reserve_unchanged": True,
+        "delegate_tools": None, "receipt_metadata_derived_only": True,
+        "review_evaluator_changed": False, "grade_reused_across_input_changes": False,
+        "budget_increased": False, "new_review_credit": False,
+    }
+
+
+def _normalized_module(source: str) -> str:
+    module = ast.parse(source)
+    module.body = [node for node in module.body
+                   if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   or node.name != _SELECTION_FUNCTION]
+    for node in ast.walk(module):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_promote_reviewed_chapter_draft":
+            guarded = ast.parse(
+                'if draft.promotion_state != DraftPromotionState.ELIGIBLE.value:\n'
+                '    await mark_candidate_under_review(\n'
+                '        session, project_id=project.id, draft_kind="chapter",\n'
+                '        draft_id=draft.id, workflow_run_id=workflow_run_id)\n'
+            ).body[0]
+            for nested in ast.walk(node):
+                for field in ("body", "orelse", "finalbody"):
+                    statements = getattr(nested, field, None)
+                    if isinstance(statements, list):
+                        setattr(nested, field, [guarded.body[0] if ast.dump(statement) == ast.dump(guarded)
+                                              else statement for statement in statements])
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_chapter_pipeline":
+            guarded_preflight = ast.parse(
+                "if use_chapter_first and not resume_existing_draft_only and not should_supersede_pending_rewrites:\n"
+                "    from bestseller.services.chapter_review_preflight import validate_retained_review_before_processing\n"
+                "    await validate_retained_review_before_processing(session, settings, chapter)\n"
+            ).body[0]
+            node.body = [statement for statement in node.body
+                         if ast.dump(statement) != ast.dump(guarded_preflight)]
+            # These exact additions preserve rejected editor output before the
+            # next review iteration. They cannot change a critic verdict, its
+            # source, configuration, or attempt budget.
+            rejected_guard = ast.parse(_FAILED_REWRITE_GUARD).body[0]
+            checkpoint = ast.parse(_REWRITE_RETURN_CHECKPOINT).body
+            checkpoint_ast = [ast.dump(statement) for statement in checkpoint]
+            for nested in ast.walk(node):
+                for field in ("body", "orelse", "finalbody"):
+                    statements = getattr(nested, field, None)
+                    if not isinstance(statements, list):
+                        continue
+                    statements = [statement for statement in statements
+                                  if ast.dump(statement) != ast.dump(rejected_guard)]
+                    for index in range(len(statements) - len(checkpoint) + 1):
+                        if [ast.dump(statement) for statement in statements[index:index + len(checkpoint)]] == checkpoint_ast:
+                            statements[index:index + len(checkpoint)] = [checkpoint[2]]
+                            break
+                    setattr(nested, field, statements)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_chapter_critic_semantic_dependencies":
+            # The actual gateway already applies this profile. Only the exact
+            # local canonicalization may differ; all dependency data/config
+            # fields and validation logic must still match the old evaluator.
+            canonicalization = ast.parse(
+                "from bestseller.settings import apply_runtime_llm_profile\n"
+                "settings = apply_runtime_llm_profile(settings)\n"
+            ).body
+            offset = int(bool(node.body and isinstance(node.body[0], ast.Expr)
+                              and isinstance(node.body[0].value, ast.Constant)
+                              and isinstance(node.body[0].value.value, str)))
+            if [ast.dump(value) for value in node.body[offset:offset + 2]] == [
+                ast.dump(value) for value in canonicalization
+            ]:
+                del node.body[offset:offset + 2]
+        if isinstance(node, ast.FunctionDef) and node.name == "chapter_review_recovery_source_hash":
+            node.body = [statement for statement in node.body if not (
+                isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
+                and isinstance(statement.value.func, ast.Attribute) and statement.value.func.attr == "add"
+                and isinstance(statement.value.func.value, ast.Name) and statement.value.func.value.id == "policy_files"
+                and len(statement.value.args) == 1 and isinstance(statement.value.args[0], ast.BinOp)
+                and isinstance(statement.value.args[0].left, ast.Name) and statement.value.args[0].left.id == "root"
+                and isinstance(statement.value.args[0].op, ast.Div)
+                and isinstance(statement.value.args[0].right, ast.Constant)
+                and statement.value.args[0].right.value == _ROUTING_POLICY_FILE
+            )]
+            for inventory in ast.walk(node):
+                if isinstance(inventory, ast.Tuple) and any(
+                    isinstance(value, ast.Constant) and value.value == "pipelines.py"
+                    for value in inventory.elts
+                ):
+                    inventory.elts = [value for value in inventory.elts if not (
+                        isinstance(value, ast.Constant) and value.value in {
+                            _SELECTION_POLICY_FILE, _CONTEXT_POLICY_FILE, _PREFLIGHT_POLICY_FILE,
+                            *_EDITOR_CONTROL_POLICY_FILES}
+                    )]
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == _SELECTION_FUNCTION:
+            node.keywords = [kw for kw in node.keywords if not (
+                kw.arg == "settings" and isinstance(kw.value, ast.Name) and kw.value.id == "settings"
+            )]
+    return ast.dump(module, include_attributes=False)
+
+
+# Exact reviewed framework code transition, independent of book or runtime IDs.
+_PROMOTION_ADMISSION_AST_TRANSITIONS: dict[tuple[str, str], str] = {
+    ("b9538753b203140b721ddd5931b9ee04293300f2c0badb3b443de732575fb941",
+     "851fa55581f0b2915f78f7221e032c89e967da43348e3a4ecb1186e2d957ed1e"):
+        "source-rejected-incumbent-admission.v1",
+}
+_RETAINED_SOURCE_ADAPTER_AST_TRANSITIONS = {
+    "_retained_source": (
+        "5c661bede196c4514640b45b18cfc24f15bd6f403103258d5d6a44c087927729",
+        "696c5e50068d83eea8bdac8fb0ea823ea22e7b69bb4e8ae24f9a6dd9ce4c5b2d"),
+    "_known_selection_source": (
+        "49c4dda2e71fc9db3ba4890cfc5dfe0d2ea6ce18902e74f4f6efdc405de54add",
+        "5c9850db456218bc3729c0e48aeb018d4a98484dc7ca5f8ec3c4479953c8d029"),
+    "_audit_source_compatibility": (
+        "47777c64146356f003d71710fc114e149eb0fd7315d6cd52173ed6be3347fd3b",
+        "b5e2c827a6f9c5eabc687db08405dbd58705e3a50313490c1bc284d23b15393a"),
+    "_commercial_proof": (
+        "712fb270ab51465f85cbb7de198d33c5dba94a39b00442b6e039a57d691b9b69",
+        "dfd1db7278154922f06d93e3106ac6f8b75549148ba8da1ea79233dc27e4086f"),
+    "verify_retained_review_inputs": (
+        "d155ccd2c44c91d345b7a55430d7734573dec2b8d934466af8a3e643fcdf73f9",
+        "02179df1074ff7038fae29f2ae0a12709101f64ef31e59b96f13c9c4f41b8e16"),
+}
+_PROJECTION_AUDIT_HELPER_AST = "2afc8949fcc76fa9cc870b98abc78053f62e9979dc346925bd9aec6b3a95324c"
+_ADOPTION_SOURCE_CONTROL_AST_TRANSITIONS: dict[str, tuple[str, str | None, str]] = {
+    "adopted_chapter_source.py": ("explicit_continuity_source_rejection", None,
+        "5db3178937c6f3a49071a2420e57d70bfdde627ef075dbb89e1be91844d009dd"),
+    "chapter_scene_contract_materializer.py": ("chapter_contract_has_adopted_source",
+        "583580d10f8614f821620f12e047a432ed3a4bf67b9b6e15359e605fa3edb6d9",
+        "e01546a3fe5ab0555b1a5ac3d0a4b059cafef1c595dabd1e8c741c7569794c67"),
+}
+
+
+def _adoption_source_control_compatibility(name: str, previous: bytes, current: bytes) -> dict[str, Any]:
+    approved = _ADOPTION_SOURCE_CONTROL_AST_TRANSITIONS.get(name)
+    if approved is None:
+        raise ValueError("review_compatibility_adoption_source_file_unverified")
+    function_name, old_hash, new_hash = approved
+    trees = [ast.parse(previous.decode()), ast.parse(current.decode())]
+    actual = []
+    for tree in trees:
+        functions = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and node.name == function_name]
+        if len(functions) > 1:
+            raise ValueError("review_compatibility_adoption_source_definition_unverified")
+        actual.append(_digest(ast.dump(functions[0]).encode()) if functions else None)
+        if functions:
+            tree.body.remove(functions[0])
+    if tuple(actual) != (old_hash, new_hash) or ast.dump(trees[0]) != ast.dump(trees[1]):
+        raise ValueError("review_compatibility_adoption_source_delta_unverified")
+    return {"schema": "adoption-source-control-compatibility.v1", "file": name,
+            "function": function_name, "previous_function_ast_sha256": old_hash,
+            "current_function_ast_sha256": new_hash, "previous_source_sha256": _digest(previous),
+            "current_source_sha256": _digest(current), "review_evaluator_changed": False,
+            "all_other_source_code_ast_unchanged": True}
+
+
+def _promotion_admission_policy_compatibility(previous: bytes, current: bytes) -> dict[str, Any]:
+    """Allow one pinned adoption-control delta, never arbitrary function removal."""
+    def split(data: bytes) -> tuple[str, str]:
+        tree = ast.parse(data.decode())
+        functions = [node for node in tree.body
+                     if isinstance(node, ast.AsyncFunctionDef) and node.name == "promote_best_draft"]
+        if len(functions) != 1:
+            raise ValueError("review_compatibility_promotion_definition_missing")
+        function = functions[0]
+        tree.body.remove(function)
+        return ast.dump(tree, include_attributes=False), _digest(
+            ast.dump(function, include_attributes=False).encode())
+    old_outside, old_ast = split(previous)
+    new_outside, new_ast = split(current)
+    transition = _PROMOTION_ADMISSION_AST_TRANSITIONS.get((old_ast, new_ast))
+    if old_outside != new_outside or not transition:
+        raise ValueError("review_compatibility_promotion_control_delta_unverified")
+    return {"schema": "promotion-admission-control-compatibility.v1",
+            "transition": transition, "previous_function_ast_sha256": old_ast,
+            "current_function_ast_sha256": new_ast,
+            "previous_source_sha256": _digest(previous), "current_source_sha256": _digest(current),
+            "all_other_promotion_code_ast_unchanged": True,
+            "review_evaluator_changed": False, "grade_reused_across_input_changes": False}
+
+
+def _readonly_session_inspection_compatibility(previous: bytes, current: bytes) -> dict[str, Any]:
+    """Bound immutable inspection and the exact existing-producer schema adapter.
+
+    The only semantic edge still removes one opaque audit hash. Whole current
+    source, editable intent, body, physical request/return and route proof remain
+    mandatory; these adapter transitions cannot dispatch or alter a grade.
+    """
+    old_tree, new_tree = ast.parse(previous.decode()), ast.parse(current.decode())
+    classes = [node for node in new_tree.body
+               if isinstance(node, ast.ClassDef) and node.name == "_ReadOnlySession"]
+    if len(classes) != 1:
+        raise ValueError("review_compatibility_readonly_definition_missing")
+    adapter = classes[0]
+    for name in ("dirty", "new", "deleted"):
+        expected = ast.parse(f"@property\ndef {name}(self):\n    return tuple(self._session.{name})\n").body[0]
+        matches = [node for node in adapter.body
+                   if isinstance(node, ast.FunctionDef) and node.name == name]
+        if len(matches) != 1 or ast.dump(matches[0]) != ast.dump(expected):
+            raise ValueError("review_compatibility_readonly_inspection_unverified")
+        adapter.body.remove(matches[0])
+    protocol_adapters = []
+    for name, approved in _RETAINED_SOURCE_ADAPTER_AST_TRANSITIONS.items():
+        old_functions = [node for node in old_tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name]
+        new_functions = [node for node in new_tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name]
+        if len(old_functions) != 1 or len(new_functions) != 1:
+            raise ValueError("review_compatibility_source_adapter_definition_missing")
+        old_function, new_function = old_functions[0], new_functions[0]
+        old_ast, new_ast = ast.dump(old_function), ast.dump(new_function)
+        if old_ast == new_ast:
+            continue
+        if (_digest(old_ast.encode()), _digest(new_ast.encode())) != approved:
+            raise ValueError("review_compatibility_source_adapter_transition_unverified")
+        new_tree.body[new_tree.body.index(new_function)] = old_function
+        protocol_adapters.append(name)
+    helper_name = "_projection_audit_compatibility"
+    old_helpers = [node for node in old_tree.body if isinstance(node, ast.FunctionDef) and node.name == helper_name]
+    new_helpers = [node for node in new_tree.body if isinstance(node, ast.FunctionDef) and node.name == helper_name]
+    if not old_helpers:
+        if len(new_helpers) != 1 or _digest(ast.dump(new_helpers[0]).encode()) != _PROJECTION_AUDIT_HELPER_AST:
+            raise ValueError("review_compatibility_projection_audit_adapter_unverified")
+        new_tree.body.remove(new_helpers[0])
+        protocol_adapters.append(helper_name)
+    if ast.dump(old_tree) != ast.dump(new_tree):
+        raise ValueError("review_compatibility_readonly_other_code_changed")
+    return {"schema": "readonly-session-inspection-compatibility.v1",
+            "previous_source_sha256": _digest(previous), "current_source_sha256": _digest(current),
+            "immutable_inspection_only": ["dirty", "new", "deleted"],
+            "exact_source_protocol_adapters": protocol_adapters,
+            "query_and_mutation_guards_unchanged": True, "review_evaluator_changed": False}
+
+
+_SOURCE_RECORD_ALIAS_PINS = {'commercial_review_wire.py': ('82344953ee0673329ce7f8b914b39323bce250e2418d8a3401824585f078c183', 'cbfd1033734f6592192aee6c3d589624f3b2a4fa0110d8630439a1bc7ae5b615'), 'commercial_judge_recovery.py': ('0c929fff84e3075996c25cc11b589df2c42bc619e6bd53acda1ef4e7d5a65fd7', '142ca119c065a0a0b2cd9b6af0ca0f6f3caafc29234ca8d4a000018c196d99e5')}
+_SOURCE_RECORD_ALIAS_AST_PINS = {'old_parser': 'afc4b8da623dfc237f8da2eb9cd3cd57452d2935cc318551fa29309ca9e91b5e', 'new_parser': 'd1ff201c8fffabf37e4bc5144e194254eacd6117386de0d4b4cbaca3e15629af', 'unique_fields': '314811dacd067db6ee10fb5da03aa6caabafd9f76b5c9c220ad8d1d0f8afa478', 'record_aliases': '3a0542ab3b90e849d6d304e3b9b5441d921b1264136d7a7fd7dd1624b1b02753', 'cache_helper': '0f24caf360274dad36dca259dd9e0ef26dc19e4e968f8f632372dc6abffe65ad', 'strict_json': '391c2fc7549b100b3ce474c01cc0e6ee1948baebefab7b462ca6d524a8883116', 'native_aggregate': '391a18a74797fa5b83d960412c21a64c1b3b9a1790ccc3c50a1685ce6830f241', 'cohort_view': '155e1502cfba26d645e73f79e8cee886b615fad3ee4a647ef80fa80ce3166a5d', 'aggregate_selector': 'cbfee889ec204549c5991d74d0babbae5c552d02125dcddc341e42797d63f758', 'old_historical_cohort': '18d4631ac5423241914f728b84ad5fd656af81388f8e227a54016898305a30cb', 'new_historical_cohort': '8db8944d3a65a82c8b0377f6112e6da97d0b08fc556a692b9622d329d3c82beb', 'old_aggregate_binder': 'fc2ebefca604312a242ab6c027afe43c65335830b6ffe6d87c3259fff6f61462', 'new_aggregate_binder': '56af4069e2bc5e6bbe3f5ffb31b4e9b6ada04709c823cfe3530a1d0bb78b1c7e'}
+_SOURCE_RECORD_ALIAS_CACHE_CALL = '''
+derived = _derive_verified_alias_cached_slot(
+    raw=raw, sources=sources, contract=contract, stored_report=report, result=result, envelope=envelope,
+    rebuilt=rebuilt, adapter=current_adapter, errors=errors, submission=submission,
+    submission_errors=submission_errors, paid=paid, run=run,
+    operation=operation, attempt=attempt, transport=transport, settings=settings,
+)
+if derived is not None:
+    return derived[0], derived[1], run
+'''
+_SOURCE_RECORD_ALIAS_CONSUMER_DELTAS = {'src/bestseller/services/waiting_chapter_review_resume.py': {'bytes': ('acce182192378908f2f43eee8537889af6da3cc4e6291e7207833b6990e7ca6f', '037715be1049d0e604a7d7ca8d51cd34901aa6c4a561b35d2e06de53ac3722c6'), 'functions': {'_current_commercial_prerequisite': ('a1af0501b392f9acdae6f176ea46d9b14343e7fe9986d4a7c0842f98031adf31', '9989ddf729a1883d8f6f09cd432492860e49014d3cf44af5de149ec4d5d02793'), '_normal_commercial_prerequisite': ('5b81b8e7fb7329212292cea19beb39fc67602e6649b8de8e19972d0c59fc0004', 'b463151775d156e8a234644aeba369cbd30bf1aa9d4441f37c545ad9e37e677a')}}, 'src/bestseller/services/retained_review_input_proof.py': {'bytes': ('45f86cb82e02743576aa3df5a3e0fdeeb7542ae8fdd9eac8caf071cb7da35bc6', '34058ff7ae19d813ce840f4412ab65b51f74da1e8e0b44a4da0ccbd9003b8f58'), 'functions': {'_commercial_proof': ('dfd1db7278154922f06d93e3106ac6f8b75549148ba8da1ea79233dc27e4086f', '1e60b85aa7beed83be4070b843796a2538d4b9f5b78f9c4654de190428dc8679')}}, 'src/bestseller/services/chapter_llm_quality_judge.py': {'bytes': ('f51279175cee3b0fdae3802819e0506b4260fcb58a39e62e801fb61ffc8c6aaf', '174f0f4bfe24d3f42510957418fa67010c8cb39a103334653213129c8acdccf4'), 'functions': {'judge_chapter_commercial_quality_stable': ('f9ee37c5b49bb2437ff75d1160846031c24ce9cf9715776b939a0d9428ee9046', '2536cb6bc34ec582ae2d2008c3c61c688478fa1b3fbaaf1a40433f23ba6dd83c')}}, 'src/bestseller/services/commercial_action_projection.py': {'bytes': ('4775fcf18ccdfe6e6e2543013f7c1e98b0f64fc765b18e75d6d2598053af9a82', '4221c6478637cf0bafd9adefcb3dc8bfa99ca25cac6cc32c020b37a3952ad3ae'), 'functions': {'project_commercial_actions': ('bc7c0f7c0aa9397bd9e93b3e876510f9290675e7108e591d1cd46c317b386b05', 'c277c1771be7ec2dc8f1c7589c135929b64dbfe2d4fd7d2f40b7ec4f799af018'), 'resolve_source_record_alias_capability': (None, '0ec92b3c65c3c6f04035da9e966d1e9623b85b1cba999c769ab17adf82c10be2'), '_resolve_source_record_alias_capability': (None, '851326b363b92149a0da50a7d2bdb4ed8349db36888fd8908339b0044bea4024')}}, 'src/bestseller/services/chapter_verified_fact_disposition.py': {'bytes': ('29ceb4689adc799ebe33bc8c4226a9f423737b4e1472810e758f257ebda9c021', 'b186b0c422ab824e2146b4351728dcbbe13ee409ded5c31154dcca91bed9c155'), 'functions': {'_quorum_actions': ('fe197169a96233714ee5f53c681adce12c3b6f0388d1f8f795d20950ee6aa52d', '2dc3e091f9d790e18145f975c8c2e5bfefca4b6907cae8dc142c62bb4f0dd16e')}}, 'src/bestseller/services/chapter_draft_candidate_eligibility.py': {'bytes': ('bc8a8965d704c923278a2f5a24ef7a9a1f9c8538b9da68433f64a6aae52658e5', '81b3279edf792ea7dc0a6b711ac66265d9538eee341aac11408bbc54fd182118'), 'functions': {'_verified_commercial_actions': ('ef24665339bfe33b4e9825d412086a01cd7a3abfcf5df43e77b641fa5f917211', '9d83609583ab32610f64ae42677ac586d0d81ce1c6e0dfe5d0b24162a9404a74')}}}
+
+
+def _source_record_alias_policy_compatibility(
+    *,
+    previous_wire,
+    current_wire,
+    previous_recovery,
+    current_recovery,
+    previous_consumers=None,
+    current_consumers=None,
+):
+    """Exact reviewed identity-only wire and immutable cached-result projection."""
+    pairs = {
+        "commercial_review_wire.py": (previous_wire, current_wire),
+        "commercial_judge_recovery.py": (previous_recovery, current_recovery),
+    }
+    for name, values in pairs.items():
+        approved = _SOURCE_RECORD_ALIAS_PINS[name]
+        if (
+            not all(isinstance(value, bytes) for value in values)
+            or not all(isinstance(value, str) and len(value) == 64 for value in approved)
+            or tuple(_digest(value) for value in values) != approved
+        ):
+            raise ValueError("review_compatibility_source_alias_bytes_unverified")
+    if not all(_SOURCE_RECORD_ALIAS_AST_PINS.values()):
+        raise ValueError("review_compatibility_source_alias_ast_not_reviewed")
+
+    def function(tree, name):
+        nodes = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+        ]
+        if len(nodes) != 1:
+            raise ValueError("review_compatibility_source_alias_definition_changed")
+        return nodes[0]
+
+    def check(node, name):
+        if (
+            _digest(ast.dump(node, include_attributes=False).encode())
+            != _SOURCE_RECORD_ALIAS_AST_PINS[name]
+        ):
+            raise ValueError("review_compatibility_source_alias_function_changed:" + name)
+
+    before, after = ast.parse(previous_wire), ast.parse(current_wire)
+    old_parser, new_parser = (
+        function(before, "parse_commercial_wire"),
+        function(after, "parse_commercial_wire"),
+    )
+    check(old_parser, "old_parser")
+    check(new_parser, "new_parser")
+    for name, pin in (
+        ("_unique_fields", "unique_fields"),
+        ("_source_record_aliases", "record_aliases"),
+    ):
+        node = function(after, name)
+        check(node, pin)
+        after.body.remove(node)
+    before.body.remove(old_parser)
+    after.body.remove(new_parser)
+    uuid_import = ast.parse("from uuid import UUID").body[0]
+    imports = [node for node in after.body if ast.dump(node) == ast.dump(uuid_import)]
+    if len(imports) != 1:
+        raise ValueError("review_compatibility_source_alias_import_changed")
+    after.body.remove(imports[0])
+    imports = [
+        node
+        for node in after.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "bestseller.services.commercial_source_evidence"
+    ]
+    if (
+        len(imports) != 1
+        or sum(
+            item.name == "assemble_commercial_sources" and item.asname is None
+            for item in imports[0].names
+        )
+        != 1
+    ):
+        raise ValueError("review_compatibility_source_alias_import_changed")
+    imports[0].names = [
+        item for item in imports[0].names if item.name != "assemble_commercial_sources"
+    ]
+    if ast.dump(before) != ast.dump(after):
+        raise ValueError("review_compatibility_source_alias_other_wire_ast_changed")
+
+    before, after = ast.parse(previous_recovery), ast.parse(current_recovery)
+    for name, pin in (
+        ("_derive_verified_alias_cached_slot", "cache_helper"),
+        ("_source_alias_json", "strict_json"),
+        ("_source_alias_native_aggregate", "native_aggregate"),
+        ("_verified_source_alias_cohort_view", "cohort_view"),
+        ("_source_alias_cached_aggregate", "aggregate_selector"),
+    ):
+        helper = function(after, name)
+        check(helper, pin)
+        after.body.remove(helper)
+    for name, pin in (
+        ("_historical_commercial_cohort", "historical_cohort"),
+        ("bind_commercial_component_aggregate", "aggregate_binder"),
+    ):
+        old_function, new_function = function(before, name), function(after, name)
+        check(old_function, "old_" + pin)
+        check(new_function, "new_" + pin)
+        before.body.remove(old_function)
+        after.body.remove(new_function)
+    old_slot, new_slot = (
+        function(before, "_verified_paid_slot"),
+        function(after, "_verified_paid_slot"),
+    )
+    old_parse = [
+        node
+        for node in ast.walk(old_slot)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "parse_commercial_wire"
+    ]
+    new_parse = [
+        node
+        for node in ast.walk(new_slot)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "parse_commercial_wire"
+    ]
+    if (
+        len(old_parse) != 1
+        or len(new_parse) != 1
+        or ast.unparse(new_parse[0].targets[0]) != "(parsed, current_adapter, errors)"
+    ):
+        raise ValueError("review_compatibility_source_alias_parser_call_changed")
+    new_parse[0].targets = deepcopy(old_parse[0].targets)
+    marker = ast.parse('raise ValueError("commercial_cohort_cached_domain_changed")').body[0]
+    branches = [
+        node
+        for node in ast.walk(new_slot)
+        if isinstance(node, ast.If) and node.body and ast.dump(node.body[-1]) == ast.dump(marker)
+    ]
+    expected = ast.parse(_SOURCE_RECORD_ALIAS_CACHE_CALL).body
+    if len(branches) != 1 or [ast.dump(node) for node in branches[0].body[:-1]] != [
+        ast.dump(node) for node in expected
+    ]:
+        raise ValueError("review_compatibility_source_alias_cache_branch_changed")
+    branches[0].body = [marker]
+    if ast.dump(before) != ast.dump(after):
+        raise ValueError("review_compatibility_source_alias_other_recovery_ast_changed")
+    if (
+        not isinstance(previous_consumers, dict)
+        or not isinstance(current_consumers, dict)
+        or set(previous_consumers) != set(_SOURCE_RECORD_ALIAS_CONSUMER_DELTAS)
+        or set(current_consumers) != set(_SOURCE_RECORD_ALIAS_CONSUMER_DELTAS)
+    ):
+        raise ValueError("review_compatibility_source_alias_consumer_set_changed")
+    for path, reviewed in _SOURCE_RECORD_ALIAS_CONSUMER_DELTAS.items():
+        old_source, new_source = previous_consumers[path], current_consumers[path]
+        if (
+            not isinstance(old_source, bytes)
+            or not isinstance(new_source, bytes)
+            or (_digest(old_source), _digest(new_source)) != tuple(reviewed["bytes"])
+        ):
+            raise ValueError("review_compatibility_source_alias_consumer_bytes_changed:" + path)
+        old_tree, new_tree = ast.parse(old_source), ast.parse(new_source)
+        for name, pins in reviewed["functions"].items():
+            old_function = function(old_tree, name) if pins[0] is not None else None
+            new_function = function(new_tree, name)
+            if (
+                old_function is not None and _digest(ast.dump(old_function).encode()) != pins[0]
+            ) or _digest(ast.dump(new_function).encode()) != pins[1]:
+                raise ValueError(
+                    "review_compatibility_source_alias_consumer_function_changed:"
+                    + path
+                    + ":"
+                    + name
+                )
+            if old_function is not None:
+                old_tree.body.remove(old_function)
+            new_tree.body.remove(new_function)
+        if ast.dump(old_tree) != ast.dump(new_tree):
+            raise ValueError("review_compatibility_source_alias_other_consumer_ast_changed:" + path)
+    return {
+        "schema": "commercial-source-record-alias-compatibility.v1",
+        "wire_source_sha256": _SOURCE_RECORD_ALIAS_PINS["commercial_review_wire.py"][1],
+        "recovery_source_sha256": _SOURCE_RECORD_ALIAS_PINS["commercial_judge_recovery.py"][1],
+        "canonical_reports_and_receipts_unchanged": True,
+        "alias_scope": "unique-record-identity-only; full-typed-strict-validation",
+        "cached_domain": "authenticate-frozen-legacy-before-current-derived-projection",
+        "physical_guards_unchanged": True,
+        "scores_modified": False,
+        "issues_dropped": 0,
+        "raw_reports_modified": False,
+        "new_review_credit": False,
+        "dispatch_authorized": False,
+    }
+
+
+def _review_policy_inventory(root: Path, source: str) -> set[Path]:
+    """Resolve the actual hash function's static Path expressions, without exec.
+
+    A filename's directory comes from its expression, never its spelling.
+    This preserves e.g. both services/context.py and domain/context.py.
+    """
+    services = root / "src/bestseller/services"
+    definitions = [node for node in ast.parse(source).body
+                   if isinstance(node, ast.FunctionDef) and node.name == "chapter_review_recovery_source_hash"]
+    if len(definitions) != 1:
+        raise ValueError("review_compatibility_policy_inventory_unverified")
+    function = definitions[0]
+    bindings = [node for node in function.body if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "policy_files" for target in node.targets)]
+    if not bindings:
+        # Legacy literal-only inventories (also used by the small unit fixtures).
+        # Their exact original bytes remain bound by both whole-policy hashes.
+        literals = {node.value for node in ast.walk(function)
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+        paths = {root / value if "/" in value else services / value
+                 for value in literals if value.endswith((".py", ".yaml")) and "*" not in value}
+        paths.update((services / "quality_levers").rglob("*.py"))
+        return paths
+    if len(bindings) != 1:
+        raise ValueError("review_compatibility_policy_inventory_unverified")
+
+    def resolve(node, variables=None):
+        variables = {"root": root, "services": services, **(variables or {})}
+        if isinstance(node, ast.Name) and node.id in variables:
+            return variables[node.id]
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            left, right = resolve(node.left, variables), resolve(node.right, variables)
+            if isinstance(left, Path) and isinstance(right, str):
+                result = left / right
+                if result.is_relative_to(root) and ".." not in result.parts:
+                    return result
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            return [resolve(item, variables) for item in node.elts]
+        if isinstance(node, (ast.SetComp, ast.GeneratorExp)) and len(node.generators) == 1:
+            generator = node.generators[0]
+            if isinstance(generator.target, ast.Name) and not generator.ifs and not generator.is_async:
+                return [resolve(node.elt, {**variables, generator.target.id: item})
+                        for item in resolve(generator.iter, variables)]
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "rglob" and len(node.args) == 1 and not node.keywords
+                and resolve(node.func.value, variables) == services / "quality_levers"
+                and resolve(node.args[0], variables) == "*.py"):
+            return list((services / "quality_levers").rglob("*.py"))
+        raise ValueError("review_compatibility_policy_inventory_expression_unverified")
+
+    initial = bindings[0].value
+    if (isinstance(initial, (ast.Tuple, ast.List, ast.Set))
+            and all(isinstance(item, ast.Constant) and isinstance(item.value, str)
+                    for item in initial.elts)):
+        paths = {root / item.value if "/" in item.value else services / item.value
+                 for item in initial.elts}
+    else:
+        paths = set(resolve(initial))
+    mutations = []
+    for statement in function.body:
+        if (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
+                and isinstance(statement.value.func, ast.Attribute)
+                and isinstance(statement.value.func.value, ast.Name)
+                and statement.value.func.value.id == "policy_files"):
+            call = statement.value
+            if len(call.args) != 1 or call.keywords or call.func.attr not in {"add", "update"}:
+                raise ValueError("review_compatibility_policy_inventory_unverified")
+            value = resolve(call.args[0])
+            paths.update([value] if call.func.attr == "add" else value)
+            mutations.append(call)
+    # Reject hidden conditional/method mutations the straight-line resolver did
+    # not process; silently dropping a domain or an update is never compatible.
+    all_mutations = [node for node in ast.walk(function) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+                     and node.func.value.id == "policy_files"]
+    if len(mutations) != len(all_mutations) or any(not isinstance(path, Path) for path in paths):
+        raise ValueError("review_compatibility_policy_inventory_unverified")
+    return paths
+
+
+def candidate_selection_policy_compatibility(
+    *, root: Path, previous_pipeline_source: bytes,
+    expected_previous_policy_hash: str, expected_current_policy_hash: str,
+    previous_review_source: bytes | None = None,
+    previous_generation_source: bytes | None = None,
+    previous_promotion_source: bytes | None = None,
+    previous_input_proof_source: bytes | None = None,
+    previous_adoption_sources: dict[str, bytes] | None = None,
+    previous_editor_control_sources: dict[str, bytes] | None = None,
+) -> dict[str, Any]:
+    """Prove bounded control/config identity deltas using the old real policy hash.
+
+    Extract the existing hash function's literal file inventory and its known
+    quality-lever glob. Verify completeness against the canonical current hash;
+    an inventory change this parser cannot represent fails closed.
+    """
+    pipeline = root / "src/bestseller/services/pipelines.py"
+    current_source = pipeline.read_bytes()
+    old_text, new_text = previous_pipeline_source.decode(), current_source.decode()
+    if _normalized_module(old_text) != _normalized_module(new_text):
+        raise ValueError("review_compatibility_evaluation_code_changed")
+    services = root / "src/bestseller/services"
+    reviews_path = services / "reviews.py"
+    if previous_review_source is not None:
+        def outside_rewriter(data: bytes) -> str:
+            tree = ast.parse(data.decode())
+            names = {"rewrite_chapter_from_task", "build_chapter_rewrite_prompts"}
+            functions = [node for node in tree.body if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+                         and node.name in names]
+            if {node.name for node in functions} != names or len(functions) != len(names):
+                raise ValueError("review_compatibility_rewriter_definition_missing")
+            tree.body = [node for node in tree.body if node not in functions]
+            return ast.dump(tree, include_attributes=False)
+        if outside_rewriter(previous_review_source) != outside_rewriter(reviews_path.read_bytes()):
+            raise ValueError("review_compatibility_review_evaluator_changed")
+    generation_path = services / "chapter_generation_input_builder.py"
+    if previous_generation_source is not None:
+        runtime_keys = {
+            "chapter_critic_cycles", "chapter_review_active_cycle", "chapter_review_recovery_cycles",
+            "chapter_review_attempts_active", "chapter_first_resume_existing_draft_id",
+            "chapter_review_evidence_status", "chapter_review_evidence_report_id",
+        }
+        def without_known_runtime_keys(data: bytes, *, current: bool = False) -> str:
+            tree = ast.parse(data.decode())
+            bindings = [node for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
+                        and any(isinstance(target, ast.Name) and target.id == "_CHAPTER_RUNTIME_EVIDENCE_KEYS"
+                                for target in (node.targets if isinstance(node, ast.Assign) else [node.target]))]
+            if len(bindings) != 1:
+                raise ValueError("review_compatibility_runtime_projection_unverified")
+            call = bindings[0].value
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == "frozenset" and len(call.args) == 1
+                    and not call.keywords and isinstance(call.args[0], ast.Set)):
+                raise ValueError("review_compatibility_runtime_projection_unverified")
+            values = call.args[0].elts
+            if any(not isinstance(value, ast.Constant) or not isinstance(value.value, str) for value in values):
+                raise ValueError("review_compatibility_runtime_projection_unverified")
+            if len({value.value for value in values}) != len(values):
+                raise ValueError("review_compatibility_runtime_projection_unverified")
+            if current and not runtime_keys <= {value.value for value in values}:
+                raise ValueError("review_compatibility_runtime_projection_unverified")
+            call.args[0].elts = [value for value in values if value.value not in runtime_keys]
+            return ast.dump(tree, include_attributes=False)
+        if without_known_runtime_keys(previous_generation_source) != without_known_runtime_keys(generation_path.read_bytes(), current=True):
+            raise ValueError("review_compatibility_runtime_projection_changed_other_inputs")
+    promotion_path = services / "draft_promotion.py"
+    promotion_compatibility = None
+    if previous_promotion_source is not None:
+        promotion_compatibility = _promotion_admission_policy_compatibility(
+            previous_promotion_source, promotion_path.read_bytes())
+    input_proof_path = services / "retained_review_input_proof.py"
+    input_proof_compatibility = None
+    if previous_input_proof_source is not None:
+        input_proof_compatibility = _readonly_session_inspection_compatibility(
+            previous_input_proof_source, input_proof_path.read_bytes())
+    adoption_source_compatibilities = {}
+    if previous_adoption_sources is not None:
+        if (not isinstance(previous_adoption_sources, dict) or not previous_adoption_sources
+                or not previous_adoption_sources.keys() <= _ADOPTION_SOURCE_CONTROL_AST_TRANSITIONS.keys()):
+            raise ValueError("review_compatibility_adoption_source_files_unverified")
+        for name, previous in previous_adoption_sources.items():
+            adoption_source_compatibilities[name] = _adoption_source_control_compatibility(
+                name, previous, (services / name).read_bytes())
+    editor_source_compatibilities = {}
+    if previous_editor_control_sources is not None:
+        if (not isinstance(previous_editor_control_sources, dict) or not previous_editor_control_sources
+                or not previous_editor_control_sources.keys() <= _EDITOR_SOURCE_TRANSPORT_SHA_TRANSITIONS.keys()):
+            raise ValueError("review_compatibility_editor_source_files_unverified")
+        for name, previous in previous_editor_control_sources.items():
+            editor_source_compatibilities[name] = _editor_source_transport_compatibility(
+                name, previous, (services / name).read_bytes())
+    old_paths, paths = _review_policy_inventory(root, old_text), _review_policy_inventory(root, new_text)
+    if (pipeline not in paths or old_paths - paths
+            or paths - old_paths - {services / _SELECTION_POLICY_FILE, services / _CONTEXT_POLICY_FILE,
+                                    services / _PREFLIGHT_POLICY_FILE, root / _ROUTING_POLICY_FILE,
+                                    *(services / name for name in _EDITOR_CONTROL_POLICY_FILES)}):
+        raise ValueError("review_compatibility_policy_inventory_unverified")
+    if any(services / name not in old_paths & paths for name in editor_source_compatibilities):
+        raise ValueError("review_compatibility_editor_source_inventory_unverified")
+
+    def policy_hash(old: bool) -> str:
+        digest = hashlib.sha256()
+        for path in sorted(old_paths if old else paths):
+            data = previous_pipeline_source if old and path == pipeline else path.read_bytes()
+            if old and path == reviews_path and previous_review_source is not None:
+                data = previous_review_source
+            if old and path == generation_path and previous_generation_source is not None:
+                data = previous_generation_source
+            if old and path == promotion_path and previous_promotion_source is not None:
+                data = previous_promotion_source
+            if old and path == input_proof_path and previous_input_proof_source is not None:
+                data = previous_input_proof_source
+            if old and previous_adoption_sources and path.parent == services and path.name in previous_adoption_sources:
+                data = previous_adoption_sources[path.name]
+            if old and previous_editor_control_sources and path.parent == services and path.name in previous_editor_control_sources:
+                data = previous_editor_control_sources[path.name]
+            digest.update(str(path.relative_to(root)).encode() + b"\0")
+            digest.update(hashlib.sha256(data).digest())
+        return digest.hexdigest()
+
+    if policy_hash(False) != expected_current_policy_hash:
+        raise ValueError("review_compatibility_policy_inventory_unverified")
+    if policy_hash(True) != expected_previous_policy_hash:
+        raise ValueError("review_compatibility_original_policy_bytes_unverified")
+    return {
+        "schema": "candidate-selection-review-compatibility.v1",
+        "previous_policy_hash": expected_previous_policy_hash,
+        "current_policy_hash": expected_current_policy_hash,
+        "previous_pipeline_sha256": _digest(previous_pipeline_source),
+        "current_pipeline_sha256": _digest(current_source),
+        "previous_review_sha256": _digest(previous_review_source) if previous_review_source is not None else None,
+        "current_review_sha256": _digest(reviews_path.read_bytes()),
+        "unchanged_review_evaluator_ast": True,
+        "previous_generation_sha256": _digest(previous_generation_source) if previous_generation_source is not None else None,
+        "current_generation_sha256": _digest(generation_path.read_bytes()) if generation_path.exists() else None,
+        "unchanged_evaluation_ast": True,
+        "unchanged_other_policy_files": True,
+        **({"promotion_admission_compatibility": promotion_compatibility}
+           if promotion_compatibility is not None else {}),
+        **({"readonly_session_inspection_compatibility": input_proof_compatibility}
+           if input_proof_compatibility is not None else {}),
+        **({"adoption_source_compatibilities": adoption_source_compatibilities}
+           if adoption_source_compatibilities else {}),
+        **({"editor_source_compatibilities": editor_source_compatibilities}
+           if editor_source_compatibilities else {}),
+        "policy_file_count": len(paths),
+        "allowed_delta": [_SELECTION_FUNCTION, "its settings=settings caller keyword",
+                          _SELECTION_POLICY_FILE, _CONTEXT_POLICY_FILE, _ROUTING_POLICY_FILE,
+                          _PREFLIGHT_POLICY_FILE, "exact retained-cycle guard before paid preprocessing",
+                          "exact local effective-runtime profile canonicalization in semantic dependency fence",
+                          "exact rejected-editor terminal guard and result checkpoint; no retry authorization",
+                          "exact eligible-candidate resume guard; fresh eligibility and exact adoption still required",
+                          *sorted(_EDITOR_CONTROL_POLICY_FILES),
+                          *(["rewrite_chapter_from_task and build_chapter_rewrite_prompts only; all reviewer code unchanged"]
+                            if previous_review_source is not None else []),
+                          *(["seven exact producer-owned runtime metadata exclusions; no authored input changes"]
+                            if previous_generation_source is not None else []),
+                          *(["pinned exact source-rejected incumbent eligibility fix; no evaluator or threshold change"]
+                            if promotion_compatibility is not None else []),
+                          *(["exact immutable ORM inspection properties; SELECT-only query guards unchanged"]
+                            if input_proof_compatibility is not None else []),
+                          *(["pinned canonical explicit-source rejection helper and verified-absence consumer only"]
+                            if adoption_source_compatibilities else []),
+                          *(["pinned editor final-overflow complete-source delegate and derived receipt only"]
+                            if editor_source_compatibilities else [])],
+    }
+
+
+async def reconcile_retained_chapter_review(
+    session: AsyncSession, settings: Any, *, project_id: UUID, chapter_id: UUID,
+    expected_cycle_id: str, expected_current_draft_id: UUID,
+    previous_pipeline_source: bytes, actor: str, evidence_ref: str,
+    previous_review_source: bytes | None = None,
+    previous_generation_source: bytes | None = None,
+    previous_promotion_source: bytes | None = None,
+    previous_input_proof_source: bytes | None = None,
+    previous_adoption_sources: dict[str, bytes] | None = None,
+    previous_editor_control_sources: dict[str, bytes] | None = None,
+    allow_current_automatic_cycle: bool = False,
+) -> dict[str, Any]:
+    """Restore a reviewed working source, retaining every old row and attempt.
+
+    Caller uses a transaction/savepoint for dry-run and separately commits an
+    approved application. This helper cannot turn a candidate into an adoption.
+    Explicit current-automatic mode aliases only that current draft's completed
+    cycle; it never restores a pointer or changes any active recovery cycle.
+    """
+    from bestseller.services import pipelines
+    from bestseller.services.chapter_scene_contract_materializer import chapter_contract_has_adopted_source
+
+    if not actor.strip() or not evidence_ref.strip():
+        raise ValueError("review_reconciliation_explicit_evidence_required")
+    if type(allow_current_automatic_cycle) is not bool:
+        raise ValueError("review_reconciliation_invalid_cycle_mode")
+    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id)
+                                   .with_for_update().execution_options(populate_existing=True))
+    chapter = await session.scalar(select(ChapterModel).where(
+        ChapterModel.id == chapter_id, ChapterModel.project_id == project_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if project is None or chapter is None:
+        raise ValueError("review_reconciliation_project_chapter_missing")
+    if await chapter_contract_has_adopted_source(session, chapter=chapter):
+        raise ValueError("review_reconciliation_already_adopted")
+    scene_ids = list(await session.scalars(select(SceneCardModel.id).where(
+        SceneCardModel.project_id == project_id, SceneCardModel.chapter_id == chapter_id)))
+    from sqlalchemy import or_
+    active_work = await session.scalar(select(WorkflowRunModel.id).where(
+        WorkflowRunModel.project_id == project_id,
+        WorkflowRunModel.status.in_(("pending", "queued", "running")),
+        or_(
+            (WorkflowRunModel.scope_type == "chapter") & (WorkflowRunModel.scope_id == chapter_id),
+            (WorkflowRunModel.scope_type == "scene_card") & WorkflowRunModel.scope_id.in_(scene_ids),
+            (WorkflowRunModel.scope_type == "project") & (WorkflowRunModel.scope_id == project_id),
+        ),
+    ).limit(1))
+    if active_work is not None:
+        raise ValueError("review_reconciliation_active_workflow")
+    current = await session.scalar(select(ChapterDraftVersionModel).where(
+        ChapterDraftVersionModel.chapter_id == chapter_id,
+        ChapterDraftVersionModel.project_id == project_id,
+        ChapterDraftVersionModel.is_current.is_(True),
+    ).with_for_update().execution_options(populate_existing=True))
+    if current is None or current.id != expected_current_draft_id:
+        raise ValueError("review_reconciliation_working_pointer_changed")
+    metadata = deepcopy(chapter.metadata_json or {})
+    active = metadata.get("chapter_review_active_cycle") or {}
+    cycle = deepcopy((metadata.get("chapter_critic_cycles") or {}).get(expected_cycle_id))
+    if (not cycle or cycle.get("state") != "completed"
+            or (not allow_current_automatic_cycle and (
+                active.get("cycle_id") != expected_cycle_id or active.get("state") != "completed"))):
+        raise ValueError("review_reconciliation_completed_cycle_required")
+    if allow_current_automatic_cycle:
+        current_body_hash = pipelines.chapter_review_body_fingerprint(current.content_md or "")["digest"]
+        if (cycle.get("cycle_id") != expected_cycle_id
+                or expected_cycle_id != pipelines._chapter_critic_cycle_id(project_id, chapter_id, current_body_hash)
+                or cycle.get("source_draft_id") != str(current.id)
+                or cycle.get("source_body_hash") != current_body_hash):
+            raise ValueError("review_reconciliation_current_automatic_cycle_binding_mismatch")
+    attempts = cycle.get("attempts") or []
+    if not attempts or attempts[-1].get("state") != "completed" or attempts[-1].get("outcome") != "available":
+        raise ValueError("review_reconciliation_available_review_required")
+    source = await session.scalar(select(ChapterDraftVersionModel).where(
+        ChapterDraftVersionModel.id == UUID(cycle["source_draft_id"]),
+        ChapterDraftVersionModel.project_id == project_id,
+        ChapterDraftVersionModel.chapter_id == chapter_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if (source is None or source.project_id != project_id or source.chapter_id != chapter_id
+            or pipelines.chapter_review_body_fingerprint(source.content_md or "")["digest"] != cycle["source_body_hash"]):
+        raise ValueError("review_reconciliation_source_changed")
+    if allow_current_automatic_cycle and (source.id != current.id or not source.is_current):
+        raise ValueError("review_reconciliation_current_automatic_cycle_binding_mismatch")
+    result, report, quality, task = await pipelines._retained_chapter_critic_result(session, source, attempts[-1])
+    if result.verdict == "unknown" or pipelines._chapter_critic_evidence_unknown(report):
+        raise ValueError("review_reconciliation_unknown_evidence")
+    current_policy = pipelines.chapter_review_recovery_source_hash()
+    previous_receipts = cycle.get("candidate_selection_reconciliations") or []
+    previous_receipt = previous_receipts[-1] if previous_receipts else None
+    already_reconciled = bool(
+        previous_receipt and current.id == source.id
+        and cycle.get("policy_source_hash") == current_policy
+        and previous_receipt.get("current_policy_hash") == current_policy
+        and previous_receipt.get("source_draft_id") == str(source.id)
+    )
+    compatibility = candidate_selection_policy_compatibility(
+        root=Path(pipelines.__file__).resolve().parents[3],
+        previous_pipeline_source=previous_pipeline_source,
+        expected_previous_policy_hash=(previous_receipt["previous_policy_hash"]
+                                       if already_reconciled else cycle.get("policy_source_hash", "")),
+        expected_current_policy_hash=current_policy,
+        previous_review_source=previous_review_source,
+        previous_generation_source=previous_generation_source,
+        previous_promotion_source=previous_promotion_source,
+        previous_input_proof_source=previous_input_proof_source,
+        previous_adoption_sources=previous_adoption_sources,
+        previous_editor_control_sources=previous_editor_control_sources,
+    )
+    old_current_id = current.id
+    if not allow_current_automatic_cycle:
+        if current.id != source.id:
+            current.is_current = False
+            await session.flush()
+            source.is_current = True
+        chapter.current_word_count = source.word_count
+        await session.flush()
+    semantic = await pipelines._chapter_critic_semantic_dependencies(session, settings, chapter)
+    if semantic != cycle.get("semantic_dependencies_sha256") or cycle.get("semantic_dependency_change_detected"):
+        raise ValueError("review_reconciliation_semantic_dependencies_changed")
+    from bestseller.services.retained_review_input_proof import verify_retained_review_inputs
+    effective_input_proof = await verify_retained_review_inputs(
+        session, settings, project=project, chapter=chapter, draft=source, report=report, cycle=cycle,
+    )
+    if (pipelines.chapter_review_recovery_source_hash() != current_policy
+            or await pipelines._chapter_critic_semantic_dependencies(session, settings, chapter) != semantic):
+        raise ValueError("review_reconciliation_dependencies_changed_during_validation")
+    if already_reconciled:
+        return deepcopy(previous_receipt)
+    # Semantic computation refreshes the chapter; preserve its current metadata.
+    metadata = deepcopy(chapter.metadata_json or {})
+    cycle = deepcopy(metadata["chapter_critic_cycles"][expected_cycle_id])
+    receipt = {
+        **compatibility, "at": datetime.now(UTC).isoformat(), "actor": actor,
+        "evidence_ref": evidence_ref, "cycle_id": expected_cycle_id,
+        "previous_working_draft_id": str(old_current_id), "source_draft_id": str(source.id),
+        "source_body_hash": cycle["source_body_hash"], "review_report_id": str(report.id),
+        "quality_score_id": str(quality.id), "rewrite_task_id": str(task.id) if task else None,
+        "semantic_dependencies_sha256": semantic, "attempts_unchanged": True,
+        "effective_input_proof": effective_input_proof,
+        "adoption_created": False,
+    }
+    if allow_current_automatic_cycle:
+        receipt.update(reconciliation_mode="current_automatic_cycle_policy_alias",
+                       working_pointer_changed=False, active_cycle_unchanged=True)
+    prior = cycle.get("candidate_selection_reconciliations") or []
+    if not prior or prior[-1].get("current_policy_hash") != current_policy or old_current_id != source.id:
+        cycle["candidate_selection_reconciliations"] = [*prior, receipt]
+    cycle["policy_source_hash"] = current_policy
+    cycles = deepcopy(metadata["chapter_critic_cycles"])
+    cycles[expected_cycle_id] = cycle
+    if allow_current_automatic_cycle:
+        chapter.metadata_json = {**metadata, "chapter_critic_cycles": cycles}
+    else:
+        active = deepcopy(metadata["chapter_review_active_cycle"])
+        active["policy_compatibility_receipt"] = receipt
+        active["policy_source_hash"] = current_policy
+        chapter.metadata_json = {**metadata, "chapter_critic_cycles": cycles,
+                                 "chapter_review_active_cycle": active,
+                                 "chapter_first_resume_existing_draft_id": str(source.id)}
+    await session.flush()
+    return receipt
+
+
+_NATIVE_ALIAS = 'native-review-runtime-policy-alias.8y24-r04.v1'
+
+
+def _native_digest(value):
+    import json
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+        separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+
+
+def _native_need(value, code):
+    if not value:
+        raise ValueError('native_review_resume_' + code)
+
+
+def _validate_native_alias_chain(cycle, *, project_id, chapter_id, draft_id, body_sha256, depth,
+                                 _root_transition=None):
+    from bestseller.services.chapter_review_policy_history_8y24 import (
+        verified_alias_depth_limit,
+        verified_alias_transition,
+    )
+    if depth == 0:
+        _native_need(_root_transition is None, 'alias_chain_root_context')
+    limit = 3 if _root_transition is None else verified_alias_depth_limit(_root_transition)
+    # Extra depth requires the exact verified fifth/sixth outer target.
+    _native_need(type(cycle) is dict and depth < limit and depth < 6, 'alias_chain_depth')
+    alias = cycle.get('native_runtime_policy_alias')
+    _native_need(type(alias) is dict, 'alias_shape')
+    plain = deepcopy(alias)
+    recorded = plain.pop('receipt_sha256', None)
+    _native_need(recorded == _native_digest(plain), 'alias_digest')
+    transition = verified_alias_transition(alias.get('transition'))
+    _native_need(alias.get('schema') == _NATIVE_ALIAS
+        and alias.get('project_id') == str(project_id) and alias.get('chapter_id') == str(chapter_id)
+        and alias.get('draft_id') == str(draft_id) and alias.get('body_sha256') == body_sha256
+        and alias.get('cycle_id') == cycle.get('cycle_id')
+        and alias.get('review_workflow_run_id') == cycle.get('review_workflow_run_id')
+        and cycle.get('policy_source_hash') == transition['current_policy_hash']
+        and all(alias.get(k) is False for k in ('new_credit','dispatch_authorized','grade_recomputed','adoption_authorized'))
+        and type(alias.get('provider_calls')) is int and alias['provider_calls'] == 0, 'alias_binding')
+    if depth == 0:
+        _root_transition = transition
+    original = alias.get('original_cycle')
+    _native_need(type(original) is dict
+        and original.get('policy_source_hash') == transition['previous_policy_hash']
+        and original.get('source_body_hash') == cycle.get('source_body_hash') == body_sha256
+        and original.get('source_draft_id') == cycle.get('source_draft_id') == str(draft_id)
+        and original.get('cycle_id') == cycle.get('cycle_id')
+        and original.get('review_workflow_run_id') == cycle.get('review_workflow_run_id')
+        and original.get('semantic_dependencies_sha256') == cycle.get('semantic_dependencies_sha256'), 'alias_source')
+    if original.get('native_runtime_policy_alias') is not None:
+        _validate_native_alias_chain(original, project_id=project_id, chapter_id=chapter_id,
+            draft_id=draft_id, body_sha256=body_sha256, depth=depth + 1,
+            _root_transition=_root_transition)
+    before, current = original.get('attempts'), cycle.get('attempts')
+    _native_need(type(before) is list and type(current) is list
+        and len(before) <= len(current) <= 2, 'alias_attempt_count')
+    for old, new in zip(before, current):
+        _native_need(type(old) is dict and type(new) is dict
+            and all(old.get(k) == new.get(k) for k in ('attempt','operation_namespace')), 'alias_slot_identity')
+        if old.get('state') == 'completed':
+            _native_need(old == new, 'alias_valid_result_changed')
+        if old.get('infrastructure_history'):
+            prior = old['infrastructure_history']
+            _native_need(new.get('infrastructure_history',[])[:len(prior)] == prior, 'alias_waiting_history_changed')
+    prior = original.get('infrastructure_resumptions') or []
+    _native_need(type(prior) is list
+        and (cycle.get('infrastructure_resumptions') or [])[:len(prior)] == prior,
+        'alias_resumption_history_changed')
+    return alias
+
+
+def validate_native_policy_alias(cycle, *, project_id, chapter_id, draft_id, body_sha256):
+    """Replay only known epoch edges against full actual current runtime bytes.
+
+    Issued 1fd -> db1b -> A296 receipts remain unchanged inside at most one
+    further reviewed epoch. This does not widen prepared/waiting resumption.
+    """
+    return _validate_native_alias_chain(cycle, project_id=project_id, chapter_id=chapter_id,
+        draft_id=draft_id, body_sha256=body_sha256, depth=0)
+
+
+def native_waiting_record_binding(cycle, entry, record, binding):
+    """Find the deepest ORIGINAL domain containing this immutable wait record."""
+    validate_native_policy_alias(cycle, project_id=binding['project_id'],
+        chapter_id=binding['chapter_id'], draft_id=binding['source_draft_id'],
+        body_sha256=binding['source_body_hash'])
+    policy = binding['policy_source_hash']
+    current = cycle
+    while current.get('native_runtime_policy_alias') is not None:
+        original = current['native_runtime_policy_alias']['original_cycle']
+        originals = [r for e in original['attempts'] if e.get('attempt') == entry['attempt']
+                     for r in e.get('infrastructure_history',[])
+                     if r.get('review_report_id') == record.get('review_report_id')]
+        if not originals:
+            break
+        _native_need(len(originals) == 1 and originals[0] == record, 'historical_wait_changed')
+        policy = original['policy_source_hash']
+        current = original
+    return {**binding, 'policy_source_hash': policy}
+
+
+def _validate_prior_prepared_resumption(cycle, proof):
+    """No new rearm: check the old once receipt before a prepared-only upgrade."""
+    from bestseller.services.waiting_chapter_review_resume import POLICY
+    receipts = cycle.get('infrastructure_resumptions')
+    _native_need(cycle.get('state') == 'prepared' and type(receipts) is list
+        and cycle.get('attempts') and cycle['attempts'][-1].get('state') == 'prepared',
+        'unsupported_pending_alias')
+    entry = cycle['attempts'][-1]
+    matches = [r for r in receipts if type(r) is dict and r.get('attempt') == entry['attempt']]
+    _native_need(len(matches) == 1, 'prior_resumption_required')
+    previous = matches[0]
+    original_plan = deepcopy(previous)
+    _native_need(original_plan.pop('state_after', None) == 'prepared', 'prior_resumption_state')
+    claimed = original_plan.pop('plan_sha256', None)
+    original_plan['status'], original_plan['database_writes'] = 'prepared_plan', 0
+    _native_need(claimed == _native_digest(original_plan), 'prior_resumption_digest')
+    _native_need(previous.get('schema') == POLICY and previous.get('status') == 'rearmed'
+        and previous.get('binding') == {key: proof[key] for key in (
+            'project_id','chapter_id','draft_id','body_sha256','cycle_id',
+            'policy_source_hash','semantic_dependencies_sha256')}
+        and previous.get('operation_namespace') == entry['operation_namespace']
+        and previous.get('review_workflow_run_id') == cycle.get('review_workflow_run_id')
+        and previous.get('attempt_count') == len(cycle['attempts'])
+        and previous.get('new_attempts') == previous.get('provider_calls') == 0
+        and all(previous.get(key) is False for key in (
+            'credit_released','dispatch_authorized','adoption_authorized')),
+        'prior_resumption_binding')
+    return previous
+
+
+async def _prepare_native_chapter_resume(session, settings, *, project_id, chapter_id, requested_by):
+    from bestseller.infra.db.models import BookProductionControlModel
+    from bestseller.services import pipelines
+    from bestseller.services.chapter_review_prerequisite import WAITING
+    from bestseller.services.chapter_review_preflight import _validate_retained_review_before_processing
+    from bestseller.services.chapter_review_policy_history_8y24 import verified_transition_from
+    from bestseller.services.feedback import validate_adopted_knowledge_source
+    from bestseller.services.retry_ledger import project_execution_scope
+    from bestseller.services.waiting_chapter_review_resume import _ledger, rearm_waiting_review_native
+    from bestseller.services.budget import current_execution_scope
+
+    chapter = await session.get(ChapterModel, chapter_id)
+    _native_need(chapter is not None and chapter.project_id == project_id, 'chapter_scope')
+    meta = chapter.metadata_json or {}
+    cycles = meta.get('chapter_critic_cycles') or {}
+    _native_need(isinstance(cycles,dict), 'cycles_shape')
+    if not cycles:
+        return None
+    rows = list(await session.scalars(select(ChapterDraftVersionModel).where(
+        ChapterDraftVersionModel.project_id == project_id, ChapterDraftVersionModel.chapter_id == chapter_id,
+        ChapterDraftVersionModel.is_current.is_(True))))
+    _native_need(len(rows) == 1, 'unique_current_source')
+    draft = rows[0]
+    body = pipelines.chapter_review_body_fingerprint(draft.content_md or '')['digest']
+    active = meta.get('chapter_review_active_cycle') or {}
+    cid = active.get('cycle_id') if active.get('source_body_hash') == body else pipelines._chapter_critic_cycle_id(project_id,chapter_id,body)
+    cycle = cycles.get(cid)
+    if cycle is None:
+        return None
+    _native_need(cycle.get('source_draft_id') == str(draft.id) and cycle.get('source_body_hash') == body, 'current_cycle_source')
+    policy = pipelines.chapter_review_recovery_source_hash()
+    if cycle.get('policy_source_hash') == policy and cycle.get('state') != WAITING:
+        if cycle.get('native_runtime_policy_alias') is not None:
+            validate_native_policy_alias(cycle,project_id=project_id,chapter_id=chapter_id,draft_id=draft.id,body_sha256=body)
+        return None
+    _native_need(not session.new and not session.dirty and not session.deleted, 'uncommitted_source')
+    # Same order as STOP / native project paths: Control -> Project -> Chapter.
+    control = await session.scalar(select(BookProductionControlModel).where(
+        BookProductionControlModel.project_id == project_id).with_for_update().execution_options(populate_existing=True))
+    _native_need(control is not None and control.desired_state == 'run'
+        and type(control.command_serial) is int and control.command_serial > 0, 'run_control_required')
+    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id)
+        .with_for_update().execution_options(populate_existing=True))
+    chapter = await session.scalar(select(ChapterModel).where(ChapterModel.id == chapter_id)
+        .with_for_update().execution_options(populate_existing=True))
+    _native_need(project is not None and chapter is not None and chapter.project_id == project_id, 'locked_scope')
+    scope = project_execution_scope(project)
+    _native_need(current_execution_scope() in {None,scope}, 'execution_scope')
+    scene_ids = select(SceneCardModel.id).where(SceneCardModel.project_id == project_id,SceneCardModel.chapter_id == chapter_id)
+    from sqlalchemy import or_
+    busy = await session.scalar(select(WorkflowRunModel.id).where(WorkflowRunModel.project_id == project_id,
+        WorkflowRunModel.status.in_(('pending','queued','running')),or_(
+        WorkflowRunModel.scope_type == 'project',
+        (WorkflowRunModel.scope_type == 'chapter') & (WorkflowRunModel.scope_id == chapter_id),
+        (WorkflowRunModel.scope_type == 'scene_card') & WorkflowRunModel.scope_id.in_(scene_ids))).limit(1))
+    _native_need(busy is None, 'active_owner')
+    _, rejection = await validate_adopted_knowledge_source(session,project_id=project_id,
+        chapter_id=chapter_id,source_chapter_draft_version_id=draft.id,chapter_md=draft.content_md,lock=False)
+    if rejection is None:
+        if cycle.get('native_runtime_policy_alias') is not None:
+            validate_native_policy_alias(cycle,project_id=project_id,chapter_id=chapter_id,
+                draft_id=draft.id,body_sha256=body)
+        return None  # Adopted history/debt is immutable, never rejudged here.
+    _native_need(rejection == 'source_not_adopted', 'source_adopted_or_ambiguous')
+    # Reload under the source locks; never act on a pre-lock cycle snapshot.
+    rows = list(await session.scalars(select(ChapterDraftVersionModel).where(
+        ChapterDraftVersionModel.project_id == project_id,ChapterDraftVersionModel.chapter_id == chapter_id,
+        ChapterDraftVersionModel.is_current.is_(True)).with_for_update().execution_options(populate_existing=True)))
+    _native_need(len(rows) == 1 and rows[0].id == draft.id
+        and pipelines.chapter_review_body_fingerprint(rows[0].content_md or '')['digest'] == body, 'source_changed_under_lock')
+    draft = rows[0]
+    ledger_before = await _ledger(session,scope,lock=True)
+    original_meta = deepcopy(chapter.metadata_json or {})
+    cycle = deepcopy(original_meta['chapter_critic_cycles'][cid])
+    old = cycle['policy_source_hash']
+    receipt = None
+    if old != policy:
+        transition = verified_transition_from(old)
+        _native_need(old == transition['previous_policy_hash'] and policy == transition['current_policy_hash'], 'unsupported_policy_transition')
+        if cycle.get('native_runtime_policy_alias') is not None:
+            validate_native_policy_alias(cycle,project_id=project_id,chapter_id=chapter_id,
+                draft_id=draft.id,body_sha256=body)
+        if cycle['state'] == WAITING and cycle.get('infrastructure_resumptions'):
+            # An old once-resumption is immutable. Rebinding or deleting it
+            # would reopen paid capacity; this bounded migration refuses it.
+            _native_need(False, 'prior_resumption_waiting_requires_separate_recovery')
+        # Public normal preflight remains current-only; this private old-domain
+        # read is fenced by the fixed, full-byte trusted transition above.
+        proof = await _validate_retained_review_before_processing(session,settings,chapter,expected_policy_hash=old)
+        _native_need(proof is not None and proof.get('cycle_id') == cid
+            and proof.get('reuse_kind') in {'available_review',WAITING,'resume_pending_review'}, 'unsupported_retained_outcome')
+        prior_resumption = None
+        if proof['reuse_kind'] == 'resume_pending_review':
+            _native_need(cycle.get('native_runtime_policy_alias') is not None, 'unsupported_pending_alias')
+            prior_resumption = _validate_prior_prepared_resumption(cycle,proof)
+        owner = await session.get(WorkflowRunModel,UUID(cycle['review_workflow_run_id']))
+        _native_need(owner is not None and owner.status in {'completed','machine_blocked'}
+            and owner.project_id == project_id and owner.scope_id == chapter_id, 'original_owner')
+        if proof['reuse_kind'] == 'available_review':
+            from bestseller.services.retained_review_input_proof import verify_retained_review_inputs
+            report = (await pipelines._retained_chapter_critic_result(session,draft,cycle['attempts'][-1]))[1]
+            paid_proof = await verify_retained_review_inputs(session,settings,project=project,
+                chapter=chapter,draft=draft,report=report,cycle=cycle)
+        else:
+            # Actual history/cohort renderer+native physical proof executes
+            # again under locks in rearm_waiting_review_native below.
+            from bestseller.services.waiting_chapter_review_resume import _normal_commercial_prerequisite
+            paid_proof = await _normal_commercial_prerequisite(session,settings,project=project,
+                chapter=chapter,draft=draft,owner=owner,scope=scope)
+            if prior_resumption is not None:
+                _native_need(paid_proof == prior_resumption.get('prerequisite'), 'prior_prerequisite_changed')
+        _native_need(await _ledger(session,scope,lock=True) == ledger_before, 'ledger_changed')
+        _native_need(pipelines.chapter_review_recovery_source_hash() == policy
+            and await pipelines._chapter_critic_semantic_dependencies(session,settings,chapter) == cycle['semantic_dependencies_sha256'], 'dependencies_changed')
+        receipt = dict(schema=_NATIVE_ALIAS, project_id=str(project_id), chapter_id=str(chapter_id),
+            draft_id=str(draft.id), body_sha256=body, cycle_id=cid,
+            review_workflow_run_id=cycle['review_workflow_run_id'], transition=transition,
+            original_cycle=deepcopy(cycle), input_proof=paid_proof, ledger_sha256=_native_digest(ledger_before),
+            control_command_serial=control.command_serial, provider_calls=0,new_credit=False,
+            dispatch_authorized=False,grade_recomputed=False,adoption_authorized=False)
+        receipt['receipt_sha256'] = _native_digest(receipt)
+        cycle['policy_source_hash'] = policy
+        cycle['native_runtime_policy_alias'] = receipt
+        # Preserve all other native cycle/history records and author metadata.
+        meta = deepcopy(chapter.metadata_json or {})
+        meta['chapter_critic_cycles'][cid] = cycle
+        if (meta.get('chapter_review_active_cycle') or {}).get('cycle_id') == cid:
+            meta['chapter_review_active_cycle']['policy_source_hash'] = policy
+        chapter.metadata_json = meta
+        await session.flush()
+    result = None
+    if cycle['state'] == WAITING:
+        result = await rearm_waiting_review_native(session,settings,project_id=project_id,
+            chapter_id=chapter_id,requested_by=requested_by)
+    if receipt is not None and result is not None:
+        _native_need(result.get('prerequisite') == receipt['input_proof'], 'prerequisite_changed_after_alias')
+    _native_need(await _ledger(session,scope,lock=True) == ledger_before, 'ledger_changed_after')
+    return {'chapter_id':str(chapter_id),'cycle_id':cid,'policy_alias':receipt,'waiting_rearm':result}
+
+
+async def prepare_native_review_resume(session, settings, *, project_id, chapter_id=None, requested_by='system'):
+    """Normal RUN before NEW project/chapter WF; caller owns commit.
+
+    No old source/hash/probe is accepted. Fixed archive + current native rows
+    select the only supported transition. Every mutation is savepoint-atomic.
+    Active project/chapter/scene owners are refused, never bypassed.
+    """
+    _native_need(not session.new and not session.dirty and not session.deleted, 'clean_session_required')
+    _native_need(isinstance(requested_by,str) and 0 < len(requested_by.strip()) <= 64, 'requester')
+    project_id = UUID(str(project_id))
+    statement = select(ChapterModel).where(ChapterModel.project_id == project_id)
+    if chapter_id is not None:
+        statement = statement.where(ChapterModel.id == UUID(str(chapter_id)))
+    rows = list(await session.scalars(statement.order_by(ChapterModel.chapter_number, ChapterModel.id)
+        .execution_options(populate_existing=True)))
+    ids = [row.id for row in rows if (row.metadata_json or {}).get('chapter_critic_cycles')]
+    empty = {'schema':'native-review-resume.8y24-r04.v1','status':'unchanged',
+        'project_id':str(project_id),'chapter_receipts':[],'provider_calls':0,'new_attempts':0,
+        'credit_released':False,'dispatch_authorized':False,'adoption_authorized':False}
+    if not ids:
+        return empty
+    results = []
+    # Force real SQLite transaction before SAVEPOINT; no implicit commit.
+    connection = await session.connection()
+    if connection.dialect.name == 'sqlite':
+        if not await connection.run_sync(lambda c: c.connection.driver_connection.in_transaction):
+            await connection.exec_driver_sql('BEGIN')
+    async with session.begin_nested():
+        if len(ids) > 1:
+            # Acquire ALL source rows before the shared budget lock. Keeping a
+            # budget lock from chapter A while awaiting chapter B reverses the
+            # native STOP/project order. IDs are always a stable source order.
+            from bestseller.infra.db.models import BookProductionControlModel
+            control = await session.scalar(select(BookProductionControlModel).where(
+                BookProductionControlModel.project_id == project_id).with_for_update()
+                .execution_options(populate_existing=True))
+            _native_need(control is not None and control.desired_state == 'run'
+                and type(control.command_serial) is int and control.command_serial > 0, 'run_control_required')
+            await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id)
+                .with_for_update().execution_options(populate_existing=True))
+            await session.scalars(select(ChapterModel).where(ChapterModel.project_id == project_id,
+                ChapterModel.id.in_(ids)).order_by(ChapterModel.chapter_number,ChapterModel.id)
+                .with_for_update().execution_options(populate_existing=True))
+            await session.scalars(select(ChapterDraftVersionModel).where(
+                ChapterDraftVersionModel.project_id == project_id,
+                ChapterDraftVersionModel.chapter_id.in_(ids),ChapterDraftVersionModel.is_current.is_(True))
+                .order_by(ChapterDraftVersionModel.chapter_id,ChapterDraftVersionModel.id)
+                .with_for_update().execution_options(populate_existing=True))
+        for identity in ids:
+            result = await _prepare_native_chapter_resume(session,settings,project_id=project_id,
+                chapter_id=identity,requested_by=requested_by)
+            if result is not None:
+                results.append(result)
+    return {'schema':'native-review-resume.8y24-r04.v1','status':'prepared' if results else 'unchanged',
+        'project_id':str(project_id),'chapter_receipts':results,'provider_calls':0,'new_attempts':0,
+        'credit_released':False,'dispatch_authorized':False,'adoption_authorized':False}

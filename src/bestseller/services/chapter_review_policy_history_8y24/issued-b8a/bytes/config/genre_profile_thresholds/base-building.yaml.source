@@ -1,0 +1,52 @@
+# Base-building / kingdom-building / territory / village construction —
+# numbers-go-up is a primary pleasure; progression beats are frequent and
+# small rather than rare and massive.
+id: base-building
+name: 基建/领地发展
+
+hook_config:
+  preferred_types:
+    - 渴望
+    - 悬念
+    - 危机
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 3
+
+coolpoint_config:
+  preferred_patterns:
+    - 装逼打脸
+    - 扮猪吃虎
+    - 打脸权威
+  density_per_chapter: medium
+  combo_interval: 5
+  milestone_interval: 15
+
+micropayoff_config:
+  preferred_types:
+    - 资源获得
+    - 技术突破
+    - 人才招揽
+    - 设施升级
+  min_per_chapter: 3           # many small upgrades per chapter is core appeal
+  transition_min: 2
+
+pacing_config:
+  stagnation_threshold: 4      # base-building tolerates quieter chapters
+  strand_max_gap:
+    overt: 6
+    undercurrent: 12
+    hidden: 18
+    core_axis: 22
+  transition_max_consecutive: 3
+
+override_config:
+  allowed_rationale_types:
+    - WORLD_RULE_CONSTRAINT    # economy/logistics must stay consistent
+    - LOGIC_INTEGRITY
+    - TRANSITIONAL_SETUP
+    - ARC_TIMING
+    - GENRE_CONVENTION
+  debt_multiplier: 1.0
+  payback_window_default: 8
+  interest_rate_per_chapter: 0.07

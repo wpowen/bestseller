@@ -1,0 +1,134 @@
+# Switchable LLM model catalog for per-book model selection.
+# Each entry is a concrete vendor/version a book can be run on. The runtime
+# marks an entry "available" only when its api_key_env is present in the
+# environment. A book stores the chosen entry id in
+# project.metadata.llm_model_id and the LLM layer applies it (model + api_base
+# + api_key_env + api_key_header) to every role for that book only.
+#
+# Entries were live-probed against their endpoints when added (2026-06).
+# Upstream removals since then are marked `retired: true` (with reason) —
+# retired entries stay listed so books that already selected them get an
+# explicit "已下线" instead of a mystery "unknown id", but they are never
+# available and every selection gate rejects them.
+models:
+  # ── MiniMax (direct) ──
+  - id: minimax-m3.1-flash
+    display_name: "MiniMax · M3.1 Flash"
+    vendor: MiniMax
+    version: "M3.1-Flash"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
+    notes: "2026-10-19正式发布；强制思考，默认max。"
+
+  - id: minimax-m2.7-highspeed
+    display_name: "MiniMax · M2.7 Highspeed"
+    vendor: MiniMax
+    version: "M2.7-highspeed"
+    model: "openai/MiniMax-M2.7-highspeed"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
+    notes: "速度快，适合验证整条流程。"
+  - id: minimax-m3
+    display_name: "MiniMax · M3"
+    vendor: MiniMax
+    version: "M3"
+    model: "openai/MiniMax-M3"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
+    notes: "高质量、较慢。"
+
+  # ── DeepSeek (direct) ──
+  - id: deepseek-v4-flash
+    display_name: "DeepSeek · V4 Flash (官方)"
+    vendor: DeepSeek
+    version: "V4-Flash"
+    model: "deepseek/deepseek-v4-flash"
+    api_base: "https://api.deepseek.com"
+    api_key_env: DEEPSEEK_API_KEY
+    notes: "DeepSeek 官方直连，快、便宜。"
+
+  # ── Xiaomi MiMo (OpenAI-compatible, custom api-key header) ──
+  - id: xiaomi-mimo-v2.5-pro
+    display_name: "小米 MiMo · v2.5 Pro"
+    vendor: "Xiaomi 小米"
+    version: "v2.5-pro"
+    model: "openai/mimo-v2.5-pro"
+    api_base: "https://token-plan-cn.xiaomimimo.com/v1"
+    api_key_env: XIAOMI_MIMO_API_KEY
+    api_key_header: "api-key"
+    notes: "小米 MiMo token-plan，国内 OpenAI 兼容端点。"
+
+  # ── Aliyun Qwen coding plan (OpenAI-compatible, Bearer) ──
+  - id: qwen3.7-plus-coding-plan
+    display_name: "阿里 Qwen · 3.7 Plus (Coding Plan)"
+    vendor: "Aliyun 阿里云百炼"
+    version: "qwen3.7-plus"
+    model: "openai/qwen3.7-plus"
+    api_base: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    api_key_env: QWEN_CODING_PLAN_API_KEY
+    notes: "阿里云 coding plan (token-plan) 北京区，OpenAI 兼容端点，标准 Bearer 认证。"
+
+  # ── NVIDIA NIM (Bearer; live-probed available + fast) ──
+  - id: nim-deepseek-v4-pro
+    display_name: "NVIDIA · DeepSeek V4 Pro"
+    vendor: "NVIDIA NIM"
+    version: "deepseek-v4-pro"
+    model: "openai/deepseek-ai/deepseek-v4-pro"
+    api_base: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    retired: true
+    retired_reason: "上游 2026-08-07 EOL，端点返回 410 Gone。"
+    notes: "已下线（2026-08-07 上游 EOL，410 Gone）。曾实测 ~2.7s。"
+  - id: nim-kimi-k2.6
+    display_name: "NVIDIA · Kimi K2.6"
+    vendor: "NVIDIA NIM"
+    version: "kimi-k2.6"
+    model: "openai/moonshotai/kimi-k2.6"
+    api_base: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    retired: true
+    retired_reason: "上游已移除，端点返回 404 Function Not Found（2026-08-08 实测）。"
+    notes: "已下线（上游 404 Function Not Found）。曾实测 ~1.8s。"
+  - id: nim-mistral-large-3
+    display_name: "NVIDIA · Mistral Large 3 (675B)"
+    vendor: "NVIDIA NIM"
+    version: "mistral-large-3-675b"
+    model: "openai/mistralai/mistral-large-3-675b-instruct-2512"
+    api_base: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    notes: "Mistral Large 3 675B，实测 ~2.0s。"
+  - id: nim-llama-3.3-70b
+    display_name: "NVIDIA · Llama 3.3 70B"
+    vendor: "NVIDIA NIM"
+    version: "llama-3.3-70b"
+    model: "openai/meta/llama-3.3-70b-instruct"
+    api_base: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    notes: "Meta Llama 3.3 70B，实测 ~2.5s。"
+  - id: nim-nemotron-super-49b
+    display_name: "NVIDIA · Nemotron Super 49B"
+    vendor: "NVIDIA NIM"
+    version: "llama-3.3-nemotron-super-49b-v1"
+    model: "openai/nvidia/llama-3.3-nemotron-super-49b-v1"
+    api_base: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY
+    notes: "NVIDIA Nemotron Super 49B，实测 ~1.7s。"
+
+  # ── Anthropic (configure ANTHROPIC_API_KEY to enable) ──
+  - id: claude-opus-4-5
+    display_name: "Claude · Opus 4.5"
+    vendor: Anthropic
+    version: "Opus-4.5"
+    model: "anthropic/claude-opus-4-5"
+    api_base: null
+    api_key_env: ANTHROPIC_API_KEY
+    notes: "最强推理（需配置 ANTHROPIC_API_KEY）。"
+  - id: claude-sonnet-4-5
+    display_name: "Claude · Sonnet 4.5"
+    vendor: Anthropic
+    version: "Sonnet-4.5"
+    model: "anthropic/claude-sonnet-4-5"
+    api_base: null
+    api_key_env: ANTHROPIC_API_KEY
+    notes: "强写作（需配置 ANTHROPIC_API_KEY）。"

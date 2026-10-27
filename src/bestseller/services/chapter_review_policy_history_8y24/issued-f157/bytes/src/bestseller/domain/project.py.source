@@ -1,0 +1,640 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+
+from bestseller.domain.enums import (
+    ChapterStatus,
+    ProjectStatus,
+    ProjectType,
+    SceneStatus,
+    VolumeStatus,
+)
+from bestseller.domain.fanqie_short import validate_fanqie_short_project
+
+
+def _dedupe_string_list(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return deduped
+
+
+def _coerce_profile_text(value: object) -> object:
+    """Keep LLM-shaped profile fragments compatible with string fields."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                parts.append(f"{key}: {text.strip()}")
+        return "；".join(parts)
+    if isinstance(value, (list, tuple, set)):
+        parts = []
+        for item in value:
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        return "；".join(parts)
+    return str(value)
+
+
+def _coerce_profile_text_list(value: object) -> object:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        text = _coerce_profile_text(value)
+        return [text] if isinstance(text, str) and text.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        items: list[str] = []
+        for item in value:
+            text = _coerce_profile_text(item)
+            if isinstance(text, str) and text.strip():
+                items.append(text.strip())
+        return items
+    return [str(value)]
+
+
+class MarketPositioningConfig(BaseModel):
+    platform_target: str = Field(default="未指定平台", min_length=1, max_length=4000)
+    content_mode: str = Field(default="长篇小说", min_length=1, max_length=4000)
+    prompt_pack_key: str | None = Field(default=None, max_length=4000)
+    reader_promise: str | None = Field(default=None, max_length=4000)
+    # 2026-07-09 L3真机验收发现:conception 把冠军简介同源提炼的 logline 写进
+    # market.logline,但本 schema 没有该字段 → 项目创建时被 Pydantic 静默丢弃,
+    # 提炼调用整个被浪费(昨晚 tracked 书 market.logline 为空同因)。补字段留住它。
+    logline: str | None = Field(default=None, max_length=4000)
+    selling_points: list[str] = Field(default_factory=list)
+    trope_keywords: list[str] = Field(default_factory=list)
+    hook_keywords: list[str] = Field(default_factory=list)
+    opening_contract: str | None = Field(default=None, max_length=4000)
+    opening_strategy: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    chapter_hook_strategy: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    hook_deadline_words: int = Field(default=1500, ge=200, le=20000)
+    pacing_profile: str = Field(default="medium", min_length=1, max_length=4000)
+    payoff_rhythm: str = Field(default="未指定", min_length=1, max_length=4000)
+    update_strategy: str = Field(default="按项目规划推进", min_length=1, max_length=4000)
+
+    @field_validator(
+        "platform_target",
+        "content_mode",
+        "prompt_pack_key",
+        "reader_promise",
+        "logline",
+        "opening_contract",
+        "opening_strategy",
+        "chapter_hook_strategy",
+        "pacing_profile",
+        "payoff_rhythm",
+        "update_strategy",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator("selling_points", "trope_keywords", "hook_keywords", mode="before")
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
+
+    @field_validator("selling_points", "trope_keywords", "hook_keywords")
+    @classmethod
+    def normalize_list_fields(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
+
+
+class CharacterEngineConfig(BaseModel):
+    protagonist_archetype: str | None = Field(default=None, max_length=4000)
+    protagonist_core_drive: str | None = Field(default=None, max_length=4000)
+    golden_finger: str | None = Field(default=None, max_length=4000)
+    # Creative choices require a project contract; absence is not a genre vote.
+    growth_curve: str = Field(default="未指定", min_length=1, max_length=4000)
+    romance_mode: str = Field(default="未指定", min_length=1, max_length=4000)
+    relationship_tension: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    antagonist_mode: str = Field(default="未指定", min_length=1, max_length=4000)
+    ensemble_mode: str = Field(default="未指定", min_length=1, max_length=4000)
+    # 构思**已经产出并被判官审过**的冲突势力表（2026-08-24）。此前不在字段表
+    # 里，pydantic 默认 extra="ignore" 把它整个吃掉：真机书9 的
+    # conception_snapshot 里有 7 条（杂役班借力成风同辈／内门借力网段缁衣／
+    # 坊市黑市霍帖骨…），projects.metadata 里字段消失，于是 world_spec 的派系
+    # 只能退回「主角的当前行动单元」这类戏剧功能位。构思 prompt 明确要过它
+    # （conception.py:3005），评审判官还有一条 conflict_force_review 轴专门审
+    # 它——要了、产了、审了，然后在落库那一步丢掉。与 title_tournament
+    # （2026-08-22 写进 writing_profile.market 被 extra=ignore 吃掉）同形。
+    conflict_forces: list[dict[str, Any]] = Field(default_factory=list)
+    #: 结构化境界阶梯（2026-08-25）。此前只有自由散文的 growth_curve，
+    #: 五本零种子书写出了**五种**格式（等号+章号／L1箭头／纯箭头／公式／
+    #: 散文连接词），编译器每补一种解析下一本就换一种——「白名单对自由文本
+    #: 必然漏」在结构层的同一形状。让构思直接给列表，散文解析降为兜底。
+    power_tiers: list[str] = Field(default_factory=list)
+
+    @field_validator("power_tiers", mode="before")
+    @classmethod
+    def coerce_power_tiers(cls, value: object) -> object:
+        """只留非空字符串；模型偶尔混进 None/数字，不许因此炸掉整份 profile。"""
+
+        if not isinstance(value, list):
+            return []
+        return [
+            t.strip() for t in value
+            if isinstance(t, str) and t.strip()
+        ][:16]
+
+    @field_validator("conflict_forces", mode="before")
+    @classmethod
+    def coerce_conflict_forces(cls, value: object) -> object:
+        """只留字典条目；模型偶尔吐字符串/None，不许因此炸掉整份 profile。"""
+
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)][:24]
+
+    @field_validator(
+        "protagonist_archetype",
+        "protagonist_core_drive",
+        "golden_finger",
+        "growth_curve",
+        "romance_mode",
+        "relationship_tension",
+        "antagonist_mode",
+        "ensemble_mode",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+
+class WorldDesignConfig(BaseModel):
+    worldbuilding_density: str = Field(default="medium", min_length=1, max_length=4000)
+    info_reveal_strategy: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    rule_hardness: str = Field(default="未指定", min_length=1, max_length=4000)
+    power_system_style: str | None = Field(default=None, max_length=4000)
+    mystery_density: str = Field(default="medium", min_length=1, max_length=4000)
+    setting_tags: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "worldbuilding_density",
+        "info_reveal_strategy",
+        "rule_hardness",
+        "power_system_style",
+        "mystery_density",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator("setting_tags", mode="before")
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
+
+    @field_validator("setting_tags")
+    @classmethod
+    def normalize_setting_tags(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
+
+
+class StylePreferenceConfig(BaseModel):
+    pov_type: str = Field(default="third-limited", min_length=1, max_length=4000)
+    tense: str = Field(default="present", min_length=1, max_length=4000)
+    tone_keywords: list[str] = Field(default_factory=list)
+    prose_style: str = Field(default="unspecified", min_length=1, max_length=4000)
+    sentence_style: str = Field(default="mixed", min_length=1, max_length=4000)
+    info_density: str = Field(default="medium", min_length=1, max_length=4000)
+    dialogue_ratio: float = Field(default=0.4, ge=0.0, le=1.0)
+    taboo_topics: list[str] = Field(default_factory=list)
+    taboo_words: list[str] = Field(default_factory=list)
+    reference_works: list[str] = Field(default_factory=list)
+    custom_rules: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "pov_type",
+        "tense",
+        "prose_style",
+        "sentence_style",
+        "info_density",
+        mode="before",
+    )
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+    @field_validator(
+        "tone_keywords",
+        "taboo_topics",
+        "taboo_words",
+        "reference_works",
+        "custom_rules",
+        mode="before",
+    )
+    @classmethod
+    def coerce_list_fields(cls, values: object) -> object:
+        return _coerce_profile_text_list(values)
+
+    @field_validator(
+        "tone_keywords",
+        "taboo_topics",
+        "taboo_words",
+        "reference_works",
+        "custom_rules",
+    )
+    @classmethod
+    def normalize_style_lists(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
+
+
+class SerializationStrategyConfig(BaseModel):
+    opening_mandate: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    first_three_chapter_goal: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    scene_drive_rule: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    exposition_rule: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    chapter_ending_rule: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+    free_chapter_strategy: str = Field(
+        default="未指定",
+        min_length=1,
+        max_length=4000,
+    )
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_text_fields(cls, value: object) -> object:
+        return _coerce_profile_text(value)
+
+
+_IF_VALID_GENRES = {"都市逆袭", "修仙升级", "悬疑生存", "职场商战", "末日爽文"}
+_IF_VALID_GENRES_EN = {"urban-revenge", "cultivation-progression", "mystery-survival", "corporate-strategy", "apocalypse-power-fantasy"}
+_IF_ALL_VALID_GENRES = _IF_VALID_GENRES | _IF_VALID_GENRES_EN
+
+_IF_VALID_ROLES = {"盟友", "宿敌", "红颜", "师尊", "家族", "中立", "反派"}
+_IF_VALID_ROLES_EN = {"ally", "rival", "love_interest", "mentor", "family", "neutral", "antagonist"}
+_IF_ALL_VALID_ROLES = _IF_VALID_ROLES | _IF_VALID_ROLES_EN
+
+
+class IFStatConfig(BaseModel):
+    combat: int = Field(default=10, ge=0, le=100)
+    fame: int = Field(default=5, ge=0, le=100)
+    strategy: int = Field(default=20, ge=0, le=100)
+    wealth: int = Field(default=5, ge=0, le=100)
+    charm: int = Field(default=10, ge=0, le=100)
+    darkness: int = Field(default=0, ge=0, le=100)
+    destiny: int = Field(default=30, ge=0, le=100)
+
+
+class IFCharacterDraft(BaseModel):
+    name: str = Field(min_length=1, max_length=20)
+    role: str = Field(description="盟友|宿敌|红颜|师尊|家族|中立|反派 / ally|rival|love_interest|mentor|family|neutral|antagonist")
+    description: str = Field(default="", max_length=4000)
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in _IF_ALL_VALID_ROLES:
+            raise ValueError(f"role must be one of {_IF_ALL_VALID_ROLES}")
+        return v
+
+
+class InteractiveFictionConfig(BaseModel):
+    enabled: bool = False
+
+    # Concept 参数（对应 story-factory concept.json 字段）
+    if_genre: str = Field(default="", max_length=64)
+    target_chapters: int = Field(default=100, ge=10, le=2000)
+    free_chapters: int = Field(default=20, ge=5, le=100)
+    premise: str = Field(default="", max_length=4000)
+    protagonist: str = Field(default="", max_length=4000)
+    core_conflict: str = Field(default="", max_length=4000)
+    tone: str = Field(default="", max_length=4000)
+    arc_structure: list[str] = Field(default_factory=list)
+    key_characters: list[IFCharacterDraft] = Field(default_factory=list)
+    initial_stats: IFStatConfig = Field(default_factory=IFStatConfig)
+
+    # Generation 参数（控制 Prompt 内容）
+    chapter_text_length: str = Field(default="2500-3500", max_length=20)
+    choice_nodes_per_chapter: str = Field(default="2-3", max_length=10)
+    text_node_length: str = Field(default="150-250", max_length=20)
+    arc_batch_size: int = Field(default=15, ge=5, le=100)
+    parallel_chapter_batch: int = Field(default=8, ge=1, le=20)
+
+    # Acts 结构（全书幕数）
+    act_count: int = Field(default=5, ge=2, le=8)
+
+    # 卷结构（Volume）— 长篇核心机制
+    # volume_size=0 表示不启用卷层级（适合 <200 章短篇）
+    volume_size: int = Field(default=100, ge=0, le=500)
+
+    # 硬分支控制
+    enable_branches: bool = Field(default=False)
+    branch_count: int = Field(default=2, ge=0, le=4)
+    branch_chapter_span: int = Field(default=30, ge=10, le=80)
+
+    # 上下文模式
+    context_mode: Literal["basic", "tiered", "full"] = Field(default="tiered")
+    snapshot_interval: int = Field(default=50, ge=25, le=100)
+
+    # 爽点密度
+    power_moment_interval: int = Field(default=5, ge=3, le=10)
+
+    @field_validator("if_genre")
+    @classmethod
+    def validate_genre(cls, v: str) -> str:
+        if v and v not in _IF_ALL_VALID_GENRES:
+            raise ValueError(f"if_genre must be one of {_IF_ALL_VALID_GENRES}")
+        return v
+
+    @model_validator(mode="after")
+    def require_selected_genre_when_enabled(self) -> "InteractiveFictionConfig":
+        if self.enabled and not self.if_genre:
+            raise ValueError("Select if_genre explicitly before enabling interactive fiction")
+        return self
+
+
+class WritingProfile(BaseModel):
+    # Code-side resolution receipt; never accepted from JSON/LLM input.
+    _content_origins: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _runtime_source_receipt: dict[str, Any] = PrivateAttr(default_factory=dict)
+    # Persist the selected conception advice through profile normalization.
+    # The planner validates/renders it separately; it is not a world contract.
+    concept_methodology: dict[str, Any] = Field(default_factory=dict)
+    market: MarketPositioningConfig = Field(default_factory=MarketPositioningConfig)
+    character: CharacterEngineConfig = Field(default_factory=CharacterEngineConfig)
+    world: WorldDesignConfig = Field(default_factory=WorldDesignConfig)
+    style: StylePreferenceConfig = Field(default_factory=StylePreferenceConfig)
+    serialization: SerializationStrategyConfig = Field(default_factory=SerializationStrategyConfig)
+    interactive_fiction: InteractiveFictionConfig = Field(default_factory=InteractiveFictionConfig)
+
+
+_AMAZON_KDP_TARGET_FORMATS = {"ebook", "paperback"}
+_AMAZON_KDP_AI_DISCLOSURE_VALUES = {"unknown", "none", "generated", "assisted"}
+
+
+class AmazonKdpContributor(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    role: str = Field(default="Contributor", min_length=1, max_length=200)
+
+
+class AmazonKdpEbookConfig(BaseModel):
+    enabled: bool = True
+    cover_image_path: str | None = Field(default=None, max_length=4000)
+
+
+class AmazonKdpPaperbackConfig(BaseModel):
+    enabled: bool = False
+    trim_size: str | None = Field(default=None, max_length=40)
+    interior_type: str = Field(default="black_and_white", min_length=1, max_length=40)
+    paper_type: str = Field(default="cream", min_length=1, max_length=40)
+    cover_finish: str = Field(default="glossy", min_length=1, max_length=40)
+
+    @model_validator(mode="after")
+    def validate_required_fields_for_enabled_paperback(self) -> "AmazonKdpPaperbackConfig":
+        if self.enabled and not self.trim_size:
+            raise ValueError("trim_size is required when Amazon KDP paperback is enabled.")
+        return self
+
+
+class AmazonKdpPublicationProfile(BaseModel):
+    language: str = Field(default="en-US", min_length=2, max_length=20)
+    book_title: str | None = Field(default=None, max_length=4000)
+    subtitle: str | None = Field(default=None, max_length=4000)
+    author_display_name: str | None = Field(default=None, max_length=4000)
+    contributors: list[AmazonKdpContributor] = Field(default_factory=list)
+    series_name: str | None = Field(default=None, max_length=4000)
+    series_number: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    keywords: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    primary_marketplace: str = Field(default="Amazon.com", min_length=1, max_length=200)
+    publishing_rights: str = Field(default="worldwide", min_length=1, max_length=200)
+    ai_generated_text: str = Field(default="unknown", min_length=1, max_length=40)
+    ai_generated_images: str = Field(default="unknown", min_length=1, max_length=40)
+    contains_bonus_content: bool = False
+    target_formats: list[str] = Field(default_factory=lambda: ["ebook"])
+    identity_verified: bool = False
+    tax_profile_complete: bool = False
+    payout_method_ready: bool = False
+    ebook: AmazonKdpEbookConfig = Field(default_factory=AmazonKdpEbookConfig)
+    paperback: AmazonKdpPaperbackConfig = Field(default_factory=AmazonKdpPaperbackConfig)
+
+    @field_validator("keywords", "categories", "target_formats")
+    @classmethod
+    def normalize_publishing_lists(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords_cap(cls, values: list[str]) -> list[str]:
+        if len(values) > 7:
+            raise ValueError("Amazon KDP allows at most 7 keyword phrases.")
+        return values
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories_cap(cls, values: list[str]) -> list[str]:
+        if len(values) > 3:
+            raise ValueError("Amazon KDP allows at most 3 categories.")
+        return values
+
+    @field_validator("target_formats")
+    @classmethod
+    def validate_target_formats(cls, values: list[str]) -> list[str]:
+        invalid = [value for value in values if value not in _AMAZON_KDP_TARGET_FORMATS]
+        if invalid:
+            raise ValueError(
+                f"Amazon KDP target_formats must be one of {_AMAZON_KDP_TARGET_FORMATS}."
+            )
+        return values
+
+    @field_validator("ai_generated_text", "ai_generated_images")
+    @classmethod
+    def validate_ai_disclosure_values(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in _AMAZON_KDP_AI_DISCLOSURE_VALUES:
+            raise ValueError(
+                f"Amazon KDP AI disclosure must be one of {_AMAZON_KDP_AI_DISCLOSURE_VALUES}."
+            )
+        return normalized
+
+
+class PublishingProfilesConfig(BaseModel):
+    amazon_kdp: AmazonKdpPublicationProfile | None = None
+
+
+class ProjectCreate(BaseModel):
+    slug: str = Field(min_length=3, max_length=64)
+    title: str = Field(min_length=1, max_length=4000)
+    genre: str = Field(min_length=1, max_length=4000)
+    sub_genre: str | None = Field(default=None, max_length=4000)
+    audience: str | None = Field(default=None, max_length=4000)
+    language: str = Field(default="zh-CN", min_length=2, max_length=20)
+    target_word_count: int = Field(ge=2000)
+    target_chapters: int = Field(gt=0)
+    project_type: ProjectType = ProjectType.LINEAR
+    metadata: dict[str, object] = Field(default_factory=dict)
+    writing_profile: WritingProfile | None = None
+    publishing: PublishingProfilesConfig | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+        if not normalized or any(char not in allowed for char in normalized):
+            raise ValueError("slug may only contain lowercase letters, numbers, '-' and '_'.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_fanqie_short_contract(self) -> ProjectCreate:
+        validate_fanqie_short_project(self)
+        return self
+
+
+class ProjectRead(BaseModel):
+    id: UUID
+    slug: str
+    title: str
+    genre: str
+    sub_genre: str | None
+    audience: str | None
+    language: str
+    target_word_count: int
+    target_chapters: int
+    status: ProjectStatus
+    project_type: ProjectType = ProjectType.LINEAR
+
+
+class VolumeCreate(BaseModel):
+    volume_number: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=4000)
+    theme: str | None = None
+    goal: str | None = None
+    obstacle: str | None = None
+    target_word_count: int | None = Field(default=None, gt=0)
+    target_chapter_count: int | None = Field(default=None, gt=0)
+    status: VolumeStatus = VolumeStatus.PLANNED
+
+
+class ChapterCreate(BaseModel):
+    chapter_number: int = Field(gt=0)
+    title: str | None = Field(default=None, max_length=4000)
+    chapter_goal: str = Field(min_length=1)
+    opening_situation: str | None = None
+    main_conflict: str | None = None
+    hook_type: str | None = None
+    hook_description: str | None = None
+    target_word_count: int = Field(default=2200, gt=0)
+    volume_number: int = Field(default=1, gt=0)
+    status: ChapterStatus = ChapterStatus.PLANNED
+
+
+class SceneCardCreate(BaseModel):
+    scene_number: int = Field(gt=0)
+    scene_type: str = Field(strict=True, max_length=4000)  # Empty string represents Unknown.
+    title: str | None = Field(default=None, max_length=4000)
+    time_label: str | None = None
+    participants: list[str] = Field(default_factory=list)
+    purpose: dict[str, object] = Field(default_factory=dict)
+    entry_state: dict[str, object] = Field(default_factory=dict)
+    exit_state: dict[str, object] = Field(default_factory=dict)
+    key_dialogue_beats: list[str] = Field(default_factory=list)
+    sensory_anchors: dict[str, object] = Field(default_factory=dict)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    hook_requirement: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+    target_word_count: int = Field(default=700, gt=0)
+    status: SceneStatus = SceneStatus.PLANNED
+
+
+class SceneStructureRead(BaseModel):
+    id: UUID
+    scene_number: int = Field(gt=0)
+    title: str | None = None
+    scene_type: str = Field(strict=True)  # Empty string represents Unknown.
+    status: SceneStatus
+    participants: list[str] = Field(default_factory=list)
+    target_word_count: int = Field(ge=0)
+    current_draft_version_no: int | None = None
+    current_word_count: int | None = None
+
+
+class ChapterStructureRead(BaseModel):
+    id: UUID
+    chapter_number: int = Field(gt=0)
+    title: str | None = None
+    volume_number: int | None = None
+    chapter_goal: str = Field(min_length=1)
+    status: ChapterStatus
+    production_state: str | None = None
+    target_word_count: int = Field(ge=0)
+    current_word_count: int = Field(ge=0)
+    current_draft_version_no: int | None = None
+    scenes: list[SceneStructureRead] = Field(default_factory=list)
+
+
+class VolumeStructureRead(BaseModel):
+    id: UUID
+    volume_number: int = Field(gt=0)
+    title: str = Field(min_length=1)
+    status: VolumeStatus
+    target_word_count: int | None = None
+    target_chapter_count: int | None = None
+    chapters: list[ChapterStructureRead] = Field(default_factory=list)
+
+
+class ProjectStructureRead(BaseModel):
+    project_id: UUID
+    project_slug: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    status: ProjectStatus
+    target_word_count: int = Field(ge=0)
+    target_chapters: int = Field(ge=0)
+    current_volume_number: int = Field(ge=0)
+    current_chapter_number: int = Field(ge=0)
+    total_chapters: int = Field(ge=0)
+    total_scenes: int = Field(ge=0)
+    volumes: list[VolumeStructureRead] = Field(default_factory=list)

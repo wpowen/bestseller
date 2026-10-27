@@ -1,0 +1,27 @@
+{
+  "alias_authority": false,
+  "consumer_audit": {
+    "production_read_performed_by_this_worker": false,
+    "sha256": "8069a95be024d4d6c33f2b3dab421b6e136286d173491830da7c7073be49ad00",
+    "source": "reports/project-e2e-validation-2026-10-25/beat-projection-recovery/epoch-3e51-consumer-audit.json"
+  },
+  "counts": {
+    "chapter_metadata_epoch_mentions": 0,
+    "execution_attempts_since_e3_runtime": 0,
+    "llm_runs_since_e3_runtime": 0,
+    "quality_scores_since_e3_runtime": 0,
+    "review_reports_since_e3_runtime": 0
+  },
+  "file_pins": {
+    "__init__.py": "e52f4c79033f381033f7381d49dda0e1cec606dfbfda5ee78e6254faa2ccc1b4",
+    "final.json": "78c202ca2204c2c12477558b2f590c294e2ee8f79d2e3de62dc19d1107e7e7c6",
+    "src/bestseller/services/chapter_review_reconciliation.py": "2d6c6f3027f4483082c6858f4fbd2c8c2d43a8ecfd6952f9a65c88a0730c7df1",
+    "src/bestseller/services/fanqie_beat_recovery.py": "e3982c8d3152ef51c3903492a99bad54a32f6299ed47b8b8a6c835fc56e83dc4",
+    "src/bestseller/services/fanqie_short_pipeline.py": "f22c3cac22e7070c4771a789f64e169e9486575ca0401cad88ae660aaa46da82",
+    "src/bestseller/services/fanqie_short_plan_resume.py": "cc66105fc0cb43a7185464d25630981833c18ade5e6247b849bd61ad58491cf5"
+  },
+  "manifest_sha256": "78c202ca2204c2c12477558b2f590c294e2ee8f79d2e3de62dc19d1107e7e7c6",
+  "policy_hash": "3e51eb1808c2f9970d6b668a5e27643a096c7522b59cc98fa464cc313022f40f",
+  "runtime_audit_only": true,
+  "schema": "native-unissued-policy-runtime-audit.v1"
+}

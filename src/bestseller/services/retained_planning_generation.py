@@ -221,10 +221,13 @@ def _current_contract(request, project_id, kind, planner_hash, binding):
 
 
 def _response(value, paid):
+    # Physical JSON types are evidence: Python considers False == 0 and 0 == 0.0.
+    # Compare structured JSON before any model normalization; retain array order.
     content = value.get("content") or {}
     _require(
         content.get("text") == paid.content
         and content.get("truncated") is False
+        and type(content.get("original_chars")) is int
         and content.get("original_chars") == len(paid.content),
         "physical_content",
     )
@@ -233,10 +236,11 @@ def _response(value, paid):
         record = (value.get("structured_payload_receipts") or {}).get(key) or {}
         text = _json(actual)
         _require(
-            value.get(key) == actual
+            _json(value.get(key)) == text
             and record.get("status") == "retained"
             and record.get("encoding") == "json-utf8"
             and record.get("truncated") is False
+            and type(record.get("original_chars")) is int
             and record.get("original_chars") == len(text)
             and type(record.get("limit_chars")) is int
             and record["limit_chars"] >= len(text)
@@ -251,9 +255,14 @@ def _response(value, paid):
         "input_tokens",
         "output_tokens",
     ):
-        _require(value.get(key) == getattr(paid, key), "physical_response_field")
+        expected = getattr(paid, key)
+        _require(
+            type(value.get(key)) is type(expected) and value.get(key) == expected,
+            "physical_response_field",
+        )
     _require(
         value.get("model") == paid.model_name
+        and type(value.get("tool_call_count")) is int
         and value.get("tool_call_count") == len(paid.tool_calls or []),
         "physical_response_model",
     )

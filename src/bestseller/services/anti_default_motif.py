@@ -1,37 +1,13 @@
-"""RETIRED (2026-08-02): the anti-default-motif police.
+"""Legacy motif vocabulary and advisory-only lexical observations.
 
-This module used to be the single source of truth for two "forbidden" story
-families — debt/ledger framing (债/账本/欠条/讨账) and death-revival /
-family-annihilation (亡夫归来/借尸还魂/灭门遗孤) — plus a minimal-cost
-vocabulary filter. Every layer imported its token banks, its dominance
-detectors, and its guardrail prompt blocks.
+Most original detectors and all prompt block builders remain retired no-ops.
+The default-family hit helpers are still active for diagnostics. Their historical
+names do not grant semantic authority: matching words cannot establish a core
+story theme, cross-book reuse, or permission to demote, rewrite, or reject.
 
-**Why it was retired.** Two independent failures, both fatal:
-
-1. *As prompt text.* The guardrail blocks enumerated the motifs they banned, so
-   every book's context carried the framework's list of corpses and ledgers.
-   Telling a model what not to write is how you get it written. (Deleted from
-   prompts 2026-08-01.)
-
-2. *As an output gate.* Death and debt are ordinary story material. A rival who
-   dies, a breakthrough that costs 灵力, a helper owed a favour — these are what
-   novels are made of, not pollution. Worse, the framework simultaneously
-   ORDERED costs (per-chapter ``cost_or_tradeoff``, the 代价账 hard gates, the
-   no-free-win material rules) and then vetoed the artifact for containing them.
-   Live evidence 2026-08-02: two books died in the foundation and outline stages
-   on PLANNER_UNREQUESTED_LEDGER_MOTIF / PLANNER_MINIMAL_COST_IRREVERSIBLE_
-   SELF_DAMAGE after 4 and 3 attempts, having written exactly what they were told.
-
-**What replaces it.** Nothing on this axis. Cross-book sameness is prevented at
-the source — no framework-authored motif content in any prompt — and by the
-deterministic cross-book fingerprint check. A book's own vocabulary is the
-book's business.
-
-The module is kept as a neutral shim so the ~50 call sites across conception,
-planner, tournament, architect and story_source stay importable and become
-no-ops. Detectors return False, intent probes return True (any residual
-``if not user_requested_X`` guard therefore passes), and block builders return
-"". Token banks remain as inert data for tests that assert the retirement.
+P1 (2026-09-10) reproduced a false positive from incidental idioms in a real
+story card. Preserve the diagnostic for audit compatibility, while selection
+and revision use their own source-backed evidence and explicit user intent.
 """
 
 from __future__ import annotations
@@ -115,15 +91,9 @@ def contains_minimal_cost_violation(text: Any) -> bool:
     return False
 
 
-# ── 2026-08-13 靶向复活（仅冠军级，其余层维持退役）─────────────────────────
-# 《摸一摸，救我妹》（欠条/垫债/三吊钱）与《我替娘讨旧账》（旧账×3+灵堂开棺）
-# 连续两本用户书撞进同一默认族——冠军级的债务/丧葬引力在退役后失去了全部
-# 反压：user_requested_debt 恒 True + is_debt_dominated 恒 False 使 finalize
-# 与 winner 两处检查成为双保险死代码。本次复活遵守退役档案里的两条死因：
-# ① 不进任何 prompt（检测器专用；重试反馈不点名词汇，沿用本体漂移渲染器的
-#   withhold 策略）；② 不禁一本书自己的素材——支配判定（≥2 个子族或≥3 次
-#   出现）+ 用户意图豁免（用户自己的输入提过该族即视为选择）+ 只在构思冠军
-#   层生效，规划/正文层的旧警察不复活。
+# ── Historical lexical heuristic; advisory only since 2026-09-10 ───────────
+# Kept to read historical receipts consistently. Neither distinct regex hits
+# nor density is a validated semantic classifier for long story cards.
 _DEFAULT_DEBT_FAMILY_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"账(?![号户])"),
     re.compile(r"[债賬]|欠(?:[债款钱条账]|下)"),
@@ -179,23 +149,17 @@ def default_debt_family_hits(text: Any) -> tuple[str, ...]:
     )
 
 
-# 密度阈值由人类语料标定（2026-08-14）：90 本榜单简介（与 premise 同体裁）
-# 的债/丧族密度 中位=0.00 / p90=2.02 / p95=6.49 / p99=21.2。阈值取 8.0（p95 之上），
-# 拍脑袋的 2.0 会误伤 9/90 本真在榜书。
-# 另：这 90 本里 **0 本** 出现 ≥2 个子族——distinct≥2 是零误报的强判据。
+# Historical blurb-derived calibration. It does not generalize to card-length
+# semantic dominance; downstream callers may only retain this as an observation.
 _DEBT_DENSITY_PER_1K = 8.0
 _DEBT_DENSITY_MIN_CHARS = 200
 
 
 def is_debt_dominated(text: Any) -> bool:
-    """冠军级支配判定。
+    """Return the historical lexical signal, never a semantic veto.
 
-    ≥2 个子族同时在场 = 支配（《我替娘讨旧账》：旧账+灵堂开棺）。
-    只有单一子族时改看**密度**而不是绝对次数：finalize 的扫描 blob 是
-    premise+synopsis+金手指+钩子拼起来的长文本，「合计≥3 次」在这种长度上
-    近乎恒真——2026-08-14 真机误杀即此：一本弃婴测灵根的书只因通篇偶尔
-    出现「旧账」被判污染并**打死**。绝对计数对变长文本量级失明，速率规则
-    必须配最小长度（本仓库已为此付过一次学费）。
+    The name is retained for compatibility with stored diagnostic contracts.
+    Two pattern families or sufficient density can include incidental language.
     """
 
     blob = text if isinstance(text, str) else _blob(text)

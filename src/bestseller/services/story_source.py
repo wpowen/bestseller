@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ArtifactType
-from bestseller.services.workflows import get_latest_planning_artifact
+from bestseller.services.workflows import get_latest_approved_planning_artifact
 from bestseller.settings import AppSettings
 
 _MINIMAL_COST_ACTIVE_SOURCE_KEYS = (
@@ -379,7 +379,7 @@ async def load_accepted_project_premise(
     and may contain obsolete exploratory text.
     """
 
-    artifact = await get_latest_planning_artifact(
+    artifact = await get_latest_approved_planning_artifact(
         session,
         project_id=project.id,
         artifact_type=ArtifactType.PREMISE,

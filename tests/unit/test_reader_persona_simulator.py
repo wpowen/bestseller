@@ -179,14 +179,24 @@ def test_persona_concerns_align_with_persona_priorities() -> None:
     assert any("创意" in c or "套路" in c for c in laobai.concerns)
 
 
-def test_render_persona_feedback_block_zh() -> None:
-    result = simulate_readers(_weak_signals())
+def test_render_persona_feedback_block_zh_is_labeled_simulation_advisory() -> None:
+    """W4-1：输出必须自称"模拟诊断/供参考"，不得伪装成读者判决或质检命令。"""
 
+    result = simulate_readers(_weak_signals())
     block = render_persona_feedback_block(result)
 
-    assert "上章读者画像反馈" in block
-    assert "弃书率" in block
-    assert "本章必须执行" in block or "本章必须" in block
+    assert "模拟诊断" in block
+    assert "供参考" in block
+    assert "不是真实读者反馈" in block
+    # 确定性来源与不确定性必须写明
+    assert "结构信号" in block
+    assert "不单独构成不合格判定" in block
+
+    # 旧包装必须撤除：不得再冒充读者判决、也不得虚构质检后果
+    assert "本章必须响应" not in block
+    assert "本章必须执行" not in block
+    assert "判定不合格" not in block
+    assert "必须" not in block
 
 
 def test_render_persona_feedback_block_handles_none() -> None:
@@ -197,10 +207,49 @@ def test_render_persona_feedback_block_supports_english() -> None:
     result = simulate_readers(_weak_signals())
     block = render_persona_feedback_block(result, language="en")
 
-    assert "Persona Feedback" in block
+    assert "Simulation" in block
+    assert "advisory" in block
+    assert "not measured readers" in block
+    assert "must address" not in block
+    assert "Required next-chapter corrections" not in block
 
 
 def test_signal_pack_position_propagates() -> None:
     signals = _strong_signals(position=42)
     result = simulate_readers(signals)
     assert result.chapter_position == 42
+
+
+# ── W4 先决条件：固定现有公式的输入/输出行为 ──────────────────────────────
+# 计划 W4 要求「先固定现有公式、输入与分数的行为回归，再修改权威边界」，并
+# 「文案降级、门禁降级和评分公式变更分别提交与验证」。以下数值是 2026-09-10
+# 的确定性基线：任何对 _normalize_channels / _score_for_persona 的改动都必须
+# 单独提交并显式更新这里，不允许在改文案或改门禁时顺带漂移。
+
+
+def test_persona_formula_strong_signals_baseline_is_pinned() -> None:
+    result = simulate_readers(_strong_signals())
+
+    assert result.weighted_score == pytest.approx(0.8634631208120976, abs=1e-12)
+    assert result.abandon_rate == pytest.approx(0.038011571977255916, abs=1e-12)
+    assert result.high_risk_personas == []
+
+
+def test_persona_formula_weak_signals_baseline_is_pinned() -> None:
+    result = simulate_readers(_weak_signals())
+
+    assert result.weighted_score == pytest.approx(0.02726468601639946, abs=1e-12)
+    assert result.abandon_rate == pytest.approx(0.9578282470529792, abs=1e-12)
+    assert len(result.high_risk_personas) == 7
+
+
+def test_persona_channel_formula_baseline_is_pinned() -> None:
+    """通道分是「结构计数过 sigmoid」，不是文学质量判断——数值本身即证据。"""
+
+    channels = simulate_readers(_strong_signals()).per_persona[0].channel_scores
+
+    assert channels["hook_density"] == pytest.approx(0.8189195275630781, abs=1e-12)
+    assert channels["payoff_density"] == pytest.approx(0.6899744811276125, abs=1e-12)
+    assert channels["pacing"] == pytest.approx(0.85, abs=1e-12)
+    assert channels["emotional_impact"] == pytest.approx(0.7109495026250039, abs=1e-12)
+

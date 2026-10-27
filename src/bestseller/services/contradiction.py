@@ -50,7 +50,6 @@ from bestseller.infra.db.models import (
     ArcBeatModel,
     ChapterModel,
     CharacterModel,
-    CharacterStateSnapshotModel,
     ClueModel,
     PlotArcModel,
     ProjectModel,
@@ -996,21 +995,12 @@ async def _check_stance_flip(
         if not curr_stance:
             continue
 
-        prior_snap = await session.scalar(
-            select(CharacterStateSnapshotModel)
-            .where(
-                CharacterStateSnapshotModel.project_id == project_id,
-                CharacterStateSnapshotModel.character_id == character.id,
-                CharacterStateSnapshotModel.chapter_number < chapter_number,
-                CharacterStateSnapshotModel.stance.is_not(None),
-            )
-            .order_by(
-                CharacterStateSnapshotModel.chapter_number.desc(),
-                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
-                CharacterStateSnapshotModel.created_at.desc(),
-            )
-            .limit(1)
-        )
+        from bestseller.services.character_snapshot_sources import load_eligible_character_snapshots
+
+        prior_snap = next((snap for snap in await load_eligible_character_snapshots(
+            session, project_id=project_id, character_id=character.id,
+            before_chapter_number=chapter_number - 1, limit=None,
+        ) if snap.stance is not None), None)
         prior_stance = prior_snap.stance if prior_snap is not None else None
 
         if not _is_flip(prior_stance, curr_stance):
@@ -1167,16 +1157,17 @@ async def _check_power_tier_regression(
         # are post-write LLM extractions (services/feedback.py), which
         # reflect what was actually narrated. Scene-numbered snapshots
         # come from planning-time projections and lag the live taxonomy.
-        curr_snap = await session.scalar(
-            select(CharacterStateSnapshotModel)
-            .where(
-                CharacterStateSnapshotModel.project_id == project_id,
-                CharacterStateSnapshotModel.character_id == character.id,
-                CharacterStateSnapshotModel.chapter_number == chapter_number,
-                CharacterStateSnapshotModel.power_tier.is_not(None),
-            )
-            .order_by(CharacterStateSnapshotModel.scene_number.asc().nulls_first())
-            .limit(1)
+        from bestseller.services.character_snapshot_sources import load_eligible_character_snapshots
+
+        eligible_snapshots = await load_eligible_character_snapshots(
+            session, project_id=project_id, character_id=character.id,
+            before_chapter_number=chapter_number, limit=None,
+        )
+        curr_snap = min(
+            (snap for snap in eligible_snapshots
+             if snap.chapter_number == chapter_number and snap.power_tier is not None),
+            key=lambda snap: (snap.scene_number is not None, snap.scene_number or 0),
+            default=None,
         )
         if curr_snap is not None:
             curr = curr_snap.power_tier
@@ -1195,19 +1186,8 @@ async def _check_power_tier_regression(
         if not curr:
             continue
 
-        prior_snaps = list(
-            await session.scalars(
-                select(CharacterStateSnapshotModel)
-                .where(
-                    CharacterStateSnapshotModel.project_id == project_id,
-                    CharacterStateSnapshotModel.character_id == character.id,
-                    CharacterStateSnapshotModel.chapter_number < chapter_number,
-                    CharacterStateSnapshotModel.power_tier.is_not(None),
-                )
-                .order_by(CharacterStateSnapshotModel.chapter_number.desc())
-                .limit(32)
-            )
-        )
+        prior_snaps = [snap for snap in eligible_snapshots
+                       if snap.chapter_number < chapter_number and snap.power_tier is not None][:32]
         if not prior_snaps:
             continue
 

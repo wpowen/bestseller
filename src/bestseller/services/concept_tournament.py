@@ -14,8 +14,7 @@
 本工序把已验证的"N 候选→确定性筛→判官淘汰赛"方法上移到概念层，跑在构思
 多 agent 展开【之前】：
 
-  1. 反俗套禁用先行——per-题材俗套清单（config）作为负面约束写进生成 prompt，
-     同时作确定性出局筛（命中即废）。
+  1. 默认俗套库仅作生成后的参考审计，不构成作者禁项、生成约束或淘汰依据。
   2. 杂交算子出 N 路候选——"题材 × 异质维度（随机抽取）"强制杂交 + 1 路
      纯题材对照组（防强行猎奇总是赢）。
   3. 轻量种子淘汰——候选阶段只交付 CoreStorySeed，避免 500 章说明反向污染一句话。
@@ -31,8 +30,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 import hashlib
 import json
@@ -41,9 +42,12 @@ import math
 from pathlib import Path
 import random
 import re
-from typing import Any, Protocol
+import time
+from typing import Any, Protocol, TypeVar
+from uuid import UUID
 
 import yaml
+from sqlalchemy.exc import SQLAlchemyError
 
 from bestseller.services.anti_default_motif import (
     default_debt_family_hits,
@@ -51,6 +55,8 @@ from bestseller.services.anti_default_motif import (
 )
 from bestseller.services.naming_normalizer import render_protagonist_name_ban
 from bestseller.services.progress_context import emit_activity
+from bestseller.services.budget import ExecutionBudgetError
+from bestseller.services.prompt_source_policy import AdoptedSourceUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +82,37 @@ _TARGETED_REPAIR_DIMENSIONS = (
     "定向修复最佳近失",
     "定向反转最佳近失",
 )
+
+# Commercial appeal is useful for ranking and later editorial repair, but it
+# is not evidence that a user's premise is invalid.  These are deliberately
+# narrower than the complete engine/architecture contract: source authority,
+# explicit creation intent, genre fidelity, and executable structure remain
+# promotion gates in advisory mode.
+_COMMERCIAL_ENGINE_AXES = frozenset({"freshness", "click_seed"})
+_COMMERCIAL_HOOK_AXES = frozenset(
+    {
+        "freshness",
+        "click",
+        "predictable",
+        "plain_language",
+    }
+)
+_PROTECTED_HOOK_AXES = frozenset(
+    {"character_logic", "mechanism_causality", "story_motion", "genre_fidelity"}
+)
+
+
+def is_commercial_gate_advisory(config: Mapping[str, Any] | None) -> bool:
+    """Return whether commercial concept scores are P1 evidence only.
+
+    The default is intentionally strict for callers that supply a partial
+    config (including old tests and older deployments).  Production enables
+    the migration explicitly in ``config/concept_tournament.yaml``.
+    """
+
+    return str((config or {}).get("commercial_gate_mode") or "strict").strip().lower() == "advisory"
+
+
 _NATIVE_STORY_LANES = (
     "人际困局",
     "世界规则",
@@ -98,6 +135,120 @@ _NATIVE_STORY_LANE_BRIEFS = {
     "资源分配": "从一种稀缺资源被谁生产、分配和争夺起步，用具体物件、场景与行动表达。",
     "纯题材直觉": "忘掉框架术语，先写一个该题材读者会立刻想看的具体人、事和反转。",
 }
+
+
+def _is_detective_genre(genre: str, sub_genre: str) -> bool:
+    """Prefer the selected subgenre when separating investigation from horror."""
+    selected = str(sub_genre or genre).strip().casefold()
+    return any(
+        token in selected for token in ("侦探", "推理", "探案", "刑侦", "detective", "mystery")
+    )
+
+
+def _genre_native_commitment_guidance(genre: str, sub_genre: str) -> str:
+    """Render a small, genre-aware promise for the raw idea generator.
+
+    The raw pool is upstream of every later card.  A generic "honour the
+    genre" sentence is too weak here: models collapse fantasy into realistic
+    occupations and treat every reader desire as a money/status win.  Keep the
+    guidance at the level of reader-visible ingredients, while leaving the
+    actual premise open to the model.
+    """
+
+    blob = f"{genre} {sub_genre}".strip()
+    if _is_detective_genre(genre, sub_genre):
+        return (
+            "侦探/推理题材适配：句中要有待查明的具体案件或事件、可追踪的证据或矛盾、"
+            "主角主动采取的查证、试探或设局行动，以及失败会影响的人或具体利害；"
+            "悬念必须落在案件推进上，不能只停在怪事、气氛或抽象真相。"
+        )
+    if any(token in blob for token in ("玄幻", "仙侠", "奇幻", "魔幻", "异世", "武侠", "修真")):
+        return (
+            "幻想/武侠题材适配：句中至少出现一项能被场景证明的题材原生体验，"
+            "例如修炼或技艺成长、超凡规则的运用、门派/势力关系、异族或江湖秩序、"
+            "宝物与资源争夺；主角必须主动利用或改变其中一项，不能只写现实职业换了一个"
+            "仙侠名词。幻想感必须成为冲突和选择的原因，而不是背景装饰。"
+        )
+    if any(token in blob for token in ("科幻", "未来", "赛博", "星际", "太空")):
+        return (
+            "科幻题材适配：句中至少出现一项可被行动验证的技术、制度或未来环境规则，"
+            "并让主角主动利用、破解或承担它的后果；不能只把现实职业搬到未来场景。"
+        )
+    if any(token in blob for token in ("悬疑", "推理", "灵异", "怪谈", "惊悚", "恐怖", "诡秘")):
+        return (
+            "悬疑/惊悚题材适配：句中要同时看见异常线索与主角主动采取的查证、试探、"
+            "逃脱或设局行动；悬念可以替代功利目标，但不能只停在怪事本身。"
+        )
+    if any(token in blob for token in ("言情", "恋爱", "情感")):
+        return (
+            "情感题材适配：句中要看见具体关系、人物想从对方那里得到或守住的东西，"
+            "以及一次会改变关系的主动选择；不能只写职业事件或空泛相爱。"
+        )
+    if any(token in blob for token in ("历史", "古代", "宫廷", "年代")):
+        return (
+            "历史题材适配：句中要让时代的身份、制度、礼法或真实生活条件直接制造冲突，"
+            "并让主角在其中主动选择；不能只把现代故事换成古代地名。"
+        )
+    # 都市异能 is a distinct contract from ordinary urban realism.  Keep the
+    # exception narrow: only the explicit genre marker (or its existing
+    # canonical key) enables ability-driven premises.
+    if any(token in blob.casefold() for token in ("异能", "超能力", "urban-psionic")):
+        return (
+            "都市异能题材适配：句中必须让能力在现代社会、具体关系或现实规则中"
+            "造成可见冲突，并让主角主动运用、隐藏、交换或承担能力后果；能力是题材"
+            "原生承诺，不能退化成普通职场故事，也不能只写能力名词。"
+        )
+    if any(token in blob for token in ("现实", "都市", "职场", "生活", "现实主义")):
+        return (
+            "现实题材适配：句中要让具体关系、工作、家庭或社会规则直接制造选择和后果，"
+            "不能靠凭空超能力、系统或奇迹解决问题。"
+        )
+    return (
+        "题材适配：句中必须出现该题材读者期待的原生身份、规则、关系或行动方式，"
+        "并让主角主动利用或改变其中一项；删掉题材名后若仍能原样换成另一题材，必须重想。"
+    )
+
+
+def _distilled_creative_reference_payload(
+    *, genre: str, sub_genre: str, phase: str = "architecture"
+) -> tuple[str, dict[str, Any]]:
+    """Return prompt text plus the verified receipt used to produce it."""
+
+    try:
+        from bestseller.services.distilled_design_reference import (
+            get_verified_distilled_source_receipt,
+            load_distilled_design_reference,
+            render_distilled_design_reference_block,
+        )
+
+        reference = load_distilled_design_reference(genre=genre, sub_genre=sub_genre)
+        receipt = get_verified_distilled_source_receipt(reference)
+        if receipt is None:
+            return "", {}
+        block = render_distilled_design_reference_block(
+            genre=genre,
+            sub_genre=sub_genre,
+            phase=phase,
+            language="zh-CN",
+            max_mechanisms=4,
+            max_materials=4,
+        ).strip()
+        return block, receipt if block else {}
+    except Exception:  # pragma: no cover - optional asset failures are fail-closed
+        return "", {}
+
+
+def _distilled_creative_reference_prompt(block: str) -> str:
+    if not block.strip():
+        return ""
+    return (
+        "\n【已核验题材工艺参考·只作建议】\n"
+        "下面是同题材成熟作品蒸馏出的抽象机制、读者奖励和节奏控制。它不是本书事实，"
+        "不得照搬专名、桥段、独特组合或句式；只能选择其中一条机制，把它重新解释为"
+        "当前主角、当前世界规则和当前冲突下的原创行动。若与用户创意或题材合同冲突，"
+        "忽略参考。\n"
+        f"{block}\n"
+    )
 
 
 # 有 brief 时用来区分候选的轴。这些是**故事自身的维度**，不是题材指令——
@@ -182,6 +333,10 @@ class ConceptCandidate:
     judge_protagonist_agency: float | None = None
     judge_reason: str = ""
     composite: float | None = None
+    # Commercial findings are retained even when advisory mode allows the
+    # candidate to continue.  They are evidence for P1 repair, never a hidden
+    # second rejection path.
+    quality_findings: tuple[dict[str, Any], ...] = ()
     rejected_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -228,6 +383,7 @@ class ConceptCandidate:
             "judge_protagonist_agency": self.judge_protagonist_agency,
             "judge_reason": self.judge_reason[:200],
             "composite": self.composite,
+            "quality_findings": [dict(item) for item in self.quality_findings],
             "rejected_reason": self.rejected_reason,
         }
 
@@ -236,7 +392,7 @@ class ConceptCandidate:
 class ConceptTournamentResult:
     winner: ConceptCandidate | None = None
     candidates: list[ConceptCandidate] = field(default_factory=list)
-    banned_cliches: tuple[str, ...] = ()
+    banned_cliches: tuple[str, ...] = ()  # Legacy Python constructor compatibility only.
     llm_run_ids: list[Any] = field(default_factory=list)
     generation_model_key: str | None = None
     judge_model_key: str | None = None
@@ -244,6 +400,7 @@ class ConceptTournamentResult:
     raw_idea_judge_model_key: str | None = None
     premise_judge_model_key: str | None = None
     candidate_prompt_mode: str = "current"
+    commercial_gate_mode: str = "strict"
     raw_idea_prompt_arm: str | None = None
     candidate_prompt_chars: int = 0
     candidate_generation_calls: int = 0
@@ -251,7 +408,12 @@ class ConceptTournamentResult:
     raw_idea_ranking: list[dict[str, Any]] = field(default_factory=list)
     raw_idea_rank_coverage: dict[str, Any] = field(default_factory=dict)
     raw_ideas: list[dict[str, str]] = field(default_factory=list)
+    # The raw pool is an input contract for the expensive card expansion. Keep
+    # the accounting explicit so a repaired/truncated model response cannot be
+    # mistaken for a complete pool.
+    raw_idea_pool_stats: dict[str, Any] = field(default_factory=dict)
     premise_cards: list[dict[str, Any]] = field(default_factory=list)
+    premise_review_fallback: dict[str, Any] = field(default_factory=dict)
     # 2026-08-25：追读性阶段的回执。恒非空——"跑了/只留痕/跳过" 三态可区分，
     # 此前 seriality_judge=={} 既可能是"评了没发现"也可能是"压根没跑"。
     seriality_stage: dict[str, Any] = field(default_factory=dict)
@@ -259,16 +421,29 @@ class ConceptTournamentResult:
     # 区分「查了没问题」与「压根没查」，这正是 constraint_ladder 被埋了
     # 八天的原因（prompt 从 2026-08-19 起就在要它）。
     constraint_ladder_audit: dict[str, Any] = field(default_factory=dict)
+    quality_findings: list[dict[str, Any]] = field(default_factory=list)
+    distilled_reference_receipt: dict[str, Any] = field(default_factory=dict)
+    default_cliche_references: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "seriality_stage": dict(self.seriality_stage),
             "constraint_ladder_audit": dict(self.constraint_ladder_audit),
+            "quality_findings": [dict(item) for item in self.quality_findings],
+            "distilled_reference_receipt": dict(self.distilled_reference_receipt),
             "winner_dimension": self.winner.dimension if self.winner else None,
             "winner_concept": self.winner.concept if self.winner else None,
             "winner": self.winner.to_dict() if self.winner else None,
             "candidates": [c.to_dict() for c in self.candidates],
-            "banned_cliches": list(self.banned_cliches),
+            "default_cliche_references": {
+                "policy": "default-cliche-reference.v1",
+                "authority": "default_reference",
+                "action": "advisory",
+                "entries": list(self.default_cliche_references or self.banned_cliches),
+                "affects_eligibility": False,
+                "affects_scores": False,
+                "affects_order": False,
+            },
             "llm_run_ids": [str(run_id) for run_id in self.llm_run_ids],
             "generation_model_key": self.generation_model_key,
             "judge_model_key": self.judge_model_key,
@@ -276,6 +451,7 @@ class ConceptTournamentResult:
             "raw_idea_judge_model_key": self.raw_idea_judge_model_key,
             "premise_judge_model_key": self.premise_judge_model_key,
             "candidate_prompt_mode": self.candidate_prompt_mode,
+            "commercial_gate_mode": self.commercial_gate_mode,
             "raw_idea_prompt_arm": self.raw_idea_prompt_arm,
             "candidate_prompt_chars": self.candidate_prompt_chars,
             "candidate_generation_calls": self.candidate_generation_calls,
@@ -283,7 +459,9 @@ class ConceptTournamentResult:
             "raw_idea_ranking": list(self.raw_idea_ranking),
             "raw_idea_rank_coverage": dict(self.raw_idea_rank_coverage),
             "raw_ideas": list(self.raw_ideas),
+            "raw_idea_pool_stats": dict(self.raw_idea_pool_stats),
             "premise_cards": list(self.premise_cards),
+            "premise_review_fallback": dict(self.premise_review_fallback),
             "schema_version": "concept-tournament.v2",
         }
 
@@ -346,7 +524,11 @@ def resolve_tournament_config(
 def resolve_banned_cliches(
     genre: str | None, sub_genre: str | None, config: dict[str, Any] | None = None
 ) -> tuple[str, ...]:
-    """generic 俗套 + canonical 题材俗套合并去重。fail-open 到 generic。"""
+    """Legacy name: resolve default references, never user-authored prohibitions.
+
+    generic + canonical genre entries remain available for audit. Neither this
+    config nor avoid_mechanisms establishes explicit human avoid authority.
+    """
 
     cfg = config if config is not None else load_concept_tournament_config()
     seeds = cfg.get("cliche_seeds") if isinstance(cfg, dict) else {}
@@ -365,24 +547,45 @@ def resolve_banned_cliches(
     return tuple(dict.fromkeys(x for x in merged if x.strip()))
 
 
-def _cliche_hits(candidate: ConceptCandidate, banned: tuple[str, ...]) -> list[str]:
-    """概念/机制文本命中的俗套关键词（按禁用短语的 2+ 字连续子串宽松匹配）。
+def _has_ordered_cliche_core(field: str, tokens: list[str], required: int, max_span: int) -> bool:
+    """Require both phrase endpoints in one bounded, ordered occurrence.
 
-    禁用短语是"废脉其实是宝脉"这类概括语，候选不会逐字复述——按短语切出的
-    词元计数撞车。阈值分档（2026-07-09 真机校准）：长短语(>4词元)要求≥3 命中
-    ——首轮真机里"修真账房做假功德账"这个不错的对照组候选被"老祖飞升前留下
-    传承"以【老祖+飞升】两个散词误毙；短短语("退婚打脸"类)保持≥2。
+    This is lexical evidence, not a semantic classifier. Try every starting
+    occurrence so an earlier unrelated mention cannot hide a later match.
     """
+    start = field.find(tokens[0])
+    while start >= 0:
+        window = field[start : start + max_span + 2]
+        cursor = 0
+        matched: list[str] = []
+        for token in tokens:
+            position = window.find(token, cursor)
+            if position >= 0:
+                matched.append(token)
+                cursor = position + 1
+        if len(matched) >= required and matched[0] == tokens[0] and matched[-1] == tokens[-1]:
+            return True
+        start = field.find(tokens[0], start + 1)
+    return False
 
-    text = f"{candidate.concept} {candidate.mechanism} {candidate.hook_question}"
+
+def _cliche_hits(candidate: ConceptCandidate, banned: tuple[str, ...]) -> list[str]:
+    """Find bounded phrase evidence without joining unrelated field fragments.
+
+    Preserve the existing token-count policy, but require the beginning and end
+    of the banned phrase. Shared death/identity words alone do not establish its
+    final action. Paraphrases still need downstream creative review; this lexical
+    screen must not claim semantic equivalence from scattered bigrams.
+    """
+    fields = (candidate.concept, candidate.mechanism, candidate.hook_question)
     hits: list[str] = []
     for phrase in banned:
-        tokens = [t for t in _phrase_tokens(phrase) if len(t) >= 2]
+        tokens = [token for token in _phrase_tokens(phrase) if len(token) >= 2]
         if not tokens:
             continue
-        matched = sum(1 for t in tokens if t in text)
         required = 3 if len(tokens) > 4 else 2 if len(tokens) > 1 else 1
-        if matched >= required:
+        max_span = max(12, len(phrase) * 2)
+        if any(_has_ordered_cliche_core(field, tokens, required, max_span) for field in fields):
             hits.append(phrase)
     return hits
 
@@ -433,101 +636,157 @@ def _deterministic_anti_pattern(candidate: ConceptCandidate) -> str | None:
     )
     if any(term in text for term in ("资本真身", "复活死路", "未来庄家")):
         return "abstract_formula"
-    if (
-        ("随机" in text or "每使用一次" in text or "每发动一次" in text)
-        and any(term in text for term in ("折寿", "失忆", "寿命扣", "器官衰竭"))
+    if ("随机" in text or "每使用一次" in text or "每发动一次" in text) and any(
+        term in text for term in ("折寿", "失忆", "寿命扣", "器官衰竭")
     ):
         return "external_cost"
-    if (
-        any(
-            term in text
-            for term in ("每用一次", "每递一", "每送一", "每渡一", "每完成一")
-        )
-        and any(
-            term in text
-            for term in (
-                "离死越近",
-                "离死亡越近",
-                "寿元越短",
-                "寿命越短",
-                "记忆越少",
-                "自我越少",
-            )
+    if any(term in text for term in ("每用一次", "每递一", "每送一", "每渡一", "每完成一")) and any(
+        term in text
+        for term in (
+            "离死越近",
+            "离死亡越近",
+            "寿元越短",
+            "寿命越短",
+            "记忆越少",
+            "自我越少",
         )
     ):
         return "external_cost"
-    if (
-        any(term in text for term in ("每继承一次", "每完成一次", "每使用一次"))
-        and any(
-            term in text
-            for term in ("存在就被抹去", "没人记得", "失去自我", "记忆被扣除")
+    if any(term in text for term in ("每继承一次", "每完成一次", "每使用一次")) and any(
+        term in text for term in ("存在就被抹去", "没人记得", "失去自我", "记忆被扣除")
+    ):
+        return "external_cost"
+    if any(
+        term in text
+        for term in (
+            "每渡一",
+            "每送一",
+            "每救一",
+            "每点一",
+            "每多一",
+            "灯愈明",
+        )
+    ) and any(
+        term in text
+        for term in (
+            "记忆便愈",
+            "记忆稀薄",
+            "记忆剥落",
+            "自我剥落",
+            "失去当下",
+            "忘记自己",
+            "人格消失",
         )
     ):
         return "external_cost"
-    if (
-        any(
-            term in text
-            for term in (
-                "每渡一",
-                "每送一",
-                "每救一",
-                "每点一",
-                "每多一",
-                "灯愈明",
-            )
+    if any(
+        term in text
+        for term in (
+            "每揭穿一条",
+            "每揭开一条",
+            "每改写一次",
+            "每窥见一次",
+            "每动用一次",
         )
-        and any(
-            term in text
-            for term in (
-                "记忆便愈",
-                "记忆稀薄",
-                "记忆剥落",
-                "自我剥落",
-                "失去当下",
-                "忘记自己",
-                "人格消失",
-            )
+    ) and any(
+        term in text
+        for term in (
+            "讨走一块肉",
+            "肉身残缺",
+            "寿命",
+            "气运",
+            "人格磨损",
+            "记忆被吞噬",
         )
     ):
         return "external_cost"
-    if (
-        any(
-            term in text
-            for term in (
-                "每揭穿一条",
-                "每揭开一条",
-                "每改写一次",
-                "每窥见一次",
-                "每动用一次",
-            )
-        )
-        and any(
-            term in text
-            for term in (
-                "讨走一块肉",
-                "肉身残缺",
-                "寿命",
-                "气运",
-                "人格磨损",
-                "记忆被吞噬",
-            )
-        )
-    ):
-        return "external_cost"
-    if (
-        any(term in text for term in ("报警即可", "求助即可", "可以安全解决"))
-        and any(term in text for term in ("独自赴死", "主动送死", "为了故事"))
+    if any(term in text for term in ("报警即可", "求助即可", "可以安全解决")) and any(
+        term in text for term in ("独自赴死", "主动送死", "为了故事")
     ):
         return "irrational_protagonist"
-    if (
-        any(term in text for term in ("每接一个", "每换一个", "每找到一个"))
-        and any(term in text for term in ("然后遇到更强", "再来一次", "再被封杀", "破解一次"))
+    if any(term in text for term in ("每接一个", "每换一个", "每找到一个")) and any(
+        term in text for term in ("然后遇到更强", "再来一次", "再被封杀", "破解一次")
     ):
         return "parallel_repetition"
     return None
 
 
-def _seriality_audit(candidate: ConceptCandidate, *, target_chapters: int) -> str | None:
+def _seriality_timeline_contradiction(candidate: ConceptCandidate) -> str | None:
+    """Detect a phase claiming more accumulated chapters than have elapsed."""
+
+    def _number(raw: str) -> int:
+        if raw.isdigit():
+            return int(raw)
+        digits = {
+            "零": 0,
+            "一": 1,
+            "二": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+        }
+        total = 0
+        current = 0
+        for char in raw:
+            if char in digits:
+                current = digits[char]
+            elif char == "十":
+                total += (current or 1) * 10
+                current = 0
+            elif char == "百":
+                total += (current or 1) * 100
+                current = 0
+            elif char == "千":
+                total += (current or 1) * 1000
+                current = 0
+        return total + current
+
+    surfaces = (
+        candidate.unit_frequency,
+        candidate.ch50,
+        *candidate.question_ladder,
+        *candidate.phase_transitions,
+    )
+    for raw in surfaces:
+        text = str(raw or "")
+        if not text:
+            continue
+        ranges = [
+            _number(value)
+            for value in re.findall(
+                r"第\s*([0-9一二三四五六七八九十百千]+)\s*(?:章|[-—至到])",
+                text,
+            )
+        ]
+        if not ranges:
+            continue
+        elapsed = max(ranges)
+        claims = [
+            _number(left or right)
+            for left, right in re.findall(
+                r"(?:([0-9一二三四五六七八九十百千]+)\s*章\s*累计|"
+                r"累计\s*([0-9一二三四五六七八九十百千]+)\s*章)",
+                text,
+            )
+            if left or right
+        ]
+        if claims and max(claims) > elapsed:
+            return f"第{elapsed}章阶段声称已有{max(claims)}章累计成果"
+    return None
+
+
+def _seriality_audit(
+    candidate: ConceptCandidate,
+    *,
+    target_chapters: int,
+    genre: str = "",
+    seed_concept: str = "",
+    authoritative_seed_concept: str = "",
+) -> str | None:
     """决赛阶段审可续写性；这里失败不会回头修改一句话，只会淘汰候选。"""
 
     if not candidate.repeatable_story_unit.strip():
@@ -541,10 +800,67 @@ def _seriality_audit(candidate: ConceptCandidate, *, target_chapters: int) -> st
     ladder = [q.strip() for q in candidate.question_ladder if q.strip()]
     if len(dict.fromkeys(ladder)) < 3:
         return "问题梯不足3级互异问题"
-    if not candidate.ch50.strip():
-        return "答不出第50章在打什么"
-    if candidate.ch50.strip() == candidate.progress_bar.strip():
-        return "第50章与进度条同文(敷衍)"
+    # A genre or an empty/generated exploration seed cannot forbid ordinary
+    # world development. Semantic source fidelity is already reviewed against
+    # the full candidate; only an explicit user identity is deterministic here.
+    if authoritative_seed_concept.strip():
+        identity_reasons = _authoritative_seed_fidelity_reasons(
+            candidate,
+            authoritative_seed_concept,
+        )
+        if identity_reasons:
+            return "用户上位创意身份未保留: " + "；".join(identity_reasons)
+    timeline_conflict = _seriality_timeline_contradiction(candidate)
+    if timeline_conflict:
+        return timeline_conflict
+    if target_chapters < 50:
+        # A finite short book has no chapter 50.  Keep the closure proof
+        # mandatory, but judge it against the requested horizon instead of
+        # inventing a long-serial checkpoint that cannot exist.
+        if candidate.ch50.strip():
+            return f"目标{target_chapters}章不适用第50章字段"
+        if not candidate.endgame_direction.strip():
+            return f"缺第{target_chapters}章内终局收束"
+    else:
+        if not candidate.ch50.strip():
+            return "答不出第50章在打什么"
+        if candidate.ch50.strip() == candidate.progress_bar.strip():
+            return "第50章与进度条同文(敷衍)"
+    if target_chapters >= 30:
+        # Run the same promotion contract during seriality repair.  Previously
+        # the prompt/capacity ruler accepted five units for a 50-chapter book,
+        # while concept_contract later required ceil(50/4)=13 and failed with
+        # no targeted retry.  Keeping this gate here feeds its exact finding
+        # into the existing second seriality attempt.  Epic targets (200+)
+        # retain their established capacity audit here; the promotion
+        # contract still runs the shared ranking gate at the final boundary.
+        from bestseller.services.ranking_seriality_gate import evaluate_ranking_seriality
+
+        ranking_report = evaluate_ranking_seriality(
+            {
+                "repeatable_story_unit": candidate.repeatable_story_unit,
+                "unit_families": candidate.unit_families,
+                "unit_frequency": candidate.unit_frequency,
+                "unit_count_estimate": candidate.unit_count_estimate,
+                "renewal_sources": candidate.renewal_sources,
+                "accumulation_tracks": candidate.accumulation_tracks,
+                "phase_transitions": candidate.phase_transitions,
+                "opposing_ecology": candidate.opposing_ecology,
+                "mystery_ladder": candidate.question_ladder,
+                "endgame_direction": candidate.endgame_direction,
+            },
+            target_chapters=target_chapters,
+        )
+        # The final concept contract uses this exact evaluator.  Feed every
+        # blocking axis into the existing bounded repair loop so cadence,
+        # family breadth, renewal sources, and ecology failures are repaired
+        # before promotion instead of appearing only at the last boundary.
+        if not ranking_report.passed:
+            details = "；".join(
+                f"{finding.code}: {finding.message}；修复：{finding.repair_action}"
+                for finding in ranking_report.findings[:6]
+            )
+            return "榜单候选续航门失败: " + details
     if target_chapters >= 200:
         from bestseller.services.seriality_capacity import evaluate_seriality_capacity
 
@@ -565,9 +881,8 @@ def _seriality_audit(candidate: ConceptCandidate, *, target_chapters: int) -> st
             require_phase_coverage=True,
         )
         if not report.passed:
-            return (
-                f"容量证明不足({report.estimated_chapter_ceiling}章上限): "
-                + "/".join(report.blocking_codes[:3])
+            return f"容量证明不足({report.estimated_chapter_ceiling}章上限): " + "/".join(
+                report.blocking_codes[:3]
             )
     return None
 
@@ -690,16 +1005,16 @@ def _build_candidate_messages(
         "此轮禁止写卷纲、阶段表、第50章和终局说明；先把一句话和人物因果做对，"
         "长篇承载力只会在入围后单独验证。\n\n"
         "只输出 JSON：\n"
-        "{\"concept\": \"一句话高概念\", \"mechanism\": \"核心机制一句话\", "
-        "\"hook_question\": \"读者的认知缺口疑问\", "
-        "\"protagonist_identity\": \"具体身份与处境\", "
-        "\"protagonist_private_desire\": \"不等于拯救世界的私人欲望\", "
-        "\"protagonist_flaw\": \"会影响选择的缺陷\", "
-        "\"core_abnormality\": \"异常/能力的可执行规则\", "
-        "\"opening_crisis\": \"第一场迫使行动的具体危机\", "
-        "\"opponent_system\": \"会学习和反制的具体对手或系统\", "
-        "\"decision_proof\": \"安全替代方案为何失败以及冒险为何局部最优\", "
-        "\"emotional_promise\": \"读者持续追读获得的核心情绪\"}"
+        '{"concept": "一句话高概念", "mechanism": "核心机制一句话", '
+        '"hook_question": "读者的认知缺口疑问", '
+        '"protagonist_identity": "具体身份与处境", '
+        '"protagonist_private_desire": "不等于拯救世界的私人欲望", '
+        '"protagonist_flaw": "会影响选择的缺陷", '
+        '"core_abnormality": "异常/能力的可执行规则", '
+        '"opening_crisis": "第一场迫使行动的具体危机", '
+        '"opponent_system": "会学习和反制的具体对手或系统", '
+        '"decision_proof": "安全替代方案为何失败以及冒险为何局部最优", '
+        '"emotional_promise": "读者持续追读获得的核心情绪"}'
     )
     return system, user
 
@@ -768,16 +1083,16 @@ def _build_lean_candidate_messages(
         "及立即后果，让普通目标读者一遍看懂并想追问后续。不要写世界观说明、阶段表、卷纲或终局。\n\n"
         "优先使用‘独特规则+一个具体悖论’或‘标志性行动+立即后果’，不要硬塞幕后集团。\n\n"
         "只输出JSON："
-        "{\"concept\":\"一句话钩子\",\"mechanism\":\"主角行动如何改变局面并引发下一轮不同问题\","
-        "\"hook_question\":\"读者自然产生的问题\","
-        "\"protagonist_identity\":\"具体身份与处境\","
-        "\"protagonist_private_desire\":\"私人欲望\","
-        "\"protagonist_flaw\":\"影响选择的缺陷\","
-        "\"core_abnormality\":\"可执行的异常或优势\","
-        "\"opening_crisis\":\"第一场具体危机\","
-        "\"opponent_system\":\"会学习和反制的对手\","
-        "\"decision_proof\":\"安全方案为何不成立、冒险为何局部最优\","
-        "\"emotional_promise\":\"持续追读情绪\"}"
+        '{"concept":"一句话钩子","mechanism":"主角行动如何改变局面并引发下一轮不同问题",'
+        '"hook_question":"读者自然产生的问题",'
+        '"protagonist_identity":"具体身份与处境",'
+        '"protagonist_private_desire":"私人欲望",'
+        '"protagonist_flaw":"影响选择的缺陷",'
+        '"core_abnormality":"可执行的异常或优势",'
+        '"opening_crisis":"第一场具体危机",'
+        '"opponent_system":"会学习和反制的对手",'
+        '"decision_proof":"安全方案为何不成立、冒险为何局部最优",'
+        '"emotional_promise":"持续追读情绪"}'
     )
     return system, user
 
@@ -828,16 +1143,16 @@ def _build_native_candidate_messages(
         "不要为了显得新奇硬加代价、系统、幕后集团或行业术语；一句话可以用一个具体"
         "反常事件让人想追问。不要写卷纲和阶段表。\n"
         "只输出JSON："
-        "{\"concept\":\"一句话钩子\",\"mechanism\":\"故事为何会继续变化\","
-        "\"hook_question\":\"读者自然想问什么\","
-        "\"protagonist_identity\":\"主角身份与处境\","
-        "\"protagonist_private_desire\":\"私人欲望\","
-        "\"protagonist_flaw\":\"影响选择的缺陷\","
-        "\"core_abnormality\":\"核心异常或优势\","
-        "\"opening_crisis\":\"开局具体危机\","
-        "\"opponent_system\":\"会主动应对的对手\","
-        "\"decision_proof\":\"为何这样做比安全方案更合理\","
-        "\"emotional_promise\":\"持续追读情绪\"}"
+        '{"concept":"一句话钩子","mechanism":"故事为何会继续变化",'
+        '"hook_question":"读者自然想问什么",'
+        '"protagonist_identity":"主角身份与处境",'
+        '"protagonist_private_desire":"私人欲望",'
+        '"protagonist_flaw":"影响选择的缺陷",'
+        '"core_abnormality":"核心异常或优势",'
+        '"opening_crisis":"开局具体危机",'
+        '"opponent_system":"会主动应对的对手",'
+        '"decision_proof":"为何这样做比安全方案更合理",'
+        '"emotional_promise":"持续追读情绪"}'
     )
     return system, user
 
@@ -878,10 +1193,29 @@ def _effect_skills_directive_line(effect_skills: tuple[str, ...] | list[str]) ->
 
 
 _LIGHT_TONE_MARKERS: tuple[str, ...] = (
-    "轻松", "幽默", "喜剧", "诙谐", "明快", "自嘲", "吐槽", "荒诞", "好笑", "反差",
+    "轻松",
+    "幽默",
+    "喜剧",
+    "诙谐",
+    "明快",
+    "自嘲",
+    "吐槽",
+    "荒诞",
+    "好笑",
+    "反差",
 )
 _HEAVY_TONE_MARKERS: tuple[str, ...] = (
-    "黑暗", "暗黑", "压抑", "沉重", "阴冷", "冷峻", "惨烈", "绝望", "尸首", "尸体", "收尸",
+    "黑暗",
+    "暗黑",
+    "压抑",
+    "沉重",
+    "阴冷",
+    "冷峻",
+    "惨烈",
+    "绝望",
+    "尸首",
+    "尸体",
+    "收尸",
 )
 
 # 胁迫式生死赌注（2026-08-13 真机定罪《摸一摸，救我妹》）：情绪词表测不出
@@ -901,10 +1235,10 @@ _COERCION_STAKE_PATTERNS: tuple[re.Pattern[str], ...] = (
 def _coercion_stake_hits(text: str) -> tuple[str, ...]:
     blob = str(text or "")
     return tuple(
-        pattern.pattern[:24]
-        for pattern in _COERCION_STAKE_PATTERNS
-        if pattern.search(blob)
+        pattern.pattern[:24] for pattern in _COERCION_STAKE_PATTERNS if pattern.search(blob)
     )
+
+
 def _creation_intent_content_violations(
     text: str,
     *,
@@ -954,11 +1288,22 @@ def _creation_intent_content_violations(
 def _candidate_story_text(candidate: ConceptCandidate) -> str:
     payload = candidate.to_dict()
     control_fields = {
-        "seriality_report", "seriality_judge", "judge_reason", "rejected_reason",
+        "seriality_report",
+        "seriality_judge",
+        "judge_reason",
+        "rejected_reason",
         "constraint_ladder",
-        "judge_freshness", "judge_click", "judge_predictable", "judge_character_logic",
-        "judge_mechanism_causality", "judge_genre_fidelity", "judge_plain_language",
-        "judge_story_motion", "judge_protagonist_agency", "composite", "dimension",
+        "judge_freshness",
+        "judge_click",
+        "judge_predictable",
+        "judge_character_logic",
+        "judge_mechanism_causality",
+        "judge_genre_fidelity",
+        "judge_plain_language",
+        "judge_story_motion",
+        "judge_protagonist_agency",
+        "composite",
+        "dimension",
     }
 
     def _texts(value: Any) -> list[str]:
@@ -987,64 +1332,34 @@ def _demote_default_family_cards(
     seed_concept: str,
     result: ConceptTournamentResult,
 ) -> list[tuple[str, str]]:
-    """展开位让给不在默认族里的卡片——降权，不是杀权。
+    """Retain approved cards and audit lexical signals without selection power.
 
-    2026-08-24 真机（书9，零创意种子）逐层量出的覆盖空缺：
-
-        一句话胚子   55字  子族0 命中  0 → 胚子层沉底判据放行
-        展开后卡片 1247字  子族3 命中 39 → **此处**，母题刚可测
-        构思终稿   8861字  子族3 命中183 → advisory，只挣一次重生
-
-    冠军胚子写的是「借力/还力」，零个该族词；是展开把它翻译成了账本与
-    债主。胚子层的判据结构上不可能抓到——它量的是母题出生之前的那一刻。
-
-    卡片层曾有一道硬门，2026-08-02 退役，理由至今成立（「选了仙侠不等于
-    禁止出现葬礼」）。所以这里恢复的不是那道门：
-      * 只在**同一池里存在干净卡片**时才让位（比较式，不是清单式）
-      * 全池同族 → 原样放行，绝不清空池（2026-08-06 定案）
-      * 用户自己点名该族 → 完全跳过，那是用户的选择
-      * 读不到内核的卡片按干净处理——未知不等于有罪
-      * 不向任何 prompt 写一个该族的词（否定式指令点名母题词=种词）
+    The historical function name remains for caller compatibility. Theme words
+    do not establish semantic dominance or cross-book reuse. Market overlap and
+    source-backed mechanism checks keep their separate evidence contracts.
     """
 
-    if not approved:
+    if not approved or default_debt_family_hits(str(seed_concept or "")):
         return approved
-    if bool(default_debt_family_hits(str(seed_concept or ""))):
-        return approved
-
-    dominated: list[tuple[str, str]] = []
-    clean: list[tuple[str, str]] = []
-    for key in approved:
-        kernel = prebuilt_kernels.get(key)
+    for dimension, premise_seed in approved:
+        kernel = prebuilt_kernels.get((dimension, premise_seed))
         if not isinstance(kernel, dict):
-            clean.append(key)
             continue
         blob = _flatten_kernel_text(kernel)
-        (dominated if is_debt_dominated(blob) else clean).append(key)
-
-    if not dominated or not clean:
-        return approved
-
-    for dimension, premise_seed in dominated:
-        kernel = prebuilt_kernels.get((dimension, premise_seed)) or {}
-        result.engine_rejections.append(
-            {
-                "dimension": dimension,
-                "scores": {},
-                "reason": (
-                    "展开后落进框架实测过度复用的默认主题族（用户未要求），"
-                    "展开位让给同池中未落进该族的卡片"
-                ),
-                "failed_axes": ["default_family_after_expansion"],
-                "family_hits": list(
-                    default_debt_family_hits(_flatten_kernel_text(kernel))
-                ),
-                "seed_was_clean": not bool(
-                    default_debt_family_hits(str(premise_seed or ""))
-                ),
-            }
-        )
-    return clean
+        if is_debt_dominated(blob):
+            result.quality_findings.append(
+                {
+                    "stage": "premise_card",
+                    "dimension": dimension,
+                    "finding": "default_family_lexical_signal",
+                    "policy": "advisory_only",
+                    "evidence_kind": "lexical_matches",
+                    "reason": "字词命中不能证明核心母题支配或跨书重复，保留原候选资格与顺序",
+                    "family_hits": list(default_debt_family_hits(blob)),
+                    "seed_was_clean": not bool(default_debt_family_hits(premise_seed)),
+                }
+            )
+    return approved
 
 
 def _flatten_kernel_text(kernel: object) -> str:
@@ -1072,11 +1387,13 @@ def _candidate_hard_rejection_reason(
     candidate: ConceptCandidate,
     *,
     seed_concept: str,
+    authoritative_seed_concept: str = "",
     tone_preference: str,
     effect_skills: tuple[str, ...] | list[str],
     cost_style: str = "",
     allow_debt_theme: bool | None = None,
     allow_death_theme: bool | None = None,
+    raw_idea: bool = False,
 ) -> str | None:
     """Reject a candidate that contradicts an EXPLICIT user選択 — nothing else.
 
@@ -1088,7 +1405,7 @@ def _candidate_hard_rejection_reason(
     is executing the user's choice, not the framework's taste.
     """
 
-    del seed_concept, allow_debt_theme, allow_death_theme
+    del allow_debt_theme, allow_death_theme
 
     text = _candidate_story_text(candidate)
     reasons = list(
@@ -1099,7 +1416,43 @@ def _candidate_hard_rejection_reason(
             cost_style=cost_style,
         )
     )
+    if authoritative_seed_concept.strip():
+        reasons.extend(
+            _authoritative_seed_fidelity_reasons(
+                candidate,
+                authoritative_seed_concept,
+                require_identity_field=not raw_idea,
+            )
+        )
     return "；".join(reasons) if reasons else None
+
+
+def _authoritative_seed_fidelity_reasons(
+    candidate: ConceptCandidate, seed: str, *, require_identity_field: bool = True
+) -> tuple[str, ...]:
+    """Apply only deterministic identity checks; semantic facts use the judge.
+
+    The conception pipeline already runs the bounded seed-fidelity judge with
+    the original seed and evidence quotes. This early gate must not duplicate
+    that semantic decision with brittle substring heuristics. It only protects
+    an explicitly extractable protagonist name; anonymous seeds remain valid
+    and continue to the existing semantic review.
+    """
+
+    from bestseller.services.book_design import extract_creation_protagonist_name
+
+    name = extract_creation_protagonist_name({"premise": str(seed or "")})
+    if not name:
+        return ()
+    reasons: list[str] = []
+    # Mentioning the right name in a side field is insufficient: the
+    # protagonist identity and the user-facing hook are the two fields that
+    # become the shared source for every downstream agent.
+    if name not in candidate.concept or (
+        require_identity_field and name not in candidate.protagonist_identity
+    ):
+        reasons.append(f"authoritative_protagonist_missing:{name}")
+    return tuple(reasons)
 
 
 def audit_constraint_ladder(
@@ -1139,9 +1492,7 @@ def audit_constraint_ladder(
         # 同一层次打转的可判形态：去重后剩不到两阶，或任一阶是另一阶的子串。
         if ladder:
             deduped = {x for x in ladder}
-            nested = any(
-                a != b and (a in b or b in a) for a in ladder for b in ladder
-            )
+            nested = any(a != b and (a in b or b in a) for a in ladder for b in ladder)
             if len(deduped) < 2 or nested:
                 findings.append("constraint_ladder_flat")
     return {
@@ -1173,6 +1524,7 @@ def _build_engine_kernel_messages(
     lane: str,
     chapter_count: int,
     seed_concept: str = "",
+    authoritative_seed_concept: str = "",
     seed_support: dict[str, Any] | None = None,
     audience_orientation: str = "",
     banned: tuple[str, ...] = (),
@@ -1180,6 +1532,9 @@ def _build_engine_kernel_messages(
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
     creation_intent_block: str = "",
+    retry_feedback: str = "",
+    primary_effect_contract: Mapping[str, Any] | None = None,
+    distilled_reference_block: str = "",
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -1189,13 +1544,34 @@ def _build_engine_kernel_messages(
         "禁止用与核心动作没有因果关系的固定惩罚来假装张力。"
         "只输出JSON。"
     )
-    seed = (
-        f"原始创意（事实锚点）：{seed_concept.strip()}\n"
-        "其中的主角身份、核心异常和关键关系不可替换；只能补足目标、阻力、选择后果"
-        "和可变形循环。即使你想到另一个更好故事，也不得偷换。\n"
-        if seed_concept.strip()
-        else ""
-    )
+    authority = str(authoritative_seed_concept or "").strip()
+    candidate_angle = str(seed_concept or "").strip()
+    if authority:
+        seed = f"用户上位创意（唯一事实锚点）：{authority}\n"
+        if candidate_angle and candidate_angle != authority:
+            seed += f"候选提炼角度（只能扩写，不得替换上位创意）：{candidate_angle}\n"
+        seed += (
+            "用户上位创意中的主角身份、核心能力/机制、经营对象、长期目标、"
+            "对手范围与明确代价不可替换；能力事件中谁触发、谁接收或观察结果、"
+            "谁向谁交付什么以及效果方向也不可颠倒。候选角度只是同一本书的局部切入点。"
+            "只能补足目标、阻力、选择后果和可变形循环。\n"
+        )
+    elif candidate_angle:
+        seed = (
+            f"原始创意（事实锚点）：{candidate_angle}\n"
+            "其中的主角身份、核心异常和关键关系不可替换；只能补足目标、阻力、"
+            "选择后果和可变形循环。即使你想到另一个更好故事，也不得偷换。\n"
+        )
+    else:
+        seed = ""
+    if authority:
+        seed += (
+            "【原始开局事件保真】用户上位创意中明确写出的开局触发事件、异常现象及其先后因果"
+            "也是冻结事实，不只是source引用或候选提炼角度。必须把它们落实到输出的"
+            "opening_crisis、reader_promise、core_abnormality以及current_goal/effective_resistance"
+            "等相关字段中；可以补足非冲突人物、阻力和后果，但不得用泛化技能、身份说明或新事件"
+            "替换、遮蔽或省略原始开局事件。若原文没有明确开局事件，不得凭空补造并声称其来自用户。\n"
+        )
     support = ""
     if seed_support:
         support_payload = {
@@ -1209,6 +1585,15 @@ def _build_engine_kernel_messages(
                 "不得借机替换一句话中的主角、异常或关系）："
                 f"{json.dumps(support_payload, ensure_ascii=False)}\n"
             )
+    retry_block = (
+        "【上一轮门禁失败·必须重建发动机】\n"
+        f"{retry_feedback.strip()}\n"
+        "反馈针对故事结构，不是文案措辞。必须改变主角持续采取的动作、对手反制的"
+        "因果类型和每轮留下的状态；不能只增加单元数量、阶段名称或换一批对象。"
+        "不得复用上一轮被拒文本，也不得改动用户上位创意。\n"
+        if retry_feedback.strip()
+        else ""
+    )
     lane_head, _, lane_axis = lane.partition("#")
     if lane_head == _GROWTH_LANE_PREFIX:
         # 不规定写什么，只要求这一个候选在指定维度上与其他候选不同。
@@ -1247,21 +1632,27 @@ def _build_engine_kernel_messages(
             "解锁更大范围——这本身就是升级阶梯）、对象限制（只对某类人/物"
             "生效）。限制负责生成剧情与对手，主角本人始终不折损。\n"
         )
-    # 限制锁当下不锁世界（2026-08-19 用户定案）：为自圆其说把限制钉死成
-    # 永久窄边界（能力=单一场景）撑不起长篇——能力本体要大、开局表现形态
-    # 要小，范围限制必须写成随资格解锁的阶梯，每解锁一层=一卷新地图。
-    # 阶数随目标章节数伸缩（构思必须支撑不同章节数）。
+    # 对已有可扩展能力/规则，限制锁当下不锁世界：能力本体要大、开局表现形态
+    # 要小，范围限制随资格解锁成阶梯。现实题材或没有可扩展能力的项目不安装这套模板，
+    # 使用行动、证据、关系与对手变化证明容量；minimal/external 仍保留既有阶梯字段提示，
+    # 但不凭空制造能力。
     _ladder_tiers = constraint_ladder_tier_target(chapter_count)
-    cost_line += (
-        f"长篇容量铁律（本书目标 {chapter_count} 章）：限制只锁『当前阶段』，"
-        "不锁世界。核心能力的范围限制必须设计成**随资格逐级解锁的阶梯**——"
-        "开局只是能力的最低阶表现形态（第一卷的场景），每解锁一阶，能力可"
-        "作用的事、面对的对手和所在的地图都升一层。"
-        f"constraint_ladder 字段写出 {_ladder_tiers} 阶：每阶一句"
-        "『解锁什么范围+该阶的一个卷级场景』，各阶必须分属不同层次；"
-        "若所有场景都在同一层次打转（能力被钉死在单一行当/单一场景），"
-        "项目不成立。\n"
-    )
+    if str(cost_style or "").strip().lower() in ("minimal", "external"):
+        cost_line += (
+            f"长篇容量提示（本书目标 {chapter_count} 章）：本模式仍要求已有可扩展的超凡能力或"
+            "特殊规则"
+            f"提供 constraint_ladder（建议 {_ladder_tiers} 阶，每阶写解锁范围和卷级场景）；"
+            "若卡片没有这类能力或规则，不得凭空添加系统或升级，应保留空数组，"
+            "改用既有行动、证据、关系与对手变化说明容量。\n"
+        )
+    else:
+        cost_line += (
+            f"长篇容量提示（本书目标 {chapter_count} 章）：若卡片已有可扩展的超凡能力或特殊规则，"
+            "限制只锁当前阶段、不锁世界；开局表现形态小，随资格逐级扩大作用范围、对手和场景，"
+            f"constraint_ladder 可写 {_ladder_tiers} 阶，每阶写解锁范围和卷级场景。"
+            "若卡片没有这类能力或规则（例如现实题材），constraint_ladder 可为空，"
+            "改用可观察的行动、证据、关系与对手变化证明容量，不得凭空添加系统或升级。\n"
+        )
     # 建书页勾的调性与故事技能此前只进「商业定位 brief」——那是市场／角色／世界观
     # 那批 agent 的输入，而淘汰赛跑在它们之前。用户要的「轻松＋喜剧＋爽感」于是
     # 从未到达概念生成：真机四个候选全是沉重路子，判官正确判它们不想点、不好懂，
@@ -1273,9 +1664,7 @@ def _build_engine_kernel_messages(
     # 记得再补一次接线。逐字段补是治症状——2026-07-30 审计时叙事规模、
     # 反常识方向（界面自称「决定全书冲突轴」）、脑洞引擎全部到不了这一层。
     intent_line = (
-        f"{creation_intent_block.strip()}\n"
-        if str(creation_intent_block or "").strip()
-        else ""
+        f"{creation_intent_block.strip()}\n" if str(creation_intent_block or "").strip() else ""
     )
     from bestseller.services.story_design_grammars import resolve_story_design_grammar
 
@@ -1326,8 +1715,8 @@ def _build_engine_kernel_messages(
                 "choice": "主角在两条有代价路径间的具体选择",
                 "choice_mode": "本轮选择的因果类型",
                 "mechanism_family": "本轮与其他轮不同的故事机制家族",
-                "counter": "对手或规则的有效反制",
-                "counter_mode": "反制的因果类型",
+                "counter": "从前述故事提取的自然反制证据；若该轮没有独立反制则留空",
+                "counter_mode": "若有反制，写它改变行动条件的方式；没有则留空",
                 "cost": "本轮实际失去或暴露的筹码",
                 "cost_mode": "代价类型",
                 "state_change": "至少一个状态变量从什么变成什么",
@@ -1339,45 +1728,71 @@ def _build_engine_kernel_messages(
             for index in range(1, 5)
         ],
         "progression": [
-            {"name": "成长轨1", "from": "初始可观察状态", "to": "目标状态"},
-            {"name": "成长轨2", "from": "初始可观察状态", "to": "目标状态"},
+            {
+                "name": "由故事自行命名的变化轨",
+                "from": "故事中的起点状态",
+                "to": "故事中的目标状态",
+            },
+            {
+                "name": "另一条由故事自行命名的变化轨",
+                "from": "故事中的起点状态",
+                "to": "故事中的目标状态",
+            },
         ],
         "relationships": [
             {
-                "a": "主角",
-                "b": "关键关系人",
-                "tension": "双方长期矛盾",
-                "initial_state": "初始关系状态",
-                "turning_choice": "改变关系的主角选择",
-                "changed_state": "选择后的新关系状态",
+                "a": "关系中的人物A",
+                "b": "关系中的人物B",
+                "tension": "由故事自行提取的矛盾",
+                "initial_state": "故事中的初始关系状态",
+                "turning_choice": "改变关系的选择",
+                "changed_state": "选择后的关系状态",
                 "change": "关系变化摘要",
             }
         ],
         "conflicts": [
-            {"actor": "阻力主体1", "goal": "独立目标", "tactics": ["策略1", "策略2"]},
-            {"actor": "阻力主体2", "goal": "独立目标", "tactics": ["策略1", "策略2"]},
+            {"actor": "故事中的阻力主体", "goal": "其独立目标", "tactics": ["其行动方式"]},
+            {"actor": "另一故事中的阻力主体", "goal": "其独立目标", "tactics": ["其行动方式"]},
         ],
         "opponent_adaptations": [
             {
                 "after_unit": "u1",
-                "actor": "学习型对手1",
-                "learned": "从主角上一轮行为学到了什么",
-                "strategy_change": "因此从旧策略改成什么新策略",
-                "forces_new_choice": "新策略迫使主角作出什么不同选择",
+                "actor": "故事中的会学习的对手",
+                "learned": "从前一事件学到的事实",
+                "strategy_change": "因此改变的行动",
+                "forces_new_choice": "新行动带来的选择",
             },
             {
                 "after_unit": "u2",
-                "actor": "学习型对手2",
-                "learned": "从主角上一轮行为学到了什么",
-                "strategy_change": "因此从旧策略改成什么新策略",
-                "forces_new_choice": "新策略迫使主角作出什么不同选择",
+                "actor": "另一会学习的对手",
+                "learned": "从前一事件学到的事实",
+                "strategy_change": "因此改变的行动",
+                "forces_new_choice": "新行动带来的选择",
             },
         ],
-        "story_engine": {
-            "endgame_direction": "终局必须解决的价值选择，而非只写打败谁"
-        },
+        "story_engine": {"endgame_direction": "终局必须解决的价值选择，而非只写打败谁"},
     }
     architecture_json = json.dumps(architecture_template, ensure_ascii=False)
+    minimal_cost_style = str(cost_style or "").strip().lower() == "minimal"
+    opening_success_question = (
+        "成功后局势如何改变、对手会怎样作出外部反应；这些不是能力收费"
+        if minimal_cost_style
+        else "成功又会伤害、暴露或放弃什么"
+    )
+    success_cost_schema_hint = (
+        "成功后由局势和对手自然产生的外部后果；不得写能力使用造成的主角自身折损"
+        if minimal_cost_style
+        else "成功带来的伤害、暴露或放弃"
+    )
+    capacity_schema_note = (
+        "constraint_ladder 是本模式要求的容量证据：卡片已有可扩展的超凡能力或特殊规则时，"
+        "填写各阶的解锁范围与卷级场景；若卡片没有这类能力/规则，不得凭空添加，保持空数组，"
+        "改用既有行动、证据、关系与对手变化说明容量。\n"
+        if str(cost_style or "").strip().lower() in ("minimal", "external")
+        else "constraint_ladder 是可选容量证据：卡片已有可扩展的超凡能力或特殊规则时，填写各阶的"
+        "解锁范围与卷级场景；现实题材或没有可扩展能力/规则时保持空数组，改用行动、证据、关系"
+        "和对手变化证明容量。\n"
+    )
     user = (
         "【PREMISE_CARD】本轮不写一句话钩子，也不规划卷章。\n"
         f"题材：{genre}（{sub_genre}）；目标形态：约{chapter_count}章长篇；"
@@ -1390,8 +1805,13 @@ def _build_engine_kernel_messages(
         f"路线边界：{lane_brief}\n"
         f"{seed}"
         f"{support}"
+        f"{retry_block}"
+        "先把故事讲成立，再提取结构证据：用普通读者能理解的话说清一个具体人物要得到或保住什么、"
+        "他会采取什么行动、行动成功后得到什么回报，以及谁会怎样阻拦。只有这些故事事实成立后，"
+        "才把已有事件映射到 story_architecture；结构字段没有故事证据时留空，不为填槽发明计数器、"
+        "阶段名、势力或反制；counter 可留空。\n"
         "只做最小项目判断：谁的正常生活已无法维持；他眼下要完成什么可观察行动；谁有"
-        "能力让他失败；失败会失去什么；成功又会伤害、暴露或放弃什么；选择后什么不能"
+        f"能力让他失败；失败会失去什么；{opening_success_question}；选择后什么不能"
         # 2026-08-03：删掉「寿命、身份、记忆、家底、亲情」的点名列举——它把这五样
         # 直接摆进每一次概念生成的 prompt。只留正向判据：这两个字段解释开局一次决定。
         "复原。failure_cost和success_cost只解释开局这一次决定，不要把它们扩写成"
@@ -1401,50 +1821,73 @@ def _build_engine_kernel_messages(
         "同一案件换人换地，项目不成立。至少3个场面必须使用目标题材原生的行动、资源和"
         "冲突；若删掉题材名词后换成都市、科幻或悬疑仍完全成立，项目不成立。"
         "post_reveal_scene_seeds 另写3个发生在开局异常已经被解释或第一次目标已经完成"
-        "之后的场面，必须仍兑现同一读者承诺，并使用三类不同主角行动；如果只能继续"
-        "查同一个真相、找同类证据或等新事件上门，项目不成立。"
-        "deformable_loop 只写一个会因前轮后果而变形的"
+        "之后的场面，必须仍兑现同一读者承诺，并使用三类不同主角行动；场面应"
+        "由既定承诺自然产生后果、抉择或阶段性解谜；不得用重复场面、无因果事件或反复"
+        "拖延同一谜底冒充推进。"
+        + _render_engine_horizon_contract(chapter_count)
+        + "deformable_loop 只写一个会因前轮后果而变形的"
         "循环；expansion_axes 只写未来可向哪三种方向深化，不做章数承诺。\n"
-        "story_architecture 是本项目能否晋级的唯一结构通行证：四个 causal_units "
-        "必须是四种不同的选择/反制/代价/状态变化机制，并按 caused_by 串成因果链；"
-        "opponent_adaptations 必须证明对手会学习并换策略；genre_contracts 必须逐项实现"
-        "本题材 required_contracts；用户选中的每个 effect skill 都必须有可反复变形、"
-        "会改变局势的 effect_contract，只有标签或一句『轻松幽默』不算实现。\n"
+        "story_architecture 仍按现有 schema 返回，作为前文故事的证据投影；causal_units 按已经发生的"
+        "事件填写并由 caused_by 串联，反制、计数和阶段字段都不能脱离故事另造。opponent_adaptations"
+        "只有在前文能找到对手学习证据时才填写；genre_contracts 和 effect_contracts 仍按现有消费者"
+        "需要的字段返回。\n"
+        "契约名是结构语义，不是必须照字面发明的剧情名词。对异界穿越题材，"
+        "host_identity_obligation 指宿主/新身份天然附带的当下责任与关系后果；"
+        "不得把上位创意未提供的前史性义务或追索关系生成为核心压力，只能从用户已经"
+        "给出的当下身份、处境、责任与关系推出危机。\n"
+        f"{capacity_schema_note}"
         "只输出JSON：{"
-        "\"protagonist_identity\":\"身份与失衡处境\","
-        "\"protagonist_private_desire\":\"真正想保住或得到什么\","
-        "\"protagonist_flaw\":\"影响选择的缺陷\","
-        "\"core_abnormality\":\"异常、优势或独特入口\","
-        "\"current_goal\":\"眼下可观察行动\",\"effective_resistance\":\"有效阻力\","
-        "\"failure_cost\":\"失败或不行动的自然后果\","
-        "\"success_cost\":\"成功带来的伤害、暴露或放弃\","
-        "\"irreversible_change\":\"不能复原的变化\","
-        "\"reader_promise\":\"主要体验与持续追读问题\","
-        "\"difference_point\":\"相对同类只改变了什么\","
-        "\"scene_seeds\":[\"动作/阻力/选择1\",\"动作/阻力/选择2\","
-        "\"动作/阻力/选择3\",\"动作/阻力/选择4\",\"动作/阻力/选择5\"],"
-        "\"post_reveal_scene_seeds\":[\"揭晓后场面1\",\"揭晓后场面2\",\"揭晓后场面3\"],"
-        "\"deformable_loop\":\"前轮后果会改变下一轮的核心循环\","
-        "\"expansion_axes\":[\"深化方向1\",\"深化方向2\",\"深化方向3\"],"
-        "\"constraint_ladder\":[\"第一阶：解锁范围+该阶卷级场景\",\"…（按容量铁律的阶数给足，各属不同层次）\"],"
-        "\"opposing_ecology\":[\"自主阻力1\",\"自主阻力2\"],"
-        "\"opening_crisis\":\"开局具体危机\",\"emotional_promise\":\"持续情绪\","
-        f"\"story_architecture\":{architecture_json}" + "}"
+        '"protagonist_identity":"身份与失衡处境",'
+        '"protagonist_private_desire":"真正想保住或得到什么",'
+        '"protagonist_flaw":"影响选择的缺陷",'
+        '"core_abnormality":"异常、优势或独特入口",'
+        '"current_goal":"眼下可观察行动","effective_resistance":"有效阻力",'
+        '"failure_cost":"失败或不行动的自然后果",'
+        f'"success_cost":"{success_cost_schema_hint}",'
+        '"irreversible_change":"不能复原的变化",'
+        '"reader_promise":"主要体验与持续追读问题",'
+        '"difference_point":"相对同类只改变了什么",'
+        '"scene_seeds":["动作/阻力/选择1","动作/阻力/选择2",'
+        '"动作/阻力/选择3","动作/阻力/选择4","动作/阻力/选择5"],'
+        '"post_reveal_scene_seeds":["揭晓后场面1","揭晓后场面2","揭晓后场面3"],'
+        '"deformable_loop":"前轮后果会改变下一轮的核心循环",'
+        '"expansion_axes":["深化方向1","深化方向2","深化方向3"],'
+        '"constraint_ladder":[],'
+        '"opposing_ecology":["自主阻力1","自主阻力2"],'
+        '"opening_crisis":"开局具体危机","emotional_promise":"持续情绪",'
+        f'"story_architecture":{architecture_json}'
+        + "}"
         # opening_crisis + core_abnormality are where the death/relic default
         # gets baked; steer them here, upstream of the hook sentence.
-        + "\n" + render_cliche_avoidance_block(banned)
+        + "\n"
+        + render_cliche_avoidance_block(banned)
         # 主角名也是在这里铸死的（protagonist_identity 常带具名），cast 层的
         # 烂名禁令管不到已进书名/前提/简介的名字——同一份黑名单在此下沉
         # （2026-08-18《九姓井口只认我》：陆沉复发定罪）。
-        + "\n" + render_protagonist_name_ban(compact=True)
+        + "\n"
+        + (
+            (
+                "用户上位创意中已经明确写出的主角姓名属于冻结事实，必须原样保留；"
+                "命名去重黑名单和‘取新鲜姓名’只适用于新增且未被用户指定的角色，"
+                "不得为了命名去重改写用户主角。" + render_protagonist_name_ban(compact=True)
+            )
+            if authority
+            else render_protagonist_name_ban(compact=True)
+        )
         # The pre-planning logline gate hard-kills on story-logic axes
         # (protagonist_rationality / cost_integrity / causal_coherence) that are
         # decided HERE, in current_goal / opening_crisis / failure_cost — and
         # cannot be repaired later: the logline rescue rewriter is forbidden
         # from inventing story facts. Three consecutive real books died on
         # these axes (2026-07-21/22) because the kernel never saw the contract.
-        + "\n" + _render_story_logic_gate_rules()
+        + "\n"
+        + _render_story_logic_gate_rules()
     )
+    from bestseller.services.source_effect_contract import render_source_effect_generation_block
+
+    user += render_source_effect_generation_block(primary_effect_contract, source_text=authority)
+    user += _distilled_creative_reference_prompt(distilled_reference_block)
+
     return system, user
 
 
@@ -1461,13 +1904,17 @@ def _build_raw_idea_pool_messages(
     genre: str,
     sub_genre: str,
     count: int,
+    chapter_count: int | None = None,
     seed_concept: str = "",
+    authoritative_seed: bool = False,
     prompt_arm: str = "enhanced",
     focus_hint: str = "",
     audience_orientation: str = "",
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
     creation_intent_block: str = "",
+    retry_feedback: str = "",
+    distilled_reference_block: str = "",
 ) -> tuple[str, str]:
     """Minimal baseline: concrete person plus abnormal situation, nothing else.
 
@@ -1489,36 +1936,80 @@ def _build_raw_idea_pool_messages(
         + _effect_skills_directive_line(effect_skills)
         + (f"{creation_intent_block.strip()}\n" if str(creation_intent_block or "").strip() else "")
     )
+    retry_directive = (
+        "上一轮候选被门禁拒绝："
+        f"{retry_feedback.strip()}。本轮必须从原始创意层重建故事发动机，"
+        "不得只换开篇措辞、专名、对象或数量；用户上位事实仍不可改。"
+        if retry_feedback.strip()
+        else ""
+    )
+    genre_guidance = _genre_native_commitment_guidance(genre, sub_genre)
+    story_scope = (
+        f"篇幅目标：{chapter_count}章。构思的是这一篇幅内能发生完整变化的故事，"
+        "开场愿望只是起点；说明人物经过行动最终要把自己或身边的世界变成什么样。"
+        "不靠延迟解决开场的小难题来填满篇幅，也不要求把故事无限拉长。\n"
+        if chapter_count is not None and chapter_count > 0
+        else ""
+    )
+    if story_scope:
+        genre_guidance += story_scope
+    if authoritative_seed and seed_concept.strip():
+        system = (
+            "你是小说作者。用户已经决定要写哪一本书；你只为同一本书寻找不同的开篇切入，"
+            "不能另起炉灶。用户原文是唯一上位事实源，其中明确写出的主角姓名与前世职业、"
+            "穿越后身份、核心场域、能力及边界、时限、经营对象、长期目标、对手范围和禁止项"
+            "都不可替换、删减或同义改造。不同候选只能改变第一场戏聚焦的矛盾、关系、交易或"
+            "主角当场选择；不得换主角、换能力、换经营对象、换场域。只输出JSON。"
+            + channel
+            + intent
+            + retry_directive
+        )
+        user = (
+            f"题材：{genre}（{sub_genre}）\n"
+            f"{story_scope}"
+            f"用户上位创意（逐项保留）：\n{seed_concept.strip()}\n\n"
+            f"为这同一本书给出{count}个不同开篇切入角度。每一项都必须让读者认出是上述"
+            "同一位主角、同一座核心场域、同一能力边界和同一长期经营目标；区别只落在开篇"
+            "首先爆发的具体难题、主角采取的第一步行动及其当场后果。graft 解释用户原设定"
+            "为何能持续生长，不得嫁接另一套职业或机制；why_it_keeps_moving 与未来场面必须"
+            "继续兑现原文的长期目标。用户明确排除的方案不得以近义变体返回。"
+            "宁缺毋滥；无法在不改书的前提下凑足数量时，可以少写，但不得用另一本故事补位。"
+            "只输出JSON："
+            '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
+            '"seed":"同一本书的开篇切入",'
+            '"graft":"原机制为何能持续成立",'
+            '"opening":"具体开篇",'
+            '"why_it_keeps_moving":"原长期目标为何继续推进",'
+            '"future_situations":["未来场面1","未来场面2","未来场面3"]}]}'
+        )
+        system += _distilled_creative_reference_prompt(distilled_reference_block)
+        return system, user
+
     system = (
         "你是小说作者。只负责想故事，不解释方法。只输出JSON。"
         + channel
+        + retry_directive
         # 场域多样性硬约束（2026-08-09）。真机探针：同参数下模型自发把 62%
         # (25/40) 的创意押在同一个题材场域（丧葬/冥界一族），四次建书三次撞车。
         # prompt 面全程干净——这是模型自己对「新颖玄幻」的先验塌缩。约束只说
         # 类别与要求，不点名任何场域（点名即种词，见《雾街债主》案）。
-        + "这一批创意必须来自彼此不同的生活场域与行当：任何两个创意不得共享"
-        "同一职业、同一场所类型或同一核心题材元素；发现两个创意是同一类故事"
-        "换皮时，必须把其中一个换成完全不同的场域重想。"
-        # 题材锚（2026-08-29）。探针实测（scripts/genre_fidelity_probe.py，
-        # 12 题材×3 组）：创意池不管收到什么题材都爱写「现实行当逆袭」——
-        # 种田收到殡仪馆入殓师、幻想言情收到县医院外科、传统玄幻收到京城
-        # 代书吏（零超凡元素），genre_fidelity 均值仅 4.8-5.7。上面的多样性
-        # 约束管住了「彼此撞车」，但没有任何一句要求「像所选题材」；而
-        # 1479 行的「嫁接熟悉行当」在没有题材锚时就变成向现实题材的塌缩。
-        # 只说类别不点名（种词规矩）：具体元素由题材自身决定。
-        + "每条创意必须在这一句话里就兑现所选题材的类型承诺：读者点开这个"
-        "题材想看的核心体验（该题材特有的力量或规则体系、关系主线、案件谜题、"
-        "求生压力等，以题材自身惯例为准）必须已经出现在句中，不许留给后文补写。"
-        "把题材名摘掉后这句话若能原样放进任何现实题材，就是不合格，必须重想；"
-        "嫁接现实行当是手段，题材核心体验才是主体。"
+        + "这一批创意必须来自彼此不同的生活场域与行当：任何两个创意不得只是共享"
+        "同一职业、同一场所类型或同一核心行动机制的换皮；目标题材原生的力量体系、"
+        "关系主线、成长标签和用户已选方向可以共享，但主角行动、当场阻力与结果必须"
+        "明显不同。发现两个创意仍是同一类故事换皮时，必须把其中一个换成完全不同的"
+        "冲突发动机重想。"
+        # 题材锚（2026-08-29）。抽象的「兑现题材承诺」曾让模型把玄幻等
+        # 题材塌缩成现实行当逆袭；这里保留开放创意空间，但按所选题材给出
+        # 可观察的承诺，避免用一套现实赚钱模板覆盖所有类型。
+        + genre_guidance
         + (
-            intent
-            + "以上建书约束与故事起点从原始创意这一层就必须成立；不得先生成相反调性、"
+            intent + "以上建书约束与故事起点从原始创意这一层就必须成立；不得先生成相反调性、"
             "相反技能或无关故事的种子再交给下游补救。"
             if intent
             else ""
         )
     )
+    system += _distilled_creative_reference_prompt(distilled_reference_block)
     # seed 锚定之罪（2026-08-12 四臂对照定案）：旧措辞「保留其职业或核心
     # 发现」让模型把 seed 的**句法骨架**复印成整批创意——同 seed 两臂
     # 24/24 全是「天生X命+师父+每X一劫」克隆，同 prompt 去掉 seed 立刻
@@ -1546,8 +2037,7 @@ def _build_raw_idea_pool_messages(
         #   7 个语义槽挤 40-80 字，模型把「后果」和「机制演示」并成一格=
         #   开局战力膨胀。现在 seed 只装三槽，机制因果落 graft（并新增因果桥
         #   义务——「搬进新场景靠什么仍成立」正是断层处缺的那根梁）。
-        # ③ 冠军分布≠生成规则：嫁接从「12/12 必须、否则作废」降为默认策略
-        #   +逃生门（榜单 57% 是嫁接，把幸存者模式写成铁律=制度化拼凑）。
+        # ③ 冠军分布不是生成规则：嫁接是可选办法，因果才是共同要求。
         # 另：铁律二+四合并（被动开局+补一句「偏要」的表面合规是两条独立
         # 陈述的最省力解，《别人借力我替他们还债》被动开局仍加冕的直接根因）；
         # 悬疑段按题材条件渲染（纯玄幻里是 180 字死重）；「宁缺毋滥」替代硬凑
@@ -1559,7 +2049,14 @@ def _build_raw_idea_pool_messages(
             token in _genre_blob
             for token in ("悬疑", "灵异", "怪谈", "惊悚", "恐怖", "推理", "诡秘")
         )
-        _mystery_exception = "（悬疑品类例外：悬念钩合法）" if _is_mystery else ""
+        _is_detective = _is_detective_genre(genre, sub_genre)
+        _mystery_exception = (
+            "（推理品类例外：围绕具体案件的悬念钩合法）"
+            if _is_detective
+            else "（悬疑品类例外：悬念钩合法）"
+            if _is_mystery
+            else ""
+        )
         _mystery_spread = (
             # 异常来源多样性（2026-08-12 真机定罪：悬疑池两轮 5/5 候选同一
             # 内容族）。纯正向类别列举，不点任何族名 token（种词铁律）。
@@ -1571,61 +2068,67 @@ def _build_raw_idea_pool_messages(
             if _is_mystery
             else ""
         )
+        if _is_detective:
+            _mystery_spread = (
+                "整批的案件入口与关键证据来源必须彼此不同；每个创意都要看见待查事件、"
+                "主角查证动作和具体利害，不能只写日常异常或恐怖来源。\n"
+            )
         return system, (
             f"为{genre}（{sub_genre}）认真构思{count}个不同的长篇小说创意。{seed}"
             f"{focus}"
-            "像真正准备写书的作者一样，先把人物、开篇和故事为什么会继续想通，再提炼"
-            "一句话；不要从流行设定词或反转模板开始拼装。\n"
+            "像真正准备写书的作者一样，先把故事讲成立：先说清一个具体人物要得到或保住什么、"
+            "他会采取什么行动、行动成功后得到什么回报，以及行动怎样改变下一步；再提炼一句话。"
+            "不要从流行设定词或反转模板开始拼装。\n"
             # 措辞去种词（2026-08-24 两轮真机定罪）：初版示例句里的「亲手」被
             # 11/12、11/11 两轮整批复印成句式骨架，「他要的不是…是…」被 8/12
             # 照抄——示例即模板、指令词即种词（同款已定案两次：seed 句法复印、
             # 「卖点1：」标签照抄）。同一语义在三处必须各用不同措辞，且句式
             # 多样性用可数规则表达（对齐场域令的集合式写法）。
-            "【一句好创意的样子】一个具体的人，为了自己想要的东西已经做成了一件"
-            "具体的事，后果当场兑现，读者立刻想看他接下来赢什么/翻什么身/兑现什么"
-            "优势/清算什么账。这是要素清单，不是句式模板。\n"
-            "整批句式令：同一个开头方式、同一个标志性短语或同一种收尾转折，"
-            "在整批里至多出现两条；把同样的要素装进彼此不同的句子里。\n"
-            "【字段分工】seed 只装三样：主角主动做出的那件已发生的事、它当场兑现的"
-            "后果、由此点燃的读者渴望。机制原理写进 graft，开篇细节写进 opening，"
-            "长期动力写进 why_it_keeps_moving——不要把所有东西塞进一句话。\n"
+            "【故事吸引力】一个具体的人有值得在乎的愿望，却遇到不能轻易绕开的冲突；"
+            "他的选择使关系、处境或对真相的理解发生变化。读者既关心结果，也想看他怎样应对。\n"
+            "整批句式令：同一种开头或收尾短语在整批里至多出现两次；不要把人物换名后"
+            "填进同一个句子。\n"
+            "【字段分工】seed 用一句简洁的人话说清人物、特殊处境与核心冲突，不必写完"
+            "开篇剧情。seed 只陈述故事事实和人物欲望，禁止写‘读者会想看’‘很爽’‘很吸引人’等作者自评。"
+            "graft 解释行动和后果为什么成立；opening 写开篇的具体场面、选择与尚未解决的事；"
+            "why_it_keeps_moving 说明开场问题解决后，人物凭已经得到的能力、关系或成果，"
+            "主动争取什么新的结果，以及谁会因此改变行动。\n"
             "铁律（仅此三条，违反即作废）：\n"
-            "铁律一【欲望钩】：目标频道读者必须能一秒说出想看主角接下来赢什么"
-            f"{_mystery_exception}；seed 里要能读出他想赢得、夺回、兑现或做大的"
-            "具体东西——只有阻止坏事、慷慨赴死式的自毁义举不算渴望；说不出即无"
-            "渴望，作废。\n"
-            "铁律二【主角主动·事件先行】：seed 里那件已发生的事必须出自主角自己的"
-            "决定和行动；被逼、被卷入、被砸中而没有自己目标的开局作废——先写被动"
-            "事件、再补一句主角『偏要如何』不算主动。\n"
+            "铁律一【欲望钩】：人物要争取或守住的东西必须具体，失去它为何重要也须可信。"
+            f"{_mystery_exception}不要求开场已经获利或获胜，不靠夸大风险替代在乎人物的理由。\n"
+            "铁律二【可信主动性】：被动遭遇可以作为起点，但人物随后必须有自己的选择。"
+            "选择为什么值得他冒险、为何不采用更简单的办法，要在支撑字段中说得通。"
+            "主动不等于违法、羞辱别人或自毁；善良、退让、求助与拒绝也可以推动故事，"
+            "前提是有明确动机和实际后果。人物若越界，应有可信诱因和后果，不能靠职业常识失真制造冲突。\n"
             "铁律三【人话·不写机制句】：动词用最平实准确的说法（发现、接手、得到、"
-            "继承），东西只做它物理上真会做的事；不把创意写成『谁A，谁就B』"
+            "继承），行动遵守所选题材和本故事建立的因果；幻想能力可以做到现实中做不到的事，"
+            "但其作用要具体可信，现实题材则遵守现实条件。不把创意写成『谁A，谁就B』"
             "『X多了怎样、X少了怎样』式规则条款；读起来不像中国人说话的句子作废。\n"
-            "【新鲜感的默认做法是嫁接】拿一个读者早已熟悉、不需要解释的机制或行当"
-            "逻辑，放进一个意想不到的场景或身份里。graft 必须写两句：这次嫁接是什么"
-            "（熟机制×意外场景，各几个字），以及机制搬进新场景后靠什么仍然成立——"
-            "写成读者一眼能懂的因果链：做什么→为什么因此得什么→所以越做越强。"
-            "这是机制可信的底线，"
-            "写不出第二句的嫁接不成立。个别创意若有比嫁接更强的成立方式也可以，"
-            "graft 里同样要写清『做什么→得什么→受什么限制』；一个创意堆两处以上"
-            "新变量作废（认知过载）。\n"
+            "【故事因果】graft 只在确有必要时说明人物行动靠什么仍然成立：具体做什么、为什么造成"
+            "后果、受到什么限制，以及后果怎样改变下一次选择。新鲜感可以来自关系、立场、"
+            "处境或题材原生机制的组合；嫁接只是一种可选做法，不要强行跨题材嫁接。"
+            "所选题材本身就决定其原生体验：幻想、修炼、异能等能力不需要另勾脑洞增强器才能使用；"
+            "能力成长须带来新的行动机会，现实或情感故事则从生活与关系变化中推进。\n"
             # 欲望形态多样性（2026-08-12 四批终审）：悬疑池整批押在同一种
             # 欲望上。集合层面的令，正向列举；「至多两次」解掉 12 条 vs 8 种
             # 具名形态的算术死结（旧版逼模型为后 4 条生造形态）。
             "整批多样性令：这一批创意的**欲望形态必须彼此不同**——活下来、"
-            "破解规则、镇压收服、揭开身边人的不对劲、逃出去、兑现优势、"
-            "夺回属于自己的东西、把小生意做大……确实想不出新形态时，同一种"
+            "破解规则、镇压收服、揭开身边人的不对劲、逃出去、兑现优势、修复关系、"
+            "守住某人或某个地方、证明自己、夺回属于自己的东西、把小生意做大……确实想不出新形态时，同一种"
             "欲望形态在整批里至多出现两次。\n"
             f"{_mystery_spread}"
             # 产量下限（2026-08-24 真机：无下限的宁缺毋滥一轮只回 4 条，
             # 12→4 的坑比凑数还贵）。下限=判官取样面 8，上限仍是 count。
             f"宁缺毋滥：确实想不出{count}个真正不同的创意时可以少写，但不得少于"
-            f"8条；不要为凑数硬造换皮或生僻行当，缺的由系统另行补齐。\n"
+            f"{min(8, max(1, count))}条；不要为凑数硬造换皮或生僻行当，缺的由系统另行补齐。\n"
             "每个创意都把 seed、graft、opening、why_it_keeps_moving 和三个彼此"
-            "不同的未来场面写全；这些字段会被后续选题工序采信，不写卷纲、体系表"
-            "或章数计划。"
+            "不同的未来场面写全。三个场面分别发生在开场问题已解决之后、故事中段、接近目标篇幅结尾；"
+            "每个写清前一次行动留下什么变化，主角因此能做或必须做什么以前不会做的事，"
+            "以及当场得到什么结果。换人上门索取同一件东西、失而复得再归零，都不算新的场面。"
+            "这些字段会被后续选题工序采信，不写卷纲、体系表或章数计划。"
             "只输出JSON："
             '{"ideas":[{"lane":"人际困局|世界规则|成长道路|世界扩张|势力选择|身份变化|职业处境|资源分配|纯题材直觉",'
-            '"seed":"一句话故事","graft":"熟机制×意外场景＋机制为何仍成立",'
+            '"seed":"一句话故事","graft":"人物行动、具体后果及其成立条件",'
             '"opening":"具体开篇",'
             '"why_it_keeps_moving":"开篇后仍持续行动的自然原因",'
             '"future_situations":["未来场面1","未来场面2","未来场面3"]}]}'
@@ -1684,40 +2187,83 @@ def _build_raw_idea_pool_messages(
     return system, user
 
 
-def _parse_raw_idea_records(raw: str, *, limit: int) -> list[dict[str, Any]]:
+def _parse_raw_idea_records(
+    raw: str,
+    *,
+    limit: int,
+    require_pitch_fields: bool = False,
+    stats: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse raw ideas and optionally enforce the full pitch contract.
+
+    ``json_repair`` can return a valid object from a truncated response. That
+    is useful for diagnostics, but a partial author-pitch must not silently
+    enter the expensive expansion stage. ``stats`` is intentionally optional
+    to preserve the small parser API used by older callers and tests.
+    """
     payload = _parse_json_object(raw)
     ideas = (payload or {}).get("ideas")
     if not isinstance(ideas, list):
         return []
     parsed: list[dict[str, Any]] = []
     for item in ideas:
+        if stats is not None:
+            stats["parsed"] = stats.get("parsed", 0) + 1
         if not isinstance(item, dict):
+            if stats is not None:
+                stats["invalid"] = stats.get("invalid", 0) + 1
             continue
-        seed = str(item.get("seed") or "").strip()
-        if not seed:
+        seed_value = item.get("seed")
+        if not isinstance(seed_value, str) or not seed_value.strip():
+            if stats is not None:
+                stats["invalid"] = stats.get("invalid", 0) + 1
             continue
+        seed = seed_value.strip()
         lane = str(item.get("lane") or "纯题材直觉").strip()
         if lane not in _NATIVE_STORY_LANES:
             lane = "纯题材直觉"
         future_situations = item.get("future_situations")
+        future_values = (
+            [
+                str(value).strip()
+                for value in future_situations
+                if isinstance(value, str) and value.strip()
+            ]
+            if isinstance(future_situations, list)
+            else []
+        )
+        pitch_values = (
+            item.get("graft"),
+            item.get("opening"),
+            item.get("why_it_keeps_moving"),
+        )
+        if require_pitch_fields and (
+            any(not isinstance(value, str) or not value.strip() for value in pitch_values)
+            or not isinstance(future_situations, list)
+            or len(future_values) < 3
+            or any(not isinstance(value, str) or not value.strip() for value in future_situations)
+        ):
+            if stats is not None:
+                stats["invalid"] = stats.get("invalid", 0) + 1
+            continue
+        if stats is not None:
+            stats["valid"] = stats.get("valid", 0) + 1
         parsed.append(
             {
                 "lane": lane,
                 "seed": seed,
                 # 机制因果的义务落在 graft（字段分工，2026-08-24）——判官与
                 # 项目卡展开都要看它，解析层丢掉=义务白分。
-                "graft": str(item.get("graft") or "").strip(),
-                "opening": str(item.get("opening") or "").strip(),
-                "why_it_keeps_moving": str(
-                    item.get("why_it_keeps_moving") or ""
-                ).strip(),
-                "future_situations": [
-                    str(value).strip()
-                    for value in future_situations
-                    if isinstance(value, str) and value.strip()
-                ]
-                if isinstance(future_situations, list)
-                else [],
+                "graft": item.get("graft", "").strip()
+                if isinstance(item.get("graft"), str)
+                else "",
+                "opening": item.get("opening", "").strip()
+                if isinstance(item.get("opening"), str)
+                else "",
+                "why_it_keeps_moving": item.get("why_it_keeps_moving", "").strip()
+                if isinstance(item.get("why_it_keeps_moving"), str)
+                else "",
+                "future_situations": future_values,
             }
         )
         if len(parsed) >= limit:
@@ -1727,8 +2273,7 @@ def _parse_raw_idea_records(raw: str, *, limit: int) -> list[dict[str, Any]]:
 
 def _parse_raw_idea_pool(raw: str, *, limit: int) -> list[tuple[str, str]]:
     return [
-        (str(item["lane"]), str(item["seed"]))
-        for item in _parse_raw_idea_records(raw, limit=limit)
+        (str(item["lane"]), str(item["seed"])) for item in _parse_raw_idea_records(raw, limit=limit)
     ]
 
 
@@ -1739,6 +2284,8 @@ def _build_raw_idea_rank_messages(
     ideas: list[tuple[str, str]],
     audience_orientation: str = "",
     pitch_by_seed: dict[str, dict[str, Any]] | None = None,
+    authoritative_seed_concept: str = "",
+    retry_feedback: str = "",
 ) -> tuple[str, str]:
     """Rank raw ideas in one independent call before expensive card expansion.
 
@@ -1764,65 +2311,97 @@ def _build_raw_idea_rank_messages(
     rows = []
     for index, (lane, seed) in enumerate(ideas):
         row: dict[str, Any] = {"index": index, "lane": lane, "seed": seed}
-        graft = str(((pitch_by_seed or {}).get(seed) or {}).get("graft") or "").strip()
-        if graft:
-            row["graft"] = graft
+        pitch = (pitch_by_seed or {}).get(seed) or {}
+        for key in ("graft", "opening", "why_it_keeps_moving"):
+            value = pitch.get(key)
+            if isinstance(value, str) and value.strip():
+                row[key] = value.strip()
+        situations = pitch.get("future_situations")
+        if isinstance(situations, list):
+            row["future_situations"] = [
+                value.strip() for value in situations if isinstance(value, str) and value.strip()
+            ]
         rows.append(row)
+    authority = str(authoritative_seed_concept or "").strip()
+    authority_block = (
+        "【上位创意唯一事实锚点】\n"
+        f"{authority}\n"
+        "候选只能是同一本书的切入角度或忠实改写，不得用新主角、新能力、新经营对象或另一套核心目标替换上位创意。"
+        "seed_fidelity 只核对主角、核心能力/机制、关键对象、目标与明确关系；不要因文学性更强就奖励换能力。"
+        "无法逐项核对时 seed_fidelity=null，seed_evidence/candidate_evidence 写 unknown；unknown 不等于通过，后续门禁仍须复核。\n"
+        if authority
+        else ""
+    )
+    authority_schema = (
+        '"seed_fidelity":0-10或null,"seed_evidence":"上位创意中的连续逐字原文，不做概括；无法引用时unknown",'
+        '"candidate_evidence":"候选seed或graft中的连续逐字原文，不做概括；无法引用时unknown",'
+        if authority
+        else ""
+    )
+    retry_block = (
+        "【上一轮因果证据复核失败】\n"
+        f"{retry_feedback.strip()}\n"
+        "只修复指出的候选证据；source_quote 必须逐字来自该候选及其完整支撑字段，不能补写候选没有的事实。\n"
+        if retry_feedback.strip()
+        else ""
+    )
     user = (
-        f"题材={genre}（{sub_genre}）\n候选={json.dumps(rows, ensure_ascii=False)}\n\n"
-        # C 层判据（2026-08-18 榜单 70 本蒸馏）：合法的新=熟机制×异场景一处
-        # 嫁接；孤立新异常（无读者已知框架可挂载又无可复述规则）是怪不是新。
-        "逐项评分0-10：freshness 核心组合是否区别于常见同类——注意：合法的新"
-        "是『读者熟悉的机制×意外场景』的一处嫁接；若异常既没有读者已知框架"
-        "可挂载（穿越/重生/系统面板/全民降临/获得传承/民俗或历史体系等），"
-        "又复述不出一条『输入→输出→限制』的规则，那是孤立怪象不是新鲜，"
-        "freshness 不得超过4；对题材默认套路的偏离≥2处=认知过载，"
-        "freshness 不得超过5；候选若带 graft（作者自报的嫁接与机制说明），"
-        "核对它与 seed 是否自洽——机制因果断裂或 graft 与 seed 对不上，"
-        "freshness 不得超过5；"
-        "click_seed 只问一件事：目标频道读者能否一秒说出自己想看主角接下来"
-        "赢什么/翻什么身/兑现什么（悬疑品类可用悬念代替）——说不出即无渴望，"
-        "处境再巧妙 click_seed 不得超过4；"
-        # 2026-08-19 用户终审冤案：「醒来成死刑犯+31天死线」拿了8分——危机
-        # 和死线本身不是爽点，读者要看的是他**拿什么打这局**。
-        "危机、死线或身份坠落本身不构成爽点：若创意里主角没有一件当场"
-        "可用的优势、可玩的规则或能兑现的筹码去打这局，click_seed 不得"
-        "超过5；同时你必须能用一个词指认这个创意"
-        "承诺的爽的类型（数值碾压/身份反差/规则玩弄/见证兑现/囤积独活/收集"
-        "成长之一），指认不出=只有怪事没有承诺，click_seed 不得超过4；"
-        "主角全程被动（被逼着/被迫/被卷入而无"
-        "自己的目标）不得超过4；钩子止于反讽或荒诞处境、没有读者在乎的赌注，"
-        "不得超过4；写成对称机制条款（谁A谁就B、X多了怎样X少了怎样）不得超过4；"
-        "character_logic 正常聪明人是否会作出原句暗示的选择；action_seed "
-        "是否已经看得见主角要做什么；promise_survival 开局异常"
-        "被揭晓或第一次使用后，是否仍能持续产生同类但不同的选择与场景。若点子依赖"
-        "会归零的次数、一次性谜底、不断来新委托或同一能力重复使用，promise_survival"
-        "不得超过4分；genre_fidelity 是否由该题材原生的身份、行动、资源和冲突成立，"
-        "若删掉题材名词后换成别的题材仍完全成立，genre_fidelity 不得超过5分。"
-        "另给 ai_assembly 0-10，越高越像用职业、残魂、天道、器官、制度名词和收费代价"
-        "强行拼成新奇；dumb_cost=true 表示依赖按次折寿、失忆、伤身、扣身份/人格/命数"
-        "或无因果死亡倒计时。若主角只是被作者逼着做明显不合理的事，character_logic"
-        "不得超过4；dumb_cost 必须淘汰，不能用其他高分抵消。"
-        "对每项必须给三条直接证据，不能替原始创意补设定：after_opening_promise 用一个"
-        "陈述句写第一次"
-        "异常被解释或使用后仍存在的故事承诺；action_families 写由原句直接推出的至少3类"
-        "不同主角行动；growth_surface 写会因这些行动持续积累或扩大的关系、能力、事业、"
-        "地盘、势力或世界变化。after_opening_promise 禁止写问号、为何、能否、谁是；"
-        "growth_surface 禁止写可能、也许、或将。任一证据只能靠新增设定才能成立，则留空且"
-        "promise_survival不得超过4分。不要因缺少大纲扣分。"
-        # domain 标签（2026-08-09）：下游据此保证被展开的候选不全来自同一场域
-        # （真机探针：模型自发把六成创意押在同一场域）。标签由裁判自拟，
-        # 框架不提供词表；同场域必须同标签，是唯一的格式要求。
-        "另给每项 domain：2-6字的核心场域/行当标签（如主角职业或故事发生的行当），"
-        "本次候选里属于同一场域的必须给完全相同的标签。只返回综合最强的8项，"
-        "按强到弱排序。只输出JSON：{\"ranked\":["
-        "{\"index\":0,\"freshness\":0-10,\"click_seed\":0-10,"
-        "\"character_logic\":0-10,\"action_seed\":0-10,\"promise_survival\":0-10,"
-        "\"genre_fidelity\":0-10,\"ai_assembly\":0-10,\"dumb_cost\":false,"
-        "\"domain\":\"场域标签\","
-        "\"after_opening_promise\":\"持续承诺或空字符串\","
-        "\"action_families\":[\"行动1\",\"行动2\",\"行动3\"],"
-        "\"growth_surface\":\"持续积累面或空字符串\"}]}"
+        f"题材={genre}（{sub_genre}）\n"
+        f"题材原生承诺核对：{_genre_native_commitment_guidance(genre, sub_genre)}\n"
+        f"候选={json.dumps(rows, ensure_ascii=False)}\n\n"
+        + authority_block
+        + retry_block
+        + (
+            "逐项评分0-10：freshness 判断人物关系、立场、处境或题材机制的组合是否"
+            "具体而有区别；不能因缺少嫁接、系统面板或能力升级就扣分。新奇必须有可理解的"
+            "行动与后果，不能只是生僻词。候选若带 graft，核对其因果是否可信："
+            "机制因果断裂或 graft 与 seed 对不上，freshness 不得超过5；"
+            "click_seed 只问一件事：目标频道读者能否一秒说出主角接下来具体要"
+            "赢什么/翻什么身/兑现什么，或要保住、找回、证明、破解、逃出、修复、守护什么"
+            "（悬疑品类可用具体悬念代替）——说不出即无渴望，"
+            "处境再巧妙 click_seed 不得超过4；"
+            "结合seed及支撑字段判断读者回报：可以是能力成长、关系变化、真相揭示、"
+            "生活处境改善或有代价的选择，须与题材和读者偏好一致。不能因尚未获胜、"
+            "没有当场筹码或开局由外部事件引发就扣分。危机强度不等于吸引力；人物必须"
+            "在乎具体的人或事，并作出有后果的选择。纯受摆布且无目标不得超过4。"
+            "不要奖励无动机的违法、羞辱、自毁或明显违背角色职业权限的行动；"
+            "对同样动机是否存在更简单合理的办法作反事实核对，有疑点须引用候选内容。"
+            "character_logic 正常聪明人是否会作出候选及支撑字段体现的选择；action_seed "
+            "是否已经看得见主角要做什么；promise_survival 开局异常"
+            "被揭晓或第一次使用后，是否仍能持续产生同类但不同的选择与场景。若点子依赖"
+            "会归零的次数、一次性谜底、不断来新委托或同一能力重复使用，promise_survival"
+            "不得超过4分；genre_fidelity 是否由该题材原生的身份、行动、资源和冲突成立，"
+            "若删掉题材名词后换成别的题材仍完全成立，genre_fidelity 不得超过5分。"
+            "另给 ai_assembly 0-10，越高越像用职业、残魂、天道、器官、制度名词和收费代价"
+            "强行拼成新奇；dumb_cost=true 表示依赖按次折寿、失忆、伤身、扣身份/人格/命数"
+            "或无因果死亡倒计时。若主角只是被作者逼着做明显不合理的事，character_logic"
+            "不得超过4；dumb_cost 必须淘汰，不能用其他高分抵消。"
+            "对每项必须给三条直接证据，只能引用所提供的seed及支撑字段，不能替候选补设定：after_opening_promise 用一个"
+            "陈述句写第一次"
+            "异常被解释或使用后仍存在的故事承诺；action_families 写由候选及支撑字段直接推出的至少3类"
+            "不同主角行动；growth_surface 写会因这些行动持续变化的关系、能力、事业、"
+            "地盘、势力或世界变化。after_opening_promise 禁止写问号、为何、能否、谁是；"
+            "growth_surface 禁止写可能、也许、或将。任一证据只能靠新增设定才能成立，则留空且"
+            "promise_survival不得超过4分。不要因缺少大纲扣分。"
+            "另做causal_evidence因果审计：至少给一条记录，字段为source_quote（候选或支撑字段中的连续原文）、"
+            "assumed_link（这段原文如何导致主角选择/收益/风险）、simpler_alternative（是否有更简单办法，若有说明为何不用）、"
+            "motivation_justification（主角为何仍选择该行动）。source_quote 找不到逐字原文时，整条记录必须标记verified=false，"
+            "不能把模型自行补出的职业权限、关系、制度或数字当作事实；若没有可验证因果，character_logic与mechanism_causality不得超过4。"
+            # domain 标签（2026-08-09）：下游据此保证被展开的候选不全来自同一场域
+            # （真机探针：模型自发把六成创意押在同一场域）。标签由裁判自拟，
+            # 框架不提供词表；同场域必须同标签，是唯一的格式要求。
+            "另给每项 domain：2-6字的核心场域/行当标签（如主角职业或故事发生的行当），"
+            "本次候选里属于同一场域的必须给完全相同的标签。只返回综合最强的8项，"
+            '按强到弱排序。只输出JSON：{"ranked":['
+            '{"index":0,' + authority_schema + '"freshness":0-10,"click_seed":0-10,'
+            '"character_logic":0-10,"action_seed":0-10,"promise_survival":0-10,'
+            '"genre_fidelity":0-10,"ai_assembly":0-10,"dumb_cost":false,'
+            '"domain":"场域标签",'
+            '"after_opening_promise":"持续承诺或空字符串",'
+            '"action_families":["行动1","行动2","行动3"],'
+            '"growth_surface":"持续积累面或空字符串",'
+            '"causal_evidence":[{"source_quote":"候选连续原文","assumed_link":"因果链","simpler_alternative":"反事实检查","motivation_justification":"动机","verified":true}]}]}'
+        )
     )
     return system, user
 
@@ -1837,9 +2416,18 @@ def _parse_raw_idea_ranking(raw: str) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         try:
+
+            def _score(value: Any) -> float:
+                if isinstance(value, bool):
+                    raise ValueError("boolean is not a score")
+                number = float(value)
+                if not math.isfinite(number):
+                    raise ValueError("non-finite score")
+                return max(0.0, min(10.0, number))
+
             index = int(item.get("index"))
             scores = {
-                key: max(0.0, min(10.0, float(item.get(key, 0))))
+                key: _score(item.get(key, 0))
                 for key in (
                     "freshness",
                     "click_seed",
@@ -1852,15 +2440,26 @@ def _parse_raw_idea_ranking(raw: str) -> list[dict[str, Any]]:
             }
         except (TypeError, ValueError):
             continue
+        raw_fidelity = item.get("seed_fidelity")
+        if raw_fidelity is None or str(raw_fidelity).strip().lower() in {"", "unknown", "null"}:
+            fidelity = None
+        else:
+            try:
+                if isinstance(raw_fidelity, bool):
+                    raise ValueError("boolean is not a score")
+                number = float(raw_fidelity)
+                if not math.isfinite(number):
+                    raise ValueError("non-finite score")
+                fidelity = max(0.0, min(10.0, number))
+            except (TypeError, ValueError):
+                fidelity = None
         parsed.append(
             {
                 "index": index,
                 **scores,
                 "dumb_cost": bool(item.get("dumb_cost")),
                 "domain": str(item.get("domain") or "").strip(),
-                "after_opening_promise": str(
-                    item.get("after_opening_promise") or ""
-                ).strip(),
+                "after_opening_promise": str(item.get("after_opening_promise") or "").strip(),
                 "action_families": [
                     str(action).strip()
                     for action in (item.get("action_families") or [])
@@ -1870,9 +2469,76 @@ def _parse_raw_idea_ranking(raw: str) -> list[dict[str, Any]]:
                 else [],
                 "growth_surface": str(item.get("growth_surface") or "").strip(),
                 "reason": str(item.get("reason") or ""),
+                "seed_fidelity": fidelity,
+                "seed_fidelity_known": fidelity is not None,
+                "seed_evidence": str(item.get("seed_evidence") or "unknown").strip(),
+                "candidate_evidence": str(item.get("candidate_evidence") or "unknown").strip(),
+                "causal_evidence": _parse_causal_evidence(item.get("causal_evidence")),
             }
         )
     return parsed
+
+
+def _parse_causal_evidence(value: Any) -> list[dict[str, Any]]:
+    """Keep only the bounded, auditable fields of a judge's causal audit."""
+    if not isinstance(value, list):
+        return []
+    records: list[dict[str, Any]] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            records.append(
+                {
+                    "source_quote": "",
+                    "assumed_link": "",
+                    "simpler_alternative": "",
+                    "motivation_justification": "",
+                    "verified": False,
+                }
+            )
+            continue
+
+        def _string_field(key: str) -> str:
+            value = raw.get(key)
+            return value.strip() if isinstance(value, str) else ""
+
+        records.append(
+            {
+                "source_quote": _string_field("source_quote"),
+                "assumed_link": _string_field("assumed_link"),
+                "simpler_alternative": _string_field("simpler_alternative"),
+                "motivation_justification": _string_field("motivation_justification"),
+                # ``bool("false")`` is True; only JSON boolean true is valid.
+                "verified": raw.get("verified") is True,
+            }
+        )
+    return records
+
+
+def _audit_causal_evidence(item: Mapping[str, Any], candidate_support: str) -> tuple[bool, str]:
+    """Validate causal claims against the complete candidate text.
+
+    This is intentionally a narrow evidence check. It does not decide whether
+    a story is good; it only prevents a high score from laundering facts the
+    candidate never supplied into character motivation or occupational logic.
+    """
+    support = "".join(str(candidate_support or "").split())
+    records = item.get("causal_evidence")
+    if not isinstance(records, list) or not records:
+        return False, "causal_evidence_missing"
+    for record in records:
+        if not isinstance(record, Mapping):
+            return False, "causal_evidence_malformed"
+        quote = "".join(str(record.get("source_quote") or "").split())
+        if not (
+            quote
+            and quote in support
+            and str(record.get("assumed_link") or "").strip()
+            and str(record.get("simpler_alternative") or "").strip()
+            and str(record.get("motivation_justification") or "").strip()
+            and record.get("verified") is True
+        ):
+            return False, "causal_evidence_unverified"
+    return True, "verified"
 
 
 def _select_raw_ideas_for_expansion(
@@ -1881,6 +2547,8 @@ def _select_raw_ideas_for_expansion(
     raw_floor: float,
     progression_floor: float,
     limit: int,
+    authoritative_seed_concept: str = "",
+    authority_candidate_by_index: Mapping[int, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Select premises worth expanding without pretending they already passed.
 
@@ -1890,6 +2558,37 @@ def _select_raw_ideas_for_expansion(
     passes, then fill remaining slots with evidence-complete near passes. Final
     hook and seriality judges remain unchanged and decide production approval.
     """
+
+    authority = str(authoritative_seed_concept or "").strip()
+
+    def _compact(value: Any) -> str:
+        return "".join(str(value or "").split())
+
+    def _authority_status(item: dict[str, Any]) -> tuple[int, str]:
+        """Return tier and audit reason without turning fidelity into a gate.
+
+        Tier 0 is a quoted, high-fidelity candidate; tier 1 is unknown or
+        unverifiable; tier 2 is quoted but low fidelity. All tiers remain
+        eligible for the existing literary filters and later hard gates.
+        """
+
+        if not authority:
+            return (0, "not_applicable")
+        source_quote = str(item.get("seed_evidence") or "").strip()
+        candidate_quote = str(item.get("candidate_evidence") or "").strip()
+        candidate_text = (authority_candidate_by_index or {}).get(int(item.get("index", -1)), "")
+        if not source_quote or source_quote.lower() == "unknown":
+            return (1, "source_evidence_unknown")
+        if not candidate_quote or candidate_quote.lower() == "unknown":
+            return (1, "candidate_evidence_unknown")
+        if _compact(source_quote) not in _compact(authority):
+            return (1, "source_quote_not_in_seed")
+        if not candidate_text or _compact(candidate_quote) not in _compact(candidate_text):
+            return (1, "candidate_quote_not_in_candidate")
+        fidelity = item.get("seed_fidelity")
+        if fidelity is None:
+            return (1, "seed_fidelity_unknown")
+        return (0 if float(fidelity) >= 7.0 else 2, "verified")
 
     # A judge can repeat an index inside a batch. Do not let one seed consume
     # several expensive premise-card slots.
@@ -1914,13 +2613,34 @@ def _select_raw_ideas_for_expansion(
             if previous is not None
             else -1.0
         )
-        if previous is None or item_total > previous_total:
+        if previous is None:
             deduped[index] = item
+            continue
+        current_causal = item.get("causal_evidence_status") == "verified"
+        previous_causal = previous.get("causal_evidence_status") == "verified"
+        if current_causal != previous_causal:
+            if current_causal:
+                deduped[index] = item
+            continue
+        current_tier = _authority_status(item)[0]
+        previous_tier = _authority_status(previous)[0]
+        if current_tier < previous_tier or (
+            current_tier == previous_tier and item_total > previous_total
+        ):
+            deduped[index] = item
+
+    for item in deduped.values():
+        tier, reason = _authority_status(item)
+        item["authority_evidence_status"] = (
+            "verified_high" if tier == 0 else "unknown" if tier == 1 else "verified_low"
+        )
+        item["authority_evidence_reason"] = reason
 
     evidence_complete = [
         item
         for item in deduped.values()
-        if not bool(item.get("dumb_cost"))
+        if item.get("causal_evidence_status") not in {"invalid", "missing"}
+        and not bool(item.get("dumb_cost"))
         and float(item.get("ai_assembly", 10)) <= 4.0
         and float(item.get("character_logic", 0)) >= progression_floor
         and bool(item.get("after_opening_promise"))
@@ -1931,8 +2651,7 @@ def _select_raw_ideas_for_expansion(
         and len(item.get("action_families") or []) >= 3
         and bool(item.get("growth_surface"))
         and not any(
-            token in str(item.get("growth_surface") or "")
-            for token in ("可能", "也许", "或将")
+            token in str(item.get("growth_surface") or "") for token in ("可能", "也许", "或将")
         )
     ]
 
@@ -1963,8 +2682,18 @@ def _select_raw_ideas_for_expansion(
         and float(item.get("action_seed", 0)) >= progression_floor + 1
         and float(item.get("promise_survival", 0)) >= progression_floor
     ]
-    strict.sort(key=score, reverse=True)
-    near.sort(key=score, reverse=True)
+
+    def authority_score(item: dict[str, Any]) -> tuple[int, float, float, float, float]:
+        tier, _reason = _authority_status(item)
+        values = score(item)
+        return (tier, -values[0], -values[1], -values[2], -float(item.get("seed_fidelity") or 0.0))
+
+    if authority:
+        strict.sort(key=authority_score)
+        near.sort(key=authority_score)
+    else:
+        strict.sort(key=score, reverse=True)
+        near.sort(key=score, reverse=True)
     # Domain cap (2026-08-09): at most ONE expansion slot per rank-judge domain
     # label. Live probe with the ledger book's exact params: the model spent 62%
     # (25/40) of the pool on a single domain family and ranking kept that share
@@ -1981,15 +2710,25 @@ def _select_raw_ideas_for_expansion(
     # 定罪结构（谁A谁就B/对称机制条款）沉底比撞车更深：撞车只是市场巧合，
     # 定罪结构是用户逐条终审判死的形态；调性冲突（用户选轻松却是胁迫式
     # 生死赌注）沉得同样深——选题必须服从用户选项。都不过滤——池永远不清空。
-    ordered = sorted(
-        strict + near,
-        key=lambda item: (
-            bool(item.get("condemned_structure")),
-            bool(item.get("tone_conflict")),
-            bool(item.get("default_family")),
-            bool(item.get("market_collision")),
-        ),
-    )
+    if authority:
+        ordered = sorted(
+            strict + near,
+            key=lambda item: (
+                _authority_status(item)[0],
+                bool(item.get("condemned_structure")),
+                bool(item.get("tone_conflict")),
+                bool(item.get("market_collision")),
+            ),
+        )
+    else:
+        ordered = sorted(
+            strict + near,
+            key=lambda item: (
+                bool(item.get("condemned_structure")),
+                bool(item.get("tone_conflict")),
+                bool(item.get("market_collision")),
+            ),
+        )
 
     capped: list[dict[str, Any]] = []
     seen_domains: set[str] = set()
@@ -2004,6 +2743,74 @@ def _select_raw_ideas_for_expansion(
         capped.append(item)
     capped.extend(overflow)
     return capped[: max(0, limit)]
+
+
+def _ensure_authoritative_seed_in_raw_pool(
+    parsed_pool: list[tuple[str, str]],
+    raw_pitch_by_seed: dict[str, dict[str, Any]],
+    *,
+    seed_concept: str,
+    authoritative_seed: bool,
+    tone_preference: str = "",
+    effect_skills: tuple[str, ...] | list[str] = (),
+    cost_style: str = "standard",
+    allow_debt_theme: bool | None = None,
+    allow_death_theme: bool | None = None,
+) -> tuple[list[tuple[str, str]], dict[str, Any] | None]:
+    """Keep one user-original control row without spending a generation call."""
+
+    if not authoritative_seed or not seed_concept.strip():
+        return parsed_pool, None
+    original_seed = seed_concept.strip()
+    original_candidate = ConceptCandidate(
+        dimension="user_original",
+        concept=original_seed,
+    )
+    original_guard = _candidate_hard_rejection_reason(
+        original_candidate,
+        seed_concept=original_seed,
+        authoritative_seed_concept=original_seed,
+        tone_preference=tone_preference,
+        effect_skills=effect_skills,
+        cost_style=cost_style,
+        allow_debt_theme=allow_debt_theme,
+        allow_death_theme=allow_death_theme,
+        raw_idea=True,
+    )
+    normalized_original = "".join(original_seed.split())
+    matching_index = next(
+        (
+            index
+            for index, (_lane, seed) in enumerate(parsed_pool)
+            if "".join(seed.split()) == normalized_original
+        ),
+        None,
+    )
+    if original_guard:
+        return parsed_pool, {
+            "dimension": "user_original",
+            "scores": {},
+            "reason": "用户原始创意反污染门失败: " + original_guard,
+            "failed_axes": ["creation_intent_pollution"],
+            "source": "user_original",
+        }
+    if matching_index is not None:
+        _lane, existing_seed = parsed_pool[matching_index]
+        parsed_pool[matching_index] = ("user_original", original_seed)
+        raw_pitch_by_seed.pop(existing_seed, None)
+        raw_pitch_by_seed[original_seed] = {
+            "lane": "user_original",
+            "seed": original_seed,
+            "source": "user_original",
+        }
+        return parsed_pool, None
+    parsed_pool.append(("user_original", original_seed))
+    raw_pitch_by_seed[original_seed] = {
+        "lane": "user_original",
+        "seed": original_seed,
+        "source": "user_original",
+    }
+    return parsed_pool, None
 
 
 # ── plain_language: one contract, rendered to BOTH the writer and the judge ──
@@ -2067,23 +2874,14 @@ def render_plain_language_judge_rule() -> str:
 
 
 def render_cliche_avoidance_block(banned: tuple[str, ...]) -> str:
-    """Render a positive anti-cliche instruction without quoting the corpus.
+    """Legacy renderer: default references grant no creative prompt authority.
 
-    The ban bank remains the single source for deterministic post-generation
-    screening. It must not become generation material: negative examples are
-    prompt tokens too, and repeated exact phrases made new books absorb the
-    motifs the gate was meant to reject.
+    Explicit creation intent and caller-owned boundary checks remain separate.
+    Do not reinterpret arbitrary AI context or historical fingerprints as a
+    user's avoid list. Keep the argument for existing builder compatibility.
     """
-
-    items = [b.strip() for b in banned if b.strip()]
-    if not items:
-        return ""
-    return (
-        "【原创开局约束】\n"
-        "俗套库将在生成后由程序独立检查，具体禁用文本不进入本轮提示词。"
-        "请从在世主角此刻要完成的具体行动、可见阻力、手中独有资源和当场选择出发；"
-        "开局事件必须由本题材当前世界状态触发，而不是照搬任何预设模板。\n"
-    )
+    del banned
+    return ""
 
 
 def _build_hook_from_engine_messages(
@@ -2098,9 +2896,20 @@ def _build_hook_from_engine_messages(
 ) -> tuple[str, str]:
     """Distill a human-facing story seed from an already designed engine."""
 
+    from bestseller.services.book_design import extract_creation_protagonist_name
+
+    protagonist_name = extract_creation_protagonist_name({"premise": seed_concept})
+    identity_rule = (
+        f"原始种子已指定主角姓名：{protagonist_name}。每条concept必须逐字保留该姓名，"
+        "不能仅用代词、职业或身份称呼代替。\n"
+        if protagonist_name
+        else ""
+    )
+
     system = (
         "你是商业小说主编。候选项目卡已经冻结，你只负责找到其中最有人味、最想点的"
-        "开局表达；不得添加无因果的固定惩罚、幕后集团或新主线。只输出JSON。"
+        "故事承诺；让初次接触这本书的读者明白主角将面对什么、为何值得追读。"
+        "不得添加无因果的固定惩罚、幕后集团或新主线。只输出JSON。"
     )
     audience_line = (
         f"频道/受众：{audience_orientation}（三条钩子都写给该频道读者，用他们要的爽点角度切入）\n"
@@ -2112,13 +2921,15 @@ def _build_hook_from_engine_messages(
         f"题材：{genre}（{sub_genre}）\n"
         f"{audience_line}"
         f"原始种子：{seed_concept.strip() or '无'}\n"
+        f"{identity_rule}"
         f"冻结项目卡：{json.dumps(kernel, ensure_ascii=False)}\n\n"
-        "不要套promise/paradox/scene模板。像真正的小说作者一样独立写3条最想让人点开的"
-        "一句话故事，每条都必须让人看见：一个具体主角、只有本书才有的异常事实、主角"
-        "接下来会做的事或马上形成的困局。三条可以分别偏身份反转、独特行动或核心矛盾，"
-        "但都必须是完整故事，不能只有气氛或一个片段。每条30-75字、单句。\n"
-        + render_plain_language_writer_rule()
-        + "\n"
+        "先复述冻结项目卡已经成立的故事：人物目标、行动与回报，以及行动会怎样改变局面；"
+        "再从这些已有事实提取3条最想点开的"
+        "一句话故事。每条都必须让人看见：一个具体主角、只有本书才有的异常事实、主角"
+        "接下来会做的事或马上形成的困局。每条按这本故事最自然的表达重点自命名 angle；"
+        "角度可以重复，不需要覆盖预设类别。三条是同一本书的独立提案表达，不是按顺序发生的三个情节。"
+        "读者只看任意一条也应知道主角身份、核心处境和故事追问；不能依赖前一条补充背景。"
+        "每条30-75字、单句。\n" + render_plain_language_writer_rule() + "\n"
         "概念只使用读者能在开局场景直接看见或理解的人、物、行动与结果；"
         "抽象机制必须改写成主角当场能做的具体事情。"
         # 负例种词修复（2026-08-24 全链排查）：此前这里逐字引用被禁词
@@ -2127,15 +2938,14 @@ def _build_hook_from_engine_messages(
         # prompt token，会被复印）。确定性执法在 blurb_appeal_gate 的正则里，
         # 生成端只说类别。
         "删除叙述总结腔：不概括过程、不预告命运走向、不替读者下结论，"
-        "只写当场发生的事。不要解释500章、"
+        "用开局中具体的行动或困局呈现整本故事的核心承诺，而不是摘录中途的一场戏。不要解释500章、"
         "不要用剥夺主角选择的强制式措辞，不要照抄字段名。\n"
         # The judge KOs these before scoring; show them here so the generator
         # does not keep proposing the openings it is about to be eliminated for.
         + render_cliche_avoidance_block(banned)
-        # Without this the retry loop is decorative under engine_first: the
-        # caller threads retry_feedback only into the non-production branch, so
-        # a tournament could fail the same axis three rounds running and the
-        # generator would never learn why.
+        # Retry feedback is part of the active engine_first hook prompt so a
+        # later round can repair the rejected story axis without changing the
+        # frozen project-card facts.
         + (
             f"【上一轮为什么被拒，这一轮必须改掉】\n{retry_feedback.strip()}\n"
             if retry_feedback.strip()
@@ -2143,9 +2953,9 @@ def _build_hook_from_engine_messages(
         )
         + "项目卡中的人物、异常、目标、阻力、选择理由和持续机制都已冻结，不要在输出中"
         "改变事实或另加设定；允许选择并压缩其中事实。只输出JSON："
-        "{\"hooks\":[{\"angle\":\"identity\",\"concept\":\"一句话1\"},"
-        "{\"angle\":\"action\",\"concept\":\"一句话2\"},"
-        "{\"angle\":\"conflict\",\"concept\":\"一句话3\"}]}"
+        '{"hooks":[{"angle":"本条最自然的表达重点（由故事自命名，可重复）","concept":"一句话1"},'
+        '{"angle":"本条最自然的表达重点（由故事自命名，可重复）","concept":"一句话2"},'
+        '{"angle":"本条最自然的表达重点（由故事自命名，可重复）","concept":"一句话3"}]}'
     )
     return system, user
 
@@ -2191,18 +3001,15 @@ def _attach_engine_kernel(
         candidate,
         mechanism=candidate.mechanism or _text("deformable_loop"),
         hook_question=candidate.hook_question or _text("reader_promise"),
-        protagonist_identity=candidate.protagonist_identity
-        or _text("protagonist_identity"),
+        protagonist_identity=candidate.protagonist_identity or _text("protagonist_identity"),
         protagonist_private_desire=candidate.protagonist_private_desire
         or _text("protagonist_private_desire"),
         protagonist_flaw=candidate.protagonist_flaw or _text("protagonist_flaw"),
         core_abnormality=candidate.core_abnormality or _text("core_abnormality"),
         opening_crisis=candidate.opening_crisis or _text("opening_crisis"),
-        opponent_system=candidate.opponent_system
-        or "；".join(_tuple("opposing_ecology")),
+        opponent_system=candidate.opponent_system or "；".join(_tuple("opposing_ecology")),
         decision_proof=candidate.decision_proof or decision_proof,
-        emotional_promise=candidate.emotional_promise
-        or _text("emotional_promise"),
+        emotional_promise=candidate.emotional_promise or _text("emotional_promise"),
         core_promise_invariant=_text("reader_promise"),
         constraint_ladder=_tuple("constraint_ladder"),
         role_ladder=_tuple("role_ladder"),
@@ -2212,7 +3019,7 @@ def _attach_engine_kernel(
         unit_frequency=str(kernel.get("unit_frequency") or "").strip(),
         unit_count_estimate=unit_count,
         progress_bar=str(kernel.get("progress_bar") or "").strip(),
-        question_ladder=_tuple("mystery_ladder"),
+        question_ladder=(_tuple("forward_question_ladder") or _tuple("mystery_ladder")),
         ch50=str(kernel.get("ch50") or "").strip(),
         renewal_sources=_tuple("expansion_axes"),
         accumulation_tracks=_tuple("accumulation_tracks"),
@@ -2238,11 +3045,68 @@ def _candidate_message_builder(
     raise ValueError(f"unsupported candidate_prompt_mode: {mode}")
 
 
-def _build_seriality_messages(
-    *, candidate: ConceptCandidate, genre: str, chapter_count: int
-) -> tuple[str, str]:
-    """Expand a frozen seed; seriality may prove it, but may not rewrite it."""
+def _render_seriality_creation_intent(
+    *,
+    genre: str = "",
+    sub_genre: str = "",
+    tone_preference: str = "",
+    effect_skills: Sequence[str] = (),
+    creation_intent_block: str = "",
+    authoritative_seed_concept: str = "",
+) -> str:
+    """Render the user-owned boundaries shared by all seriality prompts."""
 
+    genre_label = f"{genre}（{sub_genre}）" if str(sub_genre or "").strip() else str(genre or "")
+    lines = ["【冻结创建意图】"]
+    if genre_label.strip():
+        lines.append(f"题材={genre_label.strip()}")
+    tone_line = _tone_directive_line(tone_preference).strip()
+    if tone_line:
+        lines.append(tone_line)
+    skills_line = _effect_skills_directive_line(list(effect_skills)).strip()
+    if skills_line:
+        lines.append(skills_line)
+    intent_block = str(creation_intent_block or "").strip()
+    if intent_block:
+        lines.append(intent_block)
+    lines.append(
+        "题材、子题材和用户明确选择必须在长期循环、阶段升级与终局中持续兑现；"
+        "不得靠换题材、换调性或丢弃已选故事效果来伪造承载力。"
+    )
+    authority = str(authoritative_seed_concept or "").strip()
+    if authority:
+        lines.extend(
+            (
+                "【用户上位创意事实边界】",
+                authority,
+                "保留用户明确给出的主角身份、核心机制、目标、关系、动作因果与先后顺序。"
+                "新增人物、资源、场景、阻力或后续信息不自动算替换；新增内容应补足既有"
+                "故事，不能把明确事实或核心承诺改成另一套。",
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _build_seriality_messages(
+    *,
+    candidate: ConceptCandidate,
+    genre: str,
+    sub_genre: str = "",
+    chapter_count: int,
+    seed_concept: str = "",
+    authoritative_seed_concept: str = "",
+    tone_preference: str = "",
+    effect_skills: Sequence[str] = (),
+    creation_intent_block: str = "",
+) -> tuple[str, str]:
+    """Prove the current candidate without promoting an exploration seed.
+
+    ``seed_concept`` remains a compatible input, but a generated retry idea is
+    not injected after finalist selection. Only the separately identified user
+    source can be an upper-level fact boundary.
+    """
+
+    from bestseller.services.ranking_seriality_gate import required_ranking_unit_count
     from bestseller.services.seriality_capacity import required_seriality_unit_count
 
     phase_min = (
@@ -2258,25 +3122,66 @@ def _build_seriality_messages(
     renewal_min = 5 if chapter_count >= 1500 else 3
     ecology_min = 5 if chapter_count >= 1500 else 2
     mystery_min = 9 if chapter_count >= 1500 else 5 if chapter_count >= 1000 else 3
-    required_units = required_seriality_unit_count(chapter_count)
+    # The ranking promotion gate is the shared contract for 30+ chapter
+    # candidates.  The capacity ruler remains useful for long horizons, but
+    # its 50-chapter estimate (5 units) is not enough for the chapter-level
+    # ranking floor (13 units).  Tell the seriality generator the stricter
+    # requirement up front so the existing repair loop can fix it before the
+    # concept contract is promoted.
+    required_units = max(
+        required_seriality_unit_count(chapter_count),
+        required_ranking_unit_count(chapter_count),
+    )
+    short_horizon = chapter_count < 50
     system = (
-        "你是长篇网文结构总编。你不能修改已经通过的故事种子，只负责判断它是否能"
-        "自然续写，并给出可检验的长篇承载证明。禁止靠重复副本、无限地图、强塞倒计时"
+        ("你是有限篇幅网文结构总编。" if short_horizon else "你是长篇网文结构总编。")
+        + "你不能修改已经通过的故事种子，只负责判断它是否能"
+        + (
+            "自然续写，并给出可检验的有限闭环证明。"
+            if short_horizon
+            else "自然续写，并给出可检验的长篇承载证明。"
+        )
+        + "禁止靠重复副本、无限地图、强塞倒计时"
         "或每卷换皮来伪造长度。只输出JSON。"
     )
+    repeatable_requirement = (
+        "1. repeatable_story_unit 必须写成有限篇幅内可闭合的两阶段发动机：2-4章内生微单元"
+        "（主角主动发现/选择/试错/交易/反制）→在目标章数内完成一条有限成果弧；"
+        "不得要求跨卷产业或阵营阶段，也不能只写每隔十章捡到一个新素材；\n"
+        if short_horizon
+        else "1. repeatable_story_unit 必须写成三级发动机：2-4章内生微单元（主角主动发现/"
+        "选择/试错/交易/反制）→8-20章中期成果弧→跨卷产业或阵营阶段；不是能力说明，"
+        "也不能只写每隔十章捡到一个新素材；\n"
+    )
+    horizon_requirement = (
+        f"7. 本书目标只有{chapter_count}章，必须在目标章数内完成同一故事承诺的有限闭环；"
+        "不要生成第50章字段，也不要把未存在的跨卷阶段当作承载证明。\n"
+        if short_horizon
+        else "7. ch50 必须仍在兑现同一个故事承诺，不能已经解决总问题；\n"
+    )
+    output_ch50 = '"ch50":""' if short_horizon else '"ch50":"第50章冲突"'
+    intent_context = _render_seriality_creation_intent(
+        genre=genre,
+        sub_genre=sub_genre,
+        tone_preference=tone_preference,
+        effect_skills=effect_skills,
+        creation_intent_block=creation_intent_block,
+        authoritative_seed_concept=authoritative_seed_concept,
+    )
     user = (
-        f"【冻结故事种子】题材={genre}，目标={chapter_count}章\n"
+        intent_context
+        + f"【冻结故事种子】目标={chapter_count}章\n"
         f"一句话：{candidate.concept}\n机制：{candidate.mechanism}\n"
         f"主角：{candidate.protagonist_identity}\n私人欲望：{candidate.protagonist_private_desire}\n"
         f"核心异常：{candidate.core_abnormality}\n开局危机：{candidate.opening_crisis}\n"
-        f"对手系统：{candidate.opponent_system}\n人物决策证明：{candidate.decision_proof}\n\n"
+        f"对手系统：{candidate.opponent_system}\n人物决策证明：{candidate.decision_proof}\n"
+        f"核心读者承诺：{candidate.core_promise_invariant or candidate.hook_question}\n"
+        f"冻结故事架构：{json.dumps(candidate.story_architecture, ensure_ascii=False)}\n\n"
         "证明要求（每个字符串不超过80个汉字，禁止解释性散文）：\n"
         "0. core_promise_invariant 写出从开篇到终局都不变的读者承诺；阶段升级只能改变"
         "范围、角色和题型，不能换掉这件事。\n"
-        "1. repeatable_story_unit 必须写成三级发动机：2-4章内生微单元（主角主动发现/"
-        "选择/试错/交易/反制）→8-20章中期成果弧→跨卷产业或阵营阶段；不是能力说明，"
-        "也不能只写每隔十章捡到一个新素材；\n"
-        "1.1 unit_frequency 写清2-4章内主角会作出的选择、试错或遭遇的反制。"
+        + repeatable_requirement
+        + "1.1 unit_frequency 写清2-4章内主角会作出的选择、试错或遭遇的反制。"
         f"unit_count_estimate 填不少于{required_units}的节奏预算；少于该数说明2-4章一次"
         "与目标篇幅自相矛盾。裁判不会因数字高而加分，容量仍由行动家族、阶段变化和"
         "后果链证明。每个单元必须由既有行动、关系或规则变化自然触发；\n"
@@ -2303,54 +3208,101 @@ def _build_seriality_messages(
         "且每个阶段至少一种新的主角动作、冲突家族和不可逆产物；不能只是从个人案升级"
         "为城市案、全国案却仍做同一件事；\n"
         f"5. opposing_ecology 至少{ecology_min}个会学习、结盟、背叛的自主势力；\n"
-        f"6. mystery_ladder 至少{mystery_min}级，答案会扩大而不是终止故事；\n"
-        "7. ch50 必须仍在兑现同一个故事承诺，不能已经解决总问题；\n"
-        "8. endgame_direction 由前述积累自然汇聚，不能另起炉灶。\n\n"
-        "只输出JSON：{\"core_promise_invariant\":\"全书不变承诺\","
-        "\"role_ladder\":[\"角色/动作1\",\"角色/动作2\",\"角色/动作3\",\"角色/动作4\"],"
-        "\"world_ladder\":[\"盘面1\",\"盘面2\",\"盘面3\",\"盘面4\"],"
-        "\"repeatable_story_unit\":\"每轮动作循环\","
+        f"6. forward_question_ladder 至少{mystery_min}级。它不是默认的秘密/真相梯，"
+        "而是本题材每阶段驱动读者追看的前进问题：主角下一步要完成什么、对手会如何"
+        "学习反制、经营/关系/能力/盘面会扩大到哪里。每一级只能由冻结种子已有的"
+        "人物、机制、行动与后果长出；可以补充与既有行动和规则有因果联系的世界、人物"
+        "与后续信息，但不得替换当前候选的核心机制、人物目标或读者承诺。是否发生"
+        "替换要比较具体事实和因果，不能仅凭题材名称或个别词汇判断；\n"
+        + horizon_requirement
+        + "8. endgame_direction 由前述积累自然汇聚，不能另起炉灶。\n\n"
+        '只输出JSON：{"core_promise_invariant":"全书不变承诺",'
+        '"role_ladder":["角色/动作1","角色/动作2","角色/动作3","角色/动作4"],'
+        '"world_ladder":["盘面1","盘面2","盘面3","盘面4"],'
+        '"repeatable_story_unit":"每轮动作循环",'
         # 同批修正：这个 JSON 模板里每个字段都是占位形状（"来源1"/"势力1"/"盘面1"），
         # 唯独 unit_families 把真答案填好了——模型照抄的第二个、也是更直接的入口。
-        "\"unit_families\":[\"冲突家族1\",\"冲突家族2\",\"冲突家族3\",\"冲突家族4\"],"
-        "\"progress_bar\":\"读者可感知的增长\","
-        "\"unit_frequency\":\"单元自然发生频率\","
-        f"\"unit_count_estimate\":{required_units},"
-        "\"renewal_sources\":[\"来源1\",\"来源2\",\"来源3\"],"
-        "\"accumulation_tracks\":[\"积累1\",\"积累2\",\"积累3\"],"
-        f"\"phase_transitions\":[\"第1-X章阶段1\",\"第X+1-Y章阶段2\","
-        f"\"第Y+1-Z章阶段3\",\"第Z+1-{chapter_count}章阶段4\"],"
-        "\"opposing_ecology\":[\"势力1\",\"势力2\"],"
-        "\"mystery_ladder\":[\"问题1\",\"问题2\",\"问题3\"],"
-        "\"ch50\":\"第50章冲突\",\"endgame_direction\":\"终局汇聚方向\"}"
+        '"unit_families":["冲突家族1","冲突家族2","冲突家族3","冲突家族4"],'
+        '"progress_bar":"读者可感知的增长",'
+        '"unit_frequency":"单元自然发生频率",'
+        f'"unit_count_estimate":{required_units},'
+        '"renewal_sources":["来源1","来源2","来源3"],'
+        '"accumulation_tracks":["积累1","积累2","积累3"],'
+        f'"phase_transitions":["第1-X章阶段1","第X+1-Y章阶段2",'
+        f'"第Y+1-Z章阶段3","第Z+1-{chapter_count}章阶段4"],'
+        '"opposing_ecology":["势力1","势力2"],'
+        '"forward_question_ladder":["阶段前进问题1","阶段前进问题2","阶段前进问题3"],'
+        f'{output_ch50},"endgame_direction":"目标章数内的终局汇聚方向"}}'
     )
     return system, user
 
 
 def _build_seriality_judge_messages(
-    *, candidate: ConceptCandidate, chapter_count: int
+    *,
+    candidate: ConceptCandidate,
+    chapter_count: int,
+    genre: str = "",
+    sub_genre: str = "",
+    authoritative_seed_concept: str = "",
+    tone_preference: str = "",
+    effect_skills: Sequence[str] = (),
+    creation_intent_block: str = "",
 ) -> tuple[str, str]:
+    short_horizon = chapter_count < 50
     system = (
-        "你是极其苛刻的长篇连载总编。只审承载力，不替作者补设定。字段写满不等于能写长。"
-        "只输出JSON。"
+        "你是极其苛刻的有限篇幅连载总编。" if short_horizon else "你是极其苛刻的长篇连载总编。"
+    ) + (
+        "只审目标篇幅内的闭环承载力，不替作者补设定。字段写满不等于能收束。只输出JSON。"
+        if short_horizon
+        else "只审承载力，不替作者补设定。字段写满不等于能写长。只输出JSON。"
+    )
+    horizon_line = (
+        f"本书目标为{chapter_count}章，属于有限篇幅；不得因不存在第50章而扣分，"
+        "只检查目标章数内是否有可执行的终局收束。"
+        if short_horizon
+        else "第50章是本书的检查点，必须仍兑现同一故事承诺。"
+    )
+    checkpoint_label = "目标章数内终局" if short_horizon else "第50章"
+    axis_intro = (
+        "六轴0-10：renewability 目标篇幅内是否能连续产生新单元；escalation 是否在有限闭环内换玩法而非涨数值；"
+        "anti_reset 每轮是否留下不可逆变化；coherence 是否始终兑现同一句话；"
+        "promise_survival 核心发现/矛盾在本书终局前是否持续产出同类故事；unit_density 只看"
+        "冲突家族、角色新动作与盘面变化能否在目标章数内制造选择和反制。"
+        if short_horizon
+        else "六轴0-10：renewability 新单元是否真正可再生；escalation 阶段是否换玩法而非涨数值；"
+        "anti_reset 每轮是否留下不可逆变化；coherence 长篇是否始终兑现同一句话；"
+        "promise_survival 一句话里的核心发现/矛盾在开篇兑现后是否仍持续产出同类故事，"
+        "若揭晓后只能换主线不得超过4分；unit_density 不采信自报总数，只看冲突家族能否"
+        "组合、角色新动作与盘面变化能否在章节级持续制造选择和反制；若一年一次事件被"
+        "硬拉数百章不得超过4分。"
+    )
+    intent_context = _render_seriality_creation_intent(
+        genre=genre,
+        sub_genre=sub_genre,
+        tone_preference=tone_preference,
+        effect_skills=effect_skills,
+        creation_intent_block=creation_intent_block,
+        authoritative_seed_concept=authoritative_seed_concept,
     )
     user = (
-        f"目标={chapter_count}章\n一句话={candidate.concept}\n"
+        intent_context
+        + f"目标={chapter_count}章\n一句话={candidate.concept}\n"
         f"核心承诺={candidate.core_promise_invariant}\n"
         f"循环单元={candidate.repeatable_story_unit}\n冲突家族={list(candidate.unit_families)}\n"
         f"角色行动梯={list(candidate.role_ladder)}\n盘面变化梯={list(candidate.world_ladder)}\n"
         f"发生频率={candidate.unit_frequency}\n"
         f"预计单元数={candidate.unit_count_estimate}\n更新来源={list(candidate.renewal_sources)}\n"
         f"不可逆积累={list(candidate.accumulation_tracks)}\n阶段变化={list(candidate.phase_transitions)}\n"
-        f"势力生态={list(candidate.opposing_ecology)}\n悬念梯={list(candidate.question_ladder)}\n"
-        f"第50章={candidate.ch50}\n终局={candidate.endgame_direction}\n\n"
-        "六轴0-10：renewability 新单元是否真正可再生；escalation 阶段是否换玩法而非涨数值；"
-        "anti_reset 每轮是否留下不可逆变化；coherence 长篇是否始终兑现同一句话；"
-        "promise_survival 一句话里的核心发现/矛盾在开篇兑现后是否仍持续产出同类故事，"
-        "若揭晓后只能换主线不得超过4分；unit_density 不采信自报总数，只看冲突家族能否"
-        "组合、角色新动作与盘面变化能否在章节级持续制造选择和反制；若一年一次事件被"
-        "硬拉数百章不得超过4分。"
-        "任一项低于6都应判失败。只输出JSON："
+        f"势力生态={list(candidate.opposing_ecology)}\n前进问题梯={list(candidate.question_ladder)}\n"
+        f"{checkpoint_label}={candidate.ch50 if not short_horizon else candidate.endgame_direction}\n"
+        f"终局={candidate.endgame_direction}\n{horizon_line}\n\n"
+        + axis_intro
+        + "结合上述创建意图，分别说明coherence与promise_survival的原文证据；"
+        "不得以同一笼统判断代替各轴的独立分析。"
+        "前进问题梯必须来自本题材的下一步目标、反制与盘面扩大；非悬疑题材不得把"
+        "凭空新增的失踪者、隐藏身份、旧案或秘密档案当成长篇承载力。"
+        "逐轴按证据评分并说明主要问题；分数的建议或阻断权限由调用方按当前模式与配置执行，"
+        "不要另设统一及格线，也不要用打满字段代替判断。只输出JSON："
         '{"renewability":0-10,"escalation":0-10,"anti_reset":0-10,'
         '"coherence":0-10,"promise_survival":0-10,"unit_density":0-10,'
         '"reason":"30字内"}'
@@ -2377,20 +3329,26 @@ def creation_intent_judge_axes(
 
     axes: list[tuple[str, str]] = []
     if str(tone_preference or "").strip().lower() == "light":
-        axes.append((
-            "tone_fit",
-            "tone_fit 用户建书时明确选择了轻松明快基调：看项目卡的核心处境、"
-            "场面与意象整体是否兑现这个基调；若通篇沉重压抑、以死亡仪式或阴森"
-            "氛围为主体验，本轴不得超过4分；轻松、幽默、烟火气或热血爽快的按"
-            "贴合度给分",
-        ))
+        axes.append(
+            (
+                "tone_fit",
+                "tone_fit 用户建书时明确选择了轻松明快基调：看项目卡的核心处境、"
+                "场面与意象整体是否兑现这个基调；若通篇沉重压抑、以死亡仪式或阴森"
+                "氛围为主体验，本轴不得超过4分；轻松、幽默、烟火气或热血爽快的按"
+                "贴合度给分",
+            )
+        )
     if str(cost_style or "").strip().lower() == "minimal":
-        axes.append((
-            "cost_style_fit",
-            "cost_style_fit 用户建书时明确选择了爽文无代价（金手指不向主角收费）："
-            "外部风险、交换条件与选择后果都合法；但若能力每次使用都让主角自身"
-            "付出持续损耗，或这种自损构成核心循环/卖点，本轴不得超过4分",
-        ))
+        axes.append(
+            (
+                "cost_style_fit",
+                "cost_style_fit 用户建书时明确选择了爽文无代价（金手指不向主角收费）："
+                "外部曝光、对手学习、组织反制、谈判风险以及成功后局势扩大都属于合法的"
+                "外部后果，只要能力本身不向主角扣款就不得因此扣分；只有项目卡明确写出"
+                "能力每次使用都让主角自身持续损耗，或这种自损构成核心循环/卖点时，"
+                "本轴才不得超过4分。证据不明确时不得用5-6分猜测惩罚",
+            )
+        )
     return tuple(axes)
 
 
@@ -2404,6 +3362,57 @@ def _render_intent_axis_schema(intent_axes: tuple[tuple[str, str], ...]) -> tupl
     return instructions, schema
 
 
+def _render_engine_source_fidelity_contract(authoritative_seed_concept: str) -> str:
+    """Shared source-fidelity contract for single and batch engine judges.
+
+    This is deliberately an instruction fragment, not a score axis. It makes the
+    source relation auditable while leaving the existing eleven axes and floors
+    untouched. New facts may supplement a seed; only an explicit change to a
+    frozen fact or action relation is a replacement.
+    """
+    authority = str(authoritative_seed_concept or "").strip()
+    if not authority:
+        return (
+            "seed_fidelity只核对当前候选自己的原始创意身份；不得把候选扩写误写成用户事实，"
+            "也不得把新增事实自动判为替换。新增事实必须标明是supplement（补足）；只有改写"
+            "原始主角、核心异常/机制、关系或动作因果才是replacement（替换）。"
+        )
+    return (
+        "【统一source-fidelity合同】seed_fidelity必须只对比用户上位创意，冻结主角身份、核心能力/机制、"
+        "经营对象、长期目标、对手范围、明确代价，以及触发者、结果接收者、交易方向、效果方向和"
+        "原文动作顺序；颠倒付款方、观察者或能力效果都按核心事实被替换处理；candidate_seed/候选提炼角度只是扩写入口，不能授权替换这些事实。候选新增的"
+        "人物、资源、场景、阻力或后续信息不自动算替换，必须在关系上标为supplement（补足）；"
+        "只有把冻结事实、动作因果或明确顺序改写成另一事实才标为replacement（替换）；遗漏用户明确的"
+        "开局触发事件、异常现象或先后因果时标为unknown，并在reason说明omission；仅有主角姓名相同不能证明事件保真。任一核心事实"
+        "被替换时seed_fidelity不得超过4，不能用其他高分抵消；这包括能力/机制、经营对象、目标、"
+        "对手、代价，以及触发者、结果接收者、交易方向、效果方向和动作顺序。逐项返回"
+        "source_protagonist_name（用户原文未命名时必须为null）、seed_identity_source_quote（用户原文连续引文）、"
+        "candidate_identity_quote（完整逐字引用项目卡protagonist_identity，禁止引用 candidate_seed）和"
+        "identity_relation（same/preserved/replaced/unknown），并额外返回source_change_type="
+        "supplement|replacement|none|unknown。引文不能伪造；对开局事件、异常现象和因果顺序，"
+        "reason必须同时指出用户原文连续引文与候选卡字段中的逐字证据；候选未落实、替换或无法核对时"
+        "必须写明unknown/omission，seed_fidelity不得因姓名保留而给高分。原文未命名时只能凭身份描述给出"
+        "preserved/same，无法核对时为unknown；主角换名必须为replaced且seed_fidelity不得超过4。"
+    )
+
+
+def _render_engine_horizon_contract(chapter_count: int) -> str:
+    """Keep finite premise cards from an unconditional long-seriality rule."""
+    if int(chapter_count or 0) < 50:
+        return (
+            f"【有限篇幅承载合同】目标为{int(chapter_count or 0)}章。promise_survival只检查"
+            "核心承诺能否在目标章数内经过后果、抉择和分阶段揭示推进到终局；有限谜题在"
+            "目标内揭晓并收束是有效完成，不要求揭晓后另起独立主线。post_reveal_engine"
+            "检查揭晓后的既定后果、价值选择或阶段性解谜是否仍由同一承诺自然推出；"
+            "不得因没有新主线扣分，也不得用反复拖延同一谜底、重复场面或无因果事件冒充推进。"
+        )
+    return (
+        "【长篇承载合同】promise_survival必须证明核心承诺在开篇兑现后仍能持续产出同类故事，"
+        "若揭晓后只能换主线不得超过4分；post_reveal_engine必须继续兑现同一承诺并产生积累，"
+        "若只用一次性谜底、重复查同一真相或临时换新主线填充篇幅，post_reveal_engine不得超过4分。"
+    )
+
+
 def _build_engine_judge_messages(
     *,
     kernel: dict[str, Any],
@@ -2411,6 +3420,7 @@ def _build_engine_judge_messages(
     sub_genre: str,
     chapter_count: int,
     seed_concept: str,
+    authoritative_seed_concept: str = "",
     intent_axes: tuple[tuple[str, str], ...] = (),
 ) -> tuple[str, str]:
     """Judge a premise card before hook copy can hide a weak project."""
@@ -2420,32 +3430,53 @@ def _build_engine_judge_messages(
         "你是极其苛刻的小说选题编辑。此时还没有宣传钩子，只审项目卡。字段写满、"
         "解释很长或声称能写500章都不能加分。只输出JSON。"
     )
+    authority = str(authoritative_seed_concept or "").strip()
+    candidate_angle = str(seed_concept or "").strip()
+    candidate_line = (
+        f"候选提炼角度={candidate_angle}\n"
+        if authority and candidate_angle and candidate_angle != authority
+        else ""
+    )
+    source_line = (
+        f"用户上位创意={authority}\n"
+        if authority
+        else "本轮没有用户上位创意；当前候选的原始创意仅作为本轮 raw pitch 身份参照，不构成用户事实。\n"
+    )
+    candidate_source_line = (
+        f"候选原始创意={candidate_angle}\n" if candidate_angle and not authority else ""
+    )
     user = (
         f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
-        f"原始创意={seed_concept}\n"
+        f"{source_line}"
+        f"{candidate_line}"
+        f"{candidate_source_line}"
         f"项目卡={json.dumps(kernel, ensure_ascii=False)}\n\n"
         f"{intent_text}"
-        "十一轴0-10：seed_fidelity 项目卡是否保留原始创意中的主角身份、核心异常与关键"
-        "关系；只要替换了其中任一核心事实，seed_fidelity不得超过4分。freshness 人物与"
+        + "十一轴0-10："
+        + _render_engine_source_fidelity_contract(authority)
+        + "freshness 人物与"
         "异常处境的核心组合是否明显区别于常见同类；"
         "click_seed 不看文案技巧，只看这个故事胚子是否让目标读者立刻想追问；"
         "action_conflict 眼前目标、有效阻力与双向代价是否咬合；"
         "reader_promise 主要体验与持续追读问题是否具体；character_choice 主角是否会"
         "不断面对正常聪明人也难解的选择；scene_generation 五个场面是否具体、彼此不同"
         "且由同一项目自然生出；promise_survival 开局异常首次兑现后是否仍持续产出核心"
-        "承诺，若次数会耗尽或谜底揭开后只能换主线不得超过4分；deformable_loop 前轮后果"
+        "承诺；" + _render_engine_horizon_contract(chapter_count) + "deformable_loop 前轮后果"
         "是否会改变下一轮，而非接一单"
         "再用同一能力；post_reveal_engine 三个揭晓后场面是否仍兑现同一承诺、使用不同"
-        "行动并产生积累，若只是继续查同一谜底或项目卡临时新增另一条主线不得超过4分；"
+        "行动并产生积累；"
         "genre_fidelity 是否兑现题材。声称能写500章不加分。若五个场面"
         "只是换人换地，scene_generation和deformable_loop不得超过4分。只输出JSON："
-        '{"seed_fidelity":0-10,"freshness":0-10,"click_seed":0-10,'
+        '{"seed_fidelity":0-10,"source_protagonist_name":"姓名或null","seed_identity_source_quote":"用户原文连续引文",'
+        '"candidate_identity_quote":"完整逐字引用protagonist_identity",'
+        '"identity_relation":"same|preserved|replaced|unknown","source_change_type":"supplement|replacement|none|unknown",'
+        '"freshness":0-10,"click_seed":0-10,'
         '"action_conflict":0-10,'
         '"reader_promise":0-10,"character_choice":0-10,'
         '"scene_generation":0-10,"promise_survival":0-10,'
         '"deformable_loop":0-10,"post_reveal_engine":0-10,"genre_fidelity":0-10,'
-        f'{intent_schema}'
-        '"reason":"40字内"}'
+        f"{intent_schema}"
+        '"reason":"简明具体说明；涉及源事实时同时给出源连续引文和候选字段逐字证据，不设固定字数上限"}'
     )
     return system, user
 
@@ -2456,6 +3487,7 @@ def _build_engine_batch_judge_messages(
     genre: str,
     sub_genre: str,
     chapter_count: int,
+    authoritative_seed_concept: str = "",
     intent_axes: tuple[tuple[str, str], ...] = (),
 ) -> tuple[str, str]:
     """Judge several premise cards in one independent call to avoid serial latency."""
@@ -2466,28 +3498,40 @@ def _build_engine_batch_judge_messages(
         "字段写满、解释很长或声称能写500章不能加分。只输出JSON。"
     )
     rows = [
-        {"index": index, "lane": lane, "seed": seed, "card": card}
+        {
+            "index": index,
+            "lane": lane,
+            "candidate_seed": seed,
+            "card": card,
+        }
         for index, (lane, seed, card) in enumerate(cards)
     ]
+    authority = str(authoritative_seed_concept or "").strip()
+    authority_line = f"用户上位创意={authority}\n" if authority else ""
+    seed_fidelity_instruction = _render_engine_source_fidelity_contract(authority)
     user = (
         f"题材={genre}（{sub_genre}）；目标={chapter_count}章\n"
+        f"{authority_line}"
         f"候选={json.dumps(rows, ensure_ascii=False)}\n\n"
         f"{intent_text}"
-        "逐项评分0-10：seed_fidelity保留原始主角/异常/关系；freshness核心组合新鲜；"
+        f"逐项评分0-10：{seed_fidelity_instruction}freshness核心组合新鲜；"
         "click_seed故事胚子想点；action_conflict目标阻力与自然后果咬合；reader_promise"
         "持续体验具体；character_choice能持续产生聪明人的两难；scene_generation五个"
-        "场面不同且由同一项目生出；promise_survival开局兑现后承诺仍在；"
+        "场面不同且由同一项目生出；"
+        f"{_render_engine_horizon_contract(chapter_count)}"
         "deformable_loop前轮后果改变下一轮；post_reveal_engine三个揭晓后场面仍兑现"
         "同一承诺、使用不同动作并留下积累；genre_fidelity由目标题材原生行动与资源"
-        "成立。替换原始事实、一次性谜底、接单换皮、继续查同一真相、临时换新主线，"
-        "对应轴不得超过4分。只输出JSON：{\"verdicts\":[{\"index\":0,"
-        "\"seed_fidelity\":0-10,\"freshness\":0-10,\"click_seed\":0-10,"
-        "\"action_conflict\":0-10,\"reader_promise\":0-10,"
-        "\"character_choice\":0-10,\"scene_generation\":0-10,"
-        "\"promise_survival\":0-10,\"deformable_loop\":0-10,"
-        "\"post_reveal_engine\":0-10,\"genre_fidelity\":0-10,"
+        '成立。替换原始事实、接单换皮不得通过。只输出JSON：{"verdicts":[{"index":0,'
+        '"seed_fidelity":0-10,"source_protagonist_name":"姓名或null",'
+        '"seed_identity_source_quote":"用户原文连续引文",'
+        '"candidate_identity_quote":"完整逐字引用protagonist_identity",'
+        '"identity_relation":"same|preserved|replaced|unknown","source_change_type":"supplement|replacement|none|unknown",'
+        '"freshness":0-10,"click_seed":0-10,"action_conflict":0-10,"reader_promise":0-10,'
+        '"character_choice":0-10,"scene_generation":0-10,'
+        '"promise_survival":0-10,"deformable_loop":0-10,'
+        '"post_reveal_engine":0-10,"genre_fidelity":0-10,'
         f"{intent_schema}"
-        "\"reason\":\"40字内\"}]}"
+        '"reason":"简明具体说明；涉及源事实时同时给出源连续引文和候选字段逐字证据，不设固定字数上限"}]}'
     )
     return system, user
 
@@ -2557,7 +3601,24 @@ def _story_architecture_audit(
             "report": {"reason": "story_architecture_missing"},
         }
     grammar = resolve_story_design_grammar(genre=genre, sub_genre=sub_genre)
-    architecture = dict(raw)
+    from bestseller.services.story_architecture_layout import restore_architecture_field_placement
+    try:
+        architecture, placement = restore_architecture_field_placement(raw)
+    except ValueError as exc:
+        return {"passed": False, "blocking_codes": [str(exc)],
+                "estimated_chapter_ceiling": 0, "report": {"reason": str(exc)}}
+    genre_contracts = architecture.get("genre_contracts")
+    if isinstance(genre_contracts, Mapping):
+        normalized_contracts = dict(genre_contracts)
+        if (
+            "host_identity_obligation" in grammar.required_contracts
+            and "host_identity_obligation" not in normalized_contracts
+            and isinstance(normalized_contracts.get("host_identity_debt"), Mapping)
+        ):
+            normalized_contracts["host_identity_obligation"] = dict(
+                normalized_contracts["host_identity_debt"]
+            )
+        architecture["genre_contracts"] = normalized_contracts
     architecture.update(
         {
             "schema_version": "story-architecture.v1",
@@ -2572,7 +3633,7 @@ def _story_architecture_audit(
         }
     )
     result = evaluate_story_viability(architecture, target_chapters=chapter_count)
-    return {**result, "architecture": architecture}
+    return {**result, "architecture": architecture, "placement_normalization": placement}
 
 
 _STORY_LAYER_AXES = (
@@ -2590,6 +3651,9 @@ def _build_story_layer_judge_messages(
     genre: str,
     sub_genre: str,
     audience_orientation: str = "",
+    authoritative_seed_concept: str = "",
+    candidate_seed: str = "",
+    target_chapters: int | None = None,
 ) -> tuple[str, str]:
     """故事层判卡（P0，2026-08-18 接线）。
 
@@ -2603,28 +3667,19 @@ def _build_story_layer_judge_messages(
     **不淘汰任何卡**。
     """
 
-    subset = {
-        key: card.get(key)
-        for key in (
-            "protagonist_identity",
-            "protagonist_private_desire",
-            "protagonist_flaw",
-            "current_goal",
-            "core_abnormality",
-            "deformable_loop",
-            "failure_cost",
-            "success_cost",
-            "reader_promise",
-            "emotional_promise",
-            "opening_crisis",
-            "difference_point",
-        )
-    }
     audience_line = (
         f"目标读者：{audience_orientation}频主流读者。"
         if str(audience_orientation or "").strip()
         else ""
     )
+    authority_lines = ""
+    if str(authoritative_seed_concept or "").strip():
+        authority_lines += (
+            f"【上位创意事实边界】{authoritative_seed_concept.strip()}\n"
+            "只能在同一本书内修正当前 card；不得换主角、能力源、核心目标或对手范围。\n"
+        )
+    if str(candidate_seed or "").strip():
+        authority_lines += f"【当前候选原始 seed】{candidate_seed.strip()}\n"
     system = (
         "你是商业长篇选题的故事层审稿人，只审项目卡文本本身。"
         "每一项判定都必须引用卡片原文作证据；按各项的引文规则执行，"
@@ -2632,31 +3687,37 @@ def _build_story_layer_judge_messages(
     )
     user = (
         f"{audience_line}题材：{genre}（{sub_genre}）\n"
-        f"【项目卡】{json.dumps(subset, ensure_ascii=False)}\n\n"
+        f"{authority_lines}【当前完整项目卡】{json.dumps(card, ensure_ascii=False)}\n\n"
         "五项判定（每项给 pass 布尔值 + 规定的引文字段）：\n"
-        "1. s1_wants_aggression 欲望攻性：protagonist_private_desire 与 current_goal 里，"
-        "是否至少有一件是『要拿到此刻还不属于他的东西』？quote=逐字引出那句话。"
-        "注意：挣回颜面、抵清欠款、洗清冤屈这类**恢复原状**的目标只是回到零，"
-        "不算拿到新东西；但『连本带利夺回并让对方付出代价』越过了原状线，算。"
-        "引不出（全是保住/守住/不被怎样/恢复原状）→ pass=false。\n"
-        "2. s2_stakes_upside 赌注有赢面：主角若达成目标，净得是否为正？"
-        "win_quote=引出『赢了得到什么』的原句，cost_quote=引出 success_cost 原句；"
-        "若成功的代价吞掉或反超收益（赢了也是灾难）→ pass=false。\n"
-        "3. s3_exclusivity 能力排他：core_abnormality 与 deformable_loop 里，"
-        "主角核心能力是否保持排他？若机制描述能力会扩散/复制/传染/转移给他人"
-        "→ pass=false，quote=该句。\n"
-        "4. s4_promise_survival 承诺可持续：deformable_loop 能否持续产生"
-        "同类但不同的局面？依赖一次性谜底、会耗尽的次数、或同一动作原样重复"
-        "→ pass=false，quote=依据句。\n"
+        "1. s1_wants_aggression 主动选择与行动：protagonist_private_desire 与 current_goal 里，"
+        "是否有一个具体、可观察、由主角主动选择的下一步行动，并会改变处境、关系或对真相的掌握？"
+        "quote=逐字引出那句话。保护、查明、洗清、修复、逃脱、阻止损失、守住重要之物，"
+        "以及夺取或反击都可以通过；主动不等于扩张、复仇或让对手付出代价。"
+        "Protection, investigation, exoneration, repair, escape, and prevention are valid agency;"
+        " agency does not require expansion or revenge."
+        "只有全是愿望口号、被动等待、没有行动对象与后果时才 pass=false。\n"
+        f"目标篇幅：{int(target_chapters) if target_chapters else '未指定'}章。\n"
+        "2. s2_stakes_upside 有效价值变化：主角若达成目标，是否获得可感知的故事价值变化？"
+        "win_quote=引出『赢了改变了什么』的原句，cost_quote=引出 success_cost 原句；"
+        "安全、清白、真相、关系修复、阻止损失都可以是价值变化，不要求扩张或占有新东西。"
+        "悲剧或高代价弧线也可以通过，只要代价与选择有因果，且没有抹掉故事要兑现的价值；"
+        "只有成功没有可感知价值，或代价让目标完全失去意义时才 pass=false。"
+        "A positive change may be safety, exoneration, truth, repair, or prevented loss; tragedy may pass when its cost is causally earned.\n"
+        "3. s3_mechanism_coherence（兼容旧key s3_exclusivity）机制自洽：core_abnormality 与 deformable_loop 里，"
+        "规则是否前后一致、读者能否理解主角如何行动？普通侦探、群像或无超能故事不要求能力独占；"
+        "只有卡片明确承诺‘只有主角独有/不可扩散’却自相矛盾时才 pass=false，quote=依据句。\n"
+        "4. s4_promise_survival 承诺在目标篇幅内可推进：deformable_loop 能否在目标章数内产生"
+        "足够的同类不同局面、递进压力与后果变化？终局谜底、有限次数或有限目标本身不是失败；"
+        "只有只能原样重复、没有递进或在目标篇幅内无法支撑承诺时才 pass=false，quote=依据句。\n"
         "5. s5_three_second_pitch 三秒可述：用一句大白话写出『主角接下来要赢什么』，"
         "这句话里不得出现卡片里的生造名词；写得出 → pass=true 并给 pitch 字段；"
         "写不出或必须先解释设定才能说清 → pass=false。\n\n"
-        "输出JSON：{\"s1_wants_aggression\":{\"pass\":true,\"quote\":\"…\"},"
-        "\"s2_stakes_upside\":{\"pass\":true,\"win_quote\":\"…\",\"cost_quote\":\"…\"},"
-        "\"s3_exclusivity\":{\"pass\":true,\"quote\":\"…\"},"
-        "\"s4_promise_survival\":{\"pass\":true,\"quote\":\"…\"},"
-        "\"s5_three_second_pitch\":{\"pass\":true,\"pitch\":\"…\"},"
-        "\"revise_direction\":\"任一false时给修正方向，只给方向不给措辞，≤40字；全过则空串\"}"
+        '输出JSON：{"s1_wants_aggression":{"pass":true,"quote":"…"},'
+        '"s2_stakes_upside":{"pass":true,"win_quote":"…","cost_quote":"…"},'
+        '"s3_exclusivity":{"pass":true,"quote":"…"},'
+        '"s4_promise_survival":{"pass":true,"quote":"…"},'
+        '"s5_three_second_pitch":{"pass":true,"pitch":"…"},'
+        '"revise_direction":"任一false时给修正方向，只给方向不给措辞，≤40字；全过则空串"}'
     )
     return system, user
 
@@ -2676,13 +3737,838 @@ def _parse_story_layer_verdict(
             verdict["axes"][axis] = {"pass": None}
             continue
         passed = entry.get("pass")
-        verdict["axes"][axis] = {
-            k: v for k, v in entry.items() if isinstance(k, str)
-        }
+        verdict["axes"][axis] = {k: v for k, v in entry.items() if isinstance(k, str)}
         if passed is False:
             verdict["failed_axes"].append(axis)
     verdict["revise_direction"] = str(payload.get("revise_direction") or "").strip()
     return verdict
+
+
+def _build_narrow_card_revision_context(
+    *,
+    card: Mapping[str, Any],
+    authoritative_seed_concept: str = "",
+    candidate_seed: str = "",
+    failed_axes: Sequence[str] = (),
+    directions: str = "",
+    story_layer: bool = False,
+) -> str:
+    """Attach the source, full current card, and a narrow edit boundary."""
+
+    lines = [
+        "\n\n【当前完整项目卡——未点名字段必须原样保留】",
+        json.dumps(dict(card), ensure_ascii=False),
+    ]
+    if str(authoritative_seed_concept or "").strip():
+        lines.extend(
+            [
+                "【上位创意事实边界】",
+                str(authoritative_seed_concept).strip(),
+                "只允许同书修正，不得换主角、能力源、核心目标、对手范围或核心承诺。",
+            ]
+        )
+    if str(candidate_seed or "").strip():
+        lines.extend(["【候选原始 seed】", str(candidate_seed).strip()])
+    lines.extend(
+        [
+            f"【仅修复这些失败轴】{'、'.join(str(item) for item in failed_axes)}",
+            f"【方向】{directions or '按失败轴给出的证据做最小修改'}",
+        ]
+    )
+    if story_layer:
+        allowed_fields = sorted(
+            {
+                field_name
+                for axis in failed_axes
+                for field_name in _STORY_LAYER_REPAIR_FIELDS.get(str(axis), ())
+            }
+        )
+        lines.extend(
+            [
+                "主动性修复只补充主角的具体选择、行动对象和后果；保留原有私人欲望。"
+                "保护、查明、洗清、修复和阻止损失不准被改写为复仇、扩张或让对手付出代价。",
+                "Agency repair adds a concrete choice and consequence while preserving the original desire;"
+                " protection or investigation must not become revenge or expansion.",
+                "【本次允许修改字段】" + ("、".join(allowed_fields) or "无"),
+                "主角身份、私人欲望、上位用户事实始终冻结；除上述允许字段外的模型输出将被框架丢弃。",
+            ]
+        )
+    lines.append("输出完整 JSON；除失败轴及其必要依赖外不得重写其他字段。")
+    return "\n".join(lines) + "\n"
+
+
+_STORY_LAYER_REPAIR_FIELDS: dict[str, frozenset[str]] = {
+    # Agency is repaired by adding a concrete choice and consequence while the
+    # protagonist's underlying desire remains frozen. This prevents the editor
+    # from turning protection, investigation, or exoneration into revenge.
+    "s1_wants_aggression": frozenset({"current_goal", "opening_crisis", "scene_seeds"}),
+    "s2_stakes_upside": frozenset({"success_cost", "failure_cost", "scene_seeds"}),
+    "s3_exclusivity": frozenset({"core_abnormality", "deformable_loop"}),
+    "s4_promise_survival": frozenset({"deformable_loop", "renewal_sources", "unit_families"}),
+    "s5_three_second_pitch": frozenset({"reader_promise", "current_goal"}),
+}
+
+
+def _constrain_story_layer_repair(
+    original: Mapping[str, Any],
+    revised: Mapping[str, Any],
+    failed_axes: Sequence[str],
+) -> dict[str, Any]:
+    """Apply only the fields owned by convicted story-layer axes.
+
+    The model still returns the complete card for schema compatibility, but the
+    framework refuses unrelated edits. In particular, S1 cannot rewrite the
+    protagonist's private desire, identity, core mechanism, or world contract.
+    """
+
+    allowed = frozenset(
+        field for axis in failed_axes for field in _STORY_LAYER_REPAIR_FIELDS.get(str(axis), ())
+    )
+    constrained = dict(original)
+    for field_name in allowed:
+        if field_name in revised:
+            constrained[field_name] = revised[field_name]
+    return constrained
+
+
+_NARROW_COMMERCIAL_EDIT_FIELDS = {
+    "freshness": frozenset(
+        {"difference_point", "scene_seeds", "post_reveal_scene_seeds", "expansion_axes"}
+    ),
+    "click_seed": frozenset({"difference_point", "scene_seeds"}),
+    "action_conflict": frozenset(
+        {"effective_resistance", "failure_cost", "success_cost", "scene_seeds"}
+    ),
+    "reader_promise": frozenset({"emotional_promise", "scene_seeds", "unit_families"}),
+    "character_choice": frozenset({"protagonist_flaw", "scene_seeds"}),
+    "scene_generation": frozenset({"scene_seeds", "unit_families", "unit_frequency"}),
+    "promise_survival": frozenset({"deformable_loop", "renewal_sources", "unit_families"}),
+    "deformable_loop": frozenset({"deformable_loop", "renewal_sources", "opposing_ecology"}),
+    "post_reveal_engine": frozenset(
+        {"post_reveal_scene_seeds", "renewal_sources", "expansion_axes"}
+    ),
+    "genre_fidelity": frozenset({"opposing_ecology", "emotional_promise", "scene_seeds"}),
+}
+
+
+def _narrow_field_text(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _narrow_field_text(item)]
+    if isinstance(value, Mapping):
+        leaves: list[str] = []
+        for item in value.values():
+            leaves.extend(_narrow_field_text(item))
+        return leaves
+    return []
+
+
+async def _attempt_source_fact_repair(
+    *,
+    kernel,
+    seed_concept,
+    premise_seed,
+    genre,
+    sub_genre,
+    chapter_count,
+    intent_axes,
+    engine_axes,
+    engine_floor,
+    failed_engine_axes,
+    fidelity_evidence,
+    engine_scores,
+    verdict,
+    premise_judge_fn,
+    gen_fn,
+    result,
+):
+    """Restore evidenced source omissions once; never waive a failed gate."""
+    from bestseller.services.concept_source_repair import repair_concept_source
+
+    repair_runs: list[str] = []
+    final_source_verdict: dict[str, Any] = {}
+    attempted_patch: dict[str, Any] = {}
+    diagnosed_facts: list[dict[str, Any]] = []
+
+    async def source_call(fn, system, user):
+        raw, run_id = await fn(system, user)
+        if run_id is not None:
+            result.llm_run_ids.append(run_id)
+            repair_runs.append(str(run_id))
+        return _parse_json_object(raw) or {}
+
+    async def diagnose_source(card, authority):
+        return await source_call(
+            premise_judge_fn,
+            "你核对小说项目卡与用户原文的事实，不评分商业性。只输出JSON。",
+            "只判断能否局部补回遗漏的源事实。任何事实替换、身份变化、语义不确定，"
+            "decision必须为replacement或unknown；不得为保留候选而改判遗漏。"
+            "仅遗漏时decision=missing_only，missing_facts为1至3项，每项source_quote"
+            "必须是原文连续逐字引文，candidate_field只能是core_abnormality、"
+            "opening_crisis、reader_promise。已在卡片任意字段表达的事实不算遗漏。"
+            "每项必须且只能包含source_quote和candidate_field两个键，不得添加解释或关系字段。"
+            '返回结构：{"decision":"missing_only|replacement|unknown",'
+            '"missing_facts":[{"source_quote":"原文逐字引文","candidate_field":"opening_crisis"}]}。'
+            "decision不是missing_only时missing_facts返回空数组。"
+            "若补回事实需要改其他字段或剧情结构，返回unknown。\n用户原文："
+            + authority
+            + "\n项目卡："
+            + json.dumps(card, ensure_ascii=False),
+        )
+
+    async def patch_source(card, authority, diagnosis):
+        nonlocal attempted_patch, diagnosed_facts
+        diagnosed_facts = diagnosis["missing_facts"]
+        attempted_patch = await source_call(
+            gen_fn,
+            "你只补回小说项目卡遗漏的用户事实。只输出JSON字段补丁。",
+            "仅返回诊断点名字段的完整新值，保留字段已有事实，只补回原文遗漏；"
+            "不得改主角、目标、对手、剧情结构，不得新增用户原文不支持的异常机制。"
+            "补丁键必须精确等于被点名字段集合。\n用户原文："
+            + authority
+            + "\n诊断："
+            + json.dumps(diagnosis, ensure_ascii=False)
+            + "\n项目卡："
+            + json.dumps(card, ensure_ascii=False),
+        )
+        return attempted_patch
+
+    async def rejudge_source(card, authority):
+        nonlocal final_source_verdict
+        system, user = _build_engine_judge_messages(
+            kernel=card,
+            genre=genre,
+            sub_genre=sub_genre,
+            chapter_count=chapter_count,
+            seed_concept=premise_seed,
+            authoritative_seed_concept=authority,
+            intent_axes=intent_axes,
+        )
+        user += (
+            "\n另核验这些遗漏是否已在指定字段中恢复："
+            + json.dumps(diagnosed_facts, ensure_ascii=False)
+            + "。JSON另返回source_restoration_evidence数组，与遗漏逐项对应："
+            "source_quote原样引用上列原文，candidate_field原样返回，"
+            "candidate_quote逐字引用该字段中真正恢复该事实的完整文字。"
+            "不能用身份相同、其他字段或高分代替恢复证据；未恢复不得提供肯定证据。"
+        )
+        final_source_verdict = await source_call(premise_judge_fn, system, user)
+        scores, _ = _parse_complete_axis_scores(final_source_verdict, engine_axes)
+        evidence = _validate_engine_seed_fidelity_evidence(
+            final_source_verdict,
+            authoritative_seed=authority,
+            kernel=card,
+        )
+        restorations = final_source_verdict.get("source_restoration_evidence")
+        if not isinstance(restorations, list) or len(restorations) != len(diagnosed_facts):
+            return False
+        expected = {(item["source_quote"], item["candidate_field"]) for item in diagnosed_facts}
+        matched = set()
+        for item in restorations:
+            if not isinstance(item, dict):
+                return False
+            pair = (item.get("source_quote"), item.get("candidate_field"))
+            quote = item.get("candidate_quote")
+            if (
+                not all(isinstance(value, str) for value in pair)
+                or pair not in expected
+                or pair in matched
+                or not isinstance(quote, str)
+                or not quote.strip()
+                or quote not in str(card.get(pair[1]) or "")
+            ):
+                return False
+            matched.add(pair)
+        if matched != expected:
+            return False
+        return bool(
+            scores is not None
+            and all(score >= engine_floor for score in scores.values())
+            and evidence.get("status") == "verified"
+            and final_source_verdict.get("source_change_type") in {"none", "supplement"}
+        )
+
+    source_repair = await repair_concept_source(
+        kernel,
+        seed_concept,
+        diagnose_source,
+        patch_source,
+        rejudge_source,
+        initial_failed_axes=failed_engine_axes,
+        initial_seed_fidelity_evidence=fidelity_evidence,
+        initial_scores=engine_scores,
+        engine_floor=engine_floor,
+    )
+    source_status = {
+        "status": source_repair.status,
+        "reason": source_repair.reason,
+        "diagnosis": source_repair.diagnosis,
+        "changed_fields": list(source_repair.changed_fields),
+        "llm_run_ids": repair_runs,
+        "original_card": dict(kernel),
+        "attempted_patch": attempted_patch,
+        "original_verdict": verdict,
+        "final_verdict": final_source_verdict,
+    }
+    return source_repair, source_status, final_source_verdict
+
+
+def _validate_narrow_commercial_failure_evidence(
+    verdict: Mapping[str, Any] | None,
+    *,
+    card: Mapping[str, Any],
+    failed_axes: Sequence[str],
+    seed_fidelity_verified: bool,
+    engine_floor: float = 7.0,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    if not failed_axes:
+        return False, "no_repair_needed", None
+    if not seed_fidelity_verified:
+        return False, "seed_fidelity_unverified", None
+    if len(failed_axes) != 1:
+        return False, "multiple_failed_axes", None
+    axis = str(failed_axes[0])
+    editable = _NARROW_COMMERCIAL_EDIT_FIELDS.get(axis)
+    if editable is None or not isinstance(verdict, Mapping):
+        return (
+            False,
+            "non_commercial_or_protected_axis" if editable is None else "evidence_missing",
+            None,
+        )
+    raw_evidence = verdict.get("failure_evidence")
+    if not isinstance(raw_evidence, list) or not raw_evidence:
+        return False, "evidence_missing_or_multiple", None
+    relevant = []
+    for item in raw_evidence:
+        if not isinstance(item, Mapping):
+            return False, "evidence_invalid", None
+        item_axis = str(item.get("axis") or "")
+        if item_axis == axis:
+            relevant.append(item)
+            continue
+        # Judges sometimes attach advice to an explicitly passing axis. Keep
+        # it in the original verdict for audit, but never give that advice
+        # edit authority or let it cancel an independently evidenced repair.
+        score = verdict.get(item_axis)
+        if (
+            item_axis not in _NARROW_COMMERCIAL_EDIT_FIELDS
+            or isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not math.isfinite(score)
+            or score < engine_floor
+        ):
+            return False, "axis_mismatch", None
+    if len(relevant) != 1:
+        return False, "evidence_missing_or_multiple" if relevant else "axis_mismatch", None
+    evidence = relevant[0]
+    if not isinstance(evidence, Mapping) or str(evidence.get("axis") or "") != axis:
+        return False, "axis_mismatch" if isinstance(evidence, Mapping) else "evidence_invalid", None
+    field = str(evidence.get("candidate_field") or "").strip()
+    if field not in editable or field not in card:
+        return False, "field_missing_or_protected", None
+    if not isinstance(evidence.get("quote"), str) or not isinstance(
+        evidence.get("defect") or evidence.get("specific_defect"), str
+    ):
+        return False, "evidence_text_invalid", None
+    quote = evidence["quote"].strip()
+    defect = str(evidence.get("defect") or evidence.get("specific_defect") or "").strip()
+    if not quote:
+        return False, "quote_missing", None
+    value = card.get(field)
+    if not any(quote in item for item in _narrow_field_text(value)):
+        return False, "quote_not_found", None
+    if not defect:
+        return False, "specific_defect_missing", None
+    return (
+        True,
+        "",
+        {
+            "axis": axis,
+            "candidate_field": field,
+            "quote": quote,
+            "defect": defect,
+            "minimal_fix": str(evidence.get("minimal_fix") or "").strip(),
+        },
+    )
+
+
+def _narrow_uuid(value: Any) -> str | None:
+    try:
+        parsed = UUID(str(value))
+        return str(parsed) if parsed.int else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _narrow_card_hash(card: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(dict(card), ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _engine_review_disagreement(
+    initial_verdict: Mapping[str, Any],
+    recheck_verdict: Mapping[str, Any],
+    *,
+    engine_axes: Sequence[str],
+    engine_floor: float,
+    initial_review_mode: str = "batch",
+    recheck_review_mode: str = "single",
+) -> dict[str, Any]:
+    """Record review-context disagreement without treating it as a defect.
+
+    The existing narrow gate still decides promotion. This record is evidence
+    that a card received different review contexts, so changed axes are not
+    silently promoted to confirmed failures.
+    """
+
+    def scores(verdict: Mapping[str, Any]) -> dict[str, Any]:
+        return {axis: verdict.get(axis) for axis in engine_axes if axis in verdict}
+
+    initial_scores = scores(initial_verdict)
+    recheck_scores = scores(recheck_verdict)
+    changed_axes = [
+        axis
+        for axis in engine_axes
+        if axis in initial_scores
+        and axis in recheck_scores
+        and initial_scores[axis] != recheck_scores[axis]
+    ]
+
+    def failed(values: Mapping[str, Any]) -> list[str]:
+        return [
+            axis
+            for axis in engine_axes
+            if isinstance(values.get(axis), (int, float)) and values[axis] < engine_floor
+        ]
+
+    return {
+        "kind": "review_context_disagreement",
+        "initial_review_mode": str(initial_review_mode or "unknown"),
+        "recheck_review_mode": str(recheck_review_mode or "unknown"),
+        "context_changed": str(initial_review_mode or "") != str(recheck_review_mode or ""),
+        "initial_scores": initial_scores,
+        "recheck_scores": recheck_scores,
+        "changed_axes": changed_axes,
+        "initial_failed_axes": failed(initial_scores),
+        "recheck_failed_axes": failed(recheck_scores),
+        "confirmed_defect": False,
+        "gate_decision": "existing_single_axis_evidence_gate",
+    }
+
+
+async def _attempt_narrow_commercial_repair(
+    *,
+    card: Mapping[str, Any],
+    dimension: str,
+    premise_seed: str,
+    initial_verdict: Mapping[str, Any],
+    failed_axes: Sequence[str],
+    authoritative_seed_concept: str,
+    genre: str,
+    sub_genre: str,
+    chapter_count: int,
+    intent_axes: Sequence[tuple[str, str]],
+    engine_axes: Sequence[str],
+    engine_floor: float,
+    premise_judge_fn: GeneratorFn,
+    gen_fn: GeneratorFn,
+    result: ConceptTournamentResult,
+    initial_review_mode: str = "batch",
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    status = {
+        "status": "unresolved",
+        "failed_axes": list(failed_axes),
+        "original_card_hash": _narrow_card_hash(card),
+        "context_hash": _narrow_card_hash(
+            {
+                "card": card,
+                "dimension": dimension,
+                "candidate_seed": premise_seed,
+                "authoritative_seed": authoritative_seed_concept,
+                "initial_verdict": initial_verdict,
+                "failed_axes": list(failed_axes),
+                "engine_axes": list(engine_axes),
+                "engine_floor": engine_floor,
+                "genre": genre,
+                "sub_genre": sub_genre,
+                "chapter_count": chapter_count,
+                "intent_axes": list(intent_axes),
+            }
+        ),
+    }
+    if len(failed_axes) != 1 or failed_axes[0] not in _NARROW_COMMERCIAL_EDIT_FIELDS:
+        status["reason"] = "multiple_or_noncommercial_failed_axes"
+        return None, status
+    fidelity = _validate_engine_seed_fidelity_evidence(
+        initial_verdict, authoritative_seed=authoritative_seed_concept, kernel=card
+    )
+    if fidelity.get("status") not in {"verified", "not_applicable"}:
+        status["reason"] = "seed_fidelity_unverified"
+        return None, status
+    axis = str(failed_axes[0])
+    recheck_system, recheck_user = _build_engine_judge_messages(
+        kernel=dict(card),
+        genre=genre,
+        sub_genre=sub_genre,
+        chapter_count=chapter_count,
+        seed_concept=premise_seed,
+        authoritative_seed_concept=authoritative_seed_concept,
+        intent_axes=intent_axes,
+    )
+    recheck_system += (
+        "\n单卡商业复核：自由检查全部评分轴和原始seed，不预设结论。"
+        "每个低于地板的轴须提供failure_evidence；不存在低分时允许空列表。"
+        "批评须引用卡片实际字段，不得将seed已经明示的事实称为新增；不要臆测第二卷或强加失明、寿命成本。"
+    )
+    recheck_user += (
+        "\n在上述同一响应JSON顶层增加failure_evidence数组，不要嵌套review_contract或failure_evidence_contract。"
+        + json.dumps(
+            {
+                "floor": engine_floor,
+                "failure_evidence": [
+                    {
+                        "axis": "actual below-floor axis",
+                        "candidate_field": "one existing field name",
+                        "quote": "continuous literal quote from one field leaf",
+                        "defect": "specific evidenced defect",
+                        "minimal_fix": "bounded remedy preserving core facts and explicit action order",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    phase_run_ids: set[str] = set()
+
+    async def call_phase(
+        phase: str,
+        callback: GeneratorFn,
+        system: str,
+        user: str,
+    ) -> str | None:
+        status[phase + "_prompt_hash"] = _narrow_card_hash({"system": system, "user": user})
+        try:
+            raw, run_id = await callback(system, user)
+        except Exception as exc:
+            status.update(
+                {"reason": phase + "_exception", "error_type": type(exc).__name__, "phase": phase}
+            )
+            return None
+        valid_id = _narrow_uuid(run_id)
+        status.update({phase + "_run_id": valid_id, phase + "_raw": raw})
+        if valid_id is None:
+            status["reason"] = phase + "_run_id_invalid"
+            return None
+        if valid_id in phase_run_ids:
+            status["reason"] = phase + "_run_id_reused"
+            return None
+        phase_run_ids.add(valid_id)
+        result.llm_run_ids.append(UUID(valid_id))
+        return raw
+
+    raw = await call_phase("recheck", premise_judge_fn, recheck_system, recheck_user)
+    status["recheck_input_hash"] = _narrow_card_hash(card)
+    if raw is None:
+        return None, status
+    recheck = _parse_json_object(raw)
+    recheck_scores, missing = _parse_complete_axis_scores(recheck, tuple(engine_axes))
+    recheck_failed = [
+        name for name in engine_axes if recheck_scores and recheck_scores[name] < engine_floor
+    ]
+    recheck_fidelity = _validate_engine_seed_fidelity_evidence(
+        recheck, authoritative_seed=authoritative_seed_concept, kernel=card
+    )
+    status["recheck_seed_fidelity_evidence"] = recheck_fidelity
+    status["evidence_correction"] = {"attempts": 0}
+    status["disagreement"] = _engine_review_disagreement(
+        initial_verdict,
+        recheck if isinstance(recheck, Mapping) else {},
+        engine_axes=engine_axes,
+        engine_floor=engine_floor,
+        initial_review_mode=initial_review_mode,
+        recheck_review_mode="single",
+    )
+    ok, reason, evidence = _validate_narrow_commercial_failure_evidence(
+        recheck,
+        card=card,
+        failed_axes=recheck_failed,
+        seed_fidelity_verified=recheck_fidelity.get("status") in {"verified", "not_applicable"},
+        engine_floor=engine_floor,
+    )
+    # A judge can identify the right field and defect but quote a shortened
+    # fragment that is not literally present (for example, dropping one
+    # classifier from a scene seed). Allow exactly one evidence-only receipt
+    # correction. It may not change scores, axes, the card, or source facts;
+    # the strict validator remains the authority for the corrected quote.
+    if (
+        not ok
+        and reason == "quote_not_found"
+        and isinstance(recheck, Mapping)
+        and recheck_scores is not None
+        and recheck_failed == [axis]
+    ):
+        raw_original_evidence = recheck.get("failure_evidence")
+        status["evidence_correction"] = {
+            "attempts": 1,
+            "original_failure_evidence": raw_original_evidence,
+        }
+        target_field = None
+        original_target_evidence = None
+        if isinstance(raw_original_evidence, list):
+            for item in raw_original_evidence:
+                if isinstance(item, Mapping) and str(item.get("axis") or "") == axis:
+                    target_field = str(item.get("candidate_field") or "").strip()
+                    original_target_evidence = item
+                    break
+        if (
+            target_field in _NARROW_COMMERCIAL_EDIT_FIELDS.get(axis, ())
+            and target_field in card
+            and isinstance(original_target_evidence, Mapping)
+        ):
+            correction_system = (
+                "你是证据回执校正器。只校正failure_evidence中的quote文字，"
+                "禁止修改任何评分、失败轴、candidate_field、defect、minimal_fix、卡片内容或seed事实。"
+                "quote必须是下方指定字段叶子值中的连续原文，不能同义改写、拼接多个列表项或补写不存在的字。"
+                '只输出JSON：{"failure_evidence":[{"axis":"...","candidate_field":"...",'
+                '"quote":"...","defect":"...","minimal_fix":"..."}]}。'
+            )
+            correction_user = json.dumps(
+                {
+                    "axis": axis,
+                    "candidate_field": target_field,
+                    "field_value_leaves": _narrow_field_text(card.get(target_field)),
+                    "original_failure_evidence": [dict(original_target_evidence)],
+                },
+                ensure_ascii=False,
+            )
+            corrected_raw = await call_phase(
+                "evidence_correction",
+                premise_judge_fn,
+                correction_system,
+                correction_user,
+            )
+            corrected = _parse_json_object(corrected_raw) if corrected_raw is not None else None
+            score_changed = False
+            corrected_ok = False
+            corrected_reason = ""
+            corrected_evidence = None
+            if isinstance(corrected, Mapping):
+                for score_axis, score_value in recheck_scores.items():
+                    if score_axis in corrected and corrected.get(score_axis) != score_value:
+                        score_changed = True
+                        break
+            if score_changed:
+                status["evidence_correction"].update(
+                    {"status": "rejected", "reason": "scores_changed"}
+                )
+                reason = "evidence_correction_scores_changed"
+            elif isinstance(corrected, Mapping):
+                corrected_items = corrected.get("failure_evidence")
+                correction_reason = ""
+                if set(corrected) != {"failure_evidence"}:
+                    correction_reason = "schema_extra_keys"
+                elif not isinstance(corrected_items, list) or len(corrected_items) != 1:
+                    correction_reason = "evidence_shape_changed"
+                elif not isinstance(corrected_items[0], Mapping):
+                    correction_reason = "evidence_item_invalid"
+                else:
+                    corrected_item = corrected_items[0]
+                    original_defect = str(
+                        original_target_evidence.get("defect")
+                        or original_target_evidence.get("specific_defect")
+                        or ""
+                    ).strip()
+                    corrected_defect = str(
+                        corrected_item.get("defect") or corrected_item.get("specific_defect") or ""
+                    ).strip()
+                    original_minimal_fix = str(
+                        original_target_evidence.get("minimal_fix") or ""
+                    ).strip()
+                    corrected_minimal_fix = str(corrected_item.get("minimal_fix") or "").strip()
+                    if str(corrected_item.get("axis") or "") != axis:
+                        correction_reason = "axis_changed"
+                    elif corrected_item.get("candidate_field") != target_field:
+                        correction_reason = "candidate_field_changed"
+                    elif corrected_defect != original_defect:
+                        correction_reason = "defect_changed"
+                    elif corrected_minimal_fix != original_minimal_fix:
+                        correction_reason = "minimal_fix_changed"
+                if correction_reason:
+                    status["evidence_correction"].update(
+                        {"status": "rejected", "reason": correction_reason}
+                    )
+                    reason = "evidence_correction_" + correction_reason
+                else:
+                    corrected_verdict = dict(recheck_scores)
+                    corrected_verdict["failure_evidence"] = corrected_items
+                    corrected_ok, corrected_reason, corrected_evidence = (
+                        _validate_narrow_commercial_failure_evidence(
+                            corrected_verdict,
+                            card=card,
+                            failed_axes=recheck_failed,
+                            seed_fidelity_verified=True,
+                            engine_floor=engine_floor,
+                        )
+                    )
+                if correction_reason:
+                    pass
+                elif corrected_ok:
+                    evidence = corrected_evidence
+                    ok = True
+                    reason = ""
+                    status["evidence_correction"].update(
+                        {
+                            "status": "accepted",
+                            "corrected_failure_evidence": corrected.get("failure_evidence"),
+                        }
+                    )
+                elif not corrected_ok:
+                    status["evidence_correction"].update(
+                        {"status": "rejected", "reason": corrected_reason}
+                    )
+                    reason = "evidence_correction_" + corrected_reason
+            else:
+                status["evidence_correction"].update(
+                    {"status": "rejected", "reason": "response_invalid"}
+                )
+                reason = "evidence_correction_response_invalid"
+        else:
+            status["evidence_correction"].update(
+                {"status": "rejected", "reason": "field_not_eligible"}
+            )
+            reason = "quote_not_found"
+    if (
+        not ok
+        or not isinstance(recheck, Mapping)
+        or recheck_scores is None
+        or missing
+        or recheck_failed != [axis]
+    ):
+        status["reason"] = reason or "recheck_not_exactly_single_axis"
+        status["recheck_failed_axes"] = recheck_failed
+        return None, status
+    edit_system = (
+        "你是窄范围项目卡编辑。只按已验证的单一失败轴和证据做一次最小编辑；禁止修改主角身份、"
+        "能力源、初始危机、核心目标、对手范围、核心承诺；禁止删除或新增字段；原文明示动作顺序必须保持。"
+        '只输出JSON：{"card":完整卡片}。'
+    )
+    edit_user = _build_narrow_card_revision_context(
+        card=card,
+        authoritative_seed_concept=authoritative_seed_concept,
+        candidate_seed=premise_seed,
+        failed_axes=(axis,),
+        directions=str(evidence.get("minimal_fix") or evidence.get("defect") or ""),
+    ) + json.dumps(
+        {
+            "failure_evidence": evidence,
+            "allowed_fields": sorted(_NARROW_COMMERCIAL_EDIT_FIELDS[axis]),
+        },
+        ensure_ascii=False,
+    )
+    status["failure_evidence"] = evidence
+    edited_raw = await call_phase("editor", gen_fn, edit_system, edit_user)
+    if edited_raw is None:
+        return None, status
+    payload = _parse_json_object(edited_raw)
+    edited = payload.get("card") if isinstance(payload, Mapping) else None
+    if not isinstance(edited, Mapping) or set(edited) != set(card):
+        status["reason"] = "editor_card_keys_changed"
+        return None, status
+    changed = [key for key in card if card.get(key) != edited.get(key)]
+    if not changed or not set(changed).issubset(_NARROW_COMMERCIAL_EDIT_FIELDS[axis]):
+        status.update(
+            {"reason": "editor_changed_protected_or_unrelated_field", "changed_fields": changed}
+        )
+        return None, status
+    if any(type(edited[key]) is not type(card[key]) for key in changed):
+        status["reason"] = "editor_field_type_changed"
+        return None, status
+    if _premise_card_audit(dict(edited)):
+        status["reason"] = "editor_card_incomplete"
+        return None, status
+    system, user = _build_engine_judge_messages(
+        kernel=dict(edited),
+        genre=genre,
+        sub_genre=sub_genre,
+        chapter_count=chapter_count,
+        seed_concept=premise_seed,
+        authoritative_seed_concept=authoritative_seed_concept,
+        intent_axes=intent_axes,
+    )
+    if isinstance(edited.get("story_architecture"), Mapping):
+        architecture_audit = _story_architecture_audit(
+            edited,
+            genre=genre,
+            sub_genre=sub_genre,
+            chapter_count=chapter_count,
+            effect_skills=edited["story_architecture"].get("selected_effect_skills", ()),
+        )
+        status["story_architecture_audit"] = architecture_audit
+        if not architecture_audit.get("passed"):
+            status["reason"] = "edited_story_architecture_invalid"
+            return None, status
+    user += (
+        "\n本次为编辑后的完整卡片复审。逐项检查场景与未改动的story_architecture是否一致，"
+        "包括明确动作顺序、能力来源、核心目标、承诺和目标章节规模；不能仅看新鲜感字段。"
+        "新场景与核心事实冲突时须在seed_fidelity或对应轴明确扣分并给出原文证据。"
+    )
+    status.update({"final_input_hash": _narrow_card_hash(edited), "changed_fields": changed})
+    final_raw = await call_phase("rejudge", premise_judge_fn, system, user)
+    if final_raw is None:
+        return None, status
+    status["final_raw"] = final_raw
+    verdict = _parse_json_object(final_raw)
+    scores, missing = _parse_complete_axis_scores(verdict, tuple(engine_axes))
+    old_scores, _ = _parse_complete_axis_scores(initial_verdict, tuple(engine_axes))
+    final_fidelity = _validate_engine_seed_fidelity_evidence(
+        verdict, authoritative_seed=authoritative_seed_concept, kernel=edited
+    )
+    status["final_seed_fidelity_evidence"] = final_fidelity
+    new_failed = [name for name in engine_axes if scores and scores[name] < engine_floor]
+    if (
+        scores is None
+        or missing
+        or final_fidelity.get("status") not in {"verified", "not_applicable"}
+        or new_failed
+        or old_scores is None
+        or sum(scores.values()) <= sum(old_scores.values())
+    ):
+        status.update(
+            {"reason": "rejudge_no_improvement_or_new_failure", "new_failed_axes": new_failed}
+        )
+        return None, status
+    status.update(
+        {
+            "status": "promoted",
+            "scores": scores,
+            "final_verdict": dict(verdict) if isinstance(verdict, Mapping) else None,
+            "edited_card_hash": _narrow_card_hash(edited),
+        }
+    )
+    return dict(edited), status
+
+
+def _repair_recheck_rejection(
+    votes: Sequence[Mapping[str, Any]],
+    *,
+    required_votes: int,
+    decision_axes: Sequence[str],
+    initial_convicted: Sequence[str],
+    recheck_convicted: Sequence[str],
+) -> str | None:
+    """Unknown/partial reviews cannot prove improvement over a paid original."""
+    if len(votes) < max(2, required_votes) or any(
+        not isinstance((vote.get("axes", {}).get(axis) or {}).get("pass"), bool)
+        for vote in votes
+        for axis in decision_axes
+    ):
+        return "recheck_insufficient_evidence"
+    if len(recheck_convicted) >= len(initial_convicted):
+        return "recheck_no_improvement"
+    return None
 
 
 # ── E 层编辑判官（2026-08-18 榜单市场调研蒸馏，docs/concept-quality-system-
@@ -2711,64 +4597,59 @@ def _build_expansion_editor_messages(
     *,
     genre: str,
     sub_genre: str,
+    authoritative_seed_concept: str = "",
+    candidate_seed: str = "",
 ) -> tuple[str, str]:
     """编辑视角设定质量判官——判据锚定真实榜单书（判官读例证≠写手读例证，
     例证只进判官 prompt、绝不进生成 prompt，不违种词铁律）。"""
 
-    subset = {
-        key: card.get(key)
-        for key in (
-            "protagonist_identity",
-            "core_abnormality",
-            "current_goal",
-            "deformable_loop",
-            "failure_cost",
-            "success_cost",
-            "reader_promise",
-            "opening_crisis",
-            "difference_point",
-            "scene_seeds",
-        )
-    }
     system = (
         "你是网文平台资深选题编辑，用在榜书的标准审一张项目卡的设定质量。"
         "每项判定必须按规定给出引文或改写句作证据；给不出就按该项规则判否。"
         "只输出JSON。"
     )
+    authority_lines = ""
+    if str(authoritative_seed_concept or "").strip():
+        authority_lines += (
+            f"【上位创意事实边界】{authoritative_seed_concept.strip()}\n"
+            "只能修正当前 card 的设定表达，不得换主角、能力源、核心目标或对手范围。\n"
+        )
+    if str(candidate_seed or "").strip():
+        authority_lines += f"【当前候选原始 seed】{candidate_seed.strip()}\n"
     user = (
         f"题材：{genre}（{sub_genre}）\n"
-        f"【项目卡】{json.dumps(subset, ensure_ascii=False)}\n\n"
+        f"{authority_lines}【当前完整项目卡】{json.dumps(card, ensure_ascii=False)}\n\n"
         "六项判定（每项给 pass 布尔值 + 规定的证据字段）：\n"
-        "1. e1_rule_demonstrable 规则可演示：核心异常/金手指能否用第一章内"
-        "一个≤500字的事件演示，且演示有明确的输入→输出差"
-        "（参照《聚宝仙盆》：丹药放入→一日后两颗且升品）？quote=引出卡里"
-        "写明输入输出差的句子；引不出（异常只有名词或氛围、演示无收益差）"
-        "→ pass=false。\n"
-        "2. e2_constraint_plot 限制生剧情：核心能力是否带至少一条限制/代价，"
-        "且从这条限制能推出≥3个不同的情节？plots=列出这3个情节各一句话"
-        "（参照《每天六千万，只能在县城花》：限制条款本身就是全书剧情）；"
-        "列不满3个 → pass=false。注意「独占/别人用不了」不是限制。\n"
-        "3. e3_paradox_engine 悖论引擎（加分项）：设定是否含『越X越Y』"
-        "反直觉引擎或可叠加复利（参照《洪武苟神》越不想升官越被当肱骨）？"
-        "quote=该机制句。没有 → pass=false（不定罪，只记录）。\n"
-        "4. e4_world_rule_first 世界规则先行：能否把设定改写成两句——"
-        "第一句是**不含主角**的世界规则，第二句是主角的例外位置"
-        "（参照《凡骨》：世界=灵骨四品方可修行/主角=凡骨誓登仙）？"
-        "world_rule=你写出的第一句，exception=第二句；写不出不含主角的"
-        "世界规则句（异常凭空只属于主角、在世界体系里没有位置）"
-        "→ pass=false。这是『无法自圆其说』的形式化判定。\n"
+        "1. e1_rule_demonstrable 规则/行动可演示：仅当卡片已设定超凡能力或特殊规则时，"
+        "用第一章内≤500字的事件核对使用条件、可观察结果及限制，不要求凭空增加收益或代价；"
+        "普通职业规章、取证流程和人际约定不属于金手指。若是现实/无超凡能力题材，"
+        "用可观察的行动、证据、关系后果和现实阻力写清一次选择如何改变局面。"
+        "quote=引出卡里这条因果链的原句；只有名词、氛围或口号、没有可观察差异→pass=false。\n"
+        "2. e2_constraint_plot 限制/阻力生剧情：若有能力或规则，限制/代价必须能推出≥3个"
+        "不同情节；若无超凡能力，则从职业边界、资源稀缺、制度阻力、关系代价或证据风险"
+        "中指出一条可持续约束，并列出由它造成的≥3个选择与反制。plots=每个情节一句话；"
+        "列不满3个→pass=false。不能把独占、主角特殊或空泛困难当作限制，也不得补装未选系统。\n"
+        "3. e3_paradox_engine 悖论引擎（加分项）：检查设定是否有反直觉因果、可叠加复利，"
+        "或现实题材中行动越深入越扩大代价/关系张力的机制；quote=机制原句。没有→pass=false，"
+        "只记录，不定罪，不要求所有题材安装超能力。\n"
+        "4. e4_world_rule_first 世界/处境先行：若有超凡规则，第一句写不含主角的世界规则，"
+        "第二句写主角在其中的例外位置、限制或可验证权限；若是现实/无超凡能力题材，"
+        "第一句写独立于主角的环境、制度或社会约束，第二句写主角所处位置及其选择后果。"
+        "world_rule=第一句，exception=第二句；若异常只属于主角且无法放回题材世界，或现实"
+        "处境没有外部因果→pass=false。这是自洽判定，不要求强行制造系统或能力。\n"
         "5. e5_witness_slot 见证槽位：卡里是否指明了**谁**将目睹主角的"
         "收益兑现（具名角色/群体）？quote=该句；只有主角自知自爽 → pass=false。\n"
         "6. e6_goal_quantified 目标数值化（加分项）：是否有带数字的目标或"
         "可核验终点？quote=该句。没有 → pass=false（不定罪，只记录）。\n\n"
-        "输出JSON：{\"e1_rule_demonstrable\":{\"pass\":true,\"quote\":\"…\"},"
-        "\"e2_constraint_plot\":{\"pass\":true,\"plots\":[\"…\",\"…\",\"…\"]},"
-        "\"e3_paradox_engine\":{\"pass\":false,\"quote\":\"\"},"
-        "\"e4_world_rule_first\":{\"pass\":true,\"world_rule\":\"…\",\"exception\":\"…\"},"
-        "\"e5_witness_slot\":{\"pass\":true,\"quote\":\"…\"},"
-        "\"e6_goal_quantified\":{\"pass\":false,\"quote\":\"\"},"
-        "\"revise_direction\":\"e1/e2/e4/e5任一false时给修正方向，"
-        "只给方向不给措辞，≤40字；否则空串\"}"
+        '输出JSON：{"e1_rule_demonstrable":{"pass":true,"quote":"…"},'
+        '"e2_constraint_plot":{"pass":true,"plots":["…","…","…"]},'
+        '"e3_paradox_engine":{"pass":false,"quote":""},'
+        '"e4_world_rule_first":{"pass":true,"world_rule":"…","exception":"…"},'
+        '"e5_witness_slot":{"pass":true,"quote":"…"},'
+        '"e6_goal_quantified":{"pass":false,"quote":""},'
+        '"revise_direction":"e1/e2/e4任一false时给修正方向，'
+        "只给方向不给措辞，≤40字；只能细化卡片已有能力、行动、证据、阻力和后果，"
+        '不得添加未选系统/超能力/规则；否则空串"}'
     )
     return system, user
 
@@ -2782,12 +4663,15 @@ def _build_engine_kernel_repair_messages(
     seed_concept: str,
     card: dict[str, Any],
     missing_fields: list[str],
+    authoritative_seed_concept: str = "",
     seed_support: dict[str, Any] | None = None,
     audience_orientation: str = "",
     cost_style: str = "standard",
     tone_preference: str = "",
     effect_skills: tuple[str, ...] | list[str] = (),
     creation_intent_block: str = "",
+    retry_feedback: str = "",
+    primary_effect_contract: Mapping[str, Any] | None = None,
 ) -> tuple[str, str]:
     """Repair malformed structure once without changing the premise itself.
 
@@ -2805,12 +4689,15 @@ def _build_engine_kernel_repair_messages(
         lane=lane,
         chapter_count=chapter_count,
         seed_concept=seed_concept,
+        authoritative_seed_concept=authoritative_seed_concept,
         seed_support=seed_support,
         audience_orientation=audience_orientation,
         cost_style=cost_style,
         tone_preference=tone_preference,
         effect_skills=effect_skills,
         creation_intent_block=creation_intent_block,
+        retry_feedback=retry_feedback,
+        primary_effect_contract=primary_effect_contract,
     )
     repair = (
         "\n\n【PREMISE_CARD_REPAIR】上次项目卡的JSON结构不完整。"
@@ -2838,7 +4725,7 @@ def _build_hook_copy_repair_messages(
         f"开局：{candidate.opening_crisis}\n机制：{candidate.mechanism}\n"
         f"裁判反馈：{feedback}\n"
         "保留原故事事实，改成35-80字单句。优先使用普通动词和具体名词，删除抽象解释、"
-        "多层修饰和读者必须回读的指代。只输出JSON：{\"concept\":\"修复后一句话\"}"
+        '多层修饰和读者必须回读的指代。只输出JSON：{"concept":"修复后一句话"}'
     )
     return system, user
 
@@ -2847,13 +4734,25 @@ def _build_seriality_repair_messages(
     *,
     candidate: ConceptCandidate,
     genre: str,
+    sub_genre: str = "",
     chapter_count: int,
     feedback: str,
+    seed_concept: str = "",
+    authoritative_seed_concept: str = "",
+    tone_preference: str = "",
+    effect_skills: Sequence[str] = (),
+    creation_intent_block: str = "",
 ) -> tuple[str, str]:
     system, base = _build_seriality_messages(
         candidate=candidate,
         genre=genre,
+        sub_genre=sub_genre,
         chapter_count=chapter_count,
+        seed_concept=seed_concept,
+        authoritative_seed_concept=authoritative_seed_concept,
+        tone_preference=tone_preference,
+        effect_skills=effect_skills,
+        creation_intent_block=creation_intent_block,
     )
     current = {
         "core_promise_invariant": candidate.core_promise_invariant,
@@ -2869,7 +4768,7 @@ def _build_seriality_repair_messages(
         "accumulation_tracks": list(candidate.accumulation_tracks),
         "phase_transitions": list(candidate.phase_transitions),
         "opposing_ecology": list(candidate.opposing_ecology),
-        "mystery_ladder": list(candidate.question_ladder),
+        "forward_question_ladder": list(candidate.question_ladder),
         "ch50": candidate.ch50,
         "endgame_direction": candidate.endgame_direction,
     }
@@ -2906,6 +4805,64 @@ _FLOOR_AXIS_LABELS: tuple[tuple[str, str, float], ...] = (
 
 _PROMPT_FAMILY_VERSION = "v2"
 
+_SERIALITY_JUDGE_AXES: tuple[str, ...] = (
+    "renewability",
+    "escalation",
+    "anti_reset",
+    "coherence",
+    "promise_survival",
+    "unit_density",
+)
+
+
+def _seriality_severe_collapse(
+    scores: Mapping[str, Any],
+    cfg: Mapping[str, Any] | None = None,
+) -> bool:
+    """Keep a narrow veto for a persistent, multi-axis seriality collapse.
+
+    The general seriality judge remains advisory because its ranking validity is
+    not strong enough for broad kill authority.  A live canary exposed the
+    opposite failure mode: the advisory branch erased a verdict where the core
+    promise was already exhausted, renewability was near the floor, and most
+    axes agreed the project could not keep changing.  This policy therefore
+    requires collapse in at least one load-bearing axis (renewability, promise
+    survival, or distinct unit density), together with configurable cross-axis
+    consensus.  A second narrow shape also has kill authority: the core promise
+    is already exhausted *and* the candidate cannot supply enough distinct story
+    units.  That pair is itself corroboration; one noisy score can never trigger
+    either branch.
+    """
+
+    config = cfg or {}
+    raw_policy = config.get("seriality_severe_collapse")
+    policy = raw_policy if isinstance(raw_policy, Mapping) else {}
+    if policy.get("enabled", True) is False:
+        return False
+    try:
+        values = {axis: float(scores[axis]) for axis in _SERIALITY_JUDGE_AXES}
+    except (KeyError, TypeError, ValueError):
+        return False
+    renewability_max = float(policy.get("renewability_max", 4.0))
+    promise_survival_max = float(policy.get("promise_survival_max", 4.0))
+    unit_density_max = float(policy.get("unit_density_max", 4.0))
+    exhausted_promise_unit_density_max = float(
+        policy.get("exhausted_promise_unit_density_max", 5.0)
+    )
+    low_axis_floor = float(policy.get("low_axis_floor", 6.0))
+    min_low_axes = max(2, int(policy.get("min_low_axes", 3)))
+    low_axes = sum(value < low_axis_floor for value in values.values())
+    load_bearing_collapse = (
+        values["renewability"] <= renewability_max
+        or values["promise_survival"] <= promise_survival_max
+        or values["unit_density"] <= unit_density_max
+    )
+    exhausted_promise_pair = (
+        values["promise_survival"] <= promise_survival_max
+        and values["unit_density"] <= exhausted_promise_unit_density_max
+    )
+    return exhausted_promise_pair or (load_bearing_collapse and low_axes >= min_low_axes)
+
 
 def prompt_version_stamp(system_prompt: str, user_prompt: str) -> str:
     """``v2+<内容指纹>``——版本号随 prompt 内容变化。
@@ -2919,9 +4876,7 @@ def prompt_version_stamp(system_prompt: str, user_prompt: str) -> str:
     指纹取 system+user 的 sha256 前 8 位，同 prompt 恒定、改一个字就变。
     """
 
-    digest = hashlib.sha256(
-        f"{system_prompt}\x00{user_prompt}".encode("utf-8")
-    ).hexdigest()[:8]
+    digest = hashlib.sha256(f"{system_prompt}\x00{user_prompt}".encode("utf-8")).hexdigest()[:8]
     return f"{_PROMPT_FAMILY_VERSION}+{digest}"
 
 
@@ -2993,9 +4948,7 @@ def _hard_floor_failed_axes(
     when they exceed the configured allowance, in which case every miss is
     named so the retry feedback / near-miss selector sees the full picture."""
 
-    catastrophe_floor = float(
-        hard_floors.get("catastrophe_floor", _FLOOR_CATASTROPHE)
-    )
+    catastrophe_floor = float(hard_floors.get("catastrophe_floor", _FLOOR_CATASTROPHE))
     predictable_catastrophe = float(
         hard_floors.get(
             "predictable_catastrophe",
@@ -3026,6 +4979,113 @@ def _hard_floor_failed_axes(
     return []
 
 
+_HOOK_SCORE_AXES = (
+    "freshness",
+    "click",
+    "predictable",
+    "character_logic",
+    "mechanism_causality",
+    "genre_fidelity",
+    "plain_language",
+    "story_motion",
+)
+
+
+def _parse_finite_hook_scores(payload: Mapping[str, Any] | None) -> dict[str, float] | None:
+    """Validate the original judge fields before any clamp/default logic."""
+
+    if not isinstance(payload, Mapping):
+        return None
+    scores: dict[str, float] = {}
+    for axis in _HOOK_SCORE_AXES:
+        value = payload.get(axis)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        if not math.isfinite(number) or not 0.0 <= number <= 10.0:
+            return None
+        scores[axis] = number
+    return scores
+
+
+def _commercial_findings(
+    scores: Mapping[str, float],
+    hard_floors: Mapping[str, Any],
+    *,
+    axes: frozenset[str],
+    composite: float | None = None,
+    winner_min: float | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Return explicit, serializable P1 evidence for commercial misses."""
+
+    findings: list[dict[str, Any]] = []
+    catastrophe_floor = float(hard_floors.get("catastrophe_floor", _FLOOR_CATASTROPHE))
+    for axis in sorted(axes):
+        if axis not in scores:
+            continue
+        value = float(scores[axis])
+        if axis == "predictable":
+            floor = float(hard_floors.get("predictable_max", 5.5))
+            missed = value > floor
+            comparison = "max"
+        else:
+            defaults = {key: default for key, _label, default in _FLOOR_AXIS_LABELS}
+            floor = float(hard_floors.get(axis, defaults.get(axis, 0.0)))
+            missed = value < floor
+            comparison = "min"
+        if missed:
+            findings.append(
+                {
+                    "category": "commercial_quality",
+                    "priority": "P1",
+                    "axis": axis,
+                    "score": value,
+                    "threshold": floor,
+                    "comparison": comparison,
+                    "catastrophic": value < catastrophe_floor if comparison == "min" else False,
+                }
+            )
+    if composite is not None and winner_min is not None and float(composite) < float(winner_min):
+        findings.append(
+            {
+                "category": "commercial_quality",
+                "priority": "P1",
+                "axis": "composite",
+                "score": float(composite),
+                "threshold": float(winner_min),
+                "comparison": "min",
+                "catastrophic": False,
+            }
+        )
+    return tuple(findings)
+
+
+def _protected_hook_floor_failures(
+    scores: Mapping[str, float], hard_floors: Mapping[str, Any]
+) -> list[str]:
+    """Keep causal, actionable, and genre fidelity axes hard in advisory mode."""
+
+    catastrophe = float(hard_floors.get("catastrophe_floor", _FLOOR_CATASTROPHE))
+    defaults = {key: (label, default) for key, label, default in _FLOOR_AXIS_LABELS}
+    catastrophes: list[str] = []
+    soft: list[str] = []
+    for axis in sorted(_PROTECTED_HOOK_AXES):
+        value = float(scores.get(axis, 0.0))
+        label, default = defaults.get(axis, (axis, 0.0))
+        floor = float(hard_floors.get(axis, default))
+        if value < catastrophe:
+            catastrophes.append(label)
+        elif value < floor:
+            soft.append(label)
+    if catastrophes:
+        return catastrophes + soft
+    return (
+        soft
+        if len(soft) > max(0, int(hard_floors.get("soft_miss_allowance", _SOFT_MISS_ALLOWANCE)))
+        else []
+    )
+
+
 def _build_judge_messages(
     *,
     candidate: ConceptCandidate,
@@ -3034,10 +5094,13 @@ def _build_judge_messages(
     references: list[dict[str, str]],
     audience_orientation: str = "",
 ) -> tuple[str, str]:
-    ref_lines = "\n".join(
-        f"- 《{r.get('title', '')}》：{str(r.get('blurb', '')).strip()[:80]}"
-        for r in references[:4]
-    ) or "（无参照）"
+    ref_lines = (
+        "\n".join(
+            f"- 《{r.get('title', '')}》：{str(r.get('blurb', '')).strip()[:80]}"
+            for r in references[:4]
+        )
+        or "（无参照）"
+    )
     # 频道读者定义在 click 分诞生处：中性编辑口味放过的黑话概念,下游 persona
     # 判官 0/3 否决时已无重试可救(真机第6轮)。click/plain_language 必须按频道
     # 主流读者判。
@@ -3133,6 +5196,91 @@ def _parse_json_object(raw: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _compact_seed_evidence(value: Any) -> str:
+    return "".join(str(value or "").split())
+
+
+def _validate_engine_seed_fidelity_evidence(
+    verdict: Mapping[str, Any] | None,
+    *,
+    authoritative_seed: str,
+    kernel: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate judge identity evidence against the original seed and card."""
+    if not str(authoritative_seed or "").strip():
+        return {"status": "not_applicable", "reason": "no_authoritative_seed"}
+    item = verdict if isinstance(verdict, Mapping) else {}
+    source_quote = str(item.get("seed_identity_source_quote") or "").strip()
+    candidate_quote = str(item.get("candidate_identity_quote") or "").strip()
+    relation = str(item.get("identity_relation") or "unknown").strip().lower()
+    source_name_raw = item.get("source_protagonist_name")
+    source_name = str(source_name_raw).strip() if source_name_raw is not None else ""
+    source_compact = _compact_seed_evidence(source_quote)
+    seed_compact = _compact_seed_evidence(authoritative_seed)
+    identity = str(kernel.get("protagonist_identity") or "").strip()
+    identity_compact = _compact_seed_evidence(identity)
+    base = {
+        "source_quote": source_quote,
+        "candidate_quote": candidate_quote,
+        "source_protagonist_name": source_name or None,
+        "identity_relation": relation,
+    }
+    if "source_protagonist_name" not in item:
+        return {"status": "unknown", "reason": "source_protagonist_name_missing", **base}
+    if source_name_raw is not None and (not isinstance(source_name_raw, str) or not source_name):
+        return {"status": "invalid", "reason": "source_protagonist_name_invalid", **base}
+    if not source_compact or source_compact.lower() == "unknown":
+        return {"status": "unknown", "reason": "source_identity_quote_missing", **base}
+    if source_compact not in seed_compact:
+        return {
+            "status": "invalid",
+            "reason": "source_identity_quote_not_in_authoritative_seed",
+            **base,
+        }
+    if not candidate_quote or candidate_quote.lower() == "unknown":
+        return {"status": "unknown", "reason": "candidate_identity_quote_missing", **base}
+    candidate_compact = _compact_seed_evidence(candidate_quote)
+    if candidate_compact != identity_compact:
+        return {
+            "status": "invalid",
+            "reason": "candidate_identity_quote_not_in_protagonist_identity",
+            **base,
+        }
+    if relation not in {"same", "preserved", "equivalent", "replaced", "unknown"}:
+        return {"status": "invalid", "reason": "identity_relation_invalid", **base}
+    if relation == "replaced":
+        return {"status": "invalid", "reason": "protagonist_identity_replaced", **base}
+    if source_name:
+        name_compact = _compact_seed_evidence(source_name)
+        if name_compact not in source_compact:
+            return {
+                "status": "invalid",
+                "reason": "source_protagonist_name_not_in_source_quote",
+                **base,
+            }
+        if name_compact not in seed_compact:
+            return {
+                "status": "invalid",
+                "reason": "source_protagonist_name_not_in_authoritative_seed",
+                **base,
+            }
+        if name_compact not in identity_compact:
+            return {
+                "status": "invalid",
+                "reason": "source_protagonist_name_not_in_protagonist_identity",
+                **base,
+            }
+        if name_compact not in candidate_compact:
+            return {
+                "status": "invalid",
+                "reason": "candidate_identity_quote_omits_source_name",
+                **base,
+            }
+    if relation == "unknown":
+        return {"status": "unknown", "reason": "identity_relation_unknown", **base}
+    return {"status": "verified", "reason": "identity_evidence_verified", **base}
+
+
 def _parse_complete_axis_scores(
     verdict: dict[str, Any] | None,
     axes: tuple[str, ...],
@@ -3169,6 +5317,7 @@ def _parse_candidate(raw: str, dimension: str) -> ConceptCandidate | None:
         if isinstance(ladder_raw, list)
         else ()
     )
+
     def _tuple_field(key: str) -> tuple[str, ...]:
         value = payload.get(key)
         return (
@@ -3251,9 +5400,7 @@ def _parse_hook_variants(raw: str, dimension: str) -> list[ConceptCandidate]:
     return variants
 
 
-def _apply_seriality_payload(
-    candidate: ConceptCandidate, raw: str
-) -> ConceptCandidate | None:
+def _apply_seriality_payload(candidate: ConceptCandidate, raw: str) -> ConceptCandidate | None:
     """Attach proof fields while keeping every frozen story-seed field unchanged."""
 
     from dataclasses import replace
@@ -3288,7 +5435,7 @@ def _apply_seriality_payload(
         progress_bar=str(payload.get("progress_bar") or "").strip(),
         unit_frequency=str(payload.get("unit_frequency") or "").strip(),
         unit_count_estimate=_int_field("unit_count_estimate"),
-        question_ladder=_tuple_field("mystery_ladder"),
+        question_ladder=(_tuple_field("forward_question_ladder") or _tuple_field("mystery_ladder")),
         ch50=str(payload.get("ch50") or "").strip(),
         renewal_sources=_tuple_field("renewal_sources"),
         accumulation_tracks=_tuple_field("accumulation_tracks"),
@@ -3296,6 +5443,84 @@ def _apply_seriality_payload(
         opposing_ecology=_tuple_field("opposing_ecology"),
         endgame_direction=str(payload.get("endgame_direction") or "").strip(),
     )
+
+
+_BatchItem = TypeVar("_BatchItem")
+_BatchResult = TypeVar("_BatchResult")
+_tournament_batch_index: ContextVar[int | None] = ContextVar(
+    "tournament_batch_index", default=None
+)
+_TOURNAMENT_EXECUTION_ERRORS = (
+    ExecutionBudgetError, AdoptedSourceUnavailable, SQLAlchemyError, OSError,
+)
+
+
+async def _run_tournament_batches(
+    items: Sequence[_BatchItem],
+    operation: Callable[[int, _BatchItem], Awaitable[_BatchResult]],
+    *,
+    concurrency: int,
+    stage: str,
+) -> list[_BatchResult]:
+    """Bound independent calls; merge deterministically and drain on failure.
+
+    Operations must own their database session and return results, not mutate
+    the shared candidate pool. A failed batch must never leave paid calls
+    running in the background while the caller starts a new tournament.
+    """
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    started = time.monotonic()
+    completed = 0
+    execution_error: BaseException | None = None
+
+    async def run(index: int, item: _BatchItem) -> _BatchResult:
+        nonlocal completed, execution_error
+        async with semaphore:
+            if execution_error is not None:
+                raise execution_error
+
+            def report(status: str) -> None:
+                emit_activity(
+                    "concept_tournament_progress",
+                    {
+                        "stage": stage,
+                        "status": status,
+                        "index": index,
+                        "total": len(items),
+                        "completed": completed,
+                        "elapsed_seconds": round(time.monotonic() - started, 1),
+                    },
+                )
+
+            report("started")
+            token = _tournament_batch_index.set(index)
+            try:
+                value = await operation(index, item)
+            except _TOURNAMENT_EXECUTION_ERRORS as exc:
+                execution_error = exc
+                raise
+            finally:
+                _tournament_batch_index.reset(token)
+            completed += 1
+            report("completed")
+            return value
+
+    tasks = [asyncio.create_task(run(index, item)) for index, item in enumerate(items)]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except _TOURNAMENT_EXECUTION_ERRORS:
+        # Already admitted siblings may hold paid results. Let their isolated
+        # transactions settle before surfacing the execution boundary.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    except BaseException as exc:
+        if execution_error is not None and isinstance(exc, Exception):
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise execution_error
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def _default_generator(
@@ -3306,29 +5531,35 @@ async def _default_generator(
     max_tokens: int = 900,
     logical_role: str = "planner",
     model_catalog_key: str | None = None,
+    isolated_session: bool = False,
 ) -> GeneratorFn:
     async def _call(system_prompt: str, user_prompt: str) -> tuple[str, Any]:
         from bestseller.services.llm import LLMCompletionRequest, complete_text
 
-        completion = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role=logical_role,
-                model_tier="strong",
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                fallback_response="{}",
-                prompt_template=template,
-                prompt_version=prompt_version_stamp(system_prompt, user_prompt),
-                max_tokens_override=max_tokens,
-                model_catalog_key=model_catalog_key,
-                metadata={
-                    "concept_tournament_stage": template,
-                    "model_route": model_catalog_key or "role-default",
-                },
-            ),
+        request = LLMCompletionRequest(
+            logical_role=logical_role,
+            model_tier="strong",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response="{}",
+            prompt_template=template,
+            prompt_version=prompt_version_stamp(system_prompt, user_prompt),
+            max_tokens_override=max_tokens,
+            model_catalog_key=model_catalog_key,
+            sample_slot=_tournament_batch_index.get(),
+            metadata={
+                "concept_tournament_stage": template,
+                "model_route": model_catalog_key or "role-default",
+            },
         )
+        if isolated_session:
+            from bestseller.services.planning_concurrency import run_in_isolated_session
+
+            completion = await run_in_isolated_session(
+                session, lambda lane: complete_text(lane, settings, request)
+            )
+        else:
+            completion = await complete_text(session, settings, request)
         return completion.content or "", completion.llm_run_id
 
     return _call
@@ -3378,9 +5609,7 @@ def _prefer_ontology_clean(
             for field in ("concept", "mechanism", "hook_question", "progress_bar")
         )
         try:
-            hits = detect_genre_native_ontology_violations(
-                surface, genre_intent_contract
-            )
+            hits = detect_genre_native_ontology_violations(surface, genre_intent_contract)
         except Exception:  # pragma: no cover — never fail the tournament
             hits = ()
         if hits:
@@ -3404,6 +5633,63 @@ def _prefer_ontology_clean(
     return clean
 
 
+async def _review_seriality_finalists_with_backups(
+    contenders: Sequence[ConceptCandidate],
+    *,
+    finalist_count: int,
+    review_candidate: Callable[[ConceptCandidate], Awaitable[ConceptCandidate]],
+) -> list[ConceptCandidate]:
+    """Review distinct-premise primaries, then spend spare slots on failures.
+
+    A primary that passes must not consume the backup opportunity belonging to a
+    different premise whose primary failed.  The review budget counts actual
+    callback invocations, so rejected primaries and their backups share one
+    hard cap and a passing backup stops its own premise's scan.
+    """
+
+    budget = max(0, int(finalist_count))
+    if budget == 0:
+        return []
+    ordered = sorted(contenders, key=lambda candidate: candidate.composite or 0.0, reverse=True)
+    primaries: list[ConceptCandidate] = []
+    seen_premises: set[str] = set()
+    for contender in ordered:
+        premise_key = contender.dimension.split(":", 1)[0]
+        if premise_key in seen_premises:
+            continue
+        seen_premises.add(premise_key)
+        primaries.append(contender)
+        if len(primaries) >= budget:
+            break
+
+    primary_concepts = {candidate.concept for candidate in primaries}
+    backups_by_premise: dict[str, list[ConceptCandidate]] = {}
+    for contender in ordered:
+        if contender.concept in primary_concepts:
+            continue
+        premise_key = contender.dimension.split(":", 1)[0]
+        backups_by_premise.setdefault(premise_key, []).append(contender)
+
+    reviewed: list[ConceptCandidate] = []
+    failed_premises: list[str] = []
+    for primary in primaries:
+        expanded = await review_candidate(primary)
+        reviewed.append(expanded)
+        if expanded.rejected_reason is not None:
+            failed_premises.append(primary.dimension.split(":", 1)[0])
+
+    reviewed_count = len(reviewed)
+    for premise_key in failed_premises:
+        backups = backups_by_premise.get(premise_key, [])
+        while reviewed_count < budget and backups:
+            expanded = await review_candidate(backups.pop(0))
+            reviewed.append(expanded)
+            reviewed_count += 1
+            if expanded.rejected_reason is None:
+                break
+    return reviewed
+
+
 async def run_concept_tournament(
     session: Any,
     settings: Any,
@@ -3420,6 +5706,7 @@ async def run_concept_tournament(
     premise_judge: GeneratorFn | None = None,
     rng: random.Random | None = None,
     seed_concept: str = "",
+    authoritative_seed: bool = False,
     retry_feedback: str = "",
     audience_orientation: str = "",
     cost_style: str = "standard",
@@ -3430,8 +5717,10 @@ async def run_concept_tournament(
     allow_death_theme: bool | None = None,
     genre_intent_contract: Any = None,
     market_competitors: Sequence[Mapping[str, Any]] = (),
+    candidate_boundary_check: Callable[[ConceptCandidate], Sequence[str]] | None = None,
+    primary_effect_contract: Mapping[str, Any] | None = None,
 ) -> ConceptTournamentResult:
-    """跑一轮概念淘汰赛。异常转成 winner=None，由调用方按目标篇幅决定是否阻断。
+    """跑一轮概念淘汰赛。创意失败返回 winner=None；执行边界异常原样传播。
 
     四个模型工序均可注入（测试）；``rng`` 可注入固定维度抽样。
 
@@ -3448,13 +5737,57 @@ async def run_concept_tournament(
         return ConceptTournamentResult()
 
     result = ConceptTournamentResult()
+    commercial_advisory = is_commercial_gate_advisory(cfg)
+    result.commercial_gate_mode = "advisory" if commercial_advisory else "strict"
+    distilled_reference_block, distilled_reference_source_receipt = (
+        _distilled_creative_reference_payload(genre=genre, sub_genre=sub_genre)
+    )
+    if distilled_reference_source_receipt:
+        # The renderer has already verified the source packages. Keep a compact
+        # receipt in the tournament result so downstream persistence can prove
+        # this was consumed by the active creative path.
+        distilled_reference_receipt = {
+            "status": "prepared",
+            "genre": genre,
+            "sub_genre": sub_genre,
+            "phase": "architecture",
+            "block_sha256": hashlib.sha256(distilled_reference_block.encode("utf-8")).hexdigest(),
+            **distilled_reference_source_receipt,
+        }
+        result.distilled_reference_receipt = distilled_reference_receipt
     try:
+
+        def _boundary_reasons(candidate: ConceptCandidate) -> tuple[str, ...]:
+            """Run the caller-owned boundary check and keep only stable codes."""
+
+            if candidate_boundary_check is None:
+                return ()
+            try:
+                raw_reasons = candidate_boundary_check(candidate)
+            except _TOURNAMENT_EXECUTION_ERRORS:
+                raise
+            except Exception:
+                logger.warning("candidate boundary check failed", exc_info=True)
+                return ("CANDIDATE_BOUNDARY_CHECK_FAILED",)
+            if isinstance(raw_reasons, str):
+                raw_reasons = (raw_reasons,)
+            return tuple(
+                dict.fromkeys(str(reason).strip() for reason in raw_reasons if str(reason).strip())
+            )
+
+        def _apply_boundary_rejection(candidate: ConceptCandidate) -> ConceptCandidate:
+            reasons = _boundary_reasons(candidate)
+            if not reasons:
+                return candidate
+            reason = "建书选项/反污染门失败: " + "/".join(reasons)
+            if candidate.rejected_reason:
+                reason += "；" + candidate.rejected_reason
+            return replace(candidate, rejected_reason=reason)
+
         banned = resolve_banned_cliches(genre, sub_genre, cfg)
-        result.banned_cliches = banned
+        result.default_cliche_references = banned
         n_candidates = max(2, int(cfg.get("n_candidates", 4)))
-        candidate_prompt_mode = str(
-            cfg.get("candidate_prompt_mode") or "current"
-        ).strip().lower()
+        candidate_prompt_mode = str(cfg.get("candidate_prompt_mode") or "current").strip().lower()
         pool = [str(d) for d in (cfg.get("dimension_pool") or []) if str(d).strip()]
         rand = rng if rng is not None else random.Random()
         # 有建书要求时，别把候选摊到框架自己的九条路线上。那是固定轮转，用户选
@@ -3480,31 +5813,40 @@ async def run_concept_tournament(
             )
             dimensions = list(source_dimensions[:n_candidates])
         else:
-            control_count = min(
-                2, max(1, int(cfg.get("control_candidates", 2))), n_candidates - 1
-            )
-            hybrid_count = (
-                min(max(1, n_candidates - control_count), len(pool)) if pool else 0
-            )
+            control_count = min(2, max(1, int(cfg.get("control_candidates", 2))), n_candidates - 1)
+            hybrid_count = min(max(1, n_candidates - control_count), len(pool)) if pool else 0
             controls = [_CONTROL_DIMENSION, _CHARACTER_CONTROL_DIMENSION][:control_count]
-            dimensions = (
-                rand.sample(pool, hybrid_count) if hybrid_count else []
-            ) + controls
+            dimensions = (rand.sample(pool, hybrid_count) if hybrid_count else []) + controls
 
         using_default_generator = generator is None
         using_default_judge = judge is None
-        generation_model_key = str(cfg.get("generation_model_key") or "").strip() or None
-        judge_model_key = str(cfg.get("judge_model_key") or "").strip() or None
-        finalist_judge_model_key = (
-            str(cfg.get("finalist_judge_model_key") or "").strip() or None
+        batch_concurrency = max(
+            1,
+            min(
+                4,
+                int(
+                    getattr(
+                        getattr(settings, "pipeline", None),
+                        "concept_tournament_batch_concurrency",
+                        1,
+                    )
+                ),
+            ),
         )
+        generation_model_key = str(cfg.get("generation_model_key") or "").strip() or None
+        # An explicit book binding wins for generation; the configured M3 key
+        # remains the fallback when no model was selected. Critic keys below
+        # stay explicit so evaluation remains independently routed.
+        from bestseller.services.llm import get_conception_model_catalog_key
+
+        generation_model_key = get_conception_model_catalog_key() or generation_model_key
+        judge_model_key = str(cfg.get("judge_model_key") or "").strip() or None
+        finalist_judge_model_key = str(cfg.get("finalist_judge_model_key") or "").strip() or None
         raw_idea_judge_model_key = (
-            str(cfg.get("raw_idea_judge_model_key") or "").strip()
-            or finalist_judge_model_key
+            str(cfg.get("raw_idea_judge_model_key") or "").strip() or finalist_judge_model_key
         )
         premise_judge_model_key = (
-            str(cfg.get("premise_judge_model_key") or "").strip()
-            or finalist_judge_model_key
+            str(cfg.get("premise_judge_model_key") or "").strip() or finalist_judge_model_key
         )
         result.generation_model_key = generation_model_key
         result.judge_model_key = judge_model_key
@@ -3544,6 +5886,7 @@ async def run_concept_tournament(
                 session,
                 settings,
                 template="concept_tournament_raw_idea_pool",
+                isolated_session=batch_concurrency > 1,
                 max_tokens=max(3500, int(cfg.get("raw_idea_pool_max_tokens", 6000))),
                 logical_role="planner",
                 model_catalog_key=generation_model_key,
@@ -3625,6 +5968,7 @@ async def run_concept_tournament(
                 session,
                 settings,
                 template="concept_tournament_raw_idea_rank",
+                isolated_session=batch_concurrency > 1,
                 max_tokens=max(3000, int(cfg.get("raw_idea_rank_max_tokens", 4500))),
                 logical_role="critic",
                 model_catalog_key=raw_idea_judge_model_key,
@@ -3642,15 +5986,14 @@ async def run_concept_tournament(
         avoid_block = _render_avoid_mechanisms_block(avoid_mechanisms or [])
 
         # ── 1) 候选生成 ────────────────────────────────────────────────
+        assert gen_fn is not None and pool_fn is not None
         build_candidate_messages = _candidate_message_builder(cfg)
         result.candidate_prompt_mode = candidate_prompt_mode
         candidates: list[ConceptCandidate] = []
         raw_pitch_by_seed: dict[str, dict[str, Any]] = {}
         work_items = [(dimension, seed_concept) for dimension in dimensions]
         if candidate_prompt_mode == "engine_first":
-            raw_idea_prompt_arm = str(
-                cfg.get("raw_idea_prompt_arm") or "enhanced"
-            ).strip().lower()
+            raw_idea_prompt_arm = str(cfg.get("raw_idea_prompt_arm") or "enhanced").strip().lower()
             if raw_idea_prompt_arm not in {
                 "minimal",
                 "methodology",
@@ -3659,9 +6002,7 @@ async def run_concept_tournament(
                 "guarded",
                 "enhanced",
             }:
-                raise ValueError(
-                    f"unsupported raw_idea_prompt_arm: {raw_idea_prompt_arm}"
-                )
+                raise ValueError(f"unsupported raw_idea_prompt_arm: {raw_idea_prompt_arm}")
             result.raw_idea_prompt_arm = raw_idea_prompt_arm
             pool_count = max(
                 n_candidates,
@@ -3672,43 +6013,94 @@ async def run_concept_tournament(
                 int(cfg.get("raw_idea_generation_batch_size", pool_count)),
             )
             focus_values = cfg.get("raw_idea_batch_focuses") or []
-            batch_focuses = [
-                str(value).strip()
-                for value in focus_values
-                if str(value).strip()
-            ] if isinstance(focus_values, list) else []
+            batch_focuses = (
+                [str(value).strip() for value in focus_values if str(value).strip()]
+                if isinstance(focus_values, list)
+                else []
+            )
             parsed_pool: list[tuple[str, str]] = []
             seen_seeds: set[str] = set()
-            async def _generate_pool_batch(batch_count: int, focus_hint: str) -> None:
-                """One pool call; absorbs its ideas into the shared pool."""
+            result.raw_idea_pool_stats = {
+                "target": pool_count,
+                "contract_enforced": raw_idea_prompt_arm == "author_pitch",
+                "requested": 0,
+                "parsed": 0,
+                "valid": 0,
+                "invalid": 0,
+                "deduplicated": 0,
+                "topup_calls": 0,
+                "complete": False,
+                "failure": None,
+            }
+
+            async def _generate_pool_batch(
+                batch_index: int,
+                batch_count: int,
+            ) -> tuple[str, Any, int, int]:
+                """Return a batch; only the ordered reducer mutates the pool."""
+                focus_hint = (
+                    batch_focuses[batch_index % len(batch_focuses)]
+                    if batch_focuses and batch_count == 1
+                    else ""
+                )
                 pool_system, pool_user = _build_raw_idea_pool_messages(
                     genre=genre,
                     sub_genre=sub_genre,
                     count=batch_count,
+                    chapter_count=chapter_count,
                     seed_concept=seed_concept,
+                    authoritative_seed=authoritative_seed,
                     prompt_arm=raw_idea_prompt_arm,
                     focus_hint=focus_hint,
                     audience_orientation=audience_orientation,
                     tone_preference=tone_preference,
                     effect_skills=effect_skills,
                     creation_intent_block=creation_intent_block,
+                    retry_feedback=retry_feedback,
+                    distilled_reference_block=distilled_reference_block,
                 )
-                result.candidate_prompt_chars += len(pool_system) + len(pool_user)
-                result.candidate_generation_calls += 1
                 pool_raw, pool_run_id = await pool_fn(pool_system, pool_user)
+                if result.distilled_reference_receipt:
+                    result.distilled_reference_receipt["status"] = "consumed_by_concept_generation"
+                return pool_raw, pool_run_id, len(pool_system) + len(pool_user), batch_count
+
+            def _absorb_pool_batch(batch_result: tuple[str, Any, int, int]) -> None:
+                pool_raw, pool_run_id, prompt_chars, batch_count = batch_result
+                result.candidate_prompt_chars += prompt_chars
+                result.candidate_generation_calls += 1
+                result.raw_idea_pool_stats["requested"] += batch_count
+                parse_stats: dict[str, int] = {}
                 if pool_run_id is not None:
                     result.llm_run_ids.append(pool_run_id)
-                for record in _parse_raw_idea_records(pool_raw, limit=batch_count):
+                for record in _parse_raw_idea_records(
+                    pool_raw,
+                    limit=batch_count,
+                    # The production author-pitch arm promises the full
+                    # seed/graft/opening/continuation contract.  Older
+                    # methodology/minimal arms intentionally return seed-only
+                    # records and remain backwards compatible.
+                    require_pitch_fields=raw_idea_prompt_arm == "author_pitch",
+                    stats=parse_stats,
+                ):
                     lane = str(record["lane"])
                     seed = str(record["seed"])
                     raw_guard = _candidate_hard_rejection_reason(
-                        ConceptCandidate(dimension=lane, concept=seed),
+                        ConceptCandidate(
+                            dimension=lane,
+                            concept=seed,
+                            mechanism=str(record.get("graft") or ""),
+                            opening_crisis=str(record.get("opening") or ""),
+                            repeatable_story_unit=str(record.get("why_it_keeps_moving") or ""),
+                            unit_families=tuple(record.get("future_situations") or ()),
+                        ),
                         seed_concept=seed_concept,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
                         tone_preference=tone_preference,
                         effect_skills=effect_skills,
                         cost_style=cost_style,
                         allow_debt_theme=allow_debt_theme,
                         allow_death_theme=allow_death_theme,
+                        raw_idea=True,
                     )
                     if raw_guard:
                         result.engine_rejections.append(
@@ -3722,21 +6114,26 @@ async def run_concept_tournament(
                         continue
                     normalized_seed = "".join(seed.split())
                     if normalized_seed in seen_seeds:
+                        result.raw_idea_pool_stats["deduplicated"] += 1
                         continue
                     seen_seeds.add(normalized_seed)
                     parsed_pool.append((lane, seed))
                     raw_pitch_by_seed[seed] = record
+                for key, value in parse_stats.items():
+                    result.raw_idea_pool_stats[key] = result.raw_idea_pool_stats.get(key, 0) + value
 
-            for batch_index, batch_start in enumerate(
-                range(0, pool_count, generation_batch_size)
-            ):
-                batch_count = min(generation_batch_size, pool_count - batch_start)
-                focus_hint = (
-                    batch_focuses[batch_index % len(batch_focuses)]
-                    if batch_focuses and batch_count == 1
-                    else ""
-                )
-                await _generate_pool_batch(batch_count, focus_hint)
+            pool_batches = [
+                min(generation_batch_size, pool_count - start)
+                for start in range(0, pool_count, generation_batch_size)
+            ]
+            generated_batches = await _run_tournament_batches(
+                pool_batches,
+                _generate_pool_batch,
+                concurrency=batch_concurrency if using_default_generator else 1,
+                stage="raw_idea_pool",
+            )
+            for batch_result in generated_batches:
+                _absorb_pool_batch(batch_result)
 
             # Top-up. Batching the pool is what breaks the mode collapse, but a
             # single long reply occasionally comes back short or unparseable
@@ -3747,41 +6144,100 @@ async def run_concept_tournament(
                 missing = pool_count - len(parsed_pool)
                 if missing <= 0:
                     break
+                result.raw_idea_pool_stats["topup_calls"] += 1
                 logger.info(
                     "raw idea pool short (%d/%d); topping up",
-                    len(parsed_pool), pool_count,
+                    len(parsed_pool),
+                    pool_count,
                 )
-                await _generate_pool_batch(missing, "")
+                topup_results = await _run_tournament_batches(
+                    [missing],
+                    _generate_pool_batch,
+                    concurrency=1,
+                    stage="raw_idea_pool_topup",
+                )
+                _absorb_pool_batch(topup_results[0])
             parsed_pool = parsed_pool[:pool_count]
-            if parsed_pool:
+            # ``complete`` is always truthful. Legacy seed-only arms retain
+            # their historical expansion behavior through the separate
+            # enforcement flag, while their receipt still exposes a short
+            # pool instead of calling it complete.
+            pool_complete = len(parsed_pool) >= pool_count
+            result.raw_idea_pool_stats["complete"] = pool_complete
+            contract_enforced = bool(result.raw_idea_pool_stats["contract_enforced"])
+            if not pool_complete and contract_enforced:
+                result.raw_idea_pool_stats["failure"] = (
+                    f"raw_idea_pool_incomplete:{len(parsed_pool)}/{pool_count}"
+                )
+                result.engine_rejections.append(
+                    {
+                        "dimension": "raw_idea_pool",
+                        "scores": {},
+                        "reason": (
+                            "原始创意池补齐耗尽："
+                            f"仅获得{len(parsed_pool)}/{pool_count}条合法且去重后的候选"
+                        ),
+                        "failed_axes": ["raw_idea_pool_incomplete"],
+                    }
+                )
+            parsed_pool, original_rejection = _ensure_authoritative_seed_in_raw_pool(
+                parsed_pool,
+                raw_pitch_by_seed,
+                seed_concept=seed_concept,
+                authoritative_seed=authoritative_seed,
+                tone_preference=tone_preference,
+                effect_skills=effect_skills,
+                cost_style=cost_style,
+                allow_debt_theme=allow_debt_theme,
+                allow_death_theme=allow_death_theme,
+            )
+            if original_rejection:
+                result.engine_rejections.append(original_rejection)
+            # Empty/fully rejected pools cannot fall back to the original
+            # generic dimensions and pay to build ungrounded project cards.
+            work_items = []
+            if parsed_pool and (pool_complete or not contract_enforced):
                 result.raw_ideas = [
                     raw_pitch_by_seed.get(seed, {"lane": lane, "seed": seed})
                     for lane, seed in parsed_pool
                 ]
                 work_items = [
-                    (f"{lane}#{index}", seed)
-                    for index, (lane, seed) in enumerate(parsed_pool)
+                    (f"{lane}#{index}", seed) for index, (lane, seed) in enumerate(parsed_pool)
                 ]
                 if raw_idea_rank_fn is not None:
                     ranking: list[dict[str, Any]] = []
                     rank_retry_calls = 0
-                    rank_batch_size = max(
-                        2, int(cfg.get("raw_idea_rank_batch_size", 6))
-                    )
-                    for batch_start in range(0, len(parsed_pool), rank_batch_size):
-                        batch = parsed_pool[
-                            batch_start : batch_start + rank_batch_size
-                        ]
+                    rank_batch_size = max(2, int(cfg.get("raw_idea_rank_batch_size", 6)))
+                    rank_batches = [
+                        parsed_pool[start : start + rank_batch_size]
+                        for start in range(0, len(parsed_pool), rank_batch_size)
+                    ]
+
+                    async def _rank_pool_batch(
+                        index: int,
+                        batch: list[tuple[str, str]],
+                    ) -> tuple[str, Any]:
                         rank_system, rank_user = _build_raw_idea_rank_messages(
                             genre=genre,
                             sub_genre=sub_genre,
                             ideas=batch,
                             audience_orientation=audience_orientation,
                             pitch_by_seed=raw_pitch_by_seed,
+                            authoritative_seed_concept=seed_concept if authoritative_seed else "",
                         )
-                        rank_raw, rank_run_id = await raw_idea_rank_fn(
-                            rank_system, rank_user
-                        )
+                        return await raw_idea_rank_fn(rank_system, rank_user)
+
+                    rank_responses = await _run_tournament_batches(
+                        rank_batches,
+                        _rank_pool_batch,
+                        concurrency=batch_concurrency,
+                        stage="raw_idea_rank",
+                    )
+                    for batch_index, (batch, response) in enumerate(
+                        zip(rank_batches, rank_responses, strict=True)
+                    ):
+                        batch_start = batch_index * rank_batch_size
+                        rank_raw, rank_run_id = response
                         if rank_run_id is not None:
                             result.llm_run_ids.append(rank_run_id)
                         parsed_batch = [
@@ -3790,28 +6246,96 @@ async def run_concept_tournament(
                             if 0 <= int(item.get("index", -1)) < len(batch)
                         ]
                         seen_local = {int(item["index"]) for item in parsed_batch}
+                        invalid_causal: list[int] = []
                         for item in parsed_batch:
+                            local_index = int(item["index"])
+                            lane, seed = batch[local_index]
+                            pitch = raw_pitch_by_seed.get(seed) or {}
+                            support = "\n".join(
+                                part
+                                for part in (
+                                    seed,
+                                    str(pitch.get("graft") or ""),
+                                    str(pitch.get("opening") or ""),
+                                    str(pitch.get("why_it_keeps_moving") or ""),
+                                    "\n".join(
+                                        str(v) for v in (pitch.get("future_situations") or [])
+                                    ),
+                                )
+                                if part
+                            )
+                            valid, reason = _audit_causal_evidence(item, support)
+                            item["causal_evidence_status"] = "verified" if valid else "invalid"
+                            item["causal_evidence_reason"] = reason
+                            if not valid:
+                                invalid_causal.append(local_index)
                             item["index"] = int(item["index"]) + batch_start
                             ranking.append(item)
                         missing_local = [
                             index for index in range(len(batch)) if index not in seen_local
                         ]
+                        retry_targets = sorted(set(missing_local + invalid_causal))
                         # A truncated/invalid judge response must not silently remove half
                         # the search space. Retry only missing ideas in pairs so the same
                         # output-token ceiling cannot repeat the six-item truncation.
-                        for retry_start in range(0, len(missing_local), 2):
-                            source_indexes = missing_local[retry_start : retry_start + 2]
+                        retry_batch_total = (len(retry_targets) + 1) // 2
+                        for retry_batch_index, retry_start in enumerate(
+                            range(0, len(retry_targets), 2)
+                        ):
+                            source_indexes = retry_targets[retry_start : retry_start + 2]
                             retry_batch = [batch[index] for index in source_indexes]
+                            emit_activity(
+                                "concept_tournament_progress",
+                                {
+                                    "stage": "raw_idea_rank_causal_review",
+                                    "status": "started",
+                                    "index": retry_batch_index,
+                                    "total": retry_batch_total,
+                                    "completed": retry_batch_index,
+                                    "review_kind": "causal_evidence_retry",
+                                    "candidate_count": len(source_indexes),
+                                    "source_indexes": list(source_indexes),
+                                    "generated_candidates": False,
+                                },
+                            )
                             retry_system, retry_user = _build_raw_idea_rank_messages(
                                 genre=genre,
                                 sub_genre=sub_genre,
                                 ideas=retry_batch,
                                 audience_orientation=audience_orientation,
                                 pitch_by_seed=raw_pitch_by_seed,
+                                authoritative_seed_concept=seed_concept
+                                if authoritative_seed
+                                else "",
+                                retry_feedback=(
+                                    "候选序号 "
+                                    + ",".join(str(index) for index in source_indexes)
+                                    + " 的 causal_evidence 缺失或无法逐字核验；请补齐四个字段并只引用候选支撑原文。"
+                                ),
                             )
-                            retry_raw, retry_run_id = await raw_idea_rank_fn(
-                                retry_system, retry_user
-                            )
+                            try:
+                                retry_raw, retry_run_id = await raw_idea_rank_fn(
+                                    retry_system, retry_user
+                                )
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
+                            except Exception as exc:
+                                emit_activity(
+                                    "concept_tournament_progress",
+                                    {
+                                        "stage": "raw_idea_rank_causal_review",
+                                        "status": "failed",
+                                        "index": retry_batch_index,
+                                        "total": retry_batch_total,
+                                        "completed": retry_batch_index,
+                                        "review_kind": "causal_evidence_retry",
+                                        "candidate_count": len(source_indexes),
+                                        "source_indexes": list(source_indexes),
+                                        "generated_candidates": False,
+                                        "error": type(exc).__name__,
+                                    },
+                                )
+                                raise
                             rank_retry_calls += 1
                             if retry_run_id is not None:
                                 result.llm_run_ids.append(retry_run_id)
@@ -3819,10 +6343,42 @@ async def run_concept_tournament(
                                 retry_index = int(item.get("index", -1))
                                 if not 0 <= retry_index < len(source_indexes):
                                     continue
-                                item["index"] = (
-                                    batch_start + source_indexes[retry_index]
+                                original_index = source_indexes[retry_index]
+                                _lane, retry_seed = batch[original_index]
+                                retry_pitch = raw_pitch_by_seed.get(retry_seed) or {}
+                                retry_support = "\n".join(
+                                    part
+                                    for part in (
+                                        retry_seed,
+                                        str(retry_pitch.get("graft") or ""),
+                                        str(retry_pitch.get("opening") or ""),
+                                        str(retry_pitch.get("why_it_keeps_moving") or ""),
+                                        "\n".join(
+                                            str(v)
+                                            for v in (retry_pitch.get("future_situations") or [])
+                                        ),
+                                    )
+                                    if part
                                 )
+                                valid, reason = _audit_causal_evidence(item, retry_support)
+                                item["causal_evidence_status"] = "verified" if valid else "invalid"
+                                item["causal_evidence_reason"] = reason
+                                item["index"] = batch_start + source_indexes[retry_index]
                                 ranking.append(item)
+                            emit_activity(
+                                "concept_tournament_progress",
+                                {
+                                    "stage": "raw_idea_rank_causal_review",
+                                    "status": "completed",
+                                    "index": retry_batch_index,
+                                    "total": retry_batch_total,
+                                    "completed": retry_batch_index + 1,
+                                    "review_kind": "causal_evidence_retry",
+                                    "candidate_count": len(source_indexes),
+                                    "source_indexes": list(source_indexes),
+                                    "generated_candidates": False,
+                                },
+                            )
                     result.raw_idea_ranking = ranking
                     ranked_indexes = {
                         int(item.get("index", -1))
@@ -3832,9 +6388,7 @@ async def run_concept_tournament(
                     result.raw_idea_rank_coverage = {
                         "expected": len(parsed_pool),
                         "ranked": len(ranked_indexes),
-                        "missing_indexes": sorted(
-                            set(range(len(parsed_pool))) - ranked_indexes
-                        ),
+                        "missing_indexes": sorted(set(range(len(parsed_pool))) - ranked_indexes),
                         "retry_calls": rank_retry_calls,
                         "complete": len(ranked_indexes) == len(parsed_pool),
                     }
@@ -3876,16 +6430,12 @@ async def run_concept_tournament(
                         detect_condemned_hook_structures,
                     )
 
-                    _light_tone = (
-                        str(tone_preference or "").strip().lower() == "light"
-                    )
+                    _light_tone = str(tone_preference or "").strip().lower() == "light"
                     for item in ranking:
                         idx = int(item.get("index", -1))
                         if not 0 <= idx < len(parsed_pool):
                             continue
-                        structure_hits = detect_condemned_hook_structures(
-                            parsed_pool[idx][1]
-                        )
+                        structure_hits = detect_condemned_hook_structures(parsed_pool[idx][1])
                         if structure_hits:
                             item["condemned_structure"] = structure_hits
                             result.engine_rejections.append(
@@ -3900,30 +6450,18 @@ async def run_concept_tournament(
                                     "failed_axes": ["condemned_structure"],
                                 }
                             )
-                        # 默认债务/丧葬族沉底（2026-08-13《我替娘讨旧账》：
-                        # 连续两本用户书撞进同一默认族）。用户自己的创意里
-                        # 提过该族=用户的选择，豁免。
-                        from bestseller.services.anti_default_motif import (  # noqa: PLC0415
-                            default_debt_family_hits,
-                            is_debt_dominated,
-                        )
-
-                        _user_named_family = bool(
-                            default_debt_family_hits(str(seed_concept or ""))
-                        )
-                        if not _user_named_family and is_debt_dominated(
-                            parsed_pool[idx][1]
-                        ):
+                        # Keep lexical observations out of rank and rejection evidence.
+                        _user_named_family = bool(default_debt_family_hits(str(seed_concept or "")))
+                        if not _user_named_family and is_debt_dominated(parsed_pool[idx][1]):
                             item["default_family"] = True
-                            result.engine_rejections.append(
+                            result.quality_findings.append(
                                 {
+                                    "stage": "raw_idea",
                                     "dimension": parsed_pool[idx][0],
-                                    "scores": {},
-                                    "reason": (
-                                        "命中框架实测过度复用的默认主题族"
-                                        "（用户未要求），展开位让给未收敛的候选"
-                                    ),
-                                    "failed_axes": ["default_family"],
+                                    "finding": "default_family_lexical_signal",
+                                    "policy": "advisory_only",
+                                    "evidence_kind": "lexical_matches",
+                                    "reason": "字词信号仅留痕，不改变展开顺序或候选资格",
                                 }
                             )
                         # 用户选轻松调性时，胁迫式生死赌注的胚子沉底
@@ -3945,16 +6483,22 @@ async def run_concept_tournament(
                     raw_floor = float(cfg.get("raw_idea_floor", 7.0))
                     card_count = max(1, int(cfg.get("premise_card_count", 4)))
                     qualified = _select_raw_ideas_for_expansion(
-                        [
-                            item
-                            for item in ranking
-                            if 0 <= int(item["index"]) < len(parsed_pool)
-                        ],
+                        [item for item in ranking if 0 <= int(item["index"]) < len(parsed_pool)],
                         raw_floor=raw_floor,
-                        progression_floor=float(
-                            cfg.get("raw_idea_progression_floor", 5.0)
-                        ),
+                        progression_floor=float(cfg.get("raw_idea_progression_floor", 5.0)),
                         limit=card_count,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                        authority_candidate_by_index={
+                            index: " ".join(
+                                part
+                                for part in (
+                                    seed,
+                                    str((raw_pitch_by_seed.get(seed) or {}).get("graft") or ""),
+                                )
+                                if part
+                            )
+                            for index, (_lane, seed) in enumerate(parsed_pool)
+                        },
                     )
                     if not result.raw_idea_rank_coverage["complete"]:
                         result.engine_rejections.append(
@@ -3963,9 +6507,7 @@ async def run_concept_tournament(
                                 "scores": {},
                                 "reason": "原始创意独立裁判覆盖不完整，禁止从残缺样本中选冠军",
                                 "failed_axes": ["raw_idea_rank_coverage"],
-                                "missing_indexes": result.raw_idea_rank_coverage[
-                                    "missing_indexes"
-                                ],
+                                "missing_indexes": result.raw_idea_rank_coverage["missing_indexes"],
                             }
                         )
                         qualified = []
@@ -4000,12 +6542,9 @@ async def run_concept_tournament(
         )
         engine_floor = float(cfg.get("engine_judge_floor", 7.0))
         prebuilt_kernels: dict[tuple[str, str], dict[str, Any]] = {}
+        card_records_by_key: dict[tuple[str, str], dict[str, Any]] = {}
         batch_review_complete = False
-        if (
-            candidate_prompt_mode == "engine_first"
-            and premise_judge_fn is not None
-            and work_items
-        ):
+        if candidate_prompt_mode == "engine_first" and premise_judge_fn is not None and work_items:
             cards: list[tuple[str, str, dict[str, Any]]] = []
             for _gen_idx, (dimension, premise_seed) in enumerate(work_items):
                 emit_activity(
@@ -4019,56 +6558,64 @@ async def run_concept_tournament(
                         lane=dimension,
                         chapter_count=chapter_count,
                         seed_concept=premise_seed,
-                        seed_support=raw_pitch_by_seed.get(premise_seed),
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                        seed_support=(
+                            None if authoritative_seed else raw_pitch_by_seed.get(premise_seed)
+                        ),
                         audience_orientation=audience_orientation,
                         cost_style=cost_style,
                         tone_preference=tone_preference,
                         effect_skills=effect_skills,
                         creation_intent_block=creation_intent_block,
+                        retry_feedback=retry_feedback,
                         banned=banned,
+                        primary_effect_contract=primary_effect_contract,
+                        distilled_reference_block=distilled_reference_block,
                     )
                     result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                     result.candidate_generation_calls += 1
-                    engine_raw, engine_run_id = await engine_fn(
-                        engine_system, engine_user
-                    )
+                    engine_raw, engine_run_id = await engine_fn(engine_system, engine_user)
+                    if result.distilled_reference_receipt:
+                        result.distilled_reference_receipt["status"] = (
+                            "consumed_by_concept_generation"
+                        )
                     if engine_run_id is not None:
                         result.llm_run_ids.append(engine_run_id)
                     kernel = _parse_json_object(engine_raw)
                     if kernel is None:
                         raise ValueError("engine kernel is not valid JSON")
-                    card_record = {
+                    card_record: dict[str, Any] = {
                         "dimension": dimension,
                         "seed": premise_seed,
                         "card": kernel,
                     }
                     result.premise_cards.append(card_record)
+                    card_records_by_key[(str(dimension), str(premise_seed))] = card_record
                     missing_card_fields = _premise_card_audit(kernel)
                     if missing_card_fields:
-                        repair_system, repair_user = (
-                            _build_engine_kernel_repair_messages(
-                                genre=genre,
-                                sub_genre=sub_genre,
-                                lane=dimension,
-                                chapter_count=chapter_count,
-                                seed_concept=premise_seed,
-                                card=kernel,
-                                missing_fields=missing_card_fields,
-                                seed_support=raw_pitch_by_seed.get(premise_seed),
-                                audience_orientation=audience_orientation,
-                                cost_style=cost_style,
-                                tone_preference=tone_preference,
-                                effect_skills=effect_skills,
-                                creation_intent_block=creation_intent_block,
-                            )
+                        repair_system, repair_user = _build_engine_kernel_repair_messages(
+                            genre=genre,
+                            sub_genre=sub_genre,
+                            lane=dimension,
+                            chapter_count=chapter_count,
+                            seed_concept=premise_seed,
+                            audience_orientation=audience_orientation,
+                            authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                            card=kernel,
+                            missing_fields=missing_card_fields,
+                            seed_support=(
+                                None if authoritative_seed else raw_pitch_by_seed.get(premise_seed)
+                            ),
+                            cost_style=cost_style,
+                            tone_preference=tone_preference,
+                            effect_skills=effect_skills,
+                            creation_intent_block=creation_intent_block,
+                            retry_feedback=retry_feedback,
+                            primary_effect_contract=primary_effect_contract,
                         )
-                        result.candidate_prompt_chars += len(repair_system) + len(
-                            repair_user
-                        )
+                        result.candidate_prompt_chars += len(repair_system) + len(repair_user)
                         result.candidate_generation_calls += 1
-                        repair_raw, repair_run_id = await engine_fn(
-                            repair_system, repair_user
-                        )
+                        repair_raw, repair_run_id = await engine_fn(repair_system, repair_user)
                         if repair_run_id is not None:
                             result.llm_run_ids.append(repair_run_id)
                         repaired_kernel = _parse_json_object(repair_raw)
@@ -4076,11 +6623,7 @@ async def run_concept_tournament(
                         card_record["repair"] = {
                             "initial_missing_fields": missing_card_fields,
                             "remaining_missing_fields": repaired_missing,
-                            "run_id": (
-                                str(repair_run_id)
-                                if repair_run_id is not None
-                                else None
-                            ),
+                            "run_id": (str(repair_run_id) if repair_run_id is not None else None),
                         }
                         if repaired_kernel is not None:
                             card_record["initial_card"] = kernel
@@ -4092,9 +6635,38 @@ async def run_concept_tournament(
                             {
                                 "dimension": dimension,
                                 "scores": {},
-                                "reason": "项目卡结构缺失: "
-                                + "/".join(missing_card_fields),
+                                "reason": "项目卡结构缺失: " + "/".join(missing_card_fields),
                                 "failed_axes": ["card_completeness"],
+                            }
+                        )
+                        continue
+
+                    # The same explicit-option gate used after all repairs can
+                    # reject a contradictory complete card before paid reviews.
+                    # Do not promote comparative default-motif preferences here.
+                    early_guard = _candidate_hard_rejection_reason(
+                        _attach_engine_kernel(
+                            ConceptCandidate(dimension=dimension, concept=premise_seed), kernel
+                        ),
+                        seed_concept=seed_concept,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
+                        cost_style=cost_style,
+                        allow_debt_theme=allow_debt_theme,
+                        allow_death_theme=allow_death_theme,
+                    )
+                    card_record["early_intent_gate"] = {
+                        "passed": not bool(early_guard),
+                        "reason": early_guard,
+                    }
+                    if early_guard:
+                        result.engine_rejections.append(
+                            {
+                                "dimension": dimension,
+                                "scores": {},
+                                "reason": "项目卡反污染门失败: " + early_guard,
+                                "failed_axes": ["creation_intent_pollution"],
                             }
                         )
                         continue
@@ -4109,19 +6681,22 @@ async def run_concept_tournament(
                         cfg.get("story_layer_judge_enabled", True)
                     ):
                         _sl_votes: list[dict[str, Any]] = []
-                        for _sl_i in range(
-                            max(1, int(cfg.get("story_layer_votes", 2)))
-                        ):
+                        for _sl_i in range(max(1, int(cfg.get("story_layer_votes", 2)))):
                             _sl_sys, _sl_user = _build_story_layer_judge_messages(
                                 kernel,
                                 genre=genre,
                                 sub_genre=sub_genre,
                                 audience_orientation=audience_orientation,
+                                authoritative_seed_concept=(
+                                    seed_concept if authoritative_seed else ""
+                                ),
+                                candidate_seed=premise_seed,
+                                target_chapters=chapter_count,
                             )
                             try:
-                                _sl_raw, _sl_run_id = await story_judge_fn(
-                                    _sl_sys, _sl_user
-                                )
+                                _sl_raw, _sl_run_id = await story_judge_fn(_sl_sys, _sl_user)
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
                             except Exception:
                                 break
                             if _sl_run_id is not None:
@@ -4131,12 +6706,8 @@ async def run_concept_tournament(
                                 _sl_votes.append(_sl_parsed)
                         _sl_convicted: list[str] = []
                         if len(_sl_votes) >= 2:
-                            _sl_fail_sets = [
-                                set(v["failed_axes"]) for v in _sl_votes
-                            ]
-                            _sl_convicted = sorted(
-                                set.intersection(*_sl_fail_sets)
-                            )
+                            _sl_fail_sets = [set(v["failed_axes"]) for v in _sl_votes]
+                            _sl_convicted = sorted(set.intersection(*_sl_fail_sets))
                         card_record["story_layer"] = {
                             "votes": _sl_votes,
                             "convicted_axes": _sl_convicted,
@@ -4151,71 +6722,72 @@ async def run_concept_tournament(
                                     if _qv:
                                         _sl_quotes.append(f"{_axis}={_qv}")
                             _sl_directions = "；".join(
-                                d
-                                for d in (
-                                    v.get("revise_direction", "")
-                                    for v in _sl_votes
-                                )
-                                if d
+                                d for d in (v.get("revise_direction", "") for v in _sl_votes) if d
                             )
                             _sl_revise_user = (
-                                engine_user
-                                + "\n\n【故事层判卡未过——按方向修正后重新输出"
+                                engine_user + "\n\n【故事层判卡未过——按方向修正后重新输出"
                                 "完整JSON项目卡，未点名的部分保持原样】\n"
                                 + f"未过项：{'、'.join(_sl_convicted)}\n"
                                 + (
-                                    "证据引文："
-                                    + "；".join(_sl_quotes)
-                                    + "\n"
+                                    "证据引文：" + "；".join(_sl_quotes) + "\n"
                                     if _sl_quotes
                                     else ""
                                 )
-                                + (
-                                    f"修正方向：{_sl_directions}\n"
-                                    if _sl_directions
-                                    else ""
+                                + (f"修正方向：{_sl_directions}\n" if _sl_directions else "")
+                                + _build_narrow_card_revision_context(
+                                    card=kernel,
+                                    authoritative_seed_concept=(
+                                        seed_concept if authoritative_seed else ""
+                                    ),
+                                    candidate_seed=premise_seed,
+                                    failed_axes=_sl_convicted,
+                                    directions=_sl_directions,
+                                    story_layer=True,
                                 )
                             )
                             result.candidate_generation_calls += 1
-                            result.candidate_prompt_chars += len(
-                                engine_system
-                            ) + len(_sl_revise_user)
+                            result.candidate_prompt_chars += len(engine_system) + len(
+                                _sl_revise_user
+                            )
                             try:
                                 _sl_new_raw, _sl_new_run_id = await engine_fn(
                                     engine_system, _sl_revise_user
                                 )
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
                             except Exception:
                                 _sl_new_raw, _sl_new_run_id = None, None
                             if _sl_new_run_id is not None:
                                 result.llm_run_ids.append(_sl_new_run_id)
-                            _sl_revised = (
-                                _parse_json_object(_sl_new_raw)
-                                if _sl_new_raw
-                                else None
-                            )
-                            if _sl_revised is not None and not _premise_card_audit(
-                                _sl_revised
-                            ):
+                            _sl_revised = _parse_json_object(_sl_new_raw) if _sl_new_raw else None
+                            if _sl_revised is not None:
+                                _sl_revised = _constrain_story_layer_repair(
+                                    kernel, _sl_revised, _sl_convicted
+                                )
+                            if _sl_revised is not None and not _premise_card_audit(_sl_revised):
                                 # 复核（2026-08-18《九姓井口只认我》定罪：revised
                                 # 采纳后不复核=白判——终稿 wants 仍是防守型。
                                 # 复核只花在已定罪的卡上；revised 定罪轴数没有
                                 # 变少就不采纳，防止「改了个寂寞」甚至改更坏。
                                 _sl_recheck: list[dict[str, Any]] = []
-                                for _sl_j in range(
-                                    max(1, int(cfg.get("story_layer_votes", 2)))
-                                ):
-                                    _rc_sys, _rc_user = (
-                                        _build_story_layer_judge_messages(
-                                            _sl_revised,
-                                            genre=genre,
-                                            sub_genre=sub_genre,
-                                            audience_orientation=audience_orientation,
-                                        )
+                                for _sl_j in range(max(1, int(cfg.get("story_layer_votes", 2)))):
+                                    _rc_sys, _rc_user = _build_story_layer_judge_messages(
+                                        _sl_revised,
+                                        genre=genre,
+                                        sub_genre=sub_genre,
+                                        audience_orientation=audience_orientation,
+                                        authoritative_seed_concept=(
+                                            seed_concept if authoritative_seed else ""
+                                        ),
+                                        candidate_seed=premise_seed,
+                                        target_chapters=chapter_count,
                                     )
                                     try:
                                         _rc_raw, _rc_run_id = await story_judge_fn(
                                             _rc_sys, _rc_user
                                         )
+                                    except _TOURNAMENT_EXECUTION_ERRORS:
+                                        raise
                                     except Exception:
                                         break
                                     if _rc_run_id is not None:
@@ -4227,25 +6799,26 @@ async def run_concept_tournament(
                                 if len(_sl_recheck) >= 2:
                                     _sl_recheck_convicted = sorted(
                                         set.intersection(
-                                            *(
-                                                set(v["failed_axes"])
-                                                for v in _sl_recheck
-                                            )
+                                            *(set(v["failed_axes"]) for v in _sl_recheck)
                                         )
                                     )
                                 card_record["story_layer"]["recheck_convicted"] = (
                                     _sl_recheck_convicted
                                 )
-                                if (
-                                    len(_sl_recheck) >= 2
-                                    and len(_sl_recheck_convicted)
-                                    >= len(_sl_convicted)
-                                ):
+                                card_record["story_layer"]["recheck_votes"] = _sl_recheck
+                                _sl_rejection = _repair_recheck_rejection(
+                                    _sl_recheck,
+                                    required_votes=int(cfg.get("story_layer_votes", 2)),
+                                    decision_axes=_STORY_LAYER_AXES,
+                                    initial_convicted=_sl_convicted,
+                                    recheck_convicted=_sl_recheck_convicted,
+                                )
+                                if _sl_rejection:
                                     # 复核显示没修好 → 保留原卡（零杀权，留痕）
                                     card_record["story_layer"]["revised"] = False
-                                    card_record["story_layer"][
-                                        "revise_rejected_reason"
-                                    ] = "recheck_no_improvement"
+                                    card_record["story_layer"]["revise_rejected_reason"] = (
+                                        _sl_rejection
+                                    )
                                 else:
                                     card_record["story_layer"]["revised"] = True
                                     card_record.setdefault("initial_card", kernel)
@@ -4264,16 +6837,20 @@ async def run_concept_tournament(
                         cfg.get("expansion_editor_judge_enabled", True)
                     ):
                         _ee_votes: list[dict[str, Any]] = []
-                        for _ee_i in range(
-                            max(1, int(cfg.get("story_layer_votes", 2)))
-                        ):
+                        for _ee_i in range(max(1, int(cfg.get("story_layer_votes", 2)))):
                             _ee_sys, _ee_user = _build_expansion_editor_messages(
-                                kernel, genre=genre, sub_genre=sub_genre
+                                kernel,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                authoritative_seed_concept=(
+                                    seed_concept if authoritative_seed else ""
+                                ),
+                                candidate_seed=premise_seed,
                             )
                             try:
-                                _ee_raw, _ee_run_id = await story_judge_fn(
-                                    _ee_sys, _ee_user
-                                )
+                                _ee_raw, _ee_run_id = await story_judge_fn(_ee_sys, _ee_user)
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
                             except Exception:
                                 break
                             if _ee_run_id is not None:
@@ -4286,9 +6863,7 @@ async def run_concept_tournament(
                         _ee_convicted: list[str] = []
                         if len(_ee_votes) >= 2:
                             _ee_convicted = sorted(
-                                set.intersection(
-                                    *(set(v["failed_axes"]) for v in _ee_votes)
-                                )
+                                set.intersection(*(set(v["failed_axes"]) for v in _ee_votes))
                                 & _EXPANSION_EDITOR_CONVICTION_AXES
                             )
                         card_record["expansion_editor"] = {
@@ -4305,66 +6880,57 @@ async def run_concept_tournament(
                                     if _qv:
                                         _ee_quotes.append(f"{_axis}={_qv}")
                             _ee_directions = "；".join(
-                                d
-                                for d in (
-                                    v.get("revise_direction", "")
-                                    for v in _ee_votes
-                                )
-                                if d
+                                d for d in (v.get("revise_direction", "") for v in _ee_votes) if d
                             )
                             _ee_revise_user = (
-                                engine_user
-                                + "\n\n【编辑审设定未过——按方向修正后重新输出"
+                                engine_user + "\n\n【编辑审设定未过——按方向修正后重新输出"
                                 "完整JSON项目卡，未点名的部分保持原样】\n"
                                 + f"未过项：{'、'.join(_ee_convicted)}\n"
-                                + (
-                                    "证据："
-                                    + "；".join(_ee_quotes)
-                                    + "\n"
-                                    if _ee_quotes
-                                    else ""
-                                )
-                                + (
-                                    f"修正方向：{_ee_directions}\n"
-                                    if _ee_directions
-                                    else ""
+                                + ("证据：" + "；".join(_ee_quotes) + "\n" if _ee_quotes else "")
+                                + (f"修正方向：{_ee_directions}\n" if _ee_directions else "")
+                                + _build_narrow_card_revision_context(
+                                    card=kernel,
+                                    authoritative_seed_concept=(
+                                        seed_concept if authoritative_seed else ""
+                                    ),
+                                    candidate_seed=premise_seed,
+                                    failed_axes=_ee_convicted,
+                                    directions=_ee_directions,
                                 )
                             )
                             result.candidate_generation_calls += 1
-                            result.candidate_prompt_chars += len(
-                                engine_system
-                            ) + len(_ee_revise_user)
+                            result.candidate_prompt_chars += len(engine_system) + len(
+                                _ee_revise_user
+                            )
                             try:
                                 _ee_new_raw, _ee_new_run_id = await engine_fn(
                                     engine_system, _ee_revise_user
                                 )
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
                             except Exception:
                                 _ee_new_raw, _ee_new_run_id = None, None
                             if _ee_new_run_id is not None:
                                 result.llm_run_ids.append(_ee_new_run_id)
-                            _ee_revised = (
-                                _parse_json_object(_ee_new_raw)
-                                if _ee_new_raw
-                                else None
-                            )
-                            if _ee_revised is not None and not _premise_card_audit(
-                                _ee_revised
-                            ):
+                            _ee_revised = _parse_json_object(_ee_new_raw) if _ee_new_raw else None
+                            if _ee_revised is not None and not _premise_card_audit(_ee_revised):
                                 _ee_recheck: list[dict[str, Any]] = []
-                                for _ee_j in range(
-                                    max(1, int(cfg.get("story_layer_votes", 2)))
-                                ):
-                                    _er_sys, _er_user = (
-                                        _build_expansion_editor_messages(
-                                            _ee_revised,
-                                            genre=genre,
-                                            sub_genre=sub_genre,
-                                        )
+                                for _ee_j in range(max(1, int(cfg.get("story_layer_votes", 2)))):
+                                    _er_sys, _er_user = _build_expansion_editor_messages(
+                                        _ee_revised,
+                                        genre=genre,
+                                        sub_genre=sub_genre,
+                                        authoritative_seed_concept=(
+                                            seed_concept if authoritative_seed else ""
+                                        ),
+                                        candidate_seed=premise_seed,
                                     )
                                     try:
                                         _er_raw, _er_run_id = await story_judge_fn(
                                             _er_sys, _er_user
                                         )
+                                    except _TOURNAMENT_EXECUTION_ERRORS:
+                                        raise
                                     except Exception:
                                         break
                                     if _er_run_id is not None:
@@ -4378,31 +6944,28 @@ async def run_concept_tournament(
                                 if len(_ee_recheck) >= 2:
                                     _ee_recheck_convicted = sorted(
                                         set.intersection(
-                                            *(
-                                                set(v["failed_axes"])
-                                                for v in _ee_recheck
-                                            )
+                                            *(set(v["failed_axes"]) for v in _ee_recheck)
                                         )
                                         & _EXPANSION_EDITOR_CONVICTION_AXES
                                     )
-                                card_record["expansion_editor"][
-                                    "recheck_convicted"
-                                ] = _ee_recheck_convicted
-                                if (
-                                    len(_ee_recheck) >= 2
-                                    and len(_ee_recheck_convicted)
-                                    >= len(_ee_convicted)
-                                ):
-                                    card_record["expansion_editor"]["revised"] = (
-                                        False
+                                card_record["expansion_editor"]["recheck_convicted"] = (
+                                    _ee_recheck_convicted
+                                )
+                                card_record["expansion_editor"]["recheck_votes"] = _ee_recheck
+                                _ee_rejection = _repair_recheck_rejection(
+                                    _ee_recheck,
+                                    required_votes=int(cfg.get("story_layer_votes", 2)),
+                                    decision_axes=tuple(_EXPANSION_EDITOR_CONVICTION_AXES),
+                                    initial_convicted=_ee_convicted,
+                                    recheck_convicted=_ee_recheck_convicted,
+                                )
+                                if _ee_rejection:
+                                    card_record["expansion_editor"]["revised"] = False
+                                    card_record["expansion_editor"]["revise_rejected_reason"] = (
+                                        _ee_rejection
                                     )
-                                    card_record["expansion_editor"][
-                                        "revise_rejected_reason"
-                                    ] = "recheck_no_improvement"
                                 else:
-                                    card_record["expansion_editor"]["revised"] = (
-                                        True
-                                    )
+                                    card_record["expansion_editor"]["revised"] = True
                                     card_record.setdefault("initial_card", kernel)
                                     card_record["card"] = _ee_revised
                                     kernel = _ee_revised
@@ -4434,28 +6997,26 @@ async def run_concept_tournament(
                                 "完整 JSON。确定性失败码："
                                 + "/".join(
                                     str(item)
-                                    for item in architecture_audit.get(
-                                        "blocking_codes", []
-                                    )
+                                    for item in architecture_audit.get("blocking_codes", [])
                                 )
                                 + "\n原项目卡："
                                 + json.dumps(kernel, ensure_ascii=False)
                             )
                             result.candidate_generation_calls += 1
-                            result.candidate_prompt_chars += len(
-                                engine_system
-                            ) + len(architecture_repair_user)
+                            result.candidate_prompt_chars += len(engine_system) + len(
+                                architecture_repair_user
+                            )
                             try:
                                 architecture_raw, architecture_run_id = await engine_fn(
                                     engine_system, architecture_repair_user
                                 )
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
                             except Exception:
                                 architecture_raw, architecture_run_id = "", None
                             if architecture_run_id is not None:
                                 result.llm_run_ids.append(architecture_run_id)
-                            architecture_repaired = _parse_json_object(
-                                architecture_raw
-                            )
+                            architecture_repaired = _parse_json_object(architecture_raw)
                             repaired_audit = _story_architecture_audit(
                                 architecture_repaired or {},
                                 genre=genre,
@@ -4469,9 +7030,7 @@ async def run_concept_tournament(
                                 else None,
                                 "audit": repaired_audit,
                             }
-                            if architecture_repaired is not None and repaired_audit.get(
-                                "passed"
-                            ):
+                            if architecture_repaired is not None and repaired_audit.get("passed"):
                                 card_record.setdefault("initial_card", kernel)
                                 kernel = {
                                     **architecture_repaired,
@@ -4489,9 +7048,7 @@ async def run_concept_tournament(
                                         "reason": "故事架构能力门失败: "
                                         + "/".join(
                                             str(item)
-                                            for item in repaired_audit.get(
-                                                "blocking_codes", []
-                                            )
+                                            for item in repaired_audit.get("blocking_codes", [])
                                         ),
                                         "failed_axes": ["story_architecture"],
                                         "blocking_codes": list(
@@ -4510,6 +7067,7 @@ async def run_concept_tournament(
                             kernel,
                         ),
                         seed_concept=seed_concept,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
                         tone_preference=tone_preference,
                         effect_skills=effect_skills,
                         cost_style=cost_style,
@@ -4528,32 +7086,50 @@ async def run_concept_tournament(
                         continue
                     prebuilt_kernels[(dimension, premise_seed)] = kernel
                     cards.append((dimension, premise_seed, kernel))
+                except _TOURNAMENT_EXECUTION_ERRORS:
+                    raise
                 except Exception:
                     logger.warning(
                         "concept premise generation failed (dimension=%s)",
                         dimension,
                         exc_info=True,
                     )
+            # Only cards that survived construction may reach the fallback
+            # single-card judge. Reusing the original work_items regenerated
+            # rejected cards when the pool was empty or the batch JSON invalid.
+            work_items = [(dimension, seed) for dimension, seed, _ in cards]
             if cards:
                 batch_system, batch_user = _build_engine_batch_judge_messages(
                     cards=cards,
                     genre=genre,
                     sub_genre=sub_genre,
                     chapter_count=chapter_count,
+                    authoritative_seed_concept=seed_concept if authoritative_seed else "",
                     intent_axes=intent_axes,
                 )
-                batch_raw, batch_run_id = await premise_judge_fn(
-                    batch_system, batch_user
-                )
+                batch_raw, batch_run_id = await premise_judge_fn(batch_system, batch_user)
                 if batch_run_id is not None:
                     result.llm_run_ids.append(batch_run_id)
                 verdict_payload = _parse_json_object(batch_raw) or {}
                 verdicts = verdict_payload.get("verdicts")
+                if not isinstance(verdicts, list):
+                    # Keep the single-card fallback, but expose why it spent
+                    # extra calls; missing batch JSON is not a successful review.
+                    result.premise_review_fallback = {
+                        "reason": "batch_verdict_contract_incomplete",
+                        "run_id": str(batch_run_id) if batch_run_id is not None else None,
+                        "card_count": len(cards),
+                        "recovery": "single_card_review",
+                    }
                 if isinstance(verdicts, list):
                     approved: list[tuple[str, str]] = []
-                    clean_near_passes: list[
-                        tuple[float, float, str, str]
-                    ] = []
+                    clean_near_passes: list[tuple[float, float, str, str]] = []
+                    near_pass_details: dict[tuple[str, str], tuple[dict[str, Any], list[str]]] = {}
+                    non_waivable_axes = {
+                        "seed_fidelity",
+                        *(key for key, _ in intent_axes),
+                    }
+                    protected_engine_axes = set(engine_axes) - set(_COMMERCIAL_ENGINE_AXES)
                     verdict_by_index: dict[int, dict[str, Any]] = {}
                     for verdict in verdicts:
                         if not isinstance(verdict, dict):
@@ -4562,22 +7138,20 @@ async def run_concept_tournament(
                             card_index = int(verdict.get("index"))
                         except (TypeError, ValueError):
                             continue
-                        if (
-                            not 0 <= card_index < len(cards)
-                            or card_index in verdict_by_index
-                        ):
+                        if not 0 <= card_index < len(cards) or card_index in verdict_by_index:
                             continue
                         verdict_by_index[card_index] = verdict
 
-                    for card_index, (dimension, premise_seed, kernel) in enumerate(
-                        cards
-                    ):
+                    source_repair_attempted = False
+                    for card_index, (dimension, premise_seed, kernel) in enumerate(cards):
                         verdict = verdict_by_index.get(card_index)
                         engine_scores, missing_axes = _parse_complete_axis_scores(
                             verdict, engine_axes
                         )
                         # Batch responses may be truncated or omit one field. Rejudge
                         # only that card; never convert an absent field into a zero.
+                        batch_verdict = verdict
+                        retry_run_id = None
                         if missing_axes:
                             retry_system, retry_user = _build_engine_judge_messages(
                                 kernel=kernel,
@@ -4585,6 +7159,9 @@ async def run_concept_tournament(
                                 sub_genre=sub_genre,
                                 chapter_count=chapter_count,
                                 seed_concept=premise_seed,
+                                authoritative_seed_concept=seed_concept
+                                if authoritative_seed
+                                else "",
                                 intent_axes=intent_axes,
                             )
                             retry_raw, retry_run_id = await premise_judge_fn(
@@ -4597,6 +7174,42 @@ async def run_concept_tournament(
                                 retry_verdict, engine_axes
                             )
                             verdict = retry_verdict
+                        fidelity_evidence = _validate_engine_seed_fidelity_evidence(
+                            verdict,
+                            authoritative_seed=seed_concept if authoritative_seed else "",
+                            kernel=kernel,
+                        )
+                        card_record = card_records_by_key.get((str(dimension), str(premise_seed)))
+                        if card_record is not None:
+                            card_record["premise_review"] = {
+                                "seed_fidelity": (verdict or {}).get("seed_fidelity"),
+                                "seed_fidelity_evidence": fidelity_evidence,
+                                "verdict": dict(verdict) if isinstance(verdict, dict) else None,
+                                "batch_verdict": dict(batch_verdict)
+                                if isinstance(batch_verdict, dict)
+                                else None,
+                                "batch_run_id": str(batch_run_id)
+                                if batch_run_id is not None
+                                else None,
+                                "run_id": str(retry_run_id or batch_run_id)
+                                if (retry_run_id or batch_run_id) is not None
+                                else None,
+                                "review_mode": "batch_retry"
+                                if retry_run_id is not None
+                                else "batch",
+                            }
+                        if authoritative_seed and fidelity_evidence.get("status") != "verified":
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": {},
+                                    "reason": "用户上位创意身份证据未验证，不能用高分代替核验: "
+                                    + str(fidelity_evidence.get("reason")),
+                                    "failed_axes": ["seed_fidelity_evidence"],
+                                    "seed_fidelity_evidence": fidelity_evidence,
+                                }
+                            )
+                            continue
                         if engine_scores is None:
                             result.engine_rejections.append(
                                 {
@@ -4610,29 +7223,268 @@ async def run_concept_tournament(
                             )
                             continue
                         failed_engine_axes = [
-                            axis
-                            for axis in engine_axes
-                            if engine_scores[axis] < engine_floor
+                            axis for axis in engine_axes if engine_scores[axis] < engine_floor
                         ]
-                        if failed_engine_axes:
-                            result.engine_rejections.append(
-                                {
-                                    "dimension": dimension,
-                                    "scores": engine_scores,
-                                    "reason": str(verdict.get("reason") or ""),
-                                    "failed_axes": failed_engine_axes,
-                                }
+                        if (
+                            authoritative_seed
+                            and failed_engine_axes == ["seed_fidelity"]
+                            and not source_repair_attempted
+                        ):
+                            # One bounded source repair per tournament. This never
+                            # waives the source gate or spends an entire new pool.
+                            source_repair_attempted = True
+                            (
+                                source_repair,
+                                source_status,
+                                final_source_verdict,
+                            ) = await _attempt_source_fact_repair(
+                                kernel=kernel,
+                                seed_concept=seed_concept,
+                                premise_seed=premise_seed,
+                                genre=genre,
+                                sub_genre=sub_genre,
+                                chapter_count=chapter_count,
+                                intent_axes=intent_axes,
+                                engine_axes=engine_axes,
+                                engine_floor=engine_floor,
+                                failed_engine_axes=failed_engine_axes,
+                                fidelity_evidence=fidelity_evidence,
+                                engine_scores=engine_scores,
+                                verdict=verdict,
+                                premise_judge_fn=premise_judge_fn,
+                                gen_fn=engine_fn,
+                                result=result,
                             )
-                            clean_near_passes.append(
-                                (
-                                    min(engine_scores.values()),
-                                    sum(engine_scores.values()),
-                                    dimension,
-                                    premise_seed,
+                            if card_record is not None:
+                                card_record["source_revision"] = source_status
+                            if source_repair.edited_card is not None:
+                                repaired_architecture = (
+                                    _story_architecture_audit(
+                                        source_repair.edited_card,
+                                        genre=genre,
+                                        sub_genre=sub_genre,
+                                        chapter_count=chapter_count,
+                                        effect_skills=effect_skills,
+                                    )
+                                    if bool(cfg.get("story_architecture_contract_enabled", False))
+                                    else None
                                 )
-                            )
+                                source_status["repaired_architecture_audit"] = repaired_architecture
+                                if (
+                                    repaired_architecture is not None
+                                    and not repaired_architecture.get("passed")
+                                ):
+                                    source_status.update(
+                                        status="rejected", reason="repaired_architecture_failed"
+                                    )
+                                    result.engine_rejections.append(
+                                        {
+                                            "dimension": dimension,
+                                            "scores": engine_scores,
+                                            "reason": "源事实补回后架构审查未通过",
+                                            "failed_axes": ["story_architecture"],
+                                        }
+                                    )
+                                    continue
+                                kernel = source_repair.edited_card
+                                prebuilt_kernels[(dimension, premise_seed)] = kernel
+                                verdict = final_source_verdict
+                                engine_scores, _ = _parse_complete_axis_scores(verdict, engine_axes)
+                                failed_engine_axes = []
+                                if card_record is not None:
+                                    for prior_key in (
+                                        "story_layer",
+                                        "expansion_editor",
+                                        "story_architecture_audit",
+                                    ):
+                                        if prior_key in card_record:
+                                            source_status.setdefault("prior_reviews", {})[
+                                                prior_key
+                                            ] = card_record[prior_key]
+                                            card_record[prior_key] = {
+                                                "status": "superseded_by_source_revision",
+                                                "stale": True,
+                                                "reason": "review_applied_to_original_card",
+                                            }
+                                    if repaired_architecture is not None:
+                                        card_record["story_architecture_audit"] = (
+                                            repaired_architecture
+                                        )
+                                    card_record["card"] = kernel
+                                    card_record["premise_review"] = {
+                                        "seed_fidelity": verdict.get("seed_fidelity"),
+                                        "seed_fidelity_evidence": _validate_engine_seed_fidelity_evidence(
+                                            verdict,
+                                            authoritative_seed=seed_concept,
+                                            kernel=kernel,
+                                        ),
+                                        "verdict": verdict,
+                                        "run_id": source_status["llm_run_ids"][-1]
+                                        if source_status["llm_run_ids"]
+                                        else None,
+                                        "review_mode": "source_rejudge",
+                                    }
+                        if failed_engine_axes:
+                            commercial_failed = [
+                                axis
+                                for axis in failed_engine_axes
+                                if axis in _COMMERCIAL_ENGINE_AXES
+                            ]
+                            protected_failed = [
+                                axis for axis in failed_engine_axes if axis in protected_engine_axes
+                            ]
+                            if commercial_advisory and commercial_failed:
+                                result.quality_findings.append(
+                                    {
+                                        "stage": "premise_review",
+                                        "dimension": dimension,
+                                        "category": "commercial_quality",
+                                        "priority": "P1",
+                                        "failed_axes": commercial_failed,
+                                        "scores": {
+                                            axis: engine_scores[axis] for axis in commercial_failed
+                                        },
+                                        "threshold": engine_floor,
+                                        "policy": "advisory_only",
+                                    }
+                                )
+                            if not (commercial_advisory and not protected_failed):
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": dimension,
+                                        "scores": engine_scores,
+                                        "reason": str(verdict.get("reason") or ""),
+                                        "failed_axes": failed_engine_axes,
+                                    }
+                                )
+                            # Survivor quotas may keep a commercially imperfect
+                            # card in play, but can never waive user authority
+                            # or an explicit creation option.  The old blanket
+                            # rescue let a renamed protagonist become champion
+                            # merely to keep the paid candidate pool non-empty.
+                            if commercial_advisory and not protected_failed:
+                                approved.append((dimension, premise_seed))
+                            elif not (set(failed_engine_axes) & non_waivable_axes):
+                                clean_near_passes.append(
+                                    (
+                                        min(engine_scores.values()),
+                                        sum(engine_scores.values()),
+                                        dimension,
+                                        premise_seed,
+                                    )
+                                )
+                                if isinstance(verdict, dict):
+                                    near_pass_details[(str(dimension), str(premise_seed))] = (
+                                        dict(verdict),
+                                        list(failed_engine_axes),
+                                    )
                         else:
                             approved.append((dimension, premise_seed))
+                    eligible_near_passes = [
+                        item
+                        for item in clean_near_passes
+                        if len(near_pass_details.get((item[2], item[3]), ({}, []))[1]) == 1
+                        and near_pass_details.get((item[2], item[3]), ({}, []))[1][0]
+                        in _NARROW_COMMERCIAL_EDIT_FIELDS
+                    ]
+                    if eligible_near_passes:
+                        _, _, near_dimension, near_seed = max(
+                            eligible_near_passes, key=lambda item: (item[1], item[0])
+                        )
+                        near_key = (near_dimension, near_seed)
+                        near_verdict, near_failed_axes = near_pass_details.get(near_key, ({}, []))
+                        near_kernel = prebuilt_kernels.get(near_key)
+                        # A failed bounded repair cannot later be rescued by a quota.
+                        clean_near_passes = [
+                            item for item in clean_near_passes if (item[2], item[3]) != near_key
+                        ]
+                        if near_kernel is None:
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": near_dimension,
+                                    "scores": {},
+                                    "reason": "narrow_repair_card_missing",
+                                    "failed_axes": list(near_failed_axes),
+                                }
+                            )
+                        if near_kernel is not None:
+                            near_record = card_records_by_key.get(near_key)
+                            try:
+                                repaired, narrow_status = await _attempt_narrow_commercial_repair(
+                                    card=near_kernel,
+                                    dimension=near_dimension,
+                                    premise_seed=near_seed,
+                                    initial_verdict=near_verdict,
+                                    failed_axes=near_failed_axes,
+                                    authoritative_seed_concept=seed_concept
+                                    if authoritative_seed
+                                    else "",
+                                    genre=genre,
+                                    sub_genre=sub_genre,
+                                    chapter_count=chapter_count,
+                                    intent_axes=intent_axes,
+                                    engine_axes=engine_axes,
+                                    engine_floor=engine_floor,
+                                    premise_judge_fn=premise_judge_fn,
+                                    gen_fn=gen_fn,
+                                    result=result,
+                                    initial_review_mode=str(
+                                        ((near_record or {}).get("premise_review") or {}).get(
+                                            "review_mode"
+                                        )
+                                        or "batch"
+                                    ),
+                                )
+                            except _TOURNAMENT_EXECUTION_ERRORS:
+                                raise
+                            except Exception as exc:  # pragma: no cover - provider failure boundary
+                                logger.warning(
+                                    "narrow commercial repair failed: %s", type(exc).__name__
+                                )
+                                repaired = None
+                                narrow_status = {
+                                    "status": "unresolved",
+                                    "reason": "repair_exception",
+                                    "error_type": type(exc).__name__,
+                                    "failed_axes": list(near_failed_axes),
+                                }
+                            if near_record is not None:
+                                if isinstance(near_record.get("premise_review"), dict):
+                                    narrow_status["original_premise_review"] = dict(
+                                        near_record["premise_review"]
+                                    )
+                                near_record["narrow_revision"] = {
+                                    "original_card": dict(near_kernel),
+                                    **narrow_status,
+                                }
+                            if repaired is not None:
+                                prebuilt_kernels[near_key] = repaired
+                                if near_record is not None:
+                                    near_record["card"] = repaired
+                                    near_record["premise_review"] = {
+                                        "seed_fidelity": narrow_status["scores"].get(
+                                            "seed_fidelity"
+                                        ),
+                                        "seed_fidelity_evidence": narrow_status.get(
+                                            "final_seed_fidelity_evidence"
+                                        ),
+                                        "verdict": narrow_status.get("final_verdict"),
+                                        "run_id": narrow_status.get("rejudge_run_id"),
+                                        "review_mode": "narrow_rejudge",
+                                        "card_hash": narrow_status.get("edited_card_hash"),
+                                    }
+                                approved.append(near_key)
+                            else:
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": near_dimension,
+                                        "scores": {},
+                                        "reason": "窄范围商业修复未确认，不晋升: "
+                                        + str(narrow_status.get("reason") or "unresolved"),
+                                        "failed_axes": list(near_failed_axes),
+                                        "narrow_revision": narrow_status,
+                                    }
+                                )
                     minimum_survivors = min(
                         len(cards),
                         max(
@@ -4670,9 +7522,7 @@ async def run_concept_tournament(
                 {"stage": "premise_card", "index": _card_idx, "total": len(work_items)},
             )
             try:
-                kernel: dict[str, Any] | None = prebuilt_kernels.get(
-                    (dimension, premise_seed)
-                )
+                kernel: dict[str, Any] | None = prebuilt_kernels.get((dimension, premise_seed))
                 if candidate_prompt_mode == "engine_first":
                     if kernel is None:
                         engine_system, engine_user = _build_engine_kernel_messages(
@@ -4681,19 +7531,27 @@ async def run_concept_tournament(
                             lane=dimension,
                             chapter_count=chapter_count,
                             seed_concept=premise_seed,
-                            seed_support=raw_pitch_by_seed.get(premise_seed),
+                            authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                            seed_support=(
+                                None if authoritative_seed else raw_pitch_by_seed.get(premise_seed)
+                            ),
                             audience_orientation=audience_orientation,
                             cost_style=cost_style,
                             tone_preference=tone_preference,
                             effect_skills=effect_skills,
                             creation_intent_block=creation_intent_block,
+                            retry_feedback=retry_feedback,
                             banned=banned,
+                            primary_effect_contract=primary_effect_contract,
+                            distilled_reference_block=distilled_reference_block,
                         )
                         result.candidate_prompt_chars += len(engine_system) + len(engine_user)
                         result.candidate_generation_calls += 1
-                        engine_raw, engine_run_id = await engine_fn(
-                            engine_system, engine_user
-                        )
+                        engine_raw, engine_run_id = await engine_fn(engine_system, engine_user)
+                        if result.distilled_reference_receipt:
+                            result.distilled_reference_receipt["status"] = (
+                                "consumed_by_concept_generation"
+                            )
                         if engine_run_id is not None:
                             result.llm_run_ids.append(engine_run_id)
                         kernel = _parse_json_object(engine_raw)
@@ -4712,15 +7570,12 @@ async def run_concept_tournament(
                                 {
                                     "dimension": dimension,
                                     "scores": {},
-                                    "reason": "项目卡结构缺失: "
-                                    + "/".join(missing_card_fields),
+                                    "reason": "项目卡结构缺失: " + "/".join(missing_card_fields),
                                     "failed_axes": ["card_completeness"],
                                 }
                             )
                             continue
-                        if bool(
-                            cfg.get("story_architecture_contract_enabled", False)
-                        ):
+                        if bool(cfg.get("story_architecture_contract_enabled", False)):
                             architecture_audit = _story_architecture_audit(
                                 kernel,
                                 genre=genre,
@@ -4728,9 +7583,9 @@ async def run_concept_tournament(
                                 chapter_count=chapter_count,
                                 effect_skills=effect_skills,
                             )
-                            result.premise_cards[-1][
-                                "story_architecture_audit"
-                            ] = architecture_audit
+                            result.premise_cards[-1]["story_architecture_audit"] = (
+                                architecture_audit
+                            )
                             if architecture_audit.get("passed"):
                                 kernel = {
                                     **kernel,
@@ -4747,15 +7602,11 @@ async def run_concept_tournament(
                                         "reason": "故事架构能力门失败: "
                                         + "/".join(
                                             str(item)
-                                            for item in architecture_audit.get(
-                                                "blocking_codes", []
-                                            )
+                                            for item in architecture_audit.get("blocking_codes", [])
                                         ),
                                         "failed_axes": ["story_architecture"],
                                         "blocking_codes": list(
-                                            architecture_audit.get(
-                                                "blocking_codes", []
-                                            )
+                                            architecture_audit.get("blocking_codes", [])
                                         ),
                                     }
                                 )
@@ -4763,15 +7614,14 @@ async def run_concept_tournament(
                     if not batch_review_complete and (
                         premise_judge_fn is not None or seriality_judge_fn is not None
                     ):
-                        engine_judge_system, engine_judge_user = (
-                            _build_engine_judge_messages(
-                                kernel=kernel,
-                                genre=genre,
-                                sub_genre=sub_genre,
-                                chapter_count=chapter_count,
-                                seed_concept=premise_seed,
-                                intent_axes=intent_axes,
-                            )
+                        engine_judge_system, engine_judge_user = _build_engine_judge_messages(
+                            kernel=kernel,
+                            genre=genre,
+                            sub_genre=sub_genre,
+                            chapter_count=chapter_count,
+                            seed_concept=premise_seed,
+                            authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                            intent_axes=intent_axes,
                         )
                         engine_judge = premise_judge_fn or seriality_judge_fn
                         assert engine_judge is not None
@@ -4784,6 +7634,46 @@ async def run_concept_tournament(
                         engine_scores, missing_axes = _parse_complete_axis_scores(
                             engine_verdict, engine_axes
                         )
+                        fidelity_evidence = _validate_engine_seed_fidelity_evidence(
+                            engine_verdict,
+                            authoritative_seed=seed_concept if authoritative_seed else "",
+                            kernel=kernel or {},
+                        )
+                        card_record = card_records_by_key.get((str(dimension), str(premise_seed)))
+                        if card_record is not None:
+                            card_record["premise_review"] = {
+                                "seed_fidelity": (engine_verdict or {}).get("seed_fidelity"),
+                                "seed_fidelity_evidence": fidelity_evidence,
+                                "verdict": dict(engine_verdict)
+                                if isinstance(engine_verdict, dict)
+                                else None,
+                                "run_id": str(engine_judge_run_id)
+                                if engine_judge_run_id is not None
+                                else None,
+                                "review_mode": "single_fallback",
+                            }
+                            # The fallback has no batch near-pass ordering and
+                            # therefore never spends a repair call implicitly.
+                            card_record["narrow_revision"] = {
+                                "status": "not_triggered",
+                                "reason": "single_fallback_requires_batch_near_pass_context",
+                            }
+                            card_record["source_revision"] = {
+                                "status": "not_triggered",
+                                "reason": "source_repair_requires_complete_batch_review",
+                            }
+                        if authoritative_seed and fidelity_evidence.get("status") != "verified":
+                            result.engine_rejections.append(
+                                {
+                                    "dimension": dimension,
+                                    "scores": {},
+                                    "reason": "用户上位创意身份证据未验证，不能用高分代替核验: "
+                                    + str(fidelity_evidence.get("reason")),
+                                    "failed_axes": ["seed_fidelity_evidence"],
+                                    "seed_fidelity_evidence": fidelity_evidence,
+                                }
+                            )
+                            continue
                         if engine_scores is None:
                             result.engine_rejections.append(
                                 {
@@ -4797,22 +7687,44 @@ async def run_concept_tournament(
                             )
                             continue
                         failed_engine_axes = [
-                            axis
-                            for axis in engine_axes
-                            if engine_scores[axis] < engine_floor
+                            axis for axis in engine_axes if engine_scores[axis] < engine_floor
                         ]
                         if failed_engine_axes:
-                            result.engine_rejections.append(
-                                {
-                                    "dimension": dimension,
-                                    "scores": engine_scores,
-                                    "reason": str(
-                                        (engine_verdict or {}).get("reason") or ""
-                                    ),
-                                    "failed_axes": failed_engine_axes,
-                                }
-                            )
-                            continue
+                            commercial_failed = [
+                                axis
+                                for axis in failed_engine_axes
+                                if axis in _COMMERCIAL_ENGINE_AXES
+                            ]
+                            protected_failed = [
+                                axis
+                                for axis in failed_engine_axes
+                                if axis not in _COMMERCIAL_ENGINE_AXES
+                            ]
+                            if commercial_advisory and commercial_failed:
+                                result.quality_findings.append(
+                                    {
+                                        "stage": "premise_review",
+                                        "dimension": dimension,
+                                        "category": "commercial_quality",
+                                        "priority": "P1",
+                                        "failed_axes": commercial_failed,
+                                        "scores": {
+                                            axis: engine_scores[axis] for axis in commercial_failed
+                                        },
+                                        "threshold": engine_floor,
+                                        "policy": "advisory_only",
+                                    }
+                                )
+                            if not (commercial_advisory and not protected_failed):
+                                result.engine_rejections.append(
+                                    {
+                                        "dimension": dimension,
+                                        "scores": engine_scores,
+                                        "reason": str((engine_verdict or {}).get("reason") or ""),
+                                        "failed_axes": failed_engine_axes,
+                                    }
+                                )
+                                continue
                     system, user = _build_hook_from_engine_messages(
                         genre=genre,
                         sub_genre=sub_genre,
@@ -4864,20 +7776,22 @@ async def run_concept_tournament(
                     if kernel is not None:
                         candidate = _attach_engine_kernel(candidate, kernel)
                     candidates.append(candidate)
+            except _TOURNAMENT_EXECUTION_ERRORS:
+                raise
             except Exception:
                 logger.warning(
                     "concept candidate generation failed (dimension=%s)",
-                    dimension, exc_info=True,
+                    dimension,
+                    exc_info=True,
                 )
 
-        # ── 2) 确定性筛：俗套命中 + 最小故事种子审计 ───────────────────
-        # 基线 eliminate（命中即出局）；wild_mode 覆盖为 penalize（改罚分不淘汰，
-        # 避免 2 词元假命中误杀好候选——罚分在 composite 阶段扣）。
+        # ── 2) 确定性筛 + 默认俗套参考审计 ──────────────────────────
+        # The default library is not a user avoid contract, even when a legacy
+        # config requests eliminate/penalize. Real creation/structure checks
+        # remain below; reference matches cannot change eligibility or score.
         from dataclasses import replace as _dc_replace
 
-        cliche_mode = str(cfg.get("cliche_mode", "eliminate")).strip().lower()
         audit_mode = str(cfg.get("audit_mode", "eliminate")).strip().lower()
-        cliche_penalty = float(cfg.get("cliche_penalty", 1.5))
         audit_penalty = float(cfg.get("audit_penalty", 1.0))
 
         screened: list[ConceptCandidate] = []
@@ -4888,6 +7802,7 @@ async def run_concept_tournament(
             hard_reason = _candidate_hard_rejection_reason(
                 candidate,
                 seed_concept=seed_concept,
+                authoritative_seed_concept=seed_concept if authoritative_seed else "",
                 tone_preference=tone_preference,
                 effect_skills=effect_skills,
                 cost_style=cost_style,
@@ -4913,13 +7828,18 @@ async def run_concept_tournament(
                 continue
             hits = _cliche_hits(candidate, banned)
             if hits:
-                if cliche_mode == "penalize":
-                    penalty += cliche_penalty
-                else:
-                    annotated.append(
-                        _dc_replace(candidate, rejected_reason=f"俗套命中: {'/'.join(hits[:3])}")
-                    )
-                    continue
+                result.quality_findings.append({
+                    "finding": "default_cliche_reference_match",
+                    "policy": "default-cliche-reference.v1",
+                    "authority": "default_reference",
+                    "action": "advisory",
+                    "evidence_kind": "lexical_matches",
+                    "dimension": candidate.dimension,
+                    "matches": hits,
+                    "affects_eligibility": False,
+                    "affects_scores": False,
+                    "affects_order": False,
+                })
             audit = _seed_audit(candidate)
             if audit:
                 if audit_mode == "penalize":
@@ -4953,6 +7873,8 @@ async def run_concept_tournament(
             from bestseller.services.premise_appeal_arena import resolve_reference_set
 
             references = resolve_reference_set(genre, sub_genre)
+        except _TOURNAMENT_EXECUTION_ERRORS:
+            raise
         except Exception:
             logger.debug("reference set resolution failed", exc_info=True)
 
@@ -5001,29 +7923,20 @@ async def run_concept_tournament(
                 if verdict is None:
                     judged.append(candidate)  # 判官废→无分,靠别的候选竞争
                     continue
-                fresh = max(0.0, min(10.0, float(verdict.get("freshness", 0))))
-                click = max(0.0, min(10.0, float(verdict.get("click", 0))))
-                predictable = max(0.0, min(10.0, float(verdict.get("predictable", 10))))
-                character_logic = max(
-                    0.0,
-                    min(10.0, float(verdict.get("character_logic", 5))),
-                )
-                mechanism_causality = max(
-                    0.0,
-                    min(10.0, float(verdict.get("mechanism_causality", 5))),
-                )
-                genre_fidelity = max(
-                    0.0,
-                    min(10.0, float(verdict.get("genre_fidelity", 5))),
-                )
-                plain_language = max(
-                    0.0,
-                    min(10.0, float(verdict.get("plain_language", 5))),
-                )
-                story_motion = max(
-                    0.0,
-                    min(10.0, float(verdict.get("story_motion", 0))),
-                )
+                raw_scores = _parse_finite_hook_scores(verdict)
+                if raw_scores is None:
+                    judged.append(
+                        _dc_replace(candidate, rejected_reason="钩子判官评分字段无效或缺失")
+                    )
+                    continue
+                fresh = raw_scores["freshness"]
+                click = raw_scores["click"]
+                predictable = raw_scores["predictable"]
+                character_logic = raw_scores["character_logic"]
+                mechanism_causality = raw_scores["mechanism_causality"]
+                genre_fidelity = raw_scores["genre_fidelity"]
+                plain_language = raw_scores["plain_language"]
+                story_motion = raw_scores["story_motion"]
                 protagonist_agency = max(
                     0.0,
                     min(10.0, float(verdict.get("protagonist_agency", 5))),
@@ -5040,16 +7953,14 @@ async def run_concept_tournament(
                     + protagonist_agency * w_agency
                 )
                 # penalize 模式的确定性罚分（基线无罚分 → dict 空 → 值不变）。
-                composite = max(
-                    0.0, composite - penalty_by_concept.get(candidate.concept, 0.0)
-                )
+                composite = max(0.0, composite - penalty_by_concept.get(candidate.concept, 0.0))
                 hard_floors = (
                     cfg.get("judge_hard_floors")
                     if isinstance(cfg.get("judge_hard_floors"), dict)
                     else {}
                 )
                 failed_axes: list[str] = []
-                failed_axes = _hard_floor_failed_axes(
+                all_failed_axes = _hard_floor_failed_axes(
                     {
                         "freshness": fresh,
                         "click": click,
@@ -5061,6 +7972,32 @@ async def run_concept_tournament(
                         "story_motion": story_motion,
                     },
                     hard_floors,
+                )
+                quality_findings = _commercial_findings(
+                    {
+                        "freshness": fresh,
+                        "click": click,
+                        "predictable": predictable,
+                        "character_logic": character_logic,
+                        "mechanism_causality": mechanism_causality,
+                        "plain_language": plain_language,
+                        "story_motion": story_motion,
+                    },
+                    hard_floors,
+                    axes=_COMMERCIAL_HOOK_AXES,
+                )
+                failed_axes = (
+                    _protected_hook_floor_failures(
+                        {
+                            "character_logic": character_logic,
+                            "mechanism_causality": mechanism_causality,
+                            "story_motion": story_motion,
+                            "genre_fidelity": genre_fidelity,
+                        },
+                        hard_floors,
+                    )
+                    if commercial_advisory
+                    else all_failed_axes
                 )
                 judged.append(
                     _dc_replace(
@@ -5076,30 +8013,46 @@ async def run_concept_tournament(
                         judge_protagonist_agency=protagonist_agency,
                         judge_reason=str(verdict.get("reason") or ""),
                         composite=round(composite, 2) if not failed_axes else 0.0,
+                        quality_findings=quality_findings,
                         rejected_reason=(
-                            None
-                            if not failed_axes
-                            else "钩子硬门失败: " + "/".join(failed_axes)
+                            None if not failed_axes else "钩子硬门失败: " + "/".join(failed_axes)
                         ),
                     )
                 )
+            except _TOURNAMENT_EXECUTION_ERRORS:
+                raise
             except Exception:
                 logger.warning("concept judge failed for one candidate", exc_info=True)
                 judged.append(candidate)
 
         # 打完分的评审快照回写 result.candidates（供落库复盘）。
         scored_by_concept = {c.concept: c for c in judged}
-        result.candidates = [
-            scored_by_concept.get(c.concept, c) for c in result.candidates
-        ]
+        result.candidates = [scored_by_concept.get(c.concept, c) for c in result.candidates]
 
         winner_min = float(cfg.get("winner_min", 5.5))
+        if commercial_advisory:
+            judged = [
+                _dc_replace(
+                    candidate,
+                    quality_findings=tuple(candidate.quality_findings)
+                    + _commercial_findings(
+                        {"composite": float(candidate.composite or 0.0)},
+                        {"composite": winner_min},
+                        axes=frozenset(),
+                        composite=candidate.composite,
+                        winner_min=winner_min,
+                    ),
+                )
+                for candidate in judged
+            ]
+            scored_by_concept = {c.concept: c for c in judged}
+            result.candidates = [scored_by_concept.get(c.concept, c) for c in result.candidates]
         contenders = [
             c
             for c in judged
             if c.rejected_reason is None
             and c.composite is not None
-            and (c.composite or 0.0) >= winner_min
+            and (commercial_advisory or (c.composite or 0.0) >= winner_min)
         ]
         if not contenders:
             # Forensics: a dry tournament forces conception onto its vanilla
@@ -5148,30 +8101,25 @@ async def run_concept_tournament(
                 raw, run_id = await finalist_judge_fn(system, user)
                 if run_id is not None:
                     result.llm_run_ids.append(run_id)
-                verdict = _parse_json_object(raw) or {}
-                scores = {
-                    "freshness": max(0.0, min(10.0, float(verdict.get("freshness", 0)))),
-                    "click": max(0.0, min(10.0, float(verdict.get("click", 0)))),
-                    "predictable": max(
-                        0.0, min(10.0, float(verdict.get("predictable", 10)))
-                    ),
-                    "character_logic": max(
-                        0.0, min(10.0, float(verdict.get("character_logic", 0)))
-                    ),
-                    "mechanism_causality": max(
-                        0.0, min(10.0, float(verdict.get("mechanism_causality", 0)))
-                    ),
-                    "genre_fidelity": max(
-                        0.0, min(10.0, float(verdict.get("genre_fidelity", 0)))
-                    ),
-                    "plain_language": max(
-                        0.0, min(10.0, float(verdict.get("plain_language", 0)))
-                    ),
-                    "story_motion": max(
-                        0.0, min(10.0, float(verdict.get("story_motion", 0)))
-                    ),
-                }
-                failed = _hard_floor_failed_axes(scores, hard_floors)
+                verdict = _parse_json_object(raw)
+                raw_scores = _parse_finite_hook_scores(verdict)
+                if raw_scores is None:
+                    return _dc_replace(
+                        current,
+                        rejected_reason="独立钩子终审评分字段无效或缺失",
+                    ), ["invalid_hook_scores"]
+                scores = raw_scores
+                all_failed = _hard_floor_failed_axes(scores, hard_floors)
+                quality_findings = _commercial_findings(
+                    scores,
+                    hard_floors,
+                    axes=_COMMERCIAL_HOOK_AXES,
+                )
+                failed = (
+                    _protected_hook_floor_failures(scores, hard_floors)
+                    if commercial_advisory
+                    else all_failed
+                )
                 composite = (
                     scores["freshness"] * w_fresh
                     + scores["click"] * w_click
@@ -5194,6 +8142,7 @@ async def run_concept_tournament(
                     judge_story_motion=scores["story_motion"],
                     judge_reason="独立终审: " + str(verdict.get("reason") or ""),
                     composite=round(composite, 2) if not failed else 0.0,
+                    quality_findings=quality_findings,
                     rejected_reason=(
                         None if not failed else "独立钩子终审失败: " + "/".join(failed)
                     ),
@@ -5202,9 +8151,9 @@ async def run_concept_tournament(
 
             finalist_pool_size = max(1, int(cfg.get("finalist_pool_size", 4)))
             reviewed_contenders: list[ConceptCandidate] = []
-            for contender in sorted(
-                contenders, key=lambda c: c.composite or 0.0, reverse=True
-            )[:finalist_pool_size]:
+            for contender in sorted(contenders, key=lambda c: c.composite or 0.0, reverse=True)[
+                :finalist_pool_size
+            ]:
                 reviewed, failed = await _independent_hook_review(contender)
                 if failed and set(failed).issubset({"大白话", "想点欲"}):
                     repair_system, repair_user = _build_hook_copy_repair_messages(
@@ -5213,9 +8162,7 @@ async def run_concept_tournament(
                     )
                     result.candidate_prompt_chars += len(repair_system) + len(repair_user)
                     result.candidate_generation_calls += 1
-                    repair_raw, repair_run_id = await gen_fn(
-                        repair_system, repair_user
-                    )
+                    repair_raw, repair_run_id = await gen_fn(repair_system, repair_user)
                     if repair_run_id is not None:
                         result.llm_run_ids.append(repair_run_id)
                     repair_payload = _parse_json_object(repair_raw) or {}
@@ -5230,6 +8177,18 @@ async def run_concept_tournament(
                             repaired
                         ):
                             reviewed, failed = await _independent_hook_review(repaired)
+                if commercial_advisory:
+                    reviewed = _dc_replace(
+                        reviewed,
+                        quality_findings=tuple(reviewed.quality_findings)
+                        + _commercial_findings(
+                            {},
+                            {},
+                            axes=frozenset(),
+                            composite=reviewed.composite,
+                            winner_min=winner_min,
+                        ),
+                    )
                 reviewed_contenders.append(reviewed)
             reviewed_by_dimension = {
                 candidate.dimension: candidate for candidate in reviewed_contenders
@@ -5243,12 +8202,10 @@ async def run_concept_tournament(
                 for candidate in reviewed_contenders
                 if candidate.rejected_reason is None
                 and candidate.composite is not None
-                and (candidate.composite or 0.0) >= winner_min
+                and (commercial_advisory or (candidate.composite or 0.0) >= winner_min)
             ]
             if not contenders:
-                logger.warning(
-                    "concept tournament: no independently qualified hooks; no injection"
-                )
+                logger.warning("concept tournament: no independently qualified hooks; no injection")
                 return result
 
         # Prompt presence is not adherence.  Before a contender becomes the
@@ -5260,26 +8217,32 @@ async def run_concept_tournament(
             hard_reason = _candidate_hard_rejection_reason(
                 contender,
                 seed_concept=seed_concept,
+                authoritative_seed_concept=seed_concept if authoritative_seed else "",
                 tone_preference=tone_preference,
                 effect_skills=effect_skills,
                 cost_style=cost_style,
                 allow_debt_theme=allow_debt_theme,
                 allow_death_theme=allow_death_theme,
             )
+            boundary_reasons = _boundary_reasons(contender)
+            guard_reasons = tuple(
+                str(reason)
+                for reason in (hard_reason, *boundary_reasons)
+                if str(reason or "").strip()
+            )
             guarded = (
                 _dc_replace(
                     contender,
-                    rejected_reason="建书选项/反污染门失败: " + hard_reason,
+                    rejected_reason="建书选项/反污染门失败: " + "/".join(guard_reasons),
                 )
-                if hard_reason
+                if guard_reasons
                 else contender
             )
             guarded_by_concept[guarded.concept] = guarded
             if guarded.rejected_reason is None:
                 guarded_contenders.append(guarded)
         result.candidates = [
-            guarded_by_concept.get(candidate.concept, candidate)
-            for candidate in result.candidates
+            guarded_by_concept.get(candidate.concept, candidate) for candidate in result.candidates
         ]
         contenders = guarded_contenders
         if not contenders:
@@ -5291,44 +8254,42 @@ async def run_concept_tournament(
         # ── 5) 长篇决赛：只扩展独立终审前列，禁止反向修改故事种子 ─────────
         finalist_count = max(1, int(cfg.get("seriality_finalist_count", 2)))
         # 承载力属于冻结项目卡，不属于 promise/paradox/scene 三种广告切口。
-        # 同一项目只保留钩子分最高的一条进入承载证明，避免随机扩写互相矛盾。
-        finalists: list[ConceptCandidate] = []
-        seen_premises: set[str] = set()
-        for contender in sorted(
-            contenders, key=lambda c: c.composite or 0.0, reverse=True
-        ):
-            premise_key = contender.dimension.split(":", 1)[0]
-            if premise_key in seen_premises:
-                continue
-            seen_premises.add(premise_key)
-            finalists.append(contender)
-            if len(finalists) >= finalist_count:
-                break
+        # 先给不同项目各一个主候选，避免同一项目挤占多样性预算；如果主候选
+        # 后续承载失败，再用剩余预算补审同项目的备用候选。备用候选不能预先占掉
+        # 其他项目的名额，也不能让总 seriality 审查次数超过 finalist_count。
         seriality_finalists: list[ConceptCandidate] = []
-        active_seriality_judge_fn = (
-            finalist_seriality_judge_fn or seriality_judge_fn
-        )
+        active_seriality_judge_fn = finalist_seriality_judge_fn or seriality_judge_fn
 
         async def _request_seriality_proof(
             current: ConceptCandidate, *, feedback: str = ""
         ) -> ConceptCandidate:
             if expand_fn is None:
-                return _dc_replace(
-                    current, rejected_reason="长篇承载失败: 缺SerialityProof"
-                )
+                return _dc_replace(current, rejected_reason="长篇承载失败: 缺SerialityProof")
             try:
                 if feedback:
                     system, user = _build_seriality_repair_messages(
                         candidate=current,
                         genre=genre,
+                        sub_genre=sub_genre,
                         chapter_count=chapter_count,
                         feedback=feedback,
+                        seed_concept=seed_concept,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
+                        creation_intent_block=creation_intent_block,
                     )
                 else:
                     system, user = _build_seriality_messages(
                         candidate=current,
                         genre=genre,
+                        sub_genre=sub_genre,
                         chapter_count=chapter_count,
+                        seed_concept=seed_concept,
+                        authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                        tone_preference=tone_preference,
+                        effect_skills=effect_skills,
+                        creation_intent_block=creation_intent_block,
                     )
                 raw, run_id = await expand_fn(system, user)
                 if run_id is not None:
@@ -5344,21 +8305,25 @@ async def run_concept_tournament(
                     clean,
                     rejected_reason="长篇承载失败: SerialityProof无法解析",
                 )
+            except _TOURNAMENT_EXECUTION_ERRORS:
+                raise
             except Exception:
-                logger.warning(
-                    "seriality expansion failed for one finalist", exc_info=True
-                )
+                logger.warning("seriality expansion failed for one finalist", exc_info=True)
                 return _dc_replace(
                     current,
                     rejected_reason="长篇承载失败: SerialityProof生成异常",
                 )
 
         def _audit_seriality_proof(current: ConceptCandidate) -> ConceptCandidate:
-            audit = _seriality_audit(current, target_chapters=chapter_count)
+            audit = _seriality_audit(
+                current,
+                target_chapters=chapter_count,
+                genre=genre,
+                seed_concept=seed_concept,
+                authoritative_seed_concept=seed_concept if authoritative_seed else "",
+            )
             if audit:
-                return _dc_replace(
-                    current, rejected_reason=f"长篇承载失败: {audit}"
-                )
+                return _dc_replace(current, rejected_reason=f"长篇承载失败: {audit}")
             from bestseller.services.seriality_capacity import (
                 evaluate_seriality_capacity,
             )
@@ -5388,25 +8353,26 @@ async def run_concept_tournament(
                 return current
             try:
                 system, user = _build_seriality_judge_messages(
-                    candidate=current, chapter_count=chapter_count
+                    candidate=current,
+                    chapter_count=chapter_count,
+                    genre=genre,
+                    sub_genre=sub_genre,
+                    authoritative_seed_concept=seed_concept if authoritative_seed else "",
+                    tone_preference=tone_preference,
+                    effect_skills=effect_skills,
+                    creation_intent_block=creation_intent_block,
                 )
                 raw, run_id = await active_seriality_judge_fn(system, user)
                 if run_id is not None:
                     result.llm_run_ids.append(run_id)
                 verdict = _parse_json_object(raw)
-                axes = (
-                    "renewability",
-                    "escalation",
-                    "anti_reset",
-                    "coherence",
-                    "promise_survival",
-                    "unit_density",
-                )
                 scores: dict[str, Any] = {
                     axis: max(0.0, min(10.0, float((verdict or {}).get(axis, 0))))
-                    for axis in axes
+                    for axis in _SERIALITY_JUDGE_AXES
                 }
                 scores["reason"] = str((verdict or {}).get("reason") or "")
+                severe_collapse = _seriality_severe_collapse(scores, cfg)
+                scores["severe_collapse"] = severe_collapse
                 seriality_floors = (
                     cfg.get("seriality_hard_floors")
                     if isinstance(cfg.get("seriality_hard_floors"), dict)
@@ -5414,26 +8380,25 @@ async def run_concept_tournament(
                 )
                 failed = [
                     axis
-                    for axis in axes
-                    if float(scores[axis])
-                    < float(seriality_floors.get(axis, 7.0))
+                    for axis in _SERIALITY_JUDGE_AXES
+                    if float(scores[axis]) < float(seriality_floors.get(axis, 7.0))
                 ]
                 return _dc_replace(
                     current,
                     seriality_judge=scores,
                     rejected_reason=(
-                        None
-                        if not failed
-                        else "长篇质量门失败: " + "/".join(failed)
+                        "长篇质量门失败: SEVERE_SERIALITY_COLLAPSE"
+                        if severe_collapse
+                        else (None if not failed else "长篇质量门失败: " + "/".join(failed))
                     ),
                 )
+            except _TOURNAMENT_EXECUTION_ERRORS:
+                raise
             except Exception:
                 logger.warning("seriality judge failed for one finalist", exc_info=True)
-                return _dc_replace(
-                    current, rejected_reason="长篇质量门失败: 判官异常"
-                )
+                return _dc_replace(current, rejected_reason="长篇质量门失败: 判官异常")
 
-        for candidate in finalists:
+        async def _review_seriality_candidate(candidate: ConceptCandidate) -> ConceptCandidate:
             expanded = candidate
             # 2026-08-25：这里原本写死 `chapter_count >= 200`。追读性判官评的六条轴
             # （renewability / escalation / anti_reset / coherence / promise_survival /
@@ -5447,11 +8412,16 @@ async def run_concept_tournament(
             # 并**留痕，不发否决**。理由是 config 里 2026-07-17 记着的教训——收紧
             # 概念层阈值会让淘汰赛干涸，而干涸的下场是注入保底概念，比任何被拒
             # 候选都差。本仓库对新检测器的规矩也是「只挣重生和留痕，不发杀权」。
-            _seriality_mode, result.seriality_stage = seriality_stage_mode(
-                chapter_count, cfg
-            )
+            _seriality_mode, result.seriality_stage = seriality_stage_mode(chapter_count, cfg)
             if _seriality_mode != "skipped":
                 for proof_attempt in range(2):
+                    if (
+                        proof_attempt > 0
+                        and _seriality_mode == "advisory"
+                        and str(expanded.rejected_reason or "").startswith("长篇质量门失败")
+                        and not _seriality_severe_collapse(expanded.seriality_judge or {}, cfg)
+                    ):
+                        break
                     has_proof = bool(
                         expanded.core_promise_invariant.strip()
                         and expanded.repeatable_story_unit.strip()
@@ -5471,13 +8441,21 @@ async def run_concept_tournament(
                             judge_reason = str(expanded.seriality_judge.get("reason") or "")
                             if judge_reason:
                                 feedback = f"{feedback}；判官：{judge_reason}"
-                        expanded = await _request_seriality_proof(
-                            expanded, feedback=feedback
-                        )
+                        expanded = await _request_seriality_proof(expanded, feedback=feedback)
                     if expanded.rejected_reason is None:
                         expanded = _audit_seriality_proof(expanded)
                     if expanded.rejected_reason is None:
                         expanded = await _judge_seriality_proof(expanded)
+                    if (
+                        _seriality_mode == "advisory"
+                        and str(expanded.rejected_reason or "").startswith("长篇质量门失败")
+                        and not _seriality_severe_collapse(expanded.seriality_judge or {}, cfg)
+                    ):
+                        # Advisory scores are evidence, not a repair trigger.
+                        # A normal low-axis verdict should be recorded below,
+                        # while a second expansion is reserved for structural
+                        # proof failures or corroborated severe collapse.
+                        break
                     if expanded.rejected_reason is None or expand_fn is None:
                         break
                 # 只收 **LLM 判官** 那把刀，确定性结构筛的牙必须留着。
@@ -5496,27 +8474,69 @@ async def run_concept_tournament(
                     # advisory 档只留痕不否决：把判词搬进回执，清掉杀权。
                     # 没有这一步，一个从未在短篇上校准过的判官会直接开始毙候选，
                     # 那正是 2026-07-17 干涸事故的形状。
+                    severe_collapse = _seriality_severe_collapse(
+                        expanded.seriality_judge or {}, cfg
+                    )
                     result.seriality_stage.setdefault("advisory_findings", []).append(
                         {
                             "concept": expanded.concept,
                             "reason": expanded.rejected_reason,
                             "scores": dict(expanded.seriality_judge or {}),
+                            "blocking": severe_collapse,
+                            "policy": (
+                                "SEVERE_SERIALITY_COLLAPSE" if severe_collapse else "ADVISORY_ONLY"
+                            ),
                         }
                     )
-                    expanded = _dc_replace(expanded, rejected_reason=None)
+                    if severe_collapse:
+                        report = dict(expanded.seriality_report or {})
+                        blocking_codes = [
+                            str(code)
+                            for code in (report.get("blocking_codes") or [])
+                            if str(code).strip()
+                        ]
+                        if "SEVERE_SERIALITY_COLLAPSE" not in blocking_codes:
+                            blocking_codes.append("SEVERE_SERIALITY_COLLAPSE")
+                        report.update(
+                            {
+                                "passed": False,
+                                "blocking_codes": blocking_codes,
+                                "severe_seriality_collapse": True,
+                            }
+                        )
+                        expanded = _dc_replace(expanded, seriality_report=report)
+                    else:
+                        expanded = _dc_replace(expanded, rejected_reason=None)
 
-            seriality_finalists.append(expanded)
+            return _apply_boundary_rejection(expanded)
+
+        # Review distinct-premise primaries first.  Only a failed primary unlocks
+        # a same-premise backup, and every review (primary or backup) consumes the
+        # same bounded finalist_count budget.
+        seriality_finalists = await _review_seriality_finalists_with_backups(
+            contenders,
+            finalist_count=finalist_count,
+            review_candidate=_review_seriality_candidate,
+        )
 
         finalist_by_concept = {c.concept: c for c in seriality_finalists}
-        result.candidates = [
-            finalist_by_concept.get(c.concept, c) for c in result.candidates
-        ]
+        result.candidates = [finalist_by_concept.get(c.concept, c) for c in result.candidates]
         passed = [c for c in seriality_finalists if c.rejected_reason is None]
         if not passed:
             logger.warning("concept tournament: no seriality-qualified finalists")
             return result
         passed = _prefer_ontology_clean(passed, genre_intent_contract)
         result.winner = max(passed, key=lambda c: c.composite or 0.0)
+        if commercial_advisory:
+            for candidate in passed:
+                for finding in candidate.quality_findings:
+                    result.quality_findings.append(
+                        {
+                            "stage": "hook_review",
+                            "dimension": candidate.dimension,
+                            **dict(finding),
+                        }
+                    )
         # 「无代价≠无限制」验收：只留痕不改判，按本仓库对新检测器的规矩
         # （2026-08-27）。此前 prompt 要求它、数据类没有它、零消费方——
         # 规则写了没实现，「限制」这一维度从未被审过。
@@ -5524,6 +8544,8 @@ async def run_concept_tournament(
             result.winner, chapter_count=chapter_count, cost_style=cost_style
         )
         return result
+    except _TOURNAMENT_EXECUTION_ERRORS:
+        raise
     except Exception:
         logger.warning("concept tournament failed (non-fatal); no injection", exc_info=True)
         result.winner = None
@@ -5537,16 +8559,37 @@ def render_high_concept_block(result: ConceptTournamentResult) -> str:
     if winner is None:
         return ""
     ladder = "→".join(winner.question_ladder[:3])
+    horizon = (
+        f"终局收束={winner.endgame_direction}"
+        if not winner.ch50.strip()
+        else f"中期战场(约第50章)={winner.ch50}"
+    )
     parts = [
         "",
-        "【本书已选定高概念——全程必须严格围绕它展开，禁止回归题材默认套路】",
+        "【本书已选定高概念——围绕所选人物、核心机制与读者回报展开】",
         f"高概念：{winner.concept}",
         f"核心机制（可反复运转的引擎，不是一次性信息）：{winner.mechanism}",
         f"认知缺口：{winner.hook_question}",
-        f"长线引擎：进度条={winner.progress_bar}；问题梯={ladder}；中期战场(约第50章)={winner.ch50}",
+        f"长线引擎：进度条={winner.progress_bar}；问题梯={ladder}；{horizon}",
     ]
-    if result.banned_cliches:
-        parts.append("俗套库已在生成后完成程序化筛查；禁用样本文本不向下游传播。")
+    # Downstream agents receive this projection, not the whole candidate.
+    # Keep the selected person's motives and reader payoff alongside the
+    # mechanism; otherwise they must invent those again during development.
+    for label, value in (
+        ("主角身份", winner.protagonist_identity),
+        ("私人欲望", winner.protagonist_private_desire),
+        ("人物缺陷", winner.protagonist_flaw),
+        ("核心异常", winner.core_abnormality),
+        ("开篇处境", winner.opening_crisis),
+        ("对手系统", winner.opponent_system),
+        ("选择依据", winner.decision_proof),
+        ("情绪承诺", winner.emotional_promise),
+        ("核心回报", winner.core_promise_invariant),
+    ):
+        if value.strip():
+            parts.append(f"{label}：{value}")
+    if winner.ch50.strip() and winner.endgame_direction.strip():
+        parts.append(f"终局收束：{winner.endgame_direction}")
     return "\n".join(parts)
 
 

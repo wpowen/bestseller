@@ -3,21 +3,24 @@ from __future__ import annotations
 from argparse import Namespace
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, nullcontext, suppress
+from contextvars import ContextVar
 import datetime as _dt
 import importlib.util
 import logging
+from functools import wraps
 import os
 from pathlib import Path
 import random
-from typing import Any
-from uuid import UUID
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import DBAPIError
 
 from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.infra.db.models import (
+    BookProductionControlModel,
     ChapterDraftVersionModel,
     ChapterModel,
     PlanningArtifactVersionModel,
@@ -25,12 +28,220 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
+from bestseller.infra.redis_locks import compare_owner_delete, compare_owner_expire
 from bestseller.services.planning_concurrency import PlanningConflictError
-from bestseller.services.progress_context import set_ambient
+from bestseller.services.budget import (
+    bind_execution_scope, current_execution_scope, raise_if_execution_stopped,
+)
+from bestseller.services.retry_ledger import (
+    ExecutionRecoveryBlockedError,
+    assert_execution_scope_open, project_execution_scope,
+    execution_terminal_code,
+    execution_terminal_metadata,
+)
+from bestseller.services.progress_context import (
+    TaskCancelledError,
+    set_ambient,
+    set_cancellation_checker,
+)
 from bestseller.settings import get_settings
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
+if TYPE_CHECKING:
+    from bestseller.services.retry_ledger import RetryDecision
+
 logger = logging.getLogger(__name__)
+
+
+async def clear_reconciled_execution_terminal(session, project, *, scope_id: str, receipt: dict) -> bool:
+    """An exact audited quarantine may clear only its proven local stop.
+
+    The project remains paused. No dispatch, credit, adoption or grade follows.
+    A ledger-check interruption additionally requires the actual failed owner,
+    immutable partial stream and matching durable quarantine receipt.
+    """
+    if (receipt.get("scope_id") != scope_id or receipt.get("remaining_unknown") != 0
+        or receipt.get("status") != "active" or project_execution_scope(project) != scope_id):
+        return False
+    await assert_execution_scope_open(session, scope_id)
+    metadata = dict(project.metadata_json or {})
+    code = execution_terminal_code(metadata)
+    history = list(metadata.get("execution_reconciliation_history", []))
+    from bestseller.services.failed_stream_recovery import verified_quarantine
+    manual_pause = metadata.get("production_pause_reason") == "execution_reconciled_manual_resume_required"
+    remaining_stop = {key: value for key, value in metadata.items() if key != "production_pause_reason"}
+    if (manual_pause and getattr(project, "status", None) == "paused" and metadata.get("production_paused") is True
+        and "execution_terminal" not in metadata and execution_terminal_code(remaining_stop) is None):
+        for entry in history:
+            if entry.get("receipt") != receipt:
+                continue
+            previous = execution_terminal_code(entry.get("terminal") or {})
+            if previous == "execution_ledger_unavailable":
+                return await verified_quarantine(session,project=project,scope_id=scope_id,receipt=receipt)
+            return previous in {"execution_result_unknown", "execution_operation_inflight"}
+        return False
+    if code == "execution_ledger_unavailable":
+        if not await verified_quarantine(session,project=project,scope_id=scope_id,receipt=receipt):
+            return False
+    elif code != "execution_result_unknown" and not (
+        code == "execution_operation_inflight" and receipt.get("decision") == "quarantine_charged"
+        and receipt.get("operation_replay_allowed") is False):
+        return False
+    if len(history) >= 128:
+        raise ValueError("project reconciliation history limit reached")
+    history.append({"terminal": metadata.pop("execution_terminal"), "receipt": receipt})
+    metadata.update({"execution_reconciliation_history": history,
+        "production_paused": True, "production_pause_reason": "execution_reconciled_manual_resume_required",
+        "requires_machine_repair": False, "requires_human_review": True})
+    project.metadata_json = metadata
+    return True
+
+
+async def _persist_execution_terminal(
+    project_slug: str, error: BaseException, workflow_run_id: str | None = None,
+    *, session_context: Callable[..., Any] | None = None,
+) -> None:
+    """Authenticate terminal ownership under control -> project -> WF locks."""
+    code = execution_terminal_code(error)
+    blocked = False
+    async with (session_context or get_server_session)() as session:
+        project_id = await session.scalar(select(ProjectModel.id).where(ProjectModel.slug == project_slug))
+        if project_id is None:
+            return
+        await session.scalar(select(BookProductionControlModel).where(
+            BookProductionControlModel.project_id == project_id).with_for_update()
+            .execution_options(populate_existing=True, autoflush=False))
+        project = await session.scalar(
+            select(ProjectModel).where(ProjectModel.id == project_id).with_for_update()
+            .execution_options(populate_existing=True, autoflush=False)
+        )
+        if project is None:
+            return
+        metadata = dict(project.metadata_json or {})
+        old = metadata.get("execution_terminal")
+        old_id = old.get("workflow_id") if isinstance(old, Mapping) else None
+        scope = project_execution_scope(project)
+        # Wrapped terminal exceptions retain their actual execution scope.
+        pending, seen, error_scopes = [error], set(), set()
+        while pending:
+            cause = pending.pop()
+            if id(cause) in seen:
+                continue
+            seen.add(id(cause))
+            if execution_terminal_code(cause) == code and getattr(cause, "scope_id", None):
+                error_scopes.add(cause.scope_id)
+            pending.extend(e for e in (cause.__cause__, cause.__context__) if isinstance(e, BaseException))
+        scope_ok = not error_scopes or error_scopes == {scope}
+
+        def parse(value):
+            try:
+                return UUID(str(value)) if value is not None else None
+            except (ValueError, TypeError, AttributeError):
+                return None  # Queue ids are not WorkflowRun identities.
+
+        old_uuid, explicit_uuid = parse(old_id), parse(workflow_run_id)
+        runs = {}
+        # Deterministic ordering also prevents two conflicting candidates from
+        # introducing a WF/WF lock inversion. Re-read status after acquiring it.
+        for run_id in sorted({v for v in (old_uuid, explicit_uuid) if v}, key=str):
+            row = await session.scalar(select(WorkflowRunModel).where(
+                WorkflowRunModel.id == run_id, WorkflowRunModel.project_id == project.id)
+                .with_for_update().execution_options(populate_existing=True, autoflush=False))
+            if row is not None and scope_ok and (row.metadata_json or {}).get("execution_scope_id", scope) == scope:
+                runs[run_id] = row
+        old_run, explicit_run = runs.get(old_uuid), runs.get(explicit_uuid)
+        conflict = old_run is not None and explicit_run is not None and old_uuid != explicit_uuid
+        stale = old_id is not None and old_run is None
+        chosen = old_run if old_run is not None else (explicit_run if old_id is None else None)
+        verified_id = str(chosen.id) if chosen is not None else None
+        updated = execution_terminal_metadata(metadata, error, verified_workflow_id=verified_id)
+        if conflict or stale or not scope_ok or (workflow_run_id is not None and explicit_run is None):
+            issue = {"code": code, "project_scope_id": scope,
+                     "error_scope_ids": sorted(error_scopes), "previous_workflow_id": old_id,
+                     "explicit_workflow_id": str(workflow_run_id) if workflow_run_id is not None else None,
+                     "reason": ("conflicting_valid_workflows" if conflict else "error_scope_mismatch" if not scope_ok
+                                else "invalid_previous_binding" if stale else "unverified_explicit_workflow")}
+            history = list(updated.get("execution_terminal_identity_issues") or [])
+            if issue not in history:
+                history.append(issue)
+            updated["execution_terminal_identity_issues"] = history
+        blocked = (conflict or stale or not scope_ok
+                   or (isinstance(old, Mapping) and old.get("identity_blocked") is True))
+        if blocked:
+            updated["execution_terminal"]["identity_blocked"] = True
+        project.metadata_json = updated
+        project.status = ProjectStatus.PAUSED.value
+        if not blocked and chosen is not None and str(chosen.status) in _ACTIVE_WORKFLOW_STATUSES:
+            chosen.status = (WorkflowStatus.CANCELLED.value if code == "execution_cancelled" else WorkflowStatus.FAILED.value)
+            chosen.current_step = code
+            chosen.error_message = str(error)[:4000]
+            chosen.metadata_json = execution_terminal_metadata(chosen.metadata_json, error, verified_workflow_id=verified_id)
+    if blocked:
+        # Raise only AFTER the transaction commits the current failure and
+        # ambiguity evidence. Neither conflicting workflow is rewritten.
+        raise ExecutionRecoveryBlockedError("execution_terminal_identity_blocked", "Terminal identity requires reconciliation")
+
+
+def _execution_terminal_guard(operation: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    """ARQ must finish terminal executions rather than schedule their retry."""
+    @wraps(operation)
+    async def guarded(ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]) -> Any:
+        try:
+            scope = current_execution_scope()
+            if scope is None:
+                try:
+                    slug = str(payload.get("project_slug") or payload.get("slug") or "")
+                    async with get_server_session() as session:
+                        project = await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
+                        scope = project_execution_scope(project) if project is not None else None
+                except Exception as error:
+                    raise ExecutionRecoveryBlockedError("execution_ledger_unavailable",
+                                                   "Execution scope could not be read") from error
+            with bind_execution_scope(scope) if scope is not None else nullcontext():
+                result = await operation(ctx, workflow_run_id, payload)
+                raise_if_execution_stopped()
+            # A legacy try/except may turn a budget exception into a static
+            # fallback. Read the ledger before accepting/continuing its result.
+            if not (isinstance(result, dict) and str(result.get("status") or "").startswith("skipped_")):
+                slug = str(payload.get("project_slug") or payload.get("slug") or "")
+                try:
+                    async with get_server_session() as session:
+                        project = await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
+                        if project is not None:
+                            await assert_execution_scope_open(session, project_execution_scope(project))
+                except Exception as error:
+                    if execution_terminal_code(error):
+                        raise
+                    raise ExecutionRecoveryBlockedError("execution_ledger_unavailable",
+                                                   "Postflight ledger could not be read") from error
+            return result
+        except TaskCancelledError:
+            # Operator pause/stop is owned by book_production_control and may
+            # later be released by an explicit RUN command. It must not write
+            # a lifetime execution terminal that RUN cannot clear. Provider
+            # cancellations and budget/unknown receipts still use the terminal
+            # path below; no execution credit is replenished here.
+            raise
+        except BaseException as error:
+            code = execution_terminal_code(error)
+            if code is None:
+                raise
+            slug = str(payload.get("project_slug") or payload.get("slug") or "")
+            try:
+                await _persist_execution_terminal(slug, error, workflow_run_id)
+            except Exception:
+                # Do not transform a failed terminal-state write into another
+                # paid attempt. The LLM execution ledger remains authoritative.
+                logger.exception("Could not persist worker execution stop for %s", slug)
+            result = {"status": code, "code": code, "terminal": True,
+                      "project_slug": slug, "execution_terminal": {"terminal": True, "code": code}}
+            try:
+                await RedisProgressReporter(ctx["redis"], workflow_run_id).emit(
+                    code, result, event_type="cancelled" if code == "execution_cancelled" else "failed")
+            except Exception:
+                logger.warning("Could not publish worker execution stop for %s", slug, exc_info=True)
+            return result
+    return guarded
 
 
 def _pipeline_start_key(project_id: Any) -> str:
@@ -122,6 +333,8 @@ def _clear_successful_outline_replan_blockers(metadata: dict[str, Any]) -> None:
     itself a planning reason (or no reason was recorded).
     """
 
+    if execution_terminal_code(metadata):
+        return
     reason = str(
         metadata.get("last_generation_gate_reason")
         or metadata.get("production_pause_reason")
@@ -274,7 +487,7 @@ def _reconcile_outline_replan_creation_identity(
     )
     from bestseller.services.planner import (
         _persist_creation_protagonist_choice,
-        _replace_name_drift_in_value,
+        _replace_name_drift_in_active_surface,
     )
 
     metadata = dict(project.metadata_json or {})
@@ -311,8 +524,9 @@ def _reconcile_outline_replan_creation_identity(
             "qimao_opening_contract",
         ):
             if key in project.metadata_json:
-                project.metadata_json[key] = _replace_name_drift_in_value(
+                project.metadata_json[key] = _replace_name_drift_in_active_surface(
                     project.metadata_json[key],
+                    surface_key=key,
                     forbidden_names=forbidden_names,
                     replacement=chosen,
                 )
@@ -384,7 +598,7 @@ async def _acquire_pipeline_live(redis: Any, project_slug: str, run_token: str) 
     """尝试取得本书的管线活体锁。
 
     返回 "acquired"（我持有）、"held_by_other"（另一条活管线在跑，调用方
-    必须放弃）或 "degraded"（redis 不可用，放行但无锁保护）。
+    必须放弃）或 "degraded"（redis 不可用，guard 必须拒绝继续）。
     """
 
     try:
@@ -396,7 +610,7 @@ async def _acquire_pipeline_live(redis: Any, project_slug: str, run_token: str) 
         )
     except Exception:
         logger.warning(
-            "pipeline live mutex unavailable for %s (redis down) — proceeding unguarded",
+            "pipeline live mutex unavailable for %s — ownership UNKNOWN",
             project_slug,
             exc_info=True,
         )
@@ -409,27 +623,32 @@ async def _release_pipeline_live(redis: Any, project_slug: str, run_token: str) 
 
     key = _pipeline_live_key(project_slug)
     try:
-        current = await redis.get(key)
-        if isinstance(current, bytes):
-            current = current.decode()
-        if current == str(run_token):
-            await redis.delete(key)
+        await compare_owner_delete(redis, key, run_token)
     except Exception:
         logger.debug("pipeline live mutex release skipped", exc_info=True)
 
 
 async def _renew_pipeline_live_once(
     redis: Any, project_slug: str, run_token: str
-) -> None:
+) -> bool | None:
     key = _pipeline_live_key(project_slug)
     try:
-        current = await redis.get(key)
-        if isinstance(current, bytes):
-            current = current.decode()
-        if current == str(run_token):
-            await redis.expire(key, _PIPELINE_LIVE_TTL_SECONDS)
+        return await compare_owner_expire(redis, key, run_token, _PIPELINE_LIVE_TTL_SECONDS)
     except Exception:
         logger.debug("pipeline live mutex renew skipped", exc_info=True)
+        return None  # UNKNOWN is not owned and never grants continued work.
+
+
+_PIPELINE_LEASE: ContextVar[dict[str, Any] | None] = ContextVar("pipeline_lease", default=None)
+
+
+async def _assert_pipeline_live_owner() -> None:
+    lease = _PIPELINE_LEASE.get()
+    if lease is None:
+        return
+    if lease["lost"] or await _renew_pipeline_live_once(lease["redis"], lease["slug"], lease["token"]) is not True:
+        lease["lost"] = True
+        raise TaskCancelledError("Pipeline lease lost or unverifiable; this executor must stop")
 
 
 async def _pipeline_live_renew_loop(
@@ -437,28 +656,48 @@ async def _pipeline_live_renew_loop(
 ) -> None:
     while True:
         await asyncio.sleep(_PIPELINE_LIVE_RENEW_SECONDS)
-        await _renew_pipeline_live_once(redis, project_slug, run_token)
+        if await _renew_pipeline_live_once(redis, project_slug, run_token) is not True:
+            raise TaskCancelledError("Pipeline lease lost or unverifiable")
 
 
 @asynccontextmanager
 async def _pipeline_live_guard(
     redis: Any, project_slug: str, run_token: str, state: str
 ) -> AsyncIterator[None]:
-    """已 acquired 时维持续租并在退出时释放；degraded 时什么也不做。"""
+    """Fence only this execution on loss/UNKNOWN; release only its own token."""
 
     if state != "acquired":
-        yield
-        return
+        raise TaskCancelledError("Pipeline lease ownership could not be established")
+    lease = {"redis": redis, "slug": project_slug, "token": run_token, "lost": False}
+    binding = _PIPELINE_LEASE.set(lease)
+    owner = asyncio.current_task()
     renew = asyncio.create_task(
         _pipeline_live_renew_loop(redis, project_slug, run_token)
     )
+    def renewal_done(task):
+        if task.cancelled() or task.exception() is not None:
+            lease["lost"] = True
+            if owner is not None:
+                owner.cancel("pipeline_lease_lost")
+    renew.add_done_callback(renewal_done)
     try:
-        yield
+        await _assert_pipeline_live_owner()
+        from bestseller.services.workflows import bind_acquired_pipeline_owner
+        with bind_acquired_pipeline_owner(slug=project_slug, token=run_token,
+                                          assert_owned=_assert_pipeline_live_owner):
+            yield
+        await _assert_pipeline_live_owner()
+    except asyncio.CancelledError:
+        if lease["lost"]:
+            raise TaskCancelledError("Pipeline lease lost; stopped only the former executor") from None
+        raise
     finally:
+        renew.remove_done_callback(renewal_done)
         renew.cancel()
         with suppress(asyncio.CancelledError, Exception):
             await renew
         await _release_pipeline_live(redis, project_slug, run_token)
+        _PIPELINE_LEASE.reset(binding)
 
 
 def _duplicate_pipeline_skip_payload(
@@ -540,6 +779,8 @@ async def _touch_workflow_run_heartbeat(
                 )
             )
 
+        raise_if_execution_stopped()
+
         await session.commit()
 
 
@@ -611,16 +852,19 @@ async def _skip_halted_project_if_needed(
             )
             if project is None:
                 return None
+            code = execution_terminal_code(project.metadata_json or {})
+            if code:
+                return {"status": code, "terminal": True, "code": code,
+                        "project_slug": project_slug}
+            await assert_execution_scope_open(session, project_execution_scope(project))
             state = await load_control_state(session, project.id)
-    except Exception:
-        # Fail *open* on infrastructure errors: a database blip must not look
-        # like a stop and strand every book on the platform.
-        logger.debug(
-            "Could not check production control for project %s",
-            project_slug,
-            exc_info=True,
-        )
-        return None
+    except ExecutionRecoveryBlockedError:
+        raise
+    except Exception as error:
+        if execution_terminal_code(error):
+            raise
+        raise ExecutionRecoveryBlockedError("execution_ledger_unavailable",
+                                       "Production control could not be read") from error
 
     if auto_recovery_is_permitted(state):
         return None
@@ -639,6 +883,37 @@ async def _skip_halted_project_if_needed(
     )
     await reporter.emit("skipped_halted", payload, event_type="skipped_halted")
     return payload
+
+
+async def _raise_if_project_halted(project_slug: str) -> None:
+    """Enforce the durable operator intent immediately before paid LLM calls."""
+
+    from bestseller.services.production_control import load_control_state
+
+    await _assert_pipeline_live_owner()
+    try:
+        async with get_server_session() as session:
+            project = await session.scalar(
+                select(ProjectModel).where(ProjectModel.slug == project_slug)
+            )
+            if project is None:
+                return
+            code = execution_terminal_code(project.metadata_json or {})
+            if code:
+                raise ExecutionRecoveryBlockedError(code, "Project execution is terminal")
+            await assert_execution_scope_open(session, project_execution_scope(project))
+            state = await load_control_state(session, project.id)
+    except ExecutionRecoveryBlockedError:
+        raise
+    except Exception as error:
+        if execution_terminal_code(error):
+            raise
+        raise ExecutionRecoveryBlockedError("execution_ledger_unavailable",
+                                       "Cancellation state could not be read") from error
+    if state.halted:
+        raise TaskCancelledError(
+            f"Project {project_slug} halted before the next paid LLM call"
+        )
 
 
 async def _skip_outline_replan_project_if_needed(
@@ -742,6 +1017,8 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
     surface the actionable cause in the task badge without unfolding the
     full error blob.
     """
+    if execution_terminal_code(exc):
+        return None
     message = str(exc)
 
     # A judge outage is not evidence that the outline itself is defective.
@@ -852,6 +1129,11 @@ async def _emit_terminal_pipeline_event(
     attention_reason: str,
 ) -> None:
     event_payload = {"result": completed_result, **payload}
+    from bestseller.services.autonomous_continuation import is_partial_window_result
+    if is_partial_window_result(payload) and not _result_payload_requires_attention(payload):
+        await reporter.emit("continuation_required", {**event_payload,
+            "whole_book_complete": False}, event_type="continuation_required")
+        return
     if _result_payload_requires_attention(payload):
         await reporter.emit(
             "repairable_auto_continue_pending",
@@ -975,6 +1257,8 @@ def _auto_quality_closure_enabled() -> bool:
 
 
 def _result_payload_auto_closure_candidate(payload: dict[str, Any]) -> bool:
+    if execution_terminal_code(payload):
+        return False
     if not _auto_quality_closure_enabled():
         return False
     if not str(payload.get("project_slug") or "").strip():
@@ -1321,6 +1605,8 @@ async def _mark_project_generation_repair_exhausted(
         if project is None:
             return
 
+        if execution_terminal_code(project.metadata_json or {}):
+            return
         now = _dt.datetime.now(_dt.UTC).isoformat()
         metadata = dict(project.metadata_json or {})
         for key in (
@@ -1487,32 +1773,31 @@ async def _consume_generation_gate_retry_budget(
     try:
         async with get_server_session() as session:
             project = await session.scalar(
-                select(ProjectModel).where(ProjectModel.slug == project_slug)
+                select(ProjectModel).where(ProjectModel.slug == project_slug).with_for_update()
             )
             if project is None:
-                return None
+                raise ExecutionRecoveryBlockedError("execution_ledger_unavailable", "Retry project is missing")
             metadata = dict(project.metadata_json or {})
+            code = execution_terminal_code(metadata)
+            if code:
+                raise ExecutionRecoveryBlockedError(code, "Execution is already terminal")
             decision = evaluate_retry(
                 load_chain(metadata, scope=scope),
                 trigger=RetryTrigger.AUTO,
                 budget=generation_gate_budget(),
                 reason=reason,
             )
-            if decision.allowed:
-                metadata = store_chain(metadata, scope=scope, chain=decision.chain)
-                metadata["generation_gate_retry_budget"] = decision.to_event_payload()
-                project.metadata_json = metadata
-            return decision
-    except Exception:
-        # Fail open on infrastructure errors — but say so, because a budget that
-        # silently stops being enforced is how this class of bug returns.
-        logger.warning(
-            "could not evaluate generation gate retry budget for %s; "
-            "allowing this attempt",
-            project_slug,
-            exc_info=True,
-        )
-        return None
+            metadata = store_chain(metadata, scope=scope, chain=decision.chain)
+            metadata["generation_gate_retry_budget"] = decision.to_event_payload()
+            project.metadata_json = metadata
+        # The transaction/context exit must succeed before dispatch credit is
+        # returned. A commit failure is an unavailable ledger, never permission.
+        return decision
+    except ExecutionRecoveryBlockedError:
+        raise
+    except Exception as error:
+        raise ExecutionRecoveryBlockedError("execution_ledger_unavailable",
+                                       "Retry reservation could not be persisted") from error
 
 
 async def _handle_generation_gate_auto_continue(
@@ -1622,12 +1907,18 @@ async def run_self_heal_task(ctx: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     redis = ctx.get("redis")
     worker_id = f"{os.uname().nodename}:{os.getpid()}:periodic"
+    from bestseller.services.autonomous_dispatch import recover_pending_checkpoints
+    if redis is not None:
+        async with get_server_session() as continuation_session:
+            await recover_pending_checkpoints(continuation_session, redis)
+    from bestseller.worker.export_recovery import enqueue_export_only_recoveries
+    exports = await enqueue_export_only_recoveries(settings, redis)
     dispatched = await heal_stuck_projects(
         settings,
         redis=redis,
         worker_id=worker_id,
     )
-    return {"dispatched": dispatched}
+    return {"dispatched": dispatched, "export_only_dispatched": exports}
 
 
 def _apply_cancelled_outline_replan_state(
@@ -1686,6 +1977,7 @@ async def _mark_cancelled_outline_replan_recoverable(project_slug: str) -> None:
             )
         )
         _apply_cancelled_outline_replan_state(project, active_runs)
+        raise_if_execution_stopped()
         await session.commit()
 
 
@@ -1717,6 +2009,7 @@ async def _recover_owned_outline_replan_conflict(
     return failure
 
 
+@_execution_terminal_guard
 async def run_outline_replan_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1741,6 +2034,7 @@ async def run_outline_replan_task(
     project_slug = str(payload.get("project_slug") or "").strip()
     if not project_slug:
         raise ValueError("outline replan requires project_slug")
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
 
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
@@ -1771,6 +2065,7 @@ async def run_outline_replan_task(
             )
             project.status = ProjectStatus.PAUSED.value
             project.metadata_json = metadata
+            raise_if_execution_stopped()
             await session.commit()
             blocked = {
                 "status": "outline_replan_retry_exhausted",
@@ -1929,6 +2224,7 @@ async def run_outline_replan_task(
             project_type=ProjectType(project.project_type),
             metadata=dict(metadata),
         )
+        raise_if_execution_stopped()
         await session.commit()
 
     await reporter.emit(
@@ -1954,6 +2250,9 @@ async def run_outline_replan_task(
                     allow_outline_replan=True,
                     force_foundation_replan=force_foundation_replan,
                 )
+                raise_if_execution_stopped()
+    except TaskCancelledError:
+        raise
     except asyncio.CancelledError:
         # ARQ requeues a cancelled job during rolling deployment, but the
         # planning workflow row created inside ``run_autowrite_pipeline`` is
@@ -1977,6 +2276,8 @@ async def run_outline_replan_task(
             reporter,
         )
     except Exception as exc:  # keep the project blocked; scanner owns retries
+        if execution_terminal_code(exc):
+            raise
         replan_gate_released = False
         async with get_server_session() as session:
             project = await get_project_by_slug(session, project_slug)
@@ -2036,6 +2337,7 @@ async def run_outline_replan_task(
                         metadata["outline_replan_last_retry_attempt"] = attempts
                     project.status = status
                 project.metadata_json = metadata
+                raise_if_execution_stopped()
                 await session.commit()
         if replan_gate_released:
             queued = await _enqueue_project_pipeline_if_needed(
@@ -2126,6 +2428,7 @@ async def run_outline_replan_task(
                     metadata["outline_replan_last_retry_attempt"] = attempts
                 project.metadata_json = metadata
                 project.status = status
+                raise_if_execution_stopped()
                 await session.commit()
                 failure = {
                     "status": "outline_replan_retry_pending",
@@ -2193,6 +2496,7 @@ async def run_outline_replan_task(
                 ProjectStatus.PAUSED.value,
             }:
                 project.status = ProjectStatus.WRITING.value
+            raise_if_execution_stopped()
             await session.commit()
 
     writing_queued = await _enqueue_project_pipeline_if_needed(
@@ -2213,6 +2517,7 @@ async def run_outline_replan_task(
     return result_payload
 
 
+@_execution_terminal_guard
 async def run_autowrite_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2233,6 +2538,7 @@ async def run_autowrite_task(
     set_ambient(make_sync_callback(reporter))
 
     project_slug = payload["project_slug"]
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
@@ -2245,7 +2551,9 @@ async def run_autowrite_task(
     if replan_block is not None:
         return replan_block
 
-    _live_state = await _acquire_pipeline_live(redis, project_slug, workflow_run_id)
+    # ARQ job/workflow IDs can repeat; a lease belongs to this execution only.
+    _live_token = uuid4().hex
+    _live_state = await _acquire_pipeline_live(redis, project_slug, _live_token)
     if _live_state == "held_by_other":
         payload_skip = _duplicate_pipeline_skip_payload(project_slug, workflow_run_id)
         logger.warning(
@@ -2266,7 +2574,7 @@ async def run_autowrite_task(
 
     _project_id: Any = None
     async with (
-        _pipeline_live_guard(redis, project_slug, workflow_run_id, _live_state),
+        _pipeline_live_guard(redis, project_slug, _live_token, _live_state),
         _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug),
     ):
         try:
@@ -2311,6 +2619,13 @@ async def run_autowrite_task(
                     metadata=dict(meta),
                 )
 
+                from bestseller.services.chapter_review_reconciliation import prepare_native_review_resume
+                resume = await prepare_native_review_resume(
+                    session, settings, project_id=project.id, requested_by="worker-autowrite",
+                )
+                if resume["status"] == "prepared":
+                    await session.commit()
+
                 from bestseller.services.story_source import load_accepted_project_premise
 
                 premise = await load_accepted_project_premise(session, project)
@@ -2327,6 +2642,7 @@ async def run_autowrite_task(
                         premise=premise,
                         progress=make_sync_callback(reporter),
                     )
+                    raise_if_execution_stopped()
                 else:
                     result = await run_autowrite_pipeline(
                         session=session,
@@ -2335,7 +2651,10 @@ async def run_autowrite_task(
                         premise=premise,
                         progress=make_sync_callback(reporter),
                     )
+                    raise_if_execution_stopped()
         except Exception as exc:
+            if execution_terminal_code(exc):
+                raise
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
@@ -2357,6 +2676,21 @@ async def run_autowrite_task(
     # short run. Held until here so a second request during the run cannot slip
     # through the enqueue→row window.
     await _clear_pipeline_start_marker(redis, _project_id)
+    from bestseller.services.autonomous_continuation import is_partial_window_result, record_window_continuation
+    if _project_id is not None and is_partial_window_result(result_payload):
+        async with get_server_session() as continuation_session:
+            continuation = await record_window_continuation(continuation_session,
+                project_id=_project_id, result=result_payload,
+                dispatch_authorized=payload.get("autonomous_book") is True, requested_model=payload.get("requested_model"))
+            if continuation is not None:
+                result_payload.update(continuation)
+                await continuation_session.commit()
+                if payload.get("autonomous_book") is True:
+                    from bestseller.services.autonomous_dispatch import enqueue_checkpoint
+                    await enqueue_checkpoint(continuation_session, redis, continuation['continuation_workflow_run_id'])
+        await _emit_terminal_pipeline_event(reporter, result_payload,
+            completed_result="window_done", attention_reason="execution_window_requires_attention")
+        return result_payload
     if await _enqueue_quality_closure_if_needed(
         redis,
         reporter,
@@ -2373,6 +2707,7 @@ async def run_autowrite_task(
     return result_payload
 
 
+@_execution_terminal_guard
 async def run_project_pipeline_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2388,6 +2723,7 @@ async def run_project_pipeline_task(
     # ARQ runs each job in its own copied context, so no paired reset is needed.
     set_ambient(make_sync_callback(reporter))
     project_slug = payload["project_slug"]
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
@@ -2400,7 +2736,9 @@ async def run_project_pipeline_task(
     if replan_block is not None:
         return replan_block
 
-    _live_state = await _acquire_pipeline_live(redis, project_slug, workflow_run_id)
+    # ARQ job/workflow IDs can repeat; a lease belongs to this execution only.
+    _live_token = uuid4().hex
+    _live_state = await _acquire_pipeline_live(redis, project_slug, _live_token)
     if _live_state == "held_by_other":
         payload_skip = _duplicate_pipeline_skip_payload(project_slug, workflow_run_id)
         logger.warning(
@@ -2421,7 +2759,7 @@ async def run_project_pipeline_task(
 
     _project_id: Any = None
     async with (
-        _pipeline_live_guard(redis, project_slug, workflow_run_id, _live_state),
+        _pipeline_live_guard(redis, project_slug, _live_token, _live_state),
         _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug),
     ):
         try:
@@ -2458,6 +2796,13 @@ async def run_project_pipeline_task(
                         _project_id = getattr(_proj, "id", None)
                 except Exception:
                     logger.debug("project lookup for marker clear skipped", exc_info=True)
+                if _project_id is not None:
+                    from bestseller.services.chapter_review_reconciliation import prepare_native_review_resume
+                    resume = await prepare_native_review_resume(
+                        session, settings, project_id=_project_id, requested_by="worker-project",
+                    )
+                    if resume["status"] == "prepared":
+                        await session.commit()
                 result = await pipeline_services.run_project_pipeline(
                     session=session,
                     settings=settings,
@@ -2466,6 +2811,7 @@ async def run_project_pipeline_task(
                     stop_on_chapter_failure=bool(payload.get("stop_on_chapter_failure", False)),
                     progress=make_sync_callback(reporter),
                 )
+                raise_if_execution_stopped()
         except TruthVersionStaleError:
             async with get_server_session() as session:
                 project = await get_project_by_slug(session, project_slug)
@@ -2478,6 +2824,13 @@ async def run_project_pipeline_task(
                     requested_by="worker_truth_refresh",
                     progress=make_sync_callback(reporter),
                 )
+                await session.commit()
+                from bestseller.services.chapter_review_reconciliation import prepare_native_review_resume
+                resume = await prepare_native_review_resume(
+                    session, settings, project_id=project.id, requested_by="worker-truth-refresh",
+                )
+                if resume["status"] == "prepared":
+                    await session.commit()
                 result = await pipeline_services.run_project_pipeline(
                     session=session,
                     settings=settings,
@@ -2486,7 +2839,10 @@ async def run_project_pipeline_task(
                     stop_on_chapter_failure=bool(payload.get("stop_on_chapter_failure", False)),
                     progress=make_sync_callback(reporter),
                 )
+                raise_if_execution_stopped()
         except Exception as exc:
+            if execution_terminal_code(exc):
+                raise
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
@@ -2544,6 +2900,8 @@ async def _run_with_deadlock_retry(
     session cannot be reused, so ``operation`` reopens its own session each try.
     """
     for attempt in range(1, max_attempts + 1):
+        from bestseller.services.progress_context import check_cancellation
+        await check_cancellation()
         try:
             return await operation()
         except DBAPIError as exc:
@@ -2558,8 +2916,10 @@ async def _run_with_deadlock_retry(
                 delay,
             )
             await asyncio.sleep(delay)
+            await check_cancellation()
 
 
+@_execution_terminal_guard
 async def run_chapter_pipeline_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2579,6 +2939,7 @@ async def run_chapter_pipeline_task(
     # ARQ runs each job in its own copied context, so no paired reset is needed.
     set_ambient(make_sync_callback(reporter))
     project_slug = payload["project_slug"]
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
 
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
@@ -2608,7 +2969,7 @@ async def run_chapter_pipeline_task(
                         _project_id = getattr(_proj, "id", None)
                 except Exception:
                     logger.debug("project lookup for marker clear skipped", exc_info=True)
-                return await run_chapter_pipeline(
+                _execution_result = await run_chapter_pipeline(
                     session=session,
                     settings=settings,
                     project_slug=project_slug,
@@ -2616,6 +2977,8 @@ async def run_chapter_pipeline_task(
                     chapter_first=payload.get("chapter_first"),
                     progress=make_sync_callback(reporter),
                 )
+                raise_if_execution_stopped()
+                return _execution_result
 
         try:
             result = await _run_with_deadlock_retry(
@@ -2637,6 +3000,7 @@ async def run_chapter_pipeline_task(
     return result_payload
 
 
+@_execution_terminal_guard
 async def run_project_repair_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2656,6 +3020,7 @@ async def run_project_repair_task(
     set_ambient(make_sync_callback(reporter))
 
     project_slug = payload["project_slug"]
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
     archived = await _skip_archived_project_if_needed(reporter, project_slug)
     if archived is not None:
         return archived
@@ -2668,6 +3033,13 @@ async def run_project_repair_task(
     if replan_block is not None:
         return replan_block
 
+    from bestseller.services.creation_configuration import read_window
+    async with get_server_session() as admission_session:
+        admission_project = await get_project_by_slug(admission_session, project_slug)
+        if admission_project is not None and read_window(admission_project) is not None:
+            await reporter.emit("execution_window_unbounded_repair_skipped", {"project_slug": project_slug})
+            return {"project_slug": project_slug, "status": "skipped_execution_window_requires_bounded_repair",
+                "production_data_changed": False}
     await reporter.emit("project_repair_started", {"project_slug": project_slug})
 
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
@@ -2743,7 +3115,7 @@ async def run_project_repair_task(
 
             async def _repair_op() -> Any:
                 async with get_server_session() as session:
-                    return await run_project_repair(
+                    _execution_result = await run_project_repair(
                         session=session,
                         settings=settings,
                         project_slug=project_slug,
@@ -2763,12 +3135,16 @@ async def run_project_repair_task(
                         ),
                         progress=make_sync_callback(reporter),
                     )
+                    raise_if_execution_stopped()
+                    return _execution_result
 
             result = await _run_with_deadlock_retry(
                 _repair_op,
                 description=f"project repair ({project_slug})",
             )
         except Exception as exc:
+            if execution_terminal_code(exc):
+                raise
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:
                 reason, message = gate_block
@@ -2809,6 +3185,7 @@ async def run_project_repair_task(
     return result_payload
 
 
+@_execution_terminal_guard
 async def run_book_quality_closure_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -2819,6 +3196,13 @@ async def run_book_quality_closure_task(
     # ARQ runs each job in its own copied context, so no paired reset is needed.
     set_ambient(make_sync_callback(reporter))
     project_slug = str(payload["project_slug"])
+    set_cancellation_checker(lambda: _raise_if_project_halted(project_slug))
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
+    halted = await _skip_halted_project_if_needed(reporter, project_slug)
+    if halted is not None:
+        return halted
     round_size = max(int(payload.get("round_size") or _DEFAULT_CLOSURE_ROUND_SIZE), 1)
     max_rounds = max(int(payload.get("max_rounds") or _DEFAULT_CLOSURE_MAX_ROUNDS), 1)
 
@@ -2865,6 +3249,7 @@ async def run_book_quality_closure_task(
             )
             raise
 
+    raise_if_execution_stopped()
     reports = list(result.get("reports") or []) if isinstance(result, dict) else []
     report = reports[0] if reports and isinstance(reports[0], dict) else {}
     status = str(report.get("status") or "")
@@ -2904,4 +3289,82 @@ async def run_book_quality_closure_task(
                 },
                 event_type="repairable_auto_continue_pending",
             )
+    return result
+
+
+@_execution_terminal_guard
+async def run_autonomous_continuation_task(ctx,workflow_run_id,payload):
+    """Consume one durable next-action via the normal planning/writing APIs."""
+    from bestseller.services.autonomous_dispatch import execute_checkpoint,enqueue_checkpoint
+    from bestseller.services.autonomous_window_handlers import handlers
+    from bestseller.services.production_control import load_control_state
+    from bestseller.services.model_catalog import resolve_project_model_entry
+    from bestseller.services import llm
+    from bestseller.settings import apply_runtime_llm_profile
+    settings=apply_runtime_llm_profile(get_settings());redis=ctx['redis']
+    slug=str(payload['project_slug']);token=uuid4().hex
+    state=await _acquire_pipeline_live(redis,slug,token)
+    if state!='acquired':
+        return {'state':'not_dispatched','reason':'single_writer_lease_'+state,'whole_book_complete':False}
+    reporter=RedisProgressReporter(redis,workflow_run_id)
+    set_ambient(make_sync_callback(reporter))
+    set_cancellation_checker(lambda:_raise_if_project_halted(slug))
+    async def permit(session,project,row):
+        control=await load_control_state(session,project.id)
+        if control.halted:return False,'project_halted'
+        if project.status in {'archived','cancelled','paused'}:return False,'project_not_runnable'
+        desired=row.metadata_json['binding'].get('requested_model')
+        if desired:
+            entry=resolve_project_model_entry(project.metadata_json or {})
+            if entry is None or entry.model.split('/')[-1]!=str(desired).split('/')[-1]:
+                return False,'requested_model_route_unverified'
+            llm.invalidate_project_model_override_cache(project.id)
+        return True,None
+    async def closure(project_slug,run_id):
+        runner=_load_closure_runner_module()
+        result=await runner._run(Namespace(slug=project_slug,all=False,platform='framework',priority='critical,high',round_size=_DEFAULT_CLOSURE_ROUND_SIZE,max_rounds=_DEFAULT_CLOSURE_MAX_ROUNDS,continuation_size=0,preflight_timeout=45.0,repair_task_timeout=420.0,continuation_timeout=600.0,max_books=0,include_verify=False,replace_existing=False,execute=True,dry_run=False,json=True))
+        reports=result.get('reports') or []
+        report=reports[0] if reports and isinstance(reports[0],dict) else {}
+        return {'passed':report.get('status')=='ready','report':report}
+    async with _pipeline_live_guard(redis,slug,token,state):
+        async with get_server_session() as session:
+            row=await session.get(WorkflowRunModel,UUID(payload['checkpoint_id']))
+            if row is None:raise ValueError('continuation_checkpoint_missing')
+            project=await session.get(ProjectModel,row.project_id)
+            if project is None or project.slug!=slug:raise ValueError('continuation_project_mismatch')
+            scope=(project.metadata_json or {}).get('execution_scope_id')
+            if not scope:raise ValueError('continuation_execution_scope_missing')
+            with llm.bind_execution_scope(scope),llm.bind_execution_operation('autonomous-continuation:'+str(row.id)):
+                if (row.metadata_json or {}).get('schema') == 'source-bound-book-run.v1':
+                    from bestseller.services.book_run import execute as execute_book
+                    from bestseller.services.book_run_handlers import handlers as book_handlers
+                    from bestseller.services.creation_configuration import project_settings
+                    from bestseller.services.single_dispatch_authorization import no_retry_settings
+                    settings=no_retry_settings(project_settings(settings,project))
+                    from bestseller.infra.db.models import ExecutionBudgetModel
+                    async def book_permit(s,p,r):
+                        try:
+                            owned=await compare_owner_expire(redis,_pipeline_live_key(slug),token,_PIPELINE_LIVE_TTL_SECONDS)
+                        except Exception:
+                            return False,'book_lease_unavailable'
+                        if not owned:return False,'book_lease_lost'
+                        ok,reason=await permit(s,p,r)
+                        if not ok:return ok,reason
+                        budget=await s.get(ExecutionBudgetModel,r.metadata_json['binding']['scope_id'],populate_existing=True)
+                        policy=((budget.metadata_json or {}).get('finite_book_runs') or {}).get(str(r.id)) if budget else None
+                        return (True,None) if policy and policy.get('status')=='active' else (False,'book_authority_required')
+                    result=await execute_book(session,row.id,settings=settings,handlers=book_handlers(settings),permit=book_permit,owner_id=token,resume_after_restart=payload.get('resume_after_restart') is True,recovery_owner=payload.get('recovery_owner'))
+                elif (row.metadata_json or {}).get('schema') == 'pending-manuscript-continuation.v1':
+                    from bestseller.services.pending_manuscript_continuation import execute as execute_pending
+                    from bestseller.services.pending_manuscript_handlers import handlers as pending_handlers
+                    from bestseller.services.creation_configuration import project_settings
+                    settings=project_settings(settings,project)
+                    result=await execute_pending(session,row.id,settings=settings,handlers=pending_handlers(settings),permit=permit,owner_id=token,resume_after_restart=payload.get('resume_after_restart') is True)
+                else:
+                    result=await execute_checkpoint(session,row.id,handlers=handlers(settings,progress=make_sync_callback(reporter),closure=closure),permit=permit,owner_id=token,resume_after_restart=payload.get("resume_after_restart") is True)
+    # Release this project's lease before making its successor runnable.
+    if result.get('next_checkpoint'):
+        async with get_server_session() as next_session:
+            await enqueue_checkpoint(next_session,redis,result['next_checkpoint'])
+    await reporter.emit('autonomous_continuation_result',result)
     return result

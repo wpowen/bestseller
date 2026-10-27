@@ -177,9 +177,7 @@ from bestseller.services.writing_profile import get_project_writing_profile
 from bestseller.settings import DEFAULT_CONFIG_PATH, load_settings, settings_to_dict
 from bestseller.web import serve_web_app
 
-app = typer.Typer(
-    help="BestSeller CLI for the PostgreSQL-first long-form novel framework."
-)
+app = typer.Typer(help="BestSeller CLI for the PostgreSQL-first long-form novel framework.")
 db_app = typer.Typer(help="Database operations.")
 project_app = typer.Typer(help="Project operations.")
 planning_app = typer.Typer(help="Planning artifact operations.")
@@ -284,9 +282,7 @@ def forbidden_terms_scan(
             {
                 "project": project,
                 "candidate_count": len(candidates),
-                "guardrails_path": str(
-                    (story_bible_dir / "canon-guardrails.json").resolve()
-                ),
+                "guardrails_path": str((story_bible_dir / "canon-guardrails.json").resolve()),
                 "candidates": [candidate.to_dict() for candidate in candidates],
             },
             ensure_ascii=False,
@@ -472,9 +468,7 @@ def audit(
         "--dry-run/--auto-repair",
         help="Dry-run prints findings; --auto-repair attempts repair (Phase 1: GapRepairer reports only).",
     ),
-    output_format: str = typer.Option(
-        "text", "--format", help="Output format: text | json."
-    ),
+    output_format: str = typer.Option("text", "--format", help="Output format: text | json."),
     profile: str = typer.Option(
         "full",
         "--profile",
@@ -594,25 +588,17 @@ def scorecard(
         async with session_scope(settings) as session:
             project = await get_project_by_slug(session, slug)
             if project is None:
-                typer.secho(
-                    f"Project '{slug}' was not found.", err=True, fg=typer.colors.RED
-                )
+                typer.secho(f"Project '{slug}' was not found.", err=True, fg=typer.colors.RED)
                 raise typer.Exit(code=1)
 
             from pathlib import Path as _Path
 
-            scorecard_project_dir = (
-                _Path(getattr(settings.output, "base_dir", ".") or ".") / slug
-            )
+            scorecard_project_dir = _Path(getattr(settings.output, "base_dir", ".") or ".") / slug
             card = await compute_scorecard(
                 session,
                 project.id,
                 expected_chapter_count=project.target_chapters,
-                project_dir=(
-                    scorecard_project_dir
-                    if scorecard_project_dir.exists()
-                    else None
-                ),
+                project_dir=(scorecard_project_dir if scorecard_project_dir.exists() else None),
             )
             if save:
                 await save_scorecard(session, card)
@@ -638,8 +624,7 @@ def scorecard(
                         typer.echo(f"- `{word}` ×{count}")
             else:
                 typer.secho(
-                    f"[scorecard] {slug}: quality_score = "
-                    f"{snapshot['quality_score']} / 100",
+                    f"[scorecard] {slug}: quality_score = {snapshot['quality_score']} / 100",
                     fg=typer.colors.CYAN,
                 )
                 typer.echo(
@@ -694,7 +679,9 @@ def status() -> None:
 
 @app.command("config-show")
 def config_show(
-    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, exists=True, file_okay=True, dir_okay=False),
+    config_path: Path = typer.Option(
+        DEFAULT_CONFIG_PATH, exists=True, file_okay=True, dir_okay=False
+    ),
     format: str = typer.Option("json", "--format", help="json or yaml"),
 ) -> None:
     """Render the effective configuration."""
@@ -773,8 +760,7 @@ def writing_preset_list() -> None:
                     for preset in list_genre_presets()
                 ],
                 "length_presets": [
-                    preset.model_dump(mode="json")
-                    for preset in list_length_presets()
+                    preset.model_dump(mode="json") for preset in list_length_presets()
                 ],
                 "source_notes": catalog.source_notes,
             },
@@ -1251,8 +1237,8 @@ def project_create(
         "--wild-concept",
         help="脑洞全开：松开概念淘汰赛收敛闸门（俗套/审计改罚分、降 winner_min、偏新颖）。",
     ),
-    cost_style: str = typer.Option(
-        "standard",
+    cost_style: str | None = typer.Option(
+        None,
         "--cost-style",
         help="代价强度：standard(默认)|external(外置,主角不自损)|minimal(极简,服务爽感)。",
     ),
@@ -1277,25 +1263,83 @@ def project_create(
         prompt_pack,
     )
 
-    # Story-enhancer checkboxes → metadata.story_enhancers (validated downstream).
+    # Capture author choices before defaults erase their per-field provenance.
+    from bestseller.services.creation_intent_contract import build_creation_intent_contract
+    from bestseller.services.genre_intent_contract import (
+        GenreIntentContract,
+        build_genre_intent_contract,
+    )
+    from bestseller.services.genre_taxonomy import resolve_selection
+    from bestseller.services.prompt_packs import infer_default_prompt_pack_key
     from bestseller.services.story_enhancers import (
         STORY_ENHANCERS_METADATA_KEY,
-        resolve_story_enhancers,
+        capture_story_enhancer_input,
     )
 
     _skill_list = [s.strip() for s in (enhancer_skills or "").split(",") if s.strip()]
-    _enhancer_payload = {
-        "brainhole": brainhole,
-        "wild_concept": wild_concept,
-        "cost_style": cost_style,
-        "concept_lab": concept_lab,
-        "creativity_direction": creativity_direction,
-        "effect_skills": _skill_list,
-    }
-    _resolved_enhancers = resolve_story_enhancers(
-        {STORY_ENHANCERS_METADATA_KEY: _enhancer_payload}
+    _enhancer_payload: dict[str, object] = {}
+    for key, value in (
+        ("brainhole", brainhole),
+        ("wild_concept", wild_concept),
+        ("concept_lab", concept_lab),
+        ("creativity_direction", creativity_direction),
+        ("effect_skills", _skill_list),
+    ):
+        if value:
+            _enhancer_payload[key] = value
+    if cost_style is not None:
+        _enhancer_payload["cost_style"] = cost_style
+    try:
+        _resolved_enhancers, _enhancer_sources = capture_story_enhancer_input(_enhancer_payload)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--cost-style") from exc
+
+    _resolved_genre = resolve_selection(None, genre, sub_genre)
+    if _resolved_genre.genre_key and _resolved_genre.pack and _resolved_genre.genre_str:
+        _genre_contract = build_genre_intent_contract(
+            _resolved_genre,
+            tag_source="legacy_inferred",
+            audience_orientation=audience,
+            enhancers=_resolved_enhancers,
+        )
+    else:
+        # CLI has always accepted free-form genres. Keep the original on the
+        # project; this compatibility carrier must not invent a taxonomy match.
+        _genre_contract = GenreIntentContract(
+            source="legacy_inferred",
+            genre_key="legacy-freeform",
+            genre_label=genre[:120],
+            sub_genre_label=sub_genre,
+            prompt_pack_key=prompt_pack or infer_default_prompt_pack_key(genre, sub_genre)
+            or "legacy-unmapped",
+            audience_orientation=audience,
+            explicit_enhancers=_resolved_enhancers,
+        )
+    if prompt_pack:
+        _genre_contract = _genre_contract.model_copy(update={"prompt_pack_key": prompt_pack})
+    _creation_contract = build_creation_intent_contract(
+        _genre_contract,
+        chapter_count=target_chapters,
+        audience_orientation=audience,
+        language=language,
+        story_enhancers=_resolved_enhancers,
+        hook_spec={"_story_enhancer_input_sources": _enhancer_sources},
+        field_sources={
+            "chapter_count": "explicit",
+            "story_enhancers": (
+                "explicit"
+                if not _resolved_enhancers.is_default() or "explicit" in _enhancer_sources.values()
+                else "default"
+            ),
+        },
     )
-    _project_metadata: dict[str, object] = {}
+    _project_metadata: dict[str, object] = {
+        "creation_intent_contract": _creation_contract.model_dump(mode="json"),
+        "creation_input_receipt": {
+            "contract_hash": _creation_contract.contract_hash(),
+            "story_enhancer_field_sources": _enhancer_sources,
+        },
+    }
     if not _resolved_enhancers.is_default():
         _project_metadata[STORY_ENHANCERS_METADATA_KEY] = _resolved_enhancers.model_dump(
             mode="json"
@@ -1392,6 +1436,66 @@ def project_show(slug: str) -> None:
                 )
             )
 
+    asyncio.run(_run())
+
+
+@project_app.command("adopt-story-package")
+def project_adopt_story_package(slug: str, path: Path, requested_by: str = "cli-user") -> None:
+    """Explicitly adopt a project-bound, content-hashed external story package."""
+    from bestseller.services.prompt_source_policy import adopt_story_package
+
+    async def _run() -> None:
+        async with session_scope(load_settings()) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                raise typer.BadParameter("Project was not found.")
+            receipt = adopt_story_package(project, path, requested_by=requested_by)
+            await session.flush()
+            typer.echo(json.dumps(receipt, ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@project_app.command("adopt-content-fields")
+def project_adopt_content_fields(slug: str, kind: str, fields: list[str], requested_by: str = "cli-user", source_revision: str | None = None) -> None:
+    """Explicitly adopt preserved legacy profile/invariant fields without rewriting them."""
+    from bestseller.services.content_origin_policy import leaf_values, origin_record
+    if kind not in {"profile", "invariants"}:
+        raise typer.BadParameter("kind must be profile or invariants")
+
+    async def _run() -> None:
+        async with session_scope(load_settings()) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                raise typer.BadParameter("Project was not found.")
+            metadata = dict(project.metadata_json or {})
+            raw = metadata.get("writing_profile", {}) if kind == "profile" else (project.invariants_json or {})
+            if source_revision:
+                if kind != "invariants":
+                    raise typer.BadParameter("A source revision is used only for archived invariants.")
+                source = (metadata.get("framework_state_migrations") or {}).get(source_revision)
+                if not isinstance(source, dict):
+                    raise typer.BadParameter("The archived source revision was not found.")
+                raw = source.get("original_invariants") or {}
+            values = leaf_values(raw) if kind == "profile" else raw
+            if any(path not in values for path in fields):
+                raise typer.BadParameter("Selected fields must exist in the preserved source.")
+            key = "writing_profile_origins" if kind == "profile" else "invariant_content_origins"
+            origins = dict(metadata.get(key) or {})
+            for path in fields:
+                origins[path] = origin_record(values[path], kind="explicit", adopted=True, producer=requested_by)
+            if kind == "invariants" and source_revision:
+                current = dict(project.invariants_json or {})
+                history = list(metadata.get("content_adoption_history") or [])
+                history.append({"source_revision":source_revision,"actor":requested_by,
+                                "previous_values":{path:current.get(path) for path in fields},"fields":fields})
+                current.update({path:values[path] for path in fields})
+                project.invariants_json = current
+                metadata["content_adoption_history"] = history
+            metadata[key] = origins
+            project.metadata_json = metadata
+            await session.flush()
+            typer.echo(json.dumps({"project_id":str(project.id),"kind":kind,"adopted_fields":fields},ensure_ascii=False))
     asyncio.run(_run())
 
 
@@ -1631,7 +1735,9 @@ def project_autowrite(
     genre: str,
     target_words: int,
     target_chapters: int,
-    premise: str = typer.Option(..., help="One-sentence or one-paragraph premise used to generate the whole novel plan."),
+    premise: str = typer.Option(
+        ..., help="One-sentence or one-paragraph premise used to generate the whole novel plan."
+    ),
     sub_genre: str | None = None,
     audience: str | None = None,
     language: str = "zh-CN",
@@ -2096,7 +2202,9 @@ def narrative_tree_show(project_slug: str) -> None:
 @narrative_app.command("path-show")
 def narrative_path_show(
     project_slug: str,
-    path: str = typer.Option(..., "--path", help="Narrative tree path such as /chapters/001/contract."),
+    path: str = typer.Option(
+        ..., "--path", help="Narrative tree path such as /chapters/001/contract."
+    ),
 ) -> None:
     """Show one narrative tree node by deterministic path."""
 
@@ -2156,8 +2264,12 @@ def benchmark_list() -> None:
 @benchmark_app.command("run")
 def benchmark_run(
     suite_id: str = typer.Argument("sample-books"),
-    suite_file: Path | None = typer.Option(None, "--suite-file", exists=True, file_okay=True, dir_okay=False),
-    case: list[str] | None = typer.Option(None, "--case", help="Only run selected benchmark case ids."),
+    suite_file: Path | None = typer.Option(
+        None, "--suite-file", exists=True, file_okay=True, dir_okay=False
+    ),
+    case: list[str] | None = typer.Option(
+        None, "--case", help="Only run selected benchmark case ids."
+    ),
     slug_prefix: str = typer.Option("benchmark", "--slug-prefix"),
     show_progress: bool = typer.Option(True, "--progress/--no-progress"),
 ) -> None:
@@ -2237,9 +2349,7 @@ def model_pilot_run(
                 auto_repair_on_attention=auto_repair,
                 progress=_model_pilot_progress_printer if show_progress else None,
             )
-            typer.echo(
-                json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2)
-            )
+            typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
     asyncio.run(_run())
 
@@ -2285,14 +2395,11 @@ def commercial_gate_package(
     else:
         status = "PASS" if report.passed else "FAIL"
         typer.echo(
-            f"{status} {report.title} "
-            f"score={report.overall_score} chapters={report.total_chapters}"
+            f"{status} {report.title} score={report.overall_score} chapters={report.total_chapters}"
         )
         for issue in report.issues:
             location = f"ch{issue.chapter_no}" if issue.chapter_no else "book"
-            typer.echo(
-                f"- [{issue.severity}] {issue.code} {location}: {issue.detail}"
-            )
+            typer.echo(f"- [{issue.severity}] {issue.code} {location}: {issue.detail}")
             typer.echo(f"  fix: {issue.suggestion}")
 
     if fail and not report.passed:
@@ -2330,9 +2437,7 @@ def commercial_gate_retention(
 
     verdict = scan_retention_onboarding_package(package_dir)
     if json_output:
-        typer.echo(
-            json.dumps(verdict.model_dump(mode="json"), ensure_ascii=False, indent=2)
-        )
+        typer.echo(json.dumps(verdict.model_dump(mode="json"), ensure_ascii=False, indent=2))
     else:
         status = "PASS" if verdict.passed else verdict.verdict.upper()
         typer.echo(
@@ -2340,10 +2445,7 @@ def commercial_gate_retention(
             f"coverage={verdict.coverage:.0%} findings={len(verdict.findings)}"
         )
         for finding in verdict.findings:
-            typer.echo(
-                f"- [{finding.severity}] {finding.code} {finding.path}: "
-                f"{finding.message}"
-            )
+            typer.echo(f"- [{finding.severity}] {finding.code} {finding.path}: {finding.message}")
             typer.echo(f"  fix: {finding.repair_action}")
 
     if fail and verdict.critical:
@@ -2447,10 +2549,7 @@ def commercial_gate_planning(
             f"external_pressure={report.golden_three_external_pressure_chapters}"
         )
         for finding in report.findings:
-            typer.echo(
-                f"- [{finding.severity}] {finding.code} {finding.scope}: "
-                f"{finding.message}"
-            )
+            typer.echo(f"- [{finding.severity}] {finding.code} {finding.scope}: {finding.message}")
             if finding.suggestion:
                 typer.echo(f"  fix: {finding.suggestion}")
 
@@ -2472,7 +2571,7 @@ def commercial_gate_project(
         bool,
         typer.Option(
             "--fail/--no-fail",
-            help="Exit non-zero when the project is below the vertical viability tier.",
+            help="Exit non-zero unless canonical evidence authorizes commercial release.",
         ),
     ] = True,
 ) -> None:
@@ -2483,6 +2582,9 @@ def commercial_gate_project(
         from sqlalchemy.orm import selectinload
 
         from bestseller.infra.db.models import ChapterModel, NovelScorecardModel, StyleGuideModel
+        from bestseller.services.canonical_book_readiness import (
+            load_canonical_book_readiness,
+        )
 
         settings = load_settings()
         async with session_scope(settings) as session:
@@ -2490,9 +2592,7 @@ def commercial_gate_project(
             if project is None:
                 raise ValueError(f"Project '{project_slug}' was not found.")
             style_guide = (
-                await session.get(StyleGuideModel, project.id)
-                if hasattr(session, "get")
-                else None
+                await session.get(StyleGuideModel, project.id) if hasattr(session, "get") else None
             )
             writing_profile = get_project_writing_profile(
                 project,
@@ -2601,13 +2701,12 @@ def commercial_gate_project(
                         ),
                         identity_registry_locked=(
                             isinstance(project.metadata_json, dict)
-                            and project.metadata_json.get("identity_manifest_status")
-                            == "locked"
+                            and project.metadata_json.get("identity_manifest_status") == "locked"
                         ),
                     )
                 )
             premium_report = evaluate_premium_project_readiness(project)
-            return evaluate_project_ranking_readiness(
+            diagnostic = evaluate_project_ranking_readiness(
                 project,
                 writing_profile=writing_profile,
                 story_bible=story_bible,
@@ -2625,27 +2724,38 @@ def commercial_gate_project(
                 premium_gate_score=premium_report.score,
                 external_gate_findings=gate_findings,
             )
+            canonical = await load_canonical_book_readiness(session, project)
+            return diagnostic, canonical
 
-    report = asyncio.run(_run())
+    report, canonical = asyncio.run(_run())
     payload = report.to_dict()
+    payload["canonical_release_decision"] = canonical.to_dict()
+    payload["release_authority"] = "canonical_evidence_only"
+    commercial_authorized = "COMMERCIAL_RELEASE" in {
+        str(claim) for claim in canonical.decision.claims_allowed
+    }
     if json_output:
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        status = "PASS" if report.passed else "FAIL"
+        status = "PASS" if commercial_authorized else "FAIL"
         typer.echo(
             f"{status} {report.project_slug or project_slug} "
             f"maturity_score={payload['maturity_score']} tier={report.tier}"
         )
         typer.echo(f"action: {report.action}")
+        typer.echo(
+            "canonical: "
+            f"{canonical.decision.highest_contiguous_maturity} / "
+            f"{canonical.decision.evaluation_status}"
+        )
         for finding in report.findings:
             if finding.severity in {"critical", "high", "medium"}:
                 typer.echo(
-                    f"- [{finding.severity}] {finding.code} {finding.scope}: "
-                    f"{finding.message}"
+                    f"- [{finding.severity}] {finding.code} {finding.scope}: {finding.message}"
                 )
                 typer.echo(f"  fix: {finding.suggestion}")
 
-    if fail and not report.passed:
+    if fail and not commercial_authorized:
         raise typer.Exit(1)
 
 
@@ -2693,10 +2803,7 @@ def premium_gate_project(
             f"score={report.score} genre={report.genre or '-'}"
         )
         for finding in (*report.blocking_findings, *report.warnings):
-            typer.echo(
-                f"- [{finding.severity}] {finding.code} {finding.path}: "
-                f"{finding.message}"
-            )
+            typer.echo(f"- [{finding.severity}] {finding.code} {finding.path}: {finding.message}")
             typer.echo(f"  fix: {finding.repair_action}")
 
     if fail and not report.passed:
@@ -2939,7 +3046,13 @@ def retrieval_refresh(project_slug: str) -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
             chunk_count = await refresh_project_retrieval_index(session, settings, project_slug)
-            typer.echo(json.dumps({"project_slug": project_slug, "chunk_count": chunk_count}, ensure_ascii=False, indent=2))
+            typer.echo(
+                json.dumps(
+                    {"project_slug": project_slug, "chunk_count": chunk_count},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
 
     asyncio.run(_run())
 
@@ -3014,7 +3127,9 @@ def chapter_assemble(project_slug: str, chapter_number: int) -> None:
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
-            draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
+            draft = await assemble_chapter_draft(
+                session, project_slug, chapter_number, settings=settings
+            )
             typer.echo(
                 json.dumps(
                     {
@@ -3070,7 +3185,9 @@ def chapter_review(project_slug: str, chapter_number: int) -> None:
                         "verdict": review_result.verdict,
                         "severity_max": review_result.severity_max,
                         "scores": review_result.scores.model_dump(mode="json"),
-                        "rewrite_task_id": str(rewrite_task.id) if rewrite_task is not None else None,
+                        "rewrite_task_id": str(rewrite_task.id)
+                        if rewrite_task is not None
+                        else None,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -3090,27 +3207,40 @@ def chapter_rewrite(
 
     async def _run() -> None:
         settings = load_settings()
-        async with session_scope(settings) as session:
-            draft, rewrite_task = await rewrite_chapter_from_task(
-                session,
-                project_slug,
-                chapter_number,
-                rewrite_task_id=UUID(rewrite_task_id) if rewrite_task_id is not None else None,
-                settings=settings,
-            )
-            typer.echo(
-                json.dumps(
-                    {
-                        "draft_id": str(draft.id),
-                        "version_no": draft.version_no,
-                        "word_count": draft.word_count,
-                        "rewrite_task_id": str(rewrite_task.id),
-                        "rewrite_task_status": rewrite_task.status,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
+        from bestseller.services.reviews import (
+            RewriteSourceRejected, persist_rewrite_rejection,
+        )
+
+        try:
+            async with session_scope(settings) as session:
+                draft, rewrite_task = await rewrite_chapter_from_task(
+                    session,
+                    project_slug,
+                    chapter_number,
+                    rewrite_task_id=UUID(rewrite_task_id) if rewrite_task_id is not None else None,
+                    settings=settings,
                 )
-            )
+                typer.echo(
+                    json.dumps(
+                        {
+                            "draft_id": str(draft.id),
+                            "version_no": draft.version_no,
+                            "word_count": draft.word_count,
+                            "rewrite_task_id": str(rewrite_task.id),
+                            "rewrite_task_status": rewrite_task.status,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+        except RewriteSourceRejected as rejection:
+            # session_scope has already rolled back and closed the failed
+            # rewrite transaction. Only its detached rejection is committed.
+            async with session_scope(settings) as recovery:
+                saved = await persist_rewrite_rejection(recovery, rejection)
+            if not saved:
+                typer.echo("Rewrite rejected; task was not available for audit recovery.", err=True)
+            raise
 
     asyncio.run(_run())
 
@@ -3259,7 +3389,9 @@ def scene_review(project_slug: str, chapter_number: int, scene_number: int) -> N
                         "verdict": review_result.verdict,
                         "severity_max": review_result.severity_max,
                         "scores": review_result.scores.model_dump(mode="json"),
-                        "rewrite_task_id": str(rewrite_task.id) if rewrite_task is not None else None,
+                        "rewrite_task_id": str(rewrite_task.id)
+                        if rewrite_task is not None
+                        else None,
                         "rewrite_impact_count": len(rewrite_impacts),
                     },
                     ensure_ascii=False,
@@ -3281,28 +3413,41 @@ def scene_rewrite(
 
     async def _run() -> None:
         settings = load_settings()
-        async with session_scope(settings) as session:
-            draft, rewrite_task = await rewrite_scene_from_task(
-                session,
-                project_slug,
-                chapter_number,
-                scene_number,
-                rewrite_task_id=UUID(rewrite_task_id) if rewrite_task_id is not None else None,
-                settings=settings,
-            )
-            typer.echo(
-                json.dumps(
-                    {
-                        "draft_id": str(draft.id),
-                        "version_no": draft.version_no,
-                        "word_count": draft.word_count,
-                        "rewrite_task_id": str(rewrite_task.id),
-                        "rewrite_task_status": rewrite_task.status,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
+        from bestseller.services.reviews import (
+            RewriteSourceRejected, persist_rewrite_rejection,
+        )
+
+        try:
+            async with session_scope(settings) as session:
+                draft, rewrite_task = await rewrite_scene_from_task(
+                    session,
+                    project_slug,
+                    chapter_number,
+                    scene_number,
+                    rewrite_task_id=UUID(rewrite_task_id) if rewrite_task_id is not None else None,
+                    settings=settings,
                 )
-            )
+                typer.echo(
+                    json.dumps(
+                        {
+                            "draft_id": str(draft.id),
+                            "version_no": draft.version_no,
+                            "word_count": draft.word_count,
+                            "rewrite_task_id": str(rewrite_task.id),
+                            "rewrite_task_status": rewrite_task.status,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+        except RewriteSourceRejected as rejection:
+            # session_scope has already rolled back and closed the failed
+            # rewrite transaction. Only its detached rejection is committed.
+            async with session_scope(settings) as recovery:
+                saved = await persist_rewrite_rejection(recovery, rejection)
+            if not saved:
+                typer.echo("Rewrite rejected; task was not available for audit recovery.", err=True)
+            raise
 
     asyncio.run(_run())
 
@@ -3335,7 +3480,9 @@ def rewrite_impacts(
                 payload = result.model_dump(mode="json")
             else:
                 if rewrite_task_id is None:
-                    raise typer.BadParameter("rewrite_task_id is required when --no-refresh is used.")
+                    raise typer.BadParameter(
+                        "rewrite_task_id is required when --no-refresh is used."
+                    )
                 impacts = await list_rewrite_impacts(
                     session,
                     project_slug,
@@ -3452,11 +3599,7 @@ def chapter_pipeline(
                 supersede_pending_rewrites=supersede_pending_rewrites,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
-        if (
-            result is not None
-            and fail_on_requires_human_review
-            and result.requires_human_review
-        ):
+        if result is not None and fail_on_requires_human_review and result.requires_human_review:
             raise typer.Exit(code=2)
 
     asyncio.run(_run())
@@ -3580,10 +3723,18 @@ def workflow_materialize_story_bible(
                     session,
                     project_slug,
                     requested_by=requested_by,
-                    book_spec_content=load_json_file(book_spec_file) if book_spec_file is not None else None,
-                    world_spec_content=load_json_file(world_spec_file) if world_spec_file is not None else None,
-                    cast_spec_content=load_json_file(cast_spec_file) if cast_spec_file is not None else None,
-                    volume_plan_content=load_json_file(volume_plan_file) if volume_plan_file is not None else None,
+                    book_spec_content=load_json_file(book_spec_file)
+                    if book_spec_file is not None
+                    else None,
+                    world_spec_content=load_json_file(world_spec_file)
+                    if world_spec_file is not None
+                    else None,
+                    cast_spec_content=load_json_file(cast_spec_file)
+                    if cast_spec_file is not None
+                    else None,
+                    volume_plan_content=load_json_file(volume_plan_file)
+                    if volume_plan_file is not None
+                    else None,
                 )
             else:
                 result = await materialize_latest_story_bible(
@@ -3931,7 +4082,9 @@ def export_pdf(project_slug: str, chapter_number: int | None = None) -> None:
 def publish_profile_init(
     project_slug: str,
     target: str = typer.Option("amazon-kdp", "--target", help="Publication target to initialize."),
-    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite an existing stored profile."),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite an existing stored profile."
+    ),
 ) -> None:
     """Initialize a publication profile from current project metadata."""
 
@@ -3942,7 +4095,11 @@ def publish_profile_init(
         settings = load_settings()
         async with session_scope(settings) as session:
             profile = await init_amazon_kdp_profile(session, project_slug, overwrite=overwrite)
-            typer.echo(json.dumps(profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
+            typer.echo(
+                json.dumps(
+                    profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2
+                )
+            )
 
     asyncio.run(_run())
 
@@ -3961,7 +4118,11 @@ def publish_profile_show(
         settings = load_settings()
         async with session_scope(settings) as session:
             profile = await show_amazon_kdp_profile(session, project_slug)
-            typer.echo(json.dumps(profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
+            typer.echo(
+                json.dumps(
+                    profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2
+                )
+            )
 
     asyncio.run(_run())
 
@@ -3995,7 +4156,9 @@ def export_amazon_kdp_package(
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
-            result = await package_amazon_kdp_project(session, settings, project_slug, strict=strict)
+            result = await package_amazon_kdp_project(
+                session, settings, project_slug, strict=strict
+            )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
     asyncio.run(_run())
@@ -4005,21 +4168,38 @@ def export_amazon_kdp_package(
 # IF (Interactive Fiction) commands
 # ---------------------------------------------------------------------------
 
+
 @if_app.command("run")
 def if_run(
     project_slug: str = typer.Argument(..., help="Project slug to generate IF for."),
     resume: bool = typer.Option(False, "--resume", help="Resume from last checkpoint."),
-    genre: str = typer.Option("修仙升级", "--genre", help="IF genre (修仙升级|都市逆袭|悬疑生存|职场商战|末日爽文)."),
+    genre: str = typer.Option(
+        "修仙升级", "--genre", help="IF genre (修仙升级|都市逆袭|悬疑生存|职场商战|末日爽文)."
+    ),
     chapters: int = typer.Option(100, "--chapters", min=10, max=2000, help="Target chapter count."),
-    free_chapters: int = typer.Option(20, "--free-chapters", min=5, max=100, help="Free (non-paid) chapter count."),
+    free_chapters: int = typer.Option(
+        20, "--free-chapters", min=5, max=100, help="Free (non-paid) chapter count."
+    ),
     premise: str = typer.Option("", "--premise", help="Story premise override."),
     protagonist: str = typer.Option("", "--protagonist", help="Protagonist description."),
     core_conflict: str = typer.Option("", "--core-conflict", help="Core conflict description."),
     tone: str = typer.Option("爽快、热血、有悬念", "--tone", help="Story tone."),
-    text_length: str = typer.Option("", "--text-length", help="Total text chars per chapter, e.g. '2500-3500'. Defaults to config value."),
-    node_length: str = typer.Option("", "--node-length", help="Chars per individual text node, e.g. '150-250'. Defaults to config value."),
+    text_length: str = typer.Option(
+        "",
+        "--text-length",
+        help="Total text chars per chapter, e.g. '2500-3500'. Defaults to config value.",
+    ),
+    node_length: str = typer.Option(
+        "",
+        "--node-length",
+        help="Chars per individual text node, e.g. '150-250'. Defaults to config value.",
+    ),
     output_dir: str = typer.Option("./output", "--output-dir", help="Output base directory."),
-    integrated: bool = typer.Option(True, "--integrated/--no-integrated", help="Use integrated pipeline with DB context injection and summarizer."),
+    integrated: bool = typer.Option(
+        True,
+        "--integrated/--no-integrated",
+        help="Use integrated pipeline with DB context injection and summarizer.",
+    ),
 ) -> None:
     """Run the LifeScript interactive fiction generation pipeline for a project."""
     settings = load_settings()
@@ -4034,30 +4214,52 @@ def if_run(
         from bestseller.domain.enums import ProjectType
         from bestseller.domain.project import WritingProfile
         from bestseller.services.projects import create_project
-        auto_cfg = InteractiveFictionConfig.model_validate({
-            "enabled": True, "if_genre": genre, "target_chapters": chapters,
-            "free_chapters": free_chapters, "tone": tone,
-            **({"premise": premise} if premise else {}),
-            **({"protagonist": protagonist} if protagonist else {}),
-            **({"core_conflict": core_conflict} if core_conflict else {}),
-        })
+
+        auto_cfg = InteractiveFictionConfig.model_validate(
+            {
+                "enabled": True,
+                "if_genre": genre,
+                "target_chapters": chapters,
+                "free_chapters": free_chapters,
+                "tone": tone,
+                **({"premise": premise} if premise else {}),
+                **({"protagonist": protagonist} if protagonist else {}),
+                **({"core_conflict": core_conflict} if core_conflict else {}),
+            }
+        )
+
         async def _create() -> Any:
             async with session_scope(settings) as session:
-                p = await create_project(session, ProjectCreate(
-                    slug=project_slug, title=project_slug.replace("-", " ").title(),
-                    genre=genre, target_word_count=chapters * 3000,
-                    target_chapters=chapters, project_type=ProjectType.INTERACTIVE,
-                    writing_profile=WritingProfile(interactive_fiction=auto_cfg),
-                ), settings)
+                p = await create_project(
+                    session,
+                    ProjectCreate(
+                        slug=project_slug,
+                        title=project_slug.replace("-", " ").title(),
+                        genre=genre,
+                        target_word_count=chapters * 3000,
+                        target_chapters=chapters,
+                        project_type=ProjectType.INTERACTIVE,
+                        writing_profile=WritingProfile(interactive_fiction=auto_cfg),
+                    ),
+                    settings,
+                )
                 await session.commit()
                 return p
+
         project = asyncio.run(_create())
         typer.echo(f"Created project '{project_slug}'.")
 
     # Merge stored IF config with CLI overrides
     stored_wp = project.metadata_json.get("writing_profile", {})
     stored_if = stored_wp.get("interactive_fiction", {})
-    cfg_dict: dict[str, Any] = {**stored_if, "enabled": True, "if_genre": genre, "target_chapters": chapters, "free_chapters": free_chapters, "tone": tone}
+    cfg_dict: dict[str, Any] = {
+        **stored_if,
+        "enabled": True,
+        "if_genre": genre,
+        "target_chapters": chapters,
+        "free_chapters": free_chapters,
+        "tone": tone,
+    }
     if premise:
         cfg_dict["premise"] = premise
     if protagonist:
@@ -4082,14 +4284,16 @@ def if_run(
     try:
         if integrated:
             typer.echo("[integrated] Using DB-backed pipeline with context injection + summarizer.")
-            out_path = asyncio.run(run_if_pipeline_integrated(
-                project,
-                cfg,
-                Path(output_dir),
-                settings=settings,
-                resume=resume,
-                on_progress=on_progress,
-            ))
+            out_path = asyncio.run(
+                run_if_pipeline_integrated(
+                    project,
+                    cfg,
+                    Path(output_dir),
+                    settings=settings,
+                    resume=resume,
+                    on_progress=on_progress,
+                )
+            )
         else:
             out_path = run_if_pipeline(
                 project,
@@ -4112,6 +4316,7 @@ def if_status(
 ) -> None:
     """Show IF generation progress / checkpoint state for a project."""
     import json as _json
+
     if_dir = Path(output_dir) / project_slug / "if"
     progress_path = if_dir / "if_progress.json"
     if not progress_path.exists():

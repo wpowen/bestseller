@@ -13,7 +13,7 @@ import re
 from typing import TYPE_CHECKING, Any, Mapping
 from uuid import UUID, uuid5
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import ChapterStateSnapshotContext, HardFactContext
@@ -44,7 +44,11 @@ from bestseller.services.character_identity_resolver import (
     collect_entry_aliases,
 )
 from bestseller.services.character_intelligence.strategy import (
-    character_strategy_from_project_metadata,
+    adopted_character_strategy,
+)
+from bestseller.services.character_intelligence.optimizer import (
+    record_character_engine_profile,
+    validated_character_engine_profile,
 )
 from bestseller.services.quality_levers.character_engine import (
     synthesize_character_engine_profile,
@@ -68,6 +72,21 @@ def stable_world_rule_id(project_id: UUID, rule_code: str) -> UUID:
     return uuid5(project_id, f"world-rule:{rule_code.strip()}")
 
 
+def normalize_world_rule_name(name: str) -> str:
+    """Canonical Unicode, preserving case and every internal character."""
+    import unicodedata
+
+    return unicodedata.normalize("NFC", name.strip())
+
+
+def chapter_world_rule_code(name: str) -> str:
+    """Chapter identities never use a lossy ASCII slug or a truncated name."""
+    normalized = normalize_world_rule_name(name)
+    if not normalized:
+        raise ValueError("world_rule_identity_empty_name")
+    return "wr1_" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:28]
+
+
 async def _get_world_rule_by_identity(
     session: AsyncSession,
     *,
@@ -75,20 +94,40 @@ async def _get_world_rule_by_identity(
     rule_id: UUID,
     rule_code: str,
     name: str,
+    explicit_world_spec_code: bool = False,
 ) -> WorldRuleModel | None:
+    if type(explicit_world_spec_code) is not bool:
+        raise ValueError("world_rule_identity_invalid_authority")
     by_id = await session.get(WorldRuleModel, rule_id)
-    normalized_name = _normalize_name(name)
+    if by_id is not None and by_id.project_id != project_id:
+        raise ValueError("world_rule_identity_id_conflict")
+    # A selected foundation WorldSpec declares stable rule IDs explicitly.
+    # That contract may revise its display name. Chapter extraction never
+    # enters this path and may only identify a rule by its exact Unicode name.
+    if explicit_world_spec_code and by_id is not None:
+        if by_id.rule_code != rule_code:
+            raise ValueError("world_rule_identity_code_conflict")
+        return by_id
+    normalized_name = normalize_world_rule_name(name)
     by_name = None
     if normalized_name:
         by_name = await session.scalar(
             select(WorldRuleModel).where(
                 WorldRuleModel.project_id == project_id,
-                WorldRuleModel.name == normalized_name,
+                WorldRuleModel.name.in_({normalized_name, name.strip()}),
             )
         )
         if by_name is not None and (by_id is None or by_name.id != by_id.id):
+            if explicit_world_spec_code:
+                code_owner = await session.scalar(select(WorldRuleModel).where(
+                    WorldRuleModel.project_id == project_id, WorldRuleModel.rule_code == rule_code))
+                if code_owner is not None and code_owner.id != by_name.id:
+                    raise ValueError("world_rule_identity_code_name_conflict")
             return by_name
     if by_id is not None:
+        if (by_id.project_id != project_id
+            or normalize_world_rule_name(by_id.name) != normalized_name):
+            raise ValueError("world_rule_identity_id_conflict")
         return by_id
     by_code = await session.scalar(
         select(WorldRuleModel).where(
@@ -97,6 +136,9 @@ async def _get_world_rule_by_identity(
         )
     )
     if by_code is not None:
+        if (by_code.project_id != project_id
+            or (not explicit_world_spec_code and normalize_world_rule_name(by_code.name) != normalized_name)):
+            raise ValueError("world_rule_identity_code_conflict")
         return by_code
     return by_name
 
@@ -923,6 +965,7 @@ async def upsert_world_spec(
             rule_id=rule_id,
             rule_code=rule_code,
             name=rule.name,
+            explicit_world_spec_code=bool(rule.rule_id),
         )
         if model is None:
             model = WorldRuleModel(
@@ -940,6 +983,15 @@ async def upsert_world_spec(
                 model=model,
                 rule_code=rule_code,
             )
+        if model.name != rule.name:
+            old_metadata = dict(model.metadata_json or {})
+            previous = list(old_metadata.get("world_spec_rule_identity_changes", []))
+            change = {"schema": "explicit-world-spec-rule-identity.v1",
+                      "rule_code": rule_code, "previous_name": model.name,
+                      "current_name": rule.name, "selected_spec_sha256": hashlib.sha256(
+                          json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+                      ).hexdigest()}
+            model.metadata_json = {**old_metadata, "world_spec_rule_identity_changes": [*previous, change]}
         model.name = rule.name
         model.description = rule.description
         model.story_consequence = rule.story_consequence
@@ -1033,8 +1085,17 @@ async def _ensure_initial_character_state_snapshot(
     project_id: UUID,
     character: CharacterModel,
     language: str | None = None,
+    planning_knowledge_unscoped: bool = False,
 ) -> bool:
-    existing = await session.scalar(
+    from bestseller.services.character_snapshot_sources import (
+        initial_snapshot_binding, seal_snapshot_binding, snapshot_binding_matches,
+    )
+
+    binding = await initial_snapshot_binding(
+        session, project_id=project_id, character=character,
+        knowledge_state={} if planning_knowledge_unscoped else dict(character.knowledge_state_json or {}),
+    )
+    existing_rows = await session.scalars(
         select(CharacterStateSnapshotModel).where(
             CharacterStateSnapshotModel.project_id == project_id,
             CharacterStateSnapshotModel.character_id == character.id,
@@ -1042,7 +1103,8 @@ async def _ensure_initial_character_state_snapshot(
             CharacterStateSnapshotModel.scene_number == 0,
         )
     )
-    if existing is not None:
+    if any((binding is None and row.source_binding is None)
+           or snapshot_binding_matches(row, binding) for row in existing_rows):
         return False
 
     snapshot = CharacterStateSnapshotModel(
@@ -1055,12 +1117,14 @@ async def _ensure_initial_character_state_snapshot(
         physical_state=character.metadata_json.get("physical_state"),
         power_tier=character.power_tier,
         trust_map={},
-        beliefs=_character_beliefs(
+        beliefs=[] if planning_knowledge_unscoped else _character_beliefs(
             CharacterKnowledgeStateInput.model_validate(character.knowledge_state_json or {}),
             language=language,
         ),
         notes="Initial story bible state.",
+        source_binding=binding,
     )
+    snapshot.source_binding = seal_snapshot_binding(snapshot, binding)
     session.add(snapshot)
     await session.flush()
     return True
@@ -1210,7 +1274,9 @@ async def upsert_cast_spec(
     content = _normalize_cast_spec_to_project_identity(project, content)
     cast_spec = parse_cast_spec_input(content)
     project.metadata_json = _merge_metadata(project.metadata_json, {"cast_spec": content})
-    character_strategy = character_strategy_from_project_metadata(project.metadata_json)
+    # The resolver threads the real project through source checks. Available
+    # reference data alone is not an adopted character behavior contract.
+    character_strategy = adopted_character_strategy(project)
 
     characters_upserted = 0
     voice_profiles_populated = 0
@@ -1428,10 +1494,16 @@ async def upsert_cast_spec(
             _cast_entry_payload,
             character_strategy=character_strategy,
         )
+        _previous_profile = (character.metadata_json or {}).get("character_engine_profile")
+        _profile_history = dict((character.metadata_json or {}).get("superseded_character_engine_profiles") or {})
+        if _previous_profile is not None and _previous_profile != _character_engine_profile:
+            from bestseller.services.prompt_source_policy import content_hash
+            _profile_history.setdefault(content_hash(_previous_profile), copy.deepcopy(_previous_profile))
         _identity_extra: dict[str, Any] = {
             "gender": character_input.gender,
             "cast_entry": _cast_entry_payload,
             "character_engine_profile": _character_engine_profile,
+            "superseded_character_engine_profiles": _profile_history,
         }
         if character_input.pronoun_set_zh:
             _identity_extra["pronoun_set_zh"] = character_input.pronoun_set_zh
@@ -1505,6 +1577,7 @@ async def upsert_cast_spec(
             project_id=project.id,
             character=character,
             language=project.language,
+            planning_knowledge_unscoped=isinstance((project.metadata_json or {}).get("active_foundation_selection"), dict),
         ):
             state_snapshots_created += 1
 
@@ -1610,6 +1683,14 @@ async def upsert_cast_spec(
 
     await session.flush()
 
+    # All row defaults, role adjustments and source fields are now materialized.
+    # Register only the profiles freshly generated by this CastSpec application.
+    for character in {item.id: item for item in characters_by_name.values()}.values():
+        record_character_engine_profile(
+            project, character, character.metadata_json["character_engine_profile"],
+            strategy=character_strategy,
+        )
+
     # C7: Cross-project novelty check on net-new characters (warn-only).
     # Runs *after* flush so the character rows exist, but never raises —
     # any novelty verdict is surfaced via logs only in this phase.
@@ -1711,14 +1792,12 @@ async def supersede_materialized_cast_for_foundation(
 
     metadata = dict(project.metadata_json or {})
     manifest = metadata.get("identity_manifest")
-    if isinstance(manifest, list):
-        metadata["identity_manifest"] = [
-            dict(item)
-            for item in manifest
-            if isinstance(item, Mapping)
-            and str(item.get("name") or item.get("canonical_name") or "").strip()
-            in active_names
-        ]
+    # The new approved cast also supersedes identity fields for retained
+    # names. Keeping an old locked manifest made its gender/pronouns outrank
+    # the repaired CastSpec in materialization's merge, even with zero prose.
+    previous_manifest = copy.deepcopy(manifest) if isinstance(manifest, list) else []
+    metadata.pop("identity_manifest", None)
+    metadata.pop("identity_manifest_status", None)
     metadata["entities"] = _prune_superseded_character_entities(
         metadata.get("entities"), active_names=active_names
     )
@@ -1743,6 +1822,7 @@ async def supersede_materialized_cast_for_foundation(
             name for name in removed_names if name
         ),
         "current_draft_count": 0,
+        "previous_identity_manifest": previous_manifest,
     }
     history.append(audit)
     metadata["foundation_truth_supersession_history"] = history[-10:]
@@ -1906,31 +1986,19 @@ async def get_latest_character_state(
     character_id: UUID,
     before_chapter_number: int | None = None,
     before_scene_number: int | None = None,
-) -> CharacterStateSnapshotModel | None:
-    stmt = select(CharacterStateSnapshotModel).where(
-        CharacterStateSnapshotModel.project_id == project_id,
-        CharacterStateSnapshotModel.character_id == character_id,
+) -> Any:  # noqa: ANN401
+    """Return the newest eligible CharacterSnapshotView with accepted fields intact."""
+    from bestseller.services.character_snapshot_sources import load_eligible_character_snapshots
+
+    snapshots = await load_eligible_character_snapshots(
+        session,
+        project_id=project_id,
+        character_id=character_id,
+        before_chapter_number=before_chapter_number,
+        before_scene_number=before_scene_number,
+        limit=1,
     )
-    if before_chapter_number is not None:
-        if before_scene_number is None:
-            stmt = stmt.where(CharacterStateSnapshotModel.chapter_number <= before_chapter_number)
-        else:
-            stmt = stmt.where(
-                or_(
-                    CharacterStateSnapshotModel.chapter_number < before_chapter_number,
-                    and_(
-                        CharacterStateSnapshotModel.chapter_number == before_chapter_number,
-                        CharacterStateSnapshotModel.scene_number.is_not(None),
-                        CharacterStateSnapshotModel.scene_number < before_scene_number,
-                    ),
-                )
-            )
-    stmt = stmt.order_by(
-        CharacterStateSnapshotModel.chapter_number.desc(),
-        CharacterStateSnapshotModel.scene_number.desc().nullslast(),
-        CharacterStateSnapshotModel.created_at.desc(),
-    )
-    return await session.scalar(stmt.limit(1))
+    return snapshots[0] if snapshots else None
 
 
 @dataclass(frozen=True)
@@ -1980,44 +2048,31 @@ async def get_effective_character_state(
     character: CharacterModel,
     before_chapter_number: int | None = None,
     before_scene_number: int | None = None,
+    planning_initial_knowledge_unknown: bool = False,
 ) -> EffectiveCharacterState:
     """Resolve each lifecycle field via most-recent non-null snapshot.
 
     Strategy:
-    1. Fetch all snapshots for (project, character) up to the cutoff in
-       descending chronological order (capped to avoid unbounded scans).
+    1. Fetch eligible snapshots for (project, character) up to the cutoff in
+       descending chronological order; retired rows do not consume the cap.
     2. For each tracked field, walk snapshots until a non-null value is
-       found; else fall back to CharacterModel.
+       found. Without eligible evidence the value stays unknown.
     3. latest_chapter/scene_number / notes reference the newest snapshot
        regardless of whether any field was non-null there.
     """
-    stmt = select(CharacterStateSnapshotModel).where(
-        CharacterStateSnapshotModel.project_id == project_id,
-        CharacterStateSnapshotModel.character_id == character.id,
+    from bestseller.services.character_snapshot_sources import (
+        load_eligible_character_snapshots, read_character_snapshot_knowledge,
     )
-    if before_chapter_number is not None:
-        if before_scene_number is None:
-            stmt = stmt.where(CharacterStateSnapshotModel.chapter_number <= before_chapter_number)
-        else:
-            stmt = stmt.where(
-                or_(
-                    CharacterStateSnapshotModel.chapter_number < before_chapter_number,
-                    and_(
-                        CharacterStateSnapshotModel.chapter_number == before_chapter_number,
-                        CharacterStateSnapshotModel.scene_number.is_not(None),
-                        CharacterStateSnapshotModel.scene_number < before_scene_number,
-                    ),
-                )
-            )
-    stmt = stmt.order_by(
-        CharacterStateSnapshotModel.chapter_number.desc(),
-        CharacterStateSnapshotModel.scene_number.desc().nullslast(),
-        CharacterStateSnapshotModel.created_at.desc(),
-    ).limit(64)
-    snapshots = list(await session.scalars(stmt))
+
+    snapshots = await load_eligible_character_snapshots(
+        session, project_id=project_id, character_id=character.id,
+        before_chapter_number=before_chapter_number, before_scene_number=before_scene_number,
+    )
 
     def _first_non_null(attr: str) -> Any:
         for snap in snapshots:
+            if planning_initial_knowledge_unknown and attr == "arc_state" and snap.chapter_number == 0:
+                continue
             value = getattr(snap, attr, None)
             if value not in (None, ""):
                 return value
@@ -2035,6 +2090,8 @@ async def get_effective_character_state(
         first_value: Any = None
         first_chapter: int | None = None
         for snap in snapshots:
+            if planning_initial_knowledge_unknown and attr == "arc_state" and snap.chapter_number == 0:
+                continue
             value = getattr(snap, attr, None)
             if value in (None, ""):
                 continue
@@ -2046,12 +2103,14 @@ async def get_effective_character_state(
                 return value, first_chapter
         return None, first_chapter
 
-    arc_state = _first_non_null("arc_state") or character.arc_state
-    power_tier = _first_non_null("power_tier") or character.power_tier
+    # A mutable CharacterModel fallback has no temporal/source proof for
+    # these fields. Eligible initial/scene/formal evidence supplies baselines.
+    arc_state = _first_non_null("arc_state")
+    power_tier = _first_non_null("power_tier")
     emotional_state = _first_non_null("emotional_state")
     physical_state = _first_non_null("physical_state")
-    alive_status = _first_non_null("alive_status") or getattr(character, "alive_status", None)
-    stance = _first_non_null("stance") or getattr(character, "stance", None)
+    alive_status = _first_non_null("alive_status")
+    stance = _first_non_null("stance")
 
     prev_arc, _arc_change_ch = _second_non_null("arc_state")
     prev_power, _power_change_ch = _second_non_null("power_tier")
@@ -2074,12 +2133,11 @@ async def get_effective_character_state(
     prev_state_chapter = max(change_chapters) if change_chapters else None
 
     latest = snapshots[0] if snapshots else None
-    if latest is not None and isinstance(latest.beliefs, list):
-        knowledge_state = {"knows": [str(item) for item in latest.beliefs if str(item).strip()]}
-    elif before_chapter_number is None and isinstance(character.knowledge_state_json, dict):
-        knowledge_state = dict(character.knowledge_state_json)
-    else:
-        knowledge_state = {}
+    knowledge_state = await read_character_snapshot_knowledge(
+        session, project_id=project_id, character=character,
+        before_chapter_number=before_chapter_number, before_scene_number=before_scene_number,
+        planning_initial_knowledge_unknown=planning_initial_knowledge_unknown,
+    )
     return EffectiveCharacterState(
         arc_state=arc_state,
         power_tier=power_tier,
@@ -2150,6 +2208,7 @@ async def load_scene_story_bible_context(
             character=character,
             before_chapter_number=chapter.chapter_number,
             before_scene_number=scene.scene_number,
+            planning_initial_knowledge_unknown=isinstance((project.metadata_json or {}).get("active_foundation_selection"), dict),
         )
         stance_locked_until = getattr(character, "stance_locked_until_chapter", None)
         # Pull rich personhood payloads out of metadata_json so non-POV
@@ -2171,6 +2230,7 @@ async def load_scene_story_bible_context(
             )
         characters.append(
             {
+                "character_id": str(character.id),
                 "name": character.name,
                 "role": character.role,
                 "background": character.background,
@@ -2198,9 +2258,9 @@ async def load_scene_story_bible_context(
                 "villain_charisma": _meta.get("villain_charisma")
                 if isinstance(_meta, dict)
                 else None,
-                "character_engine_profile": _meta.get("character_engine_profile")
-                if isinstance(_meta, dict)
-                else None,
+                "character_engine_profile": validated_character_engine_profile(
+                    project, character.id, _meta.get("character_engine_profile"), character=character,
+                ),
                 "latest_state": effective.notes,
                 "emotional_state": effective.emotional_state,
                 "physical_state": effective.physical_state,
@@ -2708,6 +2768,7 @@ def _append_premium_state_ledger(
     *,
     updates: dict[str, Any],
     chapter_number: int,
+    source_bound: bool = False,
 ) -> int:
     """Append extracted premium-engine state events to project metadata.
 
@@ -2721,6 +2782,50 @@ def _append_premium_state_ledger(
 
     project_meta = dict(project.metadata_json or {})
     ledger = dict(project_meta.get("premium_state_ledger") or {})
+    intent = project_meta.get("genre_intent_contract") or {}
+    if (
+        not source_bound
+        and isinstance(intent, dict)
+        and intent.get("genre_key") == "realistic"
+        and intent.get("prompt_pack_key") == "realistic-life"
+    ):
+        from bestseller.services.material_density import premium_ledger_is_category_template
+        from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+
+        old_pack = project_meta.get("premium_capability_pack")
+        if premium_ledger_is_category_template(ledger, old_pack):
+            candidate = {
+                key: [
+                    event for raw in payload.get(key) or []
+                    if (event := _normalize_premium_state_event(
+                        raw, chapter_number=chapter_number,
+                    )) is not None
+                ]
+                for key in _PREMIUM_STATE_LEDGER_KEYS
+            }
+            chapter_sourced = chapter_number > 0 and all(
+                event.get("chapter_number") == chapter_number
+                and event.get("source") == f"chapter_{chapter_number}"
+                for events in candidate.values() for event in events
+            )
+            if (
+                not candidate["relationship_events"]
+                or not chapter_sourced
+                or not validate_premium_state_ledger(candidate).passed
+            ):
+                return 0
+            # Only exact, provenance-matched scaffolding is superseded. Mixed
+            # history is never cleared; preserve the old template for auditing.
+            archive = list(project_meta.get("premium_state_template_archive") or [])
+            archive.append({"source_pack": old_pack, "ledger": ledger,
+                            "superseded_by_chapter": chapter_number})
+            project_meta["premium_state_template_archive"] = archive
+            project_meta["premium_state_ledger_provenance"] = {
+                "schema_version": "realistic-state-source.v1", "status": "project_events",
+                "source": f"chapter_{chapter_number}",
+            }
+            project_meta["premium_capability_pack"] = "category_realistic_life_zh"
+            ledger = {}
     recorded = 0
     for key in _PREMIUM_STATE_LEDGER_KEYS:
         existing = list(ledger.get(key) or [])
@@ -2730,12 +2835,16 @@ def _append_premium_state_ledger(
             if event is not None:
                 incoming.append(event)
         if incoming:
-            ledger[key] = [*existing, *incoming][-_PREMIUM_STATE_LEDGER_CAP:]
+            ledger[key] = [*existing, *incoming]
             recorded += len(incoming)
         elif key not in ledger:
-            ledger[key] = existing[-_PREMIUM_STATE_LEDGER_CAP:]
+            ledger[key] = existing
 
-    if recorded:
+    if recorded and source_bound:
+        # The source projector publishes current state; retain the exact prior
+        # snapshot/report until it has archived them in the same savepoint.
+        project.metadata_json = {**project_meta, "premium_state_ledger": ledger}
+    elif recorded:
         project_meta["premium_state_ledger"] = ledger
         try:
             from bestseller.services.premium_state_ledger import (
@@ -2762,17 +2871,63 @@ async def update_story_bible_from_chapter(
     project: ProjectModel,
     chapter: ChapterModel,
     chapter_text: str,
+    source_chapter_draft_version_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
-) -> dict[str, int]:
-    """Extract and apply story bible updates from a completed chapter.
+    step_run_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Extract once from an exact adopted body, then atomically apply its updates.
 
-    Uses the ``editor`` LLM role to extract character knowledge, relationship,
-    and world-building changes, then persists them to the database.
-
-    Returns counts for persisted story-bible and premium-state updates.
+    The model gateway must run outside savepoints. It may commit before paying,
+    so source truth and idempotency are checked again inside the DB-only apply.
+    The caller owns the final commit; budget stops propagate unchanged.
     """
+    from bestseller.services.budget import ExecutionBudgetError
+    from bestseller.services.feedback import (
+        _knowledge_llm_receipt,
+        _knowledge_operation_id,
+        validate_adopted_knowledge_source,
+    )
     from bestseller.services.llm import LLMCompletionRequest, complete_text
 
+    project_id, chapter_id = project.id, chapter.id
+    source, rejection = await validate_adopted_knowledge_source(
+        session,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        source_chapter_draft_version_id=source_chapter_draft_version_id,
+        chapter_md=chapter_text,
+    )
+    if rejection:
+        outcome = _adopted_bible_outcome(source, "rejected_source", rejection)
+        await _record_adopted_bible_receipt(session, chapter_id, project_id, outcome)
+        return outcome
+    projection_guard = await _adopted_bible_projection_guard(session, chapter, source)
+    if projection_guard is not None:
+        return await _ensure_adopted_bible_read_views(session, settings, project_id, projection_guard)
+    from bestseller.services.story_bible_projection import (
+        BibleProjectionAttributionError,
+        preflight_adopted_bible_projection,
+    )
+
+    try:
+        await preflight_adopted_bible_projection(
+            session, project_id=project_id, source_lineage=source,
+        )
+    except BibleProjectionAttributionError as exc:
+        outcome = {
+            **_adopted_bible_outcome(source, "requires_projection_reconciliation", str(exc)),
+            "projection_reconciled": False,
+        }
+        await _record_adopted_bible_receipt(session, chapter_id, project_id, outcome)
+        return outcome
+    operation_id = _knowledge_operation_id("bible", source)
+    source = {
+        **source,
+        "operation_id": operation_id,
+        "workflow_run_id": str(workflow_run_id) if workflow_run_id else None,
+        "step_run_id": str(step_run_id) if step_run_id else None,
+    }
+    operations: list[dict[str, Any]] = []
     language = getattr(project, "language", None) or "zh-CN"
     is_zh = language.lower().startswith("zh")
 
@@ -2789,246 +2944,632 @@ async def update_story_bible_from_chapter(
         )
     )
 
-    result = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
+    request = LLMCompletionRequest(
+        logical_role="editor",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback_response='{"character_updates":[],"relationship_updates":[],"world_updates":[]}',
+        prompt_template="bible_update_v1",
+        prompt_version="1.0",
+        project_id=project_id,
+        workflow_run_id=workflow_run_id,
+        step_run_id=step_run_id,
+        operation_id=operation_id,
+        metadata={"chapter_number": chapter.chapter_number, "source_lineage": source},
+    )
+    try:
+        result = await complete_text(session, settings, request)
+        operations.append(_knowledge_llm_receipt(result, request))
+    except ExecutionBudgetError:
+        raise
+    except Exception as exc:
+        outcome = _adopted_bible_outcome(source, "llm_error", type(exc).__name__)
+        await _record_adopted_bible_receipt(
+            session, chapter_id, project_id, outcome, llm_operations=operations
+        )
+        return outcome
+
+    raw_outputs = [result.content]
+    try:
+        updates = _parse_adopted_bible_updates(result.content)
+    except (ValueError, TypeError) as exc:
+        repair_source, rejection = await validate_adopted_knowledge_source(
+            session,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            source_chapter_draft_version_id=source_chapter_draft_version_id,
+            chapter_md=chapter_text,
+        )
+        if rejection:
+            outcome = _adopted_bible_outcome(
+                {**source, **operations[-1]}, "rejected_source", rejection
+            )
+            await _record_adopted_bible_receipt(
+                session,
+                chapter_id,
+                project_id,
+                outcome,
+                llm_operations=operations,
+                raw_extractions=raw_outputs,
+            )
+            return outcome
+        projection_guard = await _adopted_bible_projection_guard(
+            session, chapter, repair_source, llm_operations=operations,
+        )
+        if projection_guard is not None:
+            return await _ensure_adopted_bible_read_views(session, settings, project_id, projection_guard)
+        from bestseller.services.llm_closed_loop import (
+            build_repair_user_prompt,
+            findings_from_exception,
+        )
+
+        retry_prompt = build_repair_user_prompt(
+            original_user_prompt=user_prompt,
+            findings=findings_from_exception(exc),
+            language=getattr(project, "language", None),
+        )
+        retry_request = LLMCompletionRequest(
             logical_role="editor",
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt=retry_prompt,
             fallback_response='{"character_updates":[],"relationship_updates":[],"world_updates":[]}',
-            prompt_template="bible_update_v1",
+            prompt_template="bible_update_v1_repair",
             prompt_version="1.0",
-            project_id=project.id,
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
-            metadata={"chapter_number": chapter.chapter_number},
-        ),
-    )
-
-    # Parse LLM response
-    try:
-        raw = result.content.strip()
-        # Strip markdown fences if present
-        if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?\s*", "", raw)
-            raw = re.sub(r"\s*```$", "", raw)
-        updates = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning(
-            "Failed to parse bible update JSON for ch%d; retrying with diagnostics",
-            chapter.chapter_number,
+            step_run_id=step_run_id,
+            operation_id=operation_id + ":repair",
+            metadata={
+                "chapter_number": chapter.chapter_number,
+                "source_lineage": source,
+                "semantic_repair_of": str(result.llm_run_id) if result.llm_run_id else None,
+            },
         )
         try:
-            from bestseller.services.llm_closed_loop import (
-                build_repair_user_prompt,
-                findings_from_exception,
+            result = await complete_text(session, settings, retry_request)
+            operations.append(_knowledge_llm_receipt(result, retry_request))
+            raw_outputs.append(result.content)
+        except ExecutionBudgetError:
+            raise
+        except Exception as retry_error:
+            outcome = _adopted_bible_outcome(source, "llm_error", type(retry_error).__name__)
+            await _record_adopted_bible_receipt(
+                session,
+                chapter_id,
+                project_id,
+                outcome,
+                llm_operations=operations,
+                raw_extractions=raw_outputs,
+            )
+            return outcome
+        try:
+            updates = _parse_adopted_bible_updates(result.content)
+        except (ValueError, TypeError):
+            outcome = _adopted_bible_outcome(
+                {**source, **operations[-1]}, "parse_error", "bible_update_json_parse_failed"
+            )
+            await _record_adopted_bible_receipt(
+                session,
+                chapter_id,
+                project_id,
+                outcome,
+                llm_operations=operations,
+                raw_extractions=raw_outputs,
+            )
+            return outcome
+
+    # No paid calls below this boundary. A late or duplicate result cannot
+    # apply even when another worker changed truth while the gateway ran.
+    async with session.begin_nested():
+        current_source, rejection = await validate_adopted_knowledge_source(
+            session,
+            project_id=project_id,
+            chapter_id=chapter_id,
+            source_chapter_draft_version_id=source_chapter_draft_version_id,
+            chapter_md=chapter_text,
+        )
+        lineage = {**current_source, **operations[-1]}
+        if rejection:
+            outcome = _adopted_bible_outcome(lineage, "rejected_source", rejection)
+        elif (
+            projection_guard := await _adopted_bible_projection_guard(
+                session,
+                chapter,
+                current_source,
+                candidate_payload=updates,
+                llm_operations=operations,
+            )
+        ) is not None:
+            return await _ensure_adopted_bible_read_views(session, settings, project_id, projection_guard)
+        elif operations[-1]["fallback_used"]:
+            outcome = _adopted_bible_outcome(lineage, "llm_error", "fallback_used")
+        else:
+            # Different chapters can finish concurrently; serialize project
+            # ledger read/modify/write and refresh a gateway-stale ORM object.
+            current_project = await session.scalar(
+                select(ProjectModel)
+                .where(
+                    ProjectModel.id == project_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if current_project is None:
+                raise ValueError("Bible update project disappeared")
+            from bestseller.services.story_bible_projection import (
+                BibleProjectionAttributionError,
+                premium_projection_baseline,
+                reproject_adopted_bible,
             )
 
-            retry_prompt = build_repair_user_prompt(
-                original_user_prompt=user_prompt,
-                findings=findings_from_exception(exc),
-                language=getattr(project, "language", None),
-            )
-            retry = await complete_text(
-                session,
-                settings,
-                LLMCompletionRequest(
-                    logical_role="editor",
-                    system_prompt=system_prompt,
-                    user_prompt=retry_prompt,
-                    fallback_response='{"character_updates":[],"relationship_updates":[],"world_updates":[]}',
-                    prompt_template="bible_update_v1_repair",
-                    prompt_version="1.0",
-                    project_id=project.id,
-                    workflow_run_id=workflow_run_id,
-                    metadata={
-                        "chapter_number": chapter.chapter_number,
-                        "semantic_repair_of": str(result.llm_run_id)
-                        if result.llm_run_id
-                        else None,
-                    },
-                ),
-            )
-            raw = retry.content.strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```(?:json)?\s*", "", raw)
-                raw = re.sub(r"\s*```$", "", raw)
-            updates = json.loads(raw)
-        except Exception:
-            logger.warning(
-                "Failed to parse repaired bible update JSON for ch%d",
-                chapter.chapter_number,
-                exc_info=True,
-            )
-            return {
-                "characters_updated": 0,
-                "relationships_updated": 0,
-                "world_rules_added": 0,
-                "premium_state_events_recorded": 0,
-                "degraded": True,
-                "degraded_reason": "bible_update_json_parse_failed",
+            try:
+                async with session.begin_nested():
+                    premium_baseline = premium_projection_baseline(
+                        current_project.metadata_json or {}, current_project.id, capture=True,
+                    )
+                    counts = await _apply_adopted_bible_updates(
+                        session, current_project, chapter, updates, lineage,
+                    )
+                    await reproject_adopted_bible(
+                        session, current_project, pending=(lineage, updates),
+                        premium_baseline=premium_baseline,
+                    )
+                status = "ok" if any(counts.values()) else "empty"
+                outcome = {**_adopted_bible_outcome(lineage, status), **counts,
+                           "projection_reconciled": True}
+            except BibleProjectionAttributionError as exc:
+                # Rollback expires objects changed by the failed projection.
+                # Keep the caller's shared project usable for a cached retry.
+                await session.refresh(current_project)
+                outcome = {
+                    **_adopted_bible_outcome(lineage, "requires_projection_reconciliation", str(exc)),
+                    "projection_reconciled": False,
+                }
+        await _record_adopted_bible_receipt(
+            session,
+            chapter_id,
+            project_id,
+            outcome,
+            llm_operations=operations,
+            candidate_payload=updates,
+            raw_extractions=raw_outputs,
+        )
+        return await _ensure_adopted_bible_read_views(session, settings, project_id, outcome)
+
+
+async def _ensure_adopted_bible_read_views(session, settings, project_id, outcome):
+    """A successful apply includes its normal current read projections."""
+    if outcome.get("extraction_status") in {"ok", "empty", "already_applied"}:
+        from bestseller.services.story_bible_read_views import ensure_story_bible_read_views
+
+        project = await session.get(ProjectModel, project_id)
+        if project is None:
+            raise ValueError("story_bible_read_views_project_missing")
+        await ensure_story_bible_read_views(session, settings, project=project)
+    return outcome
+
+
+def _adopted_bible_outcome(
+    source: dict[str, Any],
+    status: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    degraded = status not in {"ok", "empty", "already_applied"}
+    return {
+        "characters_updated": 0,
+        "relationships_updated": 0,
+        "world_rules_added": 0,
+        "premium_state_events_recorded": 0,
+        "extraction_status": status,
+        "source_lineage": source,
+        "llm_run_id": source.get("llm_run_id"),
+        "degraded": degraded,
+        "degraded_reason": reason if degraded else None,
+    }
+
+
+def _find_adopted_bible_receipt(
+    chapter: ChapterModel, source: dict[str, Any]
+) -> dict[str, Any] | None:
+    from bestseller.services.story_bible_projection import same_source
+
+    for receipt in reversed((chapter.metadata_json or {}).get("story_bible_update_receipts", [])):
+        if receipt.get("status") not in {"ok", "empty"}:
+            continue
+        if same_source(receipt.get("source_lineage"), source):
+            return receipt
+        return None  # Only the latest successful application describes current projections.
+    return None
+
+
+async def _adopted_bible_projection_guard(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    source: dict[str, Any],
+    *,
+    candidate_payload: dict[str, Any] | None = None,
+    llm_operations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    from bestseller.services.story_bible_projection import (
+        BibleProjectionAttributionError,
+        reproject_adopted_bible,
+        same_source,
+    )
+
+    latest = next((receipt for receipt in reversed(
+        (chapter.metadata_json or {}).get("story_bible_update_receipts", []),
+    ) if same_source(receipt.get("source_lineage"), source)), None)
+    if latest is not None and latest.get("status") == "requires_projection_reconciliation":
+        # A structural block cannot be repaired by paying again or by promoting
+        # its retained candidate into a successful cache entry.
+        return copy.deepcopy(latest["result"])
+    current = _find_adopted_bible_receipt(chapter, source)
+    if current is not None:
+        chapter_id, project_id = chapter.id, chapter.project_id
+        lineage = {**current["source_lineage"], **source}
+        try:
+            async with session.begin_nested():
+                project = await session.scalar(select(ProjectModel).where(
+                    ProjectModel.id == project_id,
+                ).with_for_update().execution_options(populate_existing=True))
+                if project is None:
+                    raise BibleProjectionAttributionError("bible_projection_project_missing")
+                changed = await reproject_adopted_bible(session, project)
+        except BibleProjectionAttributionError as exc:
+            if project is not None:
+                await session.refresh(project)
+            outcome = {
+                **_adopted_bible_outcome(lineage, "requires_projection_reconciliation", str(exc)),
+                "projection_reconciled": False,
             }
+        else:
+            outcome = _adopted_bible_outcome(lineage, "already_applied")
+            if not changed:
+                return outcome
+            outcome["projection_reconciled"] = True
+        await _record_adopted_bible_receipt(
+            session, chapter_id, project_id, outcome,
+            projection_reconciled=outcome["projection_reconciled"],
+            candidate_payload=current.get("candidate_payload"),
+        )
+        return outcome
+    successful = [
+        receipt
+        for receipt in (chapter.metadata_json or {}).get("story_bible_update_receipts", [])
+        if receipt.get("status") in {"ok", "empty"}
+    ]
+    historical = next(
+        (
+            receipt
+            for receipt in reversed(successful)
+            if same_source(receipt.get("source_lineage"), source)
+        ),
+        None,
+    )
+    if historical is None:
+        return None
+    # Incremental affinity/ledger effects have no complete inverse. A cached
+    # extraction proves prior work, not that the current projection is restored.
+    outcome = _adopted_bible_outcome(
+        {**historical["source_lineage"], **source},
+        "requires_projection_reconciliation",
+        "historical_source_is_not_latest_applied_projection",
+    )
+    candidate = (
+        candidate_payload if candidate_payload is not None else historical.get("candidate_payload")
+    )
+    outcome.update(
+        projection_reconciled=False,
+        candidate_payload=candidate,
+        last_applied_source_lineage=successful[-1]["source_lineage"],
+    )
+    await _record_adopted_bible_receipt(
+        session,
+        chapter.id,
+        chapter.project_id,
+        outcome,
+        candidate_payload=candidate,
+        last_applied_source_lineage=outcome["last_applied_source_lineage"],
+        projection_reconciled=False,
+        llm_operations=llm_operations
+        if llm_operations is not None
+        else historical.get("llm_operations", []),
+    )
+    return outcome
+
+
+async def _record_adopted_bible_receipt(
+    session: AsyncSession,
+    chapter_id: UUID,
+    project_id: UUID,
+    outcome: dict[str, Any],
+    **details: Any,
+) -> None:
+    async with session.begin_nested():
+        chapter = await session.scalar(
+            select(ChapterModel)
+            .where(
+                ChapterModel.id == chapter_id,
+                ChapterModel.project_id == project_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if chapter is None:
+            return
+        metadata = dict(chapter.metadata_json or {})
+        metadata["story_bible_update_receipts"] = [
+            *metadata.get("story_bible_update_receipts", []),
+            {
+                "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "status": outcome["extraction_status"],
+                "source_lineage": outcome["source_lineage"],
+                "result": outcome,
+                **details,
+            },
+        ]
+        chapter.metadata_json = metadata
+        await session.flush()
+
+
+def _parse_adopted_bible_updates(raw: str) -> dict[str, Any]:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+    updates = json.loads(raw)
+    if not isinstance(updates, dict):
+        raise ValueError("Bible update must be an object")
+    for field in ("character_updates", "relationship_updates", "world_updates"):
+        items = updates.get(field, [])
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ValueError(f"Bible {field} must be a list of objects")
+    string_fields = {
+        "character_updates": ("name", "emotional_state", "physical_state", "power_change"),
+        "relationship_updates": ("character_a", "character_b", "change", "affinity_direction"),
+        "world_updates": ("rule_or_location", "description"),
+    }
+    for category, fields in string_fields.items():
+        for item in updates.get(category, []):
+            for field in fields:
+                if field in item and not isinstance(item[field], str):
+                    raise ValueError(f"Bible {category}.{field} must be a string")
+    for item in updates.get("character_updates", []):
+        for field in ("knowledge_gained", "false_beliefs"):
+            values = item.get(field, [])
+            if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+                raise ValueError(f"Bible character_updates.{field} must be a list of strings")
+    for field in ("premium_engine_updates", "premium_state_updates"):
+        payload = updates.get(field)
+        if payload is not None:
+            if not isinstance(payload, dict):
+                raise ValueError(f"Bible {field} must be an object")
+            for key in _PREMIUM_STATE_LEDGER_KEYS:
+                items = payload.get(key, [])
+                if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+                    raise ValueError(f"Bible {field}.{key} must be a list of objects")
+    return updates
+
+
+async def _apply_adopted_bible_updates(
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    updates: dict[str, Any],
+    lineage: dict[str, Any],
+) -> dict[str, int]:
+    """DB-only application: any failure rolls back every update and receipt."""
+    from bestseller.services.story_bible_projection import capture_bible_baseline
 
     counts = {
         "characters_updated": 0,
         "relationships_updated": 0,
         "world_rules_added": 0,
-        "premium_state_events_recorded": _append_premium_state_ledger(
-            project,
-            updates=updates,
-            chapter_number=chapter.chapter_number,
-        ),
+        "premium_state_events_recorded": 0,
     }
-
-    # Apply character updates
-    for cu in updates.get("character_updates", []):
+    premium_updates = copy.deepcopy(updates)
+    for items in _premium_update_payload(premium_updates).values():
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    item["source_lineage"] = lineage
+    counts["premium_state_events_recorded"] = _append_premium_state_ledger(
+        project,
+        updates=premium_updates,
+        chapter_number=chapter.chapter_number,
+        source_bound=True,
+    )
+    for cu_index, cu in enumerate(updates.get("character_updates", [])):
         name = cu.get("name", "").strip()
         if not name:
             continue
-        try:
-            char = await get_or_create_character_by_name(
-                session,
-                project_id=project.id,
-                character_name=name,
-            )
-            ks = dict(char.knowledge_state_json or {})
-            # Merge knowledge
-            existing_knows = ks.get("knows", [])
-            for item in cu.get("knowledge_gained", []):
-                if item and item not in existing_knows:
-                    existing_knows.append(item)
-            ks["knows"] = existing_knows[-30:]  # cap at 30 entries
+        char = await get_or_create_character_by_name(
+            session, project_id=project.id, character_name=name
+        )
+        capture_bible_baseline(char)
+        from bestseller.infra.db.models import ChapterDraftVersionModel
+        from bestseller.services.knowledge_epistemic_admission import (
+            admit_cognitive_update,
+            merge_cognitive_admission,
+        )
 
-            existing_false = ks.get("falsely_believes", [])
-            for item in cu.get("false_beliefs", []):
-                if item and item not in existing_false:
-                    existing_false.append(item)
-            ks["falsely_believes"] = existing_false[-10:]
+        source_body = await session.scalar(select(ChapterDraftVersionModel.content_md).where(
+            ChapterDraftVersionModel.id == UUID(lineage["source_chapter_draft_version_id"]),
+            ChapterDraftVersionModel.project_id == project.id,
+            ChapterDraftVersionModel.chapter_id == chapter.id,
+        ))
+        admission = admit_cognitive_update(
+            update=cu, source_lineage=lineage, source_body=source_body,
+            application_payload=updates, item_path=f"/character_updates/{cu_index}",
+        )
+        admitted = admission["admitted_update"]
+        ks = dict(char.knowledge_state_json or {})
+        knows = list(ks.get("knows", []))
+        for item in admitted.get("knowledge_gained", []):
+            if item and item not in knows:
+                knows.append(item)
+        ks["knows"] = knows[-30:]
+        beliefs = list(ks.get("falsely_believes", []))
+        for item in admitted.get("false_beliefs", []):
+            if item and item not in beliefs:
+                beliefs.append(item)
+        ks["falsely_believes"] = beliefs[-10:]
+        char.knowledge_state_json = merge_cognitive_admission(ks, admission)
+        metadata = dict(char.metadata_json or {})
+        if admission["item_dispositions"]:
+            knowledge = char.knowledge_state_json
+            receipt = {
+                **copy.deepcopy(knowledge["epistemic_admission"]),
+                "item_dispositions": copy.deepcopy(knowledge["unverified_interpretations"]),
+                "literal_source_observations": copy.deepcopy(
+                    knowledge["literal_source_observations"]
+                ),
+            }
+            history = list(metadata.get("knowledge_epistemic_disposition_history", []))
+            if receipt not in history:
+                history.append(receipt)
+            metadata["knowledge_epistemic_disposition_history"] = history
+        for field in ("emotional_state", "physical_state"):
+            if cu.get(field):
+                metadata[field] = cu[field]
+        if cu.get("power_change"):
+            metadata["latest_power_change"] = cu["power_change"]
+            metadata["power_change_chapter"] = chapter.chapter_number
+        char.metadata_json = {
+            **metadata,
+            "story_bible_source_lineage": lineage,
+            "source_lineage": lineage,
+            "story_bible_update_history": [
+                *metadata.get("story_bible_update_history", []),
+                {"source_lineage": lineage, "update": copy.deepcopy(cu)},
+            ],
+        }
+        counts["characters_updated"] += 1
 
-            char.knowledge_state_json = ks
-
-            # Update metadata with emotional/physical state
-            md = dict(char.metadata_json or {})
-            if cu.get("emotional_state"):
-                md["emotional_state"] = cu["emotional_state"]
-            if cu.get("physical_state"):
-                md["physical_state"] = cu["physical_state"]
-            if cu.get("power_change"):
-                md["latest_power_change"] = cu["power_change"]
-                md["power_change_chapter"] = chapter.chapter_number
-            char.metadata_json = md
-
-            counts["characters_updated"] += 1
-        except Exception:
-            logger.debug("Failed to update character '%s' (non-fatal)", name, exc_info=True)
-
-    # Apply relationship updates
     for ru in updates.get("relationship_updates", []):
-        char_a_name = ru.get("character_a", "").strip()
-        char_b_name = ru.get("character_b", "").strip()
-        if not char_a_name or not char_b_name:
+        a, b = ru.get("character_a", "").strip(), ru.get("character_b", "").strip()
+        if not a or not b:
             continue
-        try:
-            char_a = await get_or_create_character_by_name(
-                session,
+        char_a = await get_or_create_character_by_name(
+            session, project_id=project.id, character_name=a
+        )
+        char_b = await get_or_create_character_by_name(
+            session, project_id=project.id, character_name=b
+        )
+        rel_id = _stable_relationship_id(project.id, char_a.id, char_b.id)
+        rel = await session.scalar(
+            select(RelationshipModel)
+            .where(
+                RelationshipModel.id == rel_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        created = rel is None
+        if created:
+            rel = RelationshipModel(
+                id=rel_id,
                 project_id=project.id,
-                character_name=char_a_name,
+                character_a_id=char_a.id,
+                character_b_id=char_b.id,
+                relationship_type=ru.get("change", "neutral"),
+                strength=0,
+                metadata_json={},
             )
-            char_b = await get_or_create_character_by_name(
-                session,
-                project_id=project.id,
-                character_name=char_b_name,
-            )
-            rel_id = _stable_relationship_id(project.id, char_a.id, char_b.id)
-            rel = await session.get(RelationshipModel, rel_id)
-            if rel is None:
-                rel = RelationshipModel(
-                    id=rel_id,
-                    project_id=project.id,
-                    character_a_id=char_a.id,
-                    character_b_id=char_b.id,
-                    label=ru.get("change", "neutral"),
-                    current_affinity=0.5,
-                    metadata_json={},
-                )
-                session.add(rel)
-            # Update affinity
-            direction = ru.get("affinity_direction", "neutral")
-            delta = {"up": 0.1, "down": -0.1}.get(direction, 0.0)
-            rel.current_affinity = max(0.0, min(1.0, (rel.current_affinity or 0.5) + delta))
-            rel.label = ru.get("change", rel.label)
-            # Track events
-            events = list(rel.metadata_json.get("events", []) if rel.metadata_json else [])
-            events.append(
-                {
-                    "chapter": chapter.chapter_number,
-                    "change": ru.get("change", ""),
-                    "direction": direction,
-                }
-            )
-            rel.metadata_json = {**(rel.metadata_json or {}), "events": events[-20:]}
+            session.add(rel)
+        capture_bible_baseline(rel, created=created)
+        metadata = dict(rel.metadata_json or {})
+        direction = ru.get("affinity_direction", "neutral")
+        affinity = max(
+            0.0,
+            min(
+                1.0,
+                (float(rel.strength or 0) + 1) / 2 + {"up": 0.1, "down": -0.1}.get(direction, 0.0),
+            ),
+        )
+        rel.strength = 2 * affinity - 1
+        rel.relationship_type = ru.get("change", rel.relationship_type)
+        rel.last_changed_chapter_no = chapter.chapter_number
+        events = list(metadata.get("events", []))
+        events.append(
+            {
+                "chapter": chapter.chapter_number,
+                "change": ru.get("change", ""),
+                "direction": direction,
+                "source_lineage": lineage,
+                "update": copy.deepcopy(ru),
+            }
+        )
+        rel.metadata_json = {
+            **metadata,
+            "current_affinity": affinity,
+            "events": events,
+            "story_bible_source_lineage": lineage,
+            "source_lineage": lineage,
+        }
+        counts["relationships_updated"] += 1
 
-            counts["relationships_updated"] += 1
-        except Exception:
-            logger.debug(
-                "Failed to update relationship '%s'-'%s' (non-fatal)",
-                char_a_name,
-                char_b_name,
-                exc_info=True,
-            )
-
-    # Apply world updates
     for wu in updates.get("world_updates", []):
-        rule_name = wu.get("rule_or_location", "").strip()
-        if not rule_name:
+        name = normalize_world_rule_name(wu.get("rule_or_location", ""))
+        if not name:
             continue
-        try:
-            rule_code = re.sub(r"[^a-z0-9_]", "_", rule_name.lower())[:50]
-            rule_id = stable_world_rule_id(project.id, rule_code)
-            existing = await _get_world_rule_by_identity(
-                session,
-                project_id=project.id,
-                rule_id=rule_id,
-                rule_code=rule_code,
-                name=rule_name,
-            )
-            if existing is None:
-                rule = WorldRuleModel(
+        rule_code = chapter_world_rule_code(name)
+        rule_id = stable_world_rule_id(project.id, rule_code)
+        rule = await _get_world_rule_by_identity(
+            session, project_id=project.id, rule_id=rule_id, rule_code=rule_code, name=name
+        )
+        if rule is None:
+            rule = WorldRuleModel(
                     id=rule_id,
                     project_id=project.id,
                     rule_code=rule_code,
-                    name=rule_name,
+                    name=name,
                     description=wu.get("description", ""),
                     metadata_json={
                         "source": f"chapter_{chapter.chapter_number}",
                         "reveal_chapter": chapter.chapter_number,
+                        "source_lineage": lineage,
+                        "description_source_lineage": lineage,
+                        "story_bible_update_history": [
+                            {
+                                "source_lineage": lineage,
+                                "description_applied": True,
+                                "update": copy.deepcopy(wu),
+                            }
+                        ],
                     },
-                )
-                session.add(rule)
-                counts["world_rules_added"] += 1
-            else:
-                await _assign_world_rule_code_if_available(
-                    session,
-                    project_id=project.id,
-                    model=existing,
-                    rule_code=rule_code,
-                )
-                # Update description if richer
-                if wu.get("description") and len(wu["description"]) > len(
-                    existing.description or ""
-                ):
-                    existing.description = wu["description"]
-        except Exception:
-            logger.debug("Failed to add world rule '%s' (non-fatal)", rule_name, exc_info=True)
-
+            )
+            capture_bible_baseline(rule, created=True)
+            session.add(rule)
+            counts["world_rules_added"] += 1
+        else:
+            capture_bible_baseline(rule)
+            # Exact-name legacy/authored rows keep their explicit code and ID.
+            description_applied = bool(
+                wu.get("description") and len(wu["description"]) > len(rule.description or "")
+            )
+            metadata = dict(rule.metadata_json or {})
+            description_source = metadata.get(
+                "description_source_lineage", metadata.get("source_lineage")
+            )
+            if description_applied:
+                rule.description = wu["description"]
+                description_source = lineage
+            rule.metadata_json = {
+                **metadata,
+                "source_lineage": lineage,
+                "description_source_lineage": description_source,
+                "story_bible_update_history": [
+                    *metadata.get("story_bible_update_history", []),
+                    {
+                        "source_lineage": lineage,
+                        "description_applied": description_applied,
+                        "update": copy.deepcopy(wu),
+                    },
+                ],
+            }
     await session.flush()
-    logger.info(
-        "Story bible updated for ch%d: %s",
-        chapter.chapter_number,
-        counts,
-    )
     return counts
-
 
 # ---------------------------------------------------------------------------
 # Phase D1 — per-volume timeline renderer.
@@ -3176,7 +3717,7 @@ async def render_volume_timeline(
     caller is responsible for writing to ``大纲/第{N}卷-时间线.md``.
     """
 
-    from bestseller.services.continuity import _facts_from_storage
+    from bestseller.services.continuity import _current_snapshot_input
 
     volume = await session.scalar(
         select(VolumeModel).where(
@@ -3214,14 +3755,12 @@ async def render_volume_timeline(
 
     snapshots: list[ChapterStateSnapshotContext] = []
     for row in snapshot_rows:
-        snapshots.append(
-            ChapterStateSnapshotContext(
-                chapter_number=row.chapter_number,
-                facts=_facts_from_storage(row.facts),
-                time_anchor=row.time_anchor,
-                chapter_time_span=row.chapter_time_span,
-            )
+        selected = await _current_snapshot_input(
+            session, project_id=project_id, chapter_number=row.chapter_number,
+            include_source=True,
         )
+        if selected.context is not None and selected.chapter_id == row.chapter_id:
+            snapshots.append(selected.context)
 
     rows = build_volume_timeline_rows(snapshots, chapter_titles=chapter_titles)
     return render_volume_timeline_markdown(

@@ -27,6 +27,7 @@ from bestseller.domain.narrative import (
     ThemeArcRead,
 )
 from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
+from bestseller.services.narrative_obligation_migration import reference_metadata
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
     ArcBeatModel,
@@ -774,7 +775,7 @@ def _build_clues_and_payoffs(
         planted_items = list(getattr(entry, "foreshadowing_planted", []) if entry is not None else [])
         if not planted_items and first_chapter.hook_description:
             planted_items = [first_chapter.hook_description]
-        for item in planted_items:
+        for source_index, item in enumerate(planted_items):
             clue_index += 1
             seed_tag, item_text = _extract_seed_tag(item)
             label = _ensure_text(item_text, f"伏笔{clue_index}")
@@ -798,11 +799,18 @@ def _build_clues_and_payoffs(
                     "actual_paid_off_scene_number": None,
                     "reveal_guard": "在对应 payoff 前不得完整揭露。",
                     "status": "planted",
+                    "metadata_json": reference_metadata(
+                        entry.model_dump(mode="json", by_alias=True) if hasattr(entry, "model_dump")
+                        else vars(entry) if entry is not None else {"hook_description": first_chapter.hook_description},
+                        path=f"foreshadowing_planted[{source_index}]" if entry is not None
+                        and getattr(entry, "foreshadowing_planted", []) else "chapter.hook_description",
+                        volume_number=volume.volume_number,
+                    ),
                 }
             )
 
         payoff_items = list(getattr(entry, "foreshadowing_paid_off", []) if entry is not None else [])
-        for item in payoff_items:
+        for source_index, item in enumerate(payoff_items):
             payoff_index += 1
             seed_tag, item_text = _extract_seed_tag(item)
             label = _ensure_text(item_text, f"兑现{payoff_index}")
@@ -824,6 +832,10 @@ def _build_clues_and_payoffs(
                     "actual_chapter_number": last_chapter.chapter_number,
                     "actual_scene_number": last_scene_number,
                     "status": "paid_off",
+                    "metadata_json": reference_metadata(
+                        entry.model_dump(mode="json", by_alias=True) if hasattr(entry, "model_dump") else vars(entry),
+                        path=f"foreshadowing_paid_off[{source_index}]", volume_number=volume.volume_number,
+                    ),
                 }
             )
             # Close the loop: mark the resolved clue so it no longer reads as a
@@ -836,6 +848,17 @@ def _build_clues_and_payoffs(
                         clue_spec["actual_paid_off_scene_number"] = last_scene_number
                         break
 
+    # Volume plans describe intended plants/payoffs. The materialized window's
+    # endpoints prove neither an occurrence nor a promised chapter deadline.
+    for spec in clue_specs:
+        spec.update(status="reference", planted_in_chapter_number=None,
+            planted_in_scene_number=None, expected_payoff_by_volume_number=None,
+            expected_payoff_by_chapter_number=None, expected_payoff_by_scene_number=None,
+            actual_paid_off_chapter_number=None, actual_paid_off_scene_number=None,
+            reveal_guard=None)
+    for spec in payoff_specs:
+        spec.update(status="reference", target_chapter_number=None,
+            target_scene_number=None, actual_chapter_number=None, actual_scene_number=None)
     return clue_specs, payoff_specs
 
 
@@ -1513,7 +1536,7 @@ def _build_ending_contract_spec(
     arcs_to_resolve = [arc.arc_code for arc in arcs_by_code.values() if arc.status in ("planned", "active")]
     clues_to_payoff = [
         clue.clue_code for clue in clues_by_code.values()
-        if clue.actual_paid_off_chapter_number is None
+        if clue.actual_paid_off_chapter_number is None and clue.status != "reference"
     ]
     relationships_to_close = [
         track.title for track in emotion_track_models
@@ -1784,7 +1807,7 @@ async def rebuild_narrative_graph(
             actual_paid_off_scene_number=spec.get("actual_paid_off_scene_number"),
             reveal_guard=spec.get("reveal_guard"),
             status=spec["status"],
-            metadata_json={},
+            metadata_json=spec.get("metadata_json", {}),
         )
         session.add(clue)
         clues_by_code[spec["clue_code"]] = clue
@@ -1807,7 +1830,7 @@ async def rebuild_narrative_graph(
             actual_chapter_number=spec.get("actual_chapter_number"),
             actual_scene_number=spec.get("actual_scene_number"),
             status=spec["status"],
-            metadata_json={},
+            metadata_json=spec.get("metadata_json", {}),
         )
         session.add(payoff)
         payoffs_by_code[spec["payoff_code"]] = payoff

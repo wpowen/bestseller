@@ -44,10 +44,25 @@ def _ctx(**over: object) -> dict:
         "explicit_enhancers": enh,
     }
     contract.update(over)
-    return {"genre_intent_contract": contract}
+    return {
+        "genre_intent_contract": contract,
+        "creation_intent_contract": {
+            "field_sources": {"story_enhancers": "explicit"},
+            "story_enhancers": enh,
+        },
+    }
 
 
 class TestPicksAreSpelledOutInChinese:
+    def test_disabled_enhancer_does_not_disable_genre_native_abilities(self) -> None:
+        block = _creation_intent_prompt_block(_ctx(enhancers={"brainhole": False}))
+        assert '"brainhole": false' in block
+        assert "不依赖增强器开关" in block
+        assert "未勾选的能力不得自行启用" not in block
+        english = _ctx(enhancers={"brainhole": False})
+        english["language"] = "en"
+        assert "Genre-native abilities" in _creation_intent_prompt_block(english)
+
     def test_effect_skills_appear_as_chinese_labels(self) -> None:
         block = _creation_intent_prompt_block(_ctx())
         assert "喜剧" in block

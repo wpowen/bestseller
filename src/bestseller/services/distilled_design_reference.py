@@ -10,12 +10,13 @@ boundaries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
 import json
 import logging
 from pathlib import Path
-from typing import Any
+import re
+from typing import Any, cast
 
 import yaml
 
@@ -131,6 +132,14 @@ def _as_list(value: object) -> list[object]:
     return []
 
 
+def _as_mapping(value: object) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _dict_rows(value: object) -> list[dict[str, Any]]:
+    return [cast(dict[str, Any], item) for item in _as_list(value) if isinstance(item, dict)]
+
+
 def _string_items(value: object, *, limit: int = 8) -> list[str]:
     out: list[str] = []
     for item in _as_list(value):
@@ -165,6 +174,66 @@ def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
         if text and text not in out:
             out.append(text)
     return out
+
+
+_PROMPT_REUSE_MARKERS = frozenset(
+    {"abstract", "abstract_only", "approved_reusable", "prompt_safe"}
+)
+
+
+def _is_explicitly_prompt_reusable(row: dict[str, Any]) -> bool:
+    """Accept only rows whose producer explicitly cleared prompt reuse.
+
+    Review status, confidence, and a source id are provenance facts; none of
+    them means that a source-bound observation is safe to teach to a new book.
+    The distiller must opt a row into prompt reuse with a semantic marker.
+    """
+
+    for key in ("reuse_scope", "abstraction_status", "prompt_reuse"):
+        marker = str(row.get(key) or "").strip().lower()
+        if marker in _PROMPT_REUSE_MARKERS:
+            return True
+    return False
+
+
+def _prompt_reusable_rows(
+    rows: Sequence[dict[str, Any]], *, limit: int | None = None
+) -> list[dict[str, Any]]:
+    reusable = [row for row in rows if _is_explicitly_prompt_reusable(row)]
+    return reusable if limit is None else reusable[:limit]
+
+
+def _abstract_craft_rows(
+    rows: Sequence[dict[str, Any]], *, limit: int = 2
+) -> list[dict[str, Any]]:
+    """Return craft profiles carrying the aggregator's abstract-only receipt."""
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        scope = str(row.get("craft_observation_scope") or "").strip().lower()
+        policy = str(row.get("style_safety_policy") or "").strip().lower()
+        if scope == "abstract craft_profile fields only" or policy.startswith(
+            "use only abstract craft controls"
+        ):
+            out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _prompt_safe_grammar_items(
+    grammar: dict[str, Any], field: str, *, limit: int
+) -> list[str]:
+    """Render grammar fields only when the aggregate explicitly opts them in."""
+
+    fields = {
+        str(item).strip()
+        for item in _as_list(grammar.get("prompt_safe_fields"))
+        if str(item).strip()
+    }
+    if field not in fields:
+        return []
+    return _string_items(grammar.get(field), limit=limit)
 
 
 def _is_fallback_volume_path(row: dict[str, Any]) -> bool:
@@ -243,18 +312,127 @@ def _load_aggregate_cached(path_text: str) -> dict[str, Any]:
     material_path = path / "material_entries.active.jsonl"
     if not material_path.is_file():
         material_path = path / "material_entries.review.jsonl"
+    grammar = _read_yaml(path / "grammar_patch.yaml")
+    mechanisms = _read_jsonl(path / "mechanism_registry.jsonl")
+    materials = _read_jsonl(material_path)
+    volume_paths = _read_jsonl(path / "volume_design_paths.jsonl")
+    author_craft = _read_jsonl(path / "author_craft_registry.jsonl")
     return {
         "path": str(path),
         "key": path.name,
         "manifest": _read_json(path / "aggregate_manifest.json"),
-        "grammar": _read_yaml(path / "grammar_patch.yaml"),
-        "mechanisms": _read_jsonl(path / "mechanism_registry.jsonl"),
-        "materials": _read_jsonl(material_path),
-        "author_craft": _read_jsonl(path / "author_craft_registry.jsonl"),
+        "grammar": grammar,
+        "mechanisms": mechanisms,
+        "materials": materials,
+        "author_craft": author_craft,
         "anti_copy": _read_json(path / "anti_copy_rules.json"),
         "book_designs": _read_jsonl(path / "book_design_registry.jsonl"),
-        "volume_paths": _read_jsonl(path / "volume_design_paths.jsonl"),
+        "volume_paths": volume_paths,
+        # Raw registries above remain available for audit.  These are the only
+        # fields permitted to cross into planner/compiler consumers.
+        "prompt_safe_grammar": {
+            "chapter_change_vectors": _prompt_safe_grammar_items(
+                grammar, "chapter_change_vectors", limit=10
+            ),
+            "forbidden_defaults": _string_items(
+                grammar.get("forbidden_defaults"), limit=8
+            ),
+        },
+        "prompt_safe_mechanisms": _prompt_reusable_rows(mechanisms),
+        "prompt_safe_materials": _prompt_reusable_rows(materials),
+        "prompt_safe_volume_paths": _prompt_reusable_rows(
+            _usable_volume_paths(volume_paths, limit=3)
+        ),
+        "prompt_safe_craft": _abstract_craft_rows(author_craft),
     }
+
+
+def _verified_source_receipt(
+    *, aggregate_dir: Path, manifest: dict[str, Any], repo_root: Path
+) -> dict[str, Any] | None:
+    """Return a provenance receipt only for source packages we can verify locally.
+
+    Aggregate ``source_count`` is metadata supplied by the distiller and is not
+    evidence by itself.  In particular, anonymous ids in an aggregate without a
+    corresponding source package must never become prompt authority.  The
+    package manifest is already the privacy-preserving receipt used by the
+    distillation pipeline (id + content hash, without title or raw text).
+    """
+
+    key = str(manifest.get("aggregate_key") or aggregate_dir.name).strip()
+    if not key or key == "distillation-generic":
+        return None
+    try:
+        source_count = int(manifest.get("source_count") or 0)
+    except (TypeError, ValueError):
+        return None
+    source_ids = [str(item).strip() for item in _as_list(manifest.get("source_ids"))]
+    if source_count <= 0 or len(source_ids) != source_count:
+        return None
+    if len(set(source_ids)) != len(source_ids) or any(
+        not re.fullmatch(r"source-[A-Za-z0-9_-]+", item) for item in source_ids
+    ):
+        return None
+    package_root = (repo_root / "data" / "distillation").resolve()
+    packages: list[dict[str, str]] = []
+    for source_id in source_ids:
+        package_dir = package_root / source_id
+        try:
+            resolved_package_dir = package_dir.resolve(strict=True)
+            resolved_package_dir.relative_to(package_root)
+        except (OSError, ValueError):
+            return None
+        source_manifest_path = package_dir / "source_manifest.json"
+        if not source_manifest_path.is_file():
+            return None
+        try:
+            from bestseller.services.distillation_book_aggregator import (
+                package_book_phase_complete,
+            )
+
+            if not package_book_phase_complete(package_dir):
+                return None
+        except Exception:
+            # Trust is fail-closed if the package validator cannot run.
+            return None
+        source_manifest = _read_json(source_manifest_path)
+        source_hash = str(source_manifest.get("source_hash_sha256") or "").strip()
+        if (
+            str(source_manifest.get("source_id") or "").strip() != source_id
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", source_hash)
+            or not str(source_manifest.get("rights_status") or "").strip()
+        ):
+            return None
+        packages.append({"source_id": source_id, "source_hash_sha256": source_hash})
+    return {
+        "aggregate_key": key,
+        "source_count": source_count,
+        "source_ids": source_ids,
+        "packages": packages,
+        "verification": "local_source_manifest_v1",
+    }
+
+
+def get_verified_distilled_source_receipt(
+    reference: Mapping[str, Any] | None,
+    *,
+    repo_root: Path | None = None,
+) -> dict[str, Any] | None:
+    """Validate a loaded aggregate before any non-rendering consumer uses it."""
+
+    ref = dict(reference) if isinstance(reference, Mapping) else {}
+    manifest = cast(
+        dict[str, Any],
+        ref.get("manifest") if isinstance(ref.get("manifest"), dict) else {},
+    )
+    path_text = str(ref.get("path") or "").strip()
+    if not path_text:
+        return None
+    return _verified_source_receipt(
+        aggregate_dir=Path(path_text),
+        manifest=manifest,
+        repo_root=repo_root or _repo_root(),
+    )
 
 
 def load_distilled_design_reference(
@@ -330,9 +508,10 @@ def _render_zh(
     max_mechanisms: int,
     max_materials: int,
 ) -> str:
-    grammar = ref.get("grammar") if isinstance(ref.get("grammar"), dict) else {}
-    manifest = ref.get("manifest") if isinstance(ref.get("manifest"), dict) else {}
-    anti_copy = ref.get("anti_copy") if isinstance(ref.get("anti_copy"), dict) else {}
+    grammar = _as_mapping(ref.get("grammar"))
+    safe_grammar = _as_mapping(ref.get("prompt_safe_grammar"))
+    manifest = _as_mapping(ref.get("manifest"))
+    anti_copy = _as_mapping(ref.get("anti_copy"))
     source_count = int(
         manifest.get("source_count")
         or len(_as_list(anti_copy.get("source_ids")))
@@ -341,34 +520,23 @@ def _render_zh(
     key = str(ref.get("key") or grammar.get("key") or "").strip()
     phase_label = _PHASE_LABEL_ZH.get(phase, phase)
     lines = [
-        f"## 成熟小说设计参考(蒸馏聚合: {key or 'unknown'} / {phase_label})",
-        f"来源: {source_count or '多'} 本匿名成熟作品的抽象设计经验。",
-        "使用规则: 只引用机制、节奏、状态变量、角色功能和写法控制; "
+        f"## 小说设计参考(蒸馏聚合: {key or 'unknown'} / {phase_label})",
+        f"来源: {source_count} 份经来源核验的匿名叙事资料。",
+        "证据范围: 仅参考已观察章节；来源核验不证明市场表现、作品质量或全书完整性。",
+        "使用规则: 只引用明确标记为可复用的抽象机制与写法控制; "
         "不得复用源书专名、具体桥段、独特组合或句式。",
     ]
 
     if phase in {"architecture", "story_design", "volume_plan", "chapter_outline"}:
         lines.extend(
-            _render_items_zh("状态变量", _string_items(grammar.get("state_variables"), limit=8))
-        )
-        lines.extend(
             _render_items_zh(
                 "章节变化向量",
-                _string_items(grammar.get("chapter_change_vectors"), limit=8),
-            )
-        )
-        lines.extend(
-            _render_items_zh("读者奖励", _string_items(grammar.get("reader_rewards"), limit=8))
-        )
-        lines.extend(
-            _render_items_zh(
-                "钩子/后效类型",
-                _string_items(grammar.get("hook_or_aftereffect_types"), limit=6),
+                _string_items(safe_grammar.get("chapter_change_vectors"), limit=8),
             )
         )
 
     mechanisms = _phase_mechanisms(
-        _as_list(ref.get("mechanisms")),
+        _dict_rows(ref.get("prompt_safe_mechanisms")),
         phase=phase,
         limit=max_mechanisms,
     )
@@ -379,7 +547,7 @@ def _render_zh(
             lines.append(f"  - {mid}: {_truncate(row.get('summary'), 110)}")
 
     materials = _phase_materials(
-        _as_list(ref.get("materials")),
+        _dict_rows(ref.get("prompt_safe_materials")),
         phase=phase,
         limit=max_materials,
     )
@@ -392,7 +560,7 @@ def _render_zh(
             lines.append(f"  - [{dimension}] {name}: {summary}")
 
     if phase in {"architecture", "volume_plan", "chapter_outline"}:
-        volume_paths = _usable_volume_paths(_as_list(ref.get("volume_paths")), limit=3)
+        volume_paths = _dict_rows(ref.get("prompt_safe_volume_paths"))[:3]
         if volume_paths:
             lines.append("- 卷/阶段参考路径:")
             for row in volume_paths:
@@ -406,23 +574,23 @@ def _render_zh(
                     lines.append(f"  - volume_path#{row.get('volume_no', '?')}: {summary}")
 
     if phase in {"architecture", "craft", "chapter_outline", "cast"}:
-        craft_rows = _as_list(ref.get("author_craft"))[:2]
+        craft_rows = _dict_rows(ref.get("prompt_safe_craft"))
         if craft_rows:
             lines.append("- 安全写法控制:")
             for row in craft_rows:
                 if not isinstance(row, dict):
                     continue
                 controls = []
+                controls.extend(_string_items(row.get("sentence_rhythm"), limit=2))
                 controls.extend(_string_items(row.get("dialogue_system"), limit=2))
                 controls.extend(_string_items(row.get("description_strategy"), limit=2))
+                controls.extend(_string_items(row.get("exposition_strategy"), limit=2))
                 controls.extend(_string_items(row.get("hooking_and_transitions"), limit=2))
                 if controls:
-                    lines.append(f"  - {'; '.join(controls[:4])}")
+                    lines.append(f"  - {'; '.join(controls[:6])}")
 
-    forbidden = _string_items(grammar.get("forbidden_defaults"), limit=8)
-    replacement = _string_items(anti_copy.get("replacement_policy"), limit=5)
-    blocked = _string_items(anti_copy.get("blocked_combinations"), limit=5)
-    guardrails = [*forbidden, *replacement, *blocked]
+    forbidden = _string_items(safe_grammar.get("forbidden_defaults"), limit=8)
+    guardrails = forbidden
     if guardrails:
         lines.append("- 反抄袭/反俗套边界: " + "; ".join(guardrails[:10]))
 
@@ -436,9 +604,10 @@ def _render_en(
     max_mechanisms: int,
     max_materials: int,
 ) -> str:
-    grammar = ref.get("grammar") if isinstance(ref.get("grammar"), dict) else {}
-    manifest = ref.get("manifest") if isinstance(ref.get("manifest"), dict) else {}
-    anti_copy = ref.get("anti_copy") if isinstance(ref.get("anti_copy"), dict) else {}
+    grammar = _as_mapping(ref.get("grammar"))
+    safe_grammar = _as_mapping(ref.get("prompt_safe_grammar"))
+    manifest = _as_mapping(ref.get("manifest"))
+    anti_copy = _as_mapping(ref.get("anti_copy"))
     source_count = int(
         manifest.get("source_count")
         or len(_as_list(anti_copy.get("source_ids")))
@@ -447,41 +616,24 @@ def _render_en(
     key = str(ref.get("key") or grammar.get("key") or "").strip()
     phase_label = _PHASE_LABEL_EN.get(phase, phase)
     lines = [
-        f"## Distilled Mature-Fiction Design Reference ({key or 'unknown'} / {phase_label})",
-        "Source base: abstract learnings from "
-        f"{source_count or 'multiple'} anonymous mature works.",
-        "Use rule: borrow only mechanisms, rhythm, state variables, character "
-        "functions, and safe craft controls; do not reuse source names, exact "
+        f"## Distilled Fiction Design Reference ({key or 'unknown'} / {phase_label})",
+        f"Source base: {source_count} provenance-checked anonymous narrative sources.",
+        "Evidence scope: observed chapters only. Provenance checks do not establish "
+        "market performance, literary quality, or coverage of a complete work.",
+        "Use rule: borrow only explicitly reusable abstract mechanisms and safe "
+        "craft controls; do not reuse source names, exact "
         "plot chains, distinctive combinations, or sentence patterns.",
     ]
     if phase in {"architecture", "story_design", "volume_plan", "chapter_outline"}:
         lines.extend(
             _render_items_en(
-                "State variables",
-                _string_items(grammar.get("state_variables"), limit=8),
-            )
-        )
-        lines.extend(
-            _render_items_en(
                 "Chapter change vectors",
-                _string_items(grammar.get("chapter_change_vectors"), limit=8),
-            )
-        )
-        lines.extend(
-            _render_items_en(
-                "Reader rewards",
-                _string_items(grammar.get("reader_rewards"), limit=8),
-            )
-        )
-        lines.extend(
-            _render_items_en(
-                "Hook/aftereffect types",
-                _string_items(grammar.get("hook_or_aftereffect_types"), limit=6),
+                _string_items(safe_grammar.get("chapter_change_vectors"), limit=8),
             )
         )
 
     mechanisms = _phase_mechanisms(
-        _as_list(ref.get("mechanisms")),
+        _dict_rows(ref.get("prompt_safe_mechanisms")),
         phase=phase,
         limit=max_mechanisms,
     )
@@ -492,7 +644,7 @@ def _render_en(
             lines.append(f"  - {mid}: {_truncate(row.get('summary'), 110)}")
 
     materials = _phase_materials(
-        _as_list(ref.get("materials")),
+        _dict_rows(ref.get("prompt_safe_materials")),
         phase=phase,
         limit=max_materials,
     )
@@ -505,7 +657,7 @@ def _render_en(
             lines.append(f"  - [{dimension}] {name}: {summary}")
 
     if phase in {"architecture", "volume_plan", "chapter_outline"}:
-        volume_paths = _usable_volume_paths(_as_list(ref.get("volume_paths")), limit=3)
+        volume_paths = _dict_rows(ref.get("prompt_safe_volume_paths"))[:3]
         if volume_paths:
             lines.append("- Volume/stage reference paths:")
             for row in volume_paths:
@@ -519,24 +671,22 @@ def _render_en(
                     lines.append(f"  - volume_path#{row.get('volume_no', '?')}: {summary}")
 
     if phase in {"architecture", "craft", "chapter_outline", "cast"}:
-        craft_rows = _as_list(ref.get("author_craft"))[:2]
+        craft_rows = _dict_rows(ref.get("prompt_safe_craft"))
         if craft_rows:
             lines.append("- Safe craft controls:")
             for row in craft_rows:
                 if not isinstance(row, dict):
                     continue
                 controls = []
+                controls.extend(_string_items(row.get("sentence_rhythm"), limit=2))
                 controls.extend(_string_items(row.get("dialogue_system"), limit=2))
                 controls.extend(_string_items(row.get("description_strategy"), limit=2))
+                controls.extend(_string_items(row.get("exposition_strategy"), limit=2))
                 controls.extend(_string_items(row.get("hooking_and_transitions"), limit=2))
                 if controls:
-                    lines.append(f"  - {'; '.join(controls[:4])}")
+                    lines.append(f"  - {'; '.join(controls[:6])}")
 
-    guardrails = [
-        *_string_items(grammar.get("forbidden_defaults"), limit=8),
-        *_string_items(anti_copy.get("replacement_policy"), limit=5),
-        *_string_items(anti_copy.get("blocked_combinations"), limit=5),
-    ]
+    guardrails = _string_items(safe_grammar.get("forbidden_defaults"), limit=8)
     if guardrails:
         lines.append("- Anti-copy / anti-cliche boundaries: " + "; ".join(guardrails[:10]))
     return "\n".join(lines).rstrip()
@@ -571,9 +721,13 @@ def render_distilled_design_reference_block(
     # category/grammar-specific aggregate can be rendered into planner prompts.
     if str(ref.get("key") or "").strip() == "distillation-generic":
         return ""
-    manifest = ref.get("manifest") if isinstance(ref.get("manifest"), dict) else {}
-    if int(manifest.get("source_count") or 0) <= 0:
+    # Do not let a generated aggregate claim authority merely because its
+    # manifest says it has sources.  Only source packages with matching,
+    # privacy-preserving manifests are eligible for generation prompts.
+    receipt = get_verified_distilled_source_receipt(ref, repo_root=repo_root)
+    if receipt is None:
         return ""
+    ref = {**ref, "source_receipt": receipt}
     if str(language or "").lower().startswith("en"):
         return _render_en(
             ref,
@@ -629,6 +783,7 @@ def render_all_distilled_design_reference_blocks(
 
 __all__ = [
     "find_distilled_design_aggregate_dir",
+    "get_verified_distilled_source_receipt",
     "load_distilled_design_reference",
     "render_all_distilled_design_reference_blocks",
     "render_distilled_design_reference_block",

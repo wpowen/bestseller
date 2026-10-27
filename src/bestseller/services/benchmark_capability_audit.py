@@ -339,7 +339,7 @@ _KNOWN_GAPS: dict[str, tuple[str, ...]] = {
         "已建立类别硬引擎契约, 仍需用 live 章节验证 rule lattice、证据合法性、嫌疑人/时间线公平性。",
     ),
     "otherworld-cross-system": (
-        "已建立类别硬引擎契约, 仍需把跨体系映射、身份债务、异常暴露成本接入章节后状态更新。",
+        "已建立类别硬引擎契约, 仍需把跨体系映射、身份责任、异常暴露成本接入章节后状态更新。",
     ),
     "base-building": (
         "已建立类别硬引擎契约, 仍需把 settlement inventory、物流、人口、建筑队列接入生成闭环。",
@@ -491,8 +491,8 @@ _CATEGORY_BENCHMARK_FINDINGS: dict[str, dict[str, Any]] = {
     "otherworld-cross-system": {
         "reader_promise": "读者看到陌生规则、身份错位和系统收益如何重塑主角选择。",
         "core_engine": "异界规则差异 -> 身份/系统约束 -> 任务或资源收益 -> 世界反噬。",
-        "state_variables": ["identity_status", "system_rules", "task_debts", "world_reaction"],
-        "reward_cadence": "任务收益必须伴随新规则、新债务或新敌意。",
+        "state_variables": ["identity_status", "system_rules", "identity_obligations", "world_reaction"],
+        "reward_cadence": "任务收益必须伴随新规则、新责任后果或新敌意。",
         "risk_patterns": ["系统万能", "异界只换皮", "身份危机不改变行动"],
     },
     "base-building": {

@@ -141,9 +141,44 @@ def test_chapter_first_acceptance_contract_drops_duplicate_scene_payloads() -> N
     )
 
     assert payload["must_deliver"][0]["value"] == "完成核验"
-    assert "ending_frame_contract" in payload
     assert "scene_gate_targets" not in payload
     assert "methodology_application_contract" not in payload
+    assert "ending_frame_contract" not in payload
+
+    # The projection intentionally excludes generic cached endings. A current
+    # author ending instead travels in the real source-complete editor payload.
+    import json
+
+    from test_genre_prompt_authority import _source_complete_rewrite_prompt
+
+    ending = {
+        "chapter_number": 5,
+        "rule": "核验后将临时铜签交给顾箬。再用一句问话收尾。",
+    }
+    project = SimpleNamespace(
+        title="炉审核验", genre="玄幻", sub_genre=None, language="zh-CN",
+        metadata_json={"creation_intent_contract": {
+            "field_sources": {"hook_spec": "explicit"},
+            "hook_spec": {"ending_frame_contract": ending},
+        }},
+    )
+    chapter = SimpleNamespace(
+        chapter_number=5, title="核验", chapter_goal="完成核验", target_word_count=2200,
+        metadata_json={"ending_frame_contract": {"rule": "过期缓存要求关门收尾"}},
+    )
+    draft = SimpleNamespace(content_md="核验结束。众人把账册收齐。", word_count=2200)
+    task = SimpleNamespace(instructions="修复指代。", rewrite_strategy="targeted", metadata_json={})
+    _, final_user, receipt, _ = _source_complete_rewrite_prompt(project, chapter, draft, task, None)
+    wire, _ = json.JSONDecoder().raw_decode(final_user)
+    payload = wire["current_source_channels"]["explicit_creator_requirements"][
+        "creation_intent_contract"
+    ]["hook_spec"]
+
+    assert "ending_frame_contract" in payload
+    assert payload["ending_frame_contract"] == ending
+    assert "过期缓存要求关门收尾" not in final_user
+    assert draft.content_md in final_user
+    assert receipt["source_complete"] is True
 
 
 def test_pipeline_request_exposes_book_level_chapter_first_controls() -> None:

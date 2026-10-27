@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
+from bestseller.services.character_intelligence.strategy import adopt_reference_projection
 from bestseller.services.compliance_boundary_kernel import build_compliance_boundary_kernel_seed
+from bestseller.services.planning_capability_selection import CAPABILITIES, CONTRACT_SCHEMA
 from bestseller.services.planning_kernel import (
     build_prewrite_repair_directives,
     build_project_planning_kernel,
@@ -13,19 +16,45 @@ from bestseller.services.planning_kernel import (
     evaluate_prewrite_readiness,
     persist_project_planning_kernel,
 )
+from bestseller.services.prompt_source_policy import stamp_reference_cache
 
 pytestmark = pytest.mark.unit
 
 
 def _project(**metadata):
     return SimpleNamespace(
+        id=uuid4(),
         slug="xianxia-plan",
         title="道种试炼",
         genre="仙侠升级",
         sub_genre="宗门逆袭",
+        language="zh-CN",
+        audience="男频",
+        reader_contract_json={"core_fantasy": "通过道种规则反制宗门压力"},
+        dramatic_question="宁尘如何赢得三月大考？",
+        theme_statement="主动选择与资源责任",
         target_chapters=120,
         metadata_json=metadata,
     )
+
+
+def _adopt_required_card(project) -> None:
+    stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+    adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author", required=True)
+
+
+def _select_planning_capabilities(project, *capabilities: str) -> None:
+    """Positive fixtures carry author selection, never cache-derived authority."""
+    assert set(capabilities) <= set(CAPABILITIES)
+    project.metadata_json["creation_intent_contract"] = {
+        "field_sources": {"hook_spec": "explicit"},
+        "hook_spec": {
+            "planning_capabilities": {
+                "schema": CONTRACT_SCHEMA,
+                "selected": {key: key in capabilities for key in CAPABILITIES},
+            }
+        },
+    }
 
 
 def _book_spec() -> dict[str, object]:
@@ -337,7 +366,8 @@ def test_prewrite_readiness_accepts_rich_planning_kernel() -> None:
     assert report.blocking_findings == ()
     assert report.capability_snapshot["benchmark_alignment"] is True
     assert report.capability_snapshot["volume_differentiation"] is True
-    assert report.capability_snapshot["emotion_driven_core"] is False
+    assert report.capability_snapshot["emotion_driven_core"] is None
+    assert report.capability_snapshot["planning_capabilities"]["emotion_driven_kernel"]["status"] == "not_applicable"
 
 
 def test_final_conception_premise_outranks_stale_story_facets() -> None:
@@ -371,6 +401,53 @@ def test_prewrite_readiness_blocks_thin_generic_planning() -> None:
     assert "benchmark_alignment_missing" in codes
     assert "unique_hook_missing" in codes
     assert "series_engine_missing" in codes
+
+
+def test_prewrite_gate_keeps_benchmark_finding_without_blocking_first_draft() -> None:
+    from bestseller.services.planning_kernel import decide_prewrite_readiness_gate
+
+    report = {
+        "passed": False,
+        "score": 88,
+        "blocking_findings": [
+            {
+                "code": "benchmark_alignment_missing",
+                "severity": "high",
+                "message": "Missing benchmark alignment",
+            }
+        ],
+        "warnings": [],
+    }
+
+    decision = decide_prewrite_readiness_gate(
+        report, mode="block", block_on_failure=True
+    )
+
+    assert decision.should_block is False
+    assert decision.blocking_codes == ("benchmark_alignment_missing",)
+    assert decision.reason == "non_blocking_findings_warned"
+
+
+def test_prewrite_gate_still_blocks_structural_finding_with_benchmark_missing() -> None:
+    from bestseller.services.planning_kernel import decide_prewrite_readiness_gate
+
+    report = {
+        "passed": False,
+        "score": 60,
+        "blocking_findings": [
+            {"code": "benchmark_alignment_missing", "severity": "high"},
+            {"code": "series_engine_missing", "severity": "critical"},
+        ],
+        "warnings": [],
+    }
+
+    decision = decide_prewrite_readiness_gate(report, mode="block")
+
+    assert decision.should_block is True
+    assert decision.blocking_codes == (
+        "benchmark_alignment_missing",
+        "series_engine_missing",
+    )
 
 
 def test_prewrite_readiness_warns_missing_protagonist_decision_policy() -> None:
@@ -444,7 +521,7 @@ def test_prewrite_accepts_valid_contract_and_volume_mapping() -> None:
             "opponent_system": "会销毁异常死亡证据的明日会",
             "decision_proof": "报警只得到结案记录，逃避会让死亡转移；进入婚礼才能验证并阻止",
             "emotional_promise": "替死者讨回明天并逼活人面对选择",
-            "unit_frequency": "每周至少一桩异常死亡委托",
+            "unit_frequency": "每2-4章至少一桩异常死亡委托",
         "unit_count_estimate": 180,
         "unit_families": ["异常遗体案", "黑市交易案", "跨城设施争夺", "制度冲突案"],
         "question_ladder": ["个案为何偏离", "谁在回收余生", "谁控制所有人的明天"],
@@ -646,6 +723,7 @@ def test_prewrite_readiness_blocks_unconsumed_distilled_strategy() -> None:
             "anti_copy_boundaries": ["exact-opening-chain"],
         },
     )
+    _adopt_required_card(project)
     kernel = build_project_planning_kernel(
         project,
         book_spec=_book_spec(),
@@ -660,12 +738,55 @@ def test_prewrite_readiness_blocks_unconsumed_distilled_strategy() -> None:
     assert report.capability_snapshot["distilled_strategy_ready"] is False
 
 
+@pytest.mark.parametrize("reference_state", ["raw", "verified_optional"])
+def test_optional_unconsumed_strategy_does_not_penalize_or_require_repair(reference_state: str) -> None:
+    project = _project(benchmark_works=["凡人修仙传结构对标"])
+    plan_inputs = dict(book_spec=_book_spec(), world_spec=_world_spec(), cast_spec=_cast_spec(), volume_plan=_volume_plan())
+    baseline = evaluate_prewrite_readiness(build_project_planning_kernel(project, **plan_inputs))
+    project.metadata_json["distilled_strategy_card"] = {
+        "aggregate_key": "otherworld-cross-system", "maturity_score": 0.62,
+        "maturity_status": "review", "source_count": 2,
+        "required_state_variables": ["unconsumed_author_choice"],
+        "required_change_vectors": ["unconsumed_change"],
+    }
+    if reference_state == "verified_optional":
+        stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+        adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author", required=False)
+
+    report = evaluate_prewrite_readiness(build_project_planning_kernel(project, **plan_inputs))
+
+    assert report.passed == baseline.passed
+    assert report.score == baseline.score
+    assert report.blocking_findings == baseline.blocking_findings
+    assert build_prewrite_repair_directives(report) == build_prewrite_repair_directives(baseline)
+    assert not any(finding.code.startswith("distilled_") for finding in (*report.blocking_findings, *report.warnings))
+
+
+@pytest.mark.parametrize("context", ["missing_receipt", "missing_project"])
+def test_required_planning_reference_needs_current_receipt_and_project(context: str) -> None:
+    project = _project(distilled_strategy_card={"aggregate_key": "otherworld-cross-system"})
+    _adopt_required_card(project)
+    if context == "missing_receipt":
+        project.metadata_json["prompt_reference_receipts"].pop("distilled_strategy_card")
+    kernel = build_project_planning_kernel(
+        project if context != "missing_project" else None,
+        project_metadata=project.metadata_json,
+        book_spec=_book_spec(), world_spec=_world_spec(), cast_spec=_cast_spec(), volume_plan=_volume_plan(),
+    )
+    report = evaluate_prewrite_readiness(kernel)
+
+    assert report.passed is False
+    expected = "adopted_reference_unavailable" if context == "missing_receipt" else "reference_context_required"
+    assert expected in {finding.code for finding in report.blocking_findings}
+
+
 def test_prewrite_readiness_accepts_valid_emotion_driven_kernel() -> None:
     project = _project(
         story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
         benchmark_works=["凡人修仙传结构对标"],
         emotion_driven_kernel=_emotion_driven_kernel(),
     )
+    _select_planning_capabilities(project, "emotion_driven_kernel")
     kernel = build_project_planning_kernel(
         project,
         book_spec=_book_spec(),
@@ -673,7 +794,7 @@ def test_prewrite_readiness_accepts_valid_emotion_driven_kernel() -> None:
         cast_spec=_cast_spec(),
         volume_plan=_volume_plan(),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
 
     warning_codes = {finding.code for finding in report.warnings}
     assert "emotion_driven_kernel_missing" not in warning_codes
@@ -696,6 +817,7 @@ def test_prewrite_readiness_blocks_invalid_emotion_driven_kernel() -> None:
         benchmark_works=["凡人修仙传结构对标"],
         emotion_driven_kernel=broken_kernel,
     )
+    _select_planning_capabilities(project, "emotion_driven_kernel")
     kernel = build_project_planning_kernel(
         project,
         book_spec=_book_spec(),
@@ -703,7 +825,7 @@ def test_prewrite_readiness_blocks_invalid_emotion_driven_kernel() -> None:
         cast_spec=_cast_spec(),
         volume_plan=_volume_plan(),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
     codes = {finding.code for finding in report.blocking_findings}
 
     assert "empathy_contract_missing" in codes
@@ -735,6 +857,7 @@ def test_prewrite_readiness_accepts_consumed_distilled_strategy() -> None:
             "anti_copy_boundaries": ["exact-opening-chain"],
         },
     )
+    _adopt_required_card(project)
     consumed_volume_plan = [
         {
             **volume,
@@ -787,6 +910,7 @@ def test_planning_kernel_tracks_enhanced_worldview_counts() -> None:
         story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
         benchmark_works=["凡人修仙传结构对标"],
     )
+    _select_planning_capabilities(project, "story_design_kernel")
 
     kernel = build_project_planning_kernel(
         project,
@@ -829,6 +953,8 @@ def test_prewrite_readiness_warns_when_distilled_worldview_not_bound() -> None:
             "anti_copy_boundaries": ["exact-opening-chain"],
         },
     )
+    _select_planning_capabilities(project, "story_design_kernel")
+    _adopt_required_card(project)
     consumed_volume_plan = [
         {
             **volume,
@@ -845,7 +971,7 @@ def test_prewrite_readiness_warns_when_distilled_worldview_not_bound() -> None:
         volume_plan=consumed_volume_plan,
         story_design_kernel=_story_design_kernel(enhanced=False),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
     warning_codes = {finding.code for finding in report.warnings}
 
     assert "distilled_worldview_not_bound" in warning_codes
@@ -858,6 +984,7 @@ def test_planning_kernel_tracks_public_emotion_and_compliance() -> None:
         public_emotion_kernel=_public_emotion_kernel(),
         compliance_boundary_kernel=build_compliance_boundary_kernel_seed(platform="番茄小说"),
     )
+    _select_planning_capabilities(project, "public_emotion_kernel")
 
     kernel = build_project_planning_kernel(
         project,
@@ -866,7 +993,7 @@ def test_planning_kernel_tracks_public_emotion_and_compliance() -> None:
         cast_spec=_cast_spec(),
         volume_plan=_volume_plan(),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
 
     assert kernel["public_emotion"]["present"] is True
     assert kernel["public_emotion"]["passed"] is True
@@ -887,6 +1014,7 @@ def test_prewrite_readiness_blocks_high_risk_compliance_boundary() -> None:
         public_emotion_kernel=risky_public_emotion,
         compliance_boundary_kernel=build_compliance_boundary_kernel_seed(platform="番茄小说"),
     )
+    _select_planning_capabilities(project, "public_emotion_kernel")
 
     kernel = build_project_planning_kernel(
         project,
@@ -895,7 +1023,7 @@ def test_prewrite_readiness_blocks_high_risk_compliance_boundary() -> None:
         cast_spec=_cast_spec(),
         volume_plan=_volume_plan(),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
     codes = {finding.code for finding in report.blocking_findings}
 
     assert "compliance_boundary_high_risk" in codes
@@ -912,6 +1040,7 @@ def test_prewrite_readiness_scans_public_emotion_with_default_policy_pack() -> N
         benchmark_works=["凡人修仙传结构对标"],
         public_emotion_kernel=risky_public_emotion,
     )
+    _select_planning_capabilities(project, "public_emotion_kernel")
 
     kernel = build_project_planning_kernel(
         project,
@@ -920,7 +1049,7 @@ def test_prewrite_readiness_scans_public_emotion_with_default_policy_pack() -> N
         cast_spec=_cast_spec(),
         volume_plan=_volume_plan(),
     )
-    report = evaluate_prewrite_readiness(kernel)
+    report = evaluate_prewrite_readiness(kernel, project_metadata=project.metadata_json)
     warning_codes = {finding.code for finding in report.warnings}
     blocking_codes = {finding.code for finding in report.blocking_findings}
 

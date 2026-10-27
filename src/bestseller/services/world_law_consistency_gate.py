@@ -322,6 +322,8 @@ async def evaluate_world_law_consistency_llm(
     chapter_position: int = 1,
     world_model: Mapping[str, Any] | None = None,
     language: str = "zh",
+    project_id: Any | None = None,
+    workflow_run_id: Any | None = None,
 ) -> WorldLawConsistencyReport:
     """Production gate: LLM semantic judge + deterministic tier check (fallback-safe).
 
@@ -353,6 +355,8 @@ async def evaluate_world_law_consistency_llm(
                 fallback_response='{"violations":[]}',
                 prompt_template="world_law_consistency",
                 prompt_version="v1",
+                project_id=project_id,
+                workflow_run_id=workflow_run_id,
                 max_tokens_override=600,
             ),
         )

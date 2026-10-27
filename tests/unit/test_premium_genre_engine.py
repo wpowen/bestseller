@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from planning_capability_test_helpers import explicit_planning_metadata
 
 from bestseller.services.entry_registry import (
     build_entry_coverage_matrix,
@@ -495,7 +496,7 @@ def test_entry_system_metadata_feeds_writer_blocks() -> None:
     first = registry.entries[0]
 
     blocks = build_premium_genre_engine_blocks(
-        project_metadata={
+        project_metadata=explicit_planning_metadata("entry_system_kernel", metadata={
             "entry_system_kernel": entry_system_kernel_to_dict(kernel),
             "entry_registry": registry.model_dump(mode="json"),
             "entry_state_ledger": {
@@ -509,7 +510,7 @@ def test_entry_system_metadata_feeds_writer_blocks() -> None:
                     }
                 ]
             },
-        },
+        }),
         story_bible_context={},
         genre="玄幻",
         sub_genre="修仙",

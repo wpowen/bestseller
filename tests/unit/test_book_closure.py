@@ -1,274 +1,61 @@
-"""书必须能自己判断「写完了」——这个概念此前在代码里根本不存在。
+"""Status labels count progress; they never authorize adoption or delivery."""
 
-管线终态是 ``REVISING if requires_human_review else WRITING``，没有任何自动
-路径通向 COMPLETED；唯一的写入方是一个手动 web 端点。于是两本三章测试书
-（2026-07-26，0 失败工作流、三章全部产出）永远停在 ``revising``。
-
-用户要求明确：**不允许出现等人工确认的分支**。所以判据里没有「待确认」这种
-结果——书要么写完了（每章都已尘埃落定），要么没写完（还有章缺失或在途）。
-quality_debt 不停书：那是修复循环自己的裁决，导出会把 debt 记在产物上。
-"""
-
-from __future__ import annotations
-
-from types import SimpleNamespace as _NS
+from types import SimpleNamespace
 
 import pytest
 
 from bestseller.services.book_closure import (
     SETTLED_PRODUCTION_STATES,
+    _promote_settled_chapter_drafts,
     evaluate_book_closure,
 )
 
 pytestmark = pytest.mark.unit
 
 
-def _ch(number: int, state: str):
-    return _NS(chapter_number=number, production_state=state)
+def chapter(number, state="ok", status="complete"):
+    return SimpleNamespace(chapter_number=number, production_state=state, status=status)
 
 
-class TestFinishedBooksComplete:
-    def test_all_ok_is_complete_and_clean(self) -> None:
-        verdict = evaluate_book_closure(
-            [_ch(1, "ok"), _ch(2, "ok"), _ch(3, "ok")], expected_chapters=3
-        )
-        assert verdict.is_complete
-        assert verdict.is_clean
-        assert verdict.debt_chapters == ()
-
-    def test_all_quality_debt_is_complete_but_not_clean(self) -> None:
-        """THE field case: 两本书三章全 quality_debt，必须能完结。"""
-
-        verdict = evaluate_book_closure(
-            [_ch(1, "quality_debt"), _ch(2, "quality_debt"), _ch(3, "quality_debt")],
-            expected_chapters=3,
-        )
-        assert verdict.is_complete
-        assert not verdict.is_clean
-        assert verdict.debt_chapters == (1, 2, 3)
-        assert verdict.reason == "all_chapters_settled_with_debt"
-
-    def test_mixed_ok_and_debt_completes_and_names_the_debt(self) -> None:
-        verdict = evaluate_book_closure(
-            [_ch(1, "ok"), _ch(2, "quality_debt"), _ch(3, "ok")], expected_chapters=3
-        )
-        assert verdict.is_complete
-        assert verdict.debt_chapters == (2,)
-
-    def test_needs_human_review_does_not_park_the_book(self) -> None:
-        """用户要求：不允许存在等人工确认的分支。"""
-
-        verdict = evaluate_book_closure(
-            [_ch(1, "needs_human_review")], expected_chapters=1
-        )
-        assert verdict.is_complete
-
-    def test_repair_exhausted_counts_as_settled(self) -> None:
-        verdict = evaluate_book_closure([_ch(1, "repair_exhausted")], expected_chapters=1)
-        assert verdict.is_complete
+@pytest.mark.parametrize("state", sorted(SETTLED_PRODUCTION_STATES))
+@pytest.mark.parametrize("status", ["planned", "revision", "complete"])
+def test_labels_without_exact_adoption_and_knowledge_never_complete(state, status):
+    result = evaluate_book_closure([chapter(1, state, status)], expected_chapters=1)
+    assert not result.is_complete and not result.is_clean and not result.body_complete
 
 
-class TestUnfinishedBooksDoNotComplete:
-    def test_a_blocked_chapter_keeps_the_book_open(self) -> None:
-        verdict = evaluate_book_closure(
-            [_ch(1, "ok"), _ch(2, "blocked"), _ch(3, "ok")], expected_chapters=3
-        )
-        assert not verdict.is_complete
-        assert verdict.unsettled_chapters == (2,)
-        assert verdict.reason == "chapters_unsettled"
-
-    def test_a_missing_chapter_keeps_the_book_open(self) -> None:
-        """计划 5 章只写了 3 章 —— 缺的两章必须被点名。"""
-
-        verdict = evaluate_book_closure(
-            [_ch(1, "ok"), _ch(2, "ok"), _ch(3, "ok")], expected_chapters=5
-        )
-        assert not verdict.is_complete
-        assert verdict.unsettled_chapters == (4, 5)
-
-    def test_pending_chapter_keeps_the_book_open(self) -> None:
-        verdict = evaluate_book_closure([_ch(1, "pending")], expected_chapters=1)
-        assert not verdict.is_complete
-
-    def test_no_chapters_is_not_a_finished_book(self) -> None:
-        verdict = evaluate_book_closure([], expected_chapters=3)
-        assert not verdict.is_complete
-        assert verdict.reason == "no_chapters"
-
-    def test_empty_production_state_keeps_the_book_open(self) -> None:
-        verdict = evaluate_book_closure([_ch(1, "")], expected_chapters=1)
-        assert not verdict.is_complete
+@pytest.mark.parametrize(
+    ("rows", "target", "reason", "unsettled"),
+    [
+        ([], 4, "no_chapters", (1, 2, 3, 4)),
+        ([chapter(1), chapter(3)], 3, "chapters_unsettled", (2,)),
+        ([chapter(1), chapter(1)], 1, "duplicate_chapters", (1,)),
+        ([chapter(1), chapter(2)], 1, "unexpected_chapters", (2,)),
+        ([chapter(0)], 1, "unexpected_chapters", (0, 1)),
+        ([chapter(1, "blocked")], 1, "chapters_unsettled", (1,)),
+        ([chapter(1, "pending")], 1, "chapters_unsettled", (1,)),
+    ],
+)
+def test_census_rejects_missing_duplicate_unplanned_and_unsettled(rows, target, reason, unsettled):
+    result = evaluate_book_closure(rows, expected_chapters=target)
+    assert not result.is_complete and result.reason == reason
+    assert result.unsettled_chapters == unsettled
 
 
-class TestDegradesSafely:
-    def test_unknown_target_falls_back_to_the_chapter_rows(self) -> None:
-        """target_chapters 缺失不该把书永远困住。"""
-
-        verdict = evaluate_book_closure([_ch(1, "ok"), _ch(2, "ok")], expected_chapters=None)
-        assert verdict.is_complete
-        assert verdict.expected_chapters == 2
-
-    def test_zero_target_falls_back_to_the_chapter_rows(self) -> None:
-        verdict = evaluate_book_closure([_ch(1, "ok")], expected_chapters=0)
-        assert verdict.is_complete
-
-    def test_state_matching_ignores_case_and_padding(self) -> None:
-        verdict = evaluate_book_closure(
-            [_NS(chapter_number=1, production_state="  Quality_Debt ")],
-            expected_chapters=1,
-        )
-        assert verdict.is_complete
-
-    def test_extra_chapters_beyond_target_do_not_break_the_verdict(self) -> None:
-        verdict = evaluate_book_closure(
-            [_ch(1, "ok"), _ch(2, "ok"), _ch(3, "blocked")], expected_chapters=2
-        )
-        assert verdict.is_complete, "计划 2 章都好了；第 3 章超出计划不该拖住完结"
+@pytest.mark.parametrize("target", [None, 0, -1, "invalid"])
+def test_missing_plan_cannot_be_inferred_from_existing_rows(target):
+    result = evaluate_book_closure([chapter(1)], expected_chapters=target)
+    assert not result.is_complete and result.reason == "chapter_target_missing"
 
 
-class TestBothTerminalLanesUseTheSameVerdict:
-    """管线和修复各有一份终态赋值——只改一处等于没改。
-
-    2026-07-28 真机取证(urban-power-reversal-1785201018):三章全部结算,书却
-    停在 revising、零导出。原因是 run_project_pipeline 的闭环检查在**几分钟前**
-    就跑过了(那时章节还在途),真正最后收尾的是 run_project_repair,而它带着
-    自己那份 `REVISING if requires_human_review else WRITING`,把状态又写了回去。
-    **最后写的那一方说了算,而哪一方最后写取决于这次跑到哪里结束。**
-    """
-
-    def test_repair_lane_settles_through_the_shared_helper(self) -> None:
-        import inspect
-
-        from bestseller.services import repair
-
-        source = inspect.getsource(repair.run_project_repair)
-        assert "settle_project_status_on_closure(" in source, (
-            "修复车道必须走共享入口,不能自带一份终态赋值"
-        )
-
-    def test_pipeline_lane_settles_through_the_shared_helper(self) -> None:
-        import inspect
-
-        from bestseller.services import pipelines
-
-        source = inspect.getsource(pipelines.run_project_pipeline)
-        assert "settle_project_status_on_closure(" in source
-
-    def test_neither_lane_keeps_a_private_terminal_assignment(self) -> None:
-        """那句原始赋值只允许作为 fallback_status 出现在共享入口的调用里。"""
-
-        import inspect
-
-        from bestseller.services import pipelines, repair
-
-        needle = "ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value"
-        for module in (pipelines, repair):
-            src = inspect.getsource(module)
-            assert needle not in src, (
-                f"{module.__name__} 仍有一份独立的终态赋值,会覆盖闭环判决"
-            )
+def test_progress_and_debt_are_retained_without_completion_authority():
+    result = evaluate_book_closure([chapter(1), chapter(2, " Quality_Debt ")], expected_chapters=2)
+    assert result.settled_chapters == 2
+    assert result.debt_chapters == (2,)
+    assert result.reason == "adoption_knowledge_required"
+    assert not result.is_complete
 
 
-class TestEveryRepairExitSettlesClosure:
-    """修复有三个出口，全部必须给出闭环判决。
-
-    2026-07-28 第二次真机取证：修好共享入口后，触发一次修复，它走的是**第三个
-    出口** ``completed_no_actionable_repair``——「没有可修的东西」时提前 return，
-    并显式 ``project_status_preserved``，于是三章全部结算的书仍然停在 revising。
-
-    保留状态的本意是别覆盖用户的显式暂停，那是对的；但「无事可修」+「章全结算」
-    恰恰**就是**书写完了的定义，是闭环最该触发的时刻，不是最该跳过的时刻。
-    """
-
-    def test_no_actionable_repair_exit_still_evaluates_closure(self) -> None:
-        import inspect
-
-        from bestseller.services import repair
-
-        source = inspect.getsource(repair.run_project_repair)
-        marker = source.index("completed_no_actionable_repair")
-        exit_point = source.index("return ProjectRepairResult", marker)
-        # 该出口自身的代码段：从上一个返回点之后，到它自己的返回为止。
-        prev_return = source.rfind("return ProjectRepairResult", 0, marker)
-        block = source[max(prev_return, 0) : exit_point]
-        assert "settle_project_status_on_closure(" in block, (
-            "「无事可修」出口必须也给出闭环判决——那正是书写完了的时刻"
-        )
-
-    def test_every_repair_return_is_preceded_by_a_closure_decision(self) -> None:
-        """每个**可能留下未结算状态**的出口都得先结算。
-
-        2026-07-28：这条断言抓到了新增的第四个出口（项目已 completed 时直接跳过）。
-        那一个是唯一的豁免——书本来就已结算，再判一次没有意义。豁免写在这里而不是
-        把数字调大，是因为下一个新出口仍然应该让它变红。
-        """
-
-        import inspect
-
-        from bestseller.services import repair
-
-        source = inspect.getsource(repair.run_project_repair)
-        exits = source.count("return ProjectRepairResult")
-        settles = source.count("settle_project_status_on_closure(")
-        already_settled_exits = source.count("skipped_project_completed")
-        assert settles + already_settled_exits >= exits, (
-            f"{exits} 个返回点，只有 {settles} 处结算 + {already_settled_exits} 处"
-            "「已完结跳过」——有出口会漏掉判决"
-        )
-
-
-class TestCompletionAndExportCannotDiverge:
-    """完结与导出必须在同一处发生。
-
-    2026-07-28 第三次真机取证：闭环判定修好后书翻到了 ``completed``，debt 也正确
-    记在 ``[1,2,3]``，但**全书导出产物是 0**。章节 markdown 在盘上，缺的是合并
-    导出——因为判定完结的地方和触发导出的地方是分开的：``no_actionable_repair``
-    出口返回 ``export_artifact_id=None``，而管线那次导出发生在章节结算之前，必然
-    被发布门拦下。
-
-    这与前三个 bug 同形：两处必须一致的逻辑分居两地，迟早分叉。所以完结时就地
-    导出，两者不可能再不一致。
-    """
-
-    def test_settling_a_complete_book_also_exports_it(self) -> None:
-        import inspect
-
-        from bestseller.services.book_closure import (
-            settle_project_status_on_closure,
-        )
-
-        source = inspect.getsource(settle_project_status_on_closure)
-        assert "export_project_markdown" in source, (
-            "完结判定处必须同时触发全书导出，否则两者会再次分叉"
-        )
-
-    def test_export_failure_does_not_undo_completion(self) -> None:
-        """导出失败不该把已完结的书打回去——书确实写完了。"""
-
-        import inspect
-
-        from bestseller.services.book_closure import (
-            settle_project_status_on_closure,
-        )
-
-        source = inspect.getsource(settle_project_status_on_closure)
-        export_at = source.index("export_project_markdown")
-        tail = source[export_at:]
-        assert "except" in tail, "导出必须是非致命的"
-
-
-class TestNoHumanConfirmationOutcomeExists:
-    def test_the_verdict_is_binary(self) -> None:
-        """没有第三种「待人工」结果——这是本模块的设计约束。"""
-
-        fields = {
-            "is_complete", "reason", "settled_chapters", "expected_chapters",
-            "debt_chapters", "unsettled_chapters",
-        }
-        verdict = evaluate_book_closure([_ch(1, "ok")], expected_chapters=1)
-        assert fields <= set(vars(verdict))
-        assert isinstance(verdict.is_complete, bool)
-
-    def test_settled_states_never_include_an_in_flight_state(self) -> None:
-        for state in ("blocked", "pending", "drafting", ""):
-            assert state not in SETTLED_PRODUCTION_STATES
+async def test_legacy_promotion_api_cannot_promote():
+    with pytest.raises(ValueError, match="book_closure_promotion_removed"):
+        await _promote_settled_chapter_drafts(None, SimpleNamespace())

@@ -107,6 +107,44 @@ def test_creativity_direction_reaches_the_real_engine() -> None:
         assert "anti_cliche_guardrails" in hints
 
 
+@pytest.mark.unit
+def test_native_distilled_direction_preserves_exact_taxonomy_and_does_not_invent_cost() -> None:
+    """A native remix must not inherit the cross-genre suspense fallback or
+    turn ``cost_style=minimal`` into a mandatory punishment loop.
+
+    The live otherworld trial exposed both leaks at once: the exact ephemeral
+    preset was discarded in favour of generic custom-xuanhuan, and the remix
+    copy itself instructed the model to make every gain produce heavier cost.
+    """
+
+    from bestseller.services.genre_creativity import (
+        creative_direction_to_user_hints,
+        get_genre_creative_direction_for_preset,
+    )
+    from bestseller.web.server import _genre_preset_from_selection
+
+    preset = _genre_preset_from_selection(
+        {
+            "channel": "male",
+            "genre": "xuanhuan",
+            "sub_genre": "otherworld-continent",
+            "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+        }
+    )
+    direction = get_genre_creative_direction_for_preset(
+        preset,
+        "distilled-mechanism-remix",
+    )
+
+    assert direction is not None
+    assert "剧情语法库:otherworld-cross-system" in direction.source_mix
+    assert "悬疑/惊悚/犯罪" not in direction.genre_lenses
+    rendered = str(creative_direction_to_user_hints(direction))
+    assert "收益越明显，后续牵连越重" not in rendered
+    assert "代价立刻可见" not in rendered
+    assert "人物选择或代价" not in rendered
+
+
 # ── 选项不得冒充/不得越权 ──────────────────────────────────────────────────
 
 

@@ -22,7 +22,7 @@ GENRE_CONTRACTS = {
         "source_world_profession",
         "target_world_dominant_rule_system",
         "cross_system_mapping_limits",
-        "host_identity_debt",
+        "host_identity_obligation",
         "exposure_cost_model",
     ],
     "都市悬疑": [
@@ -47,6 +47,48 @@ GENRE_CONTRACTS = {
         "tactical_countermeasure_loop",
     ],
 }
+
+
+def test_otherworld_architecture_uses_identity_obligation_without_inventing_debt() -> None:
+    from bestseller.services.concept_tournament import _build_engine_kernel_messages
+    from bestseller.services.story_design_grammars import resolve_story_design_grammar
+
+    grammar = resolve_story_design_grammar(genre="玄幻", sub_genre="异世大陆经营升级")
+    _, prompt = _build_engine_kernel_messages(
+        genre="玄幻",
+        sub_genre="异世大陆",
+        lane="职业处境#identity",
+        chapter_count=60,
+        authoritative_seed_concept=(
+            "收费站班组长商洛穿越成废城城主，用旧界碑向狮人商队报价，带着七个老矿工后裔经营关卡。"
+        ),
+        cost_style="minimal",
+    )
+
+    assert "host_identity_obligation" in grammar.required_contracts
+    assert "host_identity_debt" not in grammar.required_contracts
+    assert "不得把上位创意未提供的前史性义务或追索关系生成为核心压力" in prompt
+    assert "当下身份、处境、责任与关系推出危机" in prompt
+
+
+def test_otherworld_architecture_migrates_legacy_identity_debt_contract() -> None:
+    from bestseller.services.concept_tournament import _story_architecture_audit
+
+    architecture = _architecture("异世界经营", comedy=True)
+    legacy_contract = architecture["genre_contracts"].pop("host_identity_obligation")
+    architecture["genre_contracts"]["host_identity_debt"] = legacy_contract
+    card = {"story_architecture": architecture}
+
+    audit = _story_architecture_audit(
+        card,
+        genre="玄幻",
+        sub_genre="异世大陆",
+        chapter_count=60,
+        effect_skills=("comedy_engine",),
+    )
+
+    assert audit["passed"] is True, audit
+    assert audit["architecture"]["genre_contracts"]["host_identity_obligation"] == legacy_contract
 
 
 def _architecture(genre: str, *, comedy: bool = False) -> dict:
@@ -170,6 +212,8 @@ def _concept_contract() -> dict:
         "emotional_promise": "看一个讲流程的人被异界权力逻辑反复误读并反用误读破局",
         "repeatable_story_unit": "规则验证、主角选择、对手学习、状态改写",
         "unit_families": ["规则验证", "资源争夺", "关系结盟", "秩序改写"],
+        "unit_frequency": "每2-4章完成一次选择与反制",
+        "unit_count_estimate": 15,
         "progress_bar": "规则解释权从城门扩展到区域网络",
         "question_ladder": ["谁定价", "谁解释", "谁拥有规则"],
         "ch50": "区域联盟要求主角交出公开规则的最终解释权",

@@ -198,6 +198,23 @@ def _quote_grounded(quote: str, haystack: str) -> bool:
     return False
 
 
+def _coherence_payload(raw: str) -> dict[str, Any] | None:
+    s = (raw or "").strip()
+    payload: Any = None
+    try:
+        payload = json.loads(s)
+    except json.JSONDecodeError:
+        start, end = s.find("{"), s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                payload = json.loads(s[start : end + 1])
+            except json.JSONDecodeError:
+                payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("contradictions"), list):
+        return payload
+    return None
+
+
 def parse_and_verify(
     raw: str,
     *,
@@ -210,20 +227,10 @@ def parse_and_verify(
     至少一段引文接地于 focus_text 才为 True。为空时全部视为 True（向后兼容）。
     """
 
-    s = (raw or "").strip()
-    payload: Any = None
-    try:
-        payload = json.loads(s)
-    except json.JSONDecodeError:
-        start, end = s.find("{"), s.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                payload = json.loads(s[start : end + 1])
-            except json.JSONDecodeError:
-                payload = None
-    items = payload.get("contradictions") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
+    payload = _coherence_payload(raw)
+    if payload is None:
         return (), 0
+    items = payload["contradictions"]
 
     haystack = _normalise_for_quote_match("\n".join(source_texts))
     verified: list[CoherenceFinding] = []
@@ -426,6 +433,10 @@ async def verify_blurb_coherence(
                 project_id=project_id,
             ),
         )
+        if getattr(completion, "fallback_used", False) or _coherence_payload(
+            completion.content or ""
+        ) is None:
+            return CoherenceReport(findings=(), llm_used=False)
         sources = tuple(
             t for t in (
                 premise,

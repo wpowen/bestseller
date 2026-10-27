@@ -173,6 +173,8 @@ def extract_quality_levers_meta(
     """
 
     data = dict(metadata or {})
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
     target_platform = str(data.get("target_platform") or "").strip() or None
     return QualityLeversProjectMeta(
         target_platform=target_platform,
@@ -183,6 +185,8 @@ def extract_quality_levers_meta(
         ),
         character_profiles=_coerce_character_profiles(data.get("character_profiles")),
         rejection_history=_coerce_rejection_history(data.get("rejection_history")),
-        emotion_driven_kernel=_coerce_mapping(data.get("emotion_driven_kernel")),
-        public_emotion_kernel=_coerce_mapping(data.get("public_emotion_kernel")),
+        emotion_driven_kernel=_coerce_mapping(data.get("emotion_driven_kernel"))
+            if planning_capability_selected(data, "emotion_driven_kernel") else None,
+        public_emotion_kernel=_coerce_mapping(data.get("public_emotion_kernel"))
+            if planning_capability_selected(data, "public_emotion_kernel") else None,
     )

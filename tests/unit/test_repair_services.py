@@ -23,6 +23,23 @@ from bestseller.settings import load_settings
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def isolated_delivery_boundaries(monkeypatch):
+    # This module exercises repair dispatch with a positional FakeSession.
+    # Exact adopted knowledge and settlement use real DB suites separately.
+    from unittest.mock import AsyncMock
+    from bestseller.services import adopted_knowledge_resume
+    from bestseller.services.book_closure import BookClosureVerdict
+
+    monkeypatch.setattr(adopted_knowledge_resume, "resume_project_adopted_knowledge",
+                        AsyncMock(return_value={}))
+    async def incomplete(session, project, **kwargs):
+        project.status = kwargs["fallback_status"]
+        return BookClosureVerdict(False, "fixture_delivery_pending", 0,
+                                  int(project.target_chapters or 0), (), ())
+    monkeypatch.setattr(repair_services, "settle_project_status_on_closure", incomplete)
+
+
 class FakeSession:
     def __init__(
         self,

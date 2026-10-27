@@ -10,7 +10,6 @@ repaired, then the same ranking gates are re-run.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import re
 from typing import Any
@@ -19,8 +18,6 @@ from bestseller.domain.fanqie_short import DEFAULT_UNLOCK_LINE_RATIO
 from bestseller.services.drafts import count_words
 from bestseller.services.fanqie_short_export import (
     build_signing_readiness_report,
-    export_fanqie_short_markdown,
-    export_fanqie_short_rejected_draft,
 )
 from bestseller.services.fanqie_short_quality import (
     FanqieWholePieceReview,
@@ -78,17 +75,15 @@ def finalize_fanqie_short_for_upload(
     protagonist_name: str | None = None,
     target_word_count: int | None = None,
     max_rounds: int = 4,
+    source_manifest: dict[str, Any] | None = None,
 ) -> FanqieShortFinalizationResult:
-    """Repair and export a single fanqie short story until upload gates pass.
+    """Produce an auditable whole-story candidate without publishing it.
 
-    The function does not loosen gates. It mutates a copy of the text, re-runs
-    the public readiness checks after every round, and exports only when
-    ``ready_for_upload`` is true. If the deterministic repair cannot pass, a
-    rejected-draft package is written with the final failure report.
+    The function preserves its source, re-runs the same candidate checks, and
+    archives exact candidate text. A passing candidate is still unadopted and
+    cannot create an official export or grant knowledge/source authority.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    final_dir = output_dir / "finalized"
-    final_dir.mkdir(parents=True, exist_ok=True)
+    # This producer has no adoption authority; only candidate paths may be written.
 
     current_title = _repair_title(title)
     current_text = _normalize_body(full_text)
@@ -164,45 +159,32 @@ def finalize_fanqie_short_for_upload(
         if before == (current_title, current_text):
             break
 
-    report_path = final_dir / "finalization-report.json"
-    export_paths: dict[str, str]
-    ready = bool(readiness["ready_for_upload"] and readiness["word_count_within_10pct"])
-    if ready:
-        export_paths = export_fanqie_short_markdown(
-            final_dir,
-            title=current_title,
-            genre=genre,
-            full_text=current_text,
-            unlock_line_ratio=unlock_line_ratio,
-            protagonist_name=protagonist,
-            target_word_count=target,
-        )
-    else:
-        export_paths = export_fanqie_short_rejected_draft(
-            final_dir,
-            title=current_title,
-            genre=genre,
-            full_text=current_text,
-            review_report=review.to_dict(),
-            unlock_line_ratio=unlock_line_ratio,
-            protagonist_name=protagonist,
-            target_word_count=target,
-        )
+    from bestseller.services.fanqie_short_source_export import (
+        archive_existing_whole_outputs, preserve_whole_candidate,
+    )
 
+    previous_outputs_archive = archive_existing_whole_outputs(output_dir)
+    candidate_ready = bool(readiness["ready_for_upload"] and readiness["word_count_within_10pct"])
+    export_paths = preserve_whole_candidate(
+        output_dir, producer="deterministic_finalizer", body=current_text,
+        source_manifest=source_manifest,
+        evidence={"title": current_title, "actions": list(actions),
+                  "candidate_ready_by_rules": candidate_ready, "review": review.to_dict(),
+                  "previous_outputs_archive": previous_outputs_archive},
+    )
+    report_path = Path(export_paths["candidate_report_path"])
+    readiness = {**readiness, "candidate_ready_by_rules": candidate_ready,
+                 "ready_for_upload": False, "adoption_required": True}
     result = FanqieShortFinalizationResult(
         title=current_title,
         full_text=current_text,
         review=review,
         readiness=readiness,
-        ready_for_upload=ready,
+        ready_for_upload=False,
         rounds=rounds_used,
         actions=tuple(actions),
         export_paths=export_paths,
         report_path=str(report_path.resolve()),
-    )
-    report_path.write_text(
-        json.dumps(result.to_dict(), ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
     )
     return result
 

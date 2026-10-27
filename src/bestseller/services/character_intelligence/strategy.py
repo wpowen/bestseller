@@ -562,14 +562,160 @@ def build_character_strategy_from_distillation(
     return normalize_character_strategy(payload)
 
 
-def character_strategy_from_project_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Resolve the best available character strategy from project metadata."""
+class ReferenceProjectionContext:
+    """A metadata view retaining the complete real project context for receipts.
 
-    data = _as_mapping(metadata)
-    explicit = normalize_character_strategy(_as_mapping(data.get("character_strategy")))
+    Assigning projections to this view never mutates an ORM row. It also avoids
+    reconstructing a partial project from metadata and losing fingerprint inputs.
+    """
+
+    def __init__(self, project: object, metadata: Mapping[str, Any]) -> None:
+        self._project = project
+        self.metadata_json = dict(metadata)
+
+    def __getattr__(self, key: str) -> object:
+        return getattr(self._project, key)
+
+
+def reference_projection_value(
+    metadata: Mapping[str, Any] | None, key: str, *, project: object | None = None,
+) -> object | None:
+    """Only code-side current receipts authorize stored reference projections.
+
+    A metadata-only entry point cannot prove the full input fingerprint. Neither
+    a field's presence nor an embedded source/explicit claim supplies authority.
+    """
+    if project is None or not getattr(project, "id", None):
+        return None
+    from bestseller.services.prompt_source_policy import valid_reference_value
+
+    context = ReferenceProjectionContext(project, _as_mapping(metadata))
+    return valid_reference_value(context, key)
+
+
+def adopt_reference_projection(
+    project: object, key: str, *, adopted_by: str, required: bool = False,
+) -> dict[str, Any]:
+    """Record an explicit author action; generators must never call this.
+
+    A registered reference receipt proves current origin, not author adoption.
+    Only this separate decision can make a reference a required content contract.
+    """
+    if key not in {"distilled_strategy_card", "character_strategy"} or not adopted_by.strip():
+        raise ValueError("a supported projection and adopting author are required")
+    value = reference_projection_value(project.metadata_json, key, project=project)
+    if value is None:
+        raise ValueError("cannot adopt an unavailable reference projection")
+    from bestseller.services.prompt_source_policy import content_hash
+
+    record = {"policy": "reference-adoption.v1", "project_id": str(project.id),
+              "content_hash": content_hash(value), "adopted_by": adopted_by.strip(),
+              "required": bool(required)}
+    metadata = dict(project.metadata_json)
+    adoptions = dict(metadata.get("reference_projection_adoptions") or {})
+    adoptions[key] = record
+    metadata["reference_projection_adoptions"] = adoptions
+    project.metadata_json = metadata
+    return record
+
+
+def _reference_adoption_record(metadata: Mapping[str, Any], key: str) -> dict[str, Any]:
+    record = _as_mapping(_as_mapping(metadata.get("reference_projection_adoptions")).get(key))
+    if (record.get("policy") != "reference-adoption.v1"
+        or not isinstance(record.get("adopted_by"), str)
+        or not record["adopted_by"].strip()
+        or not isinstance(record.get("project_id"), str)
+        or not record["project_id"]
+        or not isinstance(record.get("content_hash"), str)
+        or len(record["content_hash"]) != 64):
+        return {}
+    return record
+
+
+def reference_projection_adopted(project: object | None, key: str) -> bool:
+    """A previous author decision never authorizes a different new projection."""
+    if project is None or not getattr(project, "id", None):
+        return False
+    metadata = _as_mapping(project.metadata_json)
+    record = _reference_adoption_record(metadata, key)
+    value = reference_projection_value(metadata, key, project=project)
+    from bestseller.services.prompt_source_policy import content_hash
+    return bool(record and record.get("project_id") == str(project.id)
+                and value is not None and record["content_hash"] == content_hash(value))
+
+
+def reference_projection_required(project: object | None, key: str) -> bool:
+    if project is None or not getattr(project, "id", None):
+        return False
+    record = _reference_adoption_record(_as_mapping(project.metadata_json), key)
+    return bool(record and record.get("project_id") == str(project.id)
+                and record.get("required") is True)
+
+
+class AdoptedReferenceUnavailable(RuntimeError):
+    terminal = True
+    code = "adopted_reference_unavailable"
+
+
+class ReferenceContextRequiredError(AdoptedReferenceUnavailable):
+    code = "reference_context_required"
+
+
+def required_reference_projection(
+    metadata: Mapping[str, Any] | None, key: str, *, project: object | None = None,
+) -> object | None:
+    """A missing optional reference is quiet; a missing adopted contract is explicit."""
+    if project is None or not getattr(project, "id", None):
+        record = _reference_adoption_record(_as_mapping(metadata), key)
+        if record.get("required") is True:
+            raise ReferenceContextRequiredError(
+                f"Project context is required to verify recorded {key} adoption; "
+                "the record does not itself authorize reference consumption."
+            )
+        return None
+    if not reference_projection_required(project, key):
+        return None
+    value = reference_projection_value(metadata, key, project=project)
+    from bestseller.services.prompt_source_policy import content_hash
+    record = project.metadata_json["reference_projection_adoptions"][key]
+    if value is None or record["content_hash"] != content_hash(value):
+        raise AdoptedReferenceUnavailable(
+            f"Author-adopted {key} is unavailable or changed; "
+            "restore its source or explicitly revise adoption."
+        )
+    return value
+
+
+def character_strategy_from_project_metadata(
+    metadata: Mapping[str, Any] | None, *, project: object | None = None,
+) -> dict[str, Any]:
+    """Resolve a verified stored choice, then derive from a verified source card."""
+
+    for key in ("character_strategy", "distilled_strategy_card"):
+        required_reference_projection(metadata, key, project=project)
+    explicit = normalize_character_strategy(_as_mapping(
+        reference_projection_value(metadata, "character_strategy", project=project)
+    ))
     if explicit:
         return explicit
-    card = _as_mapping(data.get("distilled_strategy_card"))
+    card = _as_mapping(
+        reference_projection_value(metadata, "distilled_strategy_card", project=project)
+    )
     if card:
         return build_character_strategy_from_distillation(distilled_strategy_card=card)
+    return {}
+
+
+def adopted_character_strategy(project: object) -> dict[str, Any]:
+    """Resolve only the author's current choice for behavior-profile generation."""
+    metadata = project.metadata_json
+    available = character_strategy_from_project_metadata(metadata, project=project)
+    if reference_projection_adopted(project, "character_strategy"):
+        return available
+    if reference_projection_adopted(project, "distilled_strategy_card"):
+        return build_character_strategy_from_distillation(
+            distilled_strategy_card=reference_projection_value(
+                metadata, "distilled_strategy_card", project=project,
+            ),
+        )
     return {}

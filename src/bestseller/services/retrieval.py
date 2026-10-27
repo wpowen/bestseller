@@ -22,9 +22,9 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
-    WorldRuleModel,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.world_rule_current import current_world_rules
 from bestseller.settings import AppSettings
 
 
@@ -198,10 +198,17 @@ async def refresh_story_bible_retrieval_index(
     settings: AppSettings,
     project_id: UUID,
 ) -> int:
-    chunk_count = 0
-    world_rules = list(
-        await session.scalars(select(WorldRuleModel).where(WorldRuleModel.project_id == project_id))
+    # Prove the current set before changing index state. Retained row existence
+    # is not proof of an active rule; only this project's obsolete chunks go.
+    world_rules = await current_world_rules(session, project_id=project_id)
+    await session.execute(
+        delete(RetrievalChunkModel).where(
+            RetrievalChunkModel.project_id == project_id,
+            RetrievalChunkModel.source_type == "world_rule",
+            ~RetrievalChunkModel.source_id.in_([rule.id for rule in world_rules]),
+        )
     )
+    chunk_count = 0
     for world_rule in world_rules:
         chunk_count += await _upsert_source_chunks(
             session,
@@ -312,17 +319,13 @@ async def ensure_project_retrieval_index(
     settings: AppSettings,
     project_id: UUID,
 ) -> int:
-    existing = list(
-        await session.scalars(
-            select(RetrievalChunkModel)
-            .where(RetrievalChunkModel.project_id == project_id)
-            .limit(1)
-        )
-    )
-    if existing:
-        return 0
+    from bestseller.services.story_bible_read_views import ensure_story_bible_read_views
 
-    return await refresh_story_bible_retrieval_index(session, settings, project_id)
+    project = await session.get(ProjectModel, project_id)
+    if project is None:
+        raise ValueError("story_bible_read_views_project_missing")
+    result = await ensure_story_bible_read_views(session, settings, project=project)
+    return int(result["retrieval_chunk_count"]) if result["refreshed"] else 0
 
 
 async def refresh_project_retrieval_index(
@@ -334,6 +337,7 @@ async def refresh_project_retrieval_index(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
+    await current_world_rules(session, project_id=project.id)
     await session.execute(delete(RetrievalChunkModel).where(RetrievalChunkModel.project_id == project.id))
     chunk_count = await refresh_story_bible_retrieval_index(session, settings, project.id)
 
@@ -495,6 +499,14 @@ async def search_retrieval_for_project(
     chunks = list(
         await session.scalars(select(RetrievalChunkModel).where(RetrievalChunkModel.project_id == project.id))
     )
+    if any(chunk.source_type == "world_rule" for chunk in chunks):
+        current_ids = {
+            rule.id for rule in await current_world_rules(session, project_id=project.id)
+        }
+        chunks = [
+            chunk for chunk in chunks
+            if chunk.source_type != "world_rule" or chunk.source_id in current_ids
+        ]
     query_tokens = set(tokenize_text(query_text))
     query_embedding = build_hashed_embedding(query_text, settings.retrieval.embedding_dimensions)
     scored: list[RetrievedChunk] = []

@@ -177,7 +177,11 @@ def test_chapter_quality_bundle_blocks_common_sense_front_chapter_failures() -> 
     codes = {finding.code for finding in report.blocking_findings}
     assert "LATE_NIGHT_DELIVERY_PLAUSIBILITY" in codes
     assert "OBJECT_SIGNAL_OVERUSE" in codes
-    assert "LAY_CHARACTER_RULE_KNOWLEDGE_LEAK" in codes
+    assert "LAY_CHARACTER_RULE_KNOWLEDGE_LEAK" not in codes
+    assert any(
+        finding.code == "LAY_CHARACTER_RULE_KNOWLEDGE_LEAK" and not finding.blocking
+        for finding in report.findings
+    )
     assert report.passed is False
 
 

@@ -238,6 +238,11 @@ class ReaderQualityGateConfig:
 
     enabled: bool = True
     block_on_persona_failure: bool = True
+    # 2026-09-10 (W4-2): 合成 reader persona 的失败**不得独立授权**阻断/重写。
+    # True 时，persona 失败只有与独立证据（retention gate 自身的阻断 finding）
+    # 相互印证时才升级为阻断；否则记为 advisory——可见、可审计，但不夺创作权。
+    # 见 pipelines._merge_persona_gate_findings。
+    persona_block_requires_corroboration: bool = True
     min_weighted_score: float = 0.62
     max_abandon_rate: float = 0.35
     min_payoff_density: float = 0.22
@@ -281,7 +286,7 @@ class ProseQualityGateConfig:
     show_dont_tell_enabled: bool = True
     show_dont_tell_severity: str = "warn"
     in_scene_ending_enabled: bool = True
-    in_scene_ending_severity: str = "block"
+    in_scene_ending_severity: str = "warn"
 
 
 @dataclass(frozen=True)
@@ -561,6 +566,9 @@ def _build_reader_quality_gate(raw: dict[str, Any]) -> ReaderQualityGateConfig:
     return ReaderQualityGateConfig(
         enabled=_safe_bool(raw.get("enabled"), True),
         block_on_persona_failure=_safe_bool(raw.get("block_on_persona_failure"), True),
+        persona_block_requires_corroboration=_safe_bool(
+            raw.get("persona_block_requires_corroboration"), True
+        ),
         min_weighted_score=float(raw.get("min_weighted_score", 0.62)),
         max_abandon_rate=float(raw.get("max_abandon_rate", 0.35)),
         min_payoff_density=float(raw.get("min_payoff_density", 0.22)),
@@ -680,7 +688,7 @@ def _build_prose_quality(raw: dict[str, Any]) -> ProseQualityGateConfig:
         show_dont_tell_enabled=_safe_bool(show.get("enabled"), True),
         show_dont_tell_severity=str(show.get("severity") or "warn"),
         in_scene_ending_enabled=_safe_bool(ending.get("enabled"), True),
-        in_scene_ending_severity=str(ending.get("severity") or "block"),
+        in_scene_ending_severity=str(ending.get("severity") or "warn"),
     )
 
 
@@ -763,6 +771,8 @@ def _build_ai_flavor(raw: dict[str, Any]) -> AiFlavorGateConfig:
     llm = _as_dict(raw.get("llm_rewrite"))
     audit = _as_dict(raw.get("audit"))
     return AiFlavorGateConfig(
+        expression_guidance_enabled=bool(raw.get("expression_guidance_enabled", False)),
+        expression_guidance_max_tokens=max(1, int(raw.get("expression_guidance_max_tokens", 900))),
         enabled=bool(raw.get("enabled", True)),
         block_score_cn=_safe_int(block.get("cn"), 38),
         block_score_en=_safe_int(block.get("en"), 45),

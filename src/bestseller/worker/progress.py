@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import time
 from typing import Any
 
 from redis.asyncio import Redis
 
+from bestseller.services.progress_context import TaskCancelledError
 
 # Redis key patterns
 _PROGRESS_LIST_KEY = "task:{task_id}:progress"
@@ -20,6 +22,17 @@ _PROGRESS_TTL = 86_400  # 24 h
 _TIER_KEY = "_tier"
 _TIER_MILESTONE = "milestone"
 
+# These events are emitted by the pipeline immediately after it observes the
+# durable operator pause/stop row.  Raising from the synchronous progress
+# callback is intentional: the pipeline's inner loop otherwise only breaks
+# its current volume/chapter loop and can start the next paid batch.
+_HALT_EVENTS = frozenset(
+    {
+        "autowrite_halted_by_operator",
+        "chapter_loop_halted_by_operator",
+    }
+)
+
 
 class RedisProgressReporter:
     """Thread-safe progress reporter backed by Redis pub/sub + list."""
@@ -32,7 +45,13 @@ class RedisProgressReporter:
         self._milestone_key = _MILESTONE_LIST_KEY.format(task_id=task_id)
         self._channel = _PROGRESS_CHANNEL.format(task_id=task_id)
 
-    async def emit(self, message: str, data: dict[str, Any] | None = None, *, event_type: str = "progress") -> None:
+    async def emit(
+        self,
+        message: str,
+        data: dict[str, Any] | None = None,
+        *,
+        event_type: str = "progress",
+    ) -> None:
         data = data or {}
         is_milestone = data.get(_TIER_KEY) == _TIER_MILESTONE
         event = json.dumps(
@@ -59,15 +78,27 @@ class RedisProgressReporter:
         return [json.loads(item) for item in raw]
 
 
-def make_sync_callback(reporter: RedisProgressReporter) -> Any:
-    """Return a synchronous callback that schedules the async emit via asyncio."""
-    import asyncio  # noqa: PLC0415
+def make_sync_callback(
+    reporter: RedisProgressReporter,
+) -> Callable[[str, dict[str, Any] | None], None]:
+    """Return a callback that emits progress and propagates durable halts.
+
+    The pipeline calls progress synchronously.  A plain ``create_task`` would
+    report a halt but let the caller continue into its next LLM batch.  Halt
+    events are therefore raised synchronously after the event is scheduled;
+    an already-running provider call is unaffected, while the next boundary
+    cannot be crossed.
+    """
+    import asyncio
 
     def callback(message: str, data: dict[str, Any] | None = None) -> None:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return  # No event loop running; silently drop the event
-        loop.create_task(reporter.emit(message, data))
+        task = loop.create_task(reporter.emit(message, data))
+        task.add_done_callback(lambda completed: completed.exception())
+        if message in _HALT_EVENTS:
+            raise TaskCancelledError(f"pipeline halted by operator: {message}")
 
     return callback

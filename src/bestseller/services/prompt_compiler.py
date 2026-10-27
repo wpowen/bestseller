@@ -68,6 +68,7 @@ class PromptProvenance(BaseModel, frozen=True):
 
     kind: Literal[
         "canonical_snapshot",
+        "framework_protocol",
         "creation_intent",
         "scene_spec",
         "genre_pack",
@@ -113,6 +114,13 @@ class PromptCompilerReport(BaseModel):
     block_sizes: dict[str, dict[str, int]] = Field(default_factory=dict)
     block_source_hashes: dict[str, str] = Field(default_factory=dict)
     phase: str | None = None
+    # Integrity is distinct from instruction authority. Legacy facts cannot
+    # promote themselves to system/required canon, but must survive unchanged.
+    source_integrity_blocks: tuple[str, ...] = ()
+    source_integrity_complete: bool | None = None
+    source_selection_receipts: dict[str, dict] = Field(default_factory=dict)
+    expression_guidance_receipt: dict = Field(default_factory=dict)
+    writer_source_capacity: dict = Field(default_factory=dict)
 
     @property
     def dropped_reasons(self) -> dict[str, str]:
@@ -182,14 +190,38 @@ class PromptBudgetError(PromptCompilerError):
             details.append(f"safety_margin={safety_margin}")
         super().__init__(f"{message}; {'; '.join(details)}" if details else message)
 
+    def __reduce__(self) -> tuple[object, ...]:
+        # Exception.args already contains the rendered diagnostic. Re-running
+        # __init__ would require keyword-only fields and append details twice.
+        return type(self)._restore_from_pickle, (self.args,), self.__dict__
+
+    @classmethod
+    def _restore_from_pickle(cls, args: tuple[object, ...]) -> PromptBudgetError:
+        error = cls.__new__(cls)
+        PromptCompilerError.__init__(error, *args)
+        return error
+
 
 def estimate_prompt_tokens(text: str) -> int:
-    """Return a deterministic CJK-aware token estimate.
+    """Count CJK and other characters independently, without a script-ratio jump.
 
-    Provider reconciliation is intentionally outside this core compiler.  The
-    safety margin absorbs estimator drift until Phase 3.2 records real usage.
+    Shared with whole-request capacity accounting; provider calibration and
+    output reservation remain separate from this deterministic input estimate.
     """
 
+    if not text:
+        return 0
+    cjk = sum(
+        "\u3400" <= char <= "\u4dbf"
+        or "\u4e00" <= char <= "\u9fff"
+        or "\uf900" <= char <= "\ufaff"
+        for char in text
+    )
+    return (len(text) + cjk + 3) // 4
+
+
+def estimate_legacy_prompt_tokens(text: str) -> int:
+    """Keep the historical one-third threshold for legacy receipt comparisons."""
     if not text:
         return 0
     cjk = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
@@ -293,6 +325,15 @@ def compile_prompt(
                 "prompt provenance is required for canonical compilation",
                 conflicts=missing,
             )
+    if require_provenance:
+        forbidden = tuple(
+            item.key for item in ordered
+            if item.provenance is not None
+            and item.provenance.kind in {"derived", "legacy", "genre_pack"}
+            and (item.channel == "system" or item.layer == "hard_canon" or item.required)
+        )
+        if forbidden:
+            raise PromptConflictError("reference producers cannot grant instruction or canon authority", conflicts=forbidden)
     if effective_snapshot_hash:
         stale = tuple(
             item.key
@@ -572,6 +613,11 @@ def _apply_block_maxima(
         if item.max_tokens is None or estimate_prompt_tokens(item.text) <= item.max_tokens:
             selected.append(item)
             continue
+        if item.required:
+            raise PromptBudgetError(
+                f"required block {item.key} cannot be truncated to max_tokens",
+                required_keys=(item.key,),
+            )
         trimmed = _trim_block_to_limit(item, item.max_tokens)
         if trimmed is None:
             if item.required:

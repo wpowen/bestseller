@@ -18,12 +18,47 @@ from enum import Enum
 from typing import Any, Literal, Mapping
 from uuid import UUID
 
+from bestseller.services.content_origin_policy import ContentDefaultMigration, migrate_content_defaults
 from bestseller.services.hype_engine import (
     HypeScheme,
     hype_scheme_from_dict,
     hype_scheme_from_preset_overrides,
     hype_scheme_to_dict,
 )
+
+
+def migrate_invariant_content_defaults(
+    raw: Mapping[str, Any],
+    *,
+    origins: Mapping[str, Any] | None = None,
+) -> ContentDefaultMigration:
+    """Plan source-bound retirement of generated event/effect defaults.
+
+    ``origins`` is keyed by ``opening_archetype_pool``, ``cliffhanger_policy``
+    and ``hype_scheme``;
+    evidence must bind the entire respective JSON value. Persistence, dependent
+    cache invalidation and original byte archival belong to the caller.
+    """
+    return migrate_content_defaults(
+        raw, origins=origins, replacements={
+            "opening_archetype_pool": [],
+            "hype_scheme": hype_scheme_to_dict(HypeScheme()),
+            "cliffhanger_policy": {"no_repeat_within": 3, "allowed_types": []},
+        },
+    )
+
+
+def project_invariants_from_row(project: Any) -> ProjectInvariants:
+    """Read adopted optional effects; unverified history remains stored for review."""
+    migration = migrate_invariant_content_defaults(
+        project.invariants_json or {},
+        origins=(project.metadata_json or {}).get("invariant_content_origins"),
+    )
+    payload = dict(migration.payload)
+    neutral = {"opening_archetype_pool": [], "cliffhanger_policy": {"allowed_types": []}, "hype_scheme": {}}
+    for path in migration.receipt["unresolved_paths"]:
+        payload[path] = neutral[path]
+    return invariants_from_dict(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -94,19 +129,20 @@ class NamingScheme:
 @dataclass(frozen=True)
 class CliffhangerPolicy:
     no_repeat_within: int = 3
-    allowed_types: tuple[CliffhangerType, ...] = tuple(CliffhangerType)
+    allowed_types: tuple[CliffhangerType, ...] = ()
 
 
 # ---------------------------------------------------------------------------
 # Tone-aware opening / cliffhanger pools (genre de-homogenisation).
 #
-# The default ``opening_archetype_pool`` is the *full* enum, which is dominated
+# The legacy ``opening_archetype_pool`` was the *full* enum, which is dominated
 # by high-tension male-frequency archetypes (HUMILIATION first, plus CRISIS /
 # BROKEN_ENGAGEMENT / BANISHMENT / BETRAYAL / IDENTITY_FALL / RITUAL_INTERRUPTED).
 # Forcing those on a 沙雕喜剧 / 治愈日常 / 种田 / cozy book makes every chapter open
 # on shame or threat — directly contradicting the comedy pack's mandate of
 # "低压力高期待" hooks, "每章 ≥3 笑点 + 1 温度瞬间", and "严禁 2/3 前进入高强度冲突".
-# Low-pressure genres get a warm/light pool instead.
+# These optional pools remain available for explicit adoption. New projects
+# default to no event assignment; a tone label alone does not adopt a pool.
 LOW_PRESSURE_OPENING_POOL: tuple[OpeningArchetype, ...] = (
     OpeningArchetype.MUNDANE_DAY,
     OpeningArchetype.CONTRAST,
@@ -197,7 +233,7 @@ class ProjectInvariants:
     pov: PovStyle = "close_third"
     tense: TenseStyle = "past"
     naming_scheme: NamingScheme | None = None
-    opening_archetype_pool: tuple[OpeningArchetype, ...] = tuple(OpeningArchetype)
+    opening_archetype_pool: tuple[OpeningArchetype, ...] = ()
     cliffhanger_policy: CliffhangerPolicy = field(default_factory=CliffhangerPolicy)
     vocab_caps: Mapping[str, int] = field(default_factory=dict)
     banned_formulaic_phrases: tuple[str, ...] = ()
@@ -302,7 +338,7 @@ def invariants_from_dict(data: Mapping[str, Any]) -> ProjectInvariants:
 
     opening_pool = tuple(
         OpeningArchetype(value)
-        for value in (data.get("opening_archetype_pool") or [a.value for a in OpeningArchetype])
+        for value in (data.get("opening_archetype_pool") or ())
     )
 
     cp_raw = data.get("cliffhanger_policy") or {}
@@ -310,7 +346,7 @@ def invariants_from_dict(data: Mapping[str, Any]) -> ProjectInvariants:
         no_repeat_within=int(cp_raw.get("no_repeat_within", 3)),
         allowed_types=tuple(
             CliffhangerType(value)
-            for value in (cp_raw.get("allowed_types") or [t.value for t in CliffhangerType])
+            for value in (cp_raw.get("allowed_types") or ())
         ),
     )
 
@@ -448,21 +484,13 @@ def seed_invariants(
     ``naming_scheme``, ``banned_formulaic_phrases``, etc.  Used by the pipeline
     to bolt on category-specific adjustments without modifying this module.
 
-    ``genre`` / ``sub_genre`` / ``prompt_pack_key`` drive tone-aware defaults:
-    low-pressure comedic/healing books get a warm opening pool and "低压力高期待"
-    cliffhanger policy instead of the tension-heavy full-enum defaults — unless
-    the caller pins an explicit ``opening_archetype_pool`` / ``cliffhanger_policy``
-    override (which always wins).
+    Genre labels do not select an event rotation. Explicit opening/cliffhanger
+    pools remain available, including empty pools as an intentional no-op.
     """
 
     overrides = dict(overrides or {})
 
-    # Tone-aware opening/cliff defaults (genre de-homogenisation). Explicit
-    # overrides win; otherwise low-pressure genres swap the tension-heavy
-    # defaults for warm/light pools.
-    if is_low_pressure_tone(prompt_pack_key, genre, sub_genre):
-        overrides.setdefault("opening_archetype_pool", LOW_PRESSURE_OPENING_POOL)
-        overrides.setdefault("cliffhanger_policy", LOW_PRESSURE_CLIFFHANGER_POLICY)
+    # No inferred event pools, including tone-derived low-pressure events.
     length_envelope = overrides.get("length_envelope") or _derive_length_envelope(
         words_per_chapter, language
     )
@@ -503,7 +531,7 @@ def seed_invariants(
         tense=tense_normalized,
         length_envelope=length_envelope,
         naming_scheme=overrides.get("naming_scheme"),
-        opening_archetype_pool=tuple(overrides.get("opening_archetype_pool") or OpeningArchetype),
+        opening_archetype_pool=tuple(overrides.get("opening_archetype_pool") or ()),
         cliffhanger_policy=overrides.get("cliffhanger_policy") or CliffhangerPolicy(),
         vocab_caps=dict(overrides.get("vocab_caps") or {}),
         banned_formulaic_phrases=tuple(overrides.get("banned_formulaic_phrases") or ()),

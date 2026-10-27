@@ -52,12 +52,13 @@ def test_master_fallback_works_for_all_registered_paths() -> None:
     assert not failures, f"Broken master fallbacks: {failures}"
 
 
-def test_planner_block_works_for_minimal_pack() -> None:
-    """Sparse prompt packs still need a complete planner methodology block."""
+def test_planner_block_keeps_asset_reference_separate_from_authority() -> None:
+    """A sparse pack does not authorize the global planner recipe."""
     pack = get_prompt_pack("cozy-mystery")
     block = render_phase_block(pack, phase="planner")
 
     assert block
+    assert "SOURCE AUTHORITY" in block
     for key in (
         "opening_rules",
         "character_design",
@@ -65,7 +66,7 @@ def test_planner_block_works_for_minimal_pack() -> None:
         "climax_design",
         "core_loop",
     ):
-        assert key in block
+        assert f"【{key}】" not in block
 
 
 def test_bridge_returns_empty_when_neither_source_has_fragment() -> None:
@@ -88,5 +89,5 @@ def test_render_phase_block_produces_nonempty_for_planner() -> None:
     pack = get_prompt_pack("suspense-mystery")
     block = render_phase_block(pack, phase="planner")
     assert block
-    assert "写法方法论指导" in block
-    assert "opening_rules" in block or "开篇" in block
+    assert "SOURCE AUTHORITY" in block
+    assert "可选写作指导" in block

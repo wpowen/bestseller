@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -254,7 +257,7 @@ def test_fanqie_closure_gate_blocks_serial_teaser() -> None:
     assert any(finding.code == "serial_cliffhanger_ending" for finding in report.findings)
 
 
-def test_fanqie_short_finalizer_repairs_rejected_draft_to_upload_ready(tmp_path) -> None:
+def test_fanqie_short_finalizer_retains_candidate_without_publishing(tmp_path) -> None:
     weak_text = (
         "# 器语者\n\n"
         "## 正文\n\n"
@@ -265,6 +268,10 @@ def test_fanqie_short_finalizer_repairs_rejected_draft_to_upload_ready(tmp_path)
         "这是一段会被重复的诊断性水文，用来验证终稿闭环会删除机械重复段落。\n\n"
         "下章，他将去地下三层追问真正的真相。未完待续。"
     )
+    original_bytes = weak_text.encode("utf-8")
+    original_path = tmp_path / "exports" / "fanqie-short.md"
+    original_path.parent.mkdir()
+    original_path.write_bytes(original_bytes)
 
     result = finalize_fanqie_short_for_upload(
         tmp_path,
@@ -283,21 +290,36 @@ def test_fanqie_short_finalizer_repairs_rejected_draft_to_upload_ready(tmp_path)
         if finding["severity"] == "critical"
     }
 
-    assert result.ready_for_upload is True
+    assert result.ready_for_upload is False
+    assert result.readiness["ready_for_upload"] is False
+    assert result.readiness["candidate_ready_by_rules"] is True
+    assert result.readiness["adoption_required"] is True
     assert result.readiness["word_count_within_10pct"] is True
     assert result.title == "被逼签认罪书后，我让真凶当场认罪"
     assert "opening_contract" in result.actions
     assert "target_length" in result.actions
     assert result.full_text.count("这是一段会被重复的诊断性水文") <= 1
     assert not critical_codes
-    assert "markdown_path" in result.export_paths
+    assert set(result.export_paths) == {"candidate_markdown_path", "candidate_report_path"}
+    assert Path(result.export_paths["candidate_markdown_path"]).read_bytes() == (
+        result.full_text.encode("utf-8")
+    )
+    report = json.loads(Path(result.report_path).read_text())
+    assert report["status"] == "candidate_pending_adoption"
+    assert report["adopted"] is False and report["knowledge_rebound"] is False
+    assert report["source_authority_granted"] is False
+    assert original_path.read_bytes() == original_bytes
+    assert set(original_path.parent.iterdir()) == {original_path}
+    archive = Path(report["evidence"]["previous_outputs_archive"]["directory"])
+    assert (archive / "files" / "exports" / "fanqie-short.md").read_bytes() == original_bytes
 
 
 @pytest.mark.asyncio
-async def test_generate_fanqie_beat_sheet_resolves_prompt_pack_with_project_genre(
+async def test_generate_fanqie_beat_sheet_delegates_to_source_bound_recovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from bestseller.services import fanqie_short_planner
+    from bestseller.services import fanqie_beat_recovery, fanqie_short_planner
+    from bestseller.settings import load_settings
 
     project = SimpleNamespace(
         id=uuid4(),
@@ -310,10 +332,6 @@ async def test_generate_fanqie_beat_sheet_resolves_prompt_pack_with_project_genr
         metadata_json={"pov": "first_person"},
     )
     captured: dict[str, object] = {}
-
-    async def fake_get_project_by_slug(_session: object, slug: str) -> object:
-        assert slug == project.slug
-        return project
 
     async def fake_complete_text(*_args: object, **_kwargs: object) -> object:
         return SimpleNamespace(
@@ -336,26 +354,25 @@ async def test_generate_fanqie_beat_sheet_resolves_prompt_pack_with_project_genr
             )
         )
 
-    async def fake_import_planning_artifact(
-        _session: object,
-        slug: str,
-        artifact: object,
-    ) -> object:
-        captured["slug"] = slug
-        captured["artifact"] = artifact
-        return SimpleNamespace(id=uuid4(), version_no=1)
+    session = object()
+    settings = load_settings()
+    completion = await fake_complete_text()
+    selection = SimpleNamespace(sheet=FanqieShortBeatSheet.model_validate_json(completion.content))
 
-    monkeypatch.setattr(fanqie_short_planner, "get_project_by_slug", fake_get_project_by_slug)
-    monkeypatch.setattr(fanqie_short_planner, "complete_text", fake_complete_text)
-    monkeypatch.setattr(
-        fanqie_short_planner,
-        "import_planning_artifact",
-        fake_import_planning_artifact,
-    )
+    async def fake_ensure_beat_sheet(_session: object, _settings: object, **kwargs: object) -> object:
+        assert _session is session and _settings is settings
+        captured.update(kwargs)
+        captured["slug"] = kwargs["project_slug"]
+        return selection
+
+    # The wrapper now delegates all source/cache/proof work. Those contracts
+    # have real SQLite coverage in test_fanqie_beat_recovery; this fixture only
+    # tests the public delegation and typed return, without inventing a proof.
+    monkeypatch.setattr(fanqie_beat_recovery, "ensure_beat_sheet", fake_ensure_beat_sheet)
 
     sheet = await fanqie_short_planner.generate_fanqie_beat_sheet(
-        object(),
-        object(),
+        session,
+        settings,
         project.slug,
         "女主被误解后靠证据反击。",
     )
@@ -363,6 +380,12 @@ async def test_generate_fanqie_beat_sheet_resolves_prompt_pack_with_project_genr
     assert sheet.title == "短篇测试"
     assert len(sheet.beats) == 6
     assert captured["slug"] == project.slug
+    assert captured["premise"] == "女主被误解后靠证据反击。"
+    assert captured["book_spec"] is None and captured["cast_spec"] is None
+    assert sheet is selection.sheet
+    assert await fanqie_short_planner.generate_fanqie_beat_sheet(
+        session, settings, project.slug, "女主被误解后靠证据反击。", return_selection=True,
+    ) is selection
 
 
 def test_build_segment_outline_single_scene_per_segment() -> None:
@@ -389,24 +412,29 @@ def test_build_segment_outline_single_scene_per_segment() -> None:
     )
     batch = build_fanqie_segment_outline_batch(project, beats)
     assert len(batch["chapters"]) == 4
-    for ch in batch["chapters"]:
-        assert ch["title"].endswith("段")
-        assert "章" not in ch["title"]
+    assert [ch["chapter_number"] for ch in batch["chapters"]] == [1, 2, 3, 4]
+    for ch, beat in zip(batch["chapters"], beats.beats, strict=True):
+        assert ch["title"] is None
         assert len(ch["scenes"]) == 1
+        assert ch["chapter_goal"] == beat.purpose
+        assert ch["scenes"][0]["purpose"]["story"] == beat.purpose
         assert "爽点合同" not in ch["chapter_goal"]
         assert "开篇合同" not in ch["scenes"][0]["purpose"]["story"]
-        assert ch["hook_description"] != "我"
-        assert ch["causal_contract"]["visible_action_or_reaction"]
-        assert ch["protagonist_flaw"]
-        assert ch["scenes"][0]["conflict_stakes"]
-        assert "他身上" not in ch["scenes"][0]["conflict_stakes"]
-        assert ch["scenes"][0]["information_control"]
-        assert ch["scenes"][0]["signature_image"]
-        assert ch["scenes"][0]["cut_point"]
-    assert "爽点合同" in str(batch["chapters"][0]["methodology_contract"])
+        assert ch["hook_description"] == ""
+        assert ch["causal_contract"]["visible_action_or_reaction"] == ""
+        assert ch["causal_contract"]["cost_or_tradeoff"] == ""
+        assert ch["causal_contract"]["state_change"] == ""
+        assert ch["protagonist_flaw"] is None
+        assert ch["scenes"][0]["participants"] == []
+        assert ch["scenes"][0]["conflict_stakes"] == ""
+        assert ch["scenes"][0]["information_control"] == ""
+        assert ch["scenes"][0]["signature_image"] is None
+        assert ch["scenes"][0]["cut_point"] is None
+        assert all(not value for value in ch["methodology_contract"]["fanqie_short_v2"].values())
+    assert batch["_meta"]["segment_projection"]["grade_asserted"] is False
 
 
-def test_fallback_segment_outline_satisfies_planning_readiness_gate() -> None:
+def test_fallback_segment_outline_preserves_source_without_inventing_readiness() -> None:
     project = type(
         "P",
         (),
@@ -444,7 +472,15 @@ def test_fallback_segment_outline_satisfies_planning_readiness_gate() -> None:
         ]
     )
 
-    assert report.passed
+    assert report.passed is False
+    assert any(finding.path.endswith(".participants") for finding in report.blocking_findings)
+    for chapter, beat in zip(batch["chapters"], sheet.beats, strict=True):
+        assert chapter["chapter_goal"] == beat.purpose
+        assert chapter["scenes"][0]["purpose"]["story"] == beat.purpose
+        assert chapter["scenes"][0]["participants"] == []
+        assert chapter["protagonist_flaw"] is None
+        assert chapter["causal_contract"]["fanqie_short_v2"]["ability_cost_contract"] == beat.ability_cost_contract
+    assert batch["_meta"]["segment_projection"]["write_authorized"] is False
     assert "开篇合同" not in story_dump
     assert "30%解锁合同" not in story_dump
     assert "顾器" not in story_dump
@@ -452,7 +488,7 @@ def test_fallback_segment_outline_satisfies_planning_readiness_gate() -> None:
     assert "我 我" not in story_dump
 
 
-def test_build_segment_outline_keeps_fanqie_contract_out_of_story_fields() -> None:
+def test_build_segment_outline_preserves_untrusted_legacy_text_for_validation() -> None:
     project = type(
         "P",
         (),
@@ -497,6 +533,7 @@ def test_build_segment_outline_keeps_fanqie_contract_out_of_story_fields() -> No
         ],
         unlock_milestone_segment=1,
     )
+    source_before = deepcopy(beats.model_dump(mode="json"))
     batch = build_fanqie_segment_outline_batch(
         project,
         beats,
@@ -507,22 +544,14 @@ def test_build_segment_outline_keeps_fanqie_contract_out_of_story_fields() -> No
     )
 
     chapter = batch["chapters"][0]
-    story_fields = " ".join(
-        [
-            chapter["chapter_goal"],
-            chapter["main_conflict"],
-            chapter["hook_description"],
-            chapter["scenes"][0]["purpose"]["story"],
-        ]
-    )
-
-    assert "开篇合同" not in story_fields
-    assert "30%解锁合同" not in story_fields
-    assert "爽点合同" not in story_fields
-    assert "50字" not in story_fields
-    assert "金手指" not in story_fields
-    assert "犯罪侧写师陆鸣接手一起连环凶杀案" in chapter["chapter_goal"]
-    assert "fanqie_short_v2" in chapter["methodology_contract"]
+    source = beats.beats[0]
+    assert chapter["chapter_goal"] == source.purpose
+    assert chapter["scenes"][0]["purpose"]["story"] == source.purpose
+    assert chapter["opening_situation"] == source.opening_contract["summary"]
+    assert chapter["main_conflict"] == ""
+    assert chapter["scenes"][0]["participants"] == []
+    assert chapter["methodology_contract"]["fanqie_short_v2"]["opening_contract"] == source.opening_contract
+    assert beats.model_dump(mode="json") == source_before
 
     report = validate_chapter_plan_contract(
         ChapterOutlineBatchInput.model_validate(batch),
@@ -532,7 +561,9 @@ def test_build_segment_outline_keeps_fanqie_contract_out_of_story_fields() -> No
             {"name": "白颖", "aliases": []},
         ],
     )
-    assert report.blocks is False
+    assert report.blocks is True
+    assert evaluate_chapter_outline_batch_planning_readiness(batch).passed is False
+    assert batch["_meta"]["segment_projection"]["grade_asserted"] is False
 
 
 def test_build_segment_outline_dedupes_protagonist_name_after_subject_rewrite() -> None:
@@ -633,13 +664,13 @@ def test_build_segment_outline_with_book_spec_does_not_use_generic_fallback() ->
     assert len(batch["chapters"]) == 6
     assert "刚取回的旧物忽然认了别人的血" not in dumped
     assert "盟友的信物出现在敌人手里" not in dumped
-    contract_dump = str(batch["chapters"][0]["causal_contract"])
-    assert "continuity_contract" in contract_dump
-    assert "陆砚" in contract_dump
-    assert "第1章技术亮相" in batch["chapters"][0]["main_conflict"]
+    assert batch["chapters"][0]["causal_contract"]["fanqie_short_v2"]["continuity_contract"] == beats.beats[0].continuity_contract
     assert "爽点合同" not in batch["chapters"][0]["chapter_goal"]
-    assert "fanqie_short_v2" in batch["chapters"][0]["methodology_contract"]
-    assert batch["chapters"][-1]["main_conflict"] == "第6章规则改写"
+    for chapter, beat in zip(batch["chapters"], beats.beats, strict=True):
+        assert chapter["chapter_goal"] == beat.purpose
+        assert chapter["main_conflict"] == ""
+        assert chapter["scenes"][0]["participants"] == []
+        assert chapter["methodology_contract"]["book_source_context"]["series_engine"] == book_spec["series_engine"]
 
 
 def test_story_shape_fanqie_short_metadata() -> None:
@@ -656,8 +687,15 @@ def test_story_shape_fanqie_short_metadata() -> None:
 @pytest.mark.asyncio
 async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    from bestseller.services import fanqie_short_pipeline
+    from bestseller.services import (
+        fanqie_outline_contract_completion,
+        fanqie_outline_source_selection,
+        fanqie_short_pipeline,
+        fanqie_short_plan_resume,
+        fanqie_short_source_export,
+    )
     from bestseller.settings import load_settings
 
     project = SimpleNamespace(
@@ -696,6 +734,10 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
             unlock_milestone_segment=1,
         )
 
+    async def fake_derive_ideology_kernel(*_args: object, **_kwargs: object) -> None:
+        calls.append("ideology_kernel")
+        return None
+
     async def fake_persist_fanqie_chapter_outline(*_args: object, **_kwargs: object) -> None:
         calls.append("persist_outline")
 
@@ -705,7 +747,16 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
 
     async def fake_materialize_outline(*_args: object, **_kwargs: object) -> object:
         calls.append("outline")
-        return SimpleNamespace(workflow_run_id=uuid4(), chapters_created=1, scenes_created=1)
+        return SimpleNamespace(workflow_run_id=uuid4(), source_artifact_id=uuid4(),
+            chapters_created=1, scenes_created=1)
+
+    async def fake_complete_outline(*_args: object, **kwargs: object) -> dict:
+        calls.append("complete_missing_fields")
+        return kwargs["outline_payload"]
+
+    async def fake_admit_outline(*_args: object, **_kwargs: object) -> dict:
+        calls.append("hard_source_admission")
+        return {}
 
     async def fake_materialize_narrative_graph(*_args: object, **_kwargs: object) -> object:
         calls.append("narrative_graph")
@@ -714,12 +765,28 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
     async def fake_run_chapter_pipeline(*_args: object, **_kwargs: object) -> None:
         calls.append("write")
 
-    async def fake_load_chapter_drafts(*_args: object, **_kwargs: object) -> list:
-        return []
+    async def fake_read_assembly(*_args: object, **_kwargs: object) -> object:
+        return SimpleNamespace(full_text="", manifest={"sources": []})
+
+    async def fake_publish_assembly(*_args: object, **kwargs: object) -> dict:
+        expected = kwargs["expected"]
+        review = fanqie_short_pipeline.review_whole_fanqie_short_story(
+            expected.full_text, title=project.title,
+        )
+        assert not review.passed
+        return {
+            "full_text": expected.full_text, "review": review, "status": "needs_revision",
+            "whole_book_complete": False, "export_paths": {}, "rejected_paths": {},
+            "candidate_paths": {}, "revision_task_counts": {"ranking": 0, "short_v2": 0},
+        }
+
+    async def fake_judge_litstyle(*_args: object, **_kwargs: object) -> object:
+        return SimpleNamespace(final_score=0, level="not_applicable")
 
     monkeypatch.setattr(fanqie_short_pipeline, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(fanqie_short_pipeline, "_ensure_project_invariants", fake_noop)
     monkeypatch.setattr(fanqie_short_pipeline, "_checkpoint_commit", fake_noop)
+    monkeypatch.setattr(fanqie_short_pipeline, "_require_fanqie_production_running", fake_noop)
     monkeypatch.setattr(fanqie_short_pipeline, "generate_foundation_plan", fake_generate_foundation_plan)
     monkeypatch.setattr(
         fanqie_short_pipeline,
@@ -730,6 +797,11 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
         fanqie_short_pipeline,
         "generate_fanqie_beat_sheet",
         fake_generate_fanqie_beat_sheet,
+    )
+    monkeypatch.setattr(
+        fanqie_short_pipeline,
+        "derive_ideology_kernel",
+        fake_derive_ideology_kernel,
     )
     monkeypatch.setattr(
         fanqie_short_pipeline,
@@ -751,8 +823,25 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
         "materialize_latest_narrative_graph",
         fake_materialize_narrative_graph,
     )
-    monkeypatch.setattr(fanqie_short_pipeline, "run_chapter_pipeline", fake_run_chapter_pipeline)
-    monkeypatch.setattr(fanqie_short_pipeline, "_load_chapter_drafts", fake_load_chapter_drafts)
+    # This control-flow fixture has no DB and tests materialization ordering.
+    # Isolate the source boundaries instead of fabricating source/proof rows.
+    # Actual guards and exports are covered by the real SQLite source suites.
+    monkeypatch.setattr(
+        fanqie_short_plan_resume, "require_or_read_existing_complete_fanqie_plan", fake_noop,
+    )
+    monkeypatch.setattr(fanqie_outline_contract_completion,
+        "complete_missing_outline_contract", fake_complete_outline)
+    monkeypatch.setattr(fanqie_outline_source_selection,
+        "admit_and_select_outline_source", fake_admit_outline)
+    monkeypatch.setattr(fanqie_short_source_export, "checkpoint_writing", fake_noop)
+    monkeypatch.setattr(fanqie_short_source_export, "read_adopted_assembly", fake_read_assembly)
+    monkeypatch.setattr(fanqie_short_source_export, "publish_adopted_assembly", fake_publish_assembly)
+    monkeypatch.setattr(fanqie_short_pipeline, "_run_fanqie_segments", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        fanqie_short_pipeline,
+        "judge_chapter_litstyle_stable",
+        fake_judge_litstyle,
+    )
 
     payload = ProjectCreate(
         slug=project.slug,
@@ -765,16 +854,21 @@ async def test_fanqie_short_pipeline_materializes_narrative_graph_before_writing
         metadata=project.metadata_json,
     )
 
+    settings = load_settings().model_copy(deep=True)
+    settings.output.base_dir = str(tmp_path)
     result = await fanqie_short_pipeline.run_fanqie_short_pipeline(
         object(),
-        load_settings(),
+        settings,
         project_payload=payload,
         premise="测试短故事",
         export_markdown=False,
     )
 
-    assert calls.index("outline") < calls.index("narrative_graph") < calls.index("write")
+    assert calls.index("complete_missing_fields") < calls.index("persist_outline")
+    assert (calls.index("outline") < calls.index("hard_source_admission")
+        < calls.index("narrative_graph") < calls.index("write"))
     assert result.narrative_graph_workflow_run_id == graph_workflow_id
+    assert result.whole_book_complete is False and result.output_path is None
 
 
 @pytest.mark.asyncio

@@ -58,6 +58,7 @@ help:
 	@echo "    make test-unit      Run unit tests only"
 	@echo "    make test-integration Run integration tests only"
 	@echo "    make test-e2e       Run end-to-end tests (requires API keys)"
+	@echo "    make test-delivery  Run fixed offline delivery gate (explicit test DB and REPORT_DIR required)"
 	@echo "    make coverage       Run tests and open HTML coverage report"
 	@echo ""
 	@echo "  Generation"
@@ -149,6 +150,11 @@ check: lint format-check type-check secrets-scan
 .PHONY: test
 test:
 	$(UV) run pytest -m "not slow and not e2e" $(ARGS)
+
+.PHONY: test-delivery
+test-delivery:
+	@test -n "$(REPORT_DIR)" || (echo "Set REPORT_DIR for delivery evidence"; exit 2)
+	$(VENV_DIR)/bin/python -B scripts/verify_delivery_tests.py --report-dir "$(REPORT_DIR)"
 
 # Logical backup of the book library. The DB has been wiped three times
 # (2026-07-14, 07-21, 07-23) — scripts/backup-db.sh existed after the second

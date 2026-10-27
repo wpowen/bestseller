@@ -892,7 +892,8 @@ async def backfill_legacy_hype_assignments(
 
     The scorecard's missing-chapter metric already covers planned-but-unwritten
     rows. This helper only touches chapters that have a current draft, so it
-    does not disguise unwritten chapters as complete.
+    does not disguise unwritten chapters as complete. Full/prefix source-owned
+    plan fields, including intentional NULLs, are never legacy backfill targets.
     """
 
     target_chapters = max(int(project.target_chapters or 0), 1)
@@ -914,9 +915,18 @@ async def backfill_legacy_hype_assignments(
 
     backfilled = 0
     intensity_normalized = 0
+    source_owned_skipped = 0
     for chapter, content_md in rows:
         chapter_no = int(chapter.chapter_number)
         metadata = _as_mapping(chapter.metadata_json)
+        # Presence protects the plan even when the marker is malformed; only
+        # the normal admission guard may validate it, never this inference path.
+        if any(
+            key in metadata
+            for key in ("outline_source_admission", "outline_prefix_readiness")
+        ):
+            source_owned_skipped += 1
+            continue
         marker = _as_mapping(metadata.get("legacy_hype_backfill"))
 
         if not chapter.hype_type:
@@ -960,10 +970,13 @@ async def backfill_legacy_hype_assignments(
 
     if not dry_run and (backfilled or intensity_normalized):
         await session.flush()
-    return {
+    result = {
         "hype_backfilled": backfilled,
         "hype_intensity_normalized": intensity_normalized,
     }
+    if source_owned_skipped:
+        result["hype_source_owned_skipped"] = source_owned_skipped
+    return result
 
 
 async def bootstrap_legacy_project_state(

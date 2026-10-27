@@ -15,9 +15,9 @@ through the ARQ pool. The autowrite task is idempotent: it re-reads
 ``existing_chapters`` from disk (``_load_all_chapters``) and skips work
 already persisted, so re-queueing is safe.
 
-Before detection, :func:`reap_orphan_workflow_runs` flips workflow rows
-that have been ``running`` / ``queued`` / ``pending`` past a threshold
-(default 2 hours) to ``failed``. Without this step the active-pipeline
+Before detection, :func:`reap_orphan_workflow_runs` selects old active rows
+and fails only those whose native owner is positively disproved. Age alone,
+worker boot, and an unavailable ownership probe never authorize reaping. Without this step the active-pipeline
 guard below would treat every zombie row left behind by ``kill -9`` as
 legitimate and refuse to re-queue the project.
 
@@ -30,6 +30,7 @@ same DB rows.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass
 import datetime as _dt
 import hashlib
@@ -43,7 +44,8 @@ from urllib.parse import urlparse
 import uuid
 
 from redis.asyncio.client import NEVER_DECODE
-from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 if TYPE_CHECKING:  # pragma: no cover — import only for type hints
     from arq.connections import ArqRedis
@@ -52,36 +54,53 @@ from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
+    ExecutionBudgetModel,
     ProjectModel,
     RewriteTaskModel,
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
+from bestseller.infra.redis_locks import compare_owner_delete
 from bestseller.services.gate_registry import (
     gate_continuation_impact,
     project_blocks_all_prose_generation,
     project_resume_is_terminally_blocked,
 )
-from bestseller.services.production_control import halted_project_ids
+from bestseller.services.production_control import halted_project_ids, load_control_state
 from bestseller.services.projects import is_project_delete_tombstoned
 from bestseller.services.repair_impact import compute_continuation_readiness
+from bestseller.services.retry_ledger import (
+    RetryTrigger,
+    assert_execution_scope_open,
+    evaluate_retry,
+    execution_terminal_code,
+    generation_gate_budget,
+    generation_gate_scope,
+    load_chain,
+    project_execution_scope,
+    store_chain,
+)
+from bestseller.services.self_heal_repair_progress import (
+    STATE_KEY as REPAIR_PROGRESS_STATE_KEY,
+)
+from bestseller.services.self_heal_repair_progress import (
+    collect_repair_progress,
+    compare_repair_progress,
+)
 from bestseller.settings import AppSettings
 
 # Periodic self-heal must not reap legitimate long LLM calls.  A single
 # planner attempt can take 15 minutes and the outline repair loop can run
-# several attempts before emitting a new workflow-row update.  Startup still
-# reaps old rows immediately via ``startup_cutoff``; this longer periodic
-# timeout prevents active workers from being marked failed mid-call.
+# several attempts before emitting a new workflow-row update. Age thresholds
+# only select candidates; boot time cannot establish another executor's death.
 ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 3 * 60 * 60
 # Heartbeating workflow runs emit a workflow-row update on every scene/step, so
-# a gap much shorter than the planning timeout reliably means the owning worker
-# died. The long 3h timeout above exists for the PLANNING repair loop (multiple
+# a gap selects a candidate for independent owner verification. The long 3h timeout above exists for the PLANNING repair loop (multiple
 # 15-min planner attempts with no row update); applying it to heartbeating runs
 # left a book orphaned for up to 3h after a worker crash before self-heal could
 # resume it. ``project_repair`` belongs here too: it writes a DB heartbeat per
 # repaired chapter (see worker.tasks._workflow_db_heartbeat), so a stalled repair
-# row is a dead worker — not a long planner call — and reaping it on the short
-# window unblocks the dashboard Stop/Delete buttons that key off that row.
+# row still needs a verified expired owner before any state change.
 ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS = 30 * 60
 _WRITING_WORKFLOW_TYPES = frozenset(
     {"project_pipeline", "chapter_pipeline", "scene_pipeline"}
@@ -89,12 +108,12 @@ _WRITING_WORKFLOW_TYPES = frozenset(
 _HEARTBEAT_REAP_WORKFLOW_TYPES = _WRITING_WORKFLOW_TYPES | frozenset({"project_repair"})
 
 # 规划类工作流（2026-08-19 起）：planner 每完成一个章纲批次刷新自己的行
-# （services.planner 的 outline batch heartbeat），所以停止心跳=进程已死，
+# （services.planner 的 outline batch heartbeat）；停止心跳只产生待核验候选，
 # 不再需要 3 小时长窗口。真机两次事故都是这条：web 重启杀掉在飞规划、
 # worker 没重启⇒启动清理不触发、行以 running 僵在库里阻塞自愈
 # （`_has_active_pipeline_run`），书永久卡死。
 # 窗口取 45 分钟：单次 planner 调用上限 ~15 分钟、批次含重试，45 分钟无
-# 心跳可安全判死；仍比 3 小时短一个量级。
+# 心跳仍需独立 owner 证据；窗口比 3 小时短一个量级。
 ORPHAN_PLANNING_WORKFLOW_TIMEOUT_SECONDS = 45 * 60
 _PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES = frozenset(
     {
@@ -114,7 +133,7 @@ _PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES = frozenset(
 # It still needs SOME rule: the web layer only closes the row on the success
 # path, so an appeal-gate block or a crash leaks a permanently "running" row —
 # and ``uq_conception_workflow_idempotency`` then refuses to retry that same
-# attempt_id. Hence a plain ceiling on total age.
+# attempt_id. Total age only selects candidates; legacy Web owners remain UNKNOWN.
 #
 # 2h clears a normal conception (~20-30 min) and the worst observed stuck-but-
 # alive case (1.5h) with margin.
@@ -123,10 +142,8 @@ _CONCEPTION_WORKFLOW_TYPES = frozenset(
     {"conception_initial", "conception_revision"}
 )
 
-# Anything active + older than this at worker startup is, by definition,
-# a ghost from a prior container that died before updating its row. The
-# grace window accounts for rare cases where a job was just enqueued but
-# the row write hasn't reached the replica yet.
+# Startup grace is diagnostic only. A new worker's boot does not establish
+# that another worker or Web executor died.
 STARTUP_GRACE_SECONDS = 5
 
 # Redis lock key + TTL. Multiple worker containers boot concurrently —
@@ -173,9 +190,9 @@ MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS = 5
 SELF_HEAL_JOB_EXPIRES_DAYS = 7
 
 # ARQ can leave ``arq:in-progress:*`` and ``arq:retry:*`` keys behind when a
-# worker is rebuilt or killed mid-job. If the DB has no active workflow for the
-# project and the queue score is already well in the past, the key set is a
-# ghost and must be cleared before deterministic requeue can succeed.
+# worker is rebuilt or killed mid-job. An old queue score is diagnostic only:
+# it cannot prove an executor dead. Cleanup must wait for its lease to expire
+# and atomically verify the job is no longer queued before reclaiming debris.
 STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 
 # R24 orphan guard: an ``arq:job:<id>`` key that is in NO queue zset and has
@@ -346,6 +363,7 @@ class StuckProject:
     # Ordered quality rank for planner-only recovery.  A changed error label is
     # not progress; only a strictly better score/blocker profile is.
     progress_rank: tuple[int, int, int, int] | None = None
+    configured_window: bool = False
 
 
 _AUTO_OUTLINE_REPLAN_REASONS = frozenset(
@@ -531,148 +549,119 @@ def _normalize_progress_rank(value: Any) -> tuple[int, ...] | None:
         return None
 
 
+async def _workflow_owner_state(session, redis, run, protected_project_ids):
+    """LIVE / DEAD / UNKNOWN, using native owner identity, never row age alone."""
+    if run.project_id in protected_project_ids:
+        return "LIVE"
+    if redis is None:
+        return "UNKNOWN"
+    project = await session.get(ProjectModel, run.project_id) if run.project_id else None
+    if project is None:
+        return "UNKNOWN"  # A project-less Web/legacy owner cannot be disproved here.
+    metadata = run.metadata_json or {}
+    parent_id = metadata.get("parent_workflow_run_id")
+    if parent_id is not None:
+        try:
+            parent = await session.get(WorkflowRunModel, uuid.UUID(str(parent_id)), populate_existing=True)
+        except (ValueError, TypeError, AttributeError):
+            return "UNKNOWN"
+        if parent is None or parent.project_id != run.project_id:
+            return "UNKNOWN"
+        if parent.status in _ACTIVE_STATUSES:
+            return "LIVE"
+    try:
+        from bestseller.worker.tasks import _pipeline_live_key
+        owner = await redis.get(_pipeline_live_key(project.slug))
+        ttl = await redis.pttl(_pipeline_live_key(project.slug))
+        if owner is not None:
+            return "LIVE" if ttl > 0 else "UNKNOWN"
+        if ttl != -2:
+            return "UNKNOWN"
+        arq = await _active_arq_project_slugs(redis)
+        if arq is None:
+            return "UNKNOWN"
+        if project.slug in arq:
+            return "LIVE"
+    except Exception:
+        logger.warning("self-heal: owner lease probe unavailable", exc_info=True)
+        return "UNKNOWN"
+    # Existing native continuation owners are UUID lease tokens. Missing or
+    # unknown legacy identities do not become dead merely because Redis is empty.
+    token = metadata.get("execution_owner")
+    try:
+        if not isinstance(token, str) or uuid.UUID(token).version != 4:
+            return "UNKNOWN"
+    except (ValueError, TypeError, AttributeError):
+        return "UNKNOWN"
+    if metadata.get("execution_scope_id") != project_execution_scope(project):
+        return "UNKNOWN"
+    if metadata.get("native_pipeline_owner") != {
+        "schema": "acquired-pipeline-owner.v1", "project_id": str(project.id),
+        "project_slug": project.slug, "execution_scope_id": project_execution_scope(project),
+        "token": token, "lease_key": _pipeline_live_key(project.slug),
+    }:
+        return "UNKNOWN"
+    return "DEAD"
+
+
 async def reap_orphan_workflow_runs(
     session: Any,
     timeout_seconds: int = ORPHAN_WORKFLOW_TIMEOUT_SECONDS,
     startup_cutoff: _dt.datetime | None = None,
     protected_project_ids: set[Any] | None = None,
+    *, redis: Any | None = None,
 ) -> int:
-    """Flip active ``WorkflowRunModel`` rows that look abandoned to ``failed``.
+    """Age selects candidates; only positively disproved native owners are reaped.
 
-    A row is reaped if **either**:
-
-    * ``updated_at`` is older than ``timeout_seconds`` (no heartbeat), **or**
-    * ``updated_at`` is older than ``startup_cutoff`` — the time the current
-      worker container booted minus a small grace window. At worker startup
-      every genuinely-active row must have been written by *this* worker
-      instance, so anything older is a ghost from a previous container.
-
-    The second rule is what actually unblocks the system after a crash
-    since the first (heartbeat-based) rule forces us to wait
-    ``timeout_seconds`` even when we *know* the old process is dead.
-
-    Returns the number of rows reaped. Caller is responsible for commit.
+    Boot time is diagnostic, never proof that another Web/worker process died.
+    All branches share fresh heartbeat, lease and same-project lineage guards.
+    Unknown legacy ownership remains untouched. Caller commits the transaction.
     """
+    if redis is None:
+        return 0
     now = _dt.datetime.now(_dt.UTC)
-    heartbeat_cutoff = now - _dt.timedelta(seconds=timeout_seconds)
     protected_project_ids = protected_project_ids or set()
-
-    writing_cutoff = now - _dt.timedelta(
-        seconds=ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS
-    )
-    planning_cutoff = now - _dt.timedelta(
-        seconds=ORPHAN_PLANNING_WORKFLOW_TIMEOUT_SECONDS
-    )
-    stale_conditions = [
-        WorkflowRunModel.updated_at < heartbeat_cutoff,
-        # Writing-stage runs reap on the shorter heartbeat window.
-        and_(
-            WorkflowRunModel.workflow_type.in_(_HEARTBEAT_REAP_WORKFLOW_TYPES),
-            WorkflowRunModel.updated_at < writing_cutoff,
-        ),
-        # 规划类同理：它们现在也写心跳（每章纲批次一次），停跳即死。
-        and_(
-            WorkflowRunModel.workflow_type.in_(_PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES),
-            WorkflowRunModel.updated_at < planning_cutoff,
-        ),
-    ]
-    if startup_cutoff is not None:
-        stale_conditions.append(WorkflowRunModel.updated_at < startup_cutoff)
-        # At process startup, any active workflow created before the new
-        # worker's boot window belongs to a dead worker, even if it managed to
-        # heartbeat shortly before the container was replaced.
-        stale_conditions.append(WorkflowRunModel.created_at < startup_cutoff)
-
-    reap_stmt = (
-        update(WorkflowRunModel)
-        .where(
-            WorkflowRunModel.workflow_type.in_(_REAPABLE_WORKFLOW_TYPES),
-            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
-            or_(*stale_conditions),
-        )
-        .values(
-            status=WorkflowStatus.FAILED.value,
-            error_message=_ORPHAN_ERROR_MESSAGE,
-        )
-    )
-    if protected_project_ids:
-        reap_stmt = reap_stmt.where(
-            WorkflowRunModel.project_id.not_in(list(protected_project_ids)),
-        )
-
-    result = await session.execute(reap_stmt)
-    reaped = int(result.rowcount or 0)
-
-    # Conception rows get their own statement rather than joining
-    # ``_REAPABLE_WORKFLOW_TYPES``: sharing that set would also subject them to
-    # the startup_cutoff conditions, whose 5s grace would reap a live one.
-    conception_cutoff = now - _dt.timedelta(
-        seconds=ORPHAN_CONCEPTION_WORKFLOW_TIMEOUT_SECONDS
-    )
-    conception_result = await session.execute(
-        update(WorkflowRunModel)
-        .where(
-            WorkflowRunModel.workflow_type.in_(_CONCEPTION_WORKFLOW_TYPES),
-            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
-            WorkflowRunModel.created_at < conception_cutoff,
-        )
-        .values(
-            status=WorkflowStatus.FAILED.value,
-            error_message=_ORPHAN_ERROR_MESSAGE,
-        )
-    )
-    reaped += int(conception_result.rowcount or 0)
-
-    if startup_cutoff is not None:
-        startup_stmt = (
-            update(WorkflowRunModel)
-            .where(
-                WorkflowRunModel.workflow_type.in_(_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES),
-                WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
-                or_(
-                    WorkflowRunModel.updated_at < startup_cutoff,
-                    WorkflowRunModel.created_at < startup_cutoff,
-                ),
-            )
-            .values(
-                status=WorkflowStatus.FAILED.value,
-                error_message=_ORPHAN_ERROR_MESSAGE,
-            )
-        )
-        if protected_project_ids:
-            startup_stmt = startup_stmt.where(
-                WorkflowRunModel.project_id.not_in(list(protected_project_ids)),
-            )
-
-        startup_result = await session.execute(startup_stmt)
-        reaped += int(startup_result.rowcount or 0)
-
-    # Parent/child workflow rows can be left inconsistent during rolling
-    # rebuilds: the parent chapter/project run is reaped first, while a child
-    # scene run created by the old worker still says "running". Reap those
-    # immediately; otherwise inspection shows active work that no worker owns.
-    child_result = await session.execute(
-        text(
-            """
-            UPDATE workflow_runs AS child
-            SET status = :failed_status,
-                error_message = :error_message
-            FROM workflow_runs AS parent
-            WHERE child.status IN ('pending', 'queued', 'running')
-              AND child.metadata ? 'parent_workflow_run_id'
-              AND child.metadata ->> 'parent_workflow_run_id' = parent.id::text
-              AND parent.status NOT IN ('pending', 'queued', 'running')
-            """
-        ),
-        {
-            "failed_status": WorkflowStatus.FAILED.value,
-            "error_message": _ORPHAN_ERROR_MESSAGE,
-        },
-    )
-    return reaped + int(child_result.rowcount or 0)
+    heartbeat_cutoff = now - _dt.timedelta(seconds=timeout_seconds)
+    writing_cutoff = now - _dt.timedelta(seconds=ORPHAN_WRITING_WORKFLOW_TIMEOUT_SECONDS)
+    planning_cutoff = now - _dt.timedelta(seconds=ORPHAN_PLANNING_WORKFLOW_TIMEOUT_SECONDS)
+    conception_cutoff = now - _dt.timedelta(seconds=ORPHAN_CONCEPTION_WORKFLOW_TIMEOUT_SECONDS)
+    candidates = list(await session.scalars(select(WorkflowRunModel).where(
+        WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+        or_(and_(WorkflowRunModel.workflow_type.in_(_REAPABLE_WORKFLOW_TYPES), or_(
+                WorkflowRunModel.updated_at < heartbeat_cutoff,
+                and_(WorkflowRunModel.workflow_type.in_(_HEARTBEAT_REAP_WORKFLOW_TYPES),
+                     WorkflowRunModel.updated_at < writing_cutoff),
+                and_(WorkflowRunModel.workflow_type.in_(_PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES),
+                     WorkflowRunModel.updated_at < planning_cutoff))),
+            and_(WorkflowRunModel.workflow_type.in_(_CONCEPTION_WORKFLOW_TYPES),
+                 WorkflowRunModel.created_at < conception_cutoff),
+            WorkflowRunModel.metadata_json["parent_workflow_run_id"].as_string().is_not(None)))))
+    reaped = 0
+    for candidate in candidates:
+        # Skip locks owned by an active writer. Refresh all state AFTER locking;
+        # a stale identity map or pre-lock snapshot must not close a fresh row.
+        run = await session.scalar(select(WorkflowRunModel).where(
+            WorkflowRunModel.id == candidate.id).with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True, autoflush=False))
+        if run is None or run.status not in _ACTIVE_STATUSES:
+            continue
+        updated = run.updated_at
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=_dt.UTC)
+        if updated >= now - _dt.timedelta(seconds=ACTIVE_ARQ_OWNER_HEARTBEAT_GRACE_SECONDS):
+            continue
+        if await _workflow_owner_state(session, redis, run, protected_project_ids) != "DEAD":
+            continue
+        run.status = WorkflowStatus.FAILED.value
+        run.error_message = _ORPHAN_ERROR_MESSAGE
+        run.metadata_json = {**(run.metadata_json or {}), "orphan_recovery": {
+            "schema": "native-owner-expiry.v1", "execution_owner": run.metadata_json["execution_owner"],
+            "observed": "pipeline_lease_absent_arq_probe_complete", "at": now.isoformat()}}
+        reaped += 1
+    return reaped
 
 
-async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
+async def _active_arq_project_slugs(redis: Any | None) -> set[str] | None:
     """Return project slugs owned by currently in-progress ARQ jobs.
 
     Worker startup self-heal runs while other workers may already be executing
@@ -682,13 +671,13 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
     from marking legitimate live work as abandoned.
     """
     if redis is None:
-        return set()
+        return None
 
     slugs: set[str] = set()
     job_ids: set[str] = set()
     try:
         scan_iter = getattr(redis, "scan_iter", None)
-        patterns = ("arq:in-progress:*", "arq:job:*", "arq:retry:*")
+        patterns = ("arq:in-progress:*", "arq:job:*", "arq:retry:*", "bestseller:pipeline-live:*")
         if scan_iter is not None:
             keys = []
             for pattern in patterns:
@@ -701,10 +690,13 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
             ]
     except Exception:  # noqa: BLE001
         logger.exception("self-heal: failed to scan ARQ in-progress jobs")
-        return set()
+        return None
 
     for key in keys:
         key_text = key.decode() if isinstance(key, bytes) else str(key)
+        if key_text.startswith("bestseller:pipeline-live:"):
+            slugs.add(key_text.removeprefix("bestseller:pipeline-live:"))
+            continue
         if key_text.startswith("arq:in-progress:"):
             job_id = key_text.removeprefix("arq:in-progress:")
         elif key_text.startswith("arq:job:"):
@@ -720,21 +712,33 @@ async def _active_arq_project_slugs(redis: Any | None) -> set[str]:
             raw = await _redis_get_bytes(redis, f"arq:job:{job_id}")
         except Exception:  # noqa: BLE001
             logger.exception("self-heal: failed to read ARQ job %s", job_id)
-            continue
+            return None
         if not raw:
-            continue
+            return None
         try:
             job_payload = pickle.loads(raw)
         except Exception:  # noqa: BLE001
             logger.exception("self-heal: failed to decode ARQ job %s", job_id)
-            continue
+            return None
         kwargs = job_payload.get("k") if isinstance(job_payload, dict) else None
+        if (isinstance(job_payload, dict)
+                and set(job_payload) == {"t", "f", "a", "k", "et"}
+                and job_payload.get("f") == "run_self_heal_task"
+                and type(job_payload["a"]) is tuple and job_payload["a"] == ()
+                and type(kwargs) is dict and not kwargs
+                and (job_payload["t"] is None or type(job_payload["t"]) is int and job_payload["t"] > 0)
+                and type(job_payload["et"]) is int and job_payload["et"] > 0):
+            # The native periodic observer has no project payload. Its own ARQ
+            # row is not an unknown writer; all other unknown jobs still block.
+            continue
         payload = kwargs.get("payload") if isinstance(kwargs, dict) else None
         if not isinstance(payload, dict):
-            continue
+            return None
         slug = payload.get("project_slug")
         if isinstance(slug, str) and slug:
             slugs.add(slug)
+        else:
+            return None
 
     return slugs
 
@@ -749,20 +753,7 @@ async def _redis_get_bytes(redis: Any, key: str) -> bytes | None:
 async def _resolve_project_ids_for_slugs(session: Any, slugs: set[str]) -> set[Any]:
     if not slugs:
         return set()
-    heartbeat_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(
-        seconds=ACTIVE_ARQ_OWNER_HEARTBEAT_GRACE_SECONDS
-    )
-    result = await session.scalars(
-        select(WorkflowRunModel.project_id)
-        .join(ProjectModel, ProjectModel.id == WorkflowRunModel.project_id)
-        .where(
-            ProjectModel.slug.in_(sorted(slugs)),
-            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
-            WorkflowRunModel.updated_at >= heartbeat_cutoff,
-        )
-        .distinct(),
-    )
-    return set(result)
+    return set(await session.scalars(select(ProjectModel.id).where(ProjectModel.slug.in_(sorted(slugs)))))
 
 
 async def find_stuck_projects(session: Any) -> list[StuckProject]:
@@ -795,9 +786,40 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     halted = await halted_project_ids(session)
 
     for project in projects:
+        if _project_is_finished(project):
+            continue
+        # Pending manuscripts own a separate reference-bound continuation lane.
+        # Never restart an adopted-window run at chapter 1 for this mode.
+        from bestseller.services.draft_continuity import draft_mode_enabled
+        try:
+            if await draft_mode_enabled(session, project_id=project.id, project=project):
+                continue
+        except ValueError:
+            logger.warning('self-heal: invalid pending-mode authority; no queue for %s', project.slug)
+            continue
+        from bestseller.services.creation_configuration import read_window
+        try:
+            configured_window = read_window(project)
+        except Exception:
+            logger.warning("self-heal: invalid window for %s; no queue", project.slug)
+            continue
+        if configured_window is not None:
+            from bestseller.services.execution_windows import window_progress
+            try:
+                if (await window_progress(session, project))["window_complete"]:
+                    continue
+            except Exception:
+                logger.warning("self-heal: window evidence unavailable for %s; no queue", project.slug)
+                continue
         if project.id in halted:
             continue
-        if _project_is_finished(project):
+        if execution_terminal_code(project.metadata_json or {}):
+            continue
+        try:
+            await assert_execution_scope_open(session, project_execution_scope(project))
+        except RuntimeError as error:
+            if not execution_terminal_code(error):
+                raise
             continue
         if _project_is_focus_paused(project):
             continue
@@ -806,6 +828,22 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         # defects; treating project_repair/scene_pipeline as globally active
         # starves the intended repair+new-chapter parallelism.
         if await _has_active_continuation_pipeline_run(session, project.id):
+            continue
+        if configured_window is not None:
+            if project_blocks_all_prose_generation(project):
+                continue
+            from bestseller.services.execution_windows import assert_window_runnable
+            try:
+                await assert_window_runnable(session, project)
+            except ValueError:
+                continue
+            state = await window_progress(session, project)
+            if not state["pending"]:
+                continue
+            stuck.append(StuckProject(project_id=project.id, slug=project.slug,
+                reason="execution_window_incomplete", stuck_at_chapter=min(state["pending"]),
+                chapters_total=len(state["adopted"]), chapters_with_draft=len(state["adopted"]),
+                heal_kind="autowrite", configured_window=True))
             continue
 
         auto_resumable_generation_gate = _project_has_stale_auto_resumable_generation_gate(
@@ -873,35 +911,22 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             # back into the same project pipeline instead of upgrading repair.
             fingerprint = _outline_replan_progress_fingerprint(project)
             progress_rank = _outline_replan_progress_rank(project)
-            metadata = project.metadata_json or {}
-            abandoned_rank = _normalize_progress_rank(
-                metadata.get("self_heal_abandoned_progress_rank")
-            )
-            same_or_worse_than_abandoned = bool(
-                metadata.get("self_heal_abandoned")
-                and (
-                    (abandoned_rank is not None and progress_rank <= abandoned_rank)
-                    or (
-                        abandoned_rank is None
-                        and metadata.get("self_heal_abandoned_progress_fingerprint")
-                        == fingerprint
-                    )
+            # Candidate discovery cannot decide whether a native repair landed.
+            # The locked dispatch check below observes committed source proofs
+            # before applying the existing watchdog; rank/labels grant nothing.
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="outline_replan_required",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=0,
+                    heal_kind="outline_replan",
+                    progress_fingerprint=fingerprint,
+                    progress_rank=progress_rank,
                 )
             )
-            if not same_or_worse_than_abandoned:
-                stuck.append(
-                    StuckProject(
-                        project_id=project.id,
-                        slug=project.slug,
-                        reason="outline_replan_required",
-                        stuck_at_chapter=None,
-                        chapters_total=int(chapters_total),
-                        chapters_with_draft=0,
-                        heal_kind="outline_replan",
-                        progress_fingerprint=fingerprint,
-                        progress_rank=progress_rank,
-                    )
-                )
             continue
 
         if project_blocks_all_prose_generation(project):
@@ -1439,30 +1464,34 @@ def _compute_heal_progress_state(
     metadata: dict[str, Any],
     chapters_total: int,
     *,
+    chapters_with_draft: int | None = None,
     progress_fingerprint: str | None = None,
     progress_rank: tuple[int, ...] | None = None,
+    repair_progress_snapshot: dict[str, Any] | None = None,
+    consumed_repair_effect_keys: frozenset[str] = frozenset(),
     max_attempts: int = MAX_SELF_HEAL_NO_PROGRESS_ATTEMPTS,
 ) -> tuple[dict[str, Any], bool]:
     """Pure helper: update the no-progress attempt counter and decide escalation.
 
-    Returns ``(new_metadata, abandoned)``. Progress compares the chapter count
-    and, when supplied, an actionable blocker fingerprint or monotonic rank:
+    Returns ``(new_metadata, abandoned)``. Only delivered count high-water
+    increases or fresh native collector effects reset the observer watchdog.
+    Rank and fingerprints remain diagnostic. A missing/corrupt observer baseline
+    never clears an existing counter, and no paid/review credit is returned.
 
-    * progressed (count increased, first ever, or rank strictly improved)
-      → counter resets to 0
-    * no progress → counter increments
-
-    When the same fingerprint reaches ``max_attempts`` the current repair is
-    stopped. A later fingerprint change resets the counter automatically.
+    Counts retain their high-water marks: deleting and restoring the same
+    chapter rows is not progress. A first observation of draft count only
+    establishes its baseline for legacy metadata; it never renews a budget.
+    Execution-terminal receipts always require an explicit resume elsewhere.
     """
     updated = dict(metadata) if isinstance(metadata, dict) else {}
+    if execution_terminal_code(updated):
+        return updated, True
     last = updated.get("self_heal_last_chapters_total")
     try:
         last_int = int(last) if last is not None else None
     except (TypeError, ValueError):
         last_int = None
 
-    previous_fingerprint = updated.get("self_heal_last_progress_fingerprint")
     normalized_rank = _normalize_progress_rank(progress_rank)
     previous_rank = _normalize_progress_rank(
         updated.get("self_heal_last_progress_rank")
@@ -1470,24 +1499,28 @@ def _compute_heal_progress_state(
     rank_improved = normalized_rank is not None and (
         previous_rank is None or normalized_rank > previous_rank
     )
-    fingerprint_changed = (
-        normalized_rank is None
-        and
-        progress_fingerprint is not None
-        and progress_fingerprint != previous_fingerprint
-    )
-    progressed = (
-        last_int is None
-        or chapters_total > last_int
-        or rank_improved
-        or fingerprint_changed
-    )
-    if progressed:
+    first_observation = last_int is None and "self_heal_no_progress_attempts" not in updated
+    progressed = last_int is not None and chapters_total > last_int
+    if repair_progress_snapshot is not None:
+        observation = compare_repair_progress(
+            updated.get(REPAIR_PROGRESS_STATE_KEY), repair_progress_snapshot
+        )
+        updated[REPAIR_PROGRESS_STATE_KEY] = deepcopy(observation["next_state"])
+        progressed = progressed or bool(
+            set(observation["new_effect_keys"]) - consumed_repair_effect_keys
+        )
+    if chapters_with_draft is not None:
+        last_drafts = _metadata_int(updated, "self_heal_last_chapters_with_draft", -1)
+        progressed = progressed or (last_drafts >= 0 and chapters_with_draft > last_drafts)
+        updated["self_heal_last_chapters_with_draft"] = max(last_drafts, chapters_with_draft)
+    if progressed or first_observation:
         attempts = 0
     else:
         attempts = _metadata_int(updated, "self_heal_no_progress_attempts", 0) + 1
 
-    updated["self_heal_last_chapters_total"] = int(chapters_total)
+    updated["self_heal_last_chapters_total"] = max(
+        last_int if last_int is not None else 0, int(chapters_total)
+    )
     updated["self_heal_no_progress_attempts"] = attempts
     if progress_fingerprint is not None:
         updated["self_heal_last_progress_fingerprint"] = progress_fingerprint
@@ -1520,6 +1553,89 @@ def _compute_heal_progress_state(
     return updated, False
 
 
+async def _observe_committed_repair_progress(session, settings, project_id):
+    """Read independently of the dispatch writer; UNKNOWN grants no progress."""
+    if not isinstance(getattr(session, "bind", None), AsyncEngine):
+        return None
+    try:
+        snapshot = await collect_repair_progress(
+            async_sessionmaker(session.bind, expire_on_commit=False), settings, project_id
+        )
+        if snapshot.get("project_id") != str(project_id):
+            return None
+        return snapshot
+    except Exception as error:  # noqa: BLE001 — fail closed without logging source/secrets
+        logger.warning("self-heal: repair observation unavailable (%s)", type(error).__name__)
+        return None
+
+
+_REPAIR_OBSERVER_WORKFLOW = "self_heal_repair_observation"
+
+
+async def _consumed_repair_effects(session, project_id):
+    """Independent deny-only history survives replay of old project metadata."""
+    rows = list(await session.scalars(select(WorkflowRunModel).where(
+        WorkflowRunModel.project_id == project_id,
+        WorkflowRunModel.workflow_type == _REPAIR_OBSERVER_WORKFLOW,
+    ).execution_options(populate_existing=True)))
+    keys = set()
+    for row in rows:
+        key = (row.metadata_json or {}).get("effect_key")
+        if (row.status != "completed" or row.scope_id != project_id
+                or not isinstance(key, str) or len(key) != 64
+                or any(c not in "0123456789abcdef" for c in key)):
+            raise ValueError("repair_observer_history_unavailable")
+        keys.add(key)
+    return frozenset(keys)
+
+
+def _record_repair_effects(session, project, snapshot, keys):
+    for key in sorted(keys):
+        # No new paid/review run: this completed row only remembers a consumed
+        # observation, with no grant, dispatch, adoption or financial authority.
+        session.add(WorkflowRunModel(
+            id=uuid.uuid5(project.id, "self-heal-observed:" + key),
+            project_id=project.id, workflow_type=_REPAIR_OBSERVER_WORKFLOW,
+            status="completed", scope_type="project", scope_id=project.id,
+            requested_by="self-heal-observer", current_step="observation_consumed",
+            metadata_json={"schema": "self-heal-consumed-effect.v1", "effect_key": key,
+                "source_epoch": snapshot["source_epoch"],
+                "snapshot_sha256": snapshot["snapshot_sha256"],
+                "provider_calls": 0, "new_attempts": 0, "new_credit_allowed": False,
+                "dispatch_authorized": False, "grade_granted": False,
+                "budget_reset_allowed": False, "debt_cleared": False,
+                "unknown_reconciled": False},
+        ))
+
+
+async def _lock_heal_dispatch(session, stuck, pool):
+    # Locks stay held through enqueue/accounting. A concurrent STOP or budget
+    # transition cannot slip between an earlier scan and final admission.
+    control = await load_control_state(session, stuck.project_id, for_update=True)
+    if control.halted:
+        return None
+    project = await session.get(
+        ProjectModel, stuck.project_id, with_for_update=True, populate_existing=True,
+    )
+    if project is None or execution_terminal_code(project.metadata_json or {}):
+        return None
+    # Legacy absence is native RUN/0, not a new operator command. The project
+    # FOR UPDATE also fences a concurrent first control INSERT through its FK;
+    # reread after acquiring it to catch a STOP committed while we waited.
+    control = await load_control_state(session, stuck.project_id, for_update=True)
+    if control.halted:
+        return None
+    if await _has_active_pipeline_run(session, project.id):
+        return None
+    owners = await _active_arq_project_slugs(pool)
+    if owners is None or project.slug in owners:
+        return None
+    await session.get(ExecutionBudgetModel, project_execution_scope(project),
+                      with_for_update=True, populate_existing=True)
+    await assert_execution_scope_open(session, project_execution_scope(project))
+    return project
+
+
 def _is_auto_repairable_write_safety_block(block_code: str | None) -> bool:
     if not block_code:
         return False
@@ -1540,6 +1656,11 @@ def _write_safety_repair_wait_seconds(auto_repair_attempts: int) -> int:
 def _project_has_stale_auto_resumable_generation_gate(project: ProjectModel) -> bool:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
+        return False
+    if execution_terminal_code(metadata):
+        return False
+    if evaluate_retry(load_chain(metadata, scope=generation_gate_scope(None)),
+                      trigger=RetryTrigger.AUTO, budget=generation_gate_budget()).exhausted:
         return False
     reason = str(
         metadata.get("last_generation_gate_reason")
@@ -1591,9 +1712,10 @@ async def _clear_auto_resumable_generation_gate_pause(
     session: Any,
     project_id: Any,
 ) -> bool:
-    project = await session.get(ProjectModel, project_id)
+    project = await session.get(ProjectModel, project_id, with_for_update=True)
     if project is None or not _project_has_stale_auto_resumable_generation_gate(project):
         return False
+    await assert_execution_scope_open(session, project_execution_scope(project))
 
     metadata = dict(getattr(project, "metadata_json", None) or {})
     reason = str(
@@ -1601,13 +1723,17 @@ async def _clear_auto_resumable_generation_gate_pause(
         or metadata.get("production_pause_reason")
         or ""
     )
+    scope = generation_gate_scope(reason)
+    decision = evaluate_retry(load_chain(metadata, scope=scope), trigger=RetryTrigger.AUTO,
+                              budget=generation_gate_budget(), reason=reason)
+    if decision.exhausted:
+        return False
+    metadata = store_chain(metadata, scope=scope, chain=decision.chain)
+    metadata["generation_gate_retry_budget"] = decision.to_event_payload()
     metadata["last_generation_gate_auto_resumed_at"] = _dt.datetime.now(_dt.UTC).isoformat()
     metadata["last_generation_gate_auto_resumed_reason"] = reason
-    # Spend one unit of the retry budget. This MUST survive the key purge below
-    # (which wipes last_generation_gate_blocked_at among others) — otherwise
-    # every failure looks like the first, the budget never accrues, and the
-    # 2026-07-25 token-burning loop returns. Reset the count when the failure
-    # mode itself changes: that is progress, not a spin.
+    # Preserve this old per-reason diagnostic counter, but permission now comes
+    # from the unified retry chain above, which survives reason changes.
     _base_reason = reason.split(":", 1)[0]
     _prev_reason = str(
         metadata.get("generation_gate_auto_resume_reason") or ""
@@ -1648,6 +1774,8 @@ def _project_resume_is_blocked(project: ProjectModel) -> bool:
     # same project-level planning stop as API/worker pipelines; otherwise a
     # restart can resurrect an old autowrite job and overwrite a freshly
     # persisted ``needs_replan`` design while the public UI still says paused.
+    if execution_terminal_code(getattr(project, "metadata_json", None) or {}):
+        return True
     if project_blocks_all_prose_generation(project):
         return True
     if _project_has_stale_auto_resumable_generation_gate(project):
@@ -1701,6 +1829,20 @@ def _project_pipeline_heal_job_id(slug: str) -> str:
     return f"project-pipeline:heal:{slug}"
 
 
+def _blocking_heal_job_ids(stuck: StuckProject) -> tuple[str, ...]:
+    """Match dispatch ownership, including permitted repair/continuation overlap."""
+    autowrite = _autowrite_heal_job_id(stuck.slug)
+    repair = _repair_heal_job_id(stuck.slug)
+    pipeline = _project_pipeline_heal_job_id(stuck.slug)
+    outline = _outline_replan_heal_job_id(stuck.slug)
+    return {
+        "autowrite": (autowrite, repair),
+        "repair": (repair, autowrite),
+        "project_pipeline": (pipeline, autowrite),
+        "outline_replan": (outline, autowrite, repair, pipeline),
+    }.get(stuck.heal_kind, (autowrite, repair))
+
+
 async def _heal_job_exists(pool: "ArqRedis", job_id: str) -> bool:
     job_key = f"arq:job:{job_id}"
     in_progress_key = f"arq:in-progress:{job_id}"
@@ -1714,7 +1856,7 @@ async def _heal_job_exists(pool: "ArqRedis", job_id: str) -> bool:
 
 
 async def _is_ghost_heal_job(pool: "ArqRedis", job_id: str) -> bool:
-    """A bare ``arq:job:<id>`` definition with NO active schedule.
+    """A bare job definition or retry counter with NO active schedule.
 
     A consumed/abandoned run can leave the job-definition key behind with no
     in-progress lock, no retry entry, and no queue score. ARQ will never dispatch
@@ -1725,11 +1867,15 @@ async def _is_ghost_heal_job(pool: "ArqRedis", job_id: str) -> bool:
     project can be re-queued.
     """
     try:
-        if not await pool.exists(f"arq:job:{job_id}"):
+        job_exists = await pool.exists(f"arq:job:{job_id}")
+        retry_exists = await pool.exists(f"arq:retry:{job_id}")
+        if not job_exists and not retry_exists:
             return False
-        if await pool.exists(
-            f"arq:in-progress:{job_id}", f"arq:retry:{job_id}"
-        ):
+        if await pool.exists(f"arq:in-progress:{job_id}"):
+            return False
+        # A retry counter alone cannot execute anything. When a job payload
+        # still exists, leave age-based orphan classification in charge.
+        if job_exists and retry_exists:
             return False
         return await pool.zscore("arq:queue", job_id) is None
     except Exception:  # noqa: BLE001
@@ -1824,35 +1970,94 @@ async def _is_orphan_heal_job(
     return True
 
 
+_HEAL_JOB_SNAPSHOT_LUA = """
+-- bestseller-ghost-snapshot-v1
+if redis.call('exists', KEYS[2]) == 1 or
+   redis.call('zscore', KEYS[5], ARGV[1]) then
+    return {}
+end
+return {redis.call('get', KEYS[1]) or false,
+        redis.call('get', KEYS[3]) or false,
+        redis.call('get', KEYS[4]) or false,
+        redis.call('pttl', KEYS[1]), redis.call('pttl', KEYS[3]),
+        redis.call('pttl', KEYS[4])}
+"""
+
+_HEAL_JOB_CLEANUP_LUA = """
+-- bestseller-ghost-cleanup-v1
+if redis.call('exists', KEYS[2]) == 1 or
+   redis.call('zscore', KEYS[5], ARGV[1]) then
+    return 0
+end
+local indices = {1, 3, 4}
+for i, key_index in ipairs(indices) do
+    local offset = 2 + (i - 1) * 3
+    local current = redis.call('get', KEYS[key_index])
+    if ARGV[offset] == '0' then
+        if current then return 0 end
+    else
+        if current ~= ARGV[offset + 1] then return 0 end
+        local old_ttl = tonumber(ARGV[offset + 2])
+        local ttl = redis.call('pttl', KEYS[key_index])
+        if (old_ttl >= 0 and (ttl < 0 or ttl > old_ttl)) or
+           (old_ttl < 0 and ttl ~= old_ttl) then
+            return 0
+        end
+    end
+end
+return redis.call('del', KEYS[1], KEYS[3], KEYS[4])
+"""
+
+
 async def _clear_stale_heal_job_if_needed(pool: "ArqRedis", job_id: str) -> bool:
-    """Clear a deterministic heal job only when ARQ left a ghost owner.
+    """Atomically reclaim unchanged, unscheduled ARQ debris, never an executor.
 
-    Callers use this after DB-level active workflow checks have already decided
-    the project is stuck. That context matters: a live long-running generation
-    can legitimately hold ``arq:in-progress:*`` for many minutes, so this helper
-    must not be used as a general liveness probe. Three ghost shapes are cleared:
-    a stale in-progress lock (dead worker mid-run), a bare job-definition key
-    with no schedule at all (consumed/abandoned run), and an over-age orphan
-    job key that is neither queued nor executing (R24 — half-enqueued during a
-    deploy/restart window, possibly with a leftover retry counter).
+    An old queue score cannot prove an in-progress owner is dead: ARQ uses the
+    same constant value for every executor. Its lease must expire first. The
+    final script rechecks queue/lock absence, values and non-renewed TTLs, so a
+    new enqueue or executor between classification and cleanup wins safely.
+    Script/read failures retain all keys; there is no non-atomic fallback.
     """
-
-    if not (
-        await _stale_in_progress_job(pool, job_id)
-        or await _is_ghost_heal_job(pool, job_id)
-        or await _is_orphan_heal_job(pool, job_id)
-    ):
+    keys = [f"arq:{kind}:{job_id}" for kind in ("job", "in-progress", "result", "retry")]
+    keys.append("arq:queue")
+    try:
+        snapshot = await pool.eval(_HEAL_JOB_SNAPSHOT_LUA, len(keys), *keys, job_id)
+        if not snapshot or len(snapshot) != 6 or not any(v is not None for v in snapshot[:3]):
+            return False
+        job, _result, retry = snapshot[:3]
+        # A half-enqueued payload plus retry counter retains the existing age
+        # requirement. Bare payloads and terminal-only debris cannot execute.
+        if job is not None and retry is not None and not await _is_orphan_heal_job(pool, job_id):
+            return False
+        arguments: list[Any] = [job_id]
+        for value, ttl in zip(snapshot[:3], snapshot[3:], strict=True):
+            arguments.extend((int(value is not None), value if value is not None else b"", int(ttl)))
+        removed = await pool.eval(_HEAL_JOB_CLEANUP_LUA, len(keys), *keys, *arguments)
+    except Exception:  # preserve owners when Redis cannot prove the atomic predicate
+        logger.exception("self-heal: atomic ghost cleanup refused for %s", job_id)
         return False
-    await pool.delete(
-        f"arq:job:{job_id}",
-        f"arq:in-progress:{job_id}",
-        f"arq:result:{job_id}",
-        f"arq:retry:{job_id}",
-    )
-    await _safe_zrem(pool, "arq:queue", job_id)
-    logger.info("self-heal: cleared stale ARQ heal job %s", job_id)
-    return True
+    if removed:
+        logger.info("self-heal: atomically cleared ARQ ghost %s", job_id)
+    return bool(removed)
 
+
+
+async def _window_queue_allowed(stuck, *, repair=False):
+    if not getattr(stuck, "configured_window", False):
+        return True  # Legacy scanner records retain their existing queue path.
+    from bestseller.services.creation_configuration import read_window
+    from bestseller.services.execution_windows import window_progress
+    async with get_server_session() as session:
+        project = await session.get(ProjectModel, stuck.project_id)
+        try:
+            if project is None or read_window(project) is None or repair:
+                return False
+            from bestseller.services.execution_windows import assert_window_runnable
+            await assert_window_runnable(session, project)
+            return not (await window_progress(session, project))["window_complete"]
+        except Exception:
+            logger.warning("self-heal: configured window cannot be verified for %s", stuck.slug)
+            return False
 
 async def _requeue_autowrite(
     pool: "ArqRedis",
@@ -1863,6 +2068,8 @@ async def _requeue_autowrite(
     Returns the job id on success, or ``None`` if ARQ already has a
     pending/running job for the same slug (deterministic dedup).
     """
+    if not await _window_queue_allowed(stuck, repair=False):
+        return None
     repair_job_id = _repair_heal_job_id(stuck.slug)
     if await _heal_job_exists(pool, repair_job_id):
         if not await _clear_stale_heal_job_if_needed(pool, repair_job_id):
@@ -1885,15 +2092,8 @@ async def _requeue_autowrite(
         _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
     )
     if job is None:
-        job_key = f"arq:job:{job_id}"
-        in_progress_key = f"arq:in-progress:{job_id}"
-        result_key = f"arq:result:{job_id}"
-        retry_key = f"arq:retry:{job_id}"
         if not await _clear_stale_heal_job_if_needed(pool, job_id):
-            in_flight = await pool.exists(job_key, in_progress_key)
-            if in_flight:
-                return None
-            await pool.delete(result_key, retry_key)
+            return None
         job = await pool.enqueue_job(
             "run_autowrite_task",
             workflow_run_id=job_id,
@@ -1911,6 +2111,8 @@ async def _requeue_outline_replan(
     stuck: StuckProject,
 ) -> str | None:
     """Queue the only worker allowed to recover a rejected outline."""
+    if not await _window_queue_allowed(stuck, repair=True):
+        return None
 
     for competing_job_id in (
         _autowrite_heal_job_id(stuck.slug),
@@ -1946,12 +2148,7 @@ async def _requeue_outline_replan(
         # intentionally returns ``outline_replan_retry_pending``; retaining
         # that terminal result must not strand the book forever. Only clear it
         # after proving there is no active owner.
-        if await _heal_job_exists(pool, job_id):
-            return None
-        await pool.delete(
-            f"arq:result:{job_id}",
-            f"arq:retry:{job_id}",
-        )
+        return None
     job = await pool.enqueue_job(
         "run_outline_replan_task",
         workflow_run_id=job_id,
@@ -1971,6 +2168,8 @@ async def _requeue_repair(
     stuck: StuckProject,
 ) -> str | None:
     """Enqueue a project repair job for blocked production chapters."""
+    if not await _window_queue_allowed(stuck, repair=True):
+        return None
     autowrite_job_id = _autowrite_heal_job_id(stuck.slug)
     if await _heal_job_exists(pool, autowrite_job_id):
         if not await _clear_stale_heal_job_if_needed(pool, autowrite_job_id):
@@ -1998,15 +2197,8 @@ async def _requeue_repair(
         _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
     )
     if job is None:
-        job_key = f"arq:job:{job_id}"
-        in_progress_key = f"arq:in-progress:{job_id}"
-        result_key = f"arq:result:{job_id}"
-        retry_key = f"arq:retry:{job_id}"
         if not await _clear_stale_heal_job_if_needed(pool, job_id):
-            in_flight = await pool.exists(job_key, in_progress_key)
-            if in_flight:
-                return None
-            await pool.delete(result_key, retry_key)
+            return None
         job = await pool.enqueue_job(
             "run_project_repair_task",
             workflow_run_id=job_id,
@@ -2029,6 +2221,8 @@ async def _requeue_project_pipeline(
     stuck: StuckProject,
 ) -> str | None:
     """Enqueue project pipeline continuation for planned chapters without drafts."""
+    if not await _window_queue_allowed(stuck, repair=False):
+        return None
     autowrite_job_id = _autowrite_heal_job_id(stuck.slug)
     if await _heal_job_exists(pool, autowrite_job_id):
         if not await _clear_stale_heal_job_if_needed(pool, autowrite_job_id):
@@ -2051,15 +2245,8 @@ async def _requeue_project_pipeline(
         _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
     )
     if job is None:
-        job_key = f"arq:job:{job_id}"
-        in_progress_key = f"arq:in-progress:{job_id}"
-        result_key = f"arq:result:{job_id}"
-        retry_key = f"arq:retry:{job_id}"
         if not await _clear_stale_heal_job_if_needed(pool, job_id):
-            in_flight = await pool.exists(job_key, in_progress_key)
-            if in_flight:
-                return None
-            await pool.delete(result_key, retry_key)
+            return None
         job = await pool.enqueue_job(
             "run_project_pipeline_task",
             workflow_run_id=job_id,
@@ -2112,6 +2299,7 @@ def _coalesce_stuck_projects_for_enqueue(
 
 
 async def _stale_in_progress_job(pool: "ArqRedis", job_id: str) -> bool:
+    """Diagnostic age probe only; never authorizes deleting an executor lease."""
     in_progress_key = f"arq:in-progress:{job_id}"
     try:
         in_flight = await pool.exists(in_progress_key)
@@ -2184,14 +2372,8 @@ async def _release_heal_lock(redis: Any | None, worker_id: str) -> None:
 
     if redis is None:
         return
-    script = """
-    if redis.call('get', KEYS[1]) == ARGV[1] then
-        return redis.call('del', KEYS[1])
-    end
-    return 0
-    """
     try:
-        await redis.eval(script, 1, SELF_HEAL_LOCK_KEY, worker_id)
+        await compare_owner_delete(redis, SELF_HEAL_LOCK_KEY, worker_id)
     except Exception:  # noqa: BLE001 — expiry remains the safe fallback
         logger.exception("self-heal: failed to release boot lock")
 
@@ -2222,6 +2404,9 @@ async def heal_stuck_projects(
     dispatched: list[dict[str, Any]] = []
 
     effective_worker_id = worker_id or str(uuid.uuid4())
+    # Worker identity can recur after a lease expires. A late scan must not
+    # release a successor scan's lease even when both share the same worker.
+    heal_lock_token = f"{effective_worker_id}:{uuid.uuid4().hex}"
     previous_scan_done_marker: Any | None = None
     if redis is not None:
         try:
@@ -2247,7 +2432,7 @@ async def heal_stuck_projects(
         )
         return dispatched
 
-    if not await _try_acquire_heal_lock(redis, effective_worker_id):
+    if not await _try_acquire_heal_lock(redis, heal_lock_token):
         logger.info(
             "self-heal: another worker holds the boot lock — skipping scan",
         )
@@ -2260,6 +2445,7 @@ async def heal_stuck_projects(
         return dispatched
 
     pool: "ArqRedis | None" = None
+    ownership_known = False
     try:
         # A replica can read an empty marker, wait for the first scanner to
         # finish, then acquire the just-released lock. Re-check *after* lock
@@ -2288,14 +2474,17 @@ async def heal_stuck_projects(
                 logger.exception("self-heal: failed to clear stale scan-done marker")
 
         async with get_server_session() as session:
-            protected_project_ids = await _resolve_project_ids_for_slugs(
-                session,
-                await _active_arq_project_slugs(redis),
-            )
+            owner_slugs = await _active_arq_project_slugs(redis)
+            if owner_slugs is None:
+                logger.warning("self-heal: ownership UNKNOWN; no reaping or recovery dispatch")
+                return dispatched
+            ownership_known = True
+            protected_project_ids = await _resolve_project_ids_for_slugs(session, owner_slugs)
             reaped = await reap_orphan_workflow_runs(
                 session,
                 startup_cutoff=startup_cutoff,
                 protected_project_ids=protected_project_ids,
+                redis=redis,
             )
             if reaped:
                 await session.commit()
@@ -2335,6 +2524,9 @@ async def heal_stuck_projects(
                             stuck.slug,
                         )
                         continue
+                    if execution_terminal_code(project.metadata_json or {}):
+                        continue
+                    await assert_execution_scope_open(session, project_execution_scope(project))
                     if (
                         project_blocks_all_prose_generation(project)
                         and stuck.heal_kind != "outline_replan"
@@ -2363,6 +2555,17 @@ async def heal_stuck_projects(
                             stuck.slug,
                         )
                         continue
+                    # Queue backlog is not a failed recovery attempt. Check
+                    # ownership before consuming either retry/watchdog debt;
+                    # reclaim ghosts using the same rules as dispatch.
+                    pending_owner = False
+                    for job_id in _blocking_heal_job_ids(stuck):
+                        if await _heal_job_exists(pool, job_id):
+                            if not await _clear_stale_heal_job_if_needed(pool, job_id):
+                                pending_owner = True
+                                break
+                    if pending_owner:
+                        continue
                     if (
                         stuck.heal_kind != "outline_replan"
                         and await _clear_auto_resumable_generation_gate_pause(
@@ -2381,11 +2584,29 @@ async def heal_stuck_projects(
             # re-queued repeatedly without making any chapter-count progress.
             try:
                 async with get_server_session() as session:
-                    project = await session.get(ProjectModel, stuck.project_id)
+                    project = await _lock_heal_dispatch(session, stuck, pool)
                     if project is not None:
+                        repair_snapshot = None
+                        if not execution_terminal_code(project.metadata_json or {}):
+                            repair_snapshot = await _observe_committed_repair_progress(
+                                session, settings, stuck.project_id
+                            )
+                        consumed_keys = await _consumed_repair_effects(session, project.id)
+                        effect_keys = set()
+                        if repair_snapshot is not None:
+                            observation = compare_repair_progress(
+                                (project.metadata_json or {}).get(REPAIR_PROGRESS_STATE_KEY),
+                                repair_snapshot,
+                            )
+                            effect_keys = set(observation["new_effect_keys"]) - consumed_keys
+                        latest_owners = await _active_arq_project_slugs(pool)
+                        if latest_owners is None or project.slug in latest_owners:
+                            continue
+                        await assert_execution_scope_open(session, project_execution_scope(project))
                         new_meta, abandoned = _compute_heal_progress_state(
                             project.metadata_json or {},
                             stuck.chapters_total,
+                            chapters_with_draft=stuck.chapters_with_draft,
                             progress_fingerprint=(
                                 stuck.progress_fingerprint
                                 or "|".join(
@@ -2399,10 +2620,12 @@ async def heal_stuck_projects(
                                 )
                             ),
                             progress_rank=stuck.progress_rank,
+                            repair_progress_snapshot=repair_snapshot,
+                            consumed_repair_effect_keys=consumed_keys,
                         )
-                        project.metadata_json = new_meta
-                        await session.commit()
                         if abandoned:
+                            project.metadata_json = new_meta
+                            await session.commit()
                             logger.warning(
                                 "self-heal: ABANDONED slug=%s after %d no-progress "
                                 "heals (chapters_total=%d) — flagged for human "
@@ -2412,26 +2635,20 @@ async def heal_stuck_projects(
                                 stuck.chapters_total,
                             )
                             continue
+                        # Only an accepted dispatch consumes an attempt. ARQ
+                        # deduplication or an enqueue failure did no repair work.
+                        task_id = await _requeue_stuck_project(pool, stuck)
+                        if task_id is None:
+                            continue
+                        _record_repair_effects(session, project, repair_snapshot, effect_keys)
+                        project.metadata_json = new_meta
+                        await session.commit()
+                    else:
+                        continue
             except Exception:  # noqa: BLE001
                 logger.exception(
-                    "self-heal: failed to record heal progress for slug=%s",
+                    "self-heal: failed to dispatch/record heal progress for slug=%s",
                     stuck.slug,
-                )
-            try:
-                task_id = await _requeue_stuck_project(pool, stuck)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "self-heal: failed to enqueue slug=%s reason=%s: %s",
-                    stuck.slug,
-                    stuck.reason,
-                    exc,
-                )
-                continue
-            if task_id is None:
-                logger.info(
-                    "self-heal: skipped slug=%s — %s job already queued",
-                    stuck.slug,
-                    stuck.heal_kind,
                 )
                 continue
             dispatched.append(
@@ -2465,18 +2682,17 @@ async def heal_stuck_projects(
         # collide on row-locks with the heal jobs we're about to enqueue.
         if redis is not None:
             try:
-                await redis.set(
-                    SELF_HEAL_SCAN_DONE_KEY,
-                    (
-                        f"{effective_worker_id}:"
-                        f"{int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp())}"
-                    ),
-                    ex=SELF_HEAL_SCAN_DONE_TTL_SECONDS,
-                )
+                if ownership_known:
+                    await redis.set(
+                        SELF_HEAL_SCAN_DONE_KEY,
+                        (f"{effective_worker_id}:"
+                         f"{int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp())}"),
+                        ex=SELF_HEAL_SCAN_DONE_TTL_SECONDS,
+                    )
             except Exception:  # noqa: BLE001 — marker is advisory
                 logger.exception("self-heal: failed to publish scan-done marker")
             finally:
-                await _release_heal_lock(redis, effective_worker_id)
+                await _release_heal_lock(redis, heal_lock_token)
 
     return dispatched
 

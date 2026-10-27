@@ -152,8 +152,17 @@ class TestSerialization:
             )
         )
         restored = invariants_from_dict(payload)
-        # Default pool is the full enum.
-        assert set(restored.opening_archetype_pool) == set(OpeningArchetype)
+        # Omission is not author consent to an event rotation.
+        assert restored.opening_archetype_pool == ()
+        assert restored.cliffhanger_policy.allowed_types == ()
+        # Explicit author choices still survive the same storage round-trip.
+        payload["opening_archetype_pool"] = [item.value for item in OpeningArchetype]
+        payload["cliffhanger_policy"]["allowed_types"] = [
+            item.value for item in CliffhangerType
+        ]
+        selected = invariants_from_dict(payload)
+        assert selected.opening_archetype_pool == tuple(OpeningArchetype)
+        assert selected.cliffhanger_policy.allowed_types == tuple(CliffhangerType)
 
 
 # ---------------------------------------------------------------------------
@@ -213,14 +222,11 @@ class TestInferPovFromSample:
 
 
 # ---------------------------------------------------------------------------
-# Tone-aware opening / cliffhanger pools (genre de-homogenisation).
-# Regression for 《福星甩不掉》: a 社畜摆烂治愈喜剧 had every chapter forced to open
-# on HUMILIATION + countdown-threat cliffs because the default pools are the
-# full tension-heavy enums, steamrolling the comedy pack's "低压力高期待" mandate.
+# Tone classification is available to callers, but a genre label cannot adopt
+# story events. Keep both neutral defaults and explicit pool selection covered.
 # ---------------------------------------------------------------------------
 
 from bestseller.services.invariants import (  # noqa: E402
-    LOW_PRESSURE_OPENING_POOL,
     is_low_pressure_tone,
 )
 
@@ -249,7 +255,7 @@ class TestLowPressureTone:
             "light",
         )
 
-    def test_comedy_seed_uses_warm_opening_pool(self) -> None:
+    def test_comedy_seed_leaves_events_unselected(self) -> None:
         inv = seed_invariants(
             project_id=uuid4(),
             language="zh-CN",
@@ -262,12 +268,12 @@ class TestLowPressureTone:
         assert OpeningArchetype.HUMILIATION not in inv.opening_archetype_pool
         assert OpeningArchetype.BROKEN_ENGAGEMENT not in inv.opening_archetype_pool
         assert OpeningArchetype.BANISHMENT not in inv.opening_archetype_pool
-        assert inv.opening_archetype_pool == LOW_PRESSURE_OPENING_POOL
-        # Cliffs are "低压力高期待", not countdown-dread.
+        assert inv.opening_archetype_pool == ()
+        # A low-pressure label does not authorize even a warm event template.
         assert CliffhangerType.INTERNAL_CRISIS not in inv.cliffhanger_policy.allowed_types
-        assert CliffhangerType.NEW_CHARACTER in inv.cliffhanger_policy.allowed_types
+        assert inv.cliffhanger_policy.allowed_types == ()
 
-    def test_tension_genre_keeps_full_pools(self) -> None:
+    def test_tension_genre_does_not_opt_in_to_full_pools(self) -> None:
         inv = seed_invariants(
             project_id=uuid4(),
             language="zh-CN",
@@ -276,10 +282,10 @@ class TestLowPressureTone:
             sub_genre="升级流",
             prompt_pack_key="xianxia-upgrade-core",
         )
-        assert inv.opening_archetype_pool == tuple(OpeningArchetype)
-        assert inv.cliffhanger_policy.allowed_types == tuple(CliffhangerType)
+        assert inv.opening_archetype_pool == ()
+        assert inv.cliffhanger_policy.allowed_types == ()
 
-    def test_explicit_override_wins_over_tone_default(self) -> None:
+    def test_explicit_override_wins_over_neutral_default(self) -> None:
         inv = seed_invariants(
             project_id=uuid4(),
             language="zh-CN",
@@ -287,6 +293,12 @@ class TestLowPressureTone:
             genre="都市脑洞",
             sub_genre="社畜摆烂喜剧",
             prompt_pack_key="shezhu-bailan-comedy",
-            overrides={"opening_archetype_pool": (OpeningArchetype.CRISIS,)},
+            overrides={
+                "opening_archetype_pool": (OpeningArchetype.CRISIS,),
+                "cliffhanger_policy": CliffhangerPolicy(
+                    allowed_types=(CliffhangerType.NEW_CHARACTER,)
+                ),
+            },
         )
         assert inv.opening_archetype_pool == (OpeningArchetype.CRISIS,)
+        assert inv.cliffhanger_policy.allowed_types == (CliffhangerType.NEW_CHARACTER,)

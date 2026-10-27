@@ -23,6 +23,25 @@ class TestRenderer:
         assert "身体反应不是情绪的默认替身" in block
         assert "人物对本场物件作出的选择" in block
 
+    def test_modifier_rule_is_information_based_not_a_part_of_speech_ban(self) -> None:
+        block = render_anti_ai_voice_discipline(language="zh-CN")
+        assert "修饰语不按词类一刀切" in block
+        assert "目标不是副词归零" in block
+        for semantic_job in ("时间", "范围", "否定", "转折", "概率", "因果", "人物口吻"):
+            assert semantic_job in block
+
+    def test_show_and_tell_are_allocated_by_narrative_function(self) -> None:
+        block = render_anti_ai_voice_discipline(language="zh-CN")
+        for key_node in ("冲突", "选择", "揭示", "关系变化", "情绪转折"):
+            assert key_node in block
+        assert "目标→具体动作→本场对象→可见结果" in block
+        assert "过场、位移、时间跳跃、重复动作、背景定位和必要心理导航允许" in block
+
+    def test_concretization_cannot_be_replaced_with_generic_templates(self) -> None:
+        block = render_anti_ai_voice_discipline(language="zh-CN")
+        assert "通用身体反应、感官枚举、精确数字或陈词比喻补位" in block
+        assert "信息、因果、人物或节奏" in block
+
     def test_english_renders_empty_so_callers_can_concatenate_blindly(self) -> None:
         assert render_anti_ai_voice_discipline(language="en-US") == ""
 
@@ -68,7 +87,11 @@ class TestAllProsePathsCarryTheDiscipline:
 
     @pytest.mark.parametrize(
         "rule",
-        ["不要结论先行/总分总", "身体反应不是情绪的默认替身"],
+        [
+            "不要结论先行/总分总",
+            "身体反应不是情绪的默认替身",
+            "修饰语不按词类一刀切",
+        ],
     )
     def test_scene_rewrite_system_prompt_carries_rule(self, rule: str) -> None:
         from _prose_prompt_fixtures import build_scene_rewrite_system_prompt
@@ -77,7 +100,11 @@ class TestAllProsePathsCarryTheDiscipline:
 
     @pytest.mark.parametrize(
         "rule",
-        ["不要结论先行/总分总", "身体反应不是情绪的默认替身"],
+        [
+            "不要结论先行/总分总",
+            "身体反应不是情绪的默认替身",
+            "修饰语不按词类一刀切",
+        ],
     )
     def test_chapter_rewrite_system_prompt_carries_rule(self, rule: str) -> None:
         from _prose_prompt_fixtures import build_chapter_rewrite_system_prompt
@@ -110,7 +137,7 @@ class TestAllProsePathsCarryTheDiscipline:
     # See test_compact_discipline_delegates_dropped_rules_to_post_gates below.
     @pytest.mark.parametrize(
         "rule",
-        ["不要结论先行", "没做什么", "只输出正文"],
+        ["关键节点", "低信息修饰语", "过场可直接概括", "没做什么", "只输出正文"],
     )
     def test_chapter_first_system_prompt_carries_rule(self, rule: str) -> None:
         """The generation path this guard originally missed.
@@ -155,6 +182,19 @@ class TestAllProsePathsCarryTheDiscipline:
             "optimum is the 175-633 char instruction band"
         )
         assert block.count("- ") == 4, "compact discipline is exactly four rules"
+
+    def test_compact_discipline_keeps_the_modifier_and_show_tell_boundaries(self) -> None:
+        from bestseller.services.anti_ai_voice_discipline import (
+            render_compact_writer_discipline,
+        )
+
+        block = render_compact_writer_discipline(language="zh-CN", scope="chapter")
+        for required in (
+            "时间、范围、否定、转折、概率、因果和人物口吻",
+            "过场可直接概括",
+            "通用身体反应、感官堆积或比喻套话补位",
+        ):
+            assert required in block
 
     def test_compact_discipline_delegates_dropped_rules_to_post_gates(self) -> None:
         """The rules compact drops must still be enforced somewhere.

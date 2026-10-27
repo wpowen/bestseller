@@ -115,7 +115,7 @@ def test_configured_regeneration_budget_is_actually_read() -> None:
         "if the loader starts emitting this key, update the reader too"
     )
 
-    source = inspect.getsource(conception.run_conception_pipeline)
+    source = inspect.getsource(conception._review_conception_candidate)
     idx = source.index("_logline_regen_rescue")
     region = source[idx : idx + 1200]
     assert 'get("max_regen")' in region, (

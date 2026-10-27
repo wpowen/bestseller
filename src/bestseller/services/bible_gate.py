@@ -1070,12 +1070,29 @@ async def validate_chapter_against_bible(
     _is_en = is_english_language(language)
 
     # Pull stance-bearing snapshots for this chapter.
+    from bestseller.services.character_snapshot_sources import (
+        CharacterSnapshotView,
+        load_eligible_character_snapshots,
+        snapshot_source_status,
+    )
+
     snap_stmt = select(CharacterStateSnapshotModel).where(
         CharacterStateSnapshotModel.project_id == project_id,
         CharacterStateSnapshotModel.chapter_number == chapter_number,
         CharacterStateSnapshotModel.stance.is_not(None),
     )
-    chapter_snaps = list(await session.scalars(snap_stmt))
+    chapter_snaps = []
+    for snapshot in await session.scalars(
+        snap_stmt.execution_options(populate_existing=True, autoflush=False),
+    ):
+        status = await snapshot_source_status(
+            session, snapshot, project_id=project_id, character_id=snapshot.character_id,
+            before_chapter_number=chapter_number,
+        )
+        if status["status"] == "eligible":
+            view = CharacterSnapshotView(snapshot)
+            if view.stance is not None:
+                chapter_snaps.append(view)
 
     if not chapter_snaps:
         return ContradictionCheckResult(
@@ -1112,21 +1129,10 @@ async def validate_chapter_against_bible(
         if character is None:
             continue
 
-        prior_snap = await session.scalar(
-            select(CharacterStateSnapshotModel)
-            .where(
-                CharacterStateSnapshotModel.project_id == project_id,
-                CharacterStateSnapshotModel.character_id == character.id,
-                CharacterStateSnapshotModel.chapter_number < chapter_number,
-                CharacterStateSnapshotModel.stance.is_not(None),
-            )
-            .order_by(
-                CharacterStateSnapshotModel.chapter_number.desc(),
-                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
-                CharacterStateSnapshotModel.created_at.desc(),
-            )
-            .limit(1)
-        )
+        prior_snap = next((snap for snap in await load_eligible_character_snapshots(
+            session, project_id=project_id, character_id=character.id,
+            before_chapter_number=chapter_number - 1, limit=None,
+        ) if snap.stance is not None), None)
         prior_stance = prior_snap.stance if prior_snap is not None else None
 
         if not _is_flip(prior_stance, snap.stance):

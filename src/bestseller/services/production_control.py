@@ -41,6 +41,7 @@ from bestseller.infra.db.models import BookProductionControlModel
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ProductionControlHaltedError",
     "ProductionControlState",
     "ProductionIntent",
     "auto_recovery_is_permitted",
@@ -102,6 +103,15 @@ class ProductionControlState:
         }
 
 
+class ProductionControlHaltedError(RuntimeError):
+    """A safe checkpoint halt, never a prose failure or structural repair."""
+
+    def __init__(self, state: ProductionControlState) -> None:
+        self.control = state.to_payload()
+        self.intent = state.intent.value
+        super().__init__(f"production_{self.intent}_by_operator")
+
+
 def _now() -> _dt.datetime:
     return _dt.datetime.now(_dt.UTC)
 
@@ -149,7 +159,7 @@ async def load_control_state(
 
     stmt = select(BookProductionControlModel).where(
         BookProductionControlModel.project_id == project_id
-    )
+    ).execution_options(populate_existing=True, autoflush=False)
     if for_update:
         stmt = stmt.with_for_update()
     result = await session.execute(stmt)
@@ -317,6 +327,28 @@ async def request_run(
         resume_pending=False,
         detail=detail,
     )
+    # Reconciliation pauses are an operator projection, not another permanent
+    # stop latch. Retire only that exact projection after an explicit RUN and
+    # a current open ledger; keep structural blocks and the audit receipt.
+    from bestseller.infra.db.models import ProjectModel
+    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id))
+    metadata = dict(getattr(project, "metadata_json", None) or {})
+    if (project is not None
+        and metadata.get("production_pause_reason") == "execution_reconciled_manual_resume_required"
+        and not metadata.get("execution_terminal")):
+        from bestseller.services.retry_ledger import assert_execution_scope_open, project_execution_scope
+        scope = project_execution_scope(project)
+        history = metadata.get("execution_reconciliation_history") or []
+        last = history[-1].get("receipt", {}) if history else {}
+        if (last.get("scope_id") == scope and last.get("remaining_unknown") == 0
+            and last.get("status") == "active"):
+            await assert_execution_scope_open(session, scope)
+            retired = list(metadata.get("reconciled_pause_resume_receipts") or [])
+            retired.append({"command_serial": state.command_serial, "actor": actor,
+                            "reconciliation_id": last.get("reconciliation_id")})
+            metadata.pop("production_paused", None)
+            metadata.pop("production_pause_reason", None)
+            project.metadata_json = {**metadata, "reconciled_pause_resume_receipts": retired}
     logger.info(
         "production control: RUN project=%s actor=%s reason=%s serial=%d",
         project_id,

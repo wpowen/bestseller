@@ -1127,6 +1127,32 @@
     font-size: 13px;
   }
 
+  .conception-approval {
+    margin: 18px 0;
+    border: 1px solid var(--border);
+    background: rgba(255,250,240,0.86);
+    padding: 16px;
+  }
+
+  .conception-approval[hidden] { display: none; }
+  .conception-approval h3 { margin-bottom: 5px; }
+  .conception-approval .approval-meta { color: var(--muted); font-size: 12px; }
+  .conception-approval .approval-copy { margin: 10px 0; white-space: pre-wrap; }
+  .conception-approval .approval-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+  }
+  .conception-approval .approval-card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 10px;
+  }
+  .conception-approval .approval-card strong { display: block; margin-bottom: 4px; }
+  .conception-approval .approval-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  @media (max-width: 760px) { .conception-approval .approval-grid { grid-template-columns: 1fr; } }
+
   @media (max-width: 980px) {
     .topbar-inner, .shell { width: min(100% - 28px, 1440px); }
     .hero { grid-template-columns: 1fr; }
@@ -1171,6 +1197,7 @@
       <button class="btn" id="approvePrewriteBtn" type="button">审核通过</button>
       <button class="btn primary" id="enterWritingBtn" type="button">进入正文</button>
       <button class="btn primary" id="refreshBtn" type="button">刷新</button>
+      <span id="enterWritingStatus" class="meta" role="status" aria-live="polite"></span>
     </div>
   </div>
 </header>
@@ -1183,6 +1210,21 @@
       <p class="subtitle" id="heroSubtitle">正在加载设计资料。</p>
     </div>
     <aside class="score-panel" id="scorePanel"></aside>
+  </section>
+
+  <section class="conception-approval" id="conceptionApprovalPanel" hidden aria-live="polite">
+    <h3>构思批准与规划</h3>
+    <div class="approval-meta" id="conceptionApprovalMeta"></div>
+    <div class="approval-copy" id="conceptionApprovalStatus"></div>
+    <div class="approval-grid">
+      <article class="approval-card"><strong>一句话钩子</strong><div id="conceptionHook"></div></article>
+      <article class="approval-card"><strong>构思合约</strong><div id="conceptionContract"></div></article>
+      <article class="approval-card"><strong>来源凭据</strong><div id="conceptionSource"></div></article>
+    </div>
+    <div class="approval-actions">
+      <button class="btn primary" id="approveConceptionBtn" type="button">批准构思并继续规划</button>
+      <span class="meta" id="conceptionApprovalTaskStatus" role="status"></span>
+    </div>
   </section>
 
   <nav class="tabs" aria-label="设计审查导航">
@@ -1216,6 +1258,7 @@
   const esc = (s) => { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; };
   const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
   let dossier = null;
+  let conceptionState = { options: null, approved: false, approvalInFlight: false };
   const PAGE_SIZE = 24;
   const artifactState = { phase: 'all', status: 'all', query: '', latestOnly: true, page: 1 };
   const outlineState = { volume: null, status: 'all', query: '', page: 1 };
@@ -1423,6 +1466,13 @@
     $('#heroTitle').textContent = `${title} · 设计阶段产物`;
     $('#pageMeta').textContent = `${project.genre || '未分类'} / ${slug}`;
     $('#readLink').href = `/read/${encodeURIComponent(slug)}`;
+    const enterBtn = $('#enterWritingBtn');
+    const approveBtn = $('#approvePrewriteBtn');
+    if (enterBtn) {
+      enterBtn.disabled = !prewrite.is_approved;
+      enterBtn.title = prewrite.is_approved ? '写前审核已通过，可提交正文任务' : '请先审核通过写前资料';
+    }
+    if (approveBtn) approveBtn.disabled = !!prewrite.is_approved;
     $('#heroSubtitle').textContent = project.premise || project.synopsis || '暂无命题摘要';
     const structure = obj(summary.structure_summary);
     const bible = obj(summary.story_bible_counts);
@@ -2224,6 +2274,133 @@
     return data;
   }
 
+  function conceptionValue(value, fallback = '未提供') {
+    if (value === null || value === undefined || value === '') return fallback;
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+  }
+
+  function renderConceptionApproval() {
+    const panel = $('#conceptionApprovalPanel');
+    const options = obj(conceptionState.options);
+    const snapshot = obj(options.snapshot);
+    const canonical = obj(options.canonical);
+    if (!panel || !Object.keys(options).length) return;
+    const status = norm(snapshot.status);
+    if (status !== 'pending_user_approval' && status !== 'canonical') return;
+    const approved = conceptionState.approved || status === 'canonical';
+    conceptionState.approved = approved;
+    panel.hidden = false;
+    const hook = obj(canonical.hook_card);
+    const contract = obj(canonical.concept_contract);
+    const source = obj(canonical.source);
+    $('#conceptionApprovalMeta').textContent = `快照 ${snapshot.id || '—'} · 版本 ${snapshot.version_no ?? '—'} · ${approved ? '已批准，可继续规划' : '待批准'}`;
+    $('#conceptionApprovalStatus').textContent = approved
+      ? '该构思已经由服务端标记为 canonical；下面的继续规划会直接提交任务，不会重复批准。'
+      : '以下内容来自当前唯一有效构思快照。请确认后批准；页面不会把 pending 快照显示为已批准。';
+    $('#conceptionHook').textContent = conceptionValue(hook.one_liner || hook.promise || hook.core_question);
+    const spine = obj(contract.story_spine);
+    $('#conceptionContract').textContent = [
+      spine.who ? `主角：${spine.who}` : '',
+      spine.wants ? `目标：${spine.wants}` : '',
+      spine.why_now ? `现在必须行动：${spine.why_now}` : '',
+      spine.against ? `阻力：${spine.against}` : '',
+      spine.question ? `长期问题：${spine.question}` : '',
+    ].filter(Boolean).join('\n') || '合约正文未提供';
+    const sourceDetails = {
+      snapshot_id: source.snapshot_id || snapshot.id,
+      snapshot_hash: source.snapshot_hash || snapshot.content_hash,
+      attempt_id: source.attempt_id,
+      workflow_run_id: source.workflow_run_id,
+    };
+    $('#conceptionSource').innerHTML = `<details><summary>查看来源凭据</summary><pre class="json">${esc(JSON.stringify(sourceDetails, null, 2))}</pre></details>`;
+    const button = $('#approveConceptionBtn');
+    if (button) {
+      button.textContent = approved ? '继续规划' : '批准构思并继续规划';
+      button.disabled = conceptionState.approvalInFlight;
+    }
+  }
+
+  async function loadConceptionOptions() {
+    const panel = $('#conceptionApprovalPanel');
+    if (panel) panel.hidden = true;
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(slug)}/conception/options`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      const snapshot = obj(data.snapshot);
+      const canonical = obj(data.canonical);
+      if (!snapshot.id || !canonical.option_id || !canonical.source) return;
+      conceptionState.options = data;
+      conceptionState.approved = norm(snapshot.status) === 'canonical';
+      renderConceptionApproval();
+    } catch (err) {
+      // Non-conception projects do not expose this bridge; keep the existing dossier usable.
+    }
+  }
+
+  async function approveConceptionAndContinue() {
+    const options = obj(conceptionState.options);
+    const snapshot = obj(options.snapshot);
+    const canonical = obj(options.canonical);
+    const source = obj(canonical.source);
+    const status = $('#conceptionApprovalTaskStatus');
+    if (!snapshot.id || !canonical.option_id || !source.snapshot_hash) {
+      if (status) status.textContent = '当前没有可核对的完整构思快照，暂不能继续。';
+      return;
+    }
+    const lockText = snapshot.lock_version === null || snapshot.lock_version === undefined
+      ? '' : String(snapshot.lock_version).trim();
+    const lockNumber = Number(lockText);
+    const validLockVersion = typeof snapshot.lock_version !== 'boolean'
+      && lockText !== '' && /^\d+$/.test(lockText)
+      && Number.isSafeInteger(lockNumber) && lockNumber >= 0;
+    if (!conceptionState.approved && !validLockVersion) {
+      if (status) status.textContent = '当前构思缺少有效锁版本，暂不能批准。';
+      return;
+    }
+    conceptionState.approvalInFlight = true;
+    renderConceptionApproval();
+    try {
+      if (!conceptionState.approved && norm(snapshot.status) !== 'canonical') {
+        const approval = await postJson(`/api/projects/${encodeURIComponent(slug)}/conception/approve`, {
+          snapshot_id: snapshot.id,
+          source_hash: source.snapshot_hash,
+          expected_lock_version: lockNumber,
+          option_id: canonical.option_id,
+          idempotency_key: `conception-approval:${snapshot.id}:${source.snapshot_hash}`,
+          actor: 'web-ui',
+          reason: 'conception approved from design dossier',
+        });
+        const approved = obj(approval.conception);
+        const expectedCanonicalHash = String(approved.content_hash || '').trim();
+        const approvedSnapshotId = String(approved.snapshot_id || '').trim();
+        if (!expectedCanonicalHash || approvedSnapshotId !== String(snapshot.id)) {
+          throw new Error('批准响应缺少匹配的 canonical 快照凭据。');
+        }
+        await loadConceptionOptions();
+        const verifiedSnapshot = obj(obj(conceptionState.options).snapshot);
+        if (!conceptionState.approved
+            || String(verifiedSnapshot.id || '') !== approvedSnapshotId
+            || norm(verifiedSnapshot.content_hash) !== norm(expectedCanonicalHash)) {
+          throw new Error('服务端尚未返回匹配的 canonical 构思快照。');
+        }
+      }
+      if (status) status.textContent = '构思已批准，正在提交规划任务…';
+      const data = await postJson(`/api/projects/${encodeURIComponent(slug)}/enter-writing`, {});
+      const taskId = String(data.task_id || '').trim();
+      if (!taskId) throw new Error('服务端未返回规划任务 ID，无法打开真实进度。');
+      if (status) status.textContent = `规划任务已提交：${taskId}，正在打开任务指挥台…`;
+      window.location.href = `/quickstart?open_task=${encodeURIComponent(taskId)}`;
+    } catch (err) {
+      if (status) status.textContent = `继续规划失败：${err.message}；可重试，已批准状态不会重复提交。`;
+      // Keep approved=true after a successful approval so retry only calls enter-writing.
+    } finally {
+      conceptionState.approvalInFlight = false;
+      renderConceptionApproval();
+    }
+  }
+
   async function editArtifact(button) {
     const artifact = button.closest('.artifact');
     if (!artifact) return;
@@ -2287,12 +2464,19 @@
   }
 
   async function enterWriting() {
+    const button = $('#enterWritingBtn');
+    const status = $('#enterWritingStatus');
+    if (button) button.disabled = true;
+    if (status) status.textContent = '正在提交正文任务…';
     try {
       const data = await postJson(`/api/projects/${encodeURIComponent(slug)}/enter-writing`, {});
-      alert(`正文任务已提交：${data.task_id || 'queued'}`);
-      window.location.href = `/read/${encodeURIComponent(slug)}`;
+      const taskId = String(data.task_id || '').trim();
+      if (!taskId) throw new Error('服务端未返回正文任务 ID，无法打开真实进度。');
+      if (status) status.textContent = `正文任务已提交：${taskId}，正在打开任务指挥台…`;
+      window.location.href = `/quickstart?open_task=${encodeURIComponent(taskId)}`;
     } catch (err) {
-      alert(`进入正文失败：${err.message}`);
+      if (status) status.textContent = `进入正文失败：${err.message}`;
+      if (button) button.disabled = false;
       await load();
     }
   }
@@ -2317,6 +2501,7 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '加载失败');
       dossier = data;
+      await loadConceptionOptions();
       try {
         const reviewsResp = await fetch(`/api/projects/${encodeURIComponent(slug)}/reviews`);
         if (reviewsResp.ok) dossier._reviews = (await reviewsResp.json()).reviews || [];
@@ -2333,6 +2518,7 @@
   $('#refreshBtn').addEventListener('click', load);
   $('#approvePrewriteBtn').addEventListener('click', approvePrewrite);
   $('#enterWritingBtn').addEventListener('click', enterWriting);
+  $('#approveConceptionBtn').addEventListener('click', approveConceptionAndContinue);
 
   function renderTarget(target) {
     if (target === 'artifacts') renderArtifacts();

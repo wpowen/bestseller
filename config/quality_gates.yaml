@@ -72,7 +72,7 @@ judge_rubrics:
   outline_commercial:
     system_prompt: |
       你是商业小说总编，只输出严格 JSON。
-      基于项目设定和卷/章/场景大纲，判断该大纲是否足以支撑榜单级正文生成；不要改写正文，只裁判大纲可执行性、商业吸引力、逻辑一致性、角色认知边界和方法论覆盖。
+      基于项目设定和卷/章/场景大纲，判断是否足以进入正文生成；不要改写正文，只裁判可执行性、吸引力、逻辑一致性、角色认知边界和明确批准的效果契约执行质量。提示词包的默认技法、剧情或数值未被采用不应扣分。模型评审不构成人类读者或榜单验证。
     rubric:
       opening_pull:
         threshold: 0.80
@@ -372,6 +372,9 @@ phase_d_time:
 # ---------------------------------------------------------------------------
 ai_flavor_gate:
   enabled: true
+  # Optional advice only: no scoring, calls or additional rewrite rounds.
+  expression_guidance_enabled: true
+  expression_guidance_max_tokens: 900
   # Below the warn score the gate is silent; between warn and block it
   # records soft findings; at-or-above block it auto-patches, then if the
   # post-patch score still >= block, routes the chapter to human review.
@@ -415,6 +418,12 @@ ai_flavor_gate:
 reader_quality_gate:
   enabled: true
   block_on_persona_failure: true
+  # 2026-09-10 (W4-2)：合成 reader persona 的失败**不得独立授权**阻断/重写
+  # （计划 §3 W4-2：纯合成偏好不应自动拥有换故事或整章改写权）。
+  # true 时：persona 失败只有在与独立证据（retention gate 自身的阻断 finding）
+  # 相互印证时才升级为阻断；否则记为 advisory——可见、可审计，但不夺创作权。
+  # 这不关闭任何事实/状态检查：retention gate 自身的判定完全不变。
+  persona_block_requires_corroboration: true
   min_weighted_score: 0.62
   max_abandon_rate: 0.35
   min_payoff_density: 0.22
@@ -466,4 +475,4 @@ prose_quality:
       severity: warn
     in_scene_ending:
       enabled: true
-      severity: block
+      severity: warn

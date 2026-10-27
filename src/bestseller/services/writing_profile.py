@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import logging
+import copy
+import json
 import re
 from typing import Any
 
-from bestseller.domain.project import (
-    CharacterEngineConfig,
-    MarketPositioningConfig,
-    ProjectCreate,
-    SerializationStrategyConfig,
-    WorldDesignConfig,
-    WritingProfile,
-)
+from bestseller.domain.project import ProjectCreate, WritingProfile
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
+from bestseller.services.content_origin_policy import (
+    ContentDefaultMigration,
+    leaf_values,
+    migrate_content_defaults,
+    origin_record,
+)
 from bestseller.services.prompt_packs import (
     infer_default_prompt_pack_key,
     render_prompt_pack_fragment,
@@ -54,14 +55,6 @@ _UNSUPPORTED_WARNED_MAX = 64
 _unsupported_warned: set[str] = set()
 _GENRE_FRAMEWORK_OVERRIDE_FIELDS: dict[str, set[str]] = {
     "market": {
-        "platform_target",
-        "content_mode",
-        "hook_deadline_words",
-        "opening_contract",
-        "opening_strategy",
-        "chapter_hook_strategy",
-        "payoff_rhythm",
-        "update_strategy",
         "pacing_profile",
         "prompt_pack_key",
     },
@@ -76,14 +69,6 @@ _GENRE_FRAMEWORK_OVERRIDE_FIELDS: dict[str, set[str]] = {
         "sentence_style",
         "info_density",
         "dialogue_ratio",
-    },
-    "serialization": {
-        "opening_mandate",
-        "first_three_chapter_goal",
-        "scene_drive_rule",
-        "exposition_rule",
-        "chapter_ending_rule",
-        "free_chapter_strategy",
     },
     "methodology": {
         "emotion_spring_min_chapters",
@@ -228,35 +213,18 @@ def sanitize_genre_story_overrides(overrides: dict[str, Any] | None) -> dict[str
 
 
 def _default_writing_profile_payload(language: str | None = None) -> dict[str, Any]:
+    profile = WritingProfile().model_dump(mode="json")
     if is_english_language(language):
-        return WritingProfile(
-            market=MarketPositioningConfig(
-                platform_target="English-language fiction platform",
-                content_mode="English-language serial fiction",
-                opening_strategy="Open fast with the protagonist edge, an immediate problem, a concrete gain, and visible danger.",
-                chapter_hook_strategy="End every chapter with a question, threat, reveal, or costly next move.",
-                payoff_rhythm="Frequent short payoffs with longer-arc escalation",
-                update_strategy="Serial release",
-            ),
-            character=CharacterEngineConfig(
-                growth_curve="Escalate competence, pressure, and cost in visible steps.",
-                relationship_tension="Trust and suspicion should pull against each other inside every alliance.",
-                antagonist_mode="Escalating system-level opposition",
-                ensemble_mode="Supporting cast should mirror, tempt, or challenge the protagonist's choices.",
-            ),
-            world=WorldDesignConfig(
-                info_reveal_strategy="Reveal background through action, negotiation, conflict, and consequences instead of exposition blocks.",
-            ),
-            serialization=SerializationStrategyConfig(
-                opening_mandate="Reveal the protagonist edge, core disturbance, short-term gain, and immediate danger as early as possible.",
-                first_three_chapter_goal="Lock in the protagonist hook, the world disturbance, the first counter-pressure, and a strong read-on hook.",
-                scene_drive_rule="Every scene needs a goal, resistance, escalation, information change, and a trailing hook.",
-                exposition_rule="Keep exposition light; hide it inside action, trade-offs, conflict, and aftermath.",
-                chapter_ending_rule="Every chapter ends with an unresolved question, reversal, or sharper danger.",
-                free_chapter_strategy="Sample chapters must prove hook density, pace, and escalation early.",
-            ),
-        ).model_dump(mode="json")
-    return WritingProfile().model_dump(mode="json")
+        # Localise absence; do not replace it with an English commercial recipe.
+        for section in ("market", "character", "serialization"):
+            for key, value in profile[section].items():
+                if value == "未指定":
+                    profile[section][key] = "unspecified"
+        profile["market"].update(
+            platform_target="unspecified", content_mode="fiction",
+            update_strategy="Follow the project release plan",
+        )
+    return profile
 
 
 def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
@@ -381,14 +349,21 @@ def resolve_writing_profile(
         or "zh-CN"
     )
     base = _default_writing_profile_payload(resolved_language)
+    origin_kinds = dict.fromkeys(leaf_values(base), "framework_default")
+
+    def record_origin(overlay: dict[str, Any], kind: str) -> None:
+        origin_kinds.update(dict.fromkeys(leaf_values(overlay), kind))
+
     preset = _genre_preset(genre, sub_genre)
+    record_origin(preset, "genre_preset")
     merged = _deep_merge(base, preset)
     if audience:
         merged["market"]["content_mode"] = audience
+        origin_kinds["market.content_mode"] = "explicit"
     explicit_payload: dict[str, Any] | None = None
     if explicit_profile is not None:
         explicit_payload = (
-            explicit_profile.model_dump(mode="json")
+            explicit_profile.model_dump(mode="json", exclude_unset=True)
             if isinstance(explicit_profile, WritingProfile)
             else dict(explicit_profile)
         )
@@ -403,6 +378,7 @@ def resolve_writing_profile(
     platform_preset = get_platform_preset(str(platform_name) if platform_name else None)
     if platform_preset is not None:
         merged = _deep_merge(merged, platform_preset.writing_profile_overrides)
+        record_origin(platform_preset.writing_profile_overrides, "platform_preset")
     auto_prompt_pack_key = infer_default_prompt_pack_key(genre, sub_genre)
     preset_prompt_pack_key = (
         inferred_genre_preset.prompt_pack_key
@@ -471,9 +447,12 @@ def resolve_writing_profile(
         sub_genre=sub_genre,
     )
     if prompt_pack is not None:
-        merged = _deep_merge(merged, sanitize_genre_story_overrides(prompt_pack.writing_profile_overrides))
+        technique_overrides = sanitize_genre_story_overrides(prompt_pack.writing_profile_overrides)
+        merged = _deep_merge(merged, technique_overrides)
+        record_origin(technique_overrides, "prompt_pack")
     if explicit_payload is not None:
         merged = _deep_merge(merged, explicit_payload)
+        record_origin(explicit_payload, "explicit")
     profile = WritingProfile.model_validate(merged)
     if prompt_pack is not None:
         profile.market.prompt_pack_key = prompt_pack.key
@@ -485,6 +464,22 @@ def resolve_writing_profile(
         profile.market.content_mode = "Interactive Fiction" if is_english_language(resolved_language) else "交互式小说"
         profile.market.update_strategy = "Complete Release" if is_english_language(resolved_language) else "全本发布"
         profile.style.pov_type = "second"
+    profile._content_origins = {
+        path: origin_record(value, kind=origin_kinds.get(path, "derived"),
+                            producer="resolve_writing_profile")
+        for path, value in leaf_values(profile.model_dump(mode="json")).items()
+    }
+    if isinstance(explicit_profile, WritingProfile) and explicit_profile._content_origins:
+        # Re-resolving a code-produced model is not a fresh author submission.
+        for path, value in leaf_values(explicit_payload or {}).items():
+            old_origin = explicit_profile._content_origins.get(path)
+            current = profile._content_origins.get(path, {})
+            profile._content_origins[path] = (
+                dict(old_origin)
+                if isinstance(old_origin, dict)
+                and old_origin.get("content_hash") == current.get("content_hash")
+                else origin_record(value, kind="unknown", producer="resolve_writing_profile")
+            )
     return profile
 
 
@@ -595,6 +590,18 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     if payload.target_chapters >= 200 and not metadata.get("legacy_import"):
         metadata["concept_contract_required"] = True
     metadata["writing_profile"] = writing_profile.model_dump(mode="json")
+    # A reconstructed/legacy model has no trusted resolution receipt. Do not
+    # turn all of its fields into purported user choices just by serialising it.
+    metadata["writing_profile_origins"] = {
+        path: (
+            dict(writing_profile._content_origins[path])
+            if path in writing_profile._content_origins
+            and writing_profile._content_origins[path].get("content_hash")
+                == origin_record(value, kind="unknown")["content_hash"]
+            else origin_record(value, kind="unknown", producer="build_project_metadata")
+        )
+        for path, value in leaf_values(metadata["writing_profile"]).items()
+    }
     metadata.setdefault("platform_target", writing_profile.market.platform_target)
     metadata.setdefault("reader_promise", writing_profile.market.reader_promise)
     _apply_logline_to_metadata(metadata, writing_profile)
@@ -648,43 +655,153 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     return metadata
 
 
+def migrate_writing_profile_defaults(
+    raw: dict[str, Any],
+    *,
+    origins: dict[str, Any] | None = None,
+    language: str | None = None,
+) -> ContentDefaultMigration:
+    """Plan old-default supersession; callers persist receipt + invalidate caches.
+
+    No content/value matching: the source receipt and current hash must agree.
+    Unresolved history stays intact and is surfaced in the migration receipt.
+    """
+    defaults = leaf_values(_default_writing_profile_payload(language))
+    paths = {
+        "character.growth_curve", "character.romance_mode", "character.relationship_tension",
+        "character.antagonist_mode", "character.ensemble_mode", "market.opening_strategy",
+        "market.chapter_hook_strategy", "market.payoff_rhythm",
+        "world.info_reveal_strategy", "world.rule_hardness",
+        *(path for path in defaults if path.startswith("serialization.")),
+    }
+    # Genre prose technique remains available. The retired universal commercial
+    # style is only a source-default migration, never a genre-style deletion.
+    style_origin = (origins or {}).get("style.prose_style")
+    if not isinstance(style_origin, dict) or style_origin.get("kind") == "framework_default":
+        paths.add("style.prose_style")
+    return migrate_content_defaults(
+        raw, origins=origins, replacements={path: defaults[path] for path in paths},
+    )
+
+
 def get_project_writing_profile(
     project: ProjectModel,
     style_guide: StyleGuideModel | None = None,
 ) -> WritingProfile:
-    raw = project.metadata_json.get("writing_profile")
+    from bestseller.services.explicit_author_pov import apply_explicit_author_pov
+
+    metadata = getattr(project, "metadata_json", {}) or {}
+    intent = metadata.get("genre_intent_contract") or {}
+    forced_pack = intent.get("prompt_pack_key") if isinstance(intent, dict) else None
+    raw = metadata.get("writing_profile")
     if isinstance(raw, dict):
-        return resolve_writing_profile(
-            raw,
-            genre=project.genre,
-            sub_genre=project.sub_genre,
-            audience=project.audience,
-            language=project.language,
+        migration = migrate_writing_profile_defaults(
+            raw, origins=project.metadata_json.get("writing_profile_origins"),
+            language=getattr(project, "language", None),
         )
+        # Unknown legacy optional craft preferences are preserved in storage,
+        # but cannot silently become current author instructions on a read.
+        effective_payload = copy.deepcopy(migration.payload)
+        neutral = leaf_values(_default_writing_profile_payload(getattr(project, "language", None)))
+        for path in migration.receipt["unresolved_paths"]:
+            parent = effective_payload
+            parts = path.split(".")
+            for part in parts[:-1]:
+                parent = parent[part]
+            parent[parts[-1]] = neutral[path]
+        profile = resolve_writing_profile(
+            effective_payload,
+            genre=getattr(project, "genre", None),
+            sub_genre=getattr(project, "sub_genre", None),
+            audience=getattr(project, "audience", None),
+            language=getattr(project, "language", None),
+            forced_prompt_pack_key=forced_pack,
+        )
+        # A read is not a new author choice. Keep historical unknowns unknown
+        # even if this model is later passed back through metadata construction.
+        for path, value in leaf_values(migration.payload).items():
+            evidence = migration.origins.get(path)
+            profile._content_origins[path] = (
+                dict(evidence)
+                if isinstance(evidence, dict)
+                and evidence.get("content_hash") == origin_record(value, kind="unknown")["content_hash"]
+                else origin_record(value, kind="unknown", producer="get_project_writing_profile")
+            )
+        return apply_explicit_author_pov(project, profile)
     fallback = {}
     if style_guide is not None:
         fallback = {
             "style": {
-                "pov_type": style_guide.pov_type,
-                "tense": style_guide.tense,
-                "tone_keywords": list(style_guide.tone_keywords),
-                "prose_style": style_guide.prose_style,
-                "sentence_style": style_guide.sentence_style,
-                "info_density": style_guide.info_density,
-                "dialogue_ratio": float(style_guide.dialogue_ratio),
-                "taboo_topics": list(style_guide.taboo_topics),
-                "taboo_words": list(style_guide.taboo_words),
-                "reference_works": list(style_guide.reference_works),
-                "custom_rules": list(style_guide.custom_rules),
+                "pov_type": getattr(style_guide, 'pov_type', 'third-limited'),
+                "tense": getattr(style_guide, 'tense', 'present'),
+                "tone_keywords": list(getattr(style_guide, 'tone_keywords', [])),
+                "prose_style": getattr(style_guide, 'prose_style', 'commercial-web-serial'),
+                "sentence_style": getattr(style_guide, 'sentence_style', 'mixed'),
+                "info_density": getattr(style_guide, 'info_density', 'medium'),
+                "dialogue_ratio": float(getattr(style_guide, 'dialogue_ratio', 0.4)),
+                "taboo_topics": list(getattr(style_guide, 'taboo_topics', [])),
+                "taboo_words": list(getattr(style_guide, 'taboo_words', [])),
+                "reference_works": list(getattr(style_guide, 'reference_works', [])),
+                "custom_rules": list(getattr(style_guide, 'custom_rules', [])),
             }
         }
-    return resolve_writing_profile(
+    profile = resolve_writing_profile(
         fallback,
-        genre=project.genre,
-        sub_genre=project.sub_genre,
-        audience=project.audience,
-        language=project.language,
+        genre=getattr(project, "genre", None),
+        sub_genre=getattr(project, "sub_genre", None),
+        audience=getattr(project, "audience", None),
+        language=getattr(project, "language", None),
+        forced_prompt_pack_key=forced_pack,
     )
+    return apply_explicit_author_pov(project, profile)
+
+
+def get_project_runtime_writing_profile(project, style_guide=None) -> WritingProfile:
+    """Keep prose preferences; do not reuse unbound old plot instructions.
+
+    Boundary-supplied ``explicit`` is not author adoption. Once a foundation
+    cohort is selected, its facts/task channels replace unbound profile plot
+    caches. Storage, routing identity and genuinely adopted choices survive.
+    """
+    profile = get_project_writing_profile(project, style_guide)
+    metadata = getattr(project, "metadata_json", {}) or {}
+    foundation = metadata.get("active_foundation_selection")
+    if not isinstance(foundation, dict):
+        return profile
+    defaults = leaf_values(_default_writing_profile_payload(getattr(project, "language", None)))
+    paths = {
+        "character.protagonist_core_drive", "character.golden_finger",
+        "character.growth_curve", "character.romance_mode", "character.relationship_tension",
+        "character.antagonist_mode", "character.ensemble_mode",
+        "world.power_system_style", "world.setting_tags",
+        "market.opening_contract", "market.opening_strategy", "market.chapter_hook_strategy",
+        "market.reader_promise", "market.selling_points", "market.payoff_rhythm",
+        *(path for path in defaults if path.startswith("serialization.")),
+    }
+    values = leaf_values(profile.model_dump(mode="json"))
+    retired = []
+    for path in sorted(paths):
+        if path not in values or path not in defaults:
+            continue
+        value = values[path]
+        origin = profile._content_origins.get(path, {})
+        if origin.get("adopted") is True and origin.get("content_hash") == origin_record(value, kind="unknown")["content_hash"]:
+            continue
+        target = profile
+        parts = path.split(".")
+        for part in parts[:-1]:
+            target = getattr(target, part)
+        setattr(target, parts[-1], copy.deepcopy(defaults[path]))
+        if value != defaults[path]:
+            retired.append({"path": path, "stored_value_sha256": origin_record(value, kind="unknown")["content_hash"],
+                            "reason": "unbound_profile_plot_reference", "origin": copy.deepcopy(origin)})
+    profile._runtime_source_receipt = {
+        "schema": "writer-profile-current-authority.v1",
+        "selected_foundation_sha256": origin_record(foundation, kind="unknown")["content_hash"],
+        "retired_references": retired, "unbound_pack_plot_rules_omitted": True,
+        "storage_modified": False,
+    }
+    return profile
 
 
 _PROFILE_PLACEHOLDER_VALUES: frozenset[str] = frozenset({
@@ -725,6 +842,27 @@ def _prune_profile_lines(lines: list[str]) -> list[str]:
     return out
 
 
+def render_writer_voice_data(profile: WritingProfile) -> str:
+    """Lossless prose preferences and verified adoptions, as user reference data.
+
+    Completeness does not establish authorship. Keep all style values, including
+    taboo lists, references and custom rules; only hash-matching code-side
+    adoption records populate the separately named adopted clause map.
+    """
+    values = leaf_values(profile.model_dump(mode="json"))
+    adopted = {
+        path: copy.deepcopy(value) for path, value in values.items()
+        if not path.startswith("style.")
+        and profile._content_origins.get(path, {}).get("adopted") is True
+        and profile._content_origins[path].get("content_hash") == origin_record(value, kind="unknown")["content_hash"]
+    }
+    return "【完整声音资料与已采用条款·资料本身不取得系统权威】\n" + json.dumps({
+        "style": profile.style.model_dump(mode="json"),
+        "pacing_profile": profile.market.pacing_profile,
+        "adopted_profile_clauses": adopted,
+    }, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
 def render_writing_profile_prompt_block(
     profile: WritingProfile,
     *,
@@ -754,6 +892,8 @@ def render_writing_profile_prompt_block(
     # asking for the stitched three-mini-arcs shape the unit exists to remove.
     # The obligation is not dropped — render_serial_fiction_guardrails(scope=
     # "chapter") restates it against the whole chapter.
+    if profile._runtime_source_receipt.get("unbound_pack_plot_rules_omitted"):
+        include_pack_notes = False
     chapter_mode = mode == "chapter"
     scene_mode = mode == "scene" or chapter_mode
     opening_phase = chapter_number is None or chapter_number <= 5
@@ -779,7 +919,7 @@ def render_writing_profile_prompt_block(
                 f"- Content mode: {profile.market.content_mode}",
             ]
         lines += [
-            f"- Reader promise: {profile.market.reader_promise or 'Establish a durable read-on desire fast.'}",
+            f"- Reader promise: {profile.market.reader_promise or 'unspecified'}",
         ]
         # Opening chapters must deliver the selling points (golden-three
         # contract), so they survive scene-mode trimming there.
@@ -874,7 +1014,7 @@ def render_writing_profile_prompt_block(
             f"- 内容模式：{profile.market.content_mode}",
         ]
     lines += [
-        f"- 读者承诺：{profile.market.reader_promise or '必须快速建立持续追读欲。'}",
+        f"- 读者承诺：{profile.market.reader_promise or '未指定'}",
     ]
     # 开篇章节（黄金三章窗口）必须兑现核心卖点，scene 模式下保留。
     # 卖点逐条一行：顿号拼接会把 5-7 条卖点糊成 500 字长句（真机 prompt review
@@ -971,62 +1111,36 @@ def render_serial_fiction_guardrails(
     language: str | None = None,
     scope: str = "scene",
 ) -> str:
-    """Render the serial-fiction guardrails.
+    """Render project-selected rules without inventing a commercial contract.
 
-    ``scope="chapter"`` restates rule 3 against the whole chapter. A
-    chapter-first prompt that simultaneously demands "揉进一段连续叙事" and
-    "每场…尾钩" is asking for three mini-arcs with three mini-hooks — which is
-    precisely the stitched-together artifact the chapter-first unit exists to
-    remove. Beat obligations still apply; they just land once per chapter
-    instead of once per scene.
+    The profile renderer already exposes these to writer/reviewer alike. This
+    shared guardrail repeats only actual rules plus continuity, never a default
+    danger, hook quota, or mandatory scene beat sequence.
     """
-
-    chapter_scope = scope == "chapter"
-    if is_english_language(language):
-        beat_rule = (
-            "3. The chapter needs a goal, resistance, escalation, an information change, and a trailing hook; carry them through one continuous narrative rather than restarting the pattern per scene.\n"
-            if chapter_scope
-            else "3. Every scene needs a goal, resistance, escalation, an information change, and a trailing hook.\n"
-        )
-        guardrails = (
-            "1. Reveal the protagonist's differentiating edge, the core disturbance, a short-term gain, and immediate danger as early as possible.\n"
-            f"2. Deliver a concrete hook within the first {profile.market.hook_deadline_words} words; do not open with encyclopedia-style background.\n"
-            f"{beat_rule}"
-            "4. Release setting information through action, trade-offs, conflict, failure, and consequence instead of long exposition blocks.\n"
-            "5. Let the protagonist quickly display an advantage, wound, hunger, blind spot, or sharp contrast readers can remember.\n"
-            "6. End every chapter with a question, threat, reveal, or incentive that compels the next click.\n"
-            "7. All payoffs, mysteries, and emotional turns must serve the active platform target, selling points, and trope tags."
-        )
-        prompt_pack = resolve_prompt_pack(
-            profile.market.prompt_pack_key,
-            genre=" ".join(profile.style.tone_keywords) or "general",
-            sub_genre=None,
-        )
-        pack_rules = render_prompt_pack_fragment(prompt_pack, "global_rules")
-        if pack_rules:
-            guardrails = f"{guardrails}\n8. Extra Prompt Pack rules: {pack_rules}"
-        return guardrails
-    zh_beat_rule = (
-        "3. 整章必须有明确目标、阻碍、升级和信息变化，并收束到章末钩子；"
-        "这些拍点在一段连续叙事里推进，不要每换一个场面就重起一遍并各留一个小尾钩。\n"
-        if chapter_scope
-        else "3. 每场必须包含明确目标、阻碍、升级、信息变化和尾钩，不要写成策划说明。\n"
-    )
-    guardrails = (
-        "1. 开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险。\n"
-        f"2. 在前 {profile.market.hook_deadline_words} 字内给出明确钩子，不要先铺背景百科。\n"
-        f"{zh_beat_rule}"
-        "4. 设定信息只在角色行动、交易、冲突、失败和代价里释放，禁止长段解释世界观。\n"
-        "5. 主角必须尽快展现能让读者记住的优势、判断力、野心、伤口或反差。\n"
-        "6. 章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因。\n"
-        "7. 所有爽点、悬念和情绪推进都要服从当前平台目标、卖点与套路标签。"
-    )
+    english = is_english_language(language)
+    lines = [
+        "Follow the current creative contract and adopted continuity."
+        if english else "遵循当前创作合同与已采用事实，保持叙事连续性。"
+    ]
+    for value in (
+        profile.market.opening_contract, profile.market.opening_strategy,
+        profile.market.chapter_hook_strategy, profile.market.reader_promise,
+        profile.serialization.opening_mandate,
+        profile.serialization.first_three_chapter_goal,
+        profile.serialization.scene_drive_rule if scope != "chapter" else None,
+        profile.serialization.exposition_rule,
+        profile.serialization.chapter_ending_rule,
+        profile.serialization.free_chapter_strategy,
+    ):
+        if value and value.strip().lower() not in _PROFILE_PLACEHOLDER_VALUES:
+            if value not in lines:
+                lines.append(value)
     prompt_pack = resolve_prompt_pack(
         profile.market.prompt_pack_key,
-        genre=" ".join(profile.style.tone_keywords) or "通用",
+        genre=" ".join(profile.style.tone_keywords) or "general",
         sub_genre=None,
     )
     pack_rules = render_prompt_pack_fragment(prompt_pack, "global_rules")
-    if pack_rules:
-        guardrails = f"{guardrails}\n8. Prompt Pack 额外硬约束：{pack_rules}"
-    return guardrails
+    if pack_rules and not profile._runtime_source_receipt.get("unbound_pack_plot_rules_omitted"):
+        lines.append(("Genre technique guidance: " if english else "题材技法建议：") + pack_rules)
+    return "\n".join(lines)

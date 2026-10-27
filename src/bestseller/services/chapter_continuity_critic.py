@@ -31,6 +31,7 @@ import json
 import logging
 import re
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -224,6 +225,8 @@ async def audit_chapter_continuity(
     chapter_text: str,
     chapter_number: int,
     project_id: Any | None = None,
+    workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
     participants: Sequence[str] = (),
 ) -> ContinuityReport:
     """Ask the critic model for intra-chapter contradictions.
@@ -263,6 +266,8 @@ async def audit_chapter_continuity(
                 prompt_template="chapter_continuity_critic",
                 prompt_version="v1",
                 project_id=project_id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
             ),
         )
     except Exception as exc:  # noqa: BLE001 - advisory gate must never break a run

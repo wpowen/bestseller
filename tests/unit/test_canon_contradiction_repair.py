@@ -75,6 +75,60 @@ async def test_repair_that_does_not_improve_is_rejected(monkeypatch) -> None:
         None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
     assert s == _SPINE  # 原样保留
     assert rep["repaired"] is False
+    assert rep["fatal_blocking"] is False
+
+
+async def test_deterministic_conflict_gets_one_bounded_retry(monkeypatch) -> None:
+    premise = "陆家第七代守井人。"
+    spine = {"who": "陆家十八代单传的守井人"}
+    fixed = {"premise": premise, "spine": dict(spine)}
+    calls = {"complete": 0}
+
+    async def complete(session, settings, request):
+        calls["complete"] += 1
+        return type("Result", (), {"content": json.dumps(fixed), "llm_run_id": None})()
+
+    monkeypatch.setattr(C, "complete_text", complete)
+    async def verify(*_args, **_kwargs):
+        return _report(1)
+
+    monkeypatch.setattr(bcj, "verify_blurb_coherence", verify)
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=premise, spine=spine, synopsis=_SYN
+    )
+    assert calls["complete"] == 2
+    assert rep["fatal_blocking"] is True
+
+
+def test_finalize_caller_boundary_raises_before_packaging() -> None:
+    from bestseller.services.story_appeal import AppealBarNotMetError
+
+    with pytest.raises(AppealBarNotMetError) as caught:
+        C._raise_canon_fact_consistency_block_if_needed(
+            {"fatal_blocking": True, "repair_rejection_reason": "unresolved"},
+            conception_log=[{"round": "canon"}],
+        )
+    assert caught.value.blocked_by == ("canon_fact_consistency",)
+    assert caught.value.conception_log == [{"round": "canon"}]
+
+
+async def test_unverified_llm_canon_advice_does_not_block(monkeypatch) -> None:
+    advisory = bcj.CoherenceFinding(
+        kind="mechanism", quote_a="三十五岁盒饭铺老板纪釜", quote_b="",
+        explanation="机制建议，不是确定事实冲突", touches_synopsis=False,
+    )
+    fixed = {"premise": _PREMISE, "spine": {**_SPINE, "who": "多年市井厨房摸爬滚打"}}
+    _patch(
+        monkeypatch,
+        verify_seq=[bcj.CoherenceReport(findings=(advisory,), llm_used=True),
+                    bcj.CoherenceReport(findings=(advisory,), llm_used=True)],
+        llm_payload=json.dumps(fixed, ensure_ascii=False),
+    )
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise="纪釜经营一家盒饭铺。", spine={"who": "他擅长辨认火候"}, synopsis=_SYN
+    )
+    assert rep["repaired"] is False
+    assert rep["fatal_blocking"] is False
 
 
 async def test_shrunken_spine_is_rejected(monkeypatch) -> None:
@@ -111,3 +165,103 @@ async def test_verifier_down_fails_open(monkeypatch) -> None:
     p, s, rep = await C._repair_canon_contradictions(
         None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
     assert p == _PREMISE and s == _SPINE and rep is None
+
+
+async def test_unavailable_recheck_cannot_certify_repair(monkeypatch) -> None:
+    fixed = {"premise": _PREMISE, "spine": {**_SPINE, "who": "多年市井厨房摸爬滚打"}}
+    unavailable = bcj.CoherenceReport(findings=(), llm_used=False)
+    _patch(monkeypatch, verify_seq=[_report(1), unavailable],
+           llm_payload=json.dumps(fixed, ensure_ascii=False))
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep["repaired"] is False
+    assert rep["repair_rejection_reason"] == "recheck_unavailable"
+
+
+async def test_repair_cannot_trade_canon_conflict_for_synopsis_conflict(monkeypatch) -> None:
+    fixed = {"premise": _PREMISE, "spine": {**_SPINE, "who": "多年市井厨房摸爬滚打"}}
+    new_conflict = bcj.CoherenceFinding(
+        kind="fact", quote_a="新前提事实", quote_b="简介旧事实",
+        explanation="修复改变了简介依据", touches_synopsis=True,
+    )
+    _patch(monkeypatch, verify_seq=[_report(1), bcj.CoherenceReport(
+        findings=(new_conflict,), llm_used=True)],
+        llm_payload=json.dumps(fixed, ensure_ascii=False))
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep["repaired"] is False
+
+
+async def test_partial_repair_is_not_certified_as_consistent(monkeypatch) -> None:
+    fixed = {"premise": _PREMISE, "spine": {**_SPINE, "who": "多年市井厨房摸爬滚打"}}
+    _patch(monkeypatch, verify_seq=[_report(2), _report(1)],
+           llm_payload=json.dumps(fixed, ensure_ascii=False))
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep["repaired"] is False
+
+
+@pytest.mark.parametrize('replacement', ['', '   ', None, [], {}])
+async def test_repair_cannot_erase_populated_spine_value(monkeypatch, replacement) -> None:
+    fixed = {'premise': _PREMISE, 'spine': {**_SPINE, 'why_now': replacement}}
+    _patch(monkeypatch, verify_seq=[_report(1), _report(0)],
+           llm_payload=json.dumps(fixed, ensure_ascii=False))
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep['repaired'] is False
+    assert rep['repair_rejection_reason'] == 'invalid_spine_structure'
+
+
+async def test_repair_failure_retains_known_conflict_evidence(monkeypatch) -> None:
+    _patch(monkeypatch, verify_seq=[_report(1)], llm_payload='{broken')
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep is not None
+    assert rep['repaired'] is False
+    assert rep['repair_rejection_reason'] == 'repair_failed'
+    assert rep['findings']
+
+
+async def test_editor_exception_keeps_original_findings(monkeypatch) -> None:
+    _patch(monkeypatch, verify_seq=[_report(1)], llm_payload='{}')
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError('editor unavailable')
+
+    monkeypatch.setattr(C, 'complete_text', unavailable)
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep['repair_rejection_reason'] == 'repair_failed'
+    assert rep['findings']
+
+
+async def test_repair_cannot_add_unrequested_spine_fields(monkeypatch) -> None:
+    fixed = {'premise': _PREMISE, 'spine': {**_SPINE, 'new_power': 'teleportation'}}
+    _patch(monkeypatch, verify_seq=[_report(1), _report(0)],
+           llm_payload=json.dumps(fixed, ensure_ascii=False))
+    p, s, rep = await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert p == _PREMISE and s == _SPINE
+    assert rep['repair_rejection_reason'] == 'invalid_spine_structure'
+
+
+async def test_repair_prompt_supplies_synopsis_and_preserves_distinct_deadlines(monkeypatch) -> None:
+    _patch(monkeypatch, verify_seq=[_report(1)], llm_payload='{}')
+    requests = []
+
+    async def capture(session, settings, request):
+        requests.append(request)
+        return type('Result', (), {'content': '{}'})()
+
+    monkeypatch.setattr(C, 'complete_text', capture)
+    await C._repair_canon_contradictions(
+        None, None, premise=_PREMISE, spine=_SPINE, synopsis=_SYN)
+    assert _SYN in requests[0].user_prompt
+    assert '只留最狠' not in requests[0].user_prompt
+    assert requests[0].prompt_version == 'v2'

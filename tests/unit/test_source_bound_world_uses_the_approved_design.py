@@ -100,19 +100,29 @@ def test_no_curve_means_no_claim() -> None:
     ) is None
 
 
-def test_compiled_world_spec_carries_the_story_ladder() -> None:
-    """端到端：编译器产出的 world_spec 里不再有框架术语阶梯。"""
-
+def test_compiled_world_requires_canonical_power_source_not_metadata_cache() -> None:
     from bestseller.services.planner import _compile_source_bound_world_spec
+    from bestseller.services.conception_snapshots import snapshot_hash
 
     project = _project(
         growth_curve=_BOOK9_CURVE,
         writing_profile={"world": {"power_system_style": _BOOK9_STYLE}},
         book_design_snapshot={"protagonist": {"name": "祝余"}},
     )
+    unresolved = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
+    assert unresolved["power_system"] == {}
+    assert unresolved["_meta"]["source_gaps"] == ["full_canonical_source_unavailable"]
+    tiers = ["杂役级", "执簿境", "账本识海", "清债之钥"]
+    content = {"writing_profile": {"character": {"power_tiers": tiers},
+                "world": {"power_system_style": _BOOK9_STYLE}}}
+    project._source_bound_planning_canonical = {
+        "id": "canonical-world", "content_hash": snapshot_hash(content), "content": content,
+    }
     spec = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
-    tiers = spec["power_system"]["tiers"]
-    assert not ({"确认", "复现", "转化", "扩张"} & set(tiers)), tiers
+    assert spec["power_system"]["tiers"] == tiers
+    assert spec["power_system"]["description"] == _BOOK9_STYLE
+    assert "acquisition_method" not in spec["power_system"]
+    assert spec["_meta"]["approved_complete"] is False
 
 
 # ── 第二种真机格式（2026-08-24 末日验证书 custom-apocalypse-1787538561）──
@@ -145,7 +155,7 @@ def test_level_format_keeps_order() -> None:
         _project(growth_curve=_APOC_CURVE), engine="垂直运输"
     )
     assert ps["protagonist_starting_tier"] == ps["tiers"][0]
-    bodies = [t["bottleneck"] for t in ps["tier_progression"]]
+    bodies = [t["description"] for t in ps["tier_progression"]]
     assert "独居" in bodies[0]
     assert "临时秩序" in bodies[-1]
 

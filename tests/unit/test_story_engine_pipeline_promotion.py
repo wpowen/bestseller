@@ -15,6 +15,12 @@ from bestseller.services.story_engine_review import (
 )
 
 
+@pytest.fixture(autouse=True)
+def verified_continuity(monkeypatch):
+    # This module covers StoryEngine dispatch; continuity has real DB negatives.
+    monkeypatch.setattr(pipelines, "_ensure_chapter_continuity_before_adoption", AsyncMock())
+
+
 def _creative_core() -> dict[str, object]:
     pre_state = {"exposure": {"category": "exposure", "value": 0}}
     post_state = {"exposure": {"category": "exposure", "value": 1}}

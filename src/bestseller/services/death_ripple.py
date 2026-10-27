@@ -171,6 +171,7 @@ async def apply_death_ripple(
     project_id: UUID,
     deceased: CharacterModel,
     chapter_number: int,
+    trigger_snapshot_id: UUID | None = None,
 ) -> DeathRippleReport:
     """Propagate the consequences of one death across high-strength ties.
 
@@ -229,6 +230,15 @@ async def apply_death_ripple(
             continue
 
         # 1. Grief / closure snapshot for the survivor.
+        from bestseller.services.character_snapshot_sources import (
+            death_snapshot_binding, seal_snapshot_binding, snapshot_binding_matches,
+        )
+
+        binding = await death_snapshot_binding(
+            session, project_id=project_id, character_id=survivor.id,
+            deceased_id=deceased.id, chapter_number=chapter_number,
+            trigger_snapshot_id=trigger_snapshot_id,
+        )
         snapshot_created = False
         existing_snap = await _existing_grief_snapshot(
             session,
@@ -237,6 +247,15 @@ async def apply_death_ripple(
             chapter_number=chapter_number,
             deceased_name=deceased.name,
         )
+        if binding is not None:
+            # An unbound legacy note or a prior body's death cannot authorize
+            # this trigger. Keep those rows and deduplicate by exact evidence.
+            existing_snap = next((row for row in await session.scalars(
+                select(CharacterStateSnapshotModel).where(
+                    CharacterStateSnapshotModel.project_id == project_id,
+                    CharacterStateSnapshotModel.character_id == survivor.id,
+                    CharacterStateSnapshotModel.chapter_number == chapter_number,
+                )) if snapshot_binding_matches(row, binding)), None)
         if existing_snap is None:
             emotional_label = (
                 "grieving" if response == "grief" else "vengeance_resolved"
@@ -256,7 +275,9 @@ async def apply_death_ripple(
                 trust_map={},
                 beliefs=[],
                 notes=f"death_ripple:{deceased.name}:ch{chapter_number}",
+                source_binding=binding,
             )
+            snap.source_binding = seal_snapshot_binding(snap, binding)
             session.add(snap)
             snapshot_created = True
 
@@ -381,6 +402,7 @@ async def apply_death_ripples_for_chapter(
     project_id: UUID,
     deceased_character_ids: list[UUID],
     chapter_number: int,
+    trigger_snapshot_ids: dict[UUID, UUID] | None = None,
 ) -> list[DeathRippleReport]:
     """Convenience: ripple multiple deaths committed in the same chapter.
 
@@ -403,6 +425,7 @@ async def apply_death_ripples_for_chapter(
                 project_id=project_id,
                 deceased=deceased,
                 chapter_number=chapter_number,
+                trigger_snapshot_id=(trigger_snapshot_ids or {}).get(char_id),
             )
         except Exception:
             logger.exception(

@@ -21,6 +21,8 @@ from bestseller.domain.evaluation import (
     ModelPilotSpec,
 )
 from bestseller.domain.workflow import WorkflowMaterializationResult
+from bestseller.domain.ranking_evidence import CanonicalBookReadinessDecision
+from bestseller.services.canonical_book_readiness import CanonicalReadinessReadback
 
 runner = CliRunner()
 pytestmark = pytest.mark.unit
@@ -160,9 +162,7 @@ def test_premium_gate_project_command_outputs_json(monkeypatch: pytest.MonkeyPat
                     "passed": True,
                     "power_tier_state": {"沈砚": "炼气圆满"},
                     "resource_balances": {"沈砚": {"筑基丹": 1}},
-                    "opportunity_map": [
-                        {"target": "外门筑基名额", "cost": "丹药与船票"}
-                    ],
+                    "opportunity_map": [{"target": "外门筑基名额", "cost": "丹药与船票"}],
                     "faction_pressure_queue": [
                         {
                             "faction": "青炉宗",
@@ -243,12 +243,24 @@ def test_commercial_gate_project_command_outputs_ranking_json(
             dramatic_question="林渊能否逼所有人认账？",
         )
 
+    async def fake_load_canonical_book_readiness(session, project):
+        return CanonicalReadinessReadback(
+            decision=CanonicalBookReadinessDecision(
+                candidate_revision_hash="",
+                evaluation_status="UNASSESSED_NO_EVIDENCE_RUN",
+            )
+        )
+
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
     monkeypatch.setattr(
         "bestseller.cli.main.load_settings",
         lambda: SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path))),
     )
     monkeypatch.setattr("bestseller.cli.main.get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        "bestseller.services.canonical_book_readiness.load_canonical_book_readiness",
+        fake_load_canonical_book_readiness,
+    )
 
     result = runner.invoke(
         app,
@@ -259,6 +271,10 @@ def test_commercial_gate_project_command_outputs_ranking_json(
     payload = json.loads(result.stdout)
     assert payload["project_slug"] == "qingnang-test"
     assert "text_assessment" in payload
+    assert payload["release_authority"] == "canonical_evidence_only"
+    assert (
+        payload["canonical_release_decision"]["evaluation_status"] == "UNASSESSED_NO_EVIDENCE_RUN"
+    )
     assert payload["marketing_assets"]["short_video_scripts"][0]["duration_seconds"] == 15
 
 
@@ -368,7 +384,9 @@ def test_ui_serve_command(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("bestseller.cli.main.serve_web_app", fake_serve_web_app)
 
-    result = runner.invoke(app, ["ui", "serve", "--host", "127.0.0.1", "--port", "8899", "--open-browser"])
+    result = runner.invoke(
+        app, ["ui", "serve", "--host", "127.0.0.1", "--port", "8899", "--open-browser"]
+    )
 
     assert result.exit_code == 0
     assert captured == {
@@ -378,9 +396,7 @@ def test_ui_serve_command(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
-def test_config_show_reads_custom_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_config_show_reads_custom_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # config-show must read the URL from the --config-path file. The conftest
     # guardrail exempts BESTSELLER__DATABASE__URL from stripping so the suite
     # can target a test DB; clear it here so the config file is what loads.
@@ -431,7 +447,9 @@ logging:
         encoding="utf-8",
     )
 
-    result = runner.invoke(app, ["config-show", "--format", "json", "--config-path", str(config_path)])
+    result = runner.invoke(
+        app, ["config-show", "--format", "json", "--config-path", str(config_path)]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -446,7 +464,9 @@ def test_db_render_sql_prints_postgresql_schema() -> None:
     assert "CREATE EXTENSION IF NOT EXISTS vector;" in result.stdout
 
 
-def test_workflow_materialize_outline_accepts_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_workflow_materialize_outline_accepts_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     outline_path = tmp_path / "outline.json"
     outline_path.write_text(
         json.dumps(
@@ -808,7 +828,10 @@ def test_project_autowrite_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         assert kwargs["auto_repair_on_attention"] is True
         assert callable(kwargs["progress"])
         assert kwargs["project_payload"].writing_profile is not None
-        assert kwargs["project_payload"].writing_profile.market.prompt_pack_key == "apocalypse-supply-chain"
+        assert (
+            kwargs["project_payload"].writing_profile.market.prompt_pack_key
+            == "apocalypse-supply-chain"
+        )
         kwargs["progress"](
             "planning_completed",
             {
@@ -1143,7 +1166,9 @@ def test_retrieval_search_command(monkeypatch: pytest.MonkeyPatch) -> None:
         )()
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
-    monkeypatch.setattr("bestseller.cli.main.search_project_retrieval", fake_search_project_retrieval)
+    monkeypatch.setattr(
+        "bestseller.cli.main.search_project_retrieval", fake_search_project_retrieval
+    )
 
     result = runner.invoke(
         app,
@@ -1218,17 +1243,30 @@ def test_story_bible_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
                     "project_id": str(uuid4()),
                     "project_slug": "my-story",
                     "title": "My Story",
-                    "world_rules": [{"rule_code": "R001", "name": "记录优先", "description": "..." }],
-                    "locations": [{"name": "边境星港", "location_type": "station", "key_rule_codes": []}],
+                    "world_rules": [
+                        {"rule_code": "R001", "name": "记录优先", "description": "..."}
+                    ],
+                    "locations": [
+                        {"name": "边境星港", "location_type": "station", "key_rule_codes": []}
+                    ],
                     "factions": [{"name": "帝国档案局"}],
                     "characters": [{"name": "沈砚", "role": "protagonist"}],
-                    "relationships": [{"character_a": "沈砚", "character_b": "顾临", "relationship_type": "旧搭档", "strength": 0.6}],
+                    "relationships": [
+                        {
+                            "character_a": "沈砚",
+                            "character_b": "顾临",
+                            "relationship_type": "旧搭档",
+                            "strength": 0.6,
+                        }
+                    ],
                 }
             },
         )()
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
-    monkeypatch.setattr("bestseller.cli.main.build_story_bible_overview", fake_build_story_bible_overview)
+    monkeypatch.setattr(
+        "bestseller.cli.main.build_story_bible_overview", fake_build_story_bible_overview
+    )
 
     result = runner.invoke(app, ["story-bible", "show", "my-story"])
 
@@ -1457,7 +1495,9 @@ def test_scene_draft_command(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_session_scope(settings):
         yield object()
 
-    async def fake_generate_scene_draft(session, project_slug, chapter_number, scene_number, **kwargs):
+    async def fake_generate_scene_draft(
+        session, project_slug, chapter_number, scene_number, **kwargs
+    ):
         return type(
             "SceneDraftStub",
             (),
@@ -1486,7 +1526,9 @@ def test_scene_context_command(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_session_scope(settings):
         yield object()
 
-    async def fake_build_scene_writer_context(session, settings, project_slug, chapter_number, scene_number):
+    async def fake_build_scene_writer_context(
+        session, settings, project_slug, chapter_number, scene_number
+    ):
         assert project_slug == "my-story"
         return type(
             "SceneContextStub",
@@ -1549,7 +1591,9 @@ def test_narrative_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
         )()
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
-    monkeypatch.setattr("bestseller.cli.main.build_narrative_overview", fake_build_narrative_overview)
+    monkeypatch.setattr(
+        "bestseller.cli.main.build_narrative_overview", fake_build_narrative_overview
+    )
 
     result = runner.invoke(app, ["narrative", "show", "my-story"])
 
@@ -1653,7 +1697,9 @@ def test_chapter_context_command(monkeypatch: pytest.MonkeyPatch) -> None:
                     "chapter_scenes": [{"scene_number": 1, "title": "旧搭档回舰"}],
                     "previous_scene_summaries": [{"summary": "上一场发现异常。"}],
                     "recent_timeline_events": [{"event_name": "发现异常"}],
-                    "retrieval_chunks": [{"source_type": "chapter_draft", "chunk_text": "本章之前的关键线索"}],
+                    "retrieval_chunks": [
+                        {"source_type": "chapter_draft", "chunk_text": "本章之前的关键线索"}
+                    ],
                 }
             },
         )()
@@ -1688,7 +1734,12 @@ def test_chapter_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
                     "scores": type(
                         "ChapterScoreStub",
                         (),
-                        {"model_dump": lambda self, mode="json": {"overall": 0.66, "coverage": 0.54}},
+                        {
+                            "model_dump": lambda self, mode="json": {
+                                "overall": 0.66,
+                                "coverage": 0.54,
+                            }
+                        },
                     )(),
                 },
             )(),
@@ -2076,7 +2127,9 @@ def test_export_amazon_kdp_validate_command(monkeypatch: pytest.MonkeyPatch) -> 
         )()
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
-    monkeypatch.setattr("bestseller.cli.main.validate_amazon_kdp_project", fake_validate_amazon_kdp_project)
+    monkeypatch.setattr(
+        "bestseller.cli.main.validate_amazon_kdp_project", fake_validate_amazon_kdp_project
+    )
 
     result = runner.invoke(app, ["export", "amazon-kdp", "validate", "my-story"])
 
@@ -2105,7 +2158,9 @@ def test_export_amazon_kdp_package_command(monkeypatch: pytest.MonkeyPatch) -> N
         )()
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
-    monkeypatch.setattr("bestseller.cli.main.package_amazon_kdp_project", fake_package_amazon_kdp_project)
+    monkeypatch.setattr(
+        "bestseller.cli.main.package_amazon_kdp_project", fake_package_amazon_kdp_project
+    )
 
     result = runner.invoke(app, ["export", "amazon-kdp", "package", "my-story"])
 
@@ -2147,7 +2202,9 @@ def test_rewrite_impacts_command(monkeypatch: pytest.MonkeyPatch) -> None:
         fake_refresh_rewrite_impacts,
     )
 
-    result = runner.invoke(app, ["rewrite", "impacts", "my-story", "--chapter-number", "1", "--scene-number", "1"])
+    result = runner.invoke(
+        app, ["rewrite", "impacts", "my-story", "--chapter-number", "1", "--scene-number", "1"]
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -2230,7 +2287,9 @@ def test_scene_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_session_scope(settings):
         yield object()
 
-    async def fake_review_scene_draft(session, settings, project_slug, chapter_number, scene_number):
+    async def fake_review_scene_draft(
+        session, settings, project_slug, chapter_number, scene_number
+    ):
         from bestseller.domain.review import (
             SceneReviewFinding,
             SceneReviewResult,
@@ -2277,6 +2336,7 @@ def test_scene_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+
     async def fake_list_rewrite_impacts(session, project_slug, **kwargs):
         return []
 

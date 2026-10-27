@@ -89,6 +89,32 @@ async def test_run_judge_aggregates_click_rate():
 
 
 @pytest.mark.unit
+async def test_run_judge_honors_authoritative_channel_over_ambiguous_tags():
+    seen: dict[str, str] = {}
+
+    async def _judge(system, user):
+        seen["system"] = system
+        return '{"click": true, "score": 8, "reason": "经营升级明确"}'
+
+    report = await run_persona_click_judge(
+        None,
+        None,
+        title="废城经营录",
+        synopsis="现代运营负责人穿越异世大陆经营废城。",
+        genre="异世大陆",
+        sub_genre="经营建设",
+        tags=("穿越", "经营"),
+        channel="male",
+        judge=_judge,
+        samples=1,
+    )
+
+    assert report.channel == "男频"
+    assert "外卖" in seen["system"]
+    assert "言情" not in seen["system"]
+
+
+@pytest.mark.unit
 async def test_run_judge_fail_open_when_all_samples_unparseable():
     async def _judge(system, user):
         return "not json at all"

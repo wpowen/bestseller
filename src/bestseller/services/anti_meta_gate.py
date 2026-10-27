@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import re
 
@@ -215,6 +216,89 @@ def check_anti_meta_gate(
     )
 
 
+class AntiMetaActionConfigError(ValueError):
+    """Invalid prose action configuration; callers must not treat it as advisory."""
+
+
+def _anti_meta_actions(config: object) -> dict[str, bool]:
+    """Require both independent actions from the caller's actual prose config."""
+    actions = {}
+    for family in ("anti_meta", "in_scene_ending"):
+        try:
+            enabled = getattr(config, family + "_enabled")
+            severity = getattr(config, family + "_severity")
+        except AttributeError as exc:
+            raise AntiMetaActionConfigError("anti_meta_action_config_invalid") from exc
+        if (type(enabled) is not bool or not isinstance(severity, str)
+                or severity not in ("block", "warn")):
+            raise AntiMetaActionConfigError("anti_meta_action_config_invalid")
+        actions[family] = enabled and severity == "block"
+    return actions
+
+
+def effective_anti_meta_blockers(
+    report: AntiMetaReport | CheckerReport,
+    config: object,
+) -> tuple[CheckerIssue, ...]:
+    """Resolve independent leak/ending actions, preserving raw diagnostics.
+
+    Pass the actual ProseQualityGateConfig, never the enclosing app settings.
+    CheckerReport input preserves its issue objects; AntiMetaReport input uses
+    its unchanged checker conversion. An ending observation cannot inherit the
+    meta-leak action, and soft meta findings never become hard leaks.
+    """
+    actions = _anti_meta_actions(config)
+    if isinstance(report, AntiMetaReport):
+        checker = report.to_checker_report()
+    elif isinstance(report, CheckerReport) and report.agent == "anti-meta-gate":
+        checker = report
+    else:
+        raise TypeError("anti_meta_action_report_invalid")
+    selected = []
+    for issue in checker.issues:
+        if issue.id == "ANTI_META_ENDING_OUT_OF_SCENE":
+            if actions["in_scene_ending"]:
+                selected.append(issue)
+        elif issue.id in {"ANTI_META_HARD_TERM", "ANTI_META_SOFT_TERM"}:
+            if actions["anti_meta"] and not issue.can_override:
+                selected.append(issue)
+        else:
+            raise ValueError("anti_meta_action_issue_unknown")
+    return tuple(selected)
+
+
+def filter_inactive_anti_meta_block_codes(
+    codes: Iterable[str],
+    prose_config: object,
+) -> tuple[str, ...]:
+    """Read only: remove exact known codes whose current family is inactive.
+
+    No raw report, metadata, status or retry counter is rewritten. Unknown and
+    merely similar spellings remain intact, as do order and duplicate codes.
+    A live block action preserves cached codes until fresh evidence resolves
+    them; this view never claims that a new evaluation has passed.
+    """
+    actions = _anti_meta_actions(prose_config)
+    families = {
+        "ANTI_META_ENDING_OUT_OF_SCENE": "in_scene_ending",
+        "ANTI_META_LEAK": "anti_meta",
+        "ANTI_META_HARD_TERM": "anti_meta",
+        "ANTI_META_SOFT_TERM": "anti_meta",
+        "anti_meta:ANTI_META_ENDING_OUT_OF_SCENE": "in_scene_ending",
+        "anti_meta:ANTI_META_HARD_TERM": "anti_meta",
+    }
+    if isinstance(codes, (str, bytes)):
+        raise TypeError("anti_meta_block_codes_invalid")
+    selected = []
+    for code in codes:
+        if not isinstance(code, str):
+            raise TypeError("anti_meta_block_code_invalid")
+        family = families.get(code)
+        if family is None or actions[family]:
+            selected.append(code)
+    return tuple(selected)
+
+
 def _excerpt(text: str, start: int, end: int, radius: int = 36) -> str:
     return text[max(0, start - radius): min(len(text), end + radius)].replace("\n", " ")
 
@@ -302,9 +386,12 @@ def _ending_is_in_scene(sentences: list[str]) -> bool:
 
 
 __all__ = [
+    "AntiMetaActionConfigError",
     "AntiMetaFinding",
     "AntiMetaReport",
     "HARD_META_TERMS",
     "SOFT_META_TERMS",
     "check_anti_meta_gate",
+    "effective_anti_meta_blockers",
+    "filter_inactive_anti_meta_block_codes",
 ]

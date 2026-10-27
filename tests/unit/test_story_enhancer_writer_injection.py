@@ -16,11 +16,31 @@ dropped at persistence. These tests pin the three repairs:
 from __future__ import annotations
 
 from types import SimpleNamespace
+from uuid import uuid4
 
+from bestseller.infra.db.models import ChapterModel, ProjectModel, SceneCardModel
 from bestseller.services.story_enhancers import (
     STORY_ENHANCERS_METADATA_KEY,
     render_story_enhancer_writer_block,
 )
+
+def _explicit_choices(selection=None, *, methodology_mode=None):
+    selected = selection if selection is not None else {
+        "brainhole": True, "effect_skills": ["comedy_engine", "hype_satisfaction_engine"],
+    }
+    metadata = {"creation_intent_contract": {
+        "field_sources": {"story_enhancers": "explicit"},
+        "story_enhancers": selected,
+    }}
+    if methodology_mode is not None:
+        creation = metadata["creation_intent_contract"]
+        creation["field_sources"]["hook_spec"] = "explicit"
+        creation["hook_spec"] = {
+            "require_methodology_overlay": True,
+            "methodology_contract_mode": methodology_mode,
+        }
+    return metadata
+
 
 # ── A. writer-block renderer ──────────────────────────────────────────────────
 
@@ -30,6 +50,11 @@ def test_writer_block_empty_when_nothing_opted_in() -> None:
     assert render_story_enhancer_writer_block({}, {}) == ""
     # An unrelated metadata payload must not synthesise a block.
     assert render_story_enhancer_writer_block({"target_platform": "番茄"}, None) == ""
+    legacy = {STORY_ENHANCERS_METADATA_KEY: {"effect_skills": ["comedy_engine"]}}
+    stale = {"selected_effect_skills": {"primary": "comedy_engine"},
+             "brainhole_contract": {"one_sentence_sell": "旧AI建议不能变成新义务"}}
+    assert render_story_enhancer_writer_block(legacy, stale) == ""
+    assert render_story_enhancer_writer_block(None, stale) == ""
 
 
 def test_writer_block_carries_book_level_contract() -> None:
@@ -39,10 +64,10 @@ def test_writer_block_carries_book_level_contract() -> None:
             "effect_skills": ["comedy_engine"],
         }
     }
-    block = render_story_enhancer_writer_block(meta, None)
+    block = render_story_enhancer_writer_block(_explicit_choices(meta[STORY_ENHANCERS_METADATA_KEY]), None)
     assert block
     # Book-level hard contract header + the comedy tone-anchor floor reach prose.
-    assert "故事增强" in block
+    assert "已选故事效果目标" in block
     assert "喜剧" in block
     assert "脑洞" in block
 
@@ -54,8 +79,8 @@ def test_writer_block_carries_chapter_cashed_brainhole() -> None:
             "visible_comedy": "雷公嘴叼着电动车钥匙找不到充电桩",
         }
     }
-    block = render_story_enhancer_writer_block(None, chapter_meta)
-    assert "本章已规划的脑洞兑现点" in block
+    block = render_story_enhancer_writer_block(_explicit_choices(), chapter_meta)
+    assert "本章已规划的脑洞参考" in block
     assert "招来雷震子当外卖骑手" in block
     # Field keys are rendered with human labels, not raw snake_case.
     assert "一句话卖点" in block
@@ -72,8 +97,8 @@ def test_writer_block_renders_selected_effect_expected_contracts() -> None:
             },
         }
     }
-    block = render_story_enhancer_writer_block(None, chapter_meta)
-    assert "本章主推的故事效果兑现点" in block
+    block = render_story_enhancer_writer_block(_explicit_choices(), chapter_meta)
+    assert "本章主推的故事效果参考" in block
     assert "主效果" in block and "comedy_engine" in block
     assert "comic_effect_contract" in block
     assert "神仙用现代规则报错引发连锁笑点" in block
@@ -86,15 +111,15 @@ def test_writer_block_handles_list_expected_contracts() -> None:
             "expected_contracts": ["brainhole_contract", "comic_effect_contract"],
         }
     }
-    block = render_story_enhancer_writer_block(None, chapter_meta)
-    assert "需兑现合同" in block
+    block = render_story_enhancer_writer_block(_explicit_choices(), chapter_meta)
+    assert "建议技法" in block
     assert "brainhole_contract" in block
 
 
 def test_writer_block_caps_long_field_text() -> None:
     long_text = "炸" * 1000
     chapter_meta = {"brainhole_contract": {"one_sentence_sell": long_text}}
-    block = render_story_enhancer_writer_block(None, chapter_meta)
+    block = render_story_enhancer_writer_block(_explicit_choices(), chapter_meta)
     # Per-field cap (240) prevents a verbose contract from blowing up the prompt.
     assert block.count("炸") <= 240
 
@@ -175,16 +200,16 @@ def _user_prompt(*, project_meta=None, chapter_meta=None) -> str:
 
 def test_prose_prompt_injects_enhancer_when_opted_in() -> None:
     prompt = _user_prompt(
-        project_meta={
+        project_meta=_explicit_choices({
             STORY_ENHANCERS_METADATA_KEY: {
                 "brainhole": True,
                 "effect_skills": ["comedy_engine"],
             }
-        },
+        }[STORY_ENHANCERS_METADATA_KEY]),
         chapter_meta={"brainhole_contract": {"one_sentence_sell": "招来雷震子当骑手"}},
     )
     # Book-level mandate AND this chapter's cashed beat both reach the writer.
-    assert "故事增强" in prompt
+    assert "已选故事效果目标" in prompt
     assert "招来雷震子当骑手" in prompt
 
 
@@ -195,3 +220,172 @@ def test_prose_prompt_byte_identical_when_not_opted_in() -> None:
     legacy = _user_prompt(project_meta=None, chapter_meta=None)
     assert without == legacy
     assert "故事增强" not in without
+
+
+def test_chapter_first_prompt_injects_and_preserves_cashed_comedy_contract() -> None:
+    """Whole-chapter generation must see the same effect contract as scene mode."""
+
+    from bestseller.services.drafts import build_chapter_first_draft_prompts
+
+    project = ProjectModel(
+        slug="chapter-first-effect-contract",
+        title="废城运营录",
+        genre="玄幻",
+        language="zh-CN",
+        target_word_count=60_000,
+        target_chapters=30,
+        metadata_json={
+            STORY_ENHANCERS_METADATA_KEY: {
+                "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+            }
+        },
+    )
+    project.metadata_json = _explicit_choices(project.metadata_json[STORY_ENHANCERS_METADATA_KEY])
+    project.id = uuid4()
+    concrete_beat = (
+        "主角把三十年包销草案逐页折成扇面，守卒笑出声，"
+        "他借笑声把日租价格钉进封蜡，逼特使当厅念价。"
+    )
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=1,
+        title="折案成扇",
+        chapter_goal="拒绝包销并拿到第一笔短租收入。",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        target_word_count=2400,
+        metadata_json={
+            "selected_effect_skills": {
+                "primary": "comedy_engine",
+                "secondary": "hype_satisfaction_engine",
+                "expected_contracts": {
+                    "comedy_engine": {"concrete_beat": concrete_beat}
+                },
+            }
+        },
+    )
+    chapter.id = uuid4()
+    scene = SceneCardModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        scene_number=1,
+        scene_type="confrontation",
+        title="当厅改价",
+        participants=["沈渡", "裴淮安"],
+        purpose={"story": "拒绝包销", "emotion": "错位喜感"},
+        entry_state={},
+        exit_state={},
+        key_dialogue_beats=[],
+        sensory_anchors={},
+        forbidden_actions=[],
+        metadata_json={},
+        target_word_count=2400,
+    )
+    scene.id = uuid4()
+    packet = SimpleNamespace(
+        chapter_contract=None,
+        hard_fact_snapshot=None,
+        chapter_length_block=None,
+        timeline_canon_block=None,
+        character_role_block=None,
+        dialogue_voice_block=None,
+        scene_coherence_block=None,
+        canon_guardrails_block=None,
+        reader_contract_block=None,
+        hype_constraints_block=None,
+        hook_echo_block=None,
+        exposition_density_block=None,
+        voice_dna_block=None,
+        chapter_market_constraints_block=None,
+        signature_scene_block=None,
+        prior_persona_feedback_block=None,
+        participant_knowledge_states=[],
+        story_bible={"padding": "低优先级背景" * 1600},
+        previous_scene_summaries=[],
+        active_plot_arcs=[],
+        active_arc_beats=[],
+        unresolved_clues=[],
+        planned_payoffs=[],
+        recent_timeline_events=[],
+        retrieval_chunks=[],
+    )
+
+    _, user_prompt = build_chapter_first_draft_prompts(
+        project,
+        chapter,
+        [scene],
+        None,
+        packet,
+        target_word_count=2400,
+        context_budget_tokens=900,
+        prose_prompt_profile="lean",
+    )
+
+    assert "本章主推的故事效果参考" in user_prompt
+    assert concrete_beat in user_prompt
+
+
+def test_chapter_rewrite_prompt_preserves_cashed_comedy_contract() -> None:
+    """The editor must see the same selected effect contract as the writer."""
+
+    from bestseller.services.reviews import build_chapter_rewrite_prompts
+
+    project = ProjectModel(
+        slug="chapter-rewrite-effect-contract",
+        title="废城运营录",
+        genre="玄幻",
+        language="zh-CN",
+        target_word_count=60_000,
+        target_chapters=30,
+        metadata_json={
+            STORY_ENHANCERS_METADATA_KEY: {
+                "effect_skills": ["comedy_engine", "hype_satisfaction_engine"]
+            }
+        },
+    )
+    # The cached beat is an optional AI reference in the legacy strict suite.
+    # It is not promoted to an explicit author realization contract.
+    project.metadata_json = _explicit_choices(
+        project.metadata_json[STORY_ENHANCERS_METADATA_KEY], methodology_mode="strict",
+    )
+    project.id = uuid4()
+    concrete_beat = (
+        "主角把三十年包销草案逐页折成扇面，守卒笑出声，"
+        "他借笑声把日租价格钉进封蜡，逼特使当厅念价。"
+    )
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=1,
+        title="折案成扇",
+        chapter_goal="拒绝包销并拿到第一笔短租收入。",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        target_word_count=2400,
+        metadata_json={
+            "selected_effect_skills": {
+                "primary": "comedy_engine",
+                "secondary": "hype_satisfaction_engine",
+                "expected_contracts": {
+                    "comedy_engine": {"concrete_beat": concrete_beat}
+                },
+            }
+        },
+    )
+    chapter.id = uuid4()
+
+    _, user_prompt = build_chapter_rewrite_prompts(
+        project,
+        chapter,
+        SimpleNamespace(content_md="旧稿没有兑现折扇动作。", word_count=2100),
+        SimpleNamespace(
+            instructions="补齐本章选定的喜剧兑现链。",
+            rewrite_strategy="effect_realization_repair",
+            metadata_json={"editor_prompt_protocol": "3.1-lossless-source-time"},
+        ),
+        chapter_context=None,
+    )
+
+    assert "本章主推的故事效果参考" in user_prompt
+    assert concrete_beat in user_prompt

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+# ruff: noqa: RUF001
 
-# ruff: noqa: ANN401,RUF001
+from collections.abc import Mapping, Sequence
 import json
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +14,11 @@ from bestseller.domain.llm_quality_judge import (
     LLMQualityJudgeResult,
     quality_judge_result_from_mapping,
 )
+from bestseller.infra.db.models import WorkflowRunModel
 from bestseller.services.chapter_llm_quality_judge import _parse_json_object
 from bestseller.services.judge_rubrics import get_judge_rubric
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.settings import AppSettings
-
 
 _INTERNAL_TELEMETRY_MARKERS = (
     "auto_repair",
@@ -51,9 +52,23 @@ async def judge_chapter_window_quality(
     settings: AppSettings,
     *,
     chapters: Sequence[Mapping[str, Any]],
+    project_id: UUID,
     min_overall: float = 0.79,
-    workflow_run_id: Any | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> LLMQualityJudgeResult:
+    # A window is project work. Require the actual workflow FK to agree before
+    # reaching the paid gateway; prompt content/slug cannot establish ownership.
+    if project_id is None:
+        raise ValueError("window_judge_project_required")
+    if workflow_run_id is None:
+        raise ValueError("window_judge_workflow_required")
+    project_id = UUID(str(project_id))
+    workflow_run_id = UUID(str(workflow_run_id))
+    workflow = await session.get(WorkflowRunModel, workflow_run_id, populate_existing=True)
+    if workflow is None:
+        raise ValueError("window_judge_workflow_not_found")
+    if workflow.project_id != project_id:
+        raise ValueError("window_judge_workflow_project_mismatch")
     fallback = json.dumps(
         {
             "pass": False,
@@ -135,6 +150,7 @@ async def judge_chapter_window_quality(
             fallback_response=fallback,
             prompt_template="chapter_window_quality_judge",
             prompt_version="v1",
+            project_id=project_id,
             workflow_run_id=workflow_run_id,
             metadata={"judge_scope": "window", "window_size": len(chapters), "rubric": rubric.name},
             max_tokens_override=4096,

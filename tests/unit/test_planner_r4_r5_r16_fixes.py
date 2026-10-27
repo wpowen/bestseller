@@ -256,6 +256,51 @@ def test_outer_heal_restores_persisted_baseline_with_its_best_score() -> None:
     assert report["restored_from_previous_replan"] is True
 
 
+@pytest.mark.parametrize(
+    "baseline_revision",
+    [None, "stale-source"],
+)
+def test_outer_heal_discards_persisted_baseline_bound_to_missing_or_stale_revision(
+    baseline_revision: str | None,
+) -> None:
+    metadata = {
+        "derived_input_revision": {"status": "applied", "candidate_hash": "current-source"},
+        "outline_commercial_repair_baseline": {
+            "chapters": [{"chapter_number": 1, "goal": "旧源大纲"}]
+        },
+        "outline_commercial_last_failure": {
+            "overall_score": 0.9,
+            **(
+                {"baseline_revision_key": baseline_revision}
+                if baseline_revision is not None
+                else {}
+            ),
+        },
+    }
+
+    assert _restore_persisted_outline_repair_baseline(metadata) == (None, None)
+
+
+def test_outer_heal_restores_persisted_baseline_for_current_revision() -> None:
+    metadata = {
+        "derived_input_revision": {"status": "applied", "candidate_hash": "current-source"},
+        "outline_commercial_repair_baseline": {
+            "chapters": [{"chapter_number": 1, "goal": "当前源大纲"}]
+        },
+        "outline_commercial_last_failure": {
+            "recovery_baseline_score": 0.74,
+            "baseline_revision_key": "current-source",
+        },
+    }
+
+    from bestseller.services.prompt_source_policy import outline_dependency_hash
+    metadata["outline_repair_dependency_hash"] = outline_dependency_hash(metadata)
+    payload, report = _restore_persisted_outline_repair_baseline(metadata)
+
+    assert payload["chapters"][0]["goal"] == "当前源大纲"
+    assert report["overall_score"] == 0.74
+
+
 @pytest.mark.asyncio
 async def test_outer_heal_restores_best_historical_outline_and_matching_report() -> None:
     project = build_project()
@@ -283,11 +328,18 @@ async def test_outer_heal_restores_best_historical_outline_and_matching_report()
         },
     )
 
+    from bestseller.services.prompt_source_policy import outline_dependency_hash, content_hash
+    dependency = outline_dependency_hash(project.metadata_json or {}) or content_hash({})
+    step.output_ref.update(outline_repair_dependency_hash=dependency, graded_outline_hash=content_hash(artifact.content))
+
     class HistoricalSession:
         async def scalars(self, _statement):
             return SimpleNamespace(all=lambda: [step])
 
         async def scalar(self, _statement):
+            from bestseller.infra.db.models import WorkflowRunModel
+            if _statement.column_descriptions[0].get("entity") is WorkflowRunModel:
+                return SimpleNamespace(metadata_json={"outline_repair_dependency_hash":dependency})
             return artifact
 
     payload, report = await _restore_best_historical_outline_repair_baseline(
@@ -351,7 +403,7 @@ def test_commercial_surgical_repair_changes_only_allowlisted_fields() -> None:
     assert chapter["goal"] == "保住残页"
     assert chapter["information_gap_mode"] == "沉骨只按亲眼所见判断"
     assert chapter["scenes"][0]["purpose"]["story"] == (
-        "摸到残页；定点补强：沉骨亲眼比对刻痕后才翻页"
+        "沉骨亲眼比对刻痕后才翻页"
     )
     assert original["chapters"][0]["scenes"][0]["purpose"]["story"] == "摸到残页"
 

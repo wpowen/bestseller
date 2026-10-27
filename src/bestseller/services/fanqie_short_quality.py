@@ -14,6 +14,7 @@ from bestseller.domain.fanqie_short import (
 from bestseller.domain.fanqie_short_v2 import FanqieShortEmotionStack
 from bestseller.services.fanqie_short_gate_v2 import evaluate_fanqie_short_v2_readiness
 from bestseller.services.fanqie_short_opening_gate import (
+    FanqieShortOpeningReport,
     evaluate_fanqie_short_opening_gate,
     scan_fanqie_short_taboo_signals,
 )
@@ -33,6 +34,7 @@ class FanqieWholePieceReview:
     notes: list[str]
     ranking_report: FanqieRankingGateReport | None = None
     short_v2_report: FanqieRankingGateReport | None = None
+    opening_report: FanqieShortOpeningReport | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +44,9 @@ class FanqieWholePieceReview:
             "short_v2_passed": self.short_v2_passed,
             "taboo_signals": self.taboo_signals,
             "notes": self.notes,
+            "opening_report": (
+                self.opening_report.to_dict() if self.opening_report is not None else None
+            ),
             "ranking_report": (
                 self.ranking_report.to_dict() if self.ranking_report is not None else None
             ),
@@ -119,4 +124,5 @@ def review_whole_fanqie_short_story(
         notes=notes,
         ranking_report=ranking,
         short_v2_report=short_v2,
+        opening_report=opening,
     )

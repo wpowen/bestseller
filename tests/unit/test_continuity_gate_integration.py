@@ -85,7 +85,9 @@ def test_seam_major_finding_does_not_force_rewrite() -> None:
         message="前章 location open thread「门口」未承接。",
     )
     result = _merge_chapter_seam_into_review(
-        _baseline_result(), [finding], {"chapter_seam_score": 0.8},
+        _baseline_result(), [finding], {
+            "chapter_seam_silent_drops": [{"kind": "location", "marker": "门口"}],
+        },
     )
     # Major-only seam findings surface as warnings but don't force rewrite.
     assert result.verdict == "pass"

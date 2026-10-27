@@ -304,14 +304,15 @@ def test_routine_setup_spares_events_and_board_hooks(text: str) -> None:
     assert "routine_setup" not in detect_condemned_hook_structures(text)
 
 
-def test_author_pitch_arm_demands_a_landed_event() -> None:
-    """铁律四【事件先行】：类别级要求进 prompt，模板 token 只在检测器（种词铁律）。"""
+def test_author_pitch_arm_demands_concrete_goal_and_causal_action() -> None:
+    """通用创作要求具体目标、行动与后果，不强制某一种开篇节奏。"""
 
     _, user = ct._build_raw_idea_pool_messages(
         genre="悬疑灵异", sub_genre="民俗怪谈", count=12,
         audience_orientation="男频", prompt_arm="author_pitch",
     )
-    assert "事件先行" in user and "当场兑现" in user
+    assert "人物要得到或保住什么" in user
+    assert "他会采取什么行动" in user and "行动怎样改变下一步" in user
     # 种词检查：定罪模板的 token 不许出现在生成 prompt 里
     for token in ("命里注定", "命中注定", "一边"):
         assert token not in user, f"种词泄漏: {token}"

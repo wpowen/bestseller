@@ -50,20 +50,18 @@ def _block(cost_style: str) -> str:
 def test_minimal_cost_book_is_never_told_that_satisfaction_must_cost_something() -> None:
     block = _block("minimal")
     assert "hype_satisfaction" in block, "前置条件：爽点合同本来就该出现"
-    # ⚠️ 这里必须同时查中英两种写法。第一版只断言中文「代价」，**假绿**——
-    # 因为 guardrail 原文是英文 "cost"。中文 prompt 里嵌英文判据，会让
-    # 判据本身也失效，不只是腔调问题。
-    assert "代价" not in block, "勾了『无代价』的书，合同里不许再要求代价"
-    assert "cost" not in block.lower(), (
-        "英文 guardrail 同样算数——用户勾的两个选项不能在框架内部互相拆台"
-    )
+    assert "satisfaction must leave a new pressure or cost behind" not in block.lower()
+    assert "爽点必须留下代价" not in block
+    assert "不自动规定" in block
 
 
-def test_minimal_cost_book_still_gets_escalating_external_pressure() -> None:
-    """不是把压力删掉，是把压力挪到主角身外——爽文靠这个续航。"""
+def test_minimal_cost_goal_does_not_prescribe_external_pressure() -> None:
+    """保留爽点目标，不能把未选择的对手升级公式变成义务。"""
 
     block = _block("minimal")
-    assert "外部" in block or "对手" in block or "升级" in block
+    assert "爽点满足" in block
+    assert "不自动规定" in block
+    assert "必须升级外部对抗" not in block
 
 
 def test_default_cost_style_keeps_the_original_cost_guardrail() -> None:

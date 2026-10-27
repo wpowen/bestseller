@@ -180,36 +180,87 @@ class JudgeGenreContext:
     uses_commission_structure: bool
 
     def render_story_logic_block(self, language: str = "zh") -> str:
+        """Project an advisory quality lens; raw genre recipes are not authority.
+
+        Category selection cannot authorize an event, power, cadence, viewpoint
+        restriction or inference ban. Approved contracts travel separately.
+        """
+        import json
+
         is_en = str(language or "").lower().startswith("en")
-        checks = self.story_logic_checks_en if is_en else self.story_logic_checks_zh
-        header = (
-            "# STORY-LOGIC CHECKS (genre: "
-            f"{self.display_genre}) — any clear miss → blocking\n"
-            if is_en
-            else f"# 故事合理性核查(题材:{self.display_genre})— 任一明显缺失即 blocking\n"
+        dimensions = (
+            ("causality", "实际事件的因果与人物选择是否可理解。",
+             "Are the actual events and character choices causally understandable?"),
+            ("continuity", "按真实来源和时间范围核对事实衔接,允许有依据的发展与变化。",
+             "Check continuity against actual sources and their temporal scope; allow supported change."),
+            ("readability", "判断真实段落的信息组织是否妨碍读者理解。",
+             "Assess whether information in the actual paragraphs impedes comprehension."),
+            ("reader_interest", "根据已写出的冲突、关系或疑问评估阅读吸引力。",
+             "Assess interest through the conflicts, relationships or questions actually written."),
         )
-        body = "\n".join(f"{i}. {c}" for i, c in enumerate(checks, start=1))
-        return header + body + "\n"
+        focus_zh, focus_en = {
+            "relationship-driven": (
+                "如实际文本涉及核心关系,可从人设立体与关系张力观察阅读效果。",
+                "When actual text develops a central relationship, consider characterization and tension.",
+            ),
+            "suspense-mystery": (
+                "如实际文本涉及委托或解谜,可观察动机和已知线索的因果。",
+                "When actual text involves a commission or mystery, consider motives and known clues.",
+            ),
+            "action-progression": (
+                "如实际文本涉及成长或竞争,可观察选择和结果的因果。",
+                "When actual text involves growth or competition, consider choices and consequences.",
+            ),
+            "strategy-worldbuilding": (
+                "如实际文本涉及制度或博弈,可观察已建立规则与行动结果的关系。",
+                "When actual text involves institutions or strategy, consider established rules and outcomes.",
+            ),
+        }.get(self.category_key, (
+            "根据实际文本观察动机、理解与阅读兴趣。",
+            "Consider motives, comprehension and interest in the actual text.",
+        ))
+        lens = {
+            "schema_version": "genre-quality-lens.v1",
+            "authority": "advisory",
+            "category_key": self.category_key,
+            "display_genre": self.display_genre,
+            "category_focus": {"authority": "advisory", "question": focus_en if is_en else focus_zh},
+            "dimensions": [{"id": key, "question": en if is_en else zh}
+                           for key, zh, en in dimensions],
+            "policy": (
+                "Genre is context, not a content contract. No required power, event, technique, "
+                "cadence, sensory method or knowledge prohibition follows from category selection. "
+                "Concrete reader-impact defects still deserve genuine quality scores. Factual "
+                "contradictions require exact text and source references; enforce separately supplied "
+                "explicit current contracts. Missing genre techniques alone cannot block or cap scores."
+                if is_en else
+                "题材只提供背景,不是剧情合同;不因分类强制能力、事件、技巧、次数、感官方法或知识禁令。"
+                "实际阅读缺陷照常真实评分,事实冲突须引用正文与来源,明确批准的当前合同另行核查。"
+                "仅缺少某题材技巧不能阻塞或封顶;规划及术语背景不编译成持久事实。"
+            ),
+        }
+        return "# ADVISORY GENRE QUALITY LENS\n" + json.dumps(lens, ensure_ascii=False) + "\n"
 
     def render_own_terms_block(self, language: str = "zh") -> str:
-        """Tell the judge to reason about THIS book's own terms, not a fixed genre's."""
+        """Preserve this book's vocabulary without adopting uncertain context as fact."""
+        import json
 
         is_en = str(language or "").lower().startswith("en")
-        terms = "、".join(self.specialist_terms) if self.specialist_terms else ""
-        objects = "、".join(self.key_objects) if self.key_objects else ""
-        if is_en:
-            lines = [
-                "# THIS BOOK'S OWN TERMS (judge by these — do NOT import another genre's nouns)",
-                f"- specialist/rule terms: {terms or '(derive from the text; none preset)'}",
-                f"- key objects/abilities: {objects or '(derive from the text; none preset)'}",
-            ]
-        else:
-            lines = [
-                "# 本书自有术语(按这些判断 — 不要套用其它题材的名词)",
-                f"- 专业/规则术语:{terms or '(从正文判断,无预设)'}",
-                f"- 关键道具/能力:{objects or '(从正文判断,无预设)'}",
-            ]
-        return "\n".join(lines) + "\n"
+        terms = {
+            "schema_version": "book-vocabulary-reference.v1",
+            "authority": "unverified_context",
+            "specialist_terms": list(self.specialist_terms),
+            "key_objects": list(self.key_objects),
+            "policy": (
+                "Vocabulary references only. A label does not prove existence, an ability, an occurred "
+                "event or a prohibition. Verify against the actual body and authorized sources; "
+                "do not import another book's nouns or persist these labels as canon."
+                if is_en else
+                "仅供识别本书词汇;标签不证明存在、能力、已发生事件或禁令。"
+                "以实际正文和授权来源核实,不套用他书名词,不把这些标签持久化成 Canon。"
+            ),
+        }
+        return "# THIS BOOK'S VOCABULARY REFERENCES\n" + json.dumps(terms, ensure_ascii=False) + "\n"
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from bestseller.domain.llm_quality_judge import (
     quality_judge_result_from_mapping,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
-from bestseller.services.methodology_bridge import get_fragment
+from bestseller.services.methodology_bridge import render_methodology_applicability
 from bestseller.services.outline_llm_judge import _parse_json_object
 from bestseller.services.prompt_packs import PromptPack
 from bestseller.settings import AppSettings
@@ -48,12 +48,7 @@ async def judge_outline_reader_experience(
     if not golden:
         return _empty_result(reason="No chapters in reader-experience scope")
 
-    methodology_refs: list[str] = []
-    for key in ("opening_rules", "character_design"):
-        text = get_fragment(pack, phase="judge", fragment_key=key)
-        if text:
-            methodology_refs.append(f"【{key}】\n{text}")
-    methodology_block = "\n\n".join(methodology_refs)
+    authority_block = render_methodology_applicability(phase="judge", source=project_brief)
 
     chapters_text = json.dumps(golden, ensure_ascii=False, indent=2, default=str)
     if len(chapters_text) > 50000:
@@ -112,7 +107,8 @@ async def judge_outline_reader_experience(
         "\n"
         "# CONSTRAINTS · 硬性卡控（出现任一 → 必判 blocking）\n"
         "1. **空间错乱**：一章内角色物理位置变化无过渡（A → B 之间没写「半小时后 / 走到 / 推开门」）\n"
-        "2. **信息密度爆炸**：第 1 章涌入 > 3 个具名角色，或 > 2 个未解释的高概念术语\n"
+        "2. **信息过载**：引用具体段落说明首次读者为何无法跟上；人数、术语数量或比例"
+        "只有当前明确批准的合同规定时才是硬阈值，不得从题材或全局模板推断。\n"
         "3. **召唤主角无依据**：读者无法在本章看到「为什么是这个主角」（家学 / 师承 / 口碑 / 熟人 / 能力实证 之一都没有）\n"
         "4. **钩子前提缺失**：章末钩子依赖的设定未在本章建立\n"
         "5. **内部事实矛盾**：本章建立的事实被本章自己违反\n"
@@ -134,11 +130,7 @@ async def judge_outline_reader_experience(
         '"blocking_issues": [{code, severity, evidence(≤30字), required_fix, chapter_no}], '
         '"audit_issues": [{code, severity, evidence, required_fix, chapter_no}], '
         '"rewrite_plan": {scope, preserve, change, instructions}}'
-        + (
-            f"\n\n# REFERENCE · 评估时参照的方法论\n{methodology_block}"
-            if methodology_block
-            else ""
-        )
+        + "\n\n" + render_methodology_applicability(phase="judge")
     )
 
     user_prompt = (
@@ -148,10 +140,12 @@ async def judge_outline_reader_experience(
         f"- 黄金章节数：{len(golden)}\n"
         "\n## 项目简介\n"
         f"```json\n{brief_text}\n```\n"
+        f"\n{authority_block}\n"
         "\n## 黄金十章大纲\n"
         f"```json\n{chapters_text}\n```\n"
         "\n## 立即开始\n"
-        "**完全忘掉项目简介内容**，假装你只是从第 1 章第 1 句开始读的路人读者。\n"
+        "模拟读者未读简介，不得用简介替代正文的解释；但评审仍须遵守已批准的来源合同，"
+        "不得把陌生的合法设定判成违规，也不得按评审建议补造设定。\n"
         "按 system 中的 5 步 THINKING 逐项判定，输出严格 JSON。"
     )
 
@@ -167,7 +161,8 @@ async def judge_outline_reader_experience(
             prompt_template="outline_reader_experience_judge",
             prompt_version="v1",
             workflow_run_id=workflow_run_id,
-            metadata={"judge_scope": "reader_experience", "threshold": threshold},
+            metadata={"judge_scope": "reader_experience", "threshold": threshold,
+                      "methodology_applicability": "approved-contracts-only.v1"},
             max_tokens_override=4096,
         ),
     )

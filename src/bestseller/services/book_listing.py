@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from bestseller.services.book_packaging_contract import canonical_hash
 from bestseller.services.concept_lab import concept_lab_listing_overrides
 from bestseller.services.platform_title_workflow import (
     DEFAULT_TITLE_CANDIDATE_COUNT,
@@ -44,6 +45,93 @@ def _get_nested(source: Any, *keys: str, default: Any = None) -> Any:
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _active_packaging_listing_overrides(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the immutable active title/intro cache for display consumers."""
+
+    pointer = _clean_text(metadata.get("active_packaging_contract_id"))
+    if not pointer:
+        return {}
+    expected_hash = _clean_text(metadata.get("active_packaging_contract_hash"))
+    payloads = metadata.get("active_packaging_listing_payloads")
+    if not expected_hash or not isinstance(payloads, dict) or not payloads:
+        raise ValueError("STALE_PACKAGING_CONSUMER")
+    target = _clean_text(metadata.get("active_packaging_target_platform"))
+    candidates = [
+        payload
+        for key, payload in sorted(payloads.items())
+        if isinstance(payload, dict) and (not target or str(key).startswith(f"{target}:"))
+    ]
+    if not candidates:
+        raise ValueError("ACTIVE_INTRO_VARIANT_MISSING")
+    payload = candidates[0]
+    if _clean_text(payload.get("contract_hash")) != expected_hash:
+        raise ValueError("STALE_PACKAGING_CONSUMER")
+    payload_hash = _clean_text(payload.get("active_payload_hash"))
+    canonical_payload = {
+        key: value for key, value in payload.items() if key != "active_payload_hash"
+    }
+    if not payload_hash or canonical_hash(canonical_payload) != payload_hash:
+        raise ValueError("STALE_PACKAGING_CONSUMER")
+    intro = _clean_text(payload.get("active_intro_text"))
+    return {
+        "primary_title": _clean_text(payload.get("title")),
+        "logline": _clean_text(payload.get("logline")),
+        "target_platform": _clean_text(payload.get("target_platform")) or target,
+        "short_intro": intro,
+        "shelf_intro": intro,
+        "long_intro": intro,
+        "active_packaging_contract_id": pointer,
+        "active_packaging_contract_hash": expected_hash,
+        "active_intro_variant_id": _clean_text(payload.get("active_intro_variant_id")),
+        "active_intro_variant_hash": _clean_text(payload.get("active_intro_variant_hash")),
+    }
+
+
+def _formal_packaging_block(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Expose the creation-boundary failure to listing consumers.
+
+    A v2 conception may have passed the final copy audit but still have no
+    immutable contract bound to the project.  Such a package must remain
+    visible for diagnosis, while being explicitly ineligible for formal
+    listing.  Legacy/simple projects intentionally remain unchanged.
+    """
+
+    if _clean_text(metadata.get("concept_contract_version")) != "2":
+        return {}
+    artifacts = metadata.get("conception_artifacts")
+    appeal = artifacts.get("story_appeal") if isinstance(artifacts, dict) else None
+    promotion = appeal.get("final_packaging_promotion") if isinstance(appeal, dict) else None
+    if not isinstance(promotion, dict):
+        return {
+            "status": "packaging_blocked",
+            "formal_listing_ready": False,
+            "blocking_code": "FINAL_PACKAGING_PROMOTION_MISSING",
+        }
+    if promotion.get("passed") is not True:
+        # A v2 conception may be explicitly eligible for a readable draft while
+        # its commercial packaging remains a P1 review item. Keep the book and
+        # its copy visible, but never expose it as formally publishable.
+        if promotion.get("draft_eligible") is True:
+            quality_issues = promotion.get("quality_issues")
+            return {
+                "status": "packaging_needs_review",
+                "formal_listing_ready": False,
+                "quality_issues": list(quality_issues) if isinstance(quality_issues, list) else [],
+            }
+        return {
+            "status": "packaging_blocked",
+            "formal_listing_ready": False,
+            "blocking_code": "FINAL_PACKAGING_NOT_APPROVED",
+        }
+    if _clean_text(metadata.get("active_packaging_contract_id")):
+        return {}
+    return {
+        "status": "packaging_blocked",
+        "formal_listing_ready": False,
+        "blocking_code": "ACTIVE_PACKAGING_CONTRACT_MISSING",
+    }
 
 
 def _compact_text(value: Any) -> str:
@@ -274,7 +362,7 @@ def _build_shelf_intro(profile: dict[str, Any], *, max_chars: int = 500) -> str:
     primary = _clean_text(profile.get("primary_category"))
     secondary = _clean_text(profile.get("secondary_category"))
     tags = _string_list(profile.get("tags"))
-    tag_text = (" / ".join(tags[:4]) if is_en else "、".join(tags[:4]))
+    tag_text = " / ".join(tags[:4]) if is_en else "、".join(tags[:4])
 
     preferred = (
         _compact_text(profile.get("short_intro"))
@@ -290,13 +378,26 @@ def _build_shelf_intro(profile: dict[str, Any], *, max_chars: int = 500) -> str:
         pieces.append(preferred.rstrip("。.!?！？") + ending)
     else:
         if is_en:
-            category = " / ".join([item for item in [primary, secondary] if item]) or "commercial fiction"
-            pieces.append(f"{title} is a serialized {category} novel built around fast hooks, escalating choices, and chapter-end tension.")
+            category = (
+                " / ".join([item for item in [primary, secondary] if item]) or "commercial fiction"
+            )
+            pieces.append(
+                f"{title} is a serialized {category} novel built around fast hooks, escalating choices, and chapter-end tension."
+            )
         else:
             category = " / ".join([item for item in [primary, secondary] if item]) or "商业类型"
-            pieces.append(f"《{title}》是一部主打{category}的长篇连载，核心看点是高压选择、持续破局和章节尾钩。")
+            pieces.append(
+                f"《{title}》是一部主打{category}的长篇连载，核心看点是高压选择、持续破局和章节尾钩。"
+            )
 
-    promo = next((_compact_text(item) for item in _string_list(profile.get("promo_copy")) if _compact_text(item)), "")
+    promo = next(
+        (
+            _compact_text(item)
+            for item in _string_list(profile.get("promo_copy"))
+            if _compact_text(item)
+        ),
+        "",
+    )
     if promo and promo not in pieces[0]:
         pieces.append(promo.rstrip("。.!?！？") + ("." if is_en else "。"))
 
@@ -460,25 +561,70 @@ def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
         short_promise = promise[:40] if promise else f"{hook} — high-conflict opening"
         specs = [
             (title, subtitle, "Current main title / 当前主书名", "Primary / 主推"),
-            (f"{title}: {hook}", short_promise, "Genre-hook title / 强化类型入口", "Platform test / 平台测试"),
+            (
+                f"{title}: {hook}",
+                short_promise,
+                "Genre-hook title / 强化类型入口",
+                "Platform test / 平台测试",
+            ),
             (f"The {hook} Files", subtitle, "Core appeal highlight / 突出核心卖点", "Alt / 备选"),
-            (f"{primary} Chronicles", short_promise, "Clear genre signal / 类型识别明确", "Alt / 备选"),
+            (
+                f"{primary} Chronicles",
+                short_promise,
+                "Clear genre signal / 类型识别明确",
+                "Alt / 备选",
+            ),
             (f"{secondary} Diaries", subtitle, "Series potential / 系列化空间强", "Alt / 备选"),
-            (f"Breaking {primary}", short_promise, "Power-fantasy direct / 爽文表达直接", "Ad test / 广告测试"),
+            (
+                f"Breaking {primary}",
+                short_promise,
+                "Power-fantasy direct / 爽文表达直接",
+                "Ad test / 广告测试",
+            ),
             (f"{title}: Origins", subtitle, "Prequel/arc name / 适合番外/卷名", "Arc name / 卷名"),
-            (f"The {hook} Ledger", short_promise, "Suspense & consequence / 悬念与因果感", "Alt / 备选"),
+            (
+                f"The {hook} Ledger",
+                short_promise,
+                "Suspense & consequence / 悬念与因果感",
+                "Alt / 备选",
+            ),
             (f"{primary}: Case One", subtitle, "Case entry / 单元案入口", "Arc name / 卷名"),
             (f"{secondary} Endgame", short_promise, "High stakes / 危机感强", "Ad test / 广告测试"),
-            (f"When I Met the {hook}", subtitle, "Opening incident / 开篇事件感", "Ad test / 广告测试"),
+            (
+                f"When I Met the {hook}",
+                subtitle,
+                "Opening incident / 开篇事件感",
+                "Ad test / 广告测试",
+            ),
             (f"Rules of {hook}", short_promise, "Rule hook / 规则钩子", "Alt / 备选"),
             (f"The {primary} Codex", subtitle, "Mystery appeal / 神秘感强", "Alt / 备选"),
-            (f"{secondary}: The Hunt", short_promise, "Clear objective / 行动目标明确", "Alt / 备选"),
+            (
+                f"{secondary}: The Hunt",
+                short_promise,
+                "Clear objective / 行动目标明确",
+                "Alt / 备选",
+            ),
             (f"The {title} Records", subtitle, "Classic series / 传统系列感", "Alt / 备选"),
-            (f"{hook}: Sleepless Night", short_promise, "Atmosphere & crisis / 氛围与危机", "Arc name / 卷名"),
+            (
+                f"{hook}: Sleepless Night",
+                short_promise,
+                "Atmosphere & crisis / 氛围与危机",
+                "Arc name / 卷名",
+            ),
             (f"The {primary} Receipt", subtitle, "Cost & consequence / 结果与代价感", "Alt / 备选"),
-            (f"{secondary}: Day One", short_promise, "Strong opener / 强开场", "Ad test / 广告测试"),
+            (
+                f"{secondary}: Day One",
+                short_promise,
+                "Strong opener / 强开场",
+                "Ad test / 广告测试",
+            ),
             (f"The {hook} List", subtitle, "List suspense / 名单悬念", "Alt / 备选"),
-            (f"{title}: Eve of the Finale", short_promise, "Climax arc / 阶段高潮", "Arc name / 卷名"),
+            (
+                f"{title}: Eve of the Finale",
+                short_promise,
+                "Climax arc / 阶段高潮",
+                "Arc name / 卷名",
+            ),
         ]
     else:
         short_promise = promise[:26] if promise else f"{hook}开局，强冲突推进"
@@ -672,14 +818,10 @@ def write_platform_title_workflow_artifacts(
     workflow_path = target_dir / "title-workflow.json"
     candidates_path = target_dir / "title-candidates.csv"
     workflow = (
-        profile.get("title_workflow")
-        if isinstance(profile.get("title_workflow"), dict)
-        else {}
+        profile.get("title_workflow") if isinstance(profile.get("title_workflow"), dict) else {}
     )
     candidates = (
-        profile.get("title_candidates")
-        if isinstance(profile.get("title_candidates"), list)
-        else []
+        profile.get("title_candidates") if isinstance(profile.get("title_candidates"), list) else []
     )
     workflow_path.write_text(
         json.dumps(workflow, ensure_ascii=False, indent=2) + "\n",
@@ -754,15 +896,9 @@ def _derive_characters(
     characters = [item for item in characters if item["name"]]
     if characters:
         protagonists = [
-            item
-            for item in characters
-            if item["role"] == "protagonist" or item["is_pov_character"]
+            item for item in characters if item["role"] == "protagonist" or item["is_pov_character"]
         ]
-        supporting = [
-            item
-            for item in characters
-            if item not in protagonists
-        ]
+        supporting = [item for item in characters if item not in protagonists]
         normalized: list[dict[str, Any]] = []
         for item in protagonists:
             item = dict(item)
@@ -825,7 +961,8 @@ def validate_book_listing_profile(profile: dict[str, Any]) -> dict[str, Any]:
             "severity": "blocker",
             "passed": (
                 len(_clean_text(profile.get("shelf_intro") or profile.get("short_intro"))) >= 40
-                and len(_clean_text(profile.get("shelf_intro") or profile.get("short_intro"))) <= 500
+                and len(_clean_text(profile.get("shelf_intro") or profile.get("short_intro")))
+                <= 500
             ),
             "message": (
                 "The short intro must clearly convey protagonist, conflict, appeal, and reading hook.\n"
@@ -942,24 +1079,30 @@ def build_book_listing_profile(
         project_slug=_clean_text(_get_value(project, "slug")),
     )
     metadata_overrides = (
-        metadata.get("listing_profile")
-        if isinstance(metadata.get("listing_profile"), dict)
-        else {}
+        metadata.get("listing_profile") if isinstance(metadata.get("listing_profile"), dict) else {}
     )
+    packaging_overrides = _active_packaging_listing_overrides(metadata)
     # Explicit file overrides are written by the listing editor/regeneration UI
     # and therefore must win over older conception/database snapshots.
-    overrides = {**concept_overrides, **metadata_overrides, **file_overrides}
+    overrides = {
+        **concept_overrides,
+        **metadata_overrides,
+        **file_overrides,
+        **packaging_overrides,
+    }
     concept_title_candidates = _normalize_legacy_title_candidates(
         concept_overrides.get("title_candidates")
     )
 
-    project_language = (
-        _clean_text(_get_value(project, "language")) or "zh-CN"
-    )
+    project_language = _clean_text(_get_value(project, "language")) or "zh-CN"
     is_en = _is_english(project_language)
-    project_title = _clean_text(_get_value(project, "title")) or ("Untitled" if is_en else "未命名作品")
-    platform = _clean_text(_get_nested(writing_profile, "market", "platform_target")) or (
-        "All Platforms" if is_en else "全平台"
+    project_title = _clean_text(_get_value(project, "title")) or (
+        "Untitled" if is_en else "未命名作品"
+    )
+    platform = (
+        _clean_text(overrides.get("target_platform"))
+        or _clean_text(_get_nested(writing_profile, "market", "platform_target"))
+        or ("All Platforms" if is_en else "全平台")
     )
     override_tags = _string_list(overrides.get("tags"))
     if override_tags:
@@ -1156,15 +1299,20 @@ def build_book_listing_profile(
         ),
         "target_platform": platform,
         "primary_title": _clean_text(overrides.get("primary_title")) or project_title,
+        "active_packaging_contract_id": _clean_text(overrides.get("active_packaging_contract_id")),
+        "active_packaging_contract_hash": _clean_text(
+            overrides.get("active_packaging_contract_hash")
+        ),
+        "active_intro_variant_id": _clean_text(overrides.get("active_intro_variant_id")),
+        "active_intro_variant_hash": _clean_text(overrides.get("active_intro_variant_hash")),
         "recommended_subtitle": _clean_text(overrides.get("recommended_subtitle")),
         "logline": logline,
         "logline_source": logline_source,
         "channel": (
             _clean_text(overrides.get("channel")) or _clean_text(_get_value(project, "audience"))
         ),
-        "length_type": _clean_text(overrides.get("length_type")) or (
-            "Serialized Novel / 长篇连载" if is_en else "长篇连载"
-        ),
+        "length_type": _clean_text(overrides.get("length_type"))
+        or ("Serialized Novel / 长篇连载" if is_en else "长篇连载"),
         "serialization_status": _clean_text(overrides.get("serialization_status"))
         or _clean_text(_get_value(project, "status")),
         "language": (
@@ -1174,7 +1322,9 @@ def build_book_listing_profile(
         "secondary_category": secondary_category,
         "tertiary_categories": _string_list(overrides.get("tertiary_categories")) or tags[:4],
         "platform_category_suggestions": overrides.get("platform_category_suggestions")
-        or _category_suggestions(primary_category, secondary_category, platform, language=project_language),
+        or _category_suggestions(
+            primary_category, secondary_category, platform, language=project_language
+        ),
         "tags": tags,
         "short_intro": short_intro,
         "long_intro": _clean_text(overrides.get("long_intro")),
@@ -1270,16 +1420,11 @@ def build_book_listing_profile(
         "candidate_count": len(profile["title_candidates"]),
     }
 
-    profile["shelf_intro"] = (
-        _limit_chars(overrides.get("shelf_intro"), max_chars=500)
-        or _build_shelf_intro(profile, max_chars=500)
-    )
+    profile["shelf_intro"] = _limit_chars(
+        overrides.get("shelf_intro"), max_chars=500
+    ) or _build_shelf_intro(profile, max_chars=500)
     character_names = _dedupe_strings(
-        [
-            item.get("name")
-            for item in profile.get("main_characters", [])
-            if isinstance(item, dict)
-        ]
+        [item.get("name") for item in profile.get("main_characters", []) if isinstance(item, dict)]
     )
     profile["character_names"] = character_names
     profile["copy_pack"] = {
@@ -1302,4 +1447,5 @@ def build_book_listing_profile(
         story_bible=story_bible,
     )
     profile["compliance"] = validate_book_listing_profile(profile)
+    profile.update(_formal_packaging_block(metadata))
     return profile

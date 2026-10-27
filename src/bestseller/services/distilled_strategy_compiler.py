@@ -13,12 +13,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from bestseller.services.distillation_assets import calculate_aggregate_maturity_score
-from bestseller.services.distilled_design_reference import load_distilled_design_reference
+from bestseller.services.distilled_design_reference import (
+    get_verified_distilled_source_receipt,
+    load_distilled_design_reference,
+)
 
 DesignRole = Literal[
     "series_engine",
@@ -105,6 +108,31 @@ def _as_list(value: object) -> list[object]:
     if isinstance(value, tuple):
         return list(value)
     return []
+
+
+def _prompt_safe_rows(ref: Mapping[str, Any], key: str) -> list[object]:
+    """Read only the loader's prompt-safe projection, never raw registries."""
+
+    return _as_list(ref.get(key))
+
+
+def _sanitize_material_rows(rows: Sequence[object]) -> list[dict[str, Any]]:
+    """Keep reusable material shape while removing source state trajectories."""
+
+    sanitized: list[dict[str, Any]] = []
+    for item in rows:
+        row = _as_mapping(item)
+        if not row:
+            continue
+        copy = dict(row)
+        content = _as_mapping(copy.get("content_json"))
+        if content:
+            content = dict(content)
+            content.pop("state_variables", None)
+            content.pop("distillation_source_ids", None)
+            copy["content_json"] = content
+        sanitized.append(copy)
+    return sanitized
 
 
 def _text(value: object) -> str:
@@ -245,7 +273,10 @@ def _select_mechanisms(
 def _manifest_maturity(ref: Mapping[str, Any]) -> tuple[float, str]:
     manifest = _as_mapping(ref.get("manifest"))
     try:
-        score = float(manifest.get("maturity_score"))
+        raw_score = manifest.get("maturity_score")
+        if raw_score is None:
+            raise ValueError("aggregate maturity is unspecified")
+        score = float(raw_score)
     except (TypeError, ValueError):
         score = calculate_aggregate_maturity_score(
             source_count=int(manifest.get("source_count") or 0),
@@ -361,14 +392,9 @@ def _craft_controls(rows: Sequence[object], *, limit: int = 8) -> list[str]:
 
 
 def _anti_copy_boundaries(ref: Mapping[str, Any], *, limit: int = 12) -> list[str]:
-    grammar = _as_mapping(ref.get("grammar"))
-    anti_copy = _as_mapping(ref.get("anti_copy"))
+    safe_grammar = _as_mapping(ref.get("prompt_safe_grammar"))
     return _dedupe(
-        [
-            *_string_items(grammar.get("forbidden_defaults"), limit=8),
-            *_string_items(anti_copy.get("replacement_policy"), limit=6),
-            *_string_items(anti_copy.get("blocked_combinations"), limit=8),
-        ],
+        _string_items(safe_grammar.get("forbidden_defaults"), limit=8),
         limit=limit,
     )
 
@@ -393,34 +419,32 @@ def compile_distilled_strategy_card(
     if not ref:
         return None
 
-    grammar = _as_mapping(ref.get("grammar"))
+    if get_verified_distilled_source_receipt(ref, repo_root=repo_root) is None:
+        return None
+
     manifest = _as_mapping(ref.get("manifest"))
-    mechanisms = _as_list(ref.get("mechanisms"))
-    materials = _as_list(ref.get("materials"))
+    mechanisms = _prompt_safe_rows(ref, "prompt_safe_mechanisms")
+    materials = _sanitize_material_rows(
+        _prompt_safe_rows(ref, "prompt_safe_materials")
+    )
+    volume_paths = _prompt_safe_rows(ref, "prompt_safe_volume_paths")
+    craft_rows = _prompt_safe_rows(ref, "prompt_safe_craft")
+    safe_grammar = _as_mapping(ref.get("prompt_safe_grammar"))
     selected = _select_mechanisms(
         mechanisms,
         project_context=project_context,
         max_mechanisms=max_mechanisms,
     )
     score, status = _manifest_maturity(ref)
-    required_state_variables = _dedupe(
-        [
-            *_string_items(grammar.get("state_variables"), limit=8),
-            *[
-                state
-                for row in (_as_mapping(item) for item in materials)
-                for state in _string_items(
-                    _as_mapping(row.get("content_json")).get("state_variables")
-                )
-            ],
-        ],
-        limit=10,
-    )
+    # State trajectories are source observations, even when nested inside an
+    # otherwise reusable material. Keep them for audit, never for a project
+    # strategy card consumed by planning or drafting.
+    required_state_variables: list[str] = []
     required_change_vectors = _dedupe(
-        _string_items(grammar.get("chapter_change_vectors"), limit=10),
+        _string_items(safe_grammar.get("chapter_change_vectors"), limit=10),
         limit=10,
     )
-    reader_reward_mix = _dedupe(_string_items(grammar.get("reader_rewards"), limit=10), limit=10)
+    reader_reward_mix: list[str] = []
     world_design_paths = _material_summaries(
         materials,
         {"world_settings", "power_systems", "factions", "locale_templates"},
@@ -436,7 +460,7 @@ def compile_distilled_strategy_card(
             row.get("arc_function") or row.get("dominant_engine") or row.get("setup_payoff_rhythm"),
             120,
         )
-        for row in _usable_volume_rows(ref.get("volume_paths"))
+        for row in _usable_volume_rows(volume_paths)
         if _text(row.get("arc_function") or row.get("dominant_engine"))
     ][:6]
     chapter_execution_patterns = _material_summaries(
@@ -444,7 +468,7 @@ def compile_distilled_strategy_card(
         {"scene_templates"},
         limit=6,
     )
-    craft_controls = _craft_controls(_as_list(ref.get("author_craft")), limit=8)
+    craft_controls = _craft_controls(craft_rows, limit=8)
     anti_copy_boundaries = _anti_copy_boundaries(ref, limit=12)
     aggregate_key = _text(
         ref.get("key") or manifest.get("aggregate_key") or category_key or "unknown"
@@ -511,8 +535,9 @@ def compile_distilled_strategy_card(
         chapter_execution_patterns=chapter_execution_patterns,
         craft_controls=craft_controls,
         anti_copy_boundaries=anti_copy_boundaries,
-        world_mechanism_bindings=_as_list(
-            _as_mapping(worldview_bindings).get("distilled_mechanism_bindings")
+        world_mechanism_bindings=cast(
+            list[dict[str, Any]],
+            _as_list(_as_mapping(worldview_bindings).get("distilled_mechanism_bindings")),
         ),
         worldview_bindings=_as_mapping(worldview_bindings),
         transformation_requirements=transformation_requirements,
@@ -574,8 +599,8 @@ def render_distilled_strategy_card_block(
             )
     if phase == "world" and card.world_mechanism_bindings:
         lines.append("- World mechanisms:" if is_en else "- 世界机制:")
-        for item in card.world_mechanism_bindings[:max_mechanisms]:
-            row = _as_mapping(item)
+        for binding in card.world_mechanism_bindings[:max_mechanisms]:
+            row = _as_mapping(binding)
             states = _string_items(row.get("state_variables"), limit=4)
             state_text = f" -> states: {', '.join(states)}" if states else ""
             lines.append(f"  - {_text(row.get('mechanism_id'))}{state_text}")
@@ -608,8 +633,8 @@ def render_distilled_strategy_card_block(
     phase_items = phase_map.get(phase, [])
     if phase_items:
         lines.append("- Phase obligations:" if is_en else "- 本阶段义务:")
-        for item in phase_items[:6]:
-            lines.append(f"  - {item}")
+        for phase_item in phase_items[:6]:
+            lines.append(f"  - {phase_item}")
     if card.anti_copy_boundaries:
         label = "- Anti-copy boundaries: " if is_en else "- 反抄袭边界: "
         lines.append(label + "; ".join(card.anti_copy_boundaries[:8]))

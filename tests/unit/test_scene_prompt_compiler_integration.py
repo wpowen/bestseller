@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,8 @@ from bestseller.services.prompt_compiler import (
     CompiledPrompt,
     PromptBlock,
     PromptBudgetError,
+    PromptConflictError,
+    PromptProvenance,
 )
 
 pytestmark = pytest.mark.unit
@@ -141,21 +144,39 @@ def test_compiled_scene_prompt_matrix_stays_complete_unique_and_within_budget(
     assert "scene.system_contract" in compiled.report.required_blocks_kept
     assert "scene.primary_task" in compiled.report.required_blocks_kept
     blacklist = "AI套话黑名单" if language.startswith("zh") else "BANNED AI CLICH"
-    assert blacklist in compiled.system
+    # A rendered craft block is retained as a reference, not system authority.
+    assert blacklist in compiled.user
+    assert blacklist not in compiled.system
+    assert "scene.section.slop_blacklist" in compiled.report.kept
+    assert "scene.section.slop_blacklist" not in compiled.report.required_blocks_kept
+    assert compiled.report.block_source_hashes["scene.section.slop_blacklist"]
 
 
 def test_scene_compiler_dedupes_an_injected_semantic_blacklist_family() -> None:
     project, chapter, scene = _models("zh-CN", 1, 1)
     duplicate = PromptBlock(
         key="test.duplicate_blacklist",
-        channel="system",
+        channel="user",
         layer="craft",
         authority=1,
-        instruction_family="writer.output.blacklist",
+        instruction_family="writer.reference.slop_blacklist",
         source="test",
         text="另一份较弱黑名单。",
     )
 
+    # Missing provenance is an error, even for a weak duplicate. Do not bypass
+    # the new strict gate just to keep the old deduplication fixture working.
+    with pytest.raises(PromptConflictError, match="provenance is required"):
+        build_scene_draft_prompts(
+            project, chapter, scene, None, prompt_mode="compiled",
+            compiler_additional_blocks=(duplicate,),
+        )
+    duplicate = duplicate.model_copy(update={
+        "provenance": PromptProvenance(
+            kind="legacy", source_id="test.blacklist-reference",
+            source_hash=sha256(duplicate.text.encode()).hexdigest(),
+        ),
+    })
     compiled = build_scene_draft_prompts(
         project,
         chapter,
@@ -167,11 +188,17 @@ def test_scene_compiler_dedupes_an_injected_semantic_blacklist_family() -> None:
 
     assert isinstance(compiled, CompiledPrompt)
     assert "另一份较弱黑名单" not in compiled.system
+    assert "另一份较弱黑名单" not in compiled.user
     assert compiled.report.duplicates == ("test.duplicate_blacklist",)
     assert compiled.report.conflicts == ()
+    with pytest.raises(PromptConflictError, match="reference producers cannot grant"):
+        build_scene_draft_prompts(
+            project, chapter, scene, None, prompt_mode="compiled",
+            compiler_additional_blocks=(duplicate.model_copy(update={"channel": "system"}),),
+        )
 
 
-def test_compiled_scene_prompt_keeps_story_engine_creative_core_as_required() -> None:
+def test_compiled_scene_prompt_preserves_creative_core_without_rendered_authority() -> None:
     project, chapter, scene = _models("zh-CN", 4, 1)
 
     compiled = build_scene_draft_prompts(
@@ -184,12 +211,17 @@ def test_compiled_scene_prompt_keeps_story_engine_creative_core_as_required() ->
     )
 
     assert isinstance(compiled, CompiledPrompt)
-    assert "scene.section.creative_core_line" in compiled.report.required_blocks_kept
+    key = "scene.section.creative_core_line"
+    assert key in compiled.report.kept
+    assert key not in compiled.report.required_blocks_kept
+    assert key not in (*compiled.report.truncated, *compiled.report.dropped)
+    assert compiled.report.block_source_hashes[key]
     assert compiled.user.count("【StoryEngine 本章创意核心") == 1
     assert "立即公开并保护证人" in compiled.user
+    assert "立即公开并保护证人" not in compiled.system
 
 
-def test_compiler_keeps_every_hard_canon_section_and_fails_closed_if_they_do_not_fit() -> None:
+def test_compiler_keeps_critical_references_and_explicit_canon_or_fails_closed() -> None:
     hard_fact = "硬事实：林砚从未见过门后的人。"
     timeline = "时间线：今晚十一点前必须离开封锁区。"
     compiled = _compile_rendered_writer_prompt(
@@ -204,10 +236,51 @@ def test_compiler_keeps_every_hard_canon_section_and_fails_closed_if_they_do_not
         prompt_safety_margin=0.10,
     )
 
-    assert {
+    keys = {
         "scene.section.hard_fact_line",
         "scene.section.timeline_canon_line",
-    } <= set(compiled.report.required_blocks_kept)
+    }
+    assert keys <= set(compiled.report.kept)
+    assert keys.isdisjoint(compiled.report.required_blocks_kept)
+    assert keys.isdisjoint((*compiled.report.dropped, *compiled.report.truncated))
+    for text in (hard_fact, timeline):
+        assert compiled.user.count(text) == 1
+        assert text not in compiled.system
+    assert compiled.report.block_source_hashes["scene.section.hard_fact_line"] == sha256(
+        hard_fact.encode()
+    ).hexdigest()
+
+    # Rendering cannot confer canon authority, but an explicitly typed snapshot
+    # still carries the original required + preserve guarantee.
+    canonical = tuple(
+        PromptBlock(
+            key=f"test.canonical.{name}", channel="user", layer="hard_canon",
+            authority=100, instruction_family=f"test.canonical.{name}",
+            required=True, trim_policy="preserve", source="test.approved-snapshot",
+            text=text, provenance=PromptProvenance(
+                kind="canonical_snapshot", source_id="test.approved-snapshot",
+                source_hash="approved-snapshot-hash", field_paths=(name,),
+            ),
+        )
+        for name, text in (("fact", hard_fact), ("timeline", timeline))
+    )
+    typed = _compile_rendered_writer_prompt(
+        path="scene", system_prompt="Write the scene.", user_prompt="推进冲突。",
+        section_texts={}, additional_blocks=canonical,
+        total_input_budget_tokens=1_000, prompt_safety_margin=0.10,
+    )
+    assert {item.key for item in canonical} <= set(typed.report.required_blocks_kept)
+    assert typed.user.count(hard_fact) == typed.user.count(timeline) == 1
+
+    # A critical reference that fits neither intact nor within the remaining
+    # budget must fail, rather than silently losing facts at lower authority.
+    oversized_fact = hard_fact * 200
+    with pytest.raises(PromptBudgetError, match="lost critical source fields"):
+        _compile_rendered_writer_prompt(
+            path="scene", system_prompt="Write the scene.",
+            user_prompt=oversized_fact, section_texts={"hard_fact_line": oversized_fact},
+            total_input_budget_tokens=500, prompt_safety_margin=0.10,
+        )
 
     with pytest.raises(PromptBudgetError):
         _compile_rendered_writer_prompt(
@@ -218,12 +291,13 @@ def test_compiler_keeps_every_hard_canon_section_and_fails_closed_if_they_do_not
                 "hard_fact_line": hard_fact,
                 "timeline_canon_line": timeline,
             },
+            additional_blocks=canonical,
             total_input_budget_tokens=16,
             prompt_safety_margin=0.10,
         )
 
 
-def test_compiler_removes_all_duplicate_known_sections_before_typed_reinsertion() -> None:
+def test_compiler_removes_duplicate_rendered_references_without_promoting_them() -> None:
     blacklist = "不得使用万能比喻。"
     compiled = _compile_rendered_writer_prompt(
         path="scene",
@@ -235,4 +309,9 @@ def test_compiler_removes_all_duplicate_known_sections_before_typed_reinsertion(
     )
 
     assert compiled.user.count(blacklist) == 1
-    assert "scene.section.slop_blacklist" in compiled.report.required_blocks_kept
+    assert blacklist not in compiled.system
+    assert "scene.section.slop_blacklist" in compiled.report.kept
+    assert "scene.section.slop_blacklist" not in compiled.report.required_blocks_kept
+    assert compiled.report.block_source_hashes["scene.section.slop_blacklist"] == sha256(
+        blacklist.encode()
+    ).hexdigest()

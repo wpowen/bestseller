@@ -20,7 +20,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import json
 import logging
+import math
 from pathlib import Path
+import random
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,10 @@ class ArenaPair:
     chapter_number: int
     framework_label: str = ""
     benchmark_label: str = ""
+    generated_book_id: str = ""
+    benchmark_book_id: str = ""
+    benchmark_author_id: str = ""
+    narrative_stage: str = ""
 
 
 @dataclass(frozen=True)
@@ -71,24 +77,18 @@ class ArenaMatchResult:
     forward: ArenaVerdict | None
     backward: ArenaVerdict | None
     dimension_outcomes: dict[str, str] = field(default_factory=dict)
+    valid: bool = True
+    invalid_reason: str = ""
 
 
-def adapt_independent_judge_result(
-    pair: ArenaPair, result: Any
-) -> ArenaMatchResult:
+def adapt_independent_judge_result(pair: ArenaPair, result: Any) -> ArenaMatchResult:
     """Adapt advisory blind-judge evidence to the legacy arena result shape."""
 
     winner = getattr(result, "winner", None)
     outcome = "win" if winner == "draft_a" else "loss" if winner == "draft_b" else "tie"
     raw_dimensions = getattr(result, "dimension_outcomes", {})
     dimension_outcomes = {
-        str(key): (
-            "win"
-            if value == "draft_a"
-            else "loss"
-            if value == "draft_b"
-            else "tie"
-        )
+        str(key): ("win" if value == "draft_a" else "loss" if value == "draft_b" else "tie")
         for key, value in raw_dimensions.items()
     }
     return ArenaMatchResult(
@@ -203,7 +203,12 @@ async def run_arena_match(pair: ArenaPair, judge: JudgeFn) -> ArenaMatchResult:
     if forward is None or backward is None:
         logger.warning("arena pair %s: unparseable verdict, scoring tie", pair.pair_id)
         return ArenaMatchResult(
-            pair=pair, outcome="tie", forward=forward, backward=backward
+            pair=pair,
+            outcome="tie",
+            forward=forward,
+            backward=backward,
+            valid=False,
+            invalid_reason="judge_parse_failure",
         )
     dimension_outcomes = {
         key: _swap_consistent(
@@ -269,6 +274,318 @@ class BenchmarkTargets:
     min_pairs_per_tier: int = 8
 
 
+# Formal Arena v1 constants.  The legacy API above remains available for
+# diagnostic runs, while these contracts are intentionally stricter.
+FORMAL_ARENA_ESTIMATOR = "arena-estimator-v1"
+FORMAL_ARENA_BOOTSTRAP = "arena-hierarchical-bootstrap-v1"
+FORMAL_BOOTSTRAP_ITERATIONS = 10_000
+FORMAL_MIN_GENERATED = 8
+FORMAL_MIN_BENCHMARK_BOOKS = 12
+FORMAL_MIN_AUTHORS = 8
+FORMAL_MIN_PAIRS = 96
+FORMAL_MAX_CLUSTER_SHARE = 0.20
+FORMAL_MAX_INVALID_RATE = 0.05
+
+
+@dataclass(frozen=True)
+class ArenaRequiredCell:
+    """Sealed unit of inference: one genre, stage, and benchmark tier."""
+
+    genre: str
+    narrative_stage: str
+    tier: str
+
+    @property
+    def key(self) -> str:
+        return f"{self.genre}:{self.narrative_stage}:{self.tier}"
+
+
+@dataclass(frozen=True)
+class FormalArenaPair:
+    """A completed sealed pair score in [0, 1]. Invalid pairs score zero."""
+
+    generated_book_id: str
+    benchmark_book_id: str
+    benchmark_author_id: str
+    score: float
+    valid: bool = True
+    required_observations: int = 2
+    valid_observations: int = 2
+
+    @property
+    def effective_score(self) -> float:
+        return float(self.score) if self.valid else 0.0
+
+
+@dataclass(frozen=True)
+class FormalArenaCellResult:
+    cell: ArenaRequiredCell
+    point_estimate: float
+    ci_lower: float
+    ci_upper: float
+    invalid_rate: float
+    generated_clusters: int
+    benchmark_clusters: int
+    author_clusters: int
+    sealed_pairs: int
+    t1_valid: bool
+    t2_valid: bool
+    status: str
+    reasons: tuple[str, ...] = ()
+    bootstrap_iterations: int = FORMAL_BOOTSTRAP_ITERATIONS
+    estimator: str = FORMAL_ARENA_ESTIMATOR
+    h0: float = 0.50
+    h1: float = 0.60
+    mde: float = 0.10
+    planned_required_pairs: int = FORMAL_MIN_PAIRS
+    achieved_power: float = 0.0
+
+
+def _roster_value(item: Any, *keys: str) -> str:
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        for key in keys:
+            value = item.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+    return ""
+
+
+def validate_required_cell_roster(
+    cell: ArenaRequiredCell,
+    roster: dict[str, Any],
+    *,
+    min_generated: int = FORMAL_MIN_GENERATED,
+    min_benchmark_books: int = FORMAL_MIN_BENCHMARK_BOOKS,
+    min_authors: int = FORMAL_MIN_AUTHORS,
+    min_pairs: int = FORMAL_MIN_PAIRS,
+) -> tuple[str, ...]:
+    """Validate a sealed cell roster before any scores are interpreted."""
+    generated = roster.get("generated_books", roster.get("generated", ())) or ()
+    benchmarks = roster.get("benchmark_books", roster.get("benchmarks", ())) or ()
+    authors = roster.get("authors", ()) or ()
+    pairs = roster.get("pairs", ()) or ()
+    generated_ids = {_roster_value(x, "id", "book_id", "generated_book_id") for x in generated}
+    benchmark_ids = {_roster_value(x, "id", "book_id", "benchmark_book_id") for x in benchmarks}
+    author_ids = {_roster_value(x, "id", "author_id", "benchmark_author_id") for x in authors}
+    issues: list[str] = []
+    if len(generated_ids - {""}) < min_generated:
+        issues.append("GENERATED_CLUSTER_FLOOR")
+    if len(benchmark_ids - {""}) < min_benchmark_books:
+        issues.append("BENCHMARK_BOOK_CLUSTER_FLOOR")
+    if len(author_ids - {""}) < min_authors:
+        issues.append("AUTHOR_CLUSTER_FLOOR")
+    if len(pairs) < min_pairs:
+        issues.append("SEALED_PAIR_FLOOR")
+    expected = {(g, b) for g in generated_ids - {""} for b in benchmark_ids - {""}}
+    seen = {
+        (
+            _roster_value(x, "generated_book_id", "generated_id", "generated"),
+            _roster_value(x, "benchmark_book_id", "benchmark_id", "benchmark"),
+        )
+        for x in pairs
+        if isinstance(x, dict)
+    }
+    if not expected.issubset(seen):
+        issues.append("SEALED_CROSS_PRODUCT_MISSING")
+    if any(
+        _roster_value(x, "benchmark_author_id", "author_id", "author") not in author_ids
+        for x in benchmarks
+    ):
+        issues.append("BENCHMARK_AUTHOR_ROSTER_MISMATCH")
+    if pairs:
+        total = len(pairs)
+        for label, values in (
+            (
+                "GENERATED",
+                [
+                    _roster_value(x, "generated_book_id", "generated_id", "generated")
+                    for x in pairs
+                    if isinstance(x, dict)
+                ],
+            ),
+            (
+                "BENCHMARK",
+                [
+                    _roster_value(x, "benchmark_book_id", "benchmark_id", "benchmark")
+                    for x in pairs
+                    if isinstance(x, dict)
+                ],
+            ),
+            (
+                "AUTHOR",
+                [
+                    _roster_value(x, "benchmark_author_id", "author_id", "author")
+                    for x in pairs
+                    if isinstance(x, dict)
+                ],
+            ),
+        ):
+            if any(values.count(value) / total > FORMAL_MAX_CLUSTER_SHARE for value in set(values)):
+                issues.append(f"{label}_CLUSTER_SHARE_OVER_20_PERCENT")
+    return tuple(dict.fromkeys(issues))
+
+
+def _point_estimate(pairs: list[FormalArenaPair]) -> float:
+    """m_ga then p_hat; books within author, authors within generated equal."""
+    by_generated: dict[str, dict[str, list[FormalArenaPair]]] = {}
+    for pair in pairs:
+        by_generated.setdefault(pair.generated_book_id, {}).setdefault(
+            pair.benchmark_author_id, []
+        ).append(pair)
+    if not by_generated:
+        return 0.0
+    generated_means: list[float] = []
+    for authors in by_generated.values():
+        author_means = [
+            sum(p.effective_score for p in books) / len(books)
+            for books in authors.values()
+            if books
+        ]
+        generated_means.append(sum(author_means) / len(author_means) if author_means else 0.0)
+    return sum(generated_means) / len(generated_means)
+
+
+def arena_point_estimate(pairs: list[FormalArenaPair]) -> float:
+    """Public golden-formula helper for the formal Arena estimator."""
+    return _point_estimate(pairs)
+
+
+def hierarchical_bootstrap_ci(
+    pairs: list[FormalArenaPair], *, seed: int, iterations: int = FORMAL_BOOTSTRAP_ITERATIONS
+) -> tuple[float, float]:
+    """Generated/author/book hierarchical percentile bootstrap CI."""
+    if not pairs or iterations <= 0:
+        return (0.0, 0.0)
+    grouped: dict[str, dict[str, list[FormalArenaPair]]] = {}
+    for pair in pairs:
+        grouped.setdefault(pair.generated_book_id, {}).setdefault(
+            pair.benchmark_author_id, []
+        ).append(pair)
+    rng = random.Random(seed)
+    generated_ids = tuple(grouped)
+    samples: list[float] = []
+    for _ in range(iterations):
+        sampled: list[FormalArenaPair] = []
+        for g in (rng.choice(generated_ids) for _ in generated_ids):
+            authors = grouped[g]
+            author_ids = tuple(authors)
+            for author in (rng.choice(author_ids) for _ in author_ids):
+                books = authors[author]
+                sampled.extend(rng.choice(books) for _ in books)
+        samples.append(_point_estimate(sampled))
+    samples.sort()
+    lo = samples[max(0, math.floor(0.025 * len(samples)))]
+    hi = samples[min(len(samples) - 1, math.ceil(0.975 * len(samples)) - 1)]
+    return lo, hi
+
+
+def evaluate_formal_arena_cell(
+    cell: ArenaRequiredCell,
+    pairs: list[FormalArenaPair],
+    *,
+    seed: int = 0,
+    bootstrap_iterations: int = FORMAL_BOOTSTRAP_ITERATIONS,
+    roster_issues: tuple[str, ...] = (),
+    achieved_power: float | None = None,
+    planned_required_pairs: int = FORMAL_MIN_PAIRS,
+) -> FormalArenaCellResult:
+    """Evaluate one cell; no tier or cell can be silently omitted."""
+    generated = {p.generated_book_id for p in pairs}
+    benchmark = {p.benchmark_book_id for p in pairs}
+    authors = {p.benchmark_author_id for p in pairs}
+    expected_pairs = len(generated) * len(benchmark)
+    invalid = sum(not p.valid for p in pairs)
+    invalid_rate = invalid / len(pairs) if pairs else 1.0
+    reasons = list(roster_issues)
+    tier = cell.tier.lower()
+    h0, h1 = (0.35, 0.45) if tier == "t1" else (0.50, 0.60)
+    power = float(achieved_power) if achieved_power is not None else 0.0
+    if len(generated) < FORMAL_MIN_GENERATED:
+        reasons.append("GENERATED_CLUSTER_FLOOR")
+    if len(benchmark) < FORMAL_MIN_BENCHMARK_BOOKS:
+        reasons.append("BENCHMARK_BOOK_CLUSTER_FLOOR")
+    if len(authors) < FORMAL_MIN_AUTHORS:
+        reasons.append("AUTHOR_CLUSTER_FLOOR")
+    if expected_pairs < FORMAL_MIN_PAIRS or len(pairs) < expected_pairs:
+        reasons.append("SEALED_CROSS_PRODUCT_INCOMPLETE")
+    if any(
+        p.required_observations <= 0 or p.valid_observations != p.required_observations
+        for p in pairs
+    ):
+        reasons.append("REQUIRED_JUDGE_POSITION_OBSERVATION_MISSING")
+    if invalid_rate > FORMAL_MAX_INVALID_RATE:
+        reasons.append("INVALID_RATE_OVER_5_PERCENT")
+    point = _point_estimate(pairs)
+    lo, hi = hierarchical_bootstrap_ci(pairs, seed=seed, iterations=bootstrap_iterations)
+    if tier == "t2":
+        tier_valid = point >= 0.60 and lo > 0.50
+    elif tier == "t1":
+        tier_valid = point >= 0.45 and lo >= 0.35
+    else:
+        tier_valid = False
+        reasons.append("UNKNOWN_TIER")
+    structural_reasons = tuple(dict.fromkeys(reasons))
+    if power < 0.80:
+        reasons.append("POWER_BELOW_0_80")
+    if not tier_valid:
+        reasons.append(f"{cell.tier.upper()}_THRESHOLD_NOT_MET")
+    # A statistically powered, structurally valid cell that misses its fixed
+    # target is a real negative result (BLOCKED), not missing evidence.
+    if structural_reasons or power < 0.80:
+        status = "INCONCLUSIVE"
+    elif not tier_valid:
+        status = "BLOCKED"
+    else:
+        status = "PASS"
+    return FormalArenaCellResult(
+        cell=cell,
+        point_estimate=point,
+        ci_lower=lo,
+        ci_upper=hi,
+        invalid_rate=invalid_rate,
+        generated_clusters=len(generated),
+        benchmark_clusters=len(benchmark),
+        author_clusters=len(authors),
+        sealed_pairs=len(pairs),
+        t1_valid=tier_valid if tier == "t1" and status == "PASS" else False,
+        t2_valid=tier_valid if tier == "t2" and status == "PASS" else False,
+        status=status,
+        reasons=tuple(dict.fromkeys(reasons)),
+        bootstrap_iterations=bootstrap_iterations,
+        h0=h0,
+        h1=h1,
+        mde=0.10,
+        planned_required_pairs=planned_required_pairs,
+        achieved_power=power,
+    )
+
+
+def evaluate_required_arena_cells(
+    cells: dict[ArenaRequiredCell, list[FormalArenaPair]],
+    *,
+    required_cells: set[ArenaRequiredCell] | None = None,
+    seed: int = 0,
+    bootstrap_iterations: int = FORMAL_BOOTSTRAP_ITERATIONS,
+) -> tuple[bool, dict[str, FormalArenaCellResult]]:
+    """Require every sealed required cell and both T1/T2 evidence globally."""
+    required = required_cells or set(cells)
+    results: dict[str, FormalArenaCellResult] = {}
+    for cell in sorted(required, key=lambda c: c.key):
+        result = evaluate_formal_arena_cell(
+            cell,
+            cells.get(cell, []),
+            seed=seed,
+            bootstrap_iterations=bootstrap_iterations,
+        )
+        results[cell.key] = result
+    passed = bool(required) and all(r.status == "PASS" for r in results.values())
+    tiers = {r.cell.tier.lower() for r in results.values()}
+    passed = passed and {"t1", "t2"}.issubset(tiers)
+    return passed, results
+
+
 def load_benchmark_targets(path: Path | None = None) -> BenchmarkTargets:
     import yaml
 
@@ -280,15 +597,9 @@ def load_benchmark_targets(path: Path | None = None) -> BenchmarkTargets:
     section = payload.get("benchmark_targets") or {}
     defaults = BenchmarkTargets()
     return BenchmarkTargets(
-        vs_t2_win_rate_min=float(
-            section.get("vs_t2_win_rate_min", defaults.vs_t2_win_rate_min)
-        ),
-        vs_t1_win_rate_min=float(
-            section.get("vs_t1_win_rate_min", defaults.vs_t1_win_rate_min)
-        ),
-        min_pairs_per_tier=int(
-            section.get("min_pairs_per_tier", defaults.min_pairs_per_tier)
-        ),
+        vs_t2_win_rate_min=float(section.get("vs_t2_win_rate_min", defaults.vs_t2_win_rate_min)),
+        vs_t1_win_rate_min=float(section.get("vs_t1_win_rate_min", defaults.vs_t1_win_rate_min)),
+        min_pairs_per_tier=int(section.get("min_pairs_per_tier", defaults.min_pairs_per_tier)),
     )
 
 
@@ -301,16 +612,15 @@ class TargetEvaluation:
 def evaluate_targets(
     summaries: dict[str, ArenaSummary], targets: BenchmarkTargets | None = None
 ) -> TargetEvaluation:
-    """PASS iff every tier with enough pairs meets its win-rate floor.
+    """Legacy diagnostic evaluator.
 
-    Tiers below ``min_pairs_per_tier`` are reported but do not gate (insufficient
-    evidence must read as "inconclusive", never as a silent pass of the whole run —
-    so if NO tier has enough pairs the evaluation fails).
+    Both tiers are required.  Older callers may still use this function, but a
+    result with a missing/underpowered tier is explicitly diagnostic and cannot
+    be treated as a formal text-parity pass.
     """
     resolved = targets or load_benchmark_targets()
     floors = {"t1": resolved.vs_t1_win_rate_min, "t2": resolved.vs_t2_win_rate_min}
     details: dict[str, Any] = {}
-    gated: list[bool] = []
     for tier, floor in floors.items():
         summary = summaries.get(tier)
         if summary is None or summary.pairs < resolved.min_pairs_per_tier:
@@ -321,12 +631,15 @@ def evaluate_targets(
             }
             continue
         ok = summary.win_rate >= floor
-        gated.append(ok)
         details[tier] = {
             "status": "pass" if ok else "fail",
             "win_rate": summary.win_rate,
             "floor": floor,
             "pairs": summary.pairs,
         }
-    passed = bool(gated) and all(gated)
+    passed = all(details[tier].get("status") == "pass" for tier in floors)
+    details["evaluation_status"] = (
+        "diagnostic_pass" if passed else "diagnostic_inconclusive_or_fail"
+    )
+    details["formal_claims_allowed"] = False
     return TargetEvaluation(passed=passed, details=details)

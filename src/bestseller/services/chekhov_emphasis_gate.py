@@ -7,6 +7,7 @@ from typing import Any
 
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport, Severity
 from bestseller.services.methodology_overlay import as_mapping, text
+from bestseller.services.narrative_obligation_migration import has_explicit_due, is_reference_obligation
 
 CHEKHOV_GATE_AGENT = "chekhov-emphasis-gate"
 
@@ -26,6 +27,8 @@ def evaluate_chekhov_emphasis(
 
     items = list(emphasized_items) or _extract_emphasized_items(chapter_contract)
     issues: list[CheckerIssue] = []
+    reference_count = 0
+    unknown_count = 0
 
     for index, raw in enumerate(items, start=1):
         item = as_mapping(raw)
@@ -43,6 +46,12 @@ def evaluate_chekhov_emphasis(
             or item.get("payoff_by_chapter")
         )
         status = text(item.get("status")).lower()
+        if is_reference_obligation(item):
+            reference_count += 1
+            continue
+        if not has_explicit_due(item, expected_window):
+            unknown_count += 1
+            continue
 
         if _is_high_prominence(prominence) and not expected_function:
             issues.append(
@@ -121,6 +130,8 @@ def evaluate_chekhov_emphasis(
         metrics={
             "emphasized_item_count": len(items),
             "current_chapter": current_chapter,
+            "reference_item_count": reference_count,
+            "unknown_authority_item_count": unknown_count,
         },
         summary=(
             "契诃夫强调物检查通过。"

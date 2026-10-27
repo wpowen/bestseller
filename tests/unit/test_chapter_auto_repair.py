@@ -9,7 +9,7 @@ hint while returning ``chapter.production_state`` to ``pending``.  It does
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -18,8 +18,15 @@ import pytest
 from sqlalchemy import Select
 
 from bestseller.domain.enums import SceneStatus
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterQualityReportModel,
+    CharacterModel,
+    SceneCardModel,
+)
 from bestseller.services import drafts
 from bestseller.services.drafts import maybe_prepare_chapter_auto_repair
+from bestseller.services.quality_report_claim import graded_text_fingerprint
 
 
 pytestmark = pytest.mark.unit
@@ -81,32 +88,52 @@ class FakeResult:
 
 
 class FakeSession:
-    """Minimal AsyncSession stand-in.
+    """Route explicit fixtures by selected entity/projection, never call order.
 
-    * ``scalar`` pops from ``scalar_queue`` (first-in-first-out)
-    * ``scalars`` pops from ``scalars_queue`` (returns a ``FakeResult``)
-    * ``flush`` is a no-op awaitable — tracks call count
+    Report-driven unit cases supply the shipped text projection and its matching
+    report. They leave the optional full draft row absent so length-budget tests
+    continue to exercise the report's declared length contract. A full draft row
+    can be supplied separately for current-row length recalculation.
     """
 
     def __init__(
         self,
         *,
-        scalar_queue: list[Any] | None = None,
-        scalars_queue: list[list[Any]] | None = None,
+        reports: list[FakeQualityReport] | None = None,
+        current_text: str | None = None,
+        current_draft: Any | None = None,
+        scenes: list[FakeScene] | None = None,
+        offstage_names: list[str] | None = None,
     ) -> None:
-        self.scalar_queue = list(scalar_queue or [])
-        self.scalars_queue = list(scalars_queue or [])
+        self.reports = list(reports or [])
+        self.current_text = current_text
+        self.current_draft = current_draft
+        self.scenes = list(scenes or [])
+        self.offstage_names = list(offstage_names or [])
         self.flush_calls = 0
         self.execute_calls: list[Any] = []
 
-    async def scalar(self, _stmt: Any) -> Any:
-        if not self.scalar_queue:
-            return None
-        return self.scalar_queue.pop(0)
+    async def scalar(self, stmt: Any) -> Any:
+        selected = stmt.column_descriptions
+        entity = selected[0].get("entity")
+        if entity is ChapterQualityReportModel:
+            return self.reports[0] if self.reports else None
+        if entity is ChapterDraftVersionModel:
+            if selected[0]["expr"] is ChapterDraftVersionModel:
+                return self.current_draft
+            if selected[0]["name"] == "content_md":
+                return self.current_text
+        raise AssertionError(f"No scalar fixture for query: {stmt}")
 
-    async def scalars(self, _stmt: Any) -> FakeResult:
-        items = self.scalars_queue.pop(0) if self.scalars_queue else []
-        return FakeResult(items)
+    async def scalars(self, stmt: Any) -> FakeResult:
+        entity = stmt.column_descriptions[0].get("entity")
+        if entity is ChapterQualityReportModel:
+            return FakeResult(self.reports)
+        if entity is SceneCardModel:
+            return FakeResult(self.scenes)
+        if entity is CharacterModel:
+            return FakeResult(self.offstage_names)
+        raise AssertionError(f"No list fixture for query: {stmt}")
 
     async def execute(self, stmt: Any) -> FakeResult:
         self.execute_calls.append(stmt)
@@ -154,7 +181,7 @@ async def test_empty_repairable_codes_short_circuits() -> None:
 
 @pytest.mark.asyncio
 async def test_no_latest_report_returns_no_trigger() -> None:
-    session = FakeSession(scalar_queue=[None])  # no ChapterQualityReportModel
+    session = FakeSession()  # no ChapterQualityReportModel
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
         project=FakeProject(),
@@ -183,7 +210,7 @@ async def test_metadata_retention_code_triggers_repair_without_quality_report() 
         }
     )
     scene = FakeScene(chapter_id=chapter.id)
-    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+    session = FakeSession(scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -203,7 +230,11 @@ async def test_metadata_retention_code_triggers_repair_without_quality_report() 
 
 
 @pytest.mark.asyncio
-async def test_deterministic_audit_code_triggers_repair_without_quality_report() -> None:
+async def test_explicit_blocking_audit_code_triggers_repair_without_quality_report(monkeypatch) -> None:
+    from bestseller.services.write_gate import GateConfig
+    config = replace(drafts.get_quality_gates_config(),
+        l6_gate=GateConfig(mode_by_violation={"ENDING_HOOK_MISSING": "block"}))
+    monkeypatch.setattr(drafts, "get_quality_gates_config", lambda: config)
     chapter = FakeChapter(
         metadata_json={
             "deterministic_audit_latest": {
@@ -219,7 +250,7 @@ async def test_deterministic_audit_code_triggers_repair_without_quality_report()
         }
     )
     scene = FakeScene(chapter_id=chapter.id)
-    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+    session = FakeSession(scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -250,7 +281,7 @@ async def test_auto_repair_total_attempts_accumulates_across_invocations() -> No
         metadata_json={"auto_repair_last_block_codes": ["CAST_VIOLATION"]}
     )
     scene = FakeScene(chapter_id=chapter.id)
-    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+    session = FakeSession(scenes=[scene])
 
     triggered, _ = await maybe_prepare_chapter_auto_repair(
         session,
@@ -269,7 +300,7 @@ async def test_auto_repair_total_attempts_accumulates_across_invocations() -> No
     # carry forward.
     chapter.metadata_json["auto_repair_last_block_codes"] = ["CAST_VIOLATION"]
     scene2 = FakeScene(chapter_id=chapter.id)
-    session2 = FakeSession(scalar_queue=[None], scalars_queue=[[scene2]])
+    session2 = FakeSession(scenes=[scene2])
 
     triggered2, _ = await maybe_prepare_chapter_auto_repair(
         session2,
@@ -289,7 +320,7 @@ async def test_metadata_cast_violation_code_triggers_repair_hint() -> None:
         metadata_json={"auto_repair_last_block_codes": ["CAST_VIOLATION"]}
     )
     scene = FakeScene(chapter_id=chapter.id)
-    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+    session = FakeSession(scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -308,11 +339,15 @@ async def test_metadata_cast_violation_code_triggers_repair_hint() -> None:
 async def test_report_without_blocking_codes_returns_no_trigger() -> None:
     """If the latest report was a passing one, no auto-repair."""
     report = FakeQualityReport(report_json={"blocking_codes": []})
-    session = FakeSession(scalar_queue=[report])
+    chapter = FakeChapter()
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text)
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
         project=FakeProject(),
-        chapter=FakeChapter(),
+        chapter=chapter,
         repairable_codes=("BLOCK_LOW",),
     )
     assert triggered is False
@@ -331,7 +366,10 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
     )
     scene = FakeScene(chapter_id=chapter.id, scene_number=1)
     report = FakeQualityReport(report_json={"blocking_codes": []})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[[scene]])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -374,7 +412,10 @@ async def test_stored_write_safety_repair_carries_retention_evidence() -> None:
     )
     scene = FakeScene(chapter_id=chapter.id, scene_number=1)
     report = FakeQualityReport(report_json={"blocking_codes": []})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[[scene]])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -402,7 +443,7 @@ async def test_stored_pronoun_mismatch_block_triggers_rewrite_repair() -> None:
         },
     )
     scene = FakeScene(chapter_id=chapter.id, scene_number=4)
-    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+    session = FakeSession(scenes=[scene])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -427,11 +468,15 @@ async def test_non_repairable_code_returns_the_codes_but_not_triggered() -> None
     report = FakeQualityReport(
         report_json={"blocking_codes": ["NAMING", "DIALOG_INTEGRITY"]},
     )
-    session = FakeSession(scalar_queue=[report])
+    chapter = FakeChapter()
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text)
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
         project=FakeProject(),
-        chapter=FakeChapter(),
+        chapter=chapter,
         repairable_codes=("BLOCK_LOW", "BLOCK_HIGH"),
     )
     assert triggered is False
@@ -469,10 +514,7 @@ async def test_character_resurrection_removes_dead_participants_before_regen() -
             participants=["Rowan Ashford"],
         ),
     ]
-    session = FakeSession(
-        scalar_queue=[None],
-        scalars_queue=[scenes, ["Sam Blake"]],
-    )
+    session = FakeSession(scenes=scenes, offstage_names=["Sam Blake"])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -526,10 +568,7 @@ async def test_character_resurrection_removes_dead_state_refs_even_after_partici
             },
         )
     ]
-    session = FakeSession(
-        scalar_queue=[None],
-        scalars_queue=[scenes, ["陆沉"]],
-    )
+    session = FakeSession(scenes=scenes, offstage_names=["陆沉"])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -568,10 +607,7 @@ async def test_dead_alive_block_uses_offstage_character_repair() -> None:
             },
         )
     ]
-    session = FakeSession(
-        scalar_queue=[None],
-        scalars_queue=[scenes, ["母亲"]],
-    )
+    session = FakeSession(scenes=scenes, offstage_names=["母亲"])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -611,10 +647,7 @@ async def test_character_missing_appearance_removes_offstage_participants_before
             },
         )
     ]
-    session = FakeSession(
-        scalar_queue=[None],
-        scalars_queue=[scenes, ["孙九斤"]],
-    )
+    session = FakeSession(scenes=scenes, offstage_names=["孙九斤"])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -669,10 +702,7 @@ async def test_non_death_offstage_blocks_remove_participants_before_regen(
             },
         )
     ]
-    session = FakeSession(
-        scalar_queue=[None],
-        scalars_queue=[scenes, [name]],
-    )
+    session = FakeSession(scenes=scenes, offstage_names=[name])
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -711,7 +741,10 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 3500
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -756,7 +789,10 @@ async def test_repair_start_clears_stale_exhausted_marker() -> None:
             "length_stability": {"word_count": 1200, "target_words": 2400},
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 1200
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -786,7 +822,10 @@ async def test_legacy_length_block_low_alias_triggers_block_low_repair() -> None
             "length_stability": {"word_count": 1200, "target_words": 2400},
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 1200
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -823,7 +862,10 @@ async def test_block_low_after_overlong_trim_restores_publishable_scene_budgets(
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 1295
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -867,7 +909,10 @@ async def test_block_low_uses_original_scene_budget_and_publishable_sum_cap() ->
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 1323
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -910,7 +955,10 @@ async def test_conflicting_length_codes_follow_latest_length_report_direction() 
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 3156
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -946,7 +994,10 @@ async def test_metadata_quality_bundle_codes_merge_with_latest_length_report() -
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 3156
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -981,7 +1032,10 @@ async def test_block_low_clamps_legacy_huge_scene_budget() -> None:
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2753
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1004,7 +1058,10 @@ async def test_dialog_unpaired_triggers_dialog_rewrite_hint() -> None:
     chapter = FakeChapter()
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
     report = FakeQualityReport(report_json={"blocking_codes": ["DIALOG_UNPAIRED"]})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1025,7 +1082,10 @@ async def test_weak_ending_triggers_hook_rewrite_hint() -> None:
     chapter = FakeChapter()
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
     report = FakeQualityReport(report_json={"blocking_codes": ["ENDING_SENTENCE_WEAK"]})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1056,7 +1116,10 @@ async def test_canon_forbidden_term_triggers_canon_rewrite_hint() -> None:
             ],
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1089,7 +1152,10 @@ async def test_canon_state_regression_triggers_relationship_rewrite_hint() -> No
             ],
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1123,7 +1189,10 @@ async def test_naming_out_of_pool_is_not_auto_repaired_by_default() -> None:
             ],
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1155,7 +1224,10 @@ async def test_block_high_resets_scenes_with_trim_hint_and_reduced_target() -> N
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 9500
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1206,7 +1278,10 @@ async def test_existing_auto_repair_hint_is_replaced_across_cycles() -> None:
             },
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 1981
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, _ = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1247,7 +1322,10 @@ async def test_timeline_auto_repair_hint_includes_exact_anchor_replacements() ->
     )
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
     report = FakeQualityReport(report_json={"blocking_codes": []})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1288,7 +1366,10 @@ async def test_scene_jump_auto_repair_hint_includes_exact_bridge_locations() -> 
     )
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
     report = FakeQualityReport(report_json={"blocking_codes": []})
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 2400
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1330,7 +1411,10 @@ async def test_auto_repair_preserves_current_scene_drafts_until_regeneration_suc
             "length_stability": {"word_count": 3000, "target_words": 4800},
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 3000
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
 
     triggered, _ = await maybe_prepare_chapter_auto_repair(
         session,
@@ -1383,7 +1467,10 @@ async def test_mixed_blocking_codes_picks_only_repairable_subset() -> None:
             "length_stability": {"word_count": 3800, "target_words": 6400},
         },
     )
-    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+    current_text = "文" * 3800
+    report.chapter_id = chapter.id
+    report.report_json["graded"] = graded_text_fingerprint(current_text)
+    session = FakeSession(reports=[report], current_text=current_text, scenes=scenes)
     triggered, codes = await maybe_prepare_chapter_auto_repair(
         session,
         project=FakeProject(),

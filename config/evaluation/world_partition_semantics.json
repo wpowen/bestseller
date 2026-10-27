@@ -1,0 +1,102 @@
+{
+  "version": "1.0-semantic-contrast",
+  "reference_status": "agent_authored_requires_human_validation",
+  "cases": [
+    {
+      "id": "ordinary_failure_vs_incapacitation_zh",
+      "axis": "普通法术或设备失效不等于主人失能",
+      "segments": [
+        {
+          "quote": "能量耗尽则法术失效，",
+          "kind": "keep",
+          "rationale": "法术失效和能量耗尽条件不是主角自身削弱，必须保留。"
+        },
+        {
+          "quote": "主角会短暂失明",
+          "kind": "remove_self_weakening",
+          "rationale": "明确的主角感知能力丧失及其持续期属于自身削弱。"
+        },
+        {
+          "quote": "但不会退阶。",
+          "kind": "keep",
+          "rationale": "不退阶是否定保障，不能随相邻失明后果删除；保留终止符。"
+        }
+      ]
+    },
+    {
+      "id": "window_vs_duration_zh",
+      "axis": "能力有效窗与主角失能持续期",
+      "segments": [
+        {
+          "quote": "法术只持续三息；越阶后，",
+          "kind": "keep",
+          "rationale": "能力有效窗与越阶触发条件是规则边界，必须保留。"
+        },
+        {
+          "quote": "主角会在一刻钟内手抖",
+          "kind": "remove_self_weakening",
+          "rationale": "这是明确的主角自身操作削弱及其持续期。"
+        },
+        {
+          "quote": "。",
+          "kind": "keep",
+          "rationale": "句末终止符必须保留。"
+        }
+      ]
+    },
+    {
+      "id": "negative_guarantee_zh",
+      "axis": "否定保障不能当作削弱",
+      "segments": [
+        {
+          "quote": "主角不会退阶，也不会失去施法能力。",
+          "kind": "keep",
+          "rationale": "不退阶和不会失能是否定保障，不能误删。"
+        }
+      ]
+    },
+    {
+      "id": "other_actor_vs_protagonist_en",
+      "axis": "其他人后果与主角后果",
+      "segments": [
+        {
+          "quote": "The enemy is burned, but the protagonist only spends fuel.",
+          "kind": "keep",
+          "rationale": "敌人的伤害和主角的材料消耗都不是主角自身能力削弱。"
+        }
+      ]
+    },
+    {
+      "id": "material_wait_vs_weakening_en",
+      "axis": "材料消耗与制作等待不等于削弱",
+      "segments": [
+        {
+          "quote": "Making the seal needs three stones and one night of waiting; the protagonist does not grow weaker.",
+          "kind": "keep",
+          "rationale": "材料与制作等待是资源和时间限制，后半句明确否定主角变弱。"
+        }
+      ]
+    },
+    {
+      "id": "ambiguous_cost_en",
+      "axis": "代价指向不明时保持未知",
+      "segments": [
+        {
+          "quote": "After success, ",
+          "kind": "keep",
+          "rationale": "成功条件是上下文触发信息，不能删除。"
+        },
+        {
+          "quote": "they may pay a price",
+          "kind": "unknown",
+          "rationale": "代价对象、类型和是否削弱均未明确，必须标记 unknown。"
+        },
+        {
+          "quote": ".",
+          "kind": "keep",
+          "rationale": "句末终止符必须保留。"
+        }
+      ]
+    }
+  ]
+}

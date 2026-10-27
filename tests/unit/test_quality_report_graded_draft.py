@@ -28,15 +28,27 @@ def test_fingerprint_is_stable_and_content_addressed() -> None:
     assert graded_text_fingerprint(text) != graded_text_fingerprint(text + "他站住了。")
 
 
-def test_fingerprint_ignores_punctuation_by_design() -> None:
-    """只认汉字，标点不进指纹——这是刻意的取舍，不是疏漏。
+def test_fingerprint_normalizes_layout_whitespace_but_keeps_punctuation() -> None:
+    """v2 only ignores layout whitespace; punctuation remains content."""
 
-    好处：同一版稿被标点规范化（全角/半角、行末句号）后仍认得出自己，
-    否则指纹会在无关改动上失效、退回「按时间取最新」的旧错路径。
-    代价：两版只差标点的稿指纹相同——但重写必然改字，实践中不会发生。
-    """
+    assert graded_text_fingerprint("他推开门\n\n风灌了进来。") == graded_text_fingerprint(
+        "他推开门  风灌了进来。"
+    )
+    assert graded_text_fingerprint("他推开门") != graded_text_fingerprint("他推开门。")
 
-    assert graded_text_fingerprint("他推开门") == graded_text_fingerprint("他推开门。")
+
+def test_fingerprint_preserves_digits_and_english() -> None:
+    """Different numeric or English facts must never share a v2 hash."""
+
+    assert graded_text_fingerprint("剩余18分钟") != graded_text_fingerprint("剩余5分钟")
+    assert graded_text_fingerprint("case A") != graded_text_fingerprint("case B")
+
+
+def test_fingerprint_is_versioned_and_old_shape_is_not_claimed() -> None:
+    current = graded_text_fingerprint("正文 v2")
+    assert current["version"] == 2
+    legacy = {key: value for key, value in current.items() if key != "version"}
+    assert report_grades_text({"graded": legacy}, "正文 v2") is False
 
 
 def test_fingerprint_counts_han_characters_not_raw_length() -> None:
@@ -58,7 +70,7 @@ def test_report_claims_only_the_draft_it_actually_graded() -> None:
 def test_legacy_reports_without_fingerprint_are_not_claimed() -> None:
     """旧行没有指纹。**不认领**比瞎认领安全——认错版就是这个 bug 本身。
 
-    读取端对「无法认领」的处理是退回旧行为并留痕，而不是在这里假装匹配。
+    无法认领时默认无授权；只读展示历史必须显式选择，并保留未认领理由。
     """
 
     assert report_grades_text({"blocking_codes": ["LENGTH_OVER"]}, "任何正文") is False
@@ -94,36 +106,49 @@ def test_claims_the_report_for_the_shipped_draft_not_the_newest() -> None:
     assert claimed.report_json["blocking_codes"] == []
 
 
-def test_falls_back_to_newest_when_nothing_claims_the_draft() -> None:
+def test_unclaimed_report_requires_explicit_read_only_historical_display() -> None:
     rows = [_report("完全不相干的另一版正文。" * 30, ["POV_DRIFT"])]
     claimed, reason = claim_report_for_draft(rows, "在架稿的正文。" * 30)
     assert reason == "no_claim"
-    assert claimed is rows[0]
+    assert claimed is None
+    assert claim_report_for_draft(
+        rows, "在架稿的正文。" * 30, allow_historical=True
+    ) == (rows[0], "no_claim")
 
 
-def test_legacy_rows_fall_back_to_newest_and_say_so() -> None:
-    """旧数据没有指纹——必须退回旧行为，且理由可区分于「有指纹但没认领」。"""
+def test_legacy_rows_are_display_only_with_an_explicit_opt_in() -> None:
+    """旧数据没有指纹，展示不能变成授权，理由须区别于有指纹但未认领。"""
 
     rows = [_Row({"blocking_codes": ["LENGTH_UNDER"]}), _Row({"blocking_codes": []})]
     claimed, reason = claim_report_for_draft(rows, "任何正文")
     assert reason == "unfingerprinted"
-    assert claimed is rows[0]
+    assert claimed is None
+    assert claim_report_for_draft(
+        rows, "任何正文", allow_historical=True
+    ) == (rows[0], "unfingerprinted")
 
 
 def test_missing_draft_or_no_reports_never_raises() -> None:
     rows = [_report("正文", [])]
-    assert claim_report_for_draft(rows, None) == (rows[0], "no_draft")
+    assert claim_report_for_draft(rows, None) == (None, "no_draft")
+    assert claim_report_for_draft(rows, None, allow_historical=True) == (rows[0], "no_draft")
     assert claim_report_for_draft([], "正文") == (None, "empty")
+    assert claim_report_for_draft([], "正文", allow_historical=True) == (None, "empty")
 
 
-def test_no_op_on_single_report_runs_the_common_case_unchanged() -> None:
-    """绝大多数章只有一份报告——这条路径必须与修复前逐字等价。"""
+def test_single_report_still_requires_a_matching_fingerprint() -> None:
+    """单份报告不能豁免指纹；可认领的报告保持原有行为。"""
 
     text = "只有一版稿。" * 40
     only = _report(text, ["POV_DRIFT"])
     assert claim_report_for_draft([only], text) == (only, "claimed")
     stale = _Row({"blocking_codes": ["POV_DRIFT"]})
-    assert claim_report_for_draft([stale], text) == (stale, "unfingerprinted")
+    assert claim_report_for_draft([stale], text) == (None, "unfingerprinted")
+    assert claim_report_for_draft(
+        [stale], text, allow_historical=True
+    ) == (stale, "unfingerprinted")
+    # Explicit display mode still prefers a matching report over the newest history.
+    assert claim_report_for_draft([stale, only], text, allow_historical=True) == (only, "claimed")
 
 
 def test_fingerprint_word_count_matches_the_frameworks_one_ruler() -> None:

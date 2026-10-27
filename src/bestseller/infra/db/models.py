@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -38,17 +38,29 @@ class ProjectModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(Text(), nullable=False)
-    language: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'zh-CN'"))
+    language: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'zh-CN'")
+    )
     genre: Mapped[str] = mapped_column(Text(), nullable=False)
     sub_genre: Mapped[str | None] = mapped_column(Text())
     target_word_count: Mapped[int] = mapped_column(Integer, nullable=False)
     target_chapters: Mapped[int] = mapped_column(Integer, nullable=False)
-    current_volume_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
-    current_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    current_volume_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    current_chapter_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     audience: Mapped[str | None] = mapped_column(Text())
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planning'"))
-    project_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'linear'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planning'")
+    )
+    project_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'linear'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
     invariants_json: Mapped[JSON_DICT | None] = mapped_column(JSONB, nullable=True)
     theme_statement: Mapped[str | None] = mapped_column(Text)
     dramatic_question: Mapped[str | None] = mapped_column(Text)
@@ -84,10 +96,10 @@ class StyleGuideModel(TimestampMixin, Base):
     sentence_style: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'mixed'")
     )
-    info_density: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'medium'")
+    info_density: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'medium'"))
+    dialogue_ratio: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0.35")
     )
-    dialogue_ratio: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.35"))
     taboo_words: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     taboo_topics: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     reference_works: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
@@ -137,13 +149,17 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     scope_ref_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'approved'"))
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'approved'")
+    )
     schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
     source_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     idempotency_key: Mapped[str | None] = mapped_column(Text())
     notes: Mapped[str | None] = mapped_column(Text)
-    created_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'system'"))
+    created_by: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'system'")
+    )
 
 
 class StoryEngineCanaryCampaignModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -279,11 +295,15 @@ class FanqieRankingSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         Index("idx_fanqie_ranking_snapshots_category_date", "category", "data_date"),
     )
 
-    source: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqiehub'"))
+    source: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'fanqiehub'")
+    )
     source_url: Mapped[str | None] = mapped_column(Text)
     board_type: Mapped[str] = mapped_column(String(64), nullable=False)
     category: Mapped[str] = mapped_column(Text, nullable=False)
-    channel: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqie'"))
+    channel: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'fanqie'")
+    )
     data_date: Mapped[date] = mapped_column(Date, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     payload_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
@@ -329,7 +349,9 @@ class FanqieCompetitorProfileModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     evidence_json: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.5"))
 
-    snapshot: Mapped[FanqieRankingSnapshotModel] = relationship(back_populates="competitor_profiles")
+    snapshot: Mapped[FanqieRankingSnapshotModel] = relationship(
+        back_populates="competitor_profiles"
+    )
 
 
 class FanqieCategoryProfileModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -351,7 +373,9 @@ class FanqieCategoryProfileModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     category: Mapped[str] = mapped_column(Text, nullable=False)
     board_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    channel: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqie'"))
+    channel: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'fanqie'")
+    )
     data_date: Mapped[date] = mapped_column(Date, nullable=False)
     sample_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     profile_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
@@ -377,7 +401,9 @@ class WorldRuleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     story_consequence: Mapped[str | None] = mapped_column(Text)
     exploitation_potential: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class LocationModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -390,11 +416,15 @@ class LocationModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(Text(), nullable=False)
-    location_type: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'location'"))
+    location_type: Mapped[str] = mapped_column(
+        Text(), nullable=False, server_default=text("'location'")
+    )
     atmosphere: Mapped[str | None] = mapped_column(Text)
     key_rule_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     story_role: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class FactionModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -411,7 +441,9 @@ class FactionModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     method: Mapped[str | None] = mapped_column(Text)
     relationship_to_protagonist: Mapped[str | None] = mapped_column(Text)
     internal_conflict: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -427,7 +459,9 @@ class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(Text(), nullable=False)
-    role: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'supporting'"))
+    role: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'supporting'")
+    )
     age: Mapped[int | None] = mapped_column(Integer)
     background: Mapped[str | None] = mapped_column(Text)
     goal: Mapped[str | None] = mapped_column(Text)
@@ -445,31 +479,59 @@ class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stance: Mapped[str | None] = mapped_column(String(32))
     stance_locked_until_chapter: Mapped[int | None] = mapped_column(Integer)
     physical_description: Mapped[str | None] = mapped_column(Text())
-    knowledge_state_json: Mapped[JSON_DICT] = mapped_column("knowledge_state", JSONB, nullable=False, default=dict)
+    knowledge_state_json: Mapped[JSON_DICT] = mapped_column(
+        "knowledge_state", JSONB, nullable=False, default=dict
+    )
     voice_profile_json: Mapped[JSON_DICT] = mapped_column(
-        "voice_profile", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"),
+        "voice_profile",
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
     )
     moral_framework_json: Mapped[JSON_DICT] = mapped_column(
-        "moral_framework", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"),
+        "moral_framework",
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
     )
-    is_pov_character: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
+    is_pov_character: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE")
+    )
     quirks_json: Mapped[JSON_LIST] = mapped_column(
-        "quirks_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+        "quirks_json",
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
     )
     sensory_signatures_json: Mapped[JSON_LIST] = mapped_column(
-        "sensory_signatures_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+        "sensory_signatures_json",
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
     )
     signature_objects_json: Mapped[JSON_LIST] = mapped_column(
-        "signature_objects_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+        "signature_objects_json",
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
     )
     core_wound: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class RelationshipModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "relationships"
     __table_args__ = (
-        UniqueConstraint("project_id", "character_a_id", "character_b_id", name="uq_relationship_pair"),
+        UniqueConstraint(
+            "project_id", "character_a_id", "character_b_id", name="uq_relationship_pair"
+        ),
         CheckConstraint("character_a_id <> character_b_id", name="relationship_self_reference"),
         CheckConstraint("strength >= -1 AND strength <= 1", name="relationship_strength_range"),
     )
@@ -496,7 +558,9 @@ class RelationshipModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tension_summary: Mapped[str | None] = mapped_column(Text)
     established_chapter_no: Mapped[int | None] = mapped_column(Integer)
     last_changed_chapter_no: Mapped[int | None] = mapped_column(Integer)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class CharacterStateSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -522,7 +586,9 @@ class CharacterStateSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
     )
     chapter_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("chapters.id"))
-    scene_card_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("scene_cards.id"))
+    scene_card_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("scene_cards.id")
+    )
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
     scene_number: Mapped[int | None] = mapped_column(Integer)
     arc_state: Mapped[str | None] = mapped_column(Text)
@@ -534,6 +600,7 @@ class CharacterStateSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     trust_map: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
     beliefs: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     notes: Mapped[str | None] = mapped_column(Text)
+    source_binding: Mapped[JSON_DICT | None] = mapped_column(JSONB, nullable=True)
 
 
 class VolumeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -552,8 +619,12 @@ class VolumeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     obstacle: Mapped[str | None] = mapped_column(Text)
     target_word_count: Mapped[int | None] = mapped_column(Integer)
     target_chapter_count: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class WorldBackboneModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -565,7 +636,9 @@ class WorldBackboneModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    title: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'全书世界主干'"))
+    title: Mapped[str] = mapped_column(
+        Text(), nullable=False, server_default=text("'全书世界主干'")
+    )
     core_promise: Mapped[str] = mapped_column(Text, nullable=False)
     mainline_drive: Mapped[str] = mapped_column(Text, nullable=False)
     protagonist_destiny: Mapped[str | None] = mapped_column(Text)
@@ -574,7 +647,9 @@ class WorldBackboneModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     world_frame: Mapped[str | None] = mapped_column(Text)
     invariant_elements: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     stable_unknowns: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class VolumeFrontierModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -594,7 +669,9 @@ class VolumeFrontierModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    volume_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL")
+    )
     volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(Text(), nullable=False)
     frontier_summary: Mapped[str] = mapped_column(Text, nullable=False)
@@ -606,7 +683,9 @@ class VolumeFrontierModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     active_factions: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     active_arc_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     future_reveal_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class DeferredRevealModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -627,17 +706,25 @@ class DeferredRevealModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    volume_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL")
+    )
     reveal_code: Mapped[str] = mapped_column(String(64), nullable=False)
     label: Mapped[str] = mapped_column(Text(), nullable=False)
-    category: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'key_reveal'"))
+    category: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'key_reveal'")
+    )
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     source_volume_number: Mapped[int | None] = mapped_column(Integer)
     reveal_volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
     reveal_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
     guard_condition: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'scheduled'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'scheduled'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ExpansionGateModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -658,17 +745,25 @@ class ExpansionGateModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    volume_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL")
+    )
     gate_code: Mapped[str] = mapped_column(String(64), nullable=False)
     label: Mapped[str] = mapped_column(Text(), nullable=False)
-    gate_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'world_expansion'"))
+    gate_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'world_expansion'")
+    )
     condition_summary: Mapped[str] = mapped_column(Text, nullable=False)
     unlocks_summary: Mapped[str] = mapped_column(Text, nullable=False)
     source_volume_number: Mapped[int | None] = mapped_column(Integer)
     unlock_volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
     unlock_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -700,10 +795,16 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     information_withheld: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     foreshadowing_actions: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
     chapter_emotion_arc: Mapped[str | None] = mapped_column(Text)
-    target_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("2200"))
-    current_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    target_word_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("2200")
+    )
+    current_word_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     revision_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
     production_state: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'pending'")
     )
@@ -726,7 +827,9 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     dominant_line: Mapped[str | None] = mapped_column(String(32))
     support_lines: Mapped[JSON_LIST | None] = mapped_column(JSONB)
     line_intensity: Mapped[float | None] = mapped_column(Float)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
     scenes: Mapped[list["SceneCardModel"]] = relationship(
         back_populates="chapter",
@@ -816,9 +919,15 @@ class SceneCardModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sensory_anchors: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
     forbidden_actions: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     hook_requirement: Mapped[str | None] = mapped_column(Text)
-    target_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1000"))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    target_word_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1000")
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
     chapter: Mapped[ChapterModel] = relationship(back_populates="scenes")
 
@@ -841,12 +950,18 @@ class PlotArcModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     promise: Mapped[str] = mapped_column(Text, nullable=False)
     core_question: Mapped[str] = mapped_column(Text, nullable=False)
     target_payoff: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    scope_level: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'project'"))
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    scope_level: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'project'")
+    )
     scope_volume_number: Mapped[int | None] = mapped_column(Integer)
     scope_chapter_number: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ArcBeatModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -892,8 +1007,12 @@ class ArcBeatModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emotional_shift: Mapped[str | None] = mapped_column(Text)
     information_release: Mapped[str | None] = mapped_column(Text)
     expected_payoff: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ClueModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -920,7 +1039,9 @@ class ClueModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     clue_code: Mapped[str] = mapped_column(String(64), nullable=False)
     label: Mapped[str] = mapped_column(Text(), nullable=False)
-    clue_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'foreshadow'"))
+    clue_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'foreshadow'")
+    )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     planted_in_volume_number: Mapped[int | None] = mapped_column(Integer)
     planted_in_chapter_number: Mapped[int | None] = mapped_column(Integer)
@@ -931,8 +1052,12 @@ class ClueModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     actual_paid_off_chapter_number: Mapped[int | None] = mapped_column(Integer)
     actual_paid_off_scene_number: Mapped[int | None] = mapped_column(Integer)
     reveal_guard: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planted'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planted'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class PayoffModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -969,8 +1094,12 @@ class PayoffModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     target_scene_number: Mapped[int | None] = mapped_column(Integer)
     actual_chapter_number: Mapped[int | None] = mapped_column(Integer)
     actual_scene_number: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ChapterContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1002,14 +1131,18 @@ class ChapterContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     active_arc_beat_ids: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     planted_clue_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     due_payoff_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class SceneContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "scene_contracts"
     __table_args__ = (
         UniqueConstraint("project_id", "scene_card_id", name="uq_scene_contract_scene"),
-        Index("idx_scene_contracts_project_position", "project_id", "chapter_number", "scene_number"),
+        Index(
+            "idx_scene_contracts_project_position", "project_id", "chapter_number", "scene_number"
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(
@@ -1044,7 +1177,9 @@ class SceneContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     arc_beat_ids: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     planted_clue_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     payoff_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class EmotionTrackModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1075,14 +1210,26 @@ class EmotionTrackModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     relationship_type: Mapped[str | None] = mapped_column(Text())
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     desired_payoff: Mapped[str | None] = mapped_column(Text)
-    trust_level: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.5"))
-    attraction_level: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0"))
-    distance_level: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.5"))
-    conflict_level: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.5"))
-    intimacy_stage: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'setup'"))
+    trust_level: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0.5")
+    )
+    attraction_level: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0")
+    )
+    distance_level: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0.5")
+    )
+    conflict_level: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0.5")
+    )
+    intimacy_stage: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'setup'")
+    )
     last_shift_chapter_number: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class AntagonistPlanModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1110,7 +1257,9 @@ class AntagonistPlanModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     antagonist_label: Mapped[str] = mapped_column(Text(), nullable=False)
     plan_code: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(Text(), nullable=False)
-    threat_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'pressure'"))
+    threat_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'pressure'")
+    )
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     current_move: Mapped[str] = mapped_column(Text, nullable=False)
     next_countermove: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1118,16 +1267,18 @@ class AntagonistPlanModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reveal_timing: Mapped[str | None] = mapped_column(Text())
     scope_volume_number: Mapped[int | None] = mapped_column(Integer)
     target_chapter_number: Mapped[int | None] = mapped_column(Integer)
-    pressure_level: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.6"))
+    pressure_level: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("0.6")
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ThemeArcModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "theme_arcs"
-    __table_args__ = (
-        UniqueConstraint("project_id", "theme_code", name="uq_theme_arc_code"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "theme_code", name="uq_theme_arc_code"),)
 
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -1138,16 +1289,18 @@ class ThemeArcModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     theme_statement: Mapped[str] = mapped_column(Text, nullable=False)
     symbol_set: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     evolution_stages: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
-    current_stage: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'introduced'"))
+    current_stage: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'introduced'")
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class MotifPlacementModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "motif_placements"
-    __table_args__ = (
-        Index("idx_motif_placements_project_theme", "project_id", "theme_arc_id"),
-    )
+    __table_args__ = (Index("idx_motif_placements_project_theme", "project_id", "theme_arc_id"),)
 
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -1160,19 +1313,27 @@ class MotifPlacementModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     motif_label: Mapped[str] = mapped_column(Text(), nullable=False)
-    placement_type: Mapped[str] = mapped_column(String(32), nullable=False)  # plant/echo/transform/resolve
+    placement_type: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # plant/echo/transform/resolve
     volume_number: Mapped[int | None] = mapped_column(Integer)
     chapter_number: Mapped[int | None] = mapped_column(Integer)
     scene_number: Mapped[int | None] = mapped_column(Integer)
     description: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class SubplotScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "subplot_schedule"
     __table_args__ = (
-        UniqueConstraint("project_id", "plot_arc_id", "chapter_number", name="uq_subplot_schedule_arc_chapter"),
+        UniqueConstraint(
+            "project_id", "plot_arc_id", "chapter_number", name="uq_subplot_schedule_arc_chapter"
+        ),
         Index("idx_subplot_schedule_project_chapter", "project_id", "chapter_number"),
     )
 
@@ -1188,9 +1349,13 @@ class SubplotScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     arc_code: Mapped[str] = mapped_column(String(64), nullable=False)
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    prominence: Mapped[str] = mapped_column(String(16), nullable=False)  # primary/secondary/mention/dormant
+    prominence: Mapped[str] = mapped_column(
+        String(16), nullable=False
+    )  # primary/secondary/mention/dormant
     notes: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class RelationshipEventModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1210,8 +1375,12 @@ class RelationshipEventModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scene_number: Mapped[int | None] = mapped_column(Integer)
     event_description: Mapped[str] = mapped_column(Text, nullable=False)
     relationship_change: Mapped[str] = mapped_column(Text, nullable=False)
-    is_milestone: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    is_milestone: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ReaderKnowledgeEntryModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1227,16 +1396,18 @@ class ReaderKnowledgeEntryModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
     knowledge_item: Mapped[str] = mapped_column(Text, nullable=False)
-    audience: Mapped[str] = mapped_column(String(16), nullable=False)  # reader_only/character_only/both
+    audience: Mapped[str] = mapped_column(
+        String(16), nullable=False
+    )  # reader_only/character_only/both
     source_clue_code: Mapped[str | None] = mapped_column(String(64))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class EndingContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "ending_contracts"
-    __table_args__ = (
-        UniqueConstraint("project_id", name="uq_ending_contract_project"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", name="uq_ending_contract_project"),)
 
     project_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -1248,8 +1419,12 @@ class EndingContractModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     relationships_to_close: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     thematic_final_expression: Mapped[str | None] = mapped_column(Text)
     denouement_plan: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class PacingCurvePointModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1268,7 +1443,9 @@ class PacingCurvePointModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tension_level: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
     scene_type_plan: Mapped[str | None] = mapped_column(Text())
     notes: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class NarrativeTreeNodeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1301,12 +1478,16 @@ class NarrativeTreeNodeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     body_md: Mapped[str] = mapped_column(Text, nullable=False)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_ref_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    scope_level: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'project'"))
+    scope_level: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'project'")
+    )
     scope_volume_number: Mapped[int | None] = mapped_column(Integer)
     scope_chapter_number: Mapped[int | None] = mapped_column(Integer)
     scope_scene_number: Mapped[int | None] = mapped_column(Integer)
     lexical_document: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class SceneDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -1322,7 +1503,12 @@ class SceneDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "promotion_score IS NULL OR (promotion_score >= 0 AND promotion_score <= 1)",
             name="ck_scene_draft_promotion_score_range",
         ),
-        Index("uq_scene_draft_current", "scene_card_id", unique=True, postgresql_where=text("is_current")),
+        Index(
+            "uq_scene_draft_current",
+            "scene_card_id",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
         Index(
             "uq_scene_draft_promoted",
             "scene_card_id",
@@ -1379,7 +1565,12 @@ class ChapterDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "promotion_score IS NULL OR (promotion_score >= 0 AND promotion_score <= 1)",
             name="ck_chapter_draft_promotion_score_range",
         ),
-        Index("uq_chapter_draft_current", "chapter_id", unique=True, postgresql_where=text("is_current")),
+        Index(
+            "uq_chapter_draft_current",
+            "chapter_id",
+            unique=True,
+            postgresql_where=text("is_current"),
+        ),
         Index(
             "uq_chapter_draft_promoted",
             "chapter_id",
@@ -1402,7 +1593,9 @@ class ChapterDraftVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     content_md: Mapped[str] = mapped_column(Text, nullable=False)
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    assembled_from_scene_draft_ids: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    assembled_from_scene_draft_ids: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     promotion_state: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'candidate'")
@@ -1445,13 +1638,25 @@ class CanonFactModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     predicate: Mapped[str] = mapped_column(Text(), nullable=False)
     fact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     value_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
-    confidence: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("1"))
-    source_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'extracted'"))
-    source_scene_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("scene_cards.id"))
-    source_chapter_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("chapters.id"))
-    valid_from_chapter_no: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    confidence: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, server_default=text("1")
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'extracted'")
+    )
+    source_scene_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("scene_cards.id")
+    )
+    source_chapter_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chapters.id")
+    )
+    valid_from_chapter_no: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
     valid_to_chapter_no: Mapped[int | None] = mapped_column(Integer)
-    supersedes_fact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("canon_facts.id"))
+    supersedes_fact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("canon_facts.id")
+    )
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     tags: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -1467,7 +1672,9 @@ class TimelineEventModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     chapter_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("chapters.id"))
-    scene_card_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("scene_cards.id"))
+    scene_card_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("scene_cards.id")
+    )
     event_name: Mapped[str] = mapped_column(Text(), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     story_time_label: Mapped[str] = mapped_column(Text(), nullable=False)
@@ -1476,7 +1683,9 @@ class TimelineEventModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     consequences: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     duration_hint: Mapped[str | None] = mapped_column(Text())
     is_revealed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class ReviewReportModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -1546,7 +1755,9 @@ class QualityScoreModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     judge_key: Mapped[str | None] = mapped_column(String(128))
     pairwise_group_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    review_report_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("review_reports.id"))
+    review_report_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("review_reports.id")
+    )
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     score_overall: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
     score_goal: Mapped[float | None] = mapped_column(Numeric(4, 2))
@@ -1644,24 +1855,32 @@ class RewriteTaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    parent_task_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("rewrite_tasks.id"))
+    parent_task_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("rewrite_tasks.id")
+    )
     trigger_type: Mapped[str] = mapped_column(String(64), nullable=False)
     trigger_source_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     rewrite_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("5"))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'pending'")
+    )
     instructions: Mapped[str] = mapped_column(Text, nullable=False)
     context_required: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     error_log: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class RewriteImpactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "rewrite_impacts"
     __table_args__ = (
         Index("idx_rewrite_impacts_task", "rewrite_task_id", "impact_level", "impact_score"),
-        CheckConstraint("impact_score >= 0 AND impact_score <= 1", name="rewrite_impact_score_range"),
+        CheckConstraint(
+            "impact_score >= 0 AND impact_score <= 1", name="rewrite_impact_score_range"
+        ),
     )
 
     rewrite_task_id: Mapped[UUID] = mapped_column(
@@ -1679,7 +1898,12 @@ class RewriteImpactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 class WorkflowRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (
-        Index("idx_workflow_runs_pending", "status", "created_at", postgresql_where=text("status IN ('pending','queued')")),
+        Index(
+            "idx_workflow_runs_pending",
+            "status",
+            "created_at",
+            postgresql_where=text("status IN ('pending','queued')"),
+        ),
         Index(
             "uq_conception_workflow_idempotency",
             "workflow_type",
@@ -1696,15 +1920,21 @@ class WorkflowRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
 
-    project_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"))
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+    )
     workflow_type: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     scope_type: Mapped[str | None] = mapped_column(String(32))
     scope_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    requested_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'system'"))
+    requested_by: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'system'")
+    )
     current_step: Mapped[str | None] = mapped_column(Text())
     error_message: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
     idempotency_key: Mapped[str | None] = mapped_column(Text())
 
 
@@ -1731,9 +1961,15 @@ class LlmRunModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "llm_runs"
     __table_args__ = (Index("idx_llm_runs_project_created", "project_id", "created_at"),)
 
-    project_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"))
-    workflow_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="SET NULL"))
-    step_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("workflow_step_runs.id", ondelete="SET NULL"))
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    workflow_run_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflow_runs.id", ondelete="SET NULL")
+    )
+    step_run_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workflow_step_runs.id", ondelete="SET NULL")
+    )
     logical_role: Mapped[str] = mapped_column(String(64), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model_name: Mapped[str] = mapped_column(Text(), nullable=False)
@@ -1746,7 +1982,53 @@ class LlmRunModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     finish_reason: Mapped[str | None] = mapped_column(String(64))
     request_payload_ref: Mapped[str | None] = mapped_column(Text)
     response_payload_ref: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+
+
+class ExecutionBudgetModel(Base):
+    """Durable spend ceiling, deliberately independent of project/workflow FKs."""
+
+    __tablename__ = "execution_budgets"
+    scope_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    max_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_charged: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    metadata_json: Mapped[JSON_DICT] = mapped_column(PORTABLE_JSON, nullable=False, default=dict)
+
+
+class ExecutionOperationModel(Base):
+    __tablename__ = "execution_operations"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("execution_budgets.scope_id"), nullable=False, index=True
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    owner: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    result_json: Mapped[JSON_DICT | None] = mapped_column(PORTABLE_JSON)
+
+
+class ExecutionAttemptModel(Base):
+    __tablename__ = "execution_attempts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operation_key: Mapped[str] = mapped_column(
+        String(64), ForeignKey("execution_operations.key"), nullable=False, index=True
+    )
+    scope_id: Mapped[str] = mapped_column(
+        String(256), ForeignKey("execution_budgets.scope_id"), nullable=False, index=True
+    )
+    model_name: Mapped[str] = mapped_column(Text, nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reserved_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    actual_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ExportArtifactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -1798,7 +2080,9 @@ class RetrievalChunkModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     embedding_dim: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1024"))
     embedding: Mapped[Any] = mapped_column(Vector(1024), nullable=False)
     lexical_document: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class IFGenerationRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1812,8 +2096,12 @@ class IFGenerationRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
-    phase: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'story_bible'"))
-    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    phase: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'story_bible'")
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'pending'")
+    )
     book_id: Mapped[str | None] = mapped_column(Text())
     # FK to bible / arc / walkthrough planning artifacts (nullable until each phase completes)
     bible_artifact_id: Mapped[UUID | None] = mapped_column(
@@ -1829,7 +2117,9 @@ class IFGenerationRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("planning_artifact_versions.id", ondelete="SET NULL"),
     )
     total_chapters: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    completed_chapters: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    completed_chapters: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     output_dir: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
     config_snapshot: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
@@ -1896,7 +2186,9 @@ class IFRouteDefinitionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=False,
     )
     route_id: Mapped[str] = mapped_column(String(64), nullable=False)  # "mainline"|"branch_warrior"
-    route_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "mainline"|"branch"|"hidden"
+    route_type: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # "mainline"|"branch"|"hidden"
     title: Mapped[str] = mapped_column(Text(), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     branch_start_chapter: Mapped[int | None] = mapped_column(Integer)
@@ -2012,7 +2304,9 @@ class PublishingPlatformModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "publishing_platforms"
     __table_args__ = (
-        UniqueConstraint("project_id", "platform_type", name="uq_publishing_platforms_project_type"),
+        UniqueConstraint(
+            "project_id", "platform_type", name="uq_publishing_platforms_project_type"
+        ),
         Index("idx_publishing_platforms_project", "project_id"),
     )
 
@@ -2035,7 +2329,9 @@ class PublishingPlatformModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         "credentials_encrypted", Text
     )  # Fernet-encrypted JSON stored as base64-encoded text
     rate_limit_rpm: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("10"))
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class PublishingScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -2077,7 +2373,9 @@ class PublishingScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         server_default=text("'active'"),
     )  # "active" | "paused" | "completed"
-    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
 
 
 class PublishingHistoryModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -2125,7 +2423,9 @@ class PublishingHistoryModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         "platform_response", JSONB, nullable=False, default=dict
     )
     error_message: Mapped[str | None] = mapped_column(Text)
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2227,9 +2527,7 @@ class ChapterQualityReportModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         index=True,
     )
     report_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
-    regen_attempts: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
+    regen_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     blocks_write: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
@@ -2358,17 +2656,11 @@ class MaterialLibraryModel(Base):
 
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source_citations_json: Mapped[JSON_LIST | None] = mapped_column(JSONB)
-    confidence: Mapped[float] = mapped_column(
-        Float, nullable=False, server_default=text("0.0")
-    )
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.0"))
     coverage_score: Mapped[float | None] = mapped_column(Float)
 
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'active'")
-    )
-    usage_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -2436,9 +2728,7 @@ class ProjectMaterialModel(Base):
     variation_notes: Mapped[str | None] = mapped_column(Text)
     promoted_to_library_id: Mapped[int | None] = mapped_column(BigInteger)
 
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'active'")
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -2534,9 +2824,7 @@ class OverrideContractModel(Base):
     rationale_text: Mapped[str] = mapped_column(Text, nullable=False)
     payback_plan: Mapped[str] = mapped_column(Text, nullable=False)
     due_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'active'")
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -2589,9 +2877,7 @@ class ChaseDebtModel(Base):
     )
     accrued_through_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
     due_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default=text("'active'")
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -2632,9 +2918,7 @@ class BookGenerationScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     task_type: Mapped[str] = mapped_column(String(32), nullable=False)
     project_slug: Mapped[str | None] = mapped_column(String(64))
     title: Mapped[str | None] = mapped_column(Text())
-    scheduled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     timezone: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -2693,8 +2977,7 @@ class InterpersonalPromiseModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="ck_interpersonal_promises_status",
         ),
         CheckConstraint(
-            "promisor_id IS NULL OR promisee_id IS NULL OR "
-            "promisor_id <> promisee_id",
+            "promisor_id IS NULL OR promisee_id IS NULL OR promisor_id <> promisee_id",
             name="ck_interpersonal_promises_distinct",
         ),
     )
@@ -2782,6 +3065,169 @@ class BookProductionControlModel(TimestampMixin, Base):
         server_default=text("false"),
     )
     resume_pending_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    detail_json: Mapped[JSON_DICT] = mapped_column(
-        "detail", JSONB, nullable=False, default=dict
+    detail_json: Mapped[JSON_DICT] = mapped_column("detail", JSONB, nullable=False, default=dict)
+
+
+# Ranking-grade evidence authority.  These tables are intentionally kept in a
+# separate section: raw evidence is a ledger, not a mutable report cache.
+class RankingEvaluationRunModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "ranking_evaluation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned','running','finalized','blocked')", name="ranking_run_status"
+        ),
+        Index("idx_ranking_run_project_status", "project_id", "status"),
     )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    candidate_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    candidate_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_platform: Mapped[str | None] = mapped_column(String(64))
+    target_list: Mapped[str | None] = mapped_column(String(128))
+    target_genre: Mapped[str | None] = mapped_column(String(128))
+    preregistration_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    preregistration_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_plan_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    analysis_plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_cell_manifest_json: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    required_cell_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    roster_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    roster_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    sealed_candidate_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    packaging_contract_hash: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'planned'")
+    )
+    next_event_sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("1")
+    )
+    last_event_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("''")
+    )
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RankingEvidenceArtifactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "ranking_evidence_artifacts"
+    __table_args__ = (Index("idx_ranking_artifact_run_layer", "run_id", "evidence_layer"),)
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ranking_evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    evidence_layer: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    artifact_uri: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_event_ledger_hash: Mapped[str | None] = mapped_column(String(64))
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    cluster_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    verdict: Mapped[str | None] = mapped_column(String(32))
+    blocking_codes: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    unknowns: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    producer_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    producer_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class RankingRawEvidenceEventModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "ranking_raw_evidence_events"
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_ranking_event_run_sequence"),
+        UniqueConstraint("ingest_idempotency_key", name="uq_ranking_event_ingest_key"),
+        Index("idx_ranking_event_run_sequence", "run_id", "sequence"),
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ranking_evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_uuid: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        unique=True,
+        nullable=False,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    evidence_layer: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("NOW()"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    session_hash: Mapped[str | None] = mapped_column(String(128))
+    assignment_hash: Mapped[str | None] = mapped_column(String(128))
+    cluster_hash: Mapped[str | None] = mapped_column(String(128))
+    subject_hash: Mapped[str | None] = mapped_column(String(128))
+    candidate_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    candidate_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    collector_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    collector_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    key_id: Mapped[str | None] = mapped_column(String(128))
+    auth_receipt: Mapped[str | None] = mapped_column(Text)
+    ingest_idempotency_key: Mapped[str] = mapped_column(String(300), nullable=False)
+    validation_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'valid'")
+    )
+    invalid_code: Mapped[str | None] = mapped_column(String(128))
+
+
+class BookPackagingContractModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "book_packaging_contracts"
+    __table_args__ = (Index("idx_packaging_contract_project_status", "project_id", "status"),)
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    contract_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_platform: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_design_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    primary_title: Mapped[str] = mapped_column(Text, nullable=False)
+    intro_variants_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    title_candidate_decision_ids: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    active_intro_variant_map: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    tag_effect_architecture_refs: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    realization_refs: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    canonical_payload_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    canonical_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draft'"))
+    supersedes_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("book_packaging_contracts.id", ondelete="RESTRICT")
+    )
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StoryRebuildWorkspaceModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "story_rebuild_workspaces"
+    __table_args__ = (
+        Index("idx_rebuild_workspace_project_state", "project_id", "validation_state"),
+    )
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    source_canonical_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    candidate_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_lineage_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    validation_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'draft'")
+    )
+    cutover_receipt_json: Mapped[JSON_DICT | None] = mapped_column(JSONB)
+    rollback_receipt_json: Mapped[JSON_DICT | None] = mapped_column(JSONB)
+    cutover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

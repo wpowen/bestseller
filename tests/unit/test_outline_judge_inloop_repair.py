@@ -107,7 +107,7 @@ def test_both_full_and_progressive_planners_consume_enhancer_repair_directives()
     assert "_outline_next_repair_directives" in inspect.getsource(
         planner.generate_novel_plan
     )
-    assert "_outline_next_repair_directives" in inspect.getsource(
+    assert "_select_outline_repair_source_and_directives" in inspect.getsource(
         planner.generate_volume_plan
     )
 

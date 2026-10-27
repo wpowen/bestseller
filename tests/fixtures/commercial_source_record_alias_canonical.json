@@ -1,0 +1,1698 @@
+[
+  {
+    "name": "canonical_observation_critical",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "prior_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "SRC:a075a312e63c08368b8db172",
+                "kind": "observation",
+                "quote": "“六桌催菜，问这一盘是不是少盛了半勺。”"
+              }
+            ],
+            "source_assertion": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "3aefc48330d4daa23ec55c355579b408747789f39098bf886685d6609a880591",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "6c1da4b52f9453111cd1a98b0dfa5db86d1b07882e0753c1266924ecf6c8769b",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_observation_high",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"high\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "high",
+            "assessment_kind": "prior_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "SRC:a075a312e63c08368b8db172",
+                "kind": "observation",
+                "quote": "“六桌催菜，问这一盘是不是少盛了半勺。”"
+              }
+            ],
+            "source_assertion": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "c578bb416fc5ad3aaea6d963eddbc56281f07e941b51057750fea633c773ab78",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "d5b904bbf33f28b66ff2073d7c5bb0a410f848f7a6bc7bc7b0519570436002d3",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_observation_medium",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"medium\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "medium",
+            "assessment_kind": "prior_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "SRC:a075a312e63c08368b8db172",
+                "kind": "observation",
+                "quote": "“六桌催菜，问这一盘是不是少盛了半勺。”"
+              }
+            ],
+            "source_assertion": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "f260a6a4871cefd0353184d7876bf4f53f1d8367f758bf37e3600a34d8f3b332",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "fa02d56ea6e6af6f6fad405b3572ab6ecc78e00b8bea4294cba9b011ea6ee182",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 0,
+          "audit_issues": 1
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_observation_low",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"low\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [],
+        "audit_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "low",
+            "assessment_kind": "prior_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "SRC:a075a312e63c08368b8db172",
+                "kind": "observation",
+                "quote": "“六桌催菜，问这一盘是不是少盛了半勺。”"
+              }
+            ],
+            "source_assertion": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "5bc317770d29da1cc7403c22ba4f6d3757def4e7dcf2e27f6135799c0c4a3224",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "76e40f1443d3e3ff5afad9b65ece8ab92da46960de027b84839fb32ed5e99f7a",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 0,
+          "audit_issues": 1
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_narrative_quality",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"narrative_quality\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "narrative_quality",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "reader_impact": "核对同一盘扣肉的分量，不把后续进展当上限。"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "28ce5d1cdc33946b4a523d1531ea4962e8865bf2094aef62fe581ce9234767e0",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "363342aa4bcd6994c6fdd590d9686891907b4cdc1f49511c86c592d566a092f8",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_current_fact_conflict",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"current_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "current_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "source_assertion": "主桌有人问这一盘的分量。",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "f58a93eabd3f979002222499fdd527775b6c036a867ff0bed43acfff678efcf8",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "7eb80e83ba8e2edcb7343f4385d11fd8366c962836d23b903b98162aa6a0253e",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_prior_fact_conflict",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"PREV3:D651a00f6b41441b8:P0001\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "prior_fact_conflict",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "PREV3:D651a00f6b41441b8:P0001",
+                "kind": "prior",
+                "quote": "杜强按桌号传菜。"
+              }
+            ],
+            "source_assertion": "杜强按桌号传菜。",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {}
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "be7f52dd2e54cb86094c55d10509f0a9fe889ab318a6f41540ad9f13416550c1",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "07e3a49901b1741f6d08eedd008e7c35ad0e795316d7a1b4bd47b3d79b85c6ba",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "canonical_constraint_violation",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        },
+        "approved_chapter_contract": {
+          "text": "使用第三人称。",
+          "hard": true,
+          "source": "user"
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"constraint_violation\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"RULE:5fefdfd8fa7c660f4cbf9a5c\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  },\n  \"checks\": {\n    \"RULE:5fefdfd8fa7c660f4cbf9a5c\": {\n      \"result\": \"PASS\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"原条款适用。\"\n    }\n  }\n}\n",
+    "expected": [
+      {
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        },
+        "blocking_issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "constraint_violation",
+            "required_fix": "只核对引用事件的表述。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "evidence": "主桌有人问这一盘的分量。",
+            "source_citations": [
+              {
+                "id": "RULE:5fefdfd8fa7c660f4cbf9a5c",
+                "kind": "constraint",
+                "quote": "{\"hard\":true,\"source\":\"user\",\"text\":\"使用第三人称。\"}"
+              }
+            ],
+            "source_assertion": "{\"hard\":true,\"source\":\"user\",\"text\":\"使用第三人称。\"}",
+            "current_assertion": "主桌有人问这一盘的分量。",
+            "conflict_reason": "核对同一盘扣肉的分量，不把后续进展当上限。"
+          }
+        ],
+        "audit_issues": [],
+        "binary_checklist": {
+          "RULE:5fefdfd8fa7c660f4cbf9a5c": {
+            "result": "PASS",
+            "evidence": "主桌有人问这一盘的分量。",
+            "body_citations": [
+              {
+                "id": "Df2d4d9fd272fb734:P0001",
+                "kind": "current",
+                "quote": "主桌有人问这一盘的分量。"
+              }
+            ],
+            "source_citations": [
+              {
+                "id": "RULE:5fefdfd8fa7c660f4cbf9a5c",
+                "kind": "constraint",
+                "quote": "{\"hard\":true,\"source\":\"user\",\"text\":\"使用第三人称。\"}"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "4d32f3bb16a7d5dd3ef4b53d6424b779fe62f8267c3f063020edaee9bf60742c",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "18d3c36ac7a2fb1adf55206e9b24bb7da0c576cb55a59380ac208330f5981a05",
+          "semantic_source_sha256": "18d3c36ac7a2fb1adf55206e9b24bb7da0c576cb55a59380ac208330f5981a05",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "d4d9134fc8ad1d5f0cfce16c2149482366e7cb492728310914031c2d9dd8114d",
+          "assembled_characters": 3560,
+          "catalog_entries": 12,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1930,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 584,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1930,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "verified",
+        "scores_modified": false,
+        "issues_dropped": 0,
+        "derived_issues_added": 0,
+        "derived_issue_rule_ids": [],
+        "domain_mapping_sha256": "177caa6125583ab10295f0302037414350a9acbc1b5f8e5e7e237f10caaa1afc",
+        "source_resolution": "immutable-catalog-id.v1",
+        "issue_order_preserved_within_severity_group": true,
+        "issue_counts": {
+          "blocking_issues": 1,
+          "audit_issues": 0
+        }
+      },
+      []
+    ]
+  },
+  {
+    "name": "bad_body",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"foreign\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "wire_version": "commercial-review-wire.v2",
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "prior_fact_conflict",
+            "body_id": "foreign",
+            "reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "required_fix": "只核对引用事件的表述。",
+            "source_id": "SRC:a075a312e63c08368b8db172",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        }
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "15d7da34ba6d2b3accc6bf5e6443a6ed97cb4fc33d71482a4b6972479c25ae5a",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "rejected",
+        "scores_modified": false,
+        "issues_dropped": 0
+      },
+      [
+        "issues/0/body_id: unknown or incorrectly typed source ID"
+      ]
+    ]
+  },
+  {
+    "name": "legacy_version",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"old\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "wire_version": "old",
+        "pass": false,
+        "overall_score": 0.61,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "prior_fact_conflict",
+            "body_id": "Df2d4d9fd272fb734:P0001",
+            "reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "required_fix": "只核对引用事件的表述。",
+            "source_id": "SRC:a075a312e63c08368b8db172",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        }
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "ba7cf52c576ca5375a3ecda085aea6fb61a5c65a2d711cf0877bcfd02d641eae",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "rejected",
+        "scores_modified": false,
+        "issues_dropped": 0
+      },
+      [
+        "wire: explicit current wire_version required; legacy reports rejected"
+      ]
+    ]
+  },
+  {
+    "name": "bad_score",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": true,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n}\n",
+    "expected": [
+      {
+        "wire_version": "commercial-review-wire.v2",
+        "pass": false,
+        "overall_score": true,
+        "dimension_scores": {
+          "readability": 0.61
+        },
+        "issues": [
+          {
+            "code": "SAME_EVENT_QUANTITY",
+            "severity": "critical",
+            "assessment_kind": "prior_fact_conflict",
+            "body_id": "Df2d4d9fd272fb734:P0001",
+            "reason": "核对同一盘扣肉的分量，不把后续进展当上限。",
+            "required_fix": "只核对引用事件的表述。",
+            "source_id": "SRC:a075a312e63c08368b8db172",
+            "temporal_relation": "same_event_or_state"
+          }
+        ],
+        "rewrite_plan": {
+          "scope": "chapter",
+          "change": [
+            "核对引用事件"
+          ]
+        }
+      },
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "c42bf1a0901ce1e1c94f91456eceb4197743bdcee21d7f7b2b061049037081b6",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "rejected",
+        "scores_modified": false,
+        "issues_dropped": 0
+      },
+      [
+        "report: real numeric scores in 0..1 are required"
+      ]
+    ]
+  },
+  {
+    "name": "duplicate_raw_field",
+    "source_input": {
+      "chapter_number": 4,
+      "content_md": "主桌有人问这一盘的分量。\n\n后厨听见了催菜声。",
+      "previous_chapters": [
+        {
+          "chapter_number": 3,
+          "body": "杜强按桌号传菜。"
+        }
+      ],
+      "source": {
+        "adopted_continuity": {
+          "source_bound_canon": [
+            {
+              "text": "Fixture observation 0"
+            },
+            {
+              "text": "Fixture observation 1"
+            },
+            {
+              "text": "Fixture observation 2"
+            },
+            {
+              "text": "Fixture observation 3"
+            },
+            {
+              "text": "Fixture observation 4"
+            },
+            {
+              "text": "Fixture observation 5"
+            },
+            {
+              "text": "Fixture observation 6"
+            },
+            {
+              "evidence": "“六桌催菜，问这一盘是不是少盛了半勺。”",
+              "id": "29da4a0f-a3c1-42d5-9df1-b795589a6500",
+              "predicate": "对扣肉分量的质疑",
+              "source_chapter_id": "b38aacef-c424-4575-b1ad-eed353e30302",
+              "subject": "六桌传菜反馈",
+              "valid_from_chapter": 3,
+              "value": "传菜伙计询问这一盘是否少盛了半勺"
+            }
+          ]
+        }
+      }
+    },
+    "raw": "{\n  \"wire_version\": \"commercial-review-wire.v2\",\n  \"pass\": false,\n  \"overall_score\": 0.61,\n  \"dimension_scores\": {\n    \"readability\": 0.61\n  },\n  \"issues\": [\n    {\n      \"code\": \"SAME_EVENT_QUANTITY\",\n      \"severity\": \"critical\",\n      \"assessment_kind\": \"prior_fact_conflict\",\n      \"body_id\": \"Df2d4d9fd272fb734:P0001\",\n      \"reason\": \"核对同一盘扣肉的分量，不把后续进展当上限。\",\n      \"required_fix\": \"只核对引用事件的表述。\",\n      \"source_id\": \"SRC:a075a312e63c08368b8db172\",\n      \"temporal_relation\": \"same_event_or_state\"\n    }\n  ],\n  \"rewrite_plan\": {\n    \"scope\": \"chapter\",\n    \"change\": [\n      \"核对引用事件\"\n    ]\n  }\n,\"pass\":true}",
+    "expected": [
+      {},
+      {
+        "adapter_version": "commercial-review-adapter.v2",
+        "wire_version": "commercial-review-wire.v2",
+        "raw_report_sha256": "93b66bb4e04f6b79832b4aaddd06df2d49906f2f0bf219cf6874cb31a3068492",
+        "source_binding": {
+          "schema_version": "commercial-source-evidence.v3",
+          "prompt_version": "v12-source-authority",
+          "body_sha256": "f2d4d9fd272fb734bdeeeaa213b40c3b6b4d8ceb2946663c45f3f567a35f44d0",
+          "source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "semantic_source_sha256": "a293edb646b7db8bd21cdebd659df384ddf0699990a0f93b6613f56da1c52661",
+          "source_protocol_sha256": "cef0b8ab1f78099b77836741eab12f15e5589b403443fe0b44e493470e20097e",
+          "source_selection": {},
+          "previous_sha256": "068d8bd4775bd19818b98cdff35dbd68856b1a862932f22d1acac46d0f5591cc",
+          "assembled_source_sha256": "91b3aff1f0db496faf6ff25b0f493eb6c5b6ebd6505ec3c9d739950aacbe5e21",
+          "assembled_characters": 3311,
+          "catalog_entries": 11,
+          "previous": [
+            {
+              "chapter_number": 3,
+              "chapter_id": null,
+              "draft_id": null,
+              "adoption_state": null,
+              "body_sha256": "651a00f6b41441b804122ea1d49a08f9d0a85ed09320adb711938121a63116f5",
+              "characters": 8,
+              "coverage": "supplied_body"
+            }
+          ],
+          "source_complete_for_supplied_projection": true,
+          "structural_aliases": [],
+          "rendered_catalog_characters": 1756,
+          "section_characters": {
+            "schema_version": 31,
+            "chapter_number": 1,
+            "source_context": 509,
+            "previous_chapters": 40,
+            "current_body": 27,
+            "citation_catalog": 1756,
+            "citation_protocol": 520,
+            "coverage_notice": 275
+          },
+          "truncated": false
+        },
+        "status": "rejected",
+        "scores_modified": false,
+        "issues_dropped": 0
+      },
+      [
+        "wire: raw output is not strict JSON"
+      ]
+    ]
+  }
+]

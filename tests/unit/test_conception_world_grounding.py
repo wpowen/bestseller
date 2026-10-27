@@ -96,9 +96,13 @@ def test_audit_mechanism_causality_updates_premise_and_notes(monkeypatch) -> Non
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
     new_premise, new_profile, ids, notes = asyncio.run(
         conception._audit_mechanism_causality(
-            None, object(),
-            premise="原前提", writing_profile=_writing_profile(),
-            world_model=_real_world_model(), ctx=dict(_CTX), is_en=False,
+            None,
+            object(),
+            premise="原前提",
+            writing_profile=_writing_profile(),
+            world_model=_real_world_model(),
+            ctx=dict(_CTX),
+            is_en=False,
         )
     )
     assert new_premise == fixed["premise"]
@@ -109,9 +113,13 @@ def test_audit_mechanism_causality_updates_premise_and_notes(monkeypatch) -> Non
 def test_audit_mechanism_causality_skips_without_world_model() -> None:
     new_premise, new_profile, ids, notes = asyncio.run(
         conception._audit_mechanism_causality(
-            None, object(),
-            premise="原前提", writing_profile=_writing_profile(),
-            world_model=None, ctx=dict(_CTX), is_en=False,
+            None,
+            object(),
+            premise="原前提",
+            writing_profile=_writing_profile(),
+            world_model=None,
+            ctx=dict(_CTX),
+            is_en=False,
         )
     )
     assert new_premise == "原前提"
@@ -125,9 +133,13 @@ def test_audit_mechanism_causality_fails_open_on_garbage(monkeypatch) -> None:
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
     new_premise, new_profile, ids, notes = asyncio.run(
         conception._audit_mechanism_causality(
-            None, object(),
-            premise="原前提", writing_profile=_writing_profile(),
-            world_model=_real_world_model(), ctx=dict(_CTX), is_en=False,
+            None,
+            object(),
+            premise="原前提",
+            writing_profile=_writing_profile(),
+            world_model=_real_world_model(),
+            ctx=dict(_CTX),
+            is_en=False,
         )
     )
     assert new_premise == "原前提"
@@ -143,6 +155,34 @@ def test_golden_finger_optout_violation_fires_outside_whitelist() -> None:
     )
     assert msg is not None
     assert "豁免资格" in msg
+
+
+@pytest.mark.parametrize(
+    ("prompt_pack", "expected"),
+    [
+        ("realistic-life", "realistic"),
+        ("urban-power-reversal", "progression"),
+        ("otherworld-cross-system", "progression"),
+        ("xianxia-upgrade-core", "progression"),
+    ],
+)
+def test_golden_finger_policy_follows_selected_prompt_pack(prompt_pack, expected) -> None:
+    ctx = dict(_CTX, prompt_pack_key=prompt_pack)
+    assert conception._golden_finger_policy(ctx) == expected
+
+
+def test_realistic_optout_and_cost_only_mechanism_skip_polish_gate() -> None:
+    ctx = dict(_CTX, genre="现实", sub_genre="现实百态", prompt_pack_key="realistic-life")
+    assert conception._detect_golden_finger_optout_violation(
+        golden_finger="无显性金手指，优势在判断和关系", ctx=ctx
+    ) is None
+    assert conception._detect_golden_finger_polarity_violation(
+        golden_finger="每次选择都要付出代价，永久失去一段关系",
+        growth_curve="没有境界升级，只有承担后果后的成熟",
+        synopsis="一个普通职员在家庭和工作之间做选择。",
+        premise="她必须在月底前决定是否离开这份工作。",
+        ctx=ctx,
+    ) is None
 
 
 def test_golden_finger_optout_allowed_for_whitelisted_genre() -> None:
@@ -194,27 +234,40 @@ def test_golden_finger_polarity_exempt_when_dramatic_tension_present() -> None:
 
 def test_golden_finger_polarity_no_violation_without_cost_words() -> None:
     msg = conception._detect_golden_finger_polarity_violation(
-        golden_finger="", growth_curve="", synopsis="", premise="",
+        golden_finger="",
+        growth_curve="",
+        synopsis="",
+        premise="",
     )
     assert msg is None
 
 
 def test_polish_golden_finger_mechanism_applies_fix(monkeypatch) -> None:
-    fixed = {"golden_finger": "修正后有获得感的金手指", "growth_curve": "越来越强"}
+    fixed = {
+        "golden_finger": "修正后有获得感的金手指",
+        "growth_curve": "越来越强",
+        "power_tiers": ["入门", "掌控", "登顶"],
+    }
 
     async def fake_llm_call_json(*a, **k):
         return fixed, []
 
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
-    gf, gc, ids = asyncio.run(
+    gf, gc, tiers, ids = asyncio.run(
         conception._polish_golden_finger_mechanism(
-            None, object(),
-            golden_finger="只有代价", growth_curve="",
-            violations=["[机制极性缺失] ..."], ctx=dict(_CTX), is_en=False,
+            None,
+            object(),
+            golden_finger="只有代价",
+            growth_curve="",
+            power_tiers=["旧阶梯"],
+            violations=["[机制极性缺失] ..."],
+            ctx=dict(_CTX),
+            is_en=False,
         )
     )
     assert gf == fixed["golden_finger"]
     assert gc == fixed["growth_curve"]
+    assert tiers == fixed["power_tiers"]
 
 
 def test_polish_golden_finger_mechanism_fails_open(monkeypatch) -> None:
@@ -222,15 +275,50 @@ def test_polish_golden_finger_mechanism_fails_open(monkeypatch) -> None:
         return {}, []
 
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
-    gf, gc, ids = asyncio.run(
+    gf, gc, tiers, ids = asyncio.run(
         conception._polish_golden_finger_mechanism(
-            None, object(),
-            golden_finger="原始金手指", growth_curve="原始曲线",
-            violations=["x"], ctx=dict(_CTX), is_en=False,
+            None,
+            object(),
+            golden_finger="原始金手指",
+            growth_curve="原始曲线",
+            power_tiers=["原始阶梯"],
+            violations=["x"],
+            ctx=dict(_CTX),
+            is_en=False,
         )
     )
     assert gf == "原始金手指"
     assert gc == "原始曲线"
+    assert tiers == ["原始阶梯"]
+
+
+def test_realistic_polish_entry_is_a_noop_without_model_call(monkeypatch) -> None:
+    async def forbidden_llm(*_args, **_kwargs):
+        raise AssertionError("realistic fiction must not invoke golden-finger polish")
+
+    monkeypatch.setattr(conception, "_llm_call_json", forbidden_llm)
+    realistic_ctx = {
+        **_CTX,
+        "genre_intent_contract": {"prompt_pack_key": "realistic-life"},
+    }
+    result = asyncio.run(
+        conception._polish_golden_finger_mechanism(
+            None,
+            object(),
+            golden_finger="职业判断与关系经营",
+            growth_curve="逐步赢得同事信任",
+            power_tiers=["熟练"],
+            violations=["cost-only"],
+            ctx=realistic_ctx,
+            is_en=False,
+        )
+    )
+    assert result == (
+        "职业判断与关系经营",
+        "逐步赢得同事信任",
+        ["熟练"],
+        [],
+    )
 
 
 # ── ④ 跨产物事实台账 ─────────────────────────────────────────────────────
@@ -311,8 +399,12 @@ def test_detect_cross_artifact_age_mismatch_empty_inputs() -> None:
 def test_reconcile_cross_artifact_facts_noop_without_mismatches() -> None:
     premise, synopsis, ids = asyncio.run(
         conception._reconcile_cross_artifact_facts(
-            None, object(),
-            premise="P", synopsis="S", mismatches=[], ctx=dict(_CTX),
+            None,
+            object(),
+            premise="P",
+            synopsis="S",
+            mismatches=[],
+            ctx=dict(_CTX),
         )
     )
     assert (premise, synopsis, ids) == ("P", "S", [])
@@ -327,9 +419,12 @@ def test_reconcile_cross_artifact_facts_applies_fix(monkeypatch) -> None:
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
     premise, synopsis, ids = asyncio.run(
         conception._reconcile_cross_artifact_facts(
-            None, object(),
-            premise="原前提", synopsis="三十二岁的外卖员",
-            mismatches=["文中冲突"], ctx=dict(_CTX),
+            None,
+            object(),
+            premise="原前提",
+            synopsis="三十二岁的外卖员",
+            mismatches=["文中冲突"],
+            ctx=dict(_CTX),
         )
     )
     assert premise == fixed["premise"]
@@ -343,9 +438,12 @@ def test_reconcile_cross_artifact_facts_fails_open_on_garbage(monkeypatch) -> No
     monkeypatch.setattr(conception, "_llm_call_json", fake_llm_call_json)
     premise, synopsis, ids = asyncio.run(
         conception._reconcile_cross_artifact_facts(
-            None, object(),
-            premise="原前提", synopsis="原简介",
-            mismatches=["x"], ctx=dict(_CTX),
+            None,
+            object(),
+            premise="原前提",
+            synopsis="原简介",
+            mismatches=["x"],
+            ctx=dict(_CTX),
         )
     )
     assert premise == "原前提"
@@ -377,19 +475,28 @@ def test_attach_mechanism_dedup_backfills_baseline_on_cold_start(monkeypatch) ->
 
     monkeypatch.setattr(conception, "_recent_core_mechanisms", fake_recent_core_mechanisms)
     ctx = dict(_CTX)
-    settings = type("S", (), {"pipeline": type("P", (), {"enable_conception_mechanism_dedup": True})()})()
+    settings = type(
+        "S", (), {"pipeline": type("P", (), {"enable_conception_mechanism_dedup": True})()}
+    )()
     asyncio.run(conception._attach_mechanism_dedup(None, settings, ctx))
     assert ctx["avoid_mechanisms"]  # 冷启动仍非空(静态底牌补位)
 
 
 def test_attach_mechanism_dedup_prefers_real_history_over_baseline(monkeypatch) -> None:
-    real_entry = {"title": "旧书", "golden_finger": "真实机制", "premise": "p", "trope_keywords": []}
+    real_entry = {
+        "title": "旧书",
+        "golden_finger": "真实机制",
+        "premise": "p",
+        "trope_keywords": [],
+    }
 
     async def fake_recent_core_mechanisms(*a, **k):
         return [real_entry]
 
     monkeypatch.setattr(conception, "_recent_core_mechanisms", fake_recent_core_mechanisms)
     ctx = dict(_CTX)
-    settings = type("S", (), {"pipeline": type("P", (), {"enable_conception_mechanism_dedup": True})()})()
+    settings = type(
+        "S", (), {"pipeline": type("P", (), {"enable_conception_mechanism_dedup": True})()}
+    )()
     asyncio.run(conception._attach_mechanism_dedup(None, settings, ctx))
     assert ctx["avoid_mechanisms"][0] == real_entry

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections import namedtuple
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import inspect
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BindParameter, BooleanClauseList, False_, Null, True_
 
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
@@ -19,7 +25,9 @@ from bestseller.infra.db.models import (
 from bestseller.domain.review import SceneReviewFinding, SceneReviewResult, SceneReviewScores
 from bestseller.services import reviews as review_services
 from bestseller.services.chapter_quality_bundle import ChapterQualityBundleReport
+from bestseller.services import common_sense_gate
 from bestseller.services.quality_finding_schema import QualityFinding
+from bestseller.services.quality_report_claim import graded_text_fingerprint
 from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.reviews import (
     _missing_required_rewrite_context_blocks,
@@ -32,6 +40,7 @@ from bestseller.services.reviews import (
     render_chapter_review_summary,
     render_rewritten_chapter_markdown,
     render_rewritten_scene_markdown,
+    rewrite_source_binding,
 )
 from bestseller.services.write_safety_gate import WriteSafetyFinding
 from bestseller.settings import load_settings
@@ -51,17 +60,94 @@ async def test_optional_chapter_review_llm_timeout_is_bounded() -> None:
         )
 
 
+class FakeScalarResult(list):
+    def all(self) -> list[object]:
+        return list(self)
+
+
 class FakeSession:
     def __init__(
         self,
         *,
         scalar_results: list[object | None] | None = None,
         scalars_results: list[list[object]] | None = None,
+        current_draft: ChapterDraftVersionModel | None = None,
     ) -> None:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
         self.added: list[object] = []
         self.executed: list[object] = []
+        self.current_draft = current_draft
+        self.rewrite_reports: list[SimpleNamespace] = []
+        self.claimed_rewrite_reports: list[SimpleNamespace] = []
+        self.current_body_queries = 0
+        self.no_autoflush = nullcontext()
+        self.rows = [row for row in self.scalar_results if hasattr(row, "__table__")]
+        self.rows.extend(row for batch in self.scalars_results for row in batch)
+        # These service tests start at a later chapter. Supply a complete owned,
+        # formally adopted prefix so the real continuity selectors can verify it.
+        for chapter in list(self.rows):
+            if not isinstance(chapter, ChapterModel):
+                continue
+            for number in range(1, chapter.chapter_number):
+                previous = ChapterModel(
+                    id=uuid4(), project_id=chapter.project_id, chapter_number=number,
+                    title=f"前章 {number}", metadata_json={},
+                )
+                self.rows.extend([
+                    previous,
+                    ChapterDraftVersionModel(
+                        id=uuid4(), project_id=chapter.project_id, chapter_id=previous.id,
+                        version_no=1, content_md=f"第{number}章。前章记录已经结束。",
+                        is_current=True, promotion_state="promoted",
+                    ),
+                ])
+        for row in self.rows:
+            state = inspect(row)
+            state._commit_all(state.dict)
+
+    @property
+    def dirty(self) -> list[object]:
+        return [row for row in self.rows if inspect(row).modified]
+
+    @staticmethod
+    def _value(expression: Any, row: object) -> Any:
+        if isinstance(expression, BindParameter):
+            return expression.value
+        if isinstance(expression, (True_, False_)):
+            return isinstance(expression, True_)
+        if isinstance(expression, Null):
+            return None
+        if isinstance(expression, BooleanClauseList):
+            values = [FakeSession._value(clause, row) for clause in expression.clauses]
+            return all(values) if expression.operator is operators.and_ else any(values)
+        if hasattr(expression, "left") and hasattr(expression, "right"):
+            left = FakeSession._value(expression.left, row)
+            right = FakeSession._value(expression.right, row)
+            if expression.operator is operators.is_:
+                return left is right
+            if expression.operator is operators.is_not:
+                return left is not right
+            if expression.operator is operators.in_op:
+                return left in right
+            if expression.operator is operators.not_in_op:
+                return left not in right
+            return expression.operator(left, right)
+        return getattr(row, expression.key)
+
+    def _query_rows(self, stmt: Any) -> list[object]:
+        tables = stmt.get_final_froms()
+        rows = [row for row in self.rows if row.__table__ in tables]
+        rows = [row for row in rows if all(
+            self._value(clause, row) for clause in stmt._where_criteria
+        )]
+        for order in reversed(stmt._order_by_clauses):
+            column = getattr(order, "element", order)
+            rows.sort(
+                key=lambda row: (getattr(row, column.key) is not None, getattr(row, column.key)),
+                reverse=getattr(order, "modifier", None) is operators.desc_op,
+            )
+        return rows
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -73,26 +159,160 @@ class FakeSession:
                 continue
             if getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid4())
+            if all(obj is not row for row in self.rows):
+                self.rows.append(obj)
+        for row in self.rows:
+            state = inspect(row)
+            state._commit_all(state.dict)
 
     async def scalar(self, stmt: object) -> object | None:
-        if not self.scalar_results:
-            return None
-        return self.scalar_results.pop(0)
+        if self.current_draft is not None:
+            parameters = stmt.compile().params
+            if "rewrite_evaluation_id" in parameters.values():
+                for report in self.rewrite_reports:
+                    if report.report_json["rewrite_evaluation_id"] in parameters.values():
+                        self.claimed_rewrite_reports.append(report)
+                        return report
+                return None
+        entity = stmt.column_descriptions[0].get("entity")
+        if entity is not None and stmt.column_descriptions[0]["expr"] is entity:
+            rows = self._query_rows(stmt)
+            return rows[0] if rows else None
+        return next((row for row in self.scalar_results if isinstance(row, int)), None)
 
     async def scalars(self, stmt: object) -> list[object]:
-        if not self.scalars_results:
-            return []
-        return self.scalars_results.pop(0)
+        return FakeScalarResult(self._query_rows(stmt))
 
     async def get(self, model: object, key: object) -> object | None:
+        return next((row for row in self.rows if isinstance(row, model) and row.id == key), None)
+
+    async def execute(self, stmt: object) -> object | None:
+        self.executed.append(stmt)
+        columns = getattr(stmt, "selected_columns", None)
+        if self.current_draft is not None and columns is not None:
+            if list(columns.keys()) == ["id", "content_md"]:
+                self.current_body_queries += 1
+        if columns is not None:
+            keys = list(columns.keys())
+            row_type = namedtuple("FixtureRow", keys)
+            rows = [row_type(*(getattr(row, key) for key in keys))
+                    for row in self._query_rows(stmt)]
+            return SimpleNamespace(
+                one_or_none=lambda: rows[0] if rows else None,
+                mappings=lambda: [row._asdict() for row in rows],
+            )
         return None
 
-    async def execute(self, stmt: object) -> None:
-        self.executed.append(stmt)
+
+def _record_rewrite_gate_report(
+    gate_kwargs: dict[str, Any],
+    outcome: str,
+    *,
+    violations: list[dict[str, object]] | None = None,
+) -> str:
+    """Represent telemetry written by this exact gate invocation and body.
+
+    Some incumbent-only checks don't request a rewrite receipt. They still return
+    their outcome, but cannot manufacture telemetry for another invocation.
+    """
+
+    extra = gate_kwargs.get("extra_report_payload") or {}
+    if "rewrite_evaluation_id" in extra:
+        gate_kwargs["session"].rewrite_reports.append(
+            SimpleNamespace(
+                id=uuid4(),
+                report_json={
+                    **extra,
+                    "graded": graded_text_fingerprint(gate_kwargs["content"]),
+                    "violations": list(violations or []),
+                },
+            )
+        )
+    return outcome
+
+
+def _primary_critique_tool_calls(paragraphs: list[int], *, verdict: str) -> list[dict[str, Any]]:
+    """Physical native completion data; the production parser still validates it."""
+    return [{
+        "id": "fixture-primary-critique", "type": "function",
+        "function": {
+            "name": "submit_chapter_critique",
+            "arguments": json.dumps({
+                "verdict": verdict,
+                "scores": {name: 0.2 for name in review_services.ChapterReviewScores.model_fields},
+                "rewrite_direction": "加固结尾" if verdict == "rewrite" else "N/A",
+                "commentary": "当前段落只有简短概述，未呈现收尾行动。",
+                "citations": [{"paragraph_number": number, "dimension": "hook",
+                               "reason": "当前段落未呈现收尾行动。"} for number in paragraphs],
+            }, ensure_ascii=False),
+        },
+    }]
+
+
+def _explicit_strict_methodology_fixture() -> dict[str, Any]:
+    """Legacy template tests explicitly select the strict methodology suite."""
+    return {"creation_intent_contract": {
+        "field_sources": {"hook_spec": "explicit"},
+        "hook_spec": {"require_methodology_overlay": True, "methodology_contract_strict": True},
+    }}
 
 
 def build_settings():
     return load_settings(env={})
+
+
+def test_chapter_review_passes_verified_character_knowledge_to_common_sense_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_common_sense_gate(text: str, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            findings=[
+                SimpleNamespace(
+                    severity="medium",
+                    code="lay_character_rule_knowledge_leak",
+                    message="unbound rule term",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(common_sense_gate, "evaluate_common_sense_gate", fake_common_sense_gate)
+    chapter = SimpleNamespace(
+        chapter_number=2,
+        title="第二章",
+        chapter_goal="确认线索",
+        target_word_count=1000,
+        metadata_json={},
+    )
+    scenes = [SimpleNamespace(scene_number=1, title="线索")]
+    draft = SimpleNamespace(
+        content_md="# 第二章\n\n张建军：“我知道录名。”",
+        word_count=1000,
+        assembled_from_scene_draft_ids=[],
+    )
+    chapter_context = SimpleNamespace(
+        participant_knowledge_states=[
+            {"character_name": "张建军", "knows": ["录名"]},
+        ],
+        previous_scene_summaries=[],
+        recent_timeline_events=[],
+        active_arc_beats=[],
+    )
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+        chapter_context=chapter_context,
+        genre="现实",
+        sub_genre="悬疑",
+    )
+
+    assert captured["known_rule_terms_by_character"] == {"张建军": ("录名",)}
+    assert any(finding.category == "common_sense" for finding in result.findings)
 
 
 def test_recent_length_failure_directive_detects_under_over_oscillation() -> None:
@@ -396,6 +616,7 @@ def _qimao_project() -> SimpleNamespace:
         sub_genre=None,
         language="zh-CN",
         metadata_json={
+            **_explicit_strict_methodology_fixture(),
             "writing_profile": {"market": {"platform_target": "七猫小说"}},
             "editor_rejection_reasons": "文笔还有待提升，代入感较弱，开篇切入点普通。",
             "qimao_opening_contract": {
@@ -443,6 +664,13 @@ def _passing_deterministic_chapter_audit(**kwargs: object) -> tuple[SimpleNamesp
 
 
 def _micro_trim_fixture() -> str:
+    # Keep the incumbent inside the publication band after a small trim. One
+    # continuous ledger-reading paragraph supplies size without duplicate blocks.
+    ledger = "".join(
+        f"林夜翻到第{number}页，逐笔核对入库日期和收据上的签名，把交货地点另抄在纸背。"
+        "他用铜钱挡住破损的页角，沿着尚未褪色的墨迹比对原账，确认每张凭证都能对应到同一批货物。"
+        for number in range(1, 29)
+    )
     return (
         "# 第1章 旧案\n\n"
         "## 场景 1：雨夜旧账\n\n"
@@ -453,8 +681,9 @@ def _micro_trim_fixture() -> str:
         "桌边的光线微微发暗，回声仿佛贴着地面爬过来。"
         "他只是抬眼看了一下，又把指节压在桌沿。"
         "那片刻的沉默让屋里显得更冷。\n\n"
+        + ledger + "\n\n"
         "“这枚铜钱不能交出去。”林夜说。\n\n"
-        "门外脚步停住，真正的危险才刚刚贴近。"
+        "门外脚步停住，真正的危险才刚刚贴近。是谁守在外面？"
     )
 
 
@@ -805,7 +1034,10 @@ async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pres
         metadata_json={},
     )
     chapter.id = uuid4()
-    paragraphs = ["许照川按规程复称灰样并记下秤梁变化。" * 17 for _ in range(7)]
+    paragraphs = [
+        f"第{index}次记录。" + "许照川按规程复称灰样并记下秤梁变化。" * repeats
+        for index, repeats in enumerate([31, 17, 17, 17, 17, 17, 17], start=1)
+    ]
     original = "# 第1章 小满的炭票\n\n" + "\n\n".join(paragraphs)
     assert 1900 <= review_services.count_words(original) < 2500
     current_draft = ChapterDraftVersionModel(
@@ -827,6 +1059,7 @@ async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pres
         instructions="只修开篇压力和标志物",
         context_required=[],
         metadata_json={
+            **rewrite_source_binding(current_draft),
             "patch_first": True,
             "block_codes": [
                 "CHAPTER_TOO_SHORT",
@@ -841,6 +1074,7 @@ async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pres
     )
     task.id = uuid4()
     heading, opening, suffix = review_services._localized_opening_excerpt(original)
+    assert original.count(opening) == 1
     captured: dict[str, object] = {}
 
     async def fake_complete_text(session, settings, request):
@@ -849,7 +1083,7 @@ async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pres
             content=(
                 opening
                 + "\n\n"
-                + "杂役把炭票推向扣票匣，许照川先压住匣盖，再把灰秤拨回零位。" * 12
+                + "杂役把炭票推向扣票匣，许照川先压住匣盖，再把灰秤拨回零位。"
             ),
             model_name="mock-editor",
             llm_run_id=uuid4(),
@@ -870,6 +1104,8 @@ async def test_chapter_first_opening_repair_preserves_suffix_and_adds_local_pres
     )
 
     assert result is not None
+    assert task.metadata_json["local_patch_receipt"]["accepted"] is True
+    assert task.metadata_json["local_patch_receipt"]["changed_ratio"] <= 0.25
     repaired, _completion = result
     assert repaired.startswith(heading + "\n\n")
     assert repaired.endswith(suffix)
@@ -915,7 +1151,10 @@ async def test_chapter_first_ending_repair_replaces_only_tail(
         },
     )
     chapter.id = uuid4()
-    paragraphs = ["许照川按规程复称灰样并记下秤梁变化。" * 17 for _ in range(7)]
+    paragraphs = [
+        f"第{index}次记录。" + "许照川按规程复称灰样并记下秤梁变化。" * repeats
+        for index, repeats in enumerate([18, 18, 18, 18, 18, 18, 25], start=1)
+    ]
     original = "# 第1章 小满的炭票\n\n" + "\n\n".join(paragraphs)
     assert 1900 <= review_services.count_words(original) < 2500
     current_draft = ChapterDraftVersionModel(
@@ -937,6 +1176,7 @@ async def test_chapter_first_ending_repair_replaces_only_tail(
         instructions="只修章末钩子",
         context_required=[],
         metadata_json={
+            **rewrite_source_binding(current_draft),
             "patch_first": True,
             "block_codes": [
                 "ENDING_HOOK_MISSING",
@@ -954,7 +1194,7 @@ async def test_chapter_first_ending_repair_replaces_only_tail(
         return SimpleNamespace(
             content=(
                 "门外的铅封钳合拢又松开，旧铅封落进铁盘。"
-                "许照川把拓纸压进砝码底座，没有去碰门闩。" * 18
+                "许照川把拓纸压进砝码底座，没有去碰门闩。" * 12
             ),
             model_name="mock-editor",
             llm_run_id=uuid4(),
@@ -975,8 +1215,11 @@ async def test_chapter_first_ending_repair_replaces_only_tail(
     )
 
     assert result is not None
+    assert task.metadata_json["local_patch_receipt"]["accepted"] is True
+    assert task.metadata_json["local_patch_receipt"]["changed_ratio"] <= 0.25
     repaired, _completion = result
     prefix, old_ending = review_services._localized_ending_excerpt(original)
+    assert original.count(old_ending) == 1
     assert repaired.startswith(prefix + "\n\n")
     assert not repaired.endswith(old_ending)
     assert repaired.endswith("许照川把拓纸压进砝码底座，没有去碰门闩。")
@@ -2127,6 +2370,7 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
         sub_genre="重生囤货",
         language="zh-CN",
         metadata_json={
+            **_explicit_strict_methodology_fixture(),
             "material_reference_block": (
                 "## 可引用物料\n"
                 "§scene_templates/proj/warehouse-pressure：仓库压迫场景 — 现实证据和危险交易夹击"
@@ -2203,6 +2447,7 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
 
     assert "结论：rewrite" in summary
     assert "章节评论者" in system_prompt
+    assert "EVIDENCE_ANCHORS:" in system_prompt
     assert "本章场景计划" in user_prompt
     assert "上一章发现异常" in user_prompt
     assert "关系与情绪线" in user_prompt
@@ -2284,9 +2529,59 @@ def test_render_rewritten_chapter_markdown_handles_empty_draft() -> None:
     assert "上一阶段留下的局势" not in content
 
 
+@pytest.mark.parametrize(
+    ("completion_kind", "completion_content", "completion_paragraphs", "expected_status", "expected_reviewer"),
+    [
+        (
+            "real",
+            "VERDICT: rewrite\nMETHODOLOGY: hook\nREWRITE_DIRECTION: 加固结尾\n"
+            "EVIDENCE: “很短的章节草稿。”\nCOMMENTARY: 证据对应追读轴。",
+            [1],
+            "verified",
+            "fixture-anthropic-critic",
+        ),
+        (
+            "real",
+            "VERDICT: pass\nMETHODOLOGY: none\nREWRITE_DIRECTION: N/A\n"
+            "EVIDENCE: “正文中不存在的虚构引文。”\nCOMMENTARY: 看起来很好。",
+            [99],
+            "evidence_invalid",
+            "rule-based-critic",
+        ),
+        (
+            "real",
+            "VERDICT: pass\nMETHODOLOGY: none\nREWRITE_DIRECTION: N/A\n"
+            "EVIDENCE: “很短的章节草稿。” “正文中不存在的虚构引文。”\n"
+            "COMMENTARY: 一真一假。",
+            [1, 99],
+            "evidence_invalid",
+            "rule-based-critic",
+        ),
+        (
+            "real",
+            "VERDICT: pass\nMETHODOLOGY: none\nREWRITE_DIRECTION: N/A\n"
+            "COMMENTARY: 没有证据行。",
+            [],
+            "evidence_invalid",
+            "rule-based-critic",
+        ),
+        (
+            "fallback",
+            "结论：rewrite\n确定性回退摘要。",
+            [],
+            "fallback",
+            "rule-based-critic",
+        ),
+    ],
+)
 @pytest.mark.asyncio
 async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
     monkeypatch: pytest.MonkeyPatch,
+    completion_kind: str,
+    completion_content: str,
+    completion_paragraphs: list[int],
+    expected_status: str,
+    expected_reviewer: str,
 ) -> None:
     project = ProjectModel(
         slug="my-story",
@@ -2362,7 +2657,30 @@ async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
         )
 
     async def fake_complete_text(session, settings, request):
-        return SimpleNamespace(content="需要重写这一章。", model_name="mock-critic", llm_run_id=uuid4())
+        if completion_kind == "fallback":
+            return SimpleNamespace(
+                content=completion_content,
+                model_name="fallback-critic",
+                provider="fallback",
+                fallback_used=True,
+                finish_reason="fallback",
+                llm_run_id=uuid4(),
+            )
+        return SimpleNamespace(
+            content=completion_content,
+            tool_calls=_primary_critique_tool_calls(
+                completion_paragraphs,
+                verdict="rewrite" if completion_content.startswith("VERDICT: rewrite") else "pass",
+            ),
+            model_name="fixture-anthropic-critic",
+            provider="anthropic",
+            fallback_used=False,
+            finish_reason="stop",
+            llm_run_id=uuid4(),
+        )
+
+    async def no_adjudication(*args, **kwargs):
+        return None
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -2371,6 +2689,7 @@ async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
         fake_build_chapter_writer_context,
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(review_services, "adjudicate_findings", no_adjudication)
     monkeypatch.setattr(
         review_services,
         "_collect_post_assembly_duplicate_findings",
@@ -2382,19 +2701,33 @@ async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
         scalars_results=[scenes],
     )
 
+    settings = build_settings()
+    settings.quality.enable_llm_chapter_commentary = True
+    settings.pipeline.enable_chapter_llm_commercial_judge = False
+    settings.pipeline.enable_chapter_litstyle_judge = False
+    settings.pipeline.enable_chapter_window_llm_judge = False
+    settings.pipeline.enable_volume_llm_checkpoint_judge = False
     result, report, quality, rewrite_task = await review_services.review_chapter_draft(
         session,
-        build_settings(),
+        settings,
         "my-story",
         3,
     )
 
-    assert result.verdict == "rewrite"
     assert report.id is not None
     assert quality.id is not None
-    assert rewrite_task is not None
-    assert rewrite_task.trigger_type == "chapter_review"
-    assert chapter.status == "revision"
+    if expected_status == "verified":
+        assert result.verdict == "rewrite"
+        assert rewrite_task is not None
+        assert rewrite_task.trigger_type == "chapter_review"
+        assert chapter.status == "revision"
+    else:
+        assert result.verdict == "unknown"
+        assert rewrite_task is None and result.rewrite_instructions is None
+        assert chapter.production_state == "review_unknown"
+        assert report.structured_output["untrusted_critic_response"] == completion_content
+    assert report.structured_output["critic_evidence"]["status"] == expected_status
+    assert report.reviewer_type == expected_reviewer
 
 
 @pytest.mark.asyncio
@@ -2483,6 +2816,10 @@ async def test_review_chapter_draft_caps_chapter_review_at_budget(
     )
 
     settings = build_settings()
+    settings.quality.enable_llm_chapter_commentary = False
+    settings.pipeline.enable_chapter_llm_commercial_judge = False
+    settings.pipeline.enable_chapter_window_llm_judge = False
+    settings.pipeline.enable_volume_llm_checkpoint_judge = False
     budget = settings.pipeline.chapter_auto_repair_max_attempts
     # Pre-seed the chapter's persistent counter at the budget so the next
     # review tick trips the cap immediately.
@@ -2600,9 +2937,15 @@ async def test_review_chapter_draft_increments_active_counter_on_rewrite(
         scalars_results=[[scene]],
     )
 
+    settings = build_settings()
+    settings.quality.enable_llm_chapter_commentary = False
+    settings.pipeline.enable_chapter_llm_commercial_judge = False
+    settings.pipeline.enable_chapter_window_llm_judge = False
+    settings.pipeline.enable_volume_llm_checkpoint_judge = False
+
     result, _report, _quality, rewrite_task = await review_services.review_chapter_draft(
         session,
-        build_settings(),
+        settings,
         "my-story",
         3,
     )
@@ -2802,6 +3145,9 @@ async def test_review_chapter_draft_skips_llm_commentary_by_default(
 
     settings = build_settings()
     settings.quality.enable_llm_chapter_commentary = False
+    settings.pipeline.enable_chapter_llm_commercial_judge = False
+    settings.pipeline.enable_chapter_window_llm_judge = False
+    settings.pipeline.enable_volume_llm_checkpoint_judge = False
     result, report, quality, rewrite_task = await review_services.review_chapter_draft(
         session,
         settings,
@@ -2813,6 +3159,10 @@ async def test_review_chapter_draft_skips_llm_commentary_by_default(
     assert report.reviewer_type == "rule-based-critic"
     assert report.llm_run_id is None
     assert report.structured_output["critic_response"].startswith("结论：rewrite")
+    assert report.structured_output["reviewed_body_fingerprint"]["schema"] == "chapter_review_body_v1"
+    assert report.structured_output["reviewed_body_fingerprint"]["algorithm"] == "sha256"
+    assert report.structured_output["reviewed_body_fingerprint"]["normalization"] == "newlines_lf_only"
+    assert report.structured_output["critic_evidence"]["status"] == "not_run"
     assert quality.id is not None
     assert rewrite_task is not None
 
@@ -2877,7 +3227,7 @@ async def test_rewrite_chapter_from_task_creates_new_version(
         status="pending",
         instructions="补强场景衔接与章节收尾",
         context_required=[],
-        metadata_json={},
+        metadata_json=rewrite_source_binding(current_draft),
     )
     rewrite_task.id = uuid4()
     rewrite_task.attempts = 0
@@ -2922,7 +3272,7 @@ async def test_rewrite_chapter_from_task_creates_new_version(
         )
 
     async def _ok_quality_gate(**kwargs):
-        return "ok"
+        return _record_rewrite_gate_report(kwargs, "ok")
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -2947,8 +3297,9 @@ async def test_rewrite_chapter_from_task_creates_new_version(
     )
 
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, None, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
         scalars_results=[scenes],
+        current_draft=current_draft,
     )
 
     new_draft, completed_task = await review_services.rewrite_chapter_from_task(
@@ -2957,6 +3308,10 @@ async def test_rewrite_chapter_from_task_creates_new_version(
         3,
         settings=build_settings(),
     )
+
+    assert session.current_body_queries == 1
+    assert session.rewrite_reports
+    assert session.claimed_rewrite_reports == session.rewrite_reports
 
     assert new_draft.version_no == 2
     assert new_draft.word_count > current_draft.word_count
@@ -3026,7 +3381,7 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
         status="pending",
         instructions="补强场景衔接与章节收尾",
         context_required=[],
-        metadata_json={},
+        metadata_json=rewrite_source_binding(current_draft),
     )
     rewrite_task.id = uuid4()
     rewrite_task.attempts = 0
@@ -3055,7 +3410,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
         # existing current draft passes. This keeps the test robust to changes in how
         # many times the gate is consulted (micro-trim / recheck paths).
         content = str(kwargs.get("content") or "")
-        return "blocked" if "过长候选稿" in content else "ok"
+        return _record_rewrite_gate_report(
+            kwargs, "blocked" if "过长候选稿" in content else "ok"
+        )
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -3077,8 +3434,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     )
 
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, None, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
         scalars_results=[scenes],
+        current_draft=current_draft,
     )
 
     returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
@@ -3087,6 +3445,10 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
         3,
         settings=build_settings(),
     )
+
+    assert session.current_body_queries == 1
+    assert session.rewrite_reports
+    assert session.claimed_rewrite_reports == session.rewrite_reports
 
     rejected = [
         obj for obj in session.added
@@ -3097,8 +3459,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     assert rejected[0].version_no == 2
     assert rejected[0].is_current is False
     # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
-    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
-    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
+    # Read-only SELECTs, including the new FOR UPDATE parent lock, are permitted.
+    assert not any(getattr(stmt, "is_update", False) for stmt in session.executed)
+    assert current_draft.is_current is True
     assert completed_task.status == "failed"
     assert completed_task.metadata_json["quality_gate_rejected_current_promotion"] is True
     assert completed_task.metadata_json["preserved_current_chapter_draft_id"] == str(current_draft.id)
@@ -3169,7 +3532,7 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
         status="pending",
         instructions="当前章节偏长，压缩型修复。",
         context_required=[],
-        metadata_json={},
+        metadata_json=rewrite_source_binding(current_draft),
     )
     rewrite_task.id = uuid4()
     rewrite_task.attempts = 0
@@ -3200,16 +3563,19 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
         #   * the current draft is over-length until micro-trimmed within `max_words`.
         content = str(kwargs.get("content") or "")
         if "过长候选稿" in content:
-            return "blocked"
-        return "ok" if review_services.count_words(content) <= max_words else "blocked"
-
-    report = SimpleNamespace(
-        report_json={
-            "violations": [
-                {"code": "LENGTH_OVER", "detail": f"{current_word_count} chars > max {max_words}"}
-            ]
-        }
-    )
+            return _record_rewrite_gate_report(kwargs, "blocked")
+        outcome = "ok" if review_services.count_words(content) <= max_words else "blocked"
+        return _record_rewrite_gate_report(
+            kwargs,
+            outcome,
+            violations=(
+                [{
+                    "code": "LENGTH_OVER",
+                    "detail": f"{review_services.count_words(content)} chars > max {max_words}",
+                }]
+                if outcome == "blocked" else []
+            ),
+        )
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -3225,14 +3591,13 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
         lambda *args, **kwargs: _empty_async_tuple(),
     )
 
-    # Quality-report scalar queries fire before the version query, in order:
-    #   8620 candidate-blocked report, 8849 repair-pass report,
-    #   9056 candidate-micro-trim report, 9165 current-micro-trim report.
-    # The current-micro-trim report MUST carry the LENGTH_OVER violation so the
-    # overlong current draft is micro-trimmed (not preserved).
+    # Each gate publishes its own body-bound report with this invocation's ID.
+    # Only the overlong incumbent report authorizes micro-trimming the incumbent;
+    # rejected-candidate telemetry cannot be reused for another body.
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, report, report, report, report, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
         scalars_results=[[scene]],
+        current_draft=current_draft,
     )
 
     new_draft, completed_task = await review_services.rewrite_chapter_from_task(
@@ -3241,6 +3606,10 @@ async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
         1,
         settings=build_settings(),
     )
+
+    assert session.current_body_queries == 1
+    assert session.rewrite_reports
+    assert session.claimed_rewrite_reports == session.rewrite_reports
 
     assert new_draft is not current_draft
     assert new_draft.is_current is True
@@ -3313,6 +3682,7 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
         instructions="删除 AI 句式。",
         context_required=[],
         metadata_json={
+            **rewrite_source_binding(current_draft),
             "source": "quality_levers_retrofit_audit",
             "cause_ids": ["ai_voice"],
         },
@@ -3341,7 +3711,7 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
         )
 
     async def fake_quality_gate(**kwargs):
-        return "ok"
+        return _record_rewrite_gate_report(kwargs, "ok")
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -3365,6 +3735,7 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
     session = FakeSession(
         scalar_results=[chapter, current_draft, rewrite_task, 1],
         scalars_results=[[scene]],
+        current_draft=current_draft,
     )
 
     returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
@@ -3373,6 +3744,10 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
         5,
         settings=build_settings(),
     )
+
+    assert session.current_body_queries == 1
+    assert session.rewrite_reports
+    assert session.claimed_rewrite_reports == session.rewrite_reports
 
     rejected = [
         obj for obj in session.added
@@ -3387,8 +3762,9 @@ async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candid
     assert completed_task.metadata_json["quality_retrofit_rejected_current_promotion"] is True
     assert completed_task.metadata_json["candidate_quality_retrofit_findings"][0]["cause_id"] == "ai_voice"
     # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
-    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
-    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
+    # Read-only SELECTs, including the new FOR UPDATE parent lock, are permitted.
+    assert not any(getattr(stmt, "is_update", False) for stmt in session.executed)
+    assert current_draft.is_current is True
 
 
 @pytest.mark.asyncio
@@ -3452,7 +3828,7 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
         status="pending",
         instructions="补强场景衔接与章节收尾",
         context_required=[],
-        metadata_json={},
+        metadata_json=rewrite_source_binding(current_draft),
     )
     rewrite_task.id = uuid4()
     rewrite_task.attempts = 0
@@ -3477,7 +3853,7 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
         )
 
     async def fake_quality_gate(**kwargs):
-        return "ok"
+        return _record_rewrite_gate_report(kwargs, "ok")
 
     async def fake_duplicate_gate(*args, **kwargs):
         content = str(kwargs.get("content_md") or "")
@@ -3511,6 +3887,7 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
     session = FakeSession(
         scalar_results=[chapter, current_draft, rewrite_task, 1],
         scalars_results=[scenes],
+        current_draft=current_draft,
     )
 
     returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
@@ -3520,6 +3897,10 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
         settings=build_settings(),
     )
 
+    assert session.current_body_queries == 1
+    assert session.rewrite_reports
+    assert session.claimed_rewrite_reports == session.rewrite_reports
+
     rejected = [
         obj for obj in session.added
         if isinstance(obj, ChapterDraftVersionModel) and obj is not current_draft
@@ -3528,8 +3909,9 @@ async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_b
     assert len(rejected) == 1
     assert rejected[0].is_current is False
     # Preserve/reject path must not DEMOTE the current draft (no UPDATE statement).
-    # Read-only SELECTs (e.g. inter-chapter duplication scoring) are expected/harmless.
-    assert all("UPDATE" not in str(stmt).upper() for stmt in session.executed)
+    # Read-only SELECTs, including the new FOR UPDATE parent lock, are permitted.
+    assert not any(getattr(stmt, "is_update", False) for stmt in session.executed)
+    assert current_draft.is_current is True
     assert completed_task.status == "failed"
     assert completed_task.metadata_json["candidate_quality_gate_outcome"] == "blocked"
     assert completed_task.metadata_json["candidate_duplicate_gate_findings"][0]["code"] == "CROSS_CHAPTER_REPETITION"

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from bestseller.services.progress_context import (
     TIER_ACTIVITY,
     TIER_KEY,
     TIER_MILESTONE,
+    TaskCancelledError,
     bind_progress,
     current_emitter,
     emit_activity,
@@ -76,6 +79,37 @@ def test_emit_never_raises_when_callback_throws() -> None:
     with bind_progress(boom):
         emit_activity("safe_activity")
         emit_milestone("safe_milestone")
+
+
+def test_emit_rethrows_pipeline_cancellation() -> None:
+    def cancel(_stage: str, _payload: dict | None) -> None:
+        raise TaskCancelledError("cancelled")
+
+    with bind_progress(cancel):
+        with pytest.raises(TaskCancelledError, match="cancelled"):
+            emit_activity("cancelled_activity")
+
+
+def test_task_cancellation_is_asyncio_control_flow() -> None:
+    assert issubclass(TaskCancelledError, asyncio.CancelledError)
+    assert not issubclass(TaskCancelledError, Exception)
+
+
+def test_cancellation_context_is_restored_after_nested_emit() -> None:
+    seen: list[str] = []
+
+    def cancel(_stage: str, _payload: dict | None) -> None:
+        raise TaskCancelledError("cancelled")
+
+    with bind_progress(lambda stage, _payload: seen.append(stage)):
+        try:
+            with bind_progress(cancel):
+                emit_activity("cancelled_activity")
+        except TaskCancelledError:
+            pass
+        emit_activity("outer_activity")
+
+    assert seen == ["outer_activity"]
 
 
 def test_does_not_mutate_caller_payload() -> None:

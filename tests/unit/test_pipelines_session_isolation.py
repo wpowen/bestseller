@@ -4,13 +4,14 @@ These tests pin down the contract added in the 2026-04-09 fix for the
 PendingRollbackError cascade that crashed novel ``suspense-detective-1775662651``
 on chapter 2:
 
-* The "extra enhancement" code paths that *swallow* DB errors (continuity
-  snapshot loads, voice drift checks, periodic consistency checks, ...) MUST
+* Source readers and optional enhancement paths (continuity snapshot loads,
+  voice drift checks, periodic consistency checks, ...) MUST
   wrap their work in ``session.begin_nested()`` so that an internal failure
   rolls back to a savepoint and leaves the outer transaction usable for the
-  next chapter, instead of poisoning the shared session into an asyncpg
+  next query, instead of poisoning the shared session into an asyncpg
   ``ERROR`` state.
 
+Snapshot source failures propagate after rollback; absence remains ``None``.
 The tests use a fake :class:`AsyncSession` that emulates the savepoint
 contract — we don't need a real Postgres to verify the call shape.
 """
@@ -116,12 +117,12 @@ async def test_safe_load_previous_snapshot_uses_savepoint(
 
 
 @pytest.mark.asyncio
-async def test_safe_load_previous_snapshot_recovers_from_loader_failure(
+async def test_safe_load_previous_snapshot_propagates_after_savepoint_rollback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the loader raises (e.g. missing table), the wrapper must:
 
-    1. swallow the exception (return ``None``),
+    1. propagate source unavailability with the original cause,
     2. rely on the savepoint to roll back the failed query, and
     3. leave the outer session usable for subsequent queries.
     """
@@ -142,14 +143,15 @@ async def test_safe_load_previous_snapshot_recovers_from_loader_failure(
         boom,
     )
 
-    result = await context_services._safe_load_previous_snapshot(
-        session,  # type: ignore[arg-type]
-        project_id=uuid4(),
-        current_chapter_number=2,
-    )
+    with pytest.raises(RuntimeError, match="source_context_unavailable") as caught:
+        await context_services._safe_load_previous_snapshot(
+            session,  # type: ignore[arg-type]
+            project_id=uuid4(),
+            current_chapter_number=2,
+        )
 
-    # 1. exception was swallowed
-    assert result is None
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert 'relation "chapter_state_snapshots" does not exist' in str(caught.value.__cause__)
     # 2. savepoint was rolled back
     assert len(session.savepoints) == 1
     assert session.savepoints[0].entered is True

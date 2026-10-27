@@ -329,10 +329,13 @@ def evaluate_chapter_outline_batch_planning_readiness(
 
 
 def _merged(*items: Any) -> dict[str, Any]:
+    """Keep meaningful overlay priority without erasing supplied facts with blanks."""
     merged: dict[str, Any] = {}
     for item in items:
         if isinstance(item, Mapping):
-            merged.update(item)
+            for key, value in item.items():
+                if key not in merged or _is_meaningful(value) or not _is_meaningful(merged[key]):
+                    merged[key] = value
     return merged
 
 

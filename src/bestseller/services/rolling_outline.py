@@ -36,6 +36,63 @@ def rolling_window_schedule_hash(schedule: Sequence[Mapping[str, Any]]) -> str:
     return _canonical_hash([dict(item) for item in schedule])
 
 
+def bind_retained_rolling_schedule(volume_plan, schedule, stored_hash):
+    """Validate retained window boundaries against current narrative volumes.
+
+    A preference controls new schedules; it is not a migration of a verified
+    prior schedule. No source hashes, anchors, current state or grades change.
+    """
+    keys = {'window_start', 'window_end', 'volume_number', 'window_index'}
+    if not isinstance(schedule, list) or not schedule or any(
+            not isinstance(row, dict) or set(row) != keys
+            or any(type(row[key]) is not int or row[key] < 1 for key in keys)
+            for row in schedule):
+        raise ValueError('retained rolling schedule shape invalid')
+    if stored_hash != rolling_window_schedule_hash(schedule):
+        raise ValueError('retained rolling schedule hash mismatch')
+    result = []; offset = 0; cursor = 1
+    seen = set()
+    for index, raw in enumerate(volume_plan):
+        entry = dict(raw); number = entry.get('volume_number', index + 1)
+        count = entry.get('chapter_count_target')
+        start = entry.get('start_chapter_number', cursor)
+        if (type(number) is not int or number in seen or type(count) is not int or count < 1
+                or type(start) is not int or start != cursor
+                or (count < 6 and index != len(volume_plan) - 1)):
+            raise ValueError('retained rolling schedule narrative volume invalid')
+        seen.add(number); end = start + count - 1
+        if 'chapter_range' in entry and entry['chapter_range'] != [start, end]:
+            raise ValueError('retained rolling schedule narrative range mismatch')
+        rows = []
+        while offset < len(schedule) and schedule[offset]['volume_number'] == number:
+            rows.append(schedule[offset]);offset += 1
+        if not rows:
+            raise ValueError('retained rolling schedule volume missing')
+        next_start = start
+        for position, row in enumerate(rows, start=1):
+            size = row['window_end'] - row['window_start'] + 1
+            small_final = (count <= 10 and len(rows) == 1) or (
+                index == len(volume_plan) - 1 and count == 11 and position == 2
+                and len(rows) == 2 and rows[0]['window_end'] - rows[0]['window_start'] + 1 == 6
+                and size == 5)
+            if (row['window_start'] != next_start or row['window_end'] > end
+                    or row['window_index'] != position or size < 1 or size > 10
+                    or (size < 6 and not small_final)):
+                raise ValueError('retained rolling schedule bounds invalid')
+            result.append({**entry, 'chapter_count_target': size,
+                'start_chapter_number': row['window_start'], 'end_chapter_number': row['window_end'],
+                'chapter_range': [row['window_start'], row['window_end']],
+                'rolling_window_index': position, 'rolling_window_count': len(rows),
+                'narrative_volume_chapter_count': count, 'narrative_volume_chapter_range': [start, end]})
+            next_start = row['window_end'] + 1
+        if next_start != end + 1:
+            raise ValueError('retained rolling schedule volume coverage incomplete')
+        cursor = end + 1
+    if offset != len(schedule):
+        raise ValueError('retained rolling schedule unexpected volume')
+    return result
+
+
 def _deep_freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})

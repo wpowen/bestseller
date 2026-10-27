@@ -53,6 +53,8 @@ class AdjudicationResult:
     dismissed: list[Any] = field(default_factory=list)
     reasons: dict[int, str] = field(default_factory=dict)
     reviewer: str = "none"
+    response: str = ""
+    llm_run_id: str | None = None
 
     @property
     def changed(self) -> bool:
@@ -61,7 +63,15 @@ class AdjudicationResult:
 
 def is_adjudicable(finding: Any) -> bool:
     return (
-        getattr(finding, "category", "") in ADJUDICABLE_CATEGORIES
+        (
+            getattr(finding, "category", "") in ADJUDICABLE_CATEGORIES
+            or (
+                getattr(finding, "category", "") == "opening_contract"
+                and str(getattr(finding, "message", "")).startswith(
+                    "OPENING_SCENE_ANCHOR_MISSING:"
+                )
+            )
+        )
         and getattr(finding, "severity", "") in _BLOCKING_SEVERITIES
     )
 
@@ -120,6 +130,16 @@ def build_adjudication_prompts(
         f"{getattr(f, 'message', '')}"
         for i, f in enumerate(findings)
     ]
+    if any(
+        str(getattr(f, "message", "")).startswith("OPENING_SCENE_ANCHOR_MISSING:")
+        for f in findings
+    ):
+        fmt += (
+            "\nFor opening anchors, compare the planned object/place/action against the first 500 characters. "
+            "A natural paraphrase is sufficient; identical substrings are not required. "
+            "DISMISS only when the expected scene relationship is actually present. "
+            "A different scene, absent anchor, or uncertain interpretation must be CONFIRM.\n"
+        )
     user = header + "\n".join(lines) + fmt + prose_label + (text or "")
     return system, user
 
@@ -187,6 +207,7 @@ async def adjudicate_findings(
     # Fail-closed fallback: a response that confirms everything → nothing dismissed.
     fallback = "\n".join(f"{i + 1}: CONFIRM" for i in range(len(adjudicable)))
 
+    llm_run_id = None
     try:
         completion = await complete_text(
             session,
@@ -210,6 +231,7 @@ async def adjudicate_findings(
         )
         response = completion.content or fallback
         reviewer = completion.model_name
+        llm_run_id = str(completion.llm_run_id) if getattr(completion, "llm_run_id", None) else None
     except Exception:
         response = fallback
         reviewer = "fallback-error"
@@ -226,6 +248,8 @@ async def adjudicate_findings(
         confirmed=confirmed,
         dismissed=dismissed,
         reviewer=reviewer,
+        response=response,
+        llm_run_id=llm_run_id,
     )
 
 

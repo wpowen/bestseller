@@ -1,23 +1,28 @@
 from __future__ import annotations
 
-import sys
+# ruff: noqa: RUF001 -- Chinese punctuation is part of the identity fixtures.
+
 import types
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
+from support.recovery_entry_seams import offline_review_resume, offline_worker_owner  # noqa: F401
 
-redis_module = types.ModuleType("redis")
-redis_asyncio_module = types.ModuleType("redis.asyncio")
-redis_asyncio_module.Redis = object
-redis_module.asyncio = redis_asyncio_module
-sys.modules.setdefault("redis", redis_module)
-sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
+# Redis is installed in the test runtime. Replacing its package in sys.modules
+# broke self_heal imports when these modules were collected in this order.
 
 from bestseller.services.planning_concurrency import PlanningConflictError
 from bestseller.worker import tasks as worker_tasks
 
 pytestmark = pytest.mark.unit
+
+from gateway_ledger_support import gateway_ledger as gateway_ledger, worker_ledger_session, LedgerBoundSession
+
+
+@pytest.fixture(autouse=True)
+def _isolated_worker_ledger(gateway_ledger, monkeypatch):
+    monkeypatch.setattr(worker_tasks, "get_server_session", worker_ledger_session)
 
 
 def test_outline_semantic_promotion_accepts_adjudicated_combined_batch_version() -> None:
@@ -282,6 +287,46 @@ def test_outline_replan_reconciles_repaired_premise_identity_and_snapshot() -> N
     assert "苏沉" not in str(project.metadata_json["book_design_snapshot"])
 
 
+def test_outline_replan_preserves_cast_identity_in_active_book_spec() -> None:
+    """Creation-name repair may update protagonist slots, never another role."""
+
+    from bestseller.infra.db.models import ProjectModel
+
+    project = ProjectModel(
+        slug="identity-replan-cast-boundary",
+        title="欠债修仙",
+        genre="xianxia",
+        target_word_count=6_600,
+        target_chapters=3,
+        metadata_json={
+            "premise": "旧稿没有稳定身份。",
+            "creation_protagonist_name": "苏沉",
+            "creation_protagonist_source": "llm_premise_identity_resolution",
+            "protagonist": {"name": "苏沉", "goal": "苏沉必须活下来。"},
+            "book_spec": {
+                "protagonist": {"name": "苏沉", "goal": "苏沉必须活下来。"},
+                "antagonist": {
+                    "name": "孙砚",
+                    "name_reasoning": "孙砚因县衙旧账得名。",
+                    "goal": "盯着苏沉的旧账不放。",
+                },
+            },
+        },
+    )
+
+    chosen = worker_tasks._reconcile_outline_replan_creation_identity(
+        project,
+        "十九岁凡人沉骨在灰烬荒原替散修补破衣度日。",
+    )
+
+    assert chosen == "沉骨"
+    book_spec = project.metadata_json["book_spec"]
+    assert book_spec["protagonist"]["name"] == "沉骨"
+    assert book_spec["antagonist"]["name"] == "孙砚"
+    assert book_spec["antagonist"]["name_reasoning"] == "孙砚因县衙旧账得名。"
+    assert book_spec["antagonist"]["goal"] == "盯着沉骨的旧账不放。"
+
+
 @pytest.mark.asyncio
 async def test_owned_outline_replan_conflict_is_closed_and_left_retryable(
     monkeypatch: pytest.MonkeyPatch,
@@ -438,7 +483,8 @@ async def test_run_project_repair_task_auto_continues_quality_closure_when_not_c
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        async with worker_ledger_session() as session:
+            yield session
 
     captured_kwargs: dict[str, object] = {}
 
@@ -563,7 +609,8 @@ async def test_run_project_pipeline_task_marks_attention_as_auto_continue_pendin
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        async with worker_ledger_session() as session:
+            yield session
 
     async def fake_run_project_pipeline(*_args, **_kwargs):
         return _FakeResult()
@@ -625,7 +672,8 @@ async def test_run_project_pipeline_task_refreshes_stale_truth_once(
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        async with worker_ledger_session() as session:
+            yield session
 
     from bestseller.services import pipelines as pipeline_services
     from bestseller.services import projects as project_services
@@ -651,8 +699,10 @@ async def test_run_project_pipeline_task_refreshes_stale_truth_once(
             )
         return _FakeResult()
 
+    project_identity = uuid4()
+
     async def fake_get_project_by_slug(*_args, **_kwargs):
-        return types.SimpleNamespace(slug="novel")
+        return types.SimpleNamespace(id=project_identity, slug="novel")
 
     async def fake_refresh(*_args, **_kwargs):
         calls.append("refresh")
@@ -717,7 +767,7 @@ async def test_run_autowrite_task_marks_attention_as_auto_continue_pending(
 
     @asynccontextmanager
     async def fake_session_scope():
-        class _FakeSession:
+        class _FakeSession(LedgerBoundSession):
             async def scalar(self, _stmt: object) -> object:
                 return None
 
@@ -832,7 +882,8 @@ async def test_run_autowrite_self_heal_skips_framework_owned_project(
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        async with worker_ledger_session() as session:
+            yield session
 
     async def fake_get_project_by_slug(*_args, **_kwargs):
         return types.SimpleNamespace(
@@ -880,12 +931,13 @@ async def test_run_autowrite_skips_project_that_requires_outline_replan(
             events.append((message, data, event_type))
 
     project = types.SimpleNamespace(
+        id=uuid4(),
         slug="bad-outline",
         status="needs_replan",
         metadata_json={"production_pause_reason": "outline_semantic_gate_failed"},
     )
 
-    class _FakeSession:
+    class _FakeSession(LedgerBoundSession):
         async def scalar(self, _stmt: object) -> object:
             return project
 
@@ -933,7 +985,8 @@ async def test_run_project_repair_task_auto_continues_generation_gate_failures(
 
     @asynccontextmanager
     async def fake_session_scope():
-        yield object()
+        async with worker_ledger_session() as session:
+            yield session
 
     async def fake_run_project_repair(*_args, **_kwargs):
         raise ValueError(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
 import logging
@@ -12,7 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import DBAPIError, MissingGreenlet, PendingRollbackError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
 from bestseller.domain.enums import ProjectStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectRepairChapterSummary, ProjectRepairResult
@@ -892,17 +893,45 @@ async def _heal_chapter_gate_state_before_repair(
     if (getattr(chapter, "production_state", "") or "").lower() != "blocked":
         return False
 
-    if _release_resolved_identity_write_safety_block(
+    identity_released = _release_resolved_identity_write_safety_block(
         chapter,
         draft,
         identity_registry=identity_registry,
         language=language,
-    ):
-        return False
+    )
 
-    latest_report = await _load_latest_chapter_quality_report(session, chapter)
+    claim_reasons: list[str] = []
+    latest_report, report_claimed = await _load_latest_chapter_quality_report(
+        session, chapter, current_text=getattr(draft, "content_md", None),
+        claim_reason_out=claim_reasons,
+    )
+    if report_claimed:
+        metadata = dict(chapter.metadata_json or {})
+        previous = metadata.pop("quality_report_revalidation_required", None)
+        if previous is not None:
+            metadata["quality_report_revalidation_resolved"] = {
+                "previous": previous,
+                "report_id": str(getattr(latest_report, "id", "")),
+                "resolved_by": "current_body_report",
+            }
+            chapter.metadata_json = metadata
+    if not report_claimed and claim_reasons != ["empty"]:
+        # Narrow deterministic checks cannot resolve an unidentifiable
+        # historical quality verdict. Keep uncertainty separate from prose
+        # defects so it cannot generate old repair instructions on a new body.
+        chapter.production_state = "blocked"
+        chapter.metadata_json = {
+            **(chapter.metadata_json or {}),
+            "quality_report_revalidation_required": {"reason": claim_reasons[0]},
+        }
     if latest_report is not None:
         report_codes = _quality_report_blocking_codes(latest_report)
+        if identity_released:
+            resolved_code = chapter.metadata_json["resolved_write_safety_block"]["code"]
+            remaining_codes = chapter.metadata_json.get("quality_gate_block_codes") or ()
+            report_codes = tuple(dict.fromkeys(
+                code for code in (*remaining_codes, *report_codes) if code != resolved_code
+            ))
         if report_codes:
             _stamp_standard_gate_block(
                 chapter,
@@ -911,13 +940,18 @@ async def _heal_chapter_gate_state_before_repair(
                 hint=_quality_report_block_hint(latest_report, report_codes),
             )
             return True
-        if _can_release_stale_nonblocking_quality_gate(chapter):
+        if report_claimed and _can_release_stale_nonblocking_quality_gate(chapter) and not (
+            identity_released and chapter.production_state == "blocked"
+        ):
             _release_stale_gate_block(
                 chapter,
                 code="chapter_quality_gate",
                 resolved_by="nonblocking_quality_report_revalidation",
             )
             return False
+
+    if identity_released and chapter.production_state == "blocked":
+        return True
 
     legacy_length_code = _legacy_repair_audit_length_block_code(
         chapter,
@@ -933,6 +967,47 @@ async def _heal_chapter_gate_state_before_repair(
         )
         return True
     if _legacy_repair_audit_length_block_is_resolved(chapter, draft, settings=settings):
+        # A length measurement resolves only length, never a separate timeline,
+        # identity, retention or unknown historical quality finding.
+        metadata = dict(chapter.metadata_json or {})
+        resolved: dict[str, Any] = {"blocked_by_repair_audit": metadata.pop("blocked_by_repair_audit", None)}
+        length_codes = {"CHAPTER_LENGTH_BLOCK_LOW", "CHAPTER_LENGTH_BLOCK_HIGH"}
+        remaining_codes: list[str] = []
+        for key in ("auto_repair_last_block_codes", "quality_gate_block_codes"):
+            raw = metadata.get(key) or ()
+            raw = [raw] if isinstance(raw, str) else raw
+            kept = [str(code) for code in raw if _canonical_gate_block_code(str(code)) not in length_codes]
+            if list(raw) != kept:
+                resolved[key] = list(raw)
+            if kept:
+                metadata[key] = kept
+                remaining_codes.extend(kept)
+            else:
+                metadata.pop(key, None)
+        for key in ("production_block_code", "quality_gate_block_code", "write_safety_block_code"):
+            code = metadata.get(key)
+            if code and _canonical_gate_block_code(str(code)) in length_codes:
+                resolved[key] = metadata.pop(key)
+                if key == "write_safety_block_code":
+                    metadata.pop("blocked_by_write_safety_gate", None)
+                    metadata.pop("write_safety_hint", None)
+            elif code:
+                remaining_codes.append(str(code))
+        metadata["resolved_repair_audit_length_block"] = {
+            "resolved_by": "repair_audit_length_revalidation", "previous": resolved,
+        }
+        chapter.metadata_json = metadata
+        bundle = metadata.get("quality_bundle")
+        bundle_blocked = bool(bundle.get("blocking_codes")) if isinstance(bundle, dict) else bool(bundle)
+        if (
+            remaining_codes
+            or not _can_release_stale_nonblocking_quality_gate(chapter)
+            or metadata.get("retention_gate_passed") is False
+            or metadata.get("quality_report_revalidation_required")
+            or bundle_blocked
+        ):
+            chapter.production_state = "blocked"
+            return True
         _release_stale_gate_block(
             chapter,
             code="current_chapter_length_out_of_range",
@@ -954,13 +1029,30 @@ async def _heal_chapter_gate_state_before_repair(
             hint="章节上次自动修复仍未通过门禁，继续按标准门禁 code 路由修复。",
             write_safety=False,
         )
+    if identity_released:
+        return chapter.production_state == "blocked"
     return True
 
 
 async def _load_latest_chapter_quality_report(
     session: AsyncSession,
     chapter: Any,
-) -> Any | None:
+    *,
+    current_text: str | None,
+    claim_reason_out: list[str] | None = None,
+) -> tuple[Any | None, bool]:
+    from bestseller.services.quality_report_claim import (
+        REPORT_CLAIM_LOOKBACK,
+        claim_report_for_draft,
+        report_grades_text,
+    )
+
+    def finish(row: Any, claimed: bool, reason: str) -> tuple[Any | None, bool]:
+        if claim_reason_out is not None:
+            claim_reason_out.append(reason)
+        return row, claimed
+
+    report = None
     try:
         report = await session.scalar(
             select(ChapterQualityReportModel)
@@ -969,17 +1061,39 @@ async def _load_latest_chapter_quality_report(
             .limit(1)
         )
         if report is None:
-            return None
+            return finish(None, False, "empty")
         if not hasattr(report, "report_json") and not hasattr(report, "blocks_write"):
-            return None
-        return report
+            return finish(None, False, "invalid_report")
+        # Historical rows remain in storage, but cannot supply repair advice
+        # or authorize a release for a different/unavailable body.
+        if current_text is None:
+            return finish(None, False, "no_draft")
+        rows = list(await session.scalars(
+            select(ChapterQualityReportModel)
+            .where(ChapterQualityReportModel.chapter_id == chapter.id)
+            .order_by(ChapterQualityReportModel.created_at.desc())
+            .limit(REPORT_CLAIM_LOOKBACK)
+        ))
+        claimed, reason = claim_report_for_draft(rows, current_text)
+        if reason == "claimed":
+            matching = [
+                row for row in rows
+                if report_grades_text(getattr(row, "report_json", None), current_text)
+            ]
+            # Same-fingerprint contradictory verdicts are ambiguous. Keep
+            # their blockers rather than using one to release the chapter.
+            verdicts = {frozenset(_quality_report_blocking_codes(row)) for row in matching}
+            if len(verdicts) > 1:
+                return finish(None, False, "ambiguous")
+            return finish(claimed, True, "claimed")
+        return finish(None, False, reason)
     except Exception:
         logger.debug(
-            "chapter %s: latest quality report lookup failed during repair preflight",
+            "chapter %s: current-draft quality report lookup failed during repair preflight",
             getattr(chapter, "chapter_number", "?"),
             exc_info=True,
         )
-        return None
+        return finish(None, False, "unavailable")
 
 
 def _quality_report_blocking_codes(report: Any) -> tuple[str, ...]:
@@ -1223,9 +1337,12 @@ def _release_resolved_identity_write_safety_block(
 
     from bestseller.services.identity_guard import validate_scene_text_identity  # noqa: PLC0415
 
+    registry = list(identity_registry)
+    if not registry:
+        return False
     violations = validate_scene_text_identity(
         content,
-        list(identity_registry),
+        registry,
         language=language or "zh-CN",
         chapter_number=getattr(chapter, "chapter_number", None),
     )
@@ -1234,22 +1351,50 @@ def _release_resolved_identity_write_safety_block(
 
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
     previous_hint = metadata.get("write_safety_hint")
-    for key in (
-        "blocked_by_write_safety_gate",
-        "write_safety_block_code",
-        "write_safety_hint",
-        "auto_repair_exhausted",
-        "auto_repair_in_progress",
-        "auto_repair_last_block_codes",
-    ):
+    # Identity revalidation proves only this code resolved. Other failures
+    # must survive so project repair can still select and route this chapter.
+    for key in ("blocked_by_write_safety_gate", "write_safety_block_code", "write_safety_hint"):
         metadata.pop(key, None)
+    remaining_codes: list[str] = []
+    for key in ("auto_repair_last_block_codes", "quality_gate_block_codes"):
+        raw_codes = metadata.get(key) or ()
+        if isinstance(raw_codes, str):
+            raw_codes = [raw_codes]
+        codes = [str(code) for code in raw_codes if code and str(code) != block_code]
+        if codes:
+            metadata[key] = codes
+            remaining_codes.extend(codes)
+        else:
+            metadata.pop(key, None)
+    for key in ("production_block_code", "quality_gate_block_code"):
+        code = metadata.get(key)
+        if code == block_code:
+            metadata.pop(key, None)
+        elif code:
+            remaining_codes.append(str(code))
+    independent_gate = any(
+        metadata.get(key)
+        for key in (
+            "post_assembly_duplicate_gate", "blocked_by_l2_bible_gate",
+            "blocked_before_chapter_assembly", "blocked_by_repair_audit",
+        )
+    ) or metadata.get("retention_gate_passed") is False
+    if not remaining_codes and not independent_gate:
+        metadata.pop("auto_repair_exhausted", None)
+        metadata.pop("auto_repair_in_progress", None)
     metadata["resolved_write_safety_block"] = {
         "code": block_code,
         "resolved_by": "identity_guard_revalidation",
         "previous_hint": previous_hint,
     }
     chapter.metadata_json = metadata
-    chapter.production_state = "ok"
+    chapter.production_state = "blocked" if remaining_codes or independent_gate else "ok"
+    if remaining_codes:
+        _stamp_standard_gate_block(
+            chapter, tuple(dict.fromkeys(remaining_codes)),
+            source="identity_guard_remaining_blocks",
+            hint="Identity revalidation resolved one code; remaining gates still require repair.",
+        )
     return True
 
 
@@ -1466,6 +1611,7 @@ async def _mark_workflow_run_failed_isolated(
     *,
     current_step: str,
     error: str,
+    source_session: AsyncSession | None = None,
 ) -> bool:
     """Best-effort flip a workflow row to ``failed`` on a fresh, isolated session.
 
@@ -1485,7 +1631,11 @@ async def _mark_workflow_run_failed_isolated(
     from bestseller.infra.db.session import get_server_session
 
     try:
-        async with get_server_session() as recovery:
+        recovery_scope = (
+            _rewrite_rejection_recovery_session(source_session)
+            if source_session is not None else get_server_session()
+        )
+        async with recovery_scope as recovery:
             await recovery.execute(
                 update(WorkflowRunModel)
                 .where(WorkflowRunModel.id == workflow_run_id)
@@ -1504,6 +1654,28 @@ async def _mark_workflow_run_failed_isolated(
             exc_info=True,
         )
         return False
+
+
+@asynccontextmanager
+async def _rewrite_rejection_recovery_session(session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """Use the original database engine without sharing its transaction.
+
+    One-shot CLI sessions have no global server factory. A connection-bound
+    session must also open a fresh connection, rather than joining a caller's
+    external transaction. Routing/unbound sessions use the server factory.
+    """
+
+    bind = getattr(session, "bind", None)
+    if bind is not None:
+        engine = bind.engine if isinstance(bind, AsyncConnection) else bind
+        factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+        async with factory.begin() as recovery:
+            yield recovery
+    else:
+        from bestseller.infra.db.session import get_server_session
+
+        async with get_server_session() as recovery:
+            yield recovery
 
 
 async def _restore_best_chapter_drafts(
@@ -1609,6 +1781,40 @@ async def run_project_repair(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    from bestseller.services.creation_configuration import read_window
+    configured_window = read_window(project)
+    if configured_window is not None:
+        # This executor also refreshes project-wide impacts and publication
+        # candidates. A chapter filter does not bound those operations.
+        raise ValueError("execution_window_requires_explicit_bounded_repair")
+
+    # Knowledge recovery is a separate continuation of the adopted body.
+    # Run it before a completed-label shortcut or a repair may discard paid
+    # prose and rejudge/rewrite a chapter whose only missing work is knowledge.
+    if not settings.quality.draft_mode:
+        from bestseller.services.adopted_knowledge_resume import resume_project_adopted_knowledge
+
+        # Preserve the caller's explicit repair scope. Materialize generators
+        # once so downstream task selection sees the same chapter numbers.
+        if target_chapter_numbers is not None:
+            target_chapter_numbers = tuple(target_chapter_numbers)
+        await resume_project_adopted_knowledge(
+            session, settings, project=project,
+            chapter_numbers=_normalize_chapter_scope(target_chapter_numbers)
+            if target_chapter_numbers is not None else None,
+        )
+
+    # A completed label from an older release may predate adoption, knowledge
+    # or export closure. Revalidate it before the idempotent fast return;
+    # the closure service retains the old completion claim as audit history.
+    verified_completed = False
+    if str(project.status or "") == ProjectStatus.COMPLETED.value:
+        completion = await settle_project_status_on_closure(
+            session, project, settings=settings,
+            fallback_status=ProjectStatus.REVISING.value,
+            now_iso=datetime.now(UTC).isoformat(),
+        )
+        verified_completed = completion.is_complete
 
     # A finished book is finished. Repair used to keep working on one, and
     # every pass drafted a new version and reopened chapters it had already
@@ -1617,7 +1823,7 @@ async def run_project_repair(
     # with one chapter blocked and one back to `candidate` after a single
     # pass (2026-07-28). Whoever triggers it does not matter; self-heal does
     # the same, which is why such a book never came to rest.
-    if str(project.status or "") == ProjectStatus.COMPLETED.value:
+    if verified_completed:
         # 2026-08-24：这三个必需关键字参数原本没传，于是这条分支一走就
         # TypeError。它只在**已完本**的书进入修复时才到达，潜伏了近一个月，
         # 直到端到端验证书的一个自愈任务跑了 2403 秒后崩在这里才暴露。
@@ -2375,6 +2581,24 @@ async def run_project_repair(
             requires_human_review=requires_human_review,
         )
     except Exception as exc:
+        from bestseller.services.reviews import RewriteSourceRejected, persist_rewrite_rejection
+
+        if isinstance(exc, RewriteSourceRejected):
+            # Do not checkpoint/commit arbitrary work from a rejected rewrite.
+            # Roll it back first, then recover only the detached audit receipt.
+            await session.rollback()
+            try:
+                async with _rewrite_rejection_recovery_session(session) as recovery:
+                    saved = await persist_rewrite_rejection(recovery, exc)
+                if not saved:
+                    logger.error("rewrite %s rejection task missing after rollback", exc.task_id)
+            except Exception:
+                logger.exception("rewrite %s rejection audit recovery failed", exc.task_id)
+            await _mark_workflow_run_failed_isolated(
+                workflow_run_id, current_step=current_step_name, error=str(exc),
+                source_session=session,
+            )
+            raise
         if (
             isinstance(exc, (PendingRollbackError, DBAPIError, MissingGreenlet))
             or not getattr(session, "is_active", True)

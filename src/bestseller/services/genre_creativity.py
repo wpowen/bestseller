@@ -269,7 +269,7 @@ def _direction(
         "anti_cliche_guardrails": anti_cliche_guardrails,
         "usage_rule": (
             "作为创意偏置使用，不得把题材标签写成固定套路；每个机制都要转化为本书专属规则、"
-            "人物选择或代价。不得套用家庭创伤、身世旧案、神秘信物等默认动机；"
+            "人物选择或状态变化。不得套用家庭创伤、身世旧案、神秘信物等默认动机；"
             "必须根据所选类型动态创造主角目标。"
         ),
     }
@@ -320,7 +320,16 @@ def _build_pack(preset: GenrePreset) -> GenreCreativityPack:
         "压力升级",
     )
     platform = _platform_label(preset)
-    lenses = _dedupe([primary_heat, secondary_heat, preset.genre, preset.sub_genre], limit=5)
+    # Native directions must stay inside the selected taxonomy.  ``secondary_heat``
+    # deliberately falls back to another genre when a preset has no heat data;
+    # sharing that list with every direction silently injected suspense into a
+    # taxonomy-created 异世大陆 book.  Only the explicitly cross-genre direction
+    # may consume that fallback lens.
+    native_lenses = _dedupe([primary_heat, preset.genre, preset.sub_genre], limit=5)
+    cross_lenses = _dedupe(
+        [primary_heat, secondary_heat, *preset.heat_domains, preset.genre, preset.sub_genre],
+        limit=5,
+    )
     rewards = _dedupe([primary_reward, secondary_reward, *grammar.reader_rewards[:3]], limit=6)
     drives = _dedupe([primary_drive, secondary_drive, *grammar.chapter_change_vectors[:3]], limit=6)
     forbidden = "、".join(guardrails[:2]) if guardrails else "标签化开局和无代价外挂"
@@ -336,7 +345,7 @@ def _build_pack(preset: GenrePreset) -> GenreCreativityPack:
                 f"都必须引发{primary_drive}层面的新压力，而不是只重复题材惯例。"
             ),
             source_mix=source_mix,
-            genre_lenses=lenses,
+            genre_lenses=native_lenses,
             reader_rewards=rewards,
             narrative_drives=drives,
             conflict_engine=(
@@ -356,7 +365,7 @@ def _build_pack(preset: GenrePreset) -> GenreCreativityPack:
                 f"主角想拿到{primary_reward}，却必须先处理{secondary_drive}带来的误判。"
             ),
             source_mix=source_mix,
-            genre_lenses=_dedupe([primary_heat, secondary_heat, *preset.heat_domains], limit=5),
+            genre_lenses=cross_lenses,
             reader_rewards=rewards,
             narrative_drives=drives,
             conflict_engine=f"外层是{primary_drive}，内层用{secondary_drive}不断改变读者对人物关系和世界规则的判断。",
@@ -371,16 +380,16 @@ def _build_pack(preset: GenrePreset) -> GenreCreativityPack:
             stance="只借用成熟作品的抽象结构功能，全部改写为本题材专属规则。",
             logline=(
                 f"以{mechanism_text}为结构灵感，把它改造成{preset.genre}中的原创矛盾："
-                f"收益越明显，后续牵连越重。"
+                "收益越明确，世界与对手的反应越具体。"
             ),
             source_mix=source_mix,
-            genre_lenses=lenses,
+            genre_lenses=native_lenses,
             reader_rewards=rewards,
             narrative_drives=drives,
             conflict_engine=(
-                f"每个蒸馏机制都必须落到本书自己的世界规则、人物弱点或资源代价，不能直接复述机制名。"
+                "每个蒸馏机制都必须落到本书自己的世界规则、人物选择或资源变化，不能直接复述机制名。"
             ),
-            opening_hook="第一章不解释大设定，先让一个机制在小事件里发生作用，并让代价立刻可见。",
+            opening_hook="第一章不解释大设定，先让一个机制在小事件里发生作用，并让局势变化立刻可见。",
             novelty_pressure="把蒸馏库当作反套路压力源，而不是桥段库；相似桥段、专名和组合全部禁止复用。",
             distilled_mechanisms=mechanisms,
             anti_cliche_guardrails=guardrails,
@@ -394,7 +403,7 @@ def _build_pack(preset: GenrePreset) -> GenreCreativityPack:
                 f"把{primary_reward}和{secondary_reward}同时抛给读者。"
             ),
             source_mix=source_mix,
-            genre_lenses=lenses,
+            genre_lenses=native_lenses,
             reader_rewards=rewards,
             narrative_drives=drives,
             conflict_engine=f"冲突不靠标签本身成立，而靠主角在{primary_drive}和{secondary_drive}之间做无法回退的选择。",
@@ -434,6 +443,27 @@ def get_genre_creative_direction(
     direction_key: str | None,
 ) -> GenreCreativeDirection | None:
     pack = get_genre_creativity_pack(genre_key)
+    return _select_direction(pack, direction_key)
+
+
+def get_genre_creative_direction_for_preset(
+    preset: GenrePreset,
+    direction_key: str | None,
+) -> GenreCreativeDirection | None:
+    """Resolve a direction without discarding an exact ephemeral preset.
+
+    Canonical taxonomy selections synthesize a :class:`GenrePreset` carrying
+    the exact sub-genre and prompt pack. Re-looking it up by ``custom-*`` loses
+    that information and routes creativity through the parent genre grammar.
+    """
+
+    return _select_direction(_build_pack(preset), direction_key)
+
+
+def _select_direction(
+    pack: GenreCreativityPack | None,
+    direction_key: str | None,
+) -> GenreCreativeDirection | None:
     if pack is None or not pack.directions:
         return None
     wanted = str(direction_key or "").strip()
@@ -459,6 +489,7 @@ __all__ = [
     "GenreCreativityPack",
     "creative_direction_to_user_hints",
     "get_genre_creative_direction",
+    "get_genre_creative_direction_for_preset",
     "get_genre_creativity_catalog_payload",
     "get_genre_creativity_pack",
 ]

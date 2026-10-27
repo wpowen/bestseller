@@ -23,10 +23,12 @@ LLM 判官不可用时默认 **fail-closed**：不能证明一句话大纲成立
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 from dataclasses import dataclass, replace
 from enum import Enum
+import hashlib
+import json
+import logging
+import math
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -89,13 +91,15 @@ class LoglineGateVerdict:
     fix_directives: tuple[str, ...] = () # 具体怎么改（回炉时注入重写 prompt）
     llm_used: bool = False
     weakest_axis: str | None = None
+    axis_why: dict[str, Any] | None = None
+    review_input_fingerprint: str | None = None
 
     @property
     def should_expand(self) -> bool:
         return self.action is LoglineAction.EXPAND
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "action": self.action.value,
             "scores": {k: round(float(v), 2) for k, v in self.scores.items()},
             "overall": round(float(self.overall), 2),
@@ -104,6 +108,26 @@ class LoglineGateVerdict:
             "llm_used": self.llm_used,
             "weakest_axis": self.weakest_axis,
         }
+        if self.axis_why is not None:
+            payload["axis_why"] = self.axis_why
+        if self.review_input_fingerprint is not None:
+            payload["review_input_fingerprint"] = self.review_input_fingerprint
+        return payload
+
+
+class _ReaderJudgeScores(dict[str, float]):
+    """A score mapping that carries evidence without breaking legacy dict callers."""
+
+    def __init__(
+        self,
+        scores: dict[str, float],
+        *,
+        axis_why: dict[str, Any] | None,
+        review_input_fingerprint: str,
+    ) -> None:
+        super().__init__(scores)
+        self.axis_why = axis_why
+        self.review_input_fingerprint = review_input_fingerprint
 
 
 def load_logline_gate_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -136,6 +160,14 @@ def load_logline_gate_config(cfg: dict[str, Any] | None = None) -> dict[str, Any
 
 def _normalized_judged_text(value: Any) -> str:
     return "".join(str(value or "").split())
+
+
+def _score_value(value: object) -> float:
+    try:
+        candidate: float | int | str = value if isinstance(value, (float, int, str)) else 0.0
+        return float(candidate or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def verdict_from_approved_concept_contract(
@@ -172,10 +204,18 @@ def verdict_from_approved_concept_contract(
     if not judged or _normalized_judged_text(logline_text) != judged:
         return None
     try:
-        from bestseller.services.concept_contract import validate_concept_contract
+        from bestseller.services.concept_contract import (
+            validate_concept_contract,
+            verify_concept_quality_evidence,
+        )
         from bestseller.services.concept_tournament import load_concept_tournament_config
 
         if validate_concept_contract(contract, target_chapters=target_chapters):
+            return None
+        evidence_verified, _evidence_reason = verify_concept_quality_evidence(contract)
+        if not evidence_verified:
+            # A historical or copied score report is not proof for the current
+            # hook.  The independent reader judge must review this text again.
             return None
         evidence = contract.get("quality_evidence")
         if not isinstance(evidence, dict) or not evidence.get("approved"):
@@ -199,7 +239,7 @@ def verdict_from_approved_concept_contract(
             "story_motion": (">=", float(hook_floors.get("story_motion", 7.0))),
         }
         for axis, (operator, floor) in required_hook.items():
-            value = float(hook.get(axis))
+            value = _score_value(hook.get(axis))
             if (operator == ">=" and value < floor) or (operator == "<=" and value > floor):
                 return None
         if target_chapters >= 200:
@@ -214,7 +254,7 @@ def verdict_from_approved_concept_contract(
                 "promise_survival",
                 "unit_density",
             ):
-                if float(serial.get(axis)) < float(serial_floors.get(axis, 7.0)):
+                if _score_value(serial.get(axis)) < _score_value(serial_floors.get(axis, 7.0)):
                     return None
     except (TypeError, ValueError, KeyError):
         return None
@@ -474,6 +514,13 @@ def _build_reader_judge_system_prompt(cfg: dict[str, Any]) -> str:
         "3. 做题材与长篇审计：不得把民俗偷换成都市异能、把现实偷换成系统爽文；"
         "长篇必须靠问题、对手、证据和选择升级，不是同一套动作换个对象重复。\n"
         "只有所有核心命门都成立，才能再评点击力。\n"
+        "# 证据范围与用户权限\n"
+        "- 必须区分『一句话未表达』与『故事缺失』：包装维度可依据短句本身评分；"
+        "故事逻辑维度必须同时查阅补充故事核、创作意图和故事上下文。\n"
+        "- 用户明确允许的题材、子题材、风格、金手指或叙事选择属于创作权限；"
+        "不得用评审者自选的题材观、正统观或热门套路替代用户选择。\n"
+        "- 若完整输入仍不足以判断某轴，repair_scope 标为 insufficient_context，"
+        "说明缺少什么证据；unknown 不得自动判为通过，也不得虚构故事缺陷。\n"
         "真卖点的硬指标（Save the Cat 官方 logline 法 + 番茄/起点爆款简介公式）：\n"
         "① 反差/反讽(irony)是钩子之核——必须有强反差/反常识/期待违背；四平八稳=废。\n"
         "② 首句即抛未知/危机，不是背景设定铺陈。\n"
@@ -492,7 +539,53 @@ def _build_reader_judge_system_prompt(cfg: dict[str, Any]) -> str:
         '"motivation_credibility":n,"unpredictability":n,"protagonist_rationality":n,'
         '"causal_coherence":n,"cost_integrity":n,"genre_fidelity":n,'
         '"serial_sustainability":n,"payoff_promise":n,"differentiation":n,'
-        '"concrete_picture":n},"why":{...}}'
+        '"concrete_picture":n},"why":{"axis":{"reason":"...",'
+        '"evidence":[{"field":"...","quote":"..."}],'
+        '"repair_scope":"expression|story|insufficient_context"}}}'
+    )
+
+
+def _reader_judge_messages(
+    *,
+    text: str,
+    premise: str,
+    genre: str | None,
+    sub_genre: str | None,
+    creation_intent: dict[str, Any] | None,
+    story_context: dict[str, Any] | None,
+    gate: dict[str, Any],
+) -> tuple[str, str, str]:
+    """Build the complete review view and its deterministic evidence fingerprint."""
+
+    system_prompt = _build_reader_judge_system_prompt(gate)
+    user_prompt = (
+        f"题材：{genre or '未注明'}{('/' + sub_genre) if sub_genre else ''}\n"
+        f"一句话故事大纲：\n{text}\n"
+        f"补充故事核：\n{premise}\n"
+        "用户创作意图（授权边界，不能被评审偏好覆盖）：\n"
+        f"{json.dumps(creation_intent or {}, ensure_ascii=False, sort_keys=True, default=str)}\n"
+        "相关故事上下文（用于判断故事层事实，不能要求短句重复全部内容）：\n"
+        f"{json.dumps(story_context or {}, ensure_ascii=False, sort_keys=True, default=str)}\n\n"
+        "立即输出严格 JSON，所有维度都要给分并提供逐轴 why。"
+    )
+    fingerprint_payload = json.dumps(
+        {"system_prompt": system_prompt, "user_prompt": user_prompt},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    fingerprint = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
+    return system_prompt, user_prompt, fingerprint
+
+
+def _insufficient_context_axes(axis_why: dict[str, Any] | None) -> tuple[str, ...]:
+    if not isinstance(axis_why, dict):
+        return ()
+    return tuple(
+        str(axis)
+        for axis, evidence in axis_why.items()
+        if isinstance(evidence, dict)
+        and evidence.get("repair_scope") == "insufficient_context"
     )
 
 
@@ -558,6 +651,8 @@ async def evaluate_logline_gate(
     sub_genre: str | None = None,
     judge_model_key: str | None = None,
     config: dict[str, Any] | None = None,
+    creation_intent: dict[str, Any] | None = None,
+    story_context: dict[str, Any] | None = None,
 ) -> LoglineGateVerdict:
     """审查一句话故事大纲；判官失败时默认拒绝进入规划。"""
 
@@ -572,8 +667,19 @@ async def evaluate_logline_gate(
     fallback = float(gate.get("fallback_score", 3.7))
     scores: dict[str, float] = {k: fallback for k in AXIS_KEYS}
     llm_used = False
+    axis_why: dict[str, Any] | None = None
+    review_input_fingerprint: str | None = None
     text = (logline or premise or "").strip()
     if text:
+        _, _, review_input_fingerprint = _reader_judge_messages(
+            text=text,
+            premise=premise,
+            genre=genre,
+            sub_genre=sub_genre,
+            creation_intent=creation_intent,
+            story_context=story_context,
+            gate=gate,
+        )
         # Judge UNAVAILABILITY (rate limit, timeout, transient API failure) is an
         # infrastructure fault, not evidence that the story is bad.  Fail-closing
         # a book on the first hiccup killed viable concepts whenever a concurrent
@@ -582,9 +688,18 @@ async def evaluate_logline_gate(
         max_judge_attempts = max(1, int(gate.get("judge_retry_attempts", 3)))
         for attempt in range(1, max_judge_attempts + 1):
             try:
-                scores = await _run_reader_judge(
+                judged_scores = await _run_reader_judge(
                     session, settings, text=text, premise=premise, genre=genre, sub_genre=sub_genre,
                     gate=gate, judge_model_key=judge_model_key, fallback=fallback,
+                    creation_intent=creation_intent,
+                    story_context=story_context,
+                )
+                scores = dict(judged_scores)
+                axis_why = getattr(judged_scores, "axis_why", None)
+                review_input_fingerprint = getattr(
+                    judged_scores,
+                    "review_input_fingerprint",
+                    review_input_fingerprint,
                 )
                 if not any(float(scores.get(key, 0.0)) > 0.0 for key in AXIS_KEYS):
                     raise RuntimeError("logline judge returned only the configured zero fallback")
@@ -609,9 +724,26 @@ async def evaluate_logline_gate(
             fix_directives=("恢复判官后重新生成和审查，不得以默认分放行。",),
             llm_used=False,
             weakest_axis="judge_availability",
+            review_input_fingerprint=review_input_fingerprint,
         )
 
     verdict = decide_logline_action(scores, gate)
+    insufficient_axes = _insufficient_context_axes(axis_why)
+    if insufficient_axes and verdict.action is LoglineAction.EXPAND:
+        verdict = replace(
+            verdict,
+            action=LoglineAction.REGENERATE,
+            reasons=(
+                *verdict.reasons,
+                "评审上下文不足，以下维度仍为 unknown，不能据此放行："
+                + "、".join(insufficient_axes),
+            ),
+            fix_directives=(
+                *verdict.fix_directives,
+                "补齐逐轴 why 中标为 insufficient_context 的故事证据后重新评审。",
+            ),
+            weakest_axis="insufficient_context",
+        )
     return LoglineGateVerdict(
         action=verdict.action,
         scores=verdict.scores,
@@ -620,6 +752,8 @@ async def evaluate_logline_gate(
         fix_directives=verdict.fix_directives,
         llm_used=llm_used,
         weakest_axis=verdict.weakest_axis,
+        axis_why=axis_why,
+        review_input_fingerprint=review_input_fingerprint,
     )
 
 
@@ -634,6 +768,8 @@ async def _run_reader_judge(
     gate: dict[str, Any],
     judge_model_key: str | None,
     fallback: float,
+    creation_intent: dict[str, Any] | None = None,
+    story_context: dict[str, Any] | None = None,
 ) -> dict[str, float]:
     from bestseller.services.llm import LLMCompletionRequest, complete_text
 
@@ -642,48 +778,82 @@ async def _run_reader_judge(
     fallback_json = json.dumps(
         {"scores": {k: fallback for k in AXIS_KEYS}}, ensure_ascii=False
     )
-    completion = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="critic",
-            model_tier="strong",
-            system_prompt=_build_reader_judge_system_prompt(gate),
-            user_prompt=(
-                f"题材：{genre or '未注明'}{('/' + sub_genre) if sub_genre else ''}\n"
-                f"一句话故事大纲：\n{text[:800]}\n"
-                f"补充故事核（仅用于核对因果，不得用它替一句话圆谎）：\n{premise[:1200]}\n\n"
-                "立即输出严格 JSON，所有维度都要给分。"
-            ),
-            fallback_response=fallback_json,
-            prompt_template="logline_gate",
-            prompt_version="v3",
-            model_catalog_key=judge_model_key,
-            metadata={"judge_scope": "logline_gate", "genre": str(genre or "")},
-            # MiniMax-M3 emits a <think> block that consumes output budget before the
-            # multi-axis JSON verdict; 900 truncated it (finish_reason=length →
-            # unparseable → false judge_availability failure). Give think + JSON room.
-            max_tokens_override=8000,
-        ),
+    system_prompt, user_prompt, review_input_fingerprint = _reader_judge_messages(
+        text=text,
+        premise=premise,
+        genre=genre,
+        sub_genre=sub_genre,
+        creation_intent=creation_intent,
+        story_context=story_context,
+        gate=gate,
     )
+    request = LLMCompletionRequest(
+        logical_role="critic",
+        model_tier="strong",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback_response=fallback_json,
+        prompt_template="logline_gate",
+        prompt_version="v3",
+        model_catalog_key=judge_model_key,
+        metadata={"judge_scope": "logline_gate", "genre": str(genre or "")},
+        # MiniMax-M3 emits a <think> block that consumes output budget before the
+        # multi-axis JSON verdict; 900 truncated it (finish_reason=length →
+        # unparseable → false judge_availability failure). Give think + JSON room.
+        max_tokens_override=8000,
+    )
+    from bestseller.services.conception_logline_recovery import prepare_logline_request
+    call_settings, request = await prepare_logline_request(session, settings, request)
+    completion = await complete_text(session, call_settings, request)
     raw = getattr(completion, "content", None) or getattr(completion, "text", None) or ""
+    if bool(getattr(completion, "fallback_used", False)):
+        raise RuntimeError("logline judge used fallback_response")
     if raw.strip() == fallback_json:
         raise RuntimeError("logline judge used fallback_response")
-    return _parse_scores(raw, fallback)
+    scores, axis_why = _parse_reader_judge_response(raw, fallback)
+    return _ReaderJudgeScores(
+        scores,
+        axis_why=axis_why,
+        review_input_fingerprint=review_input_fingerprint,
+    )
 
 
-def _parse_scores(raw: str, fallback: float) -> dict[str, float]:
+def _parse_reader_judge_response(
+    raw: str,
+    fallback: float,
+) -> tuple[dict[str, float], dict[str, Any] | None]:
     try:
         start = raw.find("{")
         end = raw.rfind("}")
         data = json.loads(raw[start : end + 1]) if start >= 0 and end > start else {}
     except Exception:
         data = {}
-    sc = data.get("scores", data) if isinstance(data, dict) else {}
+    why = data.get("why") if isinstance(data, dict) else None
+    return _parse_scores(raw, fallback), dict(why) if isinstance(why, dict) else None
+
+
+def _parse_scores(raw: str, fallback: float) -> dict[str, float]:
+    del fallback  # Compatibility parameter; missing/invalid axes are now fail-closed.
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        data = json.loads(raw[start : end + 1]) if start >= 0 and end > start else {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        sc: dict[str, Any] = {}
+    else:
+        raw_scores = data.get("scores", data)
+        sc = raw_scores if isinstance(raw_scores, dict) else {}
     out: dict[str, float] = {}
     for key in AXIS_KEYS:
+        value = sc.get(key, 0.0)
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            out[key] = 0.0
+            continue
         try:
-            out[key] = max(0.0, min(5.0, float(sc.get(key, fallback))))
+            numeric = float(value)
+            out[key] = max(0.0, min(5.0, numeric)) if math.isfinite(numeric) else 0.0
         except (TypeError, ValueError):
-            out[key] = fallback
+            out[key] = 0.0
     return out

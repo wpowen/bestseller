@@ -1,6 +1,8 @@
 # ruff: noqa: RUF001
 from __future__ import annotations
 
+from planning_capability_test_helpers import explicit_planning_metadata
+
 from bestseller.services.emotion_driven_kernel import (
     emotion_driven_kernel_from_dict,
     emotion_driven_kernel_to_dict,
@@ -91,7 +93,7 @@ def test_kernel_round_trip_and_prompt_block() -> None:
     assert dumped["reader_emotion_promise"] == "让读者先心疼主角，再等待他带着代价完成反击。"
     assert dumped["bomb_contracts"][0]["bomb_id"] == "bomb-swapped-evidence"
 
-    block = render_emotion_driven_kernel_prompt_block(kernel, chapter_number=2)
+    block = render_emotion_driven_kernel_prompt_block(kernel, chapter_number=2, metadata=explicit_planning_metadata("emotion_driven_kernel"))
     assert "emotion_driven_core" in block
     assert "主角当前欲望" in block
     assert "证物袋已被反派调包" in block

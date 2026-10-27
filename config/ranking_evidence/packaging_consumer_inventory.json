@@ -1,0 +1,54 @@
+{
+  "schema_version": "packaging-consumer-inventory.v1",
+  "authority_rule": "an active contract makes its hash-bound title and selected intro the only public packaging source",
+  "consumers": [
+    {
+      "id": "packaging-store",
+      "path": "src/bestseller/services/book_packaging_store.py",
+      "mode": "authoritative",
+      "fields": ["title", "active_intro_variant_id", "active_intro_variant_hash", "contract_hash"]
+    },
+    {
+      "id": "book-listing",
+      "path": "src/bestseller/services/book_listing.py",
+      "mode": "active-contract-or-unsigned-draft-fallback",
+      "fields": ["primary_title", "short_intro", "shelf_intro", "active_packaging_contract_hash"]
+    },
+    {
+      "id": "projects-api",
+      "path": "src/bestseller/api/routers/projects.py",
+      "mode": "book-listing-adapter",
+      "fields": ["listing", "ranking-readiness"]
+    },
+    {
+      "id": "cli-project-gate",
+      "path": "src/bestseller/cli/main.py",
+      "mode": "book-listing-adapter",
+      "fields": ["listing_profile"]
+    },
+    {
+      "id": "project-export",
+      "path": "src/bestseller/services/exports.py",
+      "mode": "book-listing-adapter",
+      "fields": ["book-listing-metadata", "book-detail-page"]
+    },
+    {
+      "id": "web-project-view",
+      "path": "src/bestseller/web/server.py",
+      "mode": "book-listing-adapter",
+      "fields": ["listing_profile"]
+    },
+    {
+      "id": "reader-study",
+      "path": "src/bestseller/domain/reader_study.py",
+      "mode": "candidate-and-packaging-hash-bound",
+      "fields": ["candidate_hash", "assignment_hash"]
+    },
+    {
+      "id": "platform-observation",
+      "path": "src/bestseller/domain/platform_observation.py",
+      "mode": "candidate-and-packaging-hash-bound",
+      "fields": ["candidate_hash", "snapshot_hash"]
+    }
+  ]
+}

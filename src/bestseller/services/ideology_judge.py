@@ -49,6 +49,7 @@ from bestseller.services.quality_levers._loader import (
     as_str,
     load_yaml,
 )
+from bestseller.services.story_enhancers import resolve_cost_style
 from bestseller.settings import AppSettings
 
 _CONFIG_FILENAME = "ideology_judge.yaml"
@@ -230,23 +231,46 @@ def _deterministic_penalty(
 # ---------------------------------------------------------------------------
 
 
-def _render_dimension_block(config: IdeologyJudgeConfig) -> str:
+def _render_dimension_block(
+    config: IdeologyJudgeConfig, *, cost_style: str = "", source: dict[str, Any] | None = None,
+) -> str:
+    fields = (source or {}).get("effective_fields", {})
+    directions = {
+        "thesis_clarity": "仅以作者明确主题或大纲实际呈现的意图判断表达是否具体；未选择主题宣言不构成缺失。",
+        "core_question_dramatization": "仅检查已选择的核心问题或实际事件中的抉择与后果；不强制追加哲学追问。",
+        "belief_arc_integrity": "作者选择信念弧时核对其准确阶段；否则观察人物判断和行为的一致性，不要求打碎或重建信念。",
+        "cost_binding": "核对实际行动与后果的因果一致性；代价选项不授权主题、信念弧或重复付价机制。",
+        "layer_coverage_depth": "只核对作者 required_layers 明确列出的层；未指定时观察实际故事功能，不要求补齐四层。",
+        "cosmic_premise_consistency": "作者指定宇宙前提时核对其内容；否则只核对故事已建立的世界事实，不预设世界冷峻或善恶无报。",
+        "anti_sloganization": "以具体事件与引文判断已表达的内容是否只是口号；不因缺少未选母题或主题标签扣分。",
+        "hidden_motif_setup": "仅在作者选择隐藏母题时核对其铺垫；否则观察实际铺垫与后续事件的联系，不要求隐藏终局或伦理反转。",
+        "commercial_compatibility": "依据本书实际阅读体验、事件推进和已选目标评估；不以未授权的方法论替代题材与作者意图。",
+    }
     lines: list[str] = []
     for dim in config.dimensions:
-        lines.append(
-            f"- {dim.key}（{dim.display_name}, 0-{dim.max}）：{dim.definition}"
-            f" 评分：{dim.scoring_rule}"
-            f" 正例「{dim.pos_example}」 反例「{dim.neg_example}」"
-        )
+        direction = directions.get(dim.key, "仅依据有效作者来源和实际大纲证据评估。")
+        if dim.key == "cost_binding":
+            direction += f"当前代价选择={cost_style or 'unknown'}；不能由此推定任何主题方法。"
+        lines.append(f"- {dim.key}（0-{dim.max}）：{direction}")
+    lines.append("所有维度保留原量程，逐项引用实际证据；无适用方法不等于自动满分或虚构缺陷。")
+    lines.append("有效作者字段：" + json.dumps(fields, ensure_ascii=False, sort_keys=True))
+    lines.append("必需层：" + json.dumps((source or {}).get("required_layers", []), ensure_ascii=False))
+    lines.append("必需副母题角色：" + json.dumps((source or {}).get("required_secondary_roles", []), ensure_ascii=False))
     return "\n".join(lines)
 
 
-def _render_penalty_block(config: IdeologyJudgeConfig) -> str:
-    lines = [
-        f"反口号化扣分（0-{config.penalty_max}, 单列, 不并入正向维度）。逐项判其严重度后求和：",
-    ]
+def _render_penalty_block(
+    config: IdeologyJudgeConfig, *, cost_style: str = "", source: dict[str, Any] | None = None,
+) -> str:
+    directions = {
+        "sloganization": "仅对实际反复宣告而未被事件支持的内容扣分，须引用原文；未选主题不是缺陷。",
+        "theme_homogenization": "仅对实际表达缺乏本书具体人物与事件依据扣分，不强迫作者选择框架主题。",
+        "forbidden_resolution": "只对违反 effective_fields.forbidden_resolutions 的具体解法扣分；旧缓存禁则、正常收益或未付代价不自动违规。",
+    }
+    lines = [f"证据扣分（0-{config.penalty_max}，单列）："]
     for marker in config.penalty_markers:
-        lines.append(f"- {marker.marker_id}（≤{marker.penalty_max}）：{marker.problem}")
+        direction = directions.get(marker.marker_id, "只对当前有效作者约束下有具体证据的问题扣分。")
+        lines.append(f"- {marker.marker_id}（≤{marker.penalty_max}）：{direction}")
     return "\n".join(lines)
 
 
@@ -254,25 +278,28 @@ def build_ideology_judge_system_prompt(
     *,
     config: IdeologyJudgeConfig | None = None,
     genre_context: JudgeGenreContext | None = None,
+    kernel: IdeologyKernel | dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     config = config or load_ideology_judge_config()
     genre = genre_context.display_genre if genre_context else "(题材中立)"
     dim_keys = "，".join(config.dimension_keys)
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+
+    source = resolve_ideology_methodology_source(kernel, metadata)
+    cost_style = resolve_cost_style(metadata)
     return (
         "# ROLE\n"
-        "你是『核心理念(母题)评审器』。你只评一件事：这份大纲有没有『灵魂』——"
-        "即一句贯穿全书、能生长出世界观与走向的核心理念(如《诛仙》的「天地不仁」), "
-        "并且它是被故事真正戏剧化的发动机, 而不是贴在简介上的标签。\n"
-        "你不评商业留存(另有评审器), 但要确认深度没有把书写成纯文青(commercial_compatibility 维度)。\n"
-        f"本书题材：{genre}（按本书自身题材判断, 不要套用其它题材的母题)。\n"
-        "\n# 核心立场\n"
-        "- 母题 ≠ 把主题词写进简介。最高级的做法是删掉所有点题句, 读者仍能亲历那个主题。\n"
-        "- 评的是『大纲是否让理念长成故事』：宇宙前提是否一致、信念弧是否落地、代价是否绑定、四层是否都有戏。\n"
-        "- 警惕『同题材通用主题』：换一本同类书也成立的主题宣言, 不算本书的灵魂。\n"
+        "你是『核心理念(母题)评审器』，依据有效作者合同与大纲实际证据评估叙事表达。\n"
+        f"本书题材：{genre}。题材、代价选项、AI 规划或旧缓存都不能授权主题方法。\n"
+        "\n# 来源与适用边界\n"
+        "只有当前 explicit_author_entry 的 effective_fields、required_layers 与 required_secondary_roles 是方法要求。\n"
+        "未知来源不增加结构义务；不得补写宇宙前提、四层、隐藏终局、信念重建或禁用解法。\n"
+        "保留所有维度和量程，依据真实事件、人物选择及其后果评分，不自动补分、满分或判通过。\n"
         "\n# 九个正向维度（满分合计 100）\n"
-        + _render_dimension_block(config)
+        + _render_dimension_block(config, cost_style=cost_style, source=source)
         + "\n\n# "
-        + _render_penalty_block(config)
+        + _render_penalty_block(config, cost_style=cost_style, source=source)
         + "\n\n# 输出格式（严格 JSON）\n"
         "返回一个 JSON 对象, 含字段：\n"
         f"- 九维整数评分（各在量程内）：{dim_keys}\n"
@@ -290,22 +317,20 @@ def build_ideology_judge_user_prompt(
     outline_text: str,
     grounding: IdeologyGroundingResult | None = None,
     max_chars: int = 16000,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
-    from bestseller.domain.ideology import (
-        ideology_kernel_from_dict,
-        render_ideology_kernel_prompt_block,
+    from bestseller.domain.ideology import render_ideology_kernel_prompt_block
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+
+    source = resolve_ideology_methodology_source(kernel, metadata)
+    kernel_block = render_ideology_kernel_prompt_block(kernel, metadata=metadata) if kernel is not None else ""
+    if not kernel_block:
+        kernel_block = "No authorized methodology fields; evaluate actual outline evidence without inventing requirements."
+    # Recompute against current canonical sources; never reuse old theme flags.
+    grounding = (
+        audit_ideology_outline_grounding(kernel, outline_text, metadata=metadata)
+        if kernel is not None else None
     )
-
-    kernel_obj: IdeologyKernel | None
-    if isinstance(kernel, dict):
-        try:
-            kernel_obj = ideology_kernel_from_dict(kernel)
-        except Exception:
-            kernel_obj = None
-    else:
-        kernel_obj = kernel
-
-    kernel_block = render_ideology_kernel_prompt_block(kernel_obj) if kernel_obj else "(无理念内核, 仅按大纲反推应有的理念深度评分)"
     hint = ""
     if grounding is not None and grounding.flagged:
         hint = (
@@ -313,7 +338,8 @@ def build_ideology_judge_user_prompt(
         )
     return (
         "# 本书声明的核心理念内核（评分基准 — 大纲是否兑现了它）\n"
-        f"{kernel_block}\n\n"
+        f"{kernel_block}\n"
+        "来源回执：" + json.dumps(source, ensure_ascii=False, sort_keys=True) + "\n\n"
         "# 待评大纲\n"
         f"{hint}"
         f"{(outline_text or '')[:max_chars]}\n\n"
@@ -366,15 +392,19 @@ def score_ideology_from_judge_json(
     outline_text: str,
     config: IdeologyJudgeConfig | None = None,
     llm_run_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> IdeologyJudgeResult:
     """Pure scoring path: judge JSON + deterministic grounding floor → result.
 
     Used by both the production judge and the standalone pilot runner.
     """
 
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+
+    resolve_ideology_methodology_source(kernel, metadata)
     config = config or load_ideology_judge_config()
     grounding = (
-        audit_ideology_outline_grounding(kernel, outline_text) if kernel is not None else None
+        audit_ideology_outline_grounding(kernel, outline_text, metadata=metadata) if kernel is not None else None
     )
     prior, flagged = (
         _deterministic_penalty(grounding, config) if grounding is not None else (0.0, ())
@@ -405,6 +435,7 @@ async def judge_outline_ideology(
     story_bible: dict[str, Any] | None = None,
     genre_context: JudgeGenreContext | None = None,
     workflow_run_id: Any | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> IdeologyJudgeResult:
     """Score one outline's ideology depth. Advisory — never gates anything."""
 
@@ -414,7 +445,7 @@ async def judge_outline_ideology(
             genre=genre, sub_genre=sub_genre, story_bible=story_bible
         )
     grounding = (
-        audit_ideology_outline_grounding(kernel, outline_text) if kernel is not None else None
+        audit_ideology_outline_grounding(kernel, outline_text, metadata=metadata) if kernel is not None else None
     )
 
     try:
@@ -433,14 +464,14 @@ async def judge_outline_ideology(
             logical_role="critic",
             model_tier="strong",
             system_prompt=build_ideology_judge_system_prompt(
-                config=config, genre_context=genre_context
+                config=config, genre_context=genre_context, kernel=kernel, metadata=metadata
             ),
             user_prompt=build_ideology_judge_user_prompt(
-                kernel=kernel, outline_text=outline_text, grounding=grounding
+                kernel=kernel, outline_text=outline_text, grounding=grounding, metadata=metadata
             ),
             fallback_response=_ideology_fallback_json(config),
             prompt_template="ideology_judge",
-            prompt_version="v1",
+            prompt_version="methodology-source.v2",
             model_catalog_key=model_catalog_key,
             workflow_run_id=workflow_run_id,
             metadata={"judge_scope": "ideology_outline", "advisory": True},
@@ -453,6 +484,7 @@ async def judge_outline_ideology(
         outline_text=outline_text,
         config=config,
         llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
+        metadata=metadata,
     )
 
 

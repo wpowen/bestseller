@@ -287,27 +287,20 @@ def test_male_power_deck_is_opt_in_not_generic_default() -> None:
         )
 
 
-def test_non_hot_preset_deck_size_matches_fallback() -> None:
-    """Presets that wire in the shared fallback should all end up with
-    the same deck size. If a preset diverges, either it earned a bespoke
-    deck (move it to the hot list) or something is wrong."""
+def test_non_hot_preset_preserves_its_declared_deck_without_padding() -> None:
+    """A selectable library may contain bespoke decks of any valid size.
 
-    non_hot_sizes: dict[str, int] = {}
+    The retired fixed-size contract forced neutral genres into the universal
+    five-event recipe. Validate lossless loading of each declared selection,
+    rather than requiring unrelated genres to share its quantity or content.
+    """
     for preset_key, overrides in _presets_with_hype():
         if preset_key in _HOT_PRESET_KEYS:
             continue
+        declared = overrides["hype"]["recipe_deck"]
         scheme = hype_scheme_from_preset_overrides(overrides)
-        non_hot_sizes[preset_key] = len(scheme.recipe_deck)
-
-    # Flag any non-hot preset that doesn't match the fallback — that's a
-    # "should be promoted to hot" signal.
-    non_matching = {
-        k: v for k, v in non_hot_sizes.items() if v != _FALLBACK_DECK_SIZE
-    }
-    assert not non_matching, (
-        f"non-hot presets with non-fallback deck sizes: {non_matching} — "
-        "either move them to _HOT_PRESET_KEYS or use _GENERIC_FALLBACK_HYPE_DECK"
-    )
+        assert [recipe.key for recipe in scheme.recipe_deck] == [entry["key"] for entry in declared]
+        assert len(scheme.recipe_deck) == len(declared)
 
 
 # ---------------------------------------------------------------------------

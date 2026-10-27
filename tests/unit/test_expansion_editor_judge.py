@@ -36,14 +36,17 @@ _JIUXING_CARD = {
 }
 
 
-def test_prompt_carries_axes_and_board_anchors():
+def test_prompt_carries_axes_and_topic_applicability_without_board_story_anchors():
     system, user = _build_expansion_editor_messages(
         _JIUXING_CARD, genre="东方玄幻", sub_genre="东方玄幻"
     )
     for axis in _EXPANSION_EDITOR_AXES:
         assert axis in user, f"判据缺轴 {axis}"
-    # 判据必须锚定真实榜单书（判官读例证合法；例证绝不进生成 prompt）
-    assert "聚宝仙盆" in user and "凡骨" in user
+    assert "现实/无超凡能力题材" in user
+    assert "可观察的行动、证据、关系后果" in user
+    assert "不得添加未选系统/超能力/规则" in user
+    for title in ("聚宝仙盆", "凡骨", "每天六千万", "洪武苟神"):
+        assert title not in user
     assert "证据" in system and "只输出JSON" in system
 
 
@@ -53,6 +56,22 @@ def test_prompt_does_not_seed_disease_tokens():
     )
     for token in ("打脸", "逆袭", "碾压", "扮猪吃虎", "跪", "求饶", "废柴流"):
         assert token not in user, f"判据 prompt 种词：{token}"
+
+
+def test_grounded_detective_card_gets_action_evidence_and_contextual_rule_review():
+    card = {
+        "protagonist_identity": "县档案馆调查员",
+        "core_abnormality": "一段旧录音能证明证人曾在现场",
+        "current_goal": "在录音被销毁前找到原始存储卡",
+        "failure_cost": "证据失效，嫌疑人脱身",
+        "opening_crisis": "证人改口且档案室即将清理旧介质",
+    }
+    _, user = _build_expansion_editor_messages(
+        card, genre="现实悬疑", sub_genre="刑侦调查"
+    )
+    assert "现实阻力" in user
+    assert "制度阻力" in user
+    assert "不得添加未选系统/超能力/规则" in user
 
 
 def test_conviction_only_on_load_bearing_axes():
@@ -94,6 +113,37 @@ def test_parser_with_editor_axes():
     assert "e6_goal_quantified" not in convicted
 
 
+def test_realistic_e_receipt_preserves_failed_axes_without_forcing_supernatural_fields():
+    raw = json.dumps(
+        {
+            "e1_rule_demonstrable": {
+                "pass": True,
+                "quote": "录音中的时间戳与门禁记录相差九分钟",
+            },
+            "e2_constraint_plot": {
+                "pass": False,
+                "plots": ["证人改口", "原始卡被清理"],
+            },
+            "e3_paradox_engine": {"pass": False, "quote": ""},
+            "e4_world_rule_first": {
+                "pass": True,
+                "world_rule": "旧案证据必须经过双人签字才能入档",
+                "exception": "调查员只有一次机会调取未归档原件",
+            },
+            "e5_witness_slot": {"pass": True, "quote": "助理在场听见录音"},
+            "e6_goal_quantified": {"pass": False, "quote": ""},
+            "revise_direction": "补足证据风险导致的三种选择",
+        },
+        ensure_ascii=False,
+    )
+    verdict = _parse_story_layer_verdict(raw, axes=_EXPANSION_EDITOR_AXES)
+
+    assert verdict is not None
+    assert verdict["axes"]["e2_constraint_plot"]["pass"] is False
+    assert verdict["axes"]["e4_world_rule_first"]["world_rule"]
+    assert "系统" not in verdict["revise_direction"]
+
+
 def test_missing_axis_is_unknown_not_fail():
     raw = json.dumps(
         {"e1_rule_demonstrable": {"pass": True, "quote": "放入一颗次日两颗"}},
@@ -113,4 +163,4 @@ def test_wiring_present_with_recheck():
     src = inspect.getsource(concept_tournament.run_concept_tournament)
     assert "expansion_editor_judge_enabled" in src
     assert "_build_expansion_editor_messages" in src
-    assert src.count("recheck_no_improvement") >= 2, "S 与 E 两处复核都必须在"
+    assert src.count("_repair_recheck_rejection(") == 2, "S 与 E 必须共享完整复核证据门"

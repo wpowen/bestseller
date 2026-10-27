@@ -19,6 +19,87 @@ class CompactionReport:
     # 被上限淘汰掉的段标题。淘汰此前完全静默——真机《罚我守坟》18/18 章
     # 每章都在丢规划段而没有任何一行日志。留痕不夺权，只让损失可查。
     evicted_sections: tuple[str, ...] = ()
+    # ── 2026-09-10 (W2)：把"留痕"升级为"可诊断" ────────────────────────
+    # 旧行为：淘汰只写一行 logger.info，调用方拿到的字符串看起来一切正常。
+    # 历史中间输入重放（reports/framework-repair-2026-09-08/chapter2-current-input.json）
+    # 显示【活动主线/伏笔/回收】和【时间线与硬事实快照】被淘汰，而插入的压缩标记
+    # 却告诉写手"规划层冗余内容已移除"。丢掉的这两段是写手接住上一章的唯一来源，
+    # 不是冗余。下面三个字段让调用方拿到可判定的结果，而不是只能读日志。
+    cap_max_chars: int = 0
+    cap_over_budget_chars: int = 0
+    continuity_evicted_sections: tuple[str, ...] = ()
+    protected_headers_without_body: tuple[str, ...] = ()
+
+    @property
+    def budget_conflict(self) -> bool:
+        """True = 必需事实没能装进预算，属于预算冲突，不是"冗余已清理"。"""
+
+        return bool(self.continuity_evicted_sections) or self.cap_over_budget_chars > 0
+
+    def closure(self) -> dict[str, Any]:
+        """给日志/元数据的结构化预算闭合说明（不含正文）。"""
+
+        return {
+            "cap_max_chars": self.cap_max_chars,
+            "compacted_chars": self.compacted_chars,
+            "cap_over_budget_chars": self.cap_over_budget_chars,
+            "continuity_evicted_sections": list(self.continuity_evicted_sections),
+            "protected_headers_without_body": list(
+                self.protected_headers_without_body
+            ),
+            "budget_conflict": self.budget_conflict,
+        }
+
+
+@dataclass(frozen=True)
+class SoftTrimReport:
+    """``_soft_trim_user_prompt`` 的预算闭合回执。
+
+    与 :class:`CompactionReport` 分开，因为这是另一条路径（chapter-first 平铺
+    user_prompt 的字符级兜底裁剪），单位是字符而不是 token。
+
+    历史证据：fixture A 的 user prompt 里带着
+    ``[…开头已截断 2106 字以适配 context_budget_tokens=…]`` 标记，且【任务】
+    /【上一章硬承接】/【章节目标】全部缺失——头部的任务块被这一层吃掉了。
+    旧实现只把这件事写在标记里，调用方无从判定。
+    """
+
+    char_budget: int
+    original_chars: int
+    final_chars: int
+    dropped_head_chars: int = 0
+    protected_tail_chars: int = 0
+    protected_markers_found: tuple[str, ...] = ()
+    task_head_markers_dropped: tuple[str, ...] = ()
+    head_only_fallback: bool = False
+    # 必保尾段 + 标记本身就装不下 char_budget —— 计划里"保护尾段超过总预算"那条。
+    # 与"尾部正常截断后标记比预算多几十字符"区分开，后者不是预算冲突。
+    protected_tail_exceeds_budget: bool = False
+
+    @property
+    def over_budget_chars(self) -> int:
+        """最终字符数超出 char_budget 的部分（含标记开销，如实记录）。"""
+
+        return max(0, self.final_chars - self.char_budget)
+
+    @property
+    def budget_conflict(self) -> bool:
+        return bool(self.task_head_markers_dropped) or self.protected_tail_exceeds_budget
+
+    def closure(self) -> dict[str, Any]:
+        return {
+            "char_budget": self.char_budget,
+            "original_chars": self.original_chars,
+            "final_chars": self.final_chars,
+            "over_budget_chars": self.over_budget_chars,
+            "dropped_head_chars": self.dropped_head_chars,
+            "protected_tail_chars": self.protected_tail_chars,
+            "protected_tail_exceeds_budget": self.protected_tail_exceeds_budget,
+            "protected_markers_found": list(self.protected_markers_found),
+            "task_head_markers_dropped": list(self.task_head_markers_dropped),
+            "head_only_fallback": self.head_only_fallback,
+            "budget_conflict": self.budget_conflict,
+        }
 
 
 # Craft-theory / metadata / reference-dump sections that belong to the planner
@@ -142,7 +223,9 @@ def compact_user_prompt(
     compacted = _wrap_retention_findings(compacted)
     compacted = _prune_placeholder_lines(compacted)
     compacted = _collapse_blank_lines(compacted)
-    compacted, evicted = _cap_prompt(compacted, max_chars=_DEFAULT_MAX_CHARS)
+    compacted, evicted, continuity_evicted, header_only_protected, over = _cap_prompt(
+        compacted, max_chars=_DEFAULT_MAX_CHARS
+    )
     if evicted:
         logger.info(
             "writer prompt over budget: %d sections evicted (chapter %s): %s",
@@ -155,7 +238,21 @@ def compact_user_prompt(
         compacted_chars=len(compacted),
         saved_tokens_estimate=max(0, _estimate_tokens(original) - _estimate_tokens(compacted)),
         evicted_sections=evicted,
+        cap_max_chars=_DEFAULT_MAX_CHARS,
+        cap_over_budget_chars=over,
+        continuity_evicted_sections=continuity_evicted,
+        protected_headers_without_body=header_only_protected,
     )
+    if report.budget_conflict:
+        # 预算冲突必须比"淘汰了几段"更响：这是必需事实没装下，不是清理冗余。
+        logger.warning(
+            "writer prompt budget conflict (chapter %s): continuity_evicted=%s "
+            "over_budget_chars=%d protected_header_only=%s",
+            chapter_no,
+            list(continuity_evicted),
+            over,
+            list(header_only_protected),
+        )
     return compacted, report
 
 
@@ -239,6 +336,44 @@ _CONTINUITY_SECTION_MARKERS: tuple[str, ...] = (
 
 _CAP_MARKER = "【写作提示已压缩】规划层冗余内容已移除；只服从本场正典、场景目标和输出契约。"
 
+# 2026-09-10 (W2)：以上 marker 在**连贯性段被淘汰**时会说错话。
+# 只有确实拿到"冗余规划内容"时才允许用"冗余"这个措辞；一旦淘汰的是没有第二来源的
+# 承接/硬事实段，标记必须换成如实说明，否则等于让写手以为上下文完好。
+_CAP_MARKER_PREFIX = "【写作提示已压缩】"
+
+# 这些连贯性段在别处**没有第二份**。淘汰它们 = 写手接不住上一章 / 不知道已发生的事实。
+# 【故事圣经上下文】被刻意排除：它按设计排在最后，因为 pack 与 system prompt 里
+# 另有一份（见 _CONTINUITY_SECTION_MARKERS 的注释），淘汰它不构成事实损失。
+_CONTINUITY_SECTIONS_WITH_ALTERNATE_SOURCE: tuple[str, ...] = ("故事圣经上下文",)
+
+# 保护名单命中的段若无实质内容，只能算"空标题"，不能算"已保留的事实"
+# （计划 §2 更正：空标题不能算保留了事实）。fixture A 的【硬约束与门禁】只有 9 字符
+# ——标题 8 字符 + 换行，正文为空。
+_MIN_PROTECTED_BODY_CHARS = 12
+
+_SECTION_HEAD_RE = re.compile(r"(【[^】]{1,24}】|#{1,3} [^\n]{1,40}|=== [^\n]{1,40})")
+
+
+def _section_has_body(section: str) -> bool:
+    """保护段是否真有内容，而不是只有一个标题。"""
+
+    head = section.lstrip()
+    match = _SECTION_HEAD_RE.match(head)
+    body = head[match.end() :] if match else head
+    return len(re.sub(r"\s+", "", body)) >= _MIN_PROTECTED_BODY_CHARS
+
+
+def _continuity_has_no_alternate_source(section: str) -> bool:
+    """该段是否属于"丢了就没有第二个来源"的连贯性核心。"""
+
+    if _continuity_rank(section) is None:
+        return False
+    head = section.lstrip()[:80]
+    return not any(
+        marker in head for marker in _CONTINUITY_SECTIONS_WITH_ALTERNATE_SOURCE
+    )
+
+
 
 def _section_is_protected(section: str) -> bool:
     head = section.lstrip()[:80]
@@ -261,7 +396,9 @@ def _section_label(section: str) -> str:
     return match.group(1).strip() if match else head[:24].strip()
 
 
-def _cap_prompt(text: str, *, max_chars: int) -> tuple[str, tuple[str, ...]]:
+def _cap_prompt(
+    text: str, *, max_chars: int
+) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], int]:
     """Cap the writer prompt without deleting high-value middle sections.
 
     This is a safety boundary, not a quality rewrite. Rather than slicing an
@@ -271,10 +408,12 @@ def _cap_prompt(text: str, *, max_chars: int) -> tuple[str, tuple[str, ...]]:
     protected high-value section, then fill the remaining budget with the earliest
     normal sections. Protected sections may push the result modestly over budget —
     they are bounded and matter more than the char ceiling.
+
+    Returns ``(text, evicted, continuity_evicted, header_only_protected, over)``.
     """
 
     if max_chars <= 0 or len(text) <= max_chars:
-        return text, ()
+        return text, (), (), (), 0
 
     sections = _split_sections(text)
     if len(sections) <= 2:
@@ -285,17 +424,24 @@ def _cap_prompt(text: str, *, max_chars: int) -> tuple[str, tuple[str, ...]]:
         tail_chars = available - head_chars
         head = text[:head_chars].rstrip()
         tail = text[-tail_chars:].lstrip()
-        return f"{head}\n\n{_CAP_MARKER}\n\n{tail}", ("<未分段正文中段>",)
+        capped = f"{head}\n\n{_CAP_MARKER}\n\n{tail}"
+        return capped, ("<未分段正文中段>",), (), (), max(0, len(capped) - max_chars)
 
     first, last = sections[0], sections[-1]
     middle = sections[1:-1]
     keep_ids = {id(first), id(last)}
+    # 预算口径必须与改动前逐字一致：仍按基准标记长度预扣，否则可用预算会变大，
+    # 淘汰结果随之漂移（W2 只改"怎么说"，不改"装多少"）。
     used = len(first) + len(last) + len(_CAP_MARKER)
     # Protected sections are mandatory.
+    header_only_protected: list[str] = []
     for section in middle:
         if _section_is_protected(section):
             keep_ids.add(id(section))
             used += len(section)
+            if not _section_has_body(section):
+                # 命中的是空标题：它占着"已保留"的名额，却没有承载任何事实。
+                header_only_protected.append(_section_label(section))
     # 连贯性核心按价值序号优先入选（同序号保持出现顺序）。仍受预算约束——
     # 它们只是排在通用段前面，不像 protected 那样可以撑破上限。
     ranked = [
@@ -318,18 +464,43 @@ def _cap_prompt(text: str, *, max_chars: int) -> tuple[str, tuple[str, ...]]:
         keep_ids.add(id(section))
         used += len(section)
 
+    # 淘汰前先算出"丢了什么"，因为标记怎么说话取决于它。
+    evicted: list[str] = []
+    continuity_evicted: list[str] = []
+    for section in sections:
+        if id(section) in keep_ids:
+            continue
+        evicted.append(_section_label(section))
+        if _continuity_has_no_alternate_source(section):
+            continuity_evicted.append(_section_label(section))
+
+    marker = _CAP_MARKER
+    if continuity_evicted:
+        # 旧标记在这里会说"规划层冗余内容已移除"——但被删的是接住上一章的唯一来源。
+        # 换成如实说明，并点名是哪些段，让写手和调用方都看得见这次预算冲突。
+        marker = (
+            f"{_CAP_MARKER_PREFIX}预算冲突：本章必需的连贯性/硬事实段未能装入 "
+            f"{max_chars} 字预算，已舍弃 {('、'.join(continuity_evicted))}；"
+            "这些段没有第二来源。只服从本场正典、场景目标和输出契约。"
+        )
+
     out: list[str] = []
     elided = False
-    evicted: list[str] = []
     for section in sections:
         if id(section) in keep_ids:
             out.append(section)
             continue
-        evicted.append(_section_label(section))
         if not elided:
-            out.append(f"\n\n{_CAP_MARKER}\n\n")
+            out.append(f"\n\n{marker}\n\n")
             elided = True
-    return "".join(out), tuple(evicted)
+    capped = "".join(out)
+    return (
+        capped,
+        tuple(evicted),
+        tuple(continuity_evicted),
+        tuple(header_only_protected),
+        max(0, len(capped) - max_chars),
+    )
 
 
 def _dedupe_chapter_contract_digest_blocks(text: str) -> str:
@@ -475,4 +646,8 @@ def _estimate_tokens(text: str) -> int:
     return han + int(latin * 1.3) + int(punct * 0.5)
 
 
-__all__ = ["CompactionReport", "compact_user_prompt"]
+__all__ = [
+    "CompactionReport",
+    "SoftTrimReport",
+    "compact_user_prompt",
+]

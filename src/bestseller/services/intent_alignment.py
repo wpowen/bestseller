@@ -18,23 +18,44 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import json
 import re
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from bestseller.settings import AppSettings
 
 # 简介首行标签行形状：「标签：A+B+C」或「【A+B+C】」
 _TAGLINE_RE = re.compile(r"^(?:标签[:：]\s*|【)([^\n】]+)(?:】)?\s*$")
 
 
 def intent_tags_from_contract(contract: Mapping[str, Any] | None) -> list[str]:
-    """从意图契约取有效意图 tags（user_tags 优先，空则 default_tags/tags）。"""
+    """从意图契约取可作为标签意图核对的 tags。
+
+    当前 web 合同显式拆分了 ``user_tags`` 与题材默认值。拆分合同中空的
+    ``user_tags`` 是“用户没有主动选标签”，不能回退到 effective ``tags`` 或
+    ``default_tags``；否则题材推荐会被升级成用户授权。旧的未拆分 payload
+    只有 ``tags`` 时，保留兼容读取，并由调用方以 legacy/inferred 语义记录。
+    """
 
     if not isinstance(contract, Mapping):
         return []
     genre_intent = contract.get("genre_intent")
     source = genre_intent if isinstance(genre_intent, Mapping) else contract
-    for key in ("user_tags", "tags", "default_tags"):
+    # Presence of either split field identifies the current provenance-aware
+    # contract.  An empty user_tags is authoritative absence, not a cue to
+    # resurrect the taxonomy defaults.
+    if str(source.get("tag_source") or "") == "legacy_inferred":
+        keys = ("tags",)
+    elif "user_tags" in source or "default_tags" in source:
+        keys = ("user_tags",)
+    else:
+        keys = ("tags",)
+    for key in keys:
         values = [
             str(v).strip()
             for v in (source.get(key) or [])
@@ -43,6 +64,21 @@ def intent_tags_from_contract(contract: Mapping[str, Any] | None) -> list[str]:
         if values:
             return values
     return []
+
+
+def intent_tag_source_from_contract(contract: Mapping[str, Any] | None) -> str:
+    """Return the authority label for the extracted taxonomy tags."""
+
+    if not isinstance(contract, Mapping):
+        return "none"
+    source = contract.get("genre_intent")
+    source = source if isinstance(source, Mapping) else contract
+    tags = intent_tags_from_contract(contract)
+    if str(source.get("tag_source") or "") == "legacy_inferred":
+        return "legacy_inferred" if tags else "none"
+    if "user_tags" not in source and "default_tags" not in source:
+        return "legacy_inferred" if tags else "none"
+    return "user" if tags else "none"
 
 
 # 建书页那四档调性的**可核对标签**（不是写作指令——指令归生成端，
@@ -319,3 +355,30 @@ def parse_intent_alignment_verdict(
         verdict["counter_elements"].extend(verdict["cost_violations"])
     verdict["revise_direction"] = str(payload.get("revise_direction") or "").strip()
     return verdict
+
+
+async def evaluate_intent_alignment_sample(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    candidate: dict[str, Any],
+    user_controls: dict[str, Any],
+    intent_tags: list[str],
+    genre_label: str,
+    cost_style: str = "standard",
+    phase: str = "initial",
+    sample_slot: int = 0,
+    project_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Future source-bound review; historical free-text parsing stays unchanged."""
+    from bestseller.services.intent_review_submission import (
+        evaluate_intent_alignment_sample as evaluate,
+    )
+
+    return await evaluate(
+        session, settings, candidate=candidate, user_controls=user_controls,
+        intent_tags=intent_tags, genre_label=genre_label, cost_style=cost_style,
+        phase=phase, sample_slot=sample_slot, project_id=project_id,
+        workflow_run_id=workflow_run_id,
+    )

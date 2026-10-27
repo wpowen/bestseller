@@ -136,6 +136,19 @@ _GATES: tuple[GateRegistration, ...] = (
         # waited — a local prose judgement must never stall forward writing.
         continuation_impact="local",
     ),
+    GateRegistration(
+        # A selected story effect is part of the chapter's reader promise.
+        # Missing comedy/hype realization blocks this chapter, but repairing
+        # the prose does not alter canon for later chapters.
+        name="story_effect_realization_gate",
+        metadata_keys=(
+            "effect_realization_blocked",
+            "story_effect_realization_block_codes",
+        ),
+        repair_strategy="rewrite_task",
+        tier="core",
+        continuation_impact="local",
+    ),
     # ---- advanced: polish / signature / style (warn only) ----------------
     # These gates can never block the chapter. A hit stamps a warning on the
     # scene/chapter metadata so downstream reviewers see the signal, but the
@@ -329,9 +342,20 @@ LOCAL_WRITE_SAFETY_BLOCK_CODES = frozenset(
         "dialog_unpaired",
         "dialogue_ping_pong",
         "ending_sentence_weak",
+        # Persona simulation and ending-hook quality do not mutate canon.
+        "persona_weighted_score_low",
+        "ending_hook_missing",
         "intra_chapter_repetition",
         "cross_chapter_repetition",
         "chapter_opening_repetition",
+        # Hook echo is a chapter-local continuity/pacing defect.  Repairing
+        # the opening prose does not mutate the canon snapshot consumed by
+        # later chapters; keep unknown write-safety codes conservative.
+        "hook_echo_missing",
+        "hook_echo_low",
+        # The opening-hook density checker measures only this chapter's prose
+        # surface; a first-sentence length miss cannot corrupt later canon.
+        "opening_first_sentence_too_long",
     }
 )
 LOCAL_CHAPTER_OUTLINE_READINESS_BLOCK_CODES = frozenset(
@@ -469,10 +493,13 @@ def chapter_block_is_structural(metadata: Mapping[str, object] | None) -> bool:
         return True
 
     # 3. write_safety_gate is decided by its block code.
-    if bool(data.get("blocked_by_write_safety_gate")) or data.get(
-        "write_safety_block_code"
-    ):
-        if write_safety_block_is_structural(data.get("write_safety_block_code")):
+    write_safety_code = (
+        data.get("write_safety_block_code")
+        or data.get("production_block_code")
+        or data.get("production_block_codes")
+    )
+    if bool(data.get("blocked_by_write_safety_gate")) or write_safety_code:
+        if write_safety_block_is_structural(write_safety_code):
             return True
         recognized_local = True
 
@@ -534,6 +561,76 @@ def pause_reason_is_structural(reason: str | None) -> bool:
     return pause_reason_continuation_impact(reason) == "structural"
 
 
+def chapter_local_debt_allows_continuation(
+    metadata: Mapping[str, object] | None,
+    *,
+    has_current_draft: bool,
+    numeric_debt_binding_verified: bool = False,
+) -> bool:
+    """Allow forward work only for evidenced, exclusively local prose debt.
+
+    This does not promote a draft or approve publication/export. The caller
+    must establish that the current body exists. Generic debt reasons alone
+    are not gate evidence; workflow-only flags cannot be inferred here.
+    """
+
+    if not has_current_draft or not isinstance(metadata, Mapping):
+        return False
+    data = dict(metadata)
+    numeric_debt = data.get("numeric_promotion_debt")
+    if numeric_debt:
+        if not numeric_debt_binding_verified:
+            return False
+        # Only explicitly historical/resolved audit fields are ignored here.
+        for key in ("retention_retry_last_block_codes", "auto_repair_last_resolved_block_codes"):
+            data.pop(key, None)
+        repair_history = data.get("auto_repair_last_block_codes")
+        if repair_history and not write_safety_block_is_structural(repair_history):
+            data.pop("auto_repair_last_block_codes", None)
+    safety_fields = (
+        "write_safety_block_code", "production_block_code", "production_block_codes"
+    )
+    # The legacy classifier uses first-nonempty code precedence. Continuation
+    # needs every supplied code source to agree; a local code cannot hide a
+    # structural code in a second field.
+    if any(
+        data.get(key) and write_safety_block_is_structural(data[key])
+        for key in safety_fields
+    ):
+        return False
+    known_keys = set(registered_block_metadata_keys()) | set(safety_fields)
+    for key, value in data.items():
+        if not value or not isinstance(key, str):
+            continue
+        block_shaped = key.startswith("blocked_by_") or key.endswith(
+            ("_blocked", "_block_code", "_block_codes", "_blocking_code", "_blocking_codes")
+        )
+        if block_shaped and key not in known_keys:
+            return False
+    generic_debt_reasons = {
+        "chapter_promotion_ineligible", "chapter_review_without_promotion",
+        "chapter_rewrite_revision_limit", "chapter_not_promoted",
+        "legacy_accept_on_stall_deprecated",
+    }
+    reason = str(data.get("chapter_quality_debt_reason") or "").strip()
+    if reason and reason not in generic_debt_reasons and pause_reason_is_structural(reason):
+        return False
+    for key in ("production_pause_reason", "last_generation_gate_reason"):
+        if data.get(key) and pause_reason_is_structural(str(data[key])):
+            return False
+    # This returns structural for missing/unrecognized evidence and gives any
+    # known structural gate precedence over local flags.
+    if data.get("blocked_by_write_safety_gate") and not any(data.get(key) for key in safety_fields):
+        return False
+    if (data.get("blocked_by_chapter_outline_readiness_gate") or data.get("chapter_outline_readiness_block_codes")) and chapter_outline_readiness_block_is_structural(data.get("chapter_outline_readiness_block_codes")):
+        return False
+    if numeric_debt and not any(bool(data.get(key)) for key in _STRUCTURAL_BLOCK_METADATA_KEYS):
+        # Earlier checks rejected unknown/current structural codes. Numeric debt
+        # is positive local evidence; it grants no publication approval.
+        return True
+    return not chapter_block_is_structural(data)
+
+
 def project_blocks_all_prose_generation(project: object) -> bool:
     """Whether rejected architecture forbids every prose generation entry point."""
 
@@ -542,6 +639,12 @@ def project_blocks_all_prose_generation(project: object) -> bool:
         return True
     raw_metadata = getattr(project, "metadata_json", None)
     metadata = raw_metadata if isinstance(raw_metadata, Mapping) else {}
+    activation = metadata.get("verified_prefix_window_activation")
+    if activation is not None:
+        if (not isinstance(activation, Mapping)
+            or not isinstance(activation.get("binding"), Mapping)
+            or activation["binding"].get("window_hash") != metadata.get("execution_window_hash")):
+            return True
     if metadata.get("outline_replan_in_progress"):
         return True
     if str(metadata.get("outline_semantic_gate_status") or "").strip().lower() == (

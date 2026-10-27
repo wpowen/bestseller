@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.contradiction import (
@@ -12,8 +12,11 @@ from bestseller.domain.contradiction import (
 )
 from bestseller.infra.db.models import (
     CharacterModel,
-    CharacterStateSnapshotModel,
     RelationshipEventModel,
+)
+from bestseller.services.character_snapshot_sources import (
+    load_eligible_character_snapshots,
+    read_character_snapshot_knowledge,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,11 +44,7 @@ async def get_character_knowledge_state(
     character_name: str,
     as_of_chapter: int,
 ) -> CharacterKnowledgeState:
-    """Build the accumulated knowledge state for a character up to a chapter.
-
-    Starts from the base ``knowledge_state_json`` on the character record, then
-    merges in any ``beliefs`` captured in per-scene snapshots.
-    """
+    """Read explicit source-bound knowledge within the requested chapter prefix."""
     character = await _find_character(session, project_id, character_name)
     if character is None:
         return CharacterKnowledgeState(
@@ -53,31 +52,13 @@ async def get_character_knowledge_state(
             as_of_chapter=as_of_chapter,
         )
 
-    base: dict = character.knowledge_state_json or {}
+    base = await read_character_snapshot_knowledge(
+        session, project_id=project_id, character=character,
+        before_chapter_number=as_of_chapter,
+    )
     knows: list[str] = list(base.get("knows", []))
     falsely_believes: list[str] = list(base.get("falsely_believes", []))
     unaware_of: list[str] = list(base.get("unaware_of", []))
-
-    stmt = (
-        select(CharacterStateSnapshotModel)
-        .where(
-            CharacterStateSnapshotModel.character_id == character.id,
-            CharacterStateSnapshotModel.project_id == project_id,
-            CharacterStateSnapshotModel.chapter_number <= as_of_chapter,
-        )
-        .order_by(
-            CharacterStateSnapshotModel.chapter_number,
-            CharacterStateSnapshotModel.scene_number,
-        )
-    )
-    result = await session.execute(stmt)
-    snapshots = result.scalars().all()
-
-    for snap in snapshots:
-        beliefs: list = snap.beliefs or []
-        for belief in beliefs:
-            if isinstance(belief, str) and belief not in knows:
-                knows.append(belief)
 
     return CharacterKnowledgeState(
         character_name=character_name,
@@ -98,19 +79,12 @@ async def get_character_evolution_timeline(
     if character is None:
         return []
 
-    stmt = (
-        select(CharacterStateSnapshotModel)
-        .where(
-            CharacterStateSnapshotModel.character_id == character.id,
-            CharacterStateSnapshotModel.project_id == project_id,
-        )
-        .order_by(
-            CharacterStateSnapshotModel.chapter_number,
-            CharacterStateSnapshotModel.scene_number,
-        )
+    snapshots = await load_eligible_character_snapshots(
+        session, project_id=project_id, character_id=character.id, limit=None,
     )
-    result = await session.execute(stmt)
-    snapshots = result.scalars().all()
+    snapshots.sort(key=lambda snap: (
+        snap.chapter_number, snap.scene_number is None, snap.scene_number or 0,
+    ))
 
     return [
         {
@@ -143,17 +117,10 @@ async def detect_character_stagnation(
     warnings: list[CharacterStagnationWarning] = []
 
     for character in characters:
-        snap_stmt = (
-            select(CharacterStateSnapshotModel)
-            .where(
-                CharacterStateSnapshotModel.character_id == character.id,
-                CharacterStateSnapshotModel.project_id == project_id,
-            )
-            .order_by(desc(CharacterStateSnapshotModel.chapter_number))
-            .limit(2)
+        recent = await load_eligible_character_snapshots(
+            session, project_id=project_id, character_id=character.id,
+            before_chapter_number=current_chapter_number, limit=2,
         )
-        snap_result = await session.execute(snap_stmt)
-        recent = snap_result.scalars().all()
 
         if not recent:
             continue

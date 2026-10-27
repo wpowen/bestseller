@@ -160,7 +160,9 @@ def test_fanqie_long_gate_reports_ability_without_cost_as_warning() -> None:
         "下一刻，母亲病房门被推开？"
     )
 
-    report = evaluate_fanqie_long_ranking_gate(chapters, protagonist_name="林澈")
+    report = evaluate_fanqie_long_ranking_gate(
+        chapters, protagonist_name="林澈", cost_style="standard",
+    )
     findings = {finding.code: finding for finding in report.findings}
 
     assert report.passed is True

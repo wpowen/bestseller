@@ -119,3 +119,35 @@ def test_legacy_book_acceptance_blocks_structural_gate_failure() -> None:
     assert {finding.code for finding in report.findings} == {
         "premium_gate_not_passed"
     }
+
+
+def test_provisional_scorecard_never_passes_historical_acceptance() -> None:
+    report = evaluate_legacy_book_acceptance(
+        scorecard={
+            "quality_score": 96.0,
+            "missing_chapters": 0,
+            "chapters_blocked": 0,
+            "length_cv": 0.05,
+            "hype_missing_chapters": 0,
+            "quality_score_status": "provisional",
+            "quality_report_coverage": {
+                "chapters_total": 10,
+                "claimed": 9,
+                "no_claim": 1,
+            },
+            "quality_report_unknown_chapters": [7],
+        },
+        premium_gate_report={"passed": True},
+        repair_plan={"task_count": 0},
+        model_execution_ready=True,
+    )
+
+    assert report.passed is False
+    assert report.readiness_level == "blocked"
+    finding = next(
+        finding
+        for finding in report.findings
+        if finding.code == "quality_report_coverage_incomplete"
+    )
+    assert finding.severity == "critical"
+    assert report.metrics["quality_score_status"] == "provisional"

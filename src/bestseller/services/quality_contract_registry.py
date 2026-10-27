@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-QUALITY_CONTRACT_VERSION = "quality-contract-v1"
+QUALITY_CONTRACT_VERSION = "quality-contract-v3-prose-actions"
 
 Severity = Literal["info", "medium", "high", "critical", "block"]
 RepairScope = Literal[
@@ -219,7 +219,9 @@ _CONTRACTS: dict[str, QualityContract] = {
     "ANTI_META_ENDING_OUT_OF_SCENE": _contract(
         "ANTI_META_ENDING_OUT_OF_SCENE",
         "ending",
+        severity="high",
         repair_scope="ending",
+        pass_condition="effective configured ending action is satisfied; default prose preference is advisory",
     ),
     "SHOW_DONT_TELL": _contract(
         "SHOW_DONT_TELL",
@@ -260,8 +262,9 @@ _CONTRACTS: dict[str, QualityContract] = {
         repair_scope="chapter",
         required_evidence=("window",),
         pass_condition=(
-            "non-specialist characters only describe what they see or are explicitly shown "
-            "learning/being possessed before using rule terminology"
+            "advisory terminology observation only; speaker identity and a specific author or "
+            "knowledge restriction must be verified before claiming a conflict; an absent "
+            "knowledge whitelist never proves ignorance"
         ),
     ),
     # Chapter assembly / splice coherence.
@@ -355,6 +358,16 @@ _CONTRACTS: dict[str, QualityContract] = {
         "GOLDEN_THREE_WEAK",
         "retention",
         pass_condition="the golden-three chapter clears the commercial pull bar",
+    ),
+    "STORY_EFFECT_REALIZATION_UNREALIZED": _contract(
+        "STORY_EFFECT_REALIZATION_UNREALIZED",
+        "story_effect",
+        repair_scope="chapter",
+        required_evidence=("effect_realization_gate", "evidence_spans"),
+        pass_condition=(
+            "every selected story effect is realized in the chapter with "
+            "ordered verbatim prose evidence and a visible situation change"
+        ),
     ),
     "CALLBACK_OBLIGATION_MISSING": _contract(
         "CALLBACK_OBLIGATION_MISSING",

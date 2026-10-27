@@ -5,6 +5,7 @@ from copy import deepcopy
 
 from pydantic import ValidationError
 import pytest
+from planning_capability_test_helpers import explicit_planning_metadata
 
 from bestseller.services.story_design_kernel import (
     StoryDesignKernel,
@@ -153,7 +154,7 @@ def test_story_design_kernel_round_trips_and_renders_prompt_block() -> None:
     assert isinstance(kernel, StoryDesignKernel)
     assert story_design_kernel_to_dict(kernel)["reader_promise"]
 
-    block = render_story_design_kernel_prompt_block(kernel)
+    block = render_story_design_kernel_prompt_block(kernel, metadata=explicit_planning_metadata("story_design_kernel"))
 
     assert "Story Design Kernel" in block
     assert "Reader promise" in block
@@ -220,7 +221,7 @@ def test_story_design_kernel_accepts_story_principle_contracts() -> None:
 
     kernel = story_design_kernel_from_dict(payload)
     dumped = story_design_kernel_to_dict(kernel)
-    block = render_story_design_kernel_prompt_block(kernel)
+    block = render_story_design_kernel_prompt_block(kernel, metadata=explicit_planning_metadata("story_design_kernel"))
 
     assert (
         dumped["four_causes_contract"]["purpose_result"]
@@ -342,7 +343,7 @@ def test_worldview_kernel_accepts_distilled_operational_contracts() -> None:
         "higher_authority_attention"
     )
 
-    block = render_story_design_kernel_prompt_block(kernel)
+    block = render_story_design_kernel_prompt_block(kernel, metadata=explicit_planning_metadata("story_design_kernel"))
 
     assert "higher_authority_attention" in block
     assert "cross-system-rule-arbitrage" in block

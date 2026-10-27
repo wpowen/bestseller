@@ -116,6 +116,15 @@ def test_default_settings_treat_retention_codes_as_auto_repairable() -> None:
     } <= repairable
 
 
+def test_default_settings_treat_story_effect_realization_as_auto_repairable() -> None:
+    settings = load_settings(env={})
+
+    assert (
+        "STORY_EFFECT_REALIZATION_UNREALIZED"
+        in settings.pipeline.chapter_auto_repair_repairable_codes
+    )
+
+
 def test_fanqie_market_pipeline_keeps_profile_opt_in_and_blocks_long_gate() -> None:
     settings = load_settings(env={})
 
@@ -357,7 +366,7 @@ def test_runtime_llm_profile_overrides_roles_without_reloading_env(tmp_path: Pat
     assert settings.llm.writer.model != effective.llm.writer.model
 
 
-def test_minimax_runtime_profile_uses_m3_for_all_roles(tmp_path: Path) -> None:
+def test_minimax_runtime_profile_uses_m31_flash_for_all_roles(tmp_path: Path) -> None:
     base = load_settings(env={})
     settings = base.model_copy(
         update={
@@ -371,12 +380,12 @@ def test_minimax_runtime_profile_uses_m3_for_all_roles(tmp_path: Path) -> None:
     effective = apply_runtime_llm_profile(settings)
 
     assert payload["active_key"] == "minimax"
-    assert effective.llm.planner.model == "openai/MiniMax-M3"
-    assert effective.llm.writer.model == "openai/MiniMax-M3"
-    assert effective.llm.writer.model_override == "openai/MiniMax-M3"
-    assert effective.llm.critic.model == "openai/MiniMax-M3"
-    assert effective.llm.summarizer.model == "openai/MiniMax-M3"
-    assert effective.llm.editor.model == "openai/MiniMax-M3"
+    assert effective.llm.planner.model == "openai/MiniMax-M3.1-Flash"
+    assert effective.llm.writer.model == "openai/MiniMax-M3.1-Flash"
+    assert effective.llm.writer.model_override == "openai/MiniMax-M3.1-Flash"
+    assert effective.llm.critic.model == "openai/MiniMax-M3.1-Flash"
+    assert effective.llm.summarizer.model == "openai/MiniMax-M3.1-Flash"
+    assert effective.llm.editor.model == "openai/MiniMax-M3.1-Flash"
 
 
 def test_runtime_llm_profile_payload_redacts_key_values(tmp_path: Path) -> None:

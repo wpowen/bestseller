@@ -591,18 +591,35 @@ async def collect_volume_writing_feedback(
         chapter_end = int(meta.get("chapter_end") or chapter_start + int(volume_row.target_chapter_count or 10) - 1)
 
     # 1. Character state snapshots (latest per character in this volume)
+    from bestseller.services.character_snapshot_sources import (
+        CharacterSnapshotView,
+        snapshot_source_status,
+    )
+
     char_snapshots = (
         await session.execute(
             select(CharacterStateSnapshotModel, CharacterModel.name, CharacterModel.role)
             .join(CharacterModel, CharacterStateSnapshotModel.character_id == CharacterModel.id)
             .where(
                 CharacterStateSnapshotModel.project_id == project_id,
+                CharacterModel.project_id == project_id,
                 CharacterStateSnapshotModel.chapter_number >= chapter_start,
                 CharacterStateSnapshotModel.chapter_number <= chapter_end,
             )
             .order_by(CharacterStateSnapshotModel.chapter_number.desc())
+            .execution_options(populate_existing=True, autoflush=False)
         )
     ).all()
+
+    eligible_snapshots = []
+    for snap, char_name, char_role in char_snapshots:
+        status = await snapshot_source_status(
+            session, snap, project_id=project_id, character_id=snap.character_id,
+            before_chapter_number=chapter_end,
+        )
+        if status["status"] == "eligible":
+            eligible_snapshots.append((CharacterSnapshotView(snap), char_name, char_role))
+    char_snapshots = eligible_snapshots
 
     # Deduplicate: keep latest snapshot per character
     seen_chars: set[UUID] = set()

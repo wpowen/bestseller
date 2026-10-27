@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from bestseller.services.story_effect_skills import (
     ALL_STORY_EFFECT_SKILL_KEYS,
-    _render_selected_story_effect_contract,
 )
 
 STORY_ENHANCERS_METADATA_KEY = "story_enhancers"
@@ -150,9 +149,68 @@ def wants_wild_concept(metadata: Mapping[str, Any] | None) -> bool:
 
 
 def resolve_cost_style(metadata: Mapping[str, Any] | None) -> str:
-    """代价强度三档（单一真源读取口）。意识形态内核派生/渲染据此选变体。"""
+    """Return an authored cost choice, or empty when its source is unknown.
 
-    return resolve_story_enhancers(metadata).cost_style
+    Unknown is not an author request for standard costs. Per-field entry
+    provenance distinguishes an explicitly supplied standard from an omitted
+    default inside a selection of other enhancers.
+    """
+    creation = (metadata or {}).get("creation_intent_contract")
+    if not isinstance(creation, Mapping):
+        return ""
+    sources = creation.get("field_sources")
+    if not isinstance(sources, Mapping) or sources.get("story_enhancers") != "explicit":
+        return ""
+    raw = creation.get("story_enhancers")
+    if not isinstance(raw, Mapping):
+        return ""
+    value = raw.get("cost_style")
+    if value not in COST_STYLES:
+        return ""
+    hook = creation.get("hook_spec")
+    fields = hook.get("_story_enhancer_input_sources") if isinstance(hook, Mapping) else None
+    if isinstance(fields, Mapping):
+        return str(value) if fields.get("cost_style") == "explicit" else ""
+    # Prior explicit creation receipts preserved non-default choices. A
+    # serialized default standard alone cannot prove a separate author choice.
+    return str(value) if value != COST_STYLE_DEFAULT else ""
+
+
+def capture_story_enhancer_input(
+    raw: Mapping[str, Any] | None,
+) -> tuple[StoryEnhancerSelection, dict[str, str]]:
+    """Parse direct UI/CLI input before any model; never infer from project caches."""
+    values = dict(raw or {})
+    cost = values.get("cost_style")
+    supplied = cost is not None and str(cost).strip() != ""
+    if supplied:
+        cost = str(cost).strip().lower()
+        if cost not in COST_STYLES:
+            raise ValueError("cost_style must be standard, external, minimal, or omitted")
+        values["cost_style"] = cost
+    else:
+        values.pop("cost_style", None)
+    selection = resolve_story_enhancers({STORY_ENHANCERS_METADATA_KEY: values})
+    return selection, {"cost_style": "explicit" if supplied else "default"}
+
+
+def resolve_explicit_story_enhancers(
+    metadata: Mapping[str, Any] | None,
+) -> StoryEnhancerSelection:
+    """Model-facing choices require the existing explicit creation receipt.
+
+    The tolerant reader remains available for displaying legacy selections;
+    an old materialized label cannot silently become a current author mandate.
+    """
+    creation = (metadata or {}).get("creation_intent_contract")
+    if not isinstance(creation, Mapping):
+        return StoryEnhancerSelection().model_copy(update={"cost_style": ""})
+    sources = creation.get("field_sources")
+    if not isinstance(sources, Mapping) or sources.get("story_enhancers") != "explicit":
+        return StoryEnhancerSelection().model_copy(update={"cost_style": ""})
+    return resolve_story_enhancers({"creation_intent_contract": creation}).model_copy(
+        update={"cost_style": resolve_cost_style(metadata)}
+    )
 
 
 def render_story_enhancer_contract_block(
@@ -160,88 +218,34 @@ def render_story_enhancer_contract_block(
     *,
     language: str = "zh-CN",
 ) -> str:
-    """Render the book-level routing contract for selected capabilities.
-
-    Empty selection → empty block. Selection means the effect must recur at
-    an appropriate cadence across the book; it does *not* mean every selected
-    effect must be stacked into every chapter.
-    """
-
+    """Render selected goals without inventing a cadence or scene formula."""
     if selection.is_empty():
         return ""
+    from bestseller.services.story_effect_skills import STORY_EFFECT_SKILL_LABELS
+
     is_en = language.lower().startswith("en")
-    parts: list[str] = []
-    if is_en:
-        parts.append(
-            "[BOOK STORY-ENHANCER ROUTING CONTRACT — chosen at creation, HARD: "
-            "treat the checked effects as a recurring palette. Each chapter must "
-            "route at most one primary and one secondary effect and visibly cash "
-            "only those routed effects. Distribute every checked effect across the "
-            "volume; never stack all effects into every chapter.]"
-        )
-    else:
-        parts.append(
-            "【本书故事增强路由合同 — 建书时勾选，硬约束：下列效果是全书反复"
-            "使用的效果调色盘。每章最多路由 1 个 primary + 1 个 secondary，并只兑现"
-            "本章选中的效果；每个勾选效果都要在卷内有合理分布，严禁把全部效果硬塞进每一章】"
-        )
-    if "comedy_engine" in selection.effect_skills:
-        # 只声明"用户勾了喜剧效果",绝不断言"本书是喜剧题材"。旧文案写死
-        # 「本书是爽文喜剧」——在一本悬疑/仙侠书上勾这个 Skill,六个大纲 prompt 加
-        # 写手就会一口咬定这本书是喜剧,一个复选框改写了整本书的题材身份。
-        parts.append(
-            "・【基调锚点·硬底线】建书时已勾选【喜剧效果】：喜剧/脑洞落点要贯穿全书，"
-            "应按情境和节奏间隔落地（通常每 2–3 章至少一次），不是每章硬加一个笑话。"
-            "沉重章可以不路由喜剧；一旦本章选了 comedy_engine，必须有符合本题材"
-            "世界规则的可见落点，不得只贴‘喜剧’标签。"
-            "【边界】这是在本书【已选定的题材】内追加喜剧调性，"
-            "不得据此把本书改写成喜剧题材，也不得覆盖已选的题材/子题材/世界规则。"
-            if not is_en
-            else "・[TONE ANCHOR · HARD FLOOR] The creator ticked the COMEDY effect: "
-            "comic/brainhole beats must recur at a story-appropriate cadence "
-            "(normally at least once every 2–3 chapters), not as a joke forced into "
-            "every chapter. A heavy chapter may skip comedy; when comedy_engine is "
-            "routed into a chapter it MUST land a visible genre-native beat rather "
-            "than merely naming the effect. [Boundary] This adds a comedic tone INSIDE the book's chosen "
-            "genre — it does NOT redefine the book as a comedy, and must not override "
-            "the selected genre/sub-genre/world rules."
-        )
+    goals = [
+        f"{key}: {STORY_EFFECT_SKILL_LABELS.get(key, key)}"
+        for key in selection.effect_skills
+    ]
     if selection.brainhole:
-        parts.append(
-            "・脑洞引擎：每章（或每 2 章至少一次）必须落地一个高概念反差名场面，"
-            "把'设定脑洞'变成读者眼见的具体奇观，而不是停留在设定层。"
-            if not is_en
-            else "・Brainhole: land one high-concept contrast set-piece every 1-2 "
-            "chapters — turn the premise's hook into a visible on-page spectacle."
-        )
+        goals.append("brainhole: high-concept imagination" if is_en else "脑洞：高概念想象力")
     if selection.concept_lab:
-        parts.append(
-            "・脑洞组合 story-loop：每章必须推进'开篇问题→复现压力→升级轴'这条主回路，"
-            "不许把它晾在一边只写支线事务。"
-            if not is_en
-            else "・Concept-lab story-loop: every chapter must advance the "
-            "opening-question → recurring-pressure → escalation loop."
-        )
+        goals.append("concept_lab: explore the premise" if is_en else "脑洞组合：探索当前构思")
     if selection.creativity_direction:
-        label = _CREATIVITY_LABEL_ZH.get(
-            selection.creativity_direction, selection.creativity_direction
-        )
-        parts.append(
-            f"・反常识方向【{label}】：全书冲突设计走这条反套路轴，"
-            "禁止退回到同质化的程序/合规微冲突。"
-            if not is_en
-            else f"・Anti-cliché direction [{selection.creativity_direction}]: design "
-            "conflict along this axis; do not regress to homogeneous procedural "
-            "micro-conflicts."
-        )
-    for skill_key in selection.effect_skills:
-        # 代价档必须传进去：勾了「无代价」的书，爽点合同不许再要求代价。
-        contract = _render_selected_story_effect_contract(
-            skill_key, language=language, cost_style=selection.cost_style
-        )
-        if contract:
-            parts.append(contract)
-    return "\n\n".join(parts)
+        goals.append(f"creativity_direction: {selection.creativity_direction}")
+    header = "[SELECTED STORY-EFFECT GOALS]" if is_en else "【已选故事效果目标】"
+    boundary = (
+        "Use the selected goals where the story supports them. They do not change "
+        "the genre or approved facts and do not require a fixed chapter cadence, "
+        "stage sequence, event, death, cost, reaction, or literal planned wording. "
+        "Any exact realization requirement needs its separate explicit author contract."
+        if is_en else
+        "按符合本题材世界规则的情境体现所选目标；这些选择不改写题材或已确认事实，"
+        "不自动规定章节频率、阶段顺序、具体事件、死亡、代价、人物反应或规划原句。"
+        "具体兑现硬要求以作者另行明确的当前合同为准。"
+    )
+    return header + "\n" + "\n".join(goals) + "\n" + boundary
 
 
 # ── 读者契约标签（对外见光的那一行）─────────────────────────────────────────
@@ -274,7 +278,7 @@ def reader_contract_labels(metadata: Mapping[str, Any] | None) -> tuple[str, ...
     只翻译已勾选项；没勾就返回空。顺序稳定、去重。
     """
 
-    selection = resolve_story_enhancers(metadata)
+    selection = resolve_explicit_story_enhancers(metadata)
     labels: list[str] = []
     for skill_key in selection.effect_skills:
         label = _READER_CONTRACT_BY_SKILL.get(skill_key)
@@ -510,10 +514,9 @@ def _render_chapter_cashed_effects_block(
             rows.append(f"  - {label}：{text[:_WRITER_FIELD_CHAR_CAP]}")
         if rows:
             head = (
-                "・This chapter's planned brainhole beat — render it as an on-page "
-                "spectacle the reader can see, not just a premise note:"
+                "・This chapter's proposed high-concept beat (planning reference):"
                 if is_en
-                else "・本章已规划的脑洞兑现点（把它写成读者眼见的名场面，不要停在设定层）："
+                else "・本章已规划的脑洞参考（可按当前事实与创作需要调整）："
             )
             sections.append(head + "\n" + "\n".join(rows[:10]))
 
@@ -536,13 +539,13 @@ def _render_chapter_cashed_effects_block(
             names = "、".join(str(x).strip() for x in expected if str(x).strip())
             if names:
                 rows.append(
-                    (f"  - contracts to cash: {names}" if is_en else f"  - 需兑现合同：{names}")
+                    (f"  - proposed techniques: {names}" if is_en else f"  - 建议技法：{names}")
                 )
         if rows:
             head = (
-                "・This chapter's primary story-effect beats to cash in the prose:"
+                "・This chapter's proposed story-effect references:"
                 if is_en
-                else "・本章主推的故事效果兑现点（在正文里真正落地，不是贴标签）："
+                else "・本章主推的故事效果参考（不据此新增事实或硬义务）："
             )
             sections.append(head + "\n" + "\n".join(rows[:12]))
 
@@ -571,9 +574,32 @@ def render_story_enhancer_writer_block(
     contract → the prose prompt stays byte-identical for non-opted-in books.
     """
 
-    book_block = render_story_enhancer_contract_block(
-        resolve_story_enhancers(project_metadata), language=language
-    )
+    from bestseller.services.story_effect_realization import resolve_effect_requirements
+
+    project = project_metadata or {}
+    selection = resolve_explicit_story_enhancers(project)
+    requirements = resolve_effect_requirements({
+        **(chapter_metadata or {}), "_effect_project_metadata": project,
+    })
+    if selection.is_empty() and not requirements["required_effects"]:
+        return ""
+    book_block = render_story_enhancer_contract_block(selection, language=language)
     chapter_block = _render_chapter_cashed_effects_block(chapter_metadata, language=language)
-    parts = [p for p in (book_block, chapter_block) if p]
-    return "\n\n".join(parts)
+    if chapter_block:
+        chapter_block = (
+            "[AI planning references; optional techniques, not facts or additional obligations]\n"
+            if language.lower().startswith("en") else
+            "【AI规划参考：可选创作建议，不是既成事实，也不新增硬要求】\n"
+        ) + chapter_block
+    strict_block = ""
+    if requirements["required_effects"]:
+        import json
+
+        creation = project["creation_intent_contract"]
+        contracts = creation["hook_spec"]["effect_realization_contracts"]
+        strict_block = (
+            "[EXPLICIT AUTHOR REALIZATION CONTRACT]\n"
+            if language.lower().startswith("en") else "【作者明确的效果兑现合同】\n"
+        ) + json.dumps({key: contracts[key] for key in requirements["required_effects"]},
+                       ensure_ascii=False, separators=(",", ":"))
+    return "\n\n".join(p for p in (book_block, chapter_block, strict_block) if p)

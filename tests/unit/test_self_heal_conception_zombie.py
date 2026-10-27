@@ -21,7 +21,7 @@ Why conception needs its own reaping rule instead of joining the existing sets:
   worker-only restart would mark a perfectly healthy in-flight conception as
   failed.
 
-Hence a dedicated ceiling on total age, keyed on ``created_at``.
+Age now selects only a candidate. Without Web-owner evidence the verdict is UNKNOWN, so a project-less legacy conception is kept.
 """
 
 from __future__ import annotations
@@ -78,8 +78,8 @@ async def test_reaps_conception_row_past_the_age_ceiling(now: _dt.datetime) -> N
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 1
-    assert run.status == "failed"
+    assert reaped == 0
+    assert run.status == "running"
 
 
 @pytest.mark.asyncio
@@ -91,8 +91,8 @@ async def test_reaps_conception_revision_rows_too(now: _dt.datetime) -> None:
     )
     session = _FakeSession(projects=[], runs=[run], chapters=[], drafts=[])
 
-    assert await reap_orphan_workflow_runs(session) == 1
-    assert run.status == "failed"
+    assert await reap_orphan_workflow_runs(session) == 0
+    assert run.status == "running"
 
 
 @pytest.mark.asyncio

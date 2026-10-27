@@ -437,7 +437,7 @@ def test_safe_opening_plan_satisfies_causality_contracts() -> None:
     assert "总结主题" in plan.ending_modes_to_avoid
 
 
-def test_prewrite_prompt_includes_methodology_for_early_chapters() -> None:
+def test_prewrite_prompt_keeps_current_manifest_without_taxonomy_recipes() -> None:
     manifest = compile_chapter_constraint_manifest(
         chapter_number=1,
         scene_number=1,
@@ -451,11 +451,11 @@ def test_prewrite_prompt_includes_methodology_for_early_chapters() -> None:
         chapter_number=1,
     )
 
-    assert "写作方法论参考" in prompt
-    assert "信息密度" in prompt
-    # 弹簧法(压抑-打脸)是爽文向方法，悬疑 pack 不再被兜底注入。
+    assert "SOURCE AUTHORITY" in prompt
+    assert "林渊" in prompt and "十七栋 23 层" in prompt
+    assert "信息密度规则" not in prompt
     assert "弹簧法" not in prompt
-    assert "冲突筹码" in prompt
+    assert "冲突筹码" not in prompt
 
     shuangwen_prompt = render_prewrite_plan_prompt(
         manifest,
@@ -463,7 +463,8 @@ def test_prewrite_prompt_includes_methodology_for_early_chapters() -> None:
         pack=get_prompt_pack("xianxia-upgrade-core"),
         chapter_number=1,
     )
-    assert "弹簧法" in shuangwen_prompt
+    assert "弹簧法" not in shuangwen_prompt
+    assert "SOURCE AUTHORITY" in shuangwen_prompt
 
 
 def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
@@ -480,9 +481,9 @@ def test_prewrite_prompt_omits_density_rule_for_late_chapters() -> None:
         chapter_number=11,
     )
 
-    assert "写作方法论参考" in prompt
+    assert "SOURCE AUTHORITY" in prompt
     assert "信息密度规则" not in prompt
-    assert "冲突筹码" in prompt
+    assert "冲突筹码" not in prompt
 
 
 def test_empty_elapsed_whitelist_does_not_auto_reject_travel() -> None:

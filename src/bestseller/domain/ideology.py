@@ -1,26 +1,9 @@
-"""Core-ideology (母题) kernel — the book's durable thematic soul.
+"""Optional source-bound ideology fields, with read compatibility for old full kernels.
 
-This is the structured "core idea" the framework planned *without* before: a
-cosmic premise + thesis + a primary motif + two secondary motifs (one driving
-action, one driving suspense) + a hidden endgame motif + a belief arc + a cost
-system. It sits alongside (and feeds) :class:`StoryDesignKernel` so the
-worldview, plot tree, beat schedule, volumes and chapters all derive from a
-single thematic spine instead of from genre tropes alone.
-
-Theory source:《从天地不仁到逆命而行的小说方法论》— 13 motifs in 4 layers
-(cosmic-order / subject-choice / cognitive-crisis / ethical-reversal). The motif
-*content* lives in ``config/motif_library.yaml``; this module is the per-book
-*binding* of that content.
-
-Design rules (mirroring story_design_kernel.py):
-* Frozen pydantic, ``extra="ignore"`` so it can carry forward-compatible fields.
-* Aggressive ``mode="before"`` alias normalization — the LLM emits drifting
-  field names, and a single bad enrichment entry must never hard-fail the whole
-  book's planning (the WorldviewKernel lesson). Unsalvageable list entries are
-  dropped, not raised.
-* No IO / LLM here. Derivation lives in ``services/ideology_kernel.py``;
-  scoring in ``services/ideology_judge.py``; structural checks in
-  ``services/ideology_coherence_gate.py``.
+The four-layer motif corpus is a recommendation resource, not a universal book
+contract. New kernels may be empty; hydration never invents missing cosmology,
+endings, belief transitions or prices. Final renderers use explicit current
+methodology provenance independently of the author's cost choice.
 """
 
 # ruff: noqa: RUF001, E501, ANN401, S112  (Chinese rubric strings + LLM-alias validators dominate)
@@ -143,7 +126,7 @@ class MotifBinding(BaseModel, frozen=True):
     display_name: str = Field(min_length=1)
     layer: MotifLayer
     book_thesis: str = Field(min_length=1)
-    book_core_question: str = Field(min_length=1)
+    book_core_question: str = ""
     concrete_symbols: list[str] = Field(default_factory=list)
     role: SecondaryRole | None = None
     reveal_after_volume: int | None = None
@@ -165,12 +148,12 @@ class MotifBinding(BaseModel, frozen=True):
         if not _text(data.get("book_thesis")):
             data["book_thesis"] = (
                 _first_text(data, "thesis", "thesis_statement", "statement", "theme", "summary")
-                or "本书将该母题落到具体人物与代价上。"
+                or ""
             )
         if not _text(data.get("book_core_question")):
             data["book_core_question"] = (
                 _first_text(data, "core_question", "question", "dramatic_question")
-                or "本书围绕该母题向读者提出的核心追问。"
+                or ""
             )
         data["concrete_symbols"] = _text_list(
             data.get("concrete_symbols")
@@ -199,9 +182,9 @@ class BeliefArc(BaseModel, frozen=True):
     """The three binding questions: what the protagonist believes, what shatters
     it, what they rebuild — the spine that turns a motif into a long-novel engine."""
 
-    initial_belief: str = Field(min_length=1)
-    midpoint_shatter: str = Field(min_length=1)
-    final_reconstruction: str = Field(min_length=1)
+    initial_belief: str = ""
+    midpoint_shatter: str = ""
+    final_reconstruction: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -245,12 +228,12 @@ class CostLaw(BaseModel, frozen=True):
         if not _text(data.get("acquires")):
             data["acquires"] = (
                 _first_text(data, "gain", "acquire", "buys", "power", "obtains", "获得")
-                or "力量/真相/救赎"
+                or ""
             )
         if not _text(data.get("costs")):
             data["costs"] = (
                 _first_text(data, "cost", "price", "pays", "代价", "tradeoff")
-                or "肉身/关系/记忆/寿命/身份之一"
+                or ""
             )
         for flag in ("delayed", "irreversible"):
             if flag in data:
@@ -308,19 +291,19 @@ class IdeologyKernel(BaseModel, frozen=True):
 
     model_config = ConfigDict(extra="ignore")
 
-    version: int = 1
-    cosmic_premise: str = Field(min_length=1)
-    thesis_statement: str = Field(min_length=1)
-    core_question: str = Field(min_length=1)
+    version: int = 2
+    cosmic_premise: str = ""
+    thesis_statement: str = ""
+    core_question: str = ""
     sub_themes: list[SubTheme] = Field(default_factory=list)
-    primary_motif: MotifBinding
+    primary_motif: MotifBinding | None = None
     secondary_motifs: list[MotifBinding] = Field(default_factory=list)
     hidden_endgame_motif: MotifBinding | None = None
-    belief_arc: BeliefArc
-    cost_system: list[CostLaw] = Field(min_length=1)
-    # 纯正爽文·代价强度档：standard(现状)|external(代价外置,主角不自损)|
-    # minimal(极简代价,服务爽感)。render 据此选代价系统块变体。默认 standard。
-    cost_style: str = "standard"
+    belief_arc: BeliefArc | None = None
+    cost_system: list[CostLaw] = Field(default_factory=list)
+    # Retained cache label only. Current author cost authority is resolved
+    # independently; missing provenance never defaults to standard.
+    cost_style: str = ""
     layer_coverage: dict[str, str] = Field(default_factory=dict)
     motif_to_world_bindings: list[str] = Field(default_factory=list)
     per_volume_thesis_pressure: list[str] = Field(default_factory=list)
@@ -335,7 +318,7 @@ class IdeologyKernel(BaseModel, frozen=True):
         if not _text(data.get("cosmic_premise")):
             data["cosmic_premise"] = (
                 _first_text(data, "premise", "cosmic_premise", "world_premise", "宇宙前提")
-                or "这个世界不会因为主角善良就自动奖励他。"
+                or ""
             )
         if not _text(data.get("thesis_statement")):
             data["thesis_statement"] = _first_text(
@@ -395,15 +378,9 @@ class IdeologyKernel(BaseModel, frozen=True):
                 kept_costs.append(entry)
             if kept_costs:
                 data["cost_system"] = kept_costs
-        # A cost system must never be empty — synthesize a minimal law.
+        # Empty means unselected; hydration must not invent a story mechanic.
         if not data.get("cost_system"):
-            data["cost_system"] = [
-                {
-                    "acquires": "力量或真相",
-                    "costs": "关系、记忆、寿命或身份之一",
-                    "delayed": True,
-                }
-            ]
+            data["cost_system"] = []
         if not isinstance(data.get("layer_coverage"), dict):
             data["layer_coverage"] = {}
         return data
@@ -421,13 +398,14 @@ class IdeologyKernel(BaseModel, frozen=True):
             *self.secondary_motifs,
             *( [self.hidden_endgame_motif] if self.hidden_endgame_motif else [] ),
         ):
-            coverage.setdefault(binding.layer, binding.display_name)
+            if binding is not None:
+                coverage.setdefault(binding.layer, binding.display_name)
         return self.model_copy(update={"layer_coverage": coverage})
 
     # -- convenience -------------------------------------------------------
 
     def all_motifs(self) -> tuple[MotifBinding, ...]:
-        out = [self.primary_motif, *self.secondary_motifs]
+        out = [*([self.primary_motif] if self.primary_motif else []), *self.secondary_motifs]
         if self.hidden_endgame_motif is not None:
             out.append(self.hidden_endgame_motif)
         return tuple(out)
@@ -451,169 +429,46 @@ def ideology_kernel_to_dict(kernel: IdeologyKernel) -> dict[str, Any]:
     return kernel.model_dump(mode="json")
 
 
+def _render_effective_ideology(kernel: Any, metadata: dict[str, Any] | None) -> str:
+    import json
+
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+    from bestseller.services.story_enhancers import resolve_cost_style
+
+    receipt = resolve_ideology_methodology_source(kernel, metadata)
+    lines: list[str] = []
+    if receipt["effective_fields"] or receipt["required_layers"] or receipt["required_secondary_roles"]:
+        lines.append("【作者明确选择的理念条款：仅约束明示范围】")
+        if receipt["effective_fields"]:
+            lines.append(json.dumps(receipt["effective_fields"], ensure_ascii=False, sort_keys=True))
+        if receipt["required_layers"]:
+            lines.append("作者选择的结构层：" + "、".join(receipt["required_layers"]))
+        if receipt["required_secondary_roles"]:
+            lines.append("作者选择的副母题职责：" + "、".join(receipt["required_secondary_roles"]))
+    style = resolve_cost_style(metadata)
+    if style == "standard":
+        lines.append("作者代价方向：标准代价，按当前故事因果呈现可见后果；这不授权任何主题或结局禁则。")
+    elif style == "external":
+        lines.append("作者代价方向：外置代价，由世界、对手或资源承担，主角不自损；不指定主题或故事结构。")
+    elif style == "minimal":
+        lines.append("作者代价方向：极简代价，能力使用不强制削弱主角；不指定主题或故事结构。")
+    return "\n".join(lines)
+
+
 def render_ideology_compact_block(
-    kernel: IdeologyKernel | dict[str, Any] | None,
-    *,
-    max_subs: int = 3,
+    kernel: IdeologyKernel | dict[str, Any] | None, *, max_subs: int = 3,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
-    """A short ideology summary for token-tight prompts (compact 细纲 mode).
-
-    Keeps the load-bearing spine — 主主题 / 核心问题 / 信念弧(碎→立) / 一条代价 /
-    一条禁用解法 — so even compact downstream prompts still reference the ideology.
-    """
-
-    if kernel is None:
-        return ""
-    if isinstance(kernel, dict):
-        try:
-            kernel = ideology_kernel_from_dict(kernel)
-        except Exception:
-            return ""
-    parts = [
-        "【核心理念(必须贯彻)】",
-        f"主主题：{kernel.thesis_statement}",
-        f"核心问题：{kernel.core_question}",
-        f"信念弧：碎「{kernel.belief_arc.midpoint_shatter}」→ 立「{kernel.belief_arc.final_reconstruction}」",
-    ]
-    if kernel.sub_themes:
-        parts.append("子题：" + "；".join(t.proposition for t in kernel.sub_themes[:max_subs]))
-    if kernel.cost_system:
-        law = kernel.cost_system[0]
-        _cs = getattr(kernel, "cost_style", "standard") or "standard"
-        if _cs == "external":
-            parts.append(
-                f"代价：获得「{law.acquires}」→ 外部代价（树敌/暴露/消耗，主角不自损）"
-            )
-        elif _cs == "minimal":
-            parts.append(f"代价：获得「{law.acquires}」→ 从简（服务爽感，不阻碍）")
-        else:
-            parts.append(f"代价：获得「{law.acquires}」必付「{law.costs}」")
-    if kernel.forbidden_resolutions:
-        parts.append(f"禁用解法：{kernel.forbidden_resolutions[0]}")
-    return "\n".join(parts)
-
-
-def _render_cost_system_block(kernel: IdeologyKernel) -> list[str]:
-    """代价系统块——纯正爽文三档变体。standard 与旧渲染逐字节一致。"""
-
-    cost_style = getattr(kernel, "cost_style", "standard") or "standard"
-
-    if cost_style == "external":
-        lines = [
-            "### 代价系统（外置代价——主角一路爽，代价由世界承担，不自损）",
-            "- 硬规则：一切代价外置——树敌、暴露行踪、招来强敌、消耗外部资源、"
-            "错失机会、连累局势；由对手/环境/时局付账。",
-            "- 禁止：削减主角的记忆/身体/关系/寿命/地位；金手指不得给主角制造"
-            "自损后果或永久残缺。",
-        ]
-        lines.extend(
-            f"- 获得「{law.acquires}」→ 外部代价（世界找主角麻烦，主角不掉血）"
-            for law in kernel.cost_system[:6]
-        )
-        return lines
-
-    if cost_style == "minimal":
-        lines = [
-            "### 代价系统（极简代价——服务爽感与节奏，点到为止，不阻碍主角）",
-            "- 以机会成本/时间/树敌为主，轻描淡写；不写削弱主角的代价账，不让代价"
-            "打断爽点兑现。",
-        ]
-        lines.extend(
-            f"- 获得「{law.acquires}」→ 顺势推进（代价从简，不喧宾夺主）"
-            for law in kernel.cost_system[:6]
-        )
-        return lines
-
-    # standard —— 与旧渲染逐字节一致
-    lines = ["### 代价系统（力量/真相/救赎都必须付费, 不可白给）"]
-    for law in kernel.cost_system[:6]:
-        flags = []
-        if law.delayed:
-            flags.append("延迟支付")
-        if law.irreversible:
-            flags.append("不可逆")
-        flag_text = f"（{', '.join(flags)}）" if flags else ""
-        lines.append(f"- 获得「{law.acquires}」→ 代价「{law.costs}」{flag_text}")
-    return lines
+    """Render only current explicit clauses, retaining exact text even in compact mode."""
+    return _render_effective_ideology(kernel, metadata) if kernel is not None else ""
 
 
 def render_ideology_kernel_prompt_block(
-    kernel: IdeologyKernel | dict[str, Any] | None,
-    *,
-    max_volume_pressure: int = 8,
+    kernel: IdeologyKernel | dict[str, Any] | None, *, max_volume_pressure: int = 8,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
-    """Render the ideology kernel as a compact prompt block for downstream planners.
-
-    Pure string assembly (no IO) so StoryDesignKernel / volume / chapter prompts
-    can embed the thematic spine cheaply.
-    """
-
-    if kernel is None:
-        return ""
-    if isinstance(kernel, dict):
-        try:
-            kernel = ideology_kernel_from_dict(kernel)
-        except Exception:
-            return ""
-
-    def _motif_line(binding: MotifBinding, *, prefix: str) -> str:
-        extra = ""
-        if binding.role:
-            extra += f"（{'管行动' if binding.role == 'action' else '管悬念'}）"
-        if binding.reveal_after_volume:
-            extra += f"（第{binding.reveal_after_volume}卷后揭示）"
-        symbols = (
-            f"；可视化符号：{', '.join(binding.concrete_symbols[:4])}"
-            if binding.concrete_symbols
-            else ""
-        )
-        return (
-            f"- {prefix}：{binding.display_name}{extra} [{LAYER_DISPLAY.get(binding.layer, binding.layer)}]\n"
-            f"  · 本书主题陈述：{binding.book_thesis}\n"
-            f"  · 本书核心问题：{binding.book_core_question}{symbols}"
-        )
-
-    lines: list[str] = [
-        "## 核心理念内核 (Ideology Kernel) — 全书的思想脊柱, 世界观/卷纲/章纲都必须服务它",
-        f"- 宇宙前提：{kernel.cosmic_premise}",
-        f"- 主主题（贯穿全书）：{kernel.thesis_statement}",
-        f"- 核心问题（贯穿全书的戏剧问题）：{kernel.core_question}",
-    ]
-    if kernel.sub_themes:
-        lines.append("### 穿插子题（与主主题交织, 在不同卷/线上各自承载）")
-        for st in kernel.sub_themes[:8]:
-            where = f"（{st.woven_through}）" if st.woven_through else ""
-            lines.append(f"- 「{st.proposition}」{where}")
-    lines.append("### 结构母题脊柱（深层结构 — 用来把主题戏剧化, 不是题材标签）")
-    lines.append(_motif_line(kernel.primary_motif, prefix="宇宙母题"))
-    for binding in kernel.secondary_motifs:
-        lines.append(_motif_line(binding, prefix="副母题"))
-    if kernel.hidden_endgame_motif is not None:
-        lines.append(_motif_line(kernel.hidden_endgame_motif, prefix="隐藏终局母题"))
-
-    lines.extend(
-        [
-            "### 信念弧（主角最初相信什么 → 中段打碎什么 → 结尾重建什么）",
-            f"- 最初相信：{kernel.belief_arc.initial_belief}",
-            f"- 中段打碎：{kernel.belief_arc.midpoint_shatter}",
-            f"- 结尾重建：{kernel.belief_arc.final_reconstruction}",
-        ]
-    )
-    lines.extend(_render_cost_system_block(kernel))
-
-    if kernel.motif_to_world_bindings:
-        lines.append("### 母题→世界观约束（用母题长出 invariant, 不要先画地图）")
-        lines.extend(f"- {item}" for item in kernel.motif_to_world_bindings[:6])
-    if kernel.per_volume_thesis_pressure:
-        lines.append("### 每卷主题加压（主题不平均用力, 逐卷推进 belief_arc）")
-        lines.extend(
-            f"- {item}" for item in kernel.per_volume_thesis_pressure[:max_volume_pressure]
-        )
-    if kernel.forbidden_resolutions:
-        lines.append("### 禁用的廉价解法（违反主题宣言即砸全书后劲）")
-        lines.extend(f"- {item}" for item in kernel.forbidden_resolutions[:6])
-
-    return "\n".join(lines)
+    """Old cached proposals cannot become mandatory methodology at the final boundary."""
+    return _render_effective_ideology(kernel, metadata) if kernel is not None else ""
 
 
 __all__ = [

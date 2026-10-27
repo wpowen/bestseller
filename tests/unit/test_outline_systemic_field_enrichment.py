@@ -73,7 +73,7 @@ def _chapter(
 # ── ① 确定性补全 ────────────────────────────────────────────────────
 
 
-def test_enrich_backfills_participants_from_text_match() -> None:
+def test_enrich_does_not_infer_participation_from_scene_prose() -> None:
     batch = _batch(
         [
             _chapter(
@@ -86,10 +86,10 @@ def test_enrich_backfills_participants_from_text_match() -> None:
         batch, identity_manifest=_MANIFEST, language="zh-CN"
     )
     assert repaired >= 1
-    assert batch.chapters[0].scenes[0].participants == ["纪渊", "玄烈"]
+    assert batch.chapters[0].scenes[0].participants == ["纪渊"]
 
 
-def test_enrich_matches_participants_via_alias_and_chapter_text() -> None:
+def test_enrich_does_not_infer_participation_from_chapter_alias_mention() -> None:
     # The scene text itself is silent, but the chapter's main_conflict names
     # the antagonist via an alias — the canonical name must be backfilled.
     batch = _batch(
@@ -104,7 +104,7 @@ def test_enrich_matches_participants_via_alias_and_chapter_text() -> None:
     planner._enrich_generated_volume_outline_systemic_fields(
         batch, identity_manifest=_MANIFEST, language="zh-CN"
     )
-    assert batch.chapters[0].scenes[0].participants == ["纪渊", "玄烈"]
+    assert batch.chapters[0].scenes[0].participants == ["纪渊"]
 
 
 def test_enrich_does_not_invent_participants_without_text_evidence() -> None:
@@ -123,11 +123,8 @@ def test_enrich_does_not_invent_participants_without_text_evidence() -> None:
     assert batch.chapters[0].scenes[0].participants == ["纪渊"]
 
 
-def test_rescue_golden_three_solo_without_text_evidence() -> None:
-    """G8: a 凡人流 solo-discovery golden chapter (no other cast name anywhere in
-    its text) must get a canonical roster name force-injected so the volume-killing
-    golden_three_solo_scene_chain gate no longer fires. Golden-three only, and it
-    runs as the final guard before the gate."""
+def test_rescue_keeps_legal_solo_scene_without_fabricating_roster_presence() -> None:
+    """A solo opening needs no additional cast member to satisfy a recipe."""
     batch = _batch(
         [
             _chapter(
@@ -145,9 +142,9 @@ def test_rescue_golden_three_solo_without_text_evidence() -> None:
     rescued = planner._rescue_golden_three_solo_scenes(
         batch, identity_manifest=_MANIFEST
     )
-    assert rescued == 1
+    assert rescued == 0
     parts = batch.chapters[0].scenes[0].participants
-    assert len({p for p in parts}) >= 2, "golden solo scene not rescued"
+    assert parts == ["纪渊"]
     # The whole point: the downstream hard gate must now pass instead of killing
     # the volume outline.
     planner._require_outline_systemic_fields_or_raise(

@@ -72,13 +72,14 @@ async def test_outline_llm_judge_enforces_threshold(monkeypatch: pytest.MonkeyPa
     assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in _judge_prompt
     assert "数字化伪精确" in _judge_prompt
     assert "当前提供的滚动章纲窗口" in _judge_prompt
-    assert "魂穿/重生角色" in _judge_prompt
-    assert "前世经历本身就是合法知识来源" in _judge_prompt
-    assert "不得额外发明并强制要求" in _judge_prompt
-    assert "婴幼儿躯体的视距/动作能力" in _judge_prompt
+    assert "既定经历或明确能力本身可以是合法来源" in _judge_prompt
+    assert "不得额外发明触发仪式" in _judge_prompt
+    assert "已批准的身体能力" in _judge_prompt
     assert "本系统的正式场景状态 schema" in _judge_prompt
     assert "不得要求 schema 中不存在" in _judge_prompt
-    assert "禁止建议婴儿用哭声气流吹落纸张" in _judge_prompt
+    assert "需要未授权能力才能实现的修法" in _judge_prompt
+    assert "作者知道的信息自动归给当前视角角色" in _judge_prompt
+    assert "goal、purpose、因果契约" in _judge_prompt
     assert "禁止输出互相冲突的整改" in _judge_prompt
     # The old detective-specific props must be gone.
     assert "铜钱 / 罗盘 / 青囊等物件信号必须有稳定含义" not in _judge_prompt
@@ -570,8 +571,9 @@ async def test_outline_judge_prompt_includes_methodology_reference(
         pack=get_prompt_pack("suspense-mystery"),
     )
 
-    assert "评估时必须参照的方法论标准" in captured["system"]
-    assert "【opening_rules】" in captured["system"]
+    assert "方法论适用边界" in captured["system"]
+    assert "默认参数不是本书的创作者契约" in captured["system"]
+    assert "【opening_rules】" not in captured["system"]
     # 弹簧法(压抑-打脸)是爽文向方法，悬疑判官不再被兜底注入，防题材固化。
     assert "【spring_model】" not in captured["system"]
 
@@ -581,7 +583,8 @@ async def test_outline_judge_prompt_includes_methodology_reference(
         outline_payload={"chapters": [{"chapter_number": 1}]},
         pack=get_prompt_pack("xianxia-upgrade-core"),
     )
-    assert "【spring_model】" in captured["system"]
+    assert "【spring_model】" not in captured["system"]
+    assert "compression_ratio" not in captured["system"]
 
 
 @pytest.mark.asyncio
@@ -617,8 +620,8 @@ async def test_commercial_planning_judge_prompt_includes_methodology_reference(
         pack=get_prompt_pack("suspense-mystery"),
     )
 
-    assert "评估时必须参照的方法论标准" in captured["system"]
-    assert "【character_design】" in captured["system"]
+    assert "方法论适用边界" in captured["system"]
+    assert "【character_design】" not in captured["system"]
 
 
 # ---------------------------------------------------------------------------

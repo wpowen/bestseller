@@ -227,7 +227,6 @@ def test_tone_conflicting_ideas_are_demoted_at_selection() -> None:
 
 
 from bestseller.services.anti_default_motif import (
-    default_debt_family_hits,
     is_debt_dominated,
     user_requested_debt,
 )
@@ -256,7 +255,7 @@ def test_user_intent_probe_is_honest_now() -> None:
     assert user_requested_debt(None) is False
 
 
-def test_default_family_ideas_sink_below_clean_but_above_nothing() -> None:
+def test_default_family_does_not_change_rank_but_market_overlap_does() -> None:
     ranking = [
         _rank_item(0, default_family=True),
         _rank_item(1, market_collision=[{"title": "撞", "overlap": 0.3}]),
@@ -265,8 +264,8 @@ def test_default_family_ideas_sink_below_clean_but_above_nothing() -> None:
     picked = ct._select_raw_ideas_for_expansion(
         ranking, raw_floor=7.0, progression_floor=5.0, limit=3
     )
-    # 干净 > 默认族 > 撞车？不——默认族沉得比撞车浅一档以上：condemned > tone > family > collision
-    assert [item["index"] for item in picked] == [2, 1, 0]
+    # Vocabulary alone has no rank authority; actual market overlap remains.
+    assert [item["index"] for item in picked] == [0, 2, 1]
 
 
 def test_debt_feedback_renders_without_family_vocabulary() -> None:
@@ -322,23 +321,16 @@ def test_default_family_never_kills_the_book() -> None:
     assert not _re.search(r"if debt_hit:\s*\n\s*detected\.append", block)
 
 
-def test_default_family_winner_rejection_stops_at_the_last_attempt() -> None:
-    """默认族只在还有重试机会时作废冠军（2026-08-14 真机）。
-
-    最后一轮仍命中就带案底发货：否则 winner=None 会掉进
-    「N 轮均未产出合格冠军」的 ConceptContractError，把整本书打死——
-    用户创意种子为空时这条路径必然触发。
-    """
+def test_default_family_is_advisory_in_all_tournament_rounds() -> None:
+    """Generic motif concentration must not exhaust the candidate pool."""
 
     import inspect
 
     from bestseller.services import conception
 
-    src = inspect.getsource(conception)
-    idx = src.index('_pollution_reasons.append("UNREQUESTED_DEFAULT_MOTIF_A")')
-    window = src[max(0, idx - 900) : idx]
-    assert "_is_last_concept_attempt" in window
-    assert "default_family_winner_advisory" in window
+    assert "UNREQUESTED_DEFAULT_MOTIF_A" in conception._TOURNAMENT_ADVISORY_POLLUTION_CODES
+    assert "UNREQUESTED_DEFAULT_MOTIF_B" in conception._TOURNAMENT_ADVISORY_POLLUTION_CODES
+    assert "_tournament_candidate_hard_pollution_reasons" in inspect.getsource(conception)
 
 
 def test_rejected_default_family_champion_is_kept_as_fallback() -> None:
@@ -349,18 +341,11 @@ def test_rejected_default_family_champion_is_kept_as_fallback() -> None:
     带案底发货，绝不因一项偏好杀书。
     """
 
-    import inspect
-
     from bestseller.services import conception
 
-    src = inspect.getsource(conception)
-    # 拒绝时入栈
-    assert "_default_family_fallback_winner = _ct_result.winner" in src
-    # 无冠军时优先兜底，而不是直接落到 raise 分支
-    assert "elif _default_family_fallback_winner is not None:" in src
-    fallback_idx = src.index("elif _default_family_fallback_winner is not None:")
-    raise_idx = src.index("概念淘汰赛 ")
-    assert fallback_idx < raise_idx, "兜底分支必须在硬失败分支之前"
+    # The former fallback is no longer needed: advisory motifs never remove the
+    # winner. Keep the symbol only for compatibility with historical receipts.
+    assert hasattr(conception, "_TOURNAMENT_ADVISORY_POLLUTION_CODES")
 
 
 def test_retry_refinement_seed_is_quota_capped() -> None:
@@ -382,3 +367,33 @@ def test_retry_refinement_seed_is_quota_capped() -> None:
     assert "其余名额必须是完全不同的故事" in src
     # 旧的整池锚定措辞不得复活
     assert "不要另起炉灶。\"\n" not in src or "限额" in src
+
+
+def test_authoritative_seed_retry_never_requests_a_different_book() -> None:
+    """User-owned story identity outranks seedless diversity quotas."""
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    identity_lock = src.index("【用户故事身份锁】")
+    diversity_quota = src.index("【定向补强·限额】")
+    guard = src.rfind("if _user_owned_story_seed:", 0, identity_lock)
+    assert guard != -1
+    assert guard < identity_lock < diversity_quota
+
+
+def test_user_seed_cannot_use_default_family_fallback() -> None:
+    """A seedless availability fallback must not replace an explicit book."""
+
+    import inspect
+
+    from bestseller.services import conception
+
+    src = inspect.getsource(conception)
+    guard = src.index("USER_SEED_DEFAULT_FAMILY_FALLBACK_FORBIDDEN")
+    restore = src.index("_ct_result.winner = _default_family_fallback_winner")
+    assert guard < restore
+    window = src[max(0, guard - 500) : guard]
+    assert "_user_owned_story_seed" in window

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import asyncio
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+import hashlib
 import json
 import logging
 import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, inspect, select, update
+from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.feedback import (
@@ -18,14 +25,397 @@ from bestseller.domain.feedback import (
     ClueObservationExtraction,
     PromiseMadeExtraction,
     RelationshipEventExtraction,
+    TimelineEventExtraction,
     WorldDetailExtraction,
 )
+from bestseller.services.budget import ExecutionBudgetError
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
 
-
 logger = logging.getLogger(__name__)
+
+KNOWLEDGE_LINEAGE_SCHEMA = "adopted-knowledge.v1"
+KNOWLEDGE_SOURCE_KEYS = (
+    "schema", "project_id", "chapter_id", "source_chapter_draft_version_id",
+    "source_version_no", "source_body_sha256",
+)
+
+
+_SOURCE_READ_BATCH = ContextVar("adopted_source_read_batch", default=None)
+
+
+def _reject_pending_source_reads(session: AsyncSession) -> None:
+    # Even unrelated pending work could flush dependencies used by adoption.
+    if session.new or session.deleted or any(
+        session.is_modified(row, include_collections=True) for row in session.dirty
+    ):
+        raise ValueError("adopted_source_batch_pending_state")
+
+
+class _AdoptedSourceReadBatch:
+    """Private, task/session/transaction-local source witnesses, never grades."""
+
+    def __init__(self, session, project_id):
+        self.session, self.project_id = session, project_id
+        self.owner = asyncio.current_task()
+        self.transaction = session.sync_session.get_transaction()
+        self.nested = session.sync_session.get_nested_transaction()
+        self.invalid = False
+        self.sources = {}
+
+    def check(self, project_id=None):
+        if (
+            self.invalid or asyncio.current_task() is not self.owner
+            or (project_id is not None and project_id != self.project_id)
+            or self.session.sync_session.get_transaction() is not self.transaction
+            or self.session.sync_session.get_nested_transaction() is not self.nested
+            or not self.transaction.is_active
+        ):
+            raise ValueError("adopted_source_batch_context_changed")
+        _reject_pending_source_reads(self.session)
+        for entry in self.sources.values():
+            for row, original in entry["rows"]:
+                state = inspect(row)
+                # Compare loaded native values without implicit IO. This also
+                # catches untracked in-place JSON edits, expiry and detachment.
+                if state.session is not self.session.sync_session or any(
+                    key not in state.dict or state.dict[key] != value
+                    for key, value in original.items()
+                ):
+                    raise ValueError("adopted_source_batch_source_changed")
+
+    def forbid_write(self, *args, **kwargs):
+        self.invalid = True
+        raise ValueError("adopted_source_batch_write_forbidden")
+
+    def changed_transaction(self, *args):
+        self.invalid = True
+
+    def before_sql(self, conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().split(None, 1)[0].upper() not in {"SELECT", "SHOW"}:
+            self.forbid_write()
+
+    def remember(self, key, body, lineage, chapter, draft):
+        self.check()
+        self.sources[key] = {
+            "body": body, "lineage": deepcopy(lineage),
+            "rows": [(row, deepcopy({column.key: inspect(row).dict[column.key]
+                                      for column in inspect(type(row)).column_attrs}))
+                     for row in (chapter, draft)],
+        }
+
+    async def verify(self):
+        self.check()
+        token = _SOURCE_READ_BATCH.set(None)
+        try:
+            for (chapter_id, draft_id, _), entry in self.sources.items():
+                current, rejection = await validate_adopted_knowledge_source(
+                    self.session, project_id=self.project_id, chapter_id=chapter_id,
+                    source_chapter_draft_version_id=draft_id,
+                    chapter_md=entry["body"], lock=False,
+                )
+                if rejection or current != entry["lineage"]:
+                    raise ValueError("adopted_source_batch_source_changed")
+                self.check()
+        finally:
+            _SOURCE_READ_BATCH.reset(token)
+
+
+@asynccontextmanager
+async def adopted_source_read_batch(session: AsyncSession, project_id: UUID, *, enabled=True):
+    """Reuse only successful native source reads until a mandatory fresh fence.
+
+    PostgreSQL READ COMMITTED is required for observing concurrent commits at
+    the final fence. Other dialects retain the original uncached read path.
+    No state survives this scope; all per-row knowledge/provenance checks run.
+    """
+    if not enabled:
+        yield
+        return
+    existing = _SOURCE_READ_BATCH.get()
+    if existing is not None and existing.session is session:
+        existing.check(project_id)
+        yield
+        await existing.verify()
+        return
+    _reject_pending_source_reads(session)
+    with session.no_autoflush:
+        connection = await session.connection()
+        if connection.dialect.name != "postgresql":
+            yield
+            return
+        if await connection.get_isolation_level() != "READ COMMITTED":
+            raise ValueError("adopted_source_batch_requires_read_committed")
+        batch = _AdoptedSourceReadBatch(session, project_id)
+        listeners = [
+            (session.sync_session, "before_flush", batch.forbid_write),
+            (session.sync_session, "before_commit", batch.forbid_write),
+            (session.sync_session, "after_rollback", batch.changed_transaction),
+            (session.sync_session, "after_soft_rollback", batch.changed_transaction),
+            (session.sync_session, "after_transaction_create", batch.changed_transaction),
+            (session.sync_session, "after_transaction_end", batch.changed_transaction),
+            (connection.sync_connection, "commit", batch.forbid_write),
+            (connection.sync_connection, "rollback", batch.changed_transaction),
+            (connection.sync_connection, "begin", batch.changed_transaction),
+            (connection.sync_connection, "savepoint", batch.forbid_write),
+            (connection.sync_connection, "rollback_savepoint", batch.changed_transaction),
+            (connection.sync_connection, "release_savepoint", batch.forbid_write),
+            (connection.sync_connection, "before_cursor_execute", batch.before_sql),
+        ]
+        for target, name, callback in listeners:
+            sa_event.listen(target, name, callback)
+        # SessionEvents.before_flush does not run for an empty flush. Guard
+        # the instance method too, so even that boundary cannot reuse witnesses.
+        sync_session = session.sync_session
+        original_flush = sync_session.__dict__.get("flush")
+        had_flush_override = "flush" in sync_session.__dict__
+        sync_session.flush = batch.forbid_write
+        token = _SOURCE_READ_BATCH.set(batch)
+        try:
+            yield
+            await batch.verify()
+        finally:
+            _SOURCE_READ_BATCH.reset(token)
+            if had_flush_override:
+                sync_session.flush = original_flush
+            else:
+                del sync_session.flush
+            for target, name, callback in reversed(listeners):
+                sa_event.remove(target, name, callback)
+            batch.sources.clear()
+
+
+async def validate_adopted_knowledge_source(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_id: UUID,
+    source_chapter_draft_version_id: UUID | None,
+    chapter_md: str,
+    lock: bool = True,
+) -> tuple[dict[str, Any], str | None]:
+    """Lock and read database truth, never trust a caller's promotion flag.
+
+    The real model gateway commits before paying; callers MUST revalidate
+    afterwards. populate_existing bypasses stale objects in the identity map.
+    """
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+
+    batch = _SOURCE_READ_BATCH.get()
+    if batch is not None and batch.session is session:
+        batch.check(project_id)
+        if lock:
+            batch.forbid_write()
+        key = (chapter_id, source_chapter_draft_version_id,
+               hashlib.sha256(chapter_md.encode("utf-8")).hexdigest())
+        if key in batch.sources:
+            return deepcopy(batch.sources[key]["lineage"]), None
+    else:
+        batch = None
+    lineage = {
+        "schema": KNOWLEDGE_LINEAGE_SCHEMA,
+        "project_id": str(project_id),
+        "chapter_id": str(chapter_id),
+        "source_chapter_draft_version_id": (
+            str(source_chapter_draft_version_id) if source_chapter_draft_version_id else None
+        ),
+        "source_body_sha256": hashlib.sha256(chapter_md.encode("utf-8")).hexdigest(),
+    }
+    if lock:
+        await session.flush()
+    chapter_query = (
+        select(ChapterModel)
+        .where(
+            ChapterModel.id == chapter_id,
+            ChapterModel.project_id == project_id,
+        )
+        .execution_options(populate_existing=True, autoflush=lock)
+    )
+    chapter = await session.scalar(chapter_query.with_for_update() if lock else chapter_query)
+    if chapter is None:
+        return lineage, "chapter_not_found"
+    if source_chapter_draft_version_id is None:
+        return lineage, "missing_source"
+    draft_query = (
+        select(ChapterDraftVersionModel)
+        .where(
+            ChapterDraftVersionModel.id == source_chapter_draft_version_id,
+            ChapterDraftVersionModel.chapter_id == chapter_id,
+            ChapterDraftVersionModel.project_id == project_id,
+        )
+        .execution_options(populate_existing=True, autoflush=lock)
+    )
+    draft = await session.scalar(draft_query.with_for_update() if lock else draft_query)
+    if draft is None:
+        return lineage, "source_not_found_or_wrong_owner"
+    lineage["source_version_no"] = draft.version_no
+    lineage["source_promotion_state"] = draft.promotion_state
+    if (
+        not chapter_md.strip()
+        or hashlib.sha256(draft.content_md.encode("utf-8")).hexdigest()
+        != lineage["source_body_sha256"]
+    ):
+        return lineage, "source_body_mismatch"
+    from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+
+    adopted, adoption = await select_adopted_chapter_source(session, chapter=chapter, lock=lock)
+    if adopted is None:
+        return lineage, "source_not_adopted"
+    if adopted.id != draft.id:
+        if draft.promotion_state != "promoted":
+            return lineage, "source_not_adopted"
+        return lineage, (
+            "source_replaced_by_adopted_debt" if adoption is not None
+            else "source_replaced_by_adopted_promoted"
+        )
+    # The selector refreshes database rows too. Bind the returned source, not a
+    # previously cached identity-map object, including on read-only consumers.
+    if (
+        hashlib.sha256(adopted.content_md.encode("utf-8")).hexdigest()
+        != lineage["source_body_sha256"]
+    ):
+        return lineage, "source_body_mismatch"
+    lineage["source_version_no"] = adopted.version_no
+    lineage["source_promotion_state"] = adopted.promotion_state
+    if adopted.promotion_state == "promoted":
+        lineage["adoption_state"] = "promoted"
+    else:
+        lineage["adoption_state"] = "accepted_with_debt"
+        lineage["adoption_receipt"] = adoption
+    if batch is not None:
+        batch.remember(key, chapter_md, lineage, chapter, draft)
+    return lineage, None
+
+
+async def _validated_numeric_adoption(
+    session: AsyncSession, chapter: Any, draft: Any, *, lock: bool
+) -> dict[str, Any] | None:
+    """Recompute the existing durable debt decision; a generic debt flag is insufficient."""
+    from bestseller.infra.db.models import QualityScoreModel, ReviewReportModel
+    from bestseller.services.draft_promotion import numeric_promotion_debt_receipt
+    from bestseller.services.gate_registry import chapter_local_debt_allows_continuation
+
+    metadata = chapter.metadata_json or {}
+    receipt = metadata.get("numeric_promotion_debt")
+    if (
+        not isinstance(receipt, dict)
+        or not metadata.get("chapter_quality_debt")
+        or chapter.production_state != "quality_debt"
+        or not draft.is_current
+        or draft.promotion_state in {"superseded", "rejected", "quarantined"}
+    ):
+        return None
+    try:
+        score_id = UUID(str(receipt["quality_score_id"]))
+        report_id = UUID(str(receipt["review_report_id"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    rows = []
+    for model, row_id in ((QualityScoreModel, score_id), (ReviewReportModel, report_id)):
+        query = (
+            select(model)
+            .where(
+                model.id == row_id,
+                model.project_id == chapter.project_id,
+                model.target_type == "chapter",
+                model.target_id == chapter.id,
+            )
+            .execution_options(populate_existing=True, autoflush=lock)
+        )
+        rows.append(await session.scalar(query.with_for_update() if lock else query))
+    if numeric_promotion_debt_receipt(
+        draft, *rows
+    ) != receipt or not chapter_local_debt_allows_continuation(
+        metadata, has_current_draft=True, numeric_debt_binding_verified=True
+    ):
+        return None
+    return receipt
+
+
+def _knowledge_operation_id(kind: str, lineage: dict[str, Any]) -> str:
+    return (
+        f"knowledge:{kind}:v1:{lineage['chapter_id']}:"
+        f"{lineage['source_chapter_draft_version_id']}:{lineage['source_body_sha256']}"
+    )
+
+
+def _knowledge_llm_receipt(completion: Any, request: LLMCompletionRequest) -> dict[str, Any]:
+    return {
+        "operation_id": request.operation_id,
+        "prompt_template": request.prompt_template,
+        "prompt_version": request.prompt_version,
+        "prompt_sha256": hashlib.sha256(
+            (request.system_prompt + "\n" + request.user_prompt).encode()
+        ).hexdigest(),
+        "llm_run_id": str(completion.llm_run_id) if completion.llm_run_id else None,
+        "workflow_run_id": str(request.workflow_run_id) if request.workflow_run_id else None,
+        "step_run_id": str(request.step_run_id) if request.step_run_id else None,
+        "model": completion.model_name,
+        "provider": getattr(completion, "provider", None),
+        "fallback_used": getattr(completion, "fallback_used", False),
+    }
+
+
+def _matching_feedback_receipt(chapter: Any, lineage: dict[str, Any]) -> dict[str, Any] | None:
+    for receipt in reversed((chapter.metadata_json or {}).get("knowledge_feedback_receipts", [])):
+        if receipt.get("status") not in {"ok", "empty"}:
+            continue
+        source = receipt.get("source_lineage", {})
+        if all(
+            source.get(key) == lineage.get(key)
+            for key in KNOWLEDGE_SOURCE_KEYS
+        ):
+            return receipt
+        return None  # A historical success is not the currently applied body.
+    return None
+
+
+def _cached_feedback_receipt(chapter: Any, lineage: dict[str, Any]) -> dict[str, Any] | None:
+    for receipt in reversed((chapter.metadata_json or {}).get("knowledge_feedback_receipts", [])):
+        if (
+            receipt.get("status") in {"ok", "empty"}
+            and "candidate_payload" in receipt
+            and all(
+                receipt.get("source_lineage", {}).get(key) == lineage.get(key)
+                for key in KNOWLEDGE_SOURCE_KEYS
+            )
+        ):
+            return receipt
+    return None
+
+
+async def _store_feedback_receipt(
+    session: AsyncSession, chapter: Any, result: ChapterFeedbackResult, **extra: Any
+) -> None:
+    from bestseller.infra.db.models import ChapterModel
+
+    async with session.begin_nested():
+        chapter = await session.scalar(
+            select(ChapterModel)
+            .where(
+                ChapterModel.id == result.chapter_id,
+                ChapterModel.project_id == result.project_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if chapter is None:
+            return
+        metadata = dict(chapter.metadata_json or {})
+        receipts = list(metadata.get("knowledge_feedback_receipts", []))
+        receipts.append(
+            {
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "status": result.extraction_status,
+                "source_lineage": result.source_lineage,
+                "result": result.model_dump(mode="json"),
+                **extra,
+            }
+        )
+        metadata["knowledge_feedback_receipts"] = receipts
+        chapter.metadata_json = metadata
+        await session.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +430,9 @@ async def extract_chapter_feedback(
     project_id: UUID,
     chapter: Any,
     chapter_md: str,
+    source_chapter_draft_version_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
 ) -> ChapterFeedbackResult:
     """Run post-chapter feedback extraction and apply state changes to DB.
 
@@ -61,17 +453,78 @@ async def extract_chapter_feedback(
     chapter_number: int = chapter.chapter_number
     chapter_id: UUID = chapter.id
 
-    # Fetch the project to determine language
-    project = await session.scalar(
-        select(ProjectModel).where(ProjectModel.id == project_id)
+    source_lineage, rejection = await validate_adopted_knowledge_source(
+        session,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        source_chapter_draft_version_id=source_chapter_draft_version_id,
+        chapter_md=chapter_md,
     )
+    result = ChapterFeedbackResult(
+        project_id=project_id,
+        chapter_id=chapter_id,
+        chapter_number=chapter_number,
+        source_lineage=source_lineage,
+    )
+    if rejection:
+        result.extraction_status = "rejected_source"
+        await _store_feedback_receipt(session, chapter, result, rejection_reason=rejection)
+        return result
+    prior = _matching_feedback_receipt(chapter, source_lineage)
+    if prior:
+        from bestseller.services.knowledge_evidence_reconciliation import (
+            feedback_evidence_complete, reconcile_feedback_evidence,
+        )
+        if not feedback_evidence_complete(chapter, prior, chapter_md):
+            if workflow_run_id is None:
+                return ChapterFeedbackResult.model_validate(
+                    {**prior["result"], "extraction_status": "evidence_pending"}
+                )
+            await reconcile_feedback_evidence(
+                session, settings, chapter=chapter, chapter_md=chapter_md,
+                source_chapter_draft_version_id=source_chapter_draft_version_id,
+                workflow_run_id=workflow_run_id, step_run_id=step_run_id,
+            )
+        return ChapterFeedbackResult.model_validate(
+            {**prior["result"], "extraction_status": "already_applied"}
+        )
+    cached = _cached_feedback_receipt(chapter, source_lineage)
+    if cached:
+        cached_run_id = cached["result"].get("llm_run_id")
+        result.llm_run_id = UUID(cached_run_id) if cached_run_id else None
+        result = await _apply_verified_feedback(
+            session,
+            chapter=chapter,
+            chapter_md=chapter_md,
+            result=result,
+            payload=ChapterFeedbackPayload.model_validate(cached["candidate_payload"]),
+            llm_receipts=cached["llm_operations"],
+            restore_projection_only=True,
+        )
+        if workflow_run_id is not None:
+            from bestseller.services.knowledge_evidence_reconciliation import reconcile_feedback_evidence
+            await reconcile_feedback_evidence(
+                session, settings, chapter=chapter, chapter_md=chapter_md,
+                source_chapter_draft_version_id=source_chapter_draft_version_id,
+                workflow_run_id=workflow_run_id, step_run_id=step_run_id,
+            )
+        return result
+    operation_id = _knowledge_operation_id("feedback", source_lineage)
+    result.source_lineage = {
+        **source_lineage,
+        "operation_id": operation_id,
+        "workflow_run_id": str(workflow_run_id) if workflow_run_id else None,
+        "step_run_id": str(step_run_id) if step_run_id else None,
+    }
+    llm_receipts: list[dict[str, Any]] = []
+
+    # Fetch the project to determine language
+    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id))
     language = project.language if project else None
 
     # Load context needed for the prompt
     characters = list(
-        await session.scalars(
-            select(CharacterModel).where(CharacterModel.project_id == project_id)
-        )
+        await session.scalars(select(CharacterModel).where(CharacterModel.project_id == project_id))
     )
     active_arcs = list(
         await session.scalars(
@@ -104,18 +557,32 @@ async def extract_chapter_feedback(
     if active_arcs:
         arc_ids = [a.id for a in active_arcs]
         all_beats = list(
-            await session.scalars(
-                select(ArcBeatModel).where(ArcBeatModel.plot_arc_id.in_(arc_ids))
-            )
+            await session.scalars(select(ArcBeatModel).where(ArcBeatModel.plot_arc_id.in_(arc_ids)))
         )
         for beat in all_beats:
             arc_beats_by_arc.setdefault(beat.plot_arc_id, []).append(beat)
+
+    # A mutable character row can still retain a withdrawn chapter's cache.
+    # Supply only source-qualified state from the adopted prefix to extraction.
+    from types import SimpleNamespace
+    from bestseller.services.story_bible import get_effective_character_state
+
+    prompt_characters = []
+    for character in characters:
+        prior_state = await get_effective_character_state(
+            session, project_id=project_id, character=character,
+            before_chapter_number=chapter.chapter_number - 1,
+        )
+        prompt_characters.append(SimpleNamespace(
+            name=character.name, arc_state=prior_state.arc_state,
+            knowledge_state_json=prior_state.knowledge_state,
+        ))
 
     # 1. Build prompts
     system_prompt, user_prompt = _build_feedback_extraction_prompts(
         chapter=chapter,
         chapter_md=chapter_md,
-        characters=characters,
+        characters=prompt_characters,
         active_arcs=active_arcs,
         arc_beats_by_arc=arc_beats_by_arc,
         unresolved_clues=unresolved_clues,
@@ -131,25 +598,24 @@ async def extract_chapter_feedback(
         user_prompt=user_prompt,
         fallback_response=fallback,
         prompt_template="chapter_feedback_extraction",
-        prompt_version="1.0",
+        prompt_version="2.1-bound-character-roster",
         project_id=project_id,
         workflow_run_id=workflow_run_id,
-    )
-
-    result = ChapterFeedbackResult(
-        project_id=project_id,
-        chapter_id=chapter_id,
-        chapter_number=chapter_number,
+        step_run_id=step_run_id,
+        operation_id=operation_id,
+        metadata={"source_lineage": source_lineage},
     )
 
     try:
         llm_result = await complete_text(session, settings, request)
         result.llm_run_id = llm_result.llm_run_id
+        llm_receipts.append(_knowledge_llm_receipt(llm_result, request))
+    except ExecutionBudgetError:
+        raise
     except Exception:
-        logger.exception(
-            "LLM call failed for chapter %d feedback extraction", chapter_number
-        )
+        logger.exception("LLM call failed for chapter %d feedback extraction", chapter_number)
         result.extraction_status = "llm_error"
+        await _store_feedback_receipt(session, chapter, result, llm_operations=llm_receipts)
         return result
 
     # 3. Parse JSON response tolerantly
@@ -183,16 +649,37 @@ async def extract_chapter_feedback(
                 ],
                 language=language,
             )
+            _, rejection = await validate_adopted_knowledge_source(
+                session,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                source_chapter_draft_version_id=source_chapter_draft_version_id,
+                chapter_md=chapter_md,
+            )
+            if rejection:
+                result.extraction_status = "rejected_source"
+                await _store_feedback_receipt(
+                    session,
+                    chapter,
+                    result,
+                    rejection_reason=rejection,
+                    llm_operations=llm_receipts,
+                    raw_extraction=llm_result.content,
+                )
+                return result
             retry_request = LLMCompletionRequest(
                 logical_role="editor",
                 system_prompt=system_prompt,
                 user_prompt=retry_prompt,
                 fallback_response=fallback,
                 prompt_template="chapter_feedback_extraction_repair",
-                prompt_version="1.0",
+                prompt_version="2.1-bound-character-roster",
                 project_id=project_id,
                 workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                operation_id=operation_id + ":repair",
                 metadata={
+                    "source_lineage": source_lineage,
                     "chapter_number": chapter_number,
                     "semantic_repair_of": str(llm_result.llm_run_id)
                     if llm_result.llm_run_id
@@ -201,7 +688,10 @@ async def extract_chapter_feedback(
             )
             retry_result = await complete_text(session, settings, retry_request)
             result.llm_run_id = retry_result.llm_run_id or result.llm_run_id
-            payload = _parse_feedback_payload(retry_result.content)
+            llm_receipts.append(_knowledge_llm_receipt(retry_result, retry_request))
+            payload = _parse_feedback_payload(retry_result.content, empty_is_failure=True)
+        except ExecutionBudgetError:
+            raise
         except Exception:
             logger.warning(
                 "Feedback extraction repair failed for chapter %d",
@@ -211,7 +701,104 @@ async def extract_chapter_feedback(
             payload = None
         if payload is None:
             result.extraction_status = "parse_error"
+            await _store_feedback_receipt(
+                session,
+                chapter,
+                result,
+                llm_operations=llm_receipts,
+                raw_extraction=llm_result.content,
+            )
             return result
+
+    result = await _apply_verified_feedback(
+        session,
+        chapter=chapter,
+        chapter_md=chapter_md,
+        result=result,
+        payload=payload,
+        llm_receipts=llm_receipts,
+    )
+    if result.extraction_status in {"ok", "empty"} and workflow_run_id is not None:
+        from bestseller.services.knowledge_evidence_reconciliation import reconcile_feedback_evidence
+        await reconcile_feedback_evidence(
+            session, settings, chapter=chapter, chapter_md=chapter_md,
+            source_chapter_draft_version_id=source_chapter_draft_version_id,
+            workflow_run_id=workflow_run_id, step_run_id=step_run_id,
+        )
+    return result
+
+
+async def _apply_verified_feedback(
+    session: AsyncSession,
+    *,
+    chapter: Any,
+    chapter_md: str,
+    result: ChapterFeedbackResult,
+    payload: ChapterFeedbackPayload,
+    llm_receipts: list[dict[str, Any]],
+    restore_projection_only: bool = False,
+) -> ChapterFeedbackResult:
+    async with session.begin_nested():
+        return await _apply_verified_feedback_in_transaction(
+            session,
+            chapter=chapter,
+            chapter_md=chapter_md,
+            result=result,
+            payload=payload,
+            llm_receipts=llm_receipts,
+            restore_projection_only=restore_projection_only,
+        )
+
+
+async def _apply_verified_feedback_in_transaction(
+    session: AsyncSession,
+    *,
+    chapter: Any,
+    chapter_md: str,
+    result: ChapterFeedbackResult,
+    payload: ChapterFeedbackPayload,
+    llm_receipts: list[dict[str, Any]],
+    restore_projection_only: bool = False,
+) -> ChapterFeedbackResult:
+    project_id, chapter_id = result.project_id, result.chapter_id
+    chapter_number = result.chapter_number
+    source_lineage = result.source_lineage
+    source_chapter_draft_version_id = UUID(source_lineage["source_chapter_draft_version_id"])
+
+    current_lineage, rejection = await validate_adopted_knowledge_source(
+        session,
+        project_id=project_id,
+        chapter_id=chapter_id,
+        source_chapter_draft_version_id=source_chapter_draft_version_id,
+        chapter_md=chapter_md,
+    )
+    if rejection:
+        result.extraction_status = "rejected_source"
+        await _store_feedback_receipt(
+            session,
+            chapter,
+            result,
+            rejection_reason=rejection,
+            candidate_payload=payload.model_dump(mode="json"),
+            llm_operations=llm_receipts,
+        )
+        return result
+    prior = _matching_feedback_receipt(chapter, source_lineage)
+    if prior:
+        return ChapterFeedbackResult.model_validate(
+            {**prior["result"], "extraction_status": "already_applied"}
+        )
+    result.source_lineage = {**current_lineage, **llm_receipts[-1]}
+    if any(receipt["fallback_used"] for receipt in llm_receipts[-1:]):
+        result.extraction_status = "llm_error"
+        await _store_feedback_receipt(
+            session,
+            chapter,
+            result,
+            candidate_payload=payload.model_dump(mode="json"),
+            llm_operations=llm_receipts,
+        )
+        return result
 
     total_items = (
         len(payload.character_states)
@@ -221,33 +808,61 @@ async def extract_chapter_feedback(
         + len(payload.world_details)
         + len(payload.canon_facts)
         + len(payload.promises_made)
+        + len(payload.timeline_events)
     )
     if total_items == 0:
         result.extraction_status = "empty"
+        await _retire_superseded_feedback_knowledge(session, chapter, result.source_lineage)
+        await _store_feedback_receipt(
+            session,
+            chapter,
+            result,
+            llm_operations=llm_receipts,
+            candidate_payload=payload.model_dump(mode="json"),
+        )
         return result
 
-    # 4. Apply each category of extractions to DB
-    result.character_states_updated = await _apply_character_state_updates(
-        session, project_id, chapter, payload.character_states
-    )
-    result.relationship_events_created = await _apply_relationship_events(
-        session, project_id, chapter, payload.relationship_events
-    )
-    result.arc_beats_updated = await _apply_arc_beat_updates(
-        session, project_id, payload.arc_beat_updates
-    )
-    result.clue_observations_applied = await _apply_clue_payoff_observations(
-        session, project_id, chapter, payload.clue_observations
-    )
-    result.world_details_enriched = await _apply_world_enrichments(
-        session, project_id, payload.world_details
-    )
+    # Cached re-adoption restores source projections, never repeats increments.
+    if not restore_projection_only:
+        # 4. Apply each category of extractions to DB
+        result.character_states_updated = await _apply_character_state_updates(
+            session, project_id, chapter, payload.character_states,
+            source_lineage=result.source_lineage,
+        )
+        result.relationship_events_created = await _apply_relationship_events(
+            session, project_id, chapter, payload.relationship_events
+        )
+        result.arc_beats_updated = await _apply_arc_beat_updates(
+            session, project_id, payload.arc_beat_updates
+        )
+        result.clue_observations_applied = await _apply_clue_payoff_observations(
+            session, project_id, chapter, payload.clue_observations
+        )
+        result.world_details_enriched = await _apply_world_enrichments(
+            session, project_id, payload.world_details
+        )
     result.canon_facts_created = await _apply_canon_fact_extractions(
-        session, project_id, chapter, payload.canon_facts
+        session,
+        project_id,
+        chapter,
+        payload.canon_facts,
+        chapter_md=chapter_md,
+        source_lineage=result.source_lineage,
+        candidates=result.candidate_canon_facts,
     )
-    result.promises_created = await _apply_promise_extractions(
-        session, project_id, chapter, payload.promises_made
+    result.timeline_events_created = await _apply_timeline_extractions(
+        session,
+        project_id,
+        chapter,
+        payload.timeline_events,
+        chapter_md=chapter_md,
+        source_lineage=result.source_lineage,
     )
+    if not restore_projection_only:
+        result.promises_created = await _apply_promise_extractions(
+            session, project_id, chapter, payload.promises_made
+        )
+    await _retire_superseded_feedback_knowledge(session, chapter, result.source_lineage)
 
     logger.info(
         "Chapter %d feedback: %d char-states, %d rel-events, %d arc-beats, "
@@ -260,6 +875,14 @@ async def extract_chapter_feedback(
         result.world_details_enriched,
         result.canon_facts_created,
         result.promises_created,
+    )
+    await _store_feedback_receipt(
+        session,
+        chapter,
+        result,
+        candidate_canon_facts=result.candidate_canon_facts,
+        candidate_payload=payload.model_dump(mode="json"),
+        llm_operations=llm_receipts,
     )
     return result
 
@@ -406,8 +1029,15 @@ _OUTPUT_SCHEMA = """\
       "subject": "...",
       "predicate": "...",
       "value": "...",
-      "fact_type": "extracted"
+      "fact_type": "extracted",
+      "evidence": "正文逐字引文 / verbatim prose quote",
+      "confidence": 0.8
     }
+  ],
+  "timeline_events": [
+    {"event_name": "本章发生的事件", "event_type": "chapter_event",
+     "story_time_label": "正文明确的时间", "consequences": [],
+     "evidence": "正文逐字引文 / verbatim prose quote"}
   ],
   "promises_made": [
     {
@@ -438,6 +1068,11 @@ def _build_feedback_extraction_prompts(
     """
     is_en = is_english_language(language)
     system_prompt = _SYSTEM_PROMPT_EN if is_en else _SYSTEM_PROMPT_ZH
+    system_prompt += (
+        "\nFor every canon_facts and timeline_events item, include evidence: a verbatim "
+        "quote from the full chapter prose. Unsupported claims remain candidates. "
+        "For canon_facts, include confidence between 0 and 1; do not assume certainty."
+    )
 
     # --- User prompt sections ---
     sections: list[str] = []
@@ -615,18 +1250,28 @@ def _partial_extract_payload(data: dict[str, Any]) -> ChapterFeedbackPayload:
         ("world_details", WorldDetailExtraction),
         ("canon_facts", CanonFactExtraction),
         ("promises_made", PromiseMadeExtraction),
+        ("timeline_events", TimelineEventExtraction),
     ]:
         raw_list = data.get(field_name, [])
         if not isinstance(raw_list, list):
+            payload.validation_diagnostics.append({
+                "field": field_name, "reason": "expected_list", "raw_item": raw_list,
+            })
             continue
         valid_items: list[Any] = []
-        for item in raw_list:
+        for index, item in enumerate(raw_list):
             if not isinstance(item, dict):
+                payload.validation_diagnostics.append({
+                    "field": field_name, "index": index, "reason": "expected_object", "raw_item": item,
+                })
                 continue
             try:
                 valid_items.append(model_cls.model_validate(item))
             except Exception:
-                logger.debug("Skipping invalid %s item: %s", field_name, item)
+                payload.validation_diagnostics.append({
+                    "field": field_name, "index": index, "reason": "invalid_item", "raw_item": item,
+                })
+                logger.debug("Retaining invalid %s item in validation diagnostics", field_name)
         setattr(payload, field_name, valid_items)
 
     return payload
@@ -659,9 +1304,7 @@ def _is_historical_character_state_writeback(
     back to that older state.
     """
 
-    last_seen = _coerce_chapter_number(
-        (metadata or {}).get("last_seen_chapter_number")
-    )
+    last_seen = _coerce_chapter_number((metadata or {}).get("last_seen_chapter_number"))
     return last_seen is not None and last_seen > int(chapter_number)
 
 
@@ -685,8 +1328,8 @@ def _resolve_alive_status_writeback(
 
     current = (current_alive_status or "alive").strip().lower()
     death_chapter = _coerce_chapter_number(death_chapter_number)
-    before_known_future_death = (
-        death_chapter is not None and int(death_chapter) > int(chapter_number)
+    before_known_future_death = death_chapter is not None and int(death_chapter) > int(
+        chapter_number
     )
 
     if extracted != "deceased":
@@ -753,9 +1396,12 @@ async def _apply_character_state_updates(
     project_id: UUID,
     chapter: Any,
     extractions: list[CharacterStateExtraction],
+    *,
+    source_lineage: dict[str, Any] | None = None,
 ) -> int:
     """Apply character state changes extracted from prose."""
     from bestseller.infra.db.models import CharacterModel, CharacterStateSnapshotModel
+    from bestseller.services.character_snapshot_sources import seal_snapshot_binding, snapshot_binding
 
     if not extractions:
         return 0
@@ -765,6 +1411,7 @@ async def _apply_character_state_updates(
     # chapter so the death-ripple service can propagate grief / closure
     # / relationship-end events after every state has been written.
     newly_deceased_ids: list[UUID] = []
+    state_snapshots: dict[UUID, CharacterStateSnapshotModel] = {}
     for extraction in extractions:
         # Find character by name
         character = await session.scalar(
@@ -779,6 +1426,13 @@ async def _apply_character_state_updates(
                 extraction.character_name,
             )
             continue
+
+        if source_lineage is not None:
+            # Feedback runs before the Bible updater. Capture the preimage
+            # before either producer writes source-owned character knowledge.
+            from bestseller.services.story_bible_projection import capture_bible_baseline
+
+            capture_bible_baseline(character)
 
         # Event-gated lifecycle fields: stance writeback requires a reason,
         # alive_status "deceased" stamps death_chapter_number, power_tier
@@ -855,7 +1509,9 @@ async def _apply_character_state_updates(
 
         # Create snapshot — always record extraction values so reviewers can
         # inspect what the LLM claimed even when gating rejected writeback.
-        trust_map: dict[str, str] = dict(extraction.trust_changes) if extraction.trust_changes else {}
+        trust_map: dict[str, str] = (
+            dict(extraction.trust_changes) if extraction.trust_changes else {}
+        )
         beliefs = list(extraction.beliefs_gained) if extraction.beliefs_gained else []
         snapshot = CharacterStateSnapshotModel(
             project_id=project_id,
@@ -872,8 +1528,25 @@ async def _apply_character_state_updates(
             trust_map=trust_map,
             beliefs=beliefs,
             notes=f"feedback_extraction:ch{chapter.chapter_number}",
+            source_binding=(snapshot_binding(
+                'adopted_feedback', project_id=project_id, character_id=character.id,
+                chapter_number=chapter.chapter_number,
+                adopted_source={key: source_lineage.get(key) for key in KNOWLEDGE_SOURCE_KEYS},
+                accepted_alive_status=_accepted_alive,
+                accepted_fields={
+                    'alive_status': _alive_rejection_reason in {None, 'pre_death_historical_state'},
+                    'stance': _accepted_stance is not None or extraction.stance == _current_stance,
+                },
+                knowledge_delta={
+                    'knowledge_gained': list(extraction.knowledge_gained),
+                    'beliefs_gained': list(extraction.beliefs_gained),
+                    'beliefs_invalidated': list(extraction.beliefs_invalidated),
+                },
+            ) if source_lineage is not None else None),
         )
+        snapshot.source_binding = seal_snapshot_binding(snapshot, snapshot.source_binding)
         session.add(snapshot)
+        state_snapshots[character.id] = snapshot
 
         if _state_writeback_historical:
             logger.debug(
@@ -1000,9 +1673,7 @@ async def _apply_character_state_updates(
             _update_values["metadata_json"] = _char_meta
 
         await session.execute(
-            update(CharacterModel)
-            .where(CharacterModel.id == character.id)
-            .values(**_update_values)
+            update(CharacterModel).where(CharacterModel.id == character.id).values(**_update_values)
         )
 
         # Update arc_state if provided
@@ -1027,11 +1698,14 @@ async def _apply_character_state_updates(
             from bestseller.services.death_ripple import (  # noqa: PLC0415
                 apply_death_ripples_for_chapter,
             )
+
             await apply_death_ripples_for_chapter(
                 session,
                 project_id=project_id,
                 deceased_character_ids=newly_deceased_ids,
                 chapter_number=chapter.chapter_number,
+                trigger_snapshot_ids={identity: state_snapshots[identity].id
+                                      for identity in newly_deceased_ids},
             )
         except Exception:
             logger.exception(
@@ -1136,9 +1810,7 @@ async def _apply_relationship_events(
             )
         )
         if emotion_track is not None:
-            trust_delta, conflict_delta = _infer_emotion_deltas(
-                extraction.relationship_change
-            )
+            trust_delta, conflict_delta = _infer_emotion_deltas(extraction.relationship_change)
             new_trust = max(0.0, min(1.0, float(emotion_track.trust_level) + trust_delta))
             new_conflict = max(0.0, min(1.0, float(emotion_track.conflict_level) + conflict_delta))
             await session.execute(
@@ -1169,24 +1841,64 @@ def _infer_emotion_deltas(relationship_change: str) -> tuple[float, float]:
 
     # Positive trust indicators
     positive_trust = [
-        "trust", "closer", "bond", "alliance", "reconcil", "forgive",
-        "信任", "亲近", "和解", "原谅", "结盟", "信赖",
+        "trust",
+        "closer",
+        "bond",
+        "alliance",
+        "reconcil",
+        "forgive",
+        "信任",
+        "亲近",
+        "和解",
+        "原谅",
+        "结盟",
+        "信赖",
     ]
     # Negative trust indicators
     negative_trust = [
-        "betray", "distrust", "suspect", "broken", "deceiv", "lie",
-        "背叛", "怀疑", "欺骗", "猜忌", "破裂", "不信任",
+        "betray",
+        "distrust",
+        "suspect",
+        "broken",
+        "deceiv",
+        "lie",
+        "背叛",
+        "怀疑",
+        "欺骗",
+        "猜忌",
+        "破裂",
+        "不信任",
     ]
     # Conflict increase indicators
     conflict_increase = [
-        "conflict", "fight", "argue", "tension", "hostil", "oppos",
-        "confront", "clash",
-        "冲突", "争吵", "对抗", "敌意", "对立", "矛盾",
+        "conflict",
+        "fight",
+        "argue",
+        "tension",
+        "hostil",
+        "oppos",
+        "confront",
+        "clash",
+        "冲突",
+        "争吵",
+        "对抗",
+        "敌意",
+        "对立",
+        "矛盾",
     ]
     # Conflict decrease indicators
     conflict_decrease = [
-        "peace", "resolv", "calm", "agree", "harmon", "cooperat",
-        "和平", "解决", "平息", "合作", "和谐",
+        "peace",
+        "resolv",
+        "calm",
+        "agree",
+        "harmon",
+        "cooperat",
+        "和平",
+        "解决",
+        "平息",
+        "合作",
+        "和谐",
     ]
 
     for keyword in positive_trust:
@@ -1275,15 +1987,11 @@ async def _apply_arc_beat_updates(
     # Check if any arcs are now fully completed
     for arc_id in arcs_to_check:
         all_beats = list(
-            await session.scalars(
-                select(ArcBeatModel).where(ArcBeatModel.plot_arc_id == arc_id)
-            )
+            await session.scalars(select(ArcBeatModel).where(ArcBeatModel.plot_arc_id == arc_id))
         )
         if all_beats and all(b.status == "completed" for b in all_beats):
             await session.execute(
-                update(PlotArcModel)
-                .where(PlotArcModel.id == arc_id)
-                .values(status="completed")
+                update(PlotArcModel).where(PlotArcModel.id == arc_id).values(status="completed")
             )
             logger.info("Feedback: arc %s fully completed", arc_id)
 
@@ -1312,9 +2020,7 @@ async def _apply_clue_payoff_observations(
             )
         )
         if clue is None:
-            logger.warning(
-                "Feedback: clue '%s' not found, skipping", extraction.clue_code
-            )
+            logger.warning("Feedback: clue '%s' not found, skipping", extraction.clue_code)
             continue
 
         if extraction.action == "planted":
@@ -1374,9 +2080,7 @@ async def _apply_world_enrichments(
                 )
             )
             if entity is None:
-                logger.warning(
-                    "Feedback: location '%s' not found, skipping", extraction.name
-                )
+                logger.warning("Feedback: location '%s' not found, skipping", extraction.name)
                 continue
             new_metadata = _append_prose_detail(entity.metadata_json, extraction.detail)
             await session.execute(
@@ -1393,9 +2097,7 @@ async def _apply_world_enrichments(
                 )
             )
             if entity is None:
-                logger.warning(
-                    "Feedback: world rule '%s' not found, skipping", extraction.name
-                )
+                logger.warning("Feedback: world rule '%s' not found, skipping", extraction.name)
                 continue
             new_metadata = _append_prose_detail(entity.metadata_json, extraction.detail)
             await session.execute(
@@ -1412,9 +2114,7 @@ async def _apply_world_enrichments(
                 )
             )
             if entity is None:
-                logger.warning(
-                    "Feedback: faction '%s' not found, skipping", extraction.name
-                )
+                logger.warning("Feedback: faction '%s' not found, skipping", extraction.name)
                 continue
             new_metadata = _append_prose_detail(entity.metadata_json, extraction.detail)
             await session.execute(
@@ -1424,9 +2124,7 @@ async def _apply_world_enrichments(
             )
 
         else:
-            logger.warning(
-                "Feedback: unknown entity_type '%s', skipping", entity_type
-            )
+            logger.warning("Feedback: unknown entity_type '%s', skipping", entity_type)
             continue
 
         applied += 1
@@ -1435,9 +2133,7 @@ async def _apply_world_enrichments(
     return applied
 
 
-def _append_prose_detail(
-    metadata_json: dict[str, Any], detail: str
-) -> dict[str, Any]:
+def _append_prose_detail(metadata_json: dict[str, Any], detail: str) -> dict[str, Any]:
     """Append a detail to the 'prose_details' list in metadata.
 
     Returns a NEW dict (immutable pattern).
@@ -1454,6 +2150,10 @@ async def _apply_canon_fact_extractions(
     project_id: UUID,
     chapter: Any,
     extractions: list[CanonFactExtraction],
+    *,
+    chapter_md: str = "",
+    source_lineage: dict[str, Any] | None = None,
+    candidates: list[dict[str, Any]] | None = None,
 ) -> int:
     """Create or update canon facts based on extraction."""
     from bestseller.infra.db.models import CanonFactModel
@@ -1463,6 +2163,13 @@ async def _apply_canon_fact_extractions(
 
     applied = 0
     for extraction in extractions:
+        quote = extraction.evidence.strip()
+        if not source_lineage or not quote or quote not in chapter_md:
+            if candidates is not None:
+                candidates.append(
+                    {**extraction.model_dump(), "reason": "missing_or_unmatched_evidence"}
+                )
+            continue
         # Check for existing current fact with same subject + predicate
         existing = await session.scalar(
             select(CanonFactModel).where(
@@ -1474,6 +2181,10 @@ async def _apply_canon_fact_extractions(
         )
 
         if existing is not None:
+            if existing.valid_from_chapter_no > chapter.chapter_number:
+                if candidates is not None:
+                    candidates.append({**extraction.model_dump(), "reason": "historical_writeback"})
+                continue
             # Supersede the old fact
             await session.execute(
                 update(CanonFactModel)
@@ -1491,8 +2202,12 @@ async def _apply_canon_fact_extractions(
                 subject_label=extraction.subject,
                 predicate=extraction.predicate,
                 fact_type=extraction.fact_type,
-                value_json={"value": extraction.value},
-                confidence=1.0,
+                value_json={
+                    "value": extraction.value,
+                    "evidence": quote,
+                    "source_lineage": source_lineage,
+                },
+                confidence=extraction.confidence,
                 source_type="feedback",
                 source_chapter_id=chapter.id,
                 valid_from_chapter_no=chapter.chapter_number,
@@ -1511,8 +2226,12 @@ async def _apply_canon_fact_extractions(
                 subject_label=extraction.subject,
                 predicate=extraction.predicate,
                 fact_type=extraction.fact_type,
-                value_json={"value": extraction.value},
-                confidence=1.0,
+                value_json={
+                    "value": extraction.value,
+                    "evidence": quote,
+                    "source_lineage": source_lineage,
+                },
+                confidence=extraction.confidence,
                 source_type="feedback",
                 source_chapter_id=chapter.id,
                 valid_from_chapter_no=chapter.chapter_number,
@@ -1525,6 +2244,130 @@ async def _apply_canon_fact_extractions(
 
     await session.flush()
     return applied
+
+
+async def _apply_timeline_extractions(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter: Any,
+    extractions: list[TimelineEventExtraction],
+    *,
+    chapter_md: str,
+    source_lineage: dict[str, Any],
+) -> int:
+    from bestseller.infra.db.models import TimelineEventModel
+
+    applied = 0
+    existing_events = (
+        list(
+            await session.scalars(
+                select(TimelineEventModel).where(
+                    TimelineEventModel.project_id == project_id,
+                    TimelineEventModel.chapter_id == chapter.id,
+                    TimelineEventModel.scene_card_id.is_(None),
+                )
+            )
+        )
+        if extractions
+        else []
+    )
+    for index, extraction in enumerate(extractions):
+        quote = extraction.evidence.strip()
+        if not quote or quote not in chapter_md:
+            continue  # Retained in the feedback receipt's candidate payload.
+        prior = next(
+            (
+                event
+                for event in existing_events
+                if event.event_name == extraction.event_name
+                and (
+                    source_lineage.get("projection_policy") != "literal-source.v2"
+                    or event.metadata_json.get("source_lineage", {}).get("projection_policy") == "literal-source.v2"
+                )
+                and event.metadata_json.get("source_lineage", {}).get("source_body_sha256")
+                == source_lineage["source_body_sha256"]
+                and event.metadata_json.get("source_lineage", {}).get(
+                    "source_chapter_draft_version_id"
+                )
+                == source_lineage["source_chapter_draft_version_id"]
+            ),
+            None,
+        )
+        if prior is not None:
+            prior.metadata_json = {**prior.metadata_json, "knowledge_lineage_status": "current"}
+            continue
+        session.add(
+            TimelineEventModel(
+                project_id=project_id,
+                chapter_id=chapter.id,
+                event_name=extraction.event_name,
+                event_type=extraction.event_type,
+                story_time_label=extraction.story_time_label,
+                story_order=chapter.chapter_number + (index + 1) / (len(extractions) + 1),
+                consequences=extraction.consequences,
+                participant_ids=[],
+                is_revealed=True,
+                metadata_json={
+                    "source": "feedback_extraction",
+                    "knowledge_lineage_status": "current",
+                    "evidence": quote,
+                    "source_lineage": source_lineage,
+                },
+            )
+        )
+        applied += 1
+    await session.flush()
+    return applied
+
+
+async def _retire_superseded_feedback_knowledge(
+    session: AsyncSession,
+    chapter: Any,
+    source_lineage: dict[str, Any],
+) -> None:
+    """Retire only this chapter's older feedback projections, preserving rows."""
+    from bestseller.infra.db.models import CanonFactModel, TimelineEventModel
+
+    def is_previous(source: dict[str, Any]) -> bool:
+        return source.get("schema") != KNOWLEDGE_LINEAGE_SCHEMA or any(
+            source.get(key) != source_lineage.get(key)
+            for key in ("source_chapter_draft_version_id", "source_body_sha256")
+        )
+
+    for fact in await session.scalars(
+        select(CanonFactModel).where(
+            CanonFactModel.project_id == chapter.project_id,
+            CanonFactModel.source_chapter_id == chapter.id,
+            CanonFactModel.source_type == "feedback",
+            CanonFactModel.is_current.is_(True),
+            CanonFactModel.valid_from_chapter_no <= chapter.chapter_number,
+        )
+    ):
+        if is_previous(fact.value_json.get("source_lineage", {})):
+            fact.is_current = False
+            fact.valid_to_chapter_no = chapter.chapter_number
+            retirement = json.dumps(
+                {"reason": "source_body_superseded", "superseded_by": source_lineage},
+                ensure_ascii=False,
+            )
+            fact.notes = (fact.notes + "\n" if fact.notes else "") + retirement
+    for event in await session.scalars(
+        select(TimelineEventModel).where(
+            TimelineEventModel.project_id == chapter.project_id,
+            TimelineEventModel.chapter_id == chapter.id,
+            TimelineEventModel.scene_card_id.is_(None),
+        )
+    ):
+        metadata = event.metadata_json or {}
+        if metadata.get("source") == "feedback_extraction" and is_previous(
+            metadata.get("source_lineage", {})
+        ):
+            event.metadata_json = {
+                **metadata,
+                "knowledge_lineage_status": "superseded",
+                "superseded_by": source_lineage,
+            }
+    await session.flush()
 
 
 async def _apply_promise_extractions(
@@ -1626,13 +2469,44 @@ def _infer_subject_type(subject: str) -> str:
     """
     lower = subject.lower()
     location_hints = [
-        "city", "town", "village", "forest", "mountain", "river", "castle",
-        "palace", "temple", "cave", "island", "realm", "kingdom",
-        "城", "镇", "村", "山", "河", "宫", "殿", "庙", "岛", "域",
+        "city",
+        "town",
+        "village",
+        "forest",
+        "mountain",
+        "river",
+        "castle",
+        "palace",
+        "temple",
+        "cave",
+        "island",
+        "realm",
+        "kingdom",
+        "城",
+        "镇",
+        "村",
+        "山",
+        "河",
+        "宫",
+        "殿",
+        "庙",
+        "岛",
+        "域",
     ]
     character_hints = [
-        "lord", "lady", "prince", "princess", "king", "queen", "master",
-        "大人", "公主", "王子", "国王", "女王", "师父",
+        "lord",
+        "lady",
+        "prince",
+        "princess",
+        "king",
+        "queen",
+        "master",
+        "大人",
+        "公主",
+        "王子",
+        "国王",
+        "女王",
+        "师父",
     ]
     for hint in location_hints:
         if hint in lower:

@@ -106,6 +106,7 @@ def test_chapter_predraft_quality_gate_passes_rich_front_chapter_input() -> None
                 scene_cards=scenes,
             ),
         },
+        quality_targets={"target_word_count": 2200},
         required_context_keys=("chapter.goal",),
         missing_context_keys=(),
     )
@@ -116,7 +117,7 @@ def test_chapter_predraft_quality_gate_passes_rich_front_chapter_input() -> None
     assert report.blocked is False
 
 
-def test_chapter_predraft_quality_gate_blocks_thin_front_chapter_input() -> None:
+def test_chapter_predraft_quality_gate_keeps_missing_legacy_recipe_unknown() -> None:
     bundle = ChapterGenerationInputBundle(
         chapter={"chapter_number": 1},
         scenes=(
@@ -137,16 +138,19 @@ def test_chapter_predraft_quality_gate_blocks_thin_front_chapter_input() -> None
             "scene_gate_targets": [],
             "front_position_rules": {},
         },
+        quality_targets={"target_word_count": 2200},
         required_context_keys=("chapter.goal", "chapter_acceptance_contract"),
         missing_context_keys=("chapter_acceptance_contract",),
     )
 
     report = evaluate_chapter_predraft_quality(bundle)
-    codes = {finding.code for finding in report.blocking_issues}
+    codes = {finding.code for finding in report.findings}
 
-    assert report.passed is False
-    assert report.blocked is True
-    assert "PREDRAFT_CONTEXT_MISSING" in codes
-    assert "PREDRAFT_SCENE_GATE_TARGETS_EMPTY" in codes
-    assert "PREDRAFT_GOLDEN_THREE_OPENING_WEAK" in codes
-    assert "PREDRAFT_KNOWLEDGE_BOUNDARY_CONTRACT_MISSING" in codes
+    assert report.passed is True  # No proven hard conflict; not semantic approval.
+    assert report.blocked is False
+    assert "PREDRAFT_CONTEXT_UNKNOWN" in codes
+    assert "PREDRAFT_SOURCE_AUTHORITY_UNKNOWN" in codes
+    assert not report.blocking_issues
+    assert bundle.schema_version == "chapter-generation-input.v1"
+    assert bundle.scenes[0]["methodology_contract"] == {}
+    assert bundle.acceptance_contract["front_position_rules"] == {}

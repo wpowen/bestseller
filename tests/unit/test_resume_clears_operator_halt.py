@@ -23,8 +23,13 @@ autowrite 一启动就读到操作者要求停止，halt 后按正常收尾流�
 
 from __future__ import annotations
 
+import asyncio
+
 # ruff: noqa: RUF002, RUF003 — 中文标点是刻意的。
 import inspect
+from types import SimpleNamespace
+
+import pytest
 
 from bestseller.services import production_control
 from bestseller.web import server
@@ -52,6 +57,34 @@ def test_the_clearing_is_wired_next_to_the_resume_call() -> None:
     source = inspect.getsource(server)
     # 锚在**调用点**上，不是函数定义——第一版抓到了 2725 行的 def，
     # 于是断言总在错误的窗口里找。
-    anchor = source.index("task_manager.resume_autowrite_task(")
+    # Synthetic db-repair resume also has a full-pipeline call; inspect the
+    # normal task resume call at the end of the handler.
+    anchor = source.rindex("task_manager.resume_autowrite_task(")
     window = source[max(0, anchor - 2000) : anchor]
     assert "_clear_production_halt_async" in window
+
+
+def test_db_repair_resume_also_clears_the_durable_production_halt() -> None:
+    """Synthetic DB-repair resume must release the same operator stop bit."""
+
+    source = inspect.getsource(server)
+    branch = source.index('if task_id.startswith("db-repair:")')
+    enqueue = source.index("_enqueue_repair_heal_job", branch)
+    window = source[branch:enqueue]
+    assert "_clear_production_halt_async(settings, slug, strict=True)" in window
+
+
+def test_strict_halt_clear_propagates_session_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _BrokenScope:
+        async def __aenter__(self) -> object:
+            raise RuntimeError("database unavailable")
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(server, "session_scope", lambda _settings: _BrokenScope())
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        asyncio.run(
+            server._clear_production_halt_async(SimpleNamespace(), "repair-book", strict=True)
+        )

@@ -154,9 +154,9 @@ def test_normalizes_inferred_countdown_jump_without_source_quote() -> None:
 
     normalized = _normalize_inferred_countdown_jumps(facts, previous)
 
-    assert normalized[0].value == "约17"
+    assert normalized[0].value == "约18"
     assert normalized[0].source_quote is None
-    assert "最多推进 1 个单位" in (normalized[0].notes or "")
+    assert "保留上一章" in (normalized[0].notes or "")
 
 
 def test_keeps_countdown_jump_when_source_quote_is_present() -> None:
@@ -185,3 +185,37 @@ def test_keeps_countdown_jump_when_source_quote_is_present() -> None:
 
     assert normalized[0].value == "约15"
     assert normalized[0].source_quote == "倒计时只剩十五小时"
+
+
+@pytest.mark.parametrize("value,notes", [("17", None), ("21", "reset=true"), ("5", "flashback=true")])
+def test_unquoted_countdown_cannot_change_even_by_one_unit(value, notes):
+    previous = ChapterStateSnapshotContext(chapter_number=2, facts=[
+        HardFactContext(name="发车剩余时间", value="18", unit="分钟", kind="countdown")])
+    facts = [HardFactContext(name="发车剩余时间", value=value, unit="小时",
+                             kind="countdown", notes=notes)]
+    result = _normalize_inferred_countdown_jumps(facts, previous)
+    assert result[0].value == "18"
+    assert result[0].unit == "分钟"
+
+
+def test_fabricated_countdown_quote_is_not_evidence():
+    previous = ChapterStateSnapshotContext(chapter_number=2, facts=[
+        HardFactContext(name="发车剩余时间", value="18", unit="分钟", kind="countdown")])
+    facts = [HardFactContext(name="发车剩余时间", value="5", unit="分钟",
+                             kind="countdown", source_quote="还剩五分钟")]
+    result = _normalize_inferred_countdown_jumps(facts, previous, chapter_md="她在站台等车。")
+    assert result[0].value == "18"
+    assert result[0].source_quote is None
+
+
+def test_source_supported_reset_and_other_subject_are_preserved():
+    previous = ChapterStateSnapshotContext(chapter_number=2, facts=[
+        HardFactContext(name="等待时间", subject="甲", value="18", unit="分钟", kind="countdown")])
+    facts = [
+        HardFactContext(name="等待时间", subject="甲", value="30", unit="分钟",
+                        kind="countdown", notes="reset=true", source_quote="甲重新拿号，还要等三十分钟"),
+        HardFactContext(name="等待时间", subject="乙", value="5", unit="分钟", kind="countdown"),
+    ]
+    result = _normalize_inferred_countdown_jumps(
+        facts, previous, chapter_md="甲重新拿号，还要等三十分钟。乙已在窗口办理。")
+    assert result == facts

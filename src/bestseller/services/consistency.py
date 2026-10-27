@@ -1420,6 +1420,8 @@ async def review_project_consistency(
             select(WorldRuleModel).where(WorldRuleModel.project_id == project.id)
         )
     )
+    from bestseller.services.world_rule_current import current_world_rules
+    world_rules = await current_world_rules(session, project_id=project.id, world_rules=world_rules)
     protagonists = list(
         await session.scalars(
             select(CharacterModel).where(
@@ -1437,6 +1439,11 @@ async def review_project_consistency(
         )
     )
     protagonist_ids = [item.id for item in protagonists if item.id is not None]
+    from bestseller.services.character_snapshot_sources import (
+        CharacterSnapshotView,
+        snapshot_source_status,
+    )
+
     protagonist_snapshots = list(
         await session.scalars(
             select(CharacterStateSnapshotModel)
@@ -1448,8 +1455,17 @@ async def review_project_consistency(
                 CharacterStateSnapshotModel.chapter_number.asc(),
                 CharacterStateSnapshotModel.scene_number.asc().nullsfirst(),
             )
+            .execution_options(populate_existing=True, autoflush=False)
         )
     ) if protagonist_ids else []
+    eligible_protagonist_snapshots = []
+    for snapshot in protagonist_snapshots:
+        status = await snapshot_source_status(
+            session, snapshot, project_id=project.id, character_id=snapshot.character_id,
+        )
+        if status["status"] == "eligible":
+            eligible_protagonist_snapshots.append(CharacterSnapshotView(snapshot))
+    protagonist_snapshots = eligible_protagonist_snapshots
     chapter_drafts = list(
         await session.scalars(
             select(ChapterDraftVersionModel).where(

@@ -49,6 +49,8 @@ class NovelPlanningResult(BaseModel):
 
 
 class AutowriteResult(BaseModel):
+    execution_window: dict[str, Any] | None = None
+    whole_book_complete: bool | None = None
     project_id: UUID
     project_slug: str = Field(min_length=1)
     planning_workflow_run_id: UUID

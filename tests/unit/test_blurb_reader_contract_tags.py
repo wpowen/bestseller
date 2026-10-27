@@ -33,9 +33,12 @@ from bestseller.services.story_enhancers import reader_contract_labels
 def test_ticked_options_become_reader_facing_contract_labels() -> None:
     labels = reader_contract_labels(
         {
-            "story_enhancers": {
-                "effect_skills": ["comedy_engine", "hype_satisfaction_engine"],
-                "cost_style": "minimal",
+            "creation_intent_contract": {
+                "field_sources": {"story_enhancers": "explicit"},
+                "story_enhancers": {
+                    "effect_skills": ["comedy_engine", "hype_satisfaction_engine"],
+                    "cost_style": "minimal",
+                },
             }
         }
     )
@@ -152,7 +155,7 @@ def test_conception_call_site_does_not_reference_project() -> None:
     2026-08-22 真机：接线第一版在 run_conception_pipeline 里写了
     `getattr(project, "metadata_json", None)`，NameError 让文案淘汰赛
     整体失败回退 v0（fail-open 掩盖了它，靠全容器错误扫描才捞出来）。
-    勾选项的正确来源是 ctx 的 genre_intent_contract.explicit_enhancers。
+    勾选项的正确来源是 ctx 中完整的 creation_intent_contract。
     """
 
     import inspect
@@ -163,5 +166,5 @@ def test_conception_call_site_does_not_reference_project() -> None:
     anchor = src.index("reader_contract=reader_contract_labels(")
     window = src[anchor : anchor + 600]
     # 断言正确来源在场、错误来源不在场
-    assert "explicit_enhancers" in window
+    assert "reader_contract=reader_contract_labels(ctx)" in window
     assert "getattr(project" not in window

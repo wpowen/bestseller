@@ -319,17 +319,24 @@ def render_public_emotion_prompt_block(
     max_segments: int = 3,
     max_bridges: int = 4,
     language: str = "zh-CN",
+    metadata: dict[str, Any] | None = None,
 ) -> str:
+    from bestseller.services.planning_capability_selection import (
+        PlanningCapabilitySelectionError, planning_capability_selected,
+    )
+
+    if not planning_capability_selected(metadata, "public_emotion_kernel"):
+        return ""
     if not kernel:
-        return ""
+        raise PlanningCapabilitySelectionError("selected_public_emotion_kernel_missing")
     try:
-        parsed = (
-            public_emotion_kernel_from_dict(dict(kernel))
-            if isinstance(kernel, dict)
-            else kernel
-        )
-    except ValidationError:
-        return ""
+        parsed = public_emotion_kernel_from_dict(dict(kernel)) if isinstance(kernel, dict) else kernel
+        if not isinstance(parsed, PublicEmotionKernel):
+            raise ValueError("invalid_kernel_type")
+        if not evaluate_public_emotion_kernel(parsed).passed:
+            raise ValueError("incomplete_selected_public_emotion_contract")
+    except (ValueError, TypeError) as exc:
+        raise PlanningCapabilitySelectionError("selected_public_emotion_kernel_invalid") from exc
     is_en = language.lower().startswith("en")
     lines = (
         ["[public_emotion_core | project-local audience bridge]"]

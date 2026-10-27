@@ -729,6 +729,24 @@ def evaluate_premium_project_readiness(
     """Evaluate whether a project has a complete premium genre engine."""
 
     metadata = _project_metadata(project_or_metadata)
+    projection_invalid = False
+    if 'premium_state_source_projection' in metadata:
+        from bestseller.services.story_bible_projection import validated_premium_projection
+        from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+
+        try:
+            view = validated_premium_projection(metadata)
+            if view is None:
+                raise ValueError('premium_state_source_projection_missing')
+        except ValueError:
+            projection_invalid = True
+        else:
+            # The caller's audit ledger and receipt stay intact. Every sub-gate
+            # below receives the same already-validated current materialization.
+            metadata = {**metadata, 'premium_state_ledger': view['active_ledger'],
+                'premium_state_snapshot': view['snapshot'],
+                'premium_state_ledger_report': validate_premium_state_ledger(view['active_ledger']).to_dict()}
+            metadata.pop('premium_state_source_projection', None)
     resolved_genre = _resolve_genre(project_or_metadata, metadata, genre)
     resolved_sub_genre = _resolve_sub_genre(project_or_metadata, metadata, sub_genre)
     capability = _capability_snapshot(
@@ -738,6 +756,10 @@ def evaluate_premium_project_readiness(
     )
 
     findings: list[PremiumBookGateFinding] = []
+    if projection_invalid:
+        findings.append(_finding('premium_state_source_projection_invalid',
+            'Current state projection does not match its retained source ledger.',
+            'premium_state_source_projection'))
     findings.extend(_ledger_findings(metadata))
     findings.extend(_capability_findings(capability))
     findings.extend(_metadata_warning_findings(metadata))

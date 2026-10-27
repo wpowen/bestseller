@@ -36,7 +36,8 @@ What this test pins
 ``_select_pending_chapters_for_resume`` must:
 
 1. Keep a REVISION chapter with zero drafts in the pending list.
-2. Skip a REVISION chapter that has >=1 draft (original stall semantics).
+2. Keep a REVISION chapter that has >=1 draft pending: a candidate is not a
+   formal promotion.
 3. Always skip COMPLETE chapters.
 4. When ``resume_enabled=False``, never skip anything.
 5. Surface draftless REVISION chapter numbers so the caller can log them.
@@ -127,18 +128,15 @@ async def test_draftless_revision_chapter_stays_pending() -> None:
         "Draftless REVISION chapter must remain pending — otherwise the "
         "writer silently skips it and leaves a permanent hole in the book."
     )
-    assert 3 not in pending_numbers, (
-        "Drafted REVISION chapter should skip on resume (accept_on_stall "
-        "semantics — take the current best draft as-is)."
-    )
+    assert 3 in pending_numbers, "A drafted REVISION chapter is still incomplete."
     assert {1, 2} & pending_numbers == set(), "COMPLETE chapters must skip."
     assert {5, 6} <= pending_numbers, "DRAFTING / PLANNED chapters must stay pending."
     assert draftless == [4]
 
 
 @pytest.mark.asyncio
-async def test_drafted_revision_chapter_skipped_when_accept_on_stall() -> None:
-    """Original accept_on_stall semantics still hold for drafted REVISION."""
+async def test_drafted_revision_chapter_stays_pending_when_accept_on_stall() -> None:
+    """A candidate draft must not hide an unfinished chapter on resume."""
     chapters = [
         _FakeChapter(chapter_number=1, status=ChapterStatus.REVISION.value),
     ]
@@ -152,7 +150,7 @@ async def test_drafted_revision_chapter_skipped_when_accept_on_stall() -> None:
         accept_on_stall=True,
     )
 
-    assert pending == []
+    assert [ch.chapter_number for ch in pending] == [1]
     assert draftless == []
 
 
@@ -321,3 +319,24 @@ async def test_reproduces_witness_protocol_ch_154_incident() -> None:
         "Before the fix this returned [] and ch 154 stayed a permanent hole."
     )
     assert draftless == [154]
+
+
+@pytest.mark.asyncio
+async def test_resume_starts_at_earliest_unpromoted_chapter_before_later_candidates() -> None:
+    """A later candidate must not allow resume to jump over chapter 2."""
+    chapters = [
+        _FakeChapter(chapter_number=1, status=ChapterStatus.COMPLETE.value),
+        _FakeChapter(chapter_number=2, status=ChapterStatus.DRAFTING.value),
+        _FakeChapter(chapter_number=3, status=ChapterStatus.DRAFTING.value),
+    ]
+    session = _FakeSession(drafted_chapter_ids={chapters[1].id, chapters[2].id})
+
+    pending, _ = await _select_pending_chapters_for_resume(
+        session,  # type: ignore[arg-type]
+        chapters,  # type: ignore[arg-type]
+        resume_enabled=True,
+        accept_on_stall=True,
+    )
+
+    assert [ch.chapter_number for ch in pending] == [2, 3]
+    assert min(ch.chapter_number for ch in pending) == 2

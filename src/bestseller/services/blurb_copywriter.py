@@ -138,6 +138,7 @@ class BlurbCopywritingResult:
     # 这是文案工序的产出缺陷，必须能在 story_appeal 报告里被看到和追责。
     canon_name_rejected: bool = False
     canon_name_rogue: list[str] = field(default_factory=list)
+    default_family: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -148,6 +149,7 @@ class BlurbCopywritingResult:
             "persona_used": self.persona_used,
             "canon_name_rejected": self.canon_name_rejected,
             "canon_name_rogue": list(self.canon_name_rogue),
+            "default_family": dict(self.default_family),
             "schema_version": "blurb-copywriting.v1",
         }
 
@@ -487,35 +489,26 @@ def demote_default_family_candidates(
     *,
     user_named_family: bool,
 ) -> tuple[list["BlurbCandidate"], list["BlurbCandidate"]]:
-    """默认族（债务/账本/丧葬）的候选把冠军位让给不在族里的。降权，不是杀权。
+    """返回完整候选池及默认族词面命中，供兼容调用方审计。
 
     用户 2026-08-24 报「债务这块的问题反反复复一直出现」。取证：书9 读者实际
     看到的三行（书名+简介+一句话）合起来 `is_debt_dominated=True`、3 个子族。
     构思终稿那道门量的是 premise+synopsis+writing_profile 的**整体 blob**，
     **从不单独量读者会看到的那几行**——而那几行是用户唯一会看到的东西。
 
-    淘汰赛本来就有 N 个候选，所以这里做**选择**而不是事后重写。形状与同日
-    卡片层降权一致：
-
-      · 比较式：同池里有不在族里的候选才让位
-      · 全池同族 → 原样放行，**绝不清空池**（2026-08-06 定案）
-      · 用户自己点名该族 → 完全跳过
-      · 不向任何 prompt 写一个该族的词（否定式指令点名母题词＝种词）
-
-    返回 (保留, 被降权的)——被降权的要留痕，用户有权知道成稿有没有落在
-    被过度复用的族里。
+    旧实现把正则分支与密度命中当成核心母题真值，并在混合池中移出候选。
+    词面信号不足以改变成员资格或冠军排序。第二个列表仍返回命中项，语义是
+    observed/advisory，不再是 demoted。用户点名时仍如实扫描，由回执的
+    ``user_requested`` 说明这是用户选择；检测本身不产生告警或选择动作。
     """
 
     from bestseller.services.anti_default_motif import is_debt_dominated
 
     items = list(candidates)
-    if not items or user_named_family:
+    if not items:
         return items, []
-    clean = [c for c in items if not is_debt_dominated(str(c.synopsis or ""))]
-    if not clean or len(clean) == len(items):
-        return items, []
-    dominated = [c for c in items if c not in clean]
-    return clean, dominated
+    observed = [c for c in items if is_debt_dominated(str(c.synopsis or ""))]
+    return items, observed
 
 
 async def run_blurb_copywriting(
@@ -541,6 +534,7 @@ async def run_blurb_copywriting(
     # （2026-08-26 基调断点）。默认空=prompt 逐字节不变。
     tone_preference: str = "",
     effect_skills: tuple[str, ...] = (),
+    channel: str | None = None,
     config: dict[str, Any] | None = None,
     generator: GeneratorFn | None = None,
     persona_judge: Any = None,
@@ -585,7 +579,7 @@ async def run_blurb_copywriting(
         # 让"Never raises"的docstring落空——调用方(conception.py)虽然有外层
         # try/except兜底，但那样整个文案工序连"回退v0"的报告都拿不到，直接
         # 静默跳过；这里失败仍应产出一份可持久化的 v0 回退结果。
-        persona = resolve_persona(genre, sub_genre, tuple(tags or ()))
+        persona = resolve_persona(genre, sub_genre, tuple(tags or ()), channel)
         band = platform_blurb_band(platform, config)
         bucket = _resolve_strategy_bucket(genre, sub_genre)
         strategies = cfg["strategies"].get(bucket) or cfg["strategies"]["default"]
@@ -646,7 +640,8 @@ async def run_blurb_copywriting(
                 report = await run_persona_click_judge(
                     session, settings,
                     title=title, synopsis=cand.synopsis, genre=genre, sub_genre=sub_genre,
-                    tags=tuple(tags or ()), samples=cfg["persona_samples"], judge=persona_judge,
+                    tags=tuple(tags or ()), channel=channel,
+                    samples=cfg["persona_samples"], judge=persona_judge,
                 )
                 persona_candidates[idx] = BlurbCandidate(
                     strategy=cand.strategy, synopsis=cand.synopsis,
@@ -726,11 +721,18 @@ async def run_blurb_copywriting(
         c for c in candidates
         if not c.has_fatal_pathology and not c.has_verified_contradiction
     ] or list(candidates)
-    # 默认族降权（2026-08-24）：读者看到的那几行才是用户唯一会看到的东西，
-    # 而构思终稿那道门量的是整体 blob，从不单独量它们。绝不清空池。
-    survivors, _family_demoted = demote_default_family_candidates(
+    # Lexical default-family detection is audit-only and cannot change ranking.
+    survivors, _family_observed = demote_default_family_candidates(
         survivors, user_named_family=user_named_default_family
     )
+    _default_family_audit = {
+        "scanned": True,
+        "observed_strategies": [row.strategy for row in _family_observed],
+        "user_requested": bool(user_named_default_family),
+        "policy": "advisory_only",
+        "blocking": False,
+        "selection_changed": False,
+    }
 
     def _rank_key(c: BlurbCandidate) -> tuple[float, float]:
         return (
@@ -779,7 +781,14 @@ async def run_blurb_copywriting(
                     blurb=verdict, meets_bar=verdict.total >= blurb_min,
                     overall_grade=verdict.grade,
                 )
-                feedback = build_improvement_feedback(fake_report, _appeal_cfg)
+                # ``build_improvement_feedback`` returns one token-capped string.
+                # Keep it as the first block, collect advisory findings as
+                # additional blocks, then join before calling the polisher.
+                # Treating the string as a list raised ``AttributeError`` in a
+                # live run and silently skipped the only focused polish pass.
+                feedback_lines = [
+                    build_improvement_feedback(fake_report, _appeal_cfg)
+                ]
                 # 教学轴发现逐条带引文喂进打磨——量具已把病灶指到句子级，
                 # 不给打磨手就等于白测。
                 for _f in champion.advisory_contradictions:
@@ -787,15 +796,16 @@ async def run_blurb_copywriting(
                     _qb = str(_f.get("quote_b") or "")
                     _why = str(_f.get("explanation") or "")
                     if _qb:
-                        feedback.append(
+                        feedback_lines.append(
                             f"逻辑病（{_f.get('kind')}）：「{_qa}」与「{_qb}」"
                             f"放在一起立不住——{_why}。改到自洽。"
                         )
                     else:
-                        feedback.append(
+                        feedback_lines.append(
                             f"逻辑病（{_f.get('kind')}）：「{_qa}」在全文找不到"
                             f"着落——{_why}。补上着落或删掉。"
                         )
+                feedback = "\n".join(line for line in feedback_lines if line.strip())
                 polished, run_id = await _polish_champion(
                     session, settings, synopsis=champion.synopsis, feedback=feedback,
                     genre=genre, sub_genre=sub_genre, language=language,
@@ -871,6 +881,7 @@ async def run_blurb_copywriting(
             champion=v0_synopsis, champion_strategy="v0_fallback",
             candidates=candidates, polish_rounds=polish_rounds,
             fell_back_to_v0=True, persona_used=persona_used, llm_run_ids=llm_run_ids,
+            default_family=_default_family_audit,
         )
 
     # 干净的冠军若是画像判官淘汰赛选出来的（persona_used），不再用确定性 gate
@@ -883,6 +894,7 @@ async def run_blurb_copywriting(
             champion=champion.synopsis, champion_strategy=champion.strategy,
             candidates=candidates, polish_rounds=polish_rounds,
             fell_back_to_v0=False, persona_used=persona_used, llm_run_ids=llm_run_ids,
+            default_family=_default_family_audit,
         )
 
     # persona 不可用（判官全废/未启用），排序降级为确定性 gate 分——这时才用
@@ -892,12 +904,14 @@ async def run_blurb_copywriting(
             champion=v0_synopsis, champion_strategy="v0_fallback",
             candidates=candidates, polish_rounds=polish_rounds,
             fell_back_to_v0=True, persona_used=persona_used, llm_run_ids=llm_run_ids,
+            default_family=_default_family_audit,
         )
 
     return BlurbCopywritingResult(
         champion=champion.synopsis, champion_strategy=champion.strategy,
         candidates=candidates, polish_rounds=polish_rounds,
         fell_back_to_v0=False, persona_used=persona_used, llm_run_ids=llm_run_ids,
+        default_family=_default_family_audit,
     )
 
 

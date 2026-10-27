@@ -21,7 +21,7 @@ from bestseller.domain.appeal import AppealDimension, BlurbAppealVerdict
 from bestseller.services.blurb_pathology import detect_blurb_pathology
 
 _CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
-_SENTENCE_SPLIT_RE = re.compile(r"[。？！!?\n]")
+_SENTENCE_RE = re.compile(r'[^。？！!?\n]+[。？！!?]*[”’"」』]?')
 _DIGIT_RE = re.compile(r"[0-9一二三四五六七八九十百千万亿]")
 # A *specific* quantity: Arabic digits, or a CJK number bound to a strong unit
 # (年/天/万/亿…). Distinguishes "三天内一个亿" (concrete stakes) from the vague
@@ -136,22 +136,30 @@ def strip_leading_tag_line(text: str) -> str:
         if end == -1 or end > 80:
             break
         stripped = stripped[end + 1 :].lstrip("＋+ \n\r\t")
+    # Generated tag metadata is not the opening story sentence. Match only
+    # the leading tag-list line; narrative punctuation makes it story text.
+    first, _, remainder = stripped.partition("\n")
+    tag = r'[^+＋\n，。！？?!；;“”"：:]+'
+    if re.fullmatch(r"标签[：:]\s*" + tag + r"(?:[+＋]" + tag + r")+", first.strip()):
+        stripped = remainder.lstrip("\n\r\t ")
     return stripped
 
 
+def _story_sentences(text: str) -> list[str]:
+    """Keep terminal punctuation: question marks are scoring evidence."""
+    return [segment.strip() for segment in _SENTENCE_RE.findall(
+        strip_leading_tag_line(text).strip()
+    ) if segment.strip()]
+
+
 def _first_sentence(text: str) -> str:
-    text = strip_leading_tag_line(text)
-    for seg in _SENTENCE_SPLIT_RE.split((text or "").strip()):
-        seg = seg.strip()
-        if seg:
-            return seg
-    return ""
+    segments = _story_sentences(text)
+    return segments[0] if segments else ""
 
 
 def _last_sentence(text: str) -> str:
-    text = strip_leading_tag_line(text)
-    segs = [s.strip() for s in _SENTENCE_SPLIT_RE.split((text or "").strip()) if s.strip()]
-    return segs[-1] if segs else ""
+    segments = _story_sentences(text)
+    return segments[-1] if segments else ""
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 5.0) -> float:
@@ -387,10 +395,11 @@ def _score_adjective_thrift(synopsis: str) -> tuple[float, str, dict]:
 def _score_length_format(
     synopsis: str, envelope: dict[str, Any]
 ) -> tuple[float, str, dict]:
-    length = _cjk_len(synopsis)
+    normalized = strip_leading_tag_line(synopsis)
+    length = _cjk_len(normalized)
     lo = int(envelope.get("min", 80)) if isinstance(envelope, dict) else 80
     hi = int(envelope.get("max", 220)) if isinstance(envelope, dict) else 220
-    paragraphs = len([ln for ln in (synopsis or "").splitlines() if ln.strip()])
+    paragraphs = len([ln for ln in normalized.splitlines() if ln.strip()])
     if lo <= length <= hi:
         score = 5.0
     elif length < lo:

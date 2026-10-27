@@ -1,18 +1,7 @@
-"""任务卡必须承认项目已经完结。
+"""Task display follows fresh native delivery, preserving historical failures.
 
-任务状态由 ARQ job + 最后一次 emit 的 stage 推导。autowrite 任务在把书移交给
-自愈时就结束了，此后书完结了却**没有任何东西再往那个任务上 emit**，于是任务卡
-永远冻结在移交那一刻。
-
-真机取证（2026-07-28，urban-power-reversal-1785201018）：项目
-``status=completed``、debt 如实记在 ``[1,2,3]``，界面上那张卡却仍写着
-``project_repair_requires_machine_repair``——用户看到的是「任务都失败了」，
-而书其实已经写完。
-
-任务卡和项目跑在**两个进程**里（任务在 web 进程内存，闭环判定在 worker），
-所以 worker 改不到它。修在读取侧：项目才是「书写完没有」的事实源，序列化任务
-时就地采信它，且复用已有的 ``_apply_project_titles_to_tasks`` 那次查询，不另
-开一趟 DB 往返。
+Synthetic reader results exercise projection only, not physical delivery proof.
+Lifecycle completed alone cannot certify a finished book.
 """
 
 from __future__ import annotations
@@ -29,9 +18,8 @@ pytestmark = pytest.mark.unit
 class TestCompletionIsReadFromTheProject:
     def test_enrichment_selects_project_status(self) -> None:
         source = inspect.getsource(server._apply_project_titles_to_tasks)
-        assert "ProjectModel.status" in source, (
-            "任务卡富化必须同时取项目状态——项目是书完结与否的事实源"
-        )
+        assert "select(ProjectModel)" in source
+        assert "_read_project_delivery_status(sess, row)" in source
 
     def test_enrichment_hands_the_statuses_to_the_settler(self) -> None:
         """取到状态还不够，必须真的用它去改写任务卡。"""
@@ -51,7 +39,7 @@ class TestCompletionIsReadFromTheProject:
         """别为此多开一趟 DB 往返——同一次 select 里带上就行。"""
 
         source = inspect.getsource(server._apply_project_titles_to_tasks)
-        assert source.count("await sess.execute(") == 1
+        assert source.count("await sess.scalars(") == 1
 
 
 class TestOnlyCompletionIsOverridden:
@@ -80,9 +68,13 @@ class TestOnlyCompletionIsOverridden:
                 "error": "project_repair_requires_machine_repair",
             }
         ]
-        server._settle_task_cards_from_project_status(tasks, {"s": "completed"})
+        # Explicit synthetic native-reader seam; status alone cannot settle.
+        server._settle_task_cards_from_project_status(tasks, {"s": "completed"},
+            {"s": {"status": "verified", "is_complete": True}})
         assert tasks[0]["status"] == "completed"
         assert not tasks[0]["error"], "书写完了就不该再挂着修复错误"
+        assert tasks[0]["current_stage"] == "project_closed"
+        assert tasks[0]["task_history"][0]["error"] == "project_repair_requires_machine_repair"
 
     def test_conception_failure_is_not_resurrected(self) -> None:
         """构思期失败的任务没有项目行，绝不能被误判成完结。"""

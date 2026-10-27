@@ -460,6 +460,114 @@ def test_hard_pollution_repair_outranks_weak_echo_noise() -> None:
     ) is True
 
 
+def test_frequency_only_motif_shape_is_audit_only() -> None:
+    """关系/每一类跨轴重复不能单独授权整份 finalize 重写。"""
+
+    from bestseller.services.motif_concentration import detect_amplified_motifs
+
+    axes = {
+        name: "关系关系关系关系关系关系 每一每一每一每一每一"
+        for name in ("hook", "edge", "relation", "world", "serial")
+    }
+    motifs = detect_amplified_motifs(
+        axes,
+        source_text="这是一个完全不同的故事素材。" * 20,
+    )
+    assert {motif.term for motif in motifs} >= {"关系", "每一"}
+    assert not conception_services._mechanism_retry_has_non_motif_trigger(
+        echo_report=[],
+        debt_hit=False,
+        death_hit=False,
+        ontology_hit=(),
+        intent_violations=(),
+        heavy_tone_hits=(),
+    )
+
+
+def test_real_ontology_or_intent_finding_still_authorizes_retry() -> None:
+    assert conception_services._mechanism_retry_has_non_motif_trigger(
+        echo_report=[],
+        debt_hit=False,
+        death_hit=False,
+        ontology_hit=("现代法医",),
+        intent_violations=(),
+        heavy_tone_hits=(),
+    )
+
+
+def test_motif_only_entry_uses_audit_event_and_skips_retry_runtime() -> None:
+    """运行实际 retry gate：字频信号只审计，语义问题才授权重写。"""
+
+    from bestseller.services.motif_concentration import detect_amplified_motifs
+
+    axes = {
+        name: "关系关系关系关系关系关系 每一每一每一每一每一"
+        for name in ("hook", "edge", "relation", "world", "serial")
+    }
+    motifs = detect_amplified_motifs(
+        axes, source_text="这是一个完全不同的故事素材。" * 20
+    )
+    events: list[tuple[str, dict[str, object]]] = []
+    retry_calls = 0
+
+    authorized = conception_services._mechanism_retry_gate(
+        motif_hits=motifs,
+        echo_report=[],
+        debt_hit=False,
+        death_hit=False,
+        ontology_hit=(),
+        intent_violations=(),
+        heavy_tone_hits=(),
+        emit=lambda stage, payload: events.append((stage, payload)),
+    )
+    if authorized:
+        retry_calls += 1
+    assert retry_calls == 0
+    assert events == [
+        (
+            "conception_motif_amplification_audit",
+            {
+                "mode": "audit_only",
+                "retry_started": False,
+                "policy": "authoritative_trigger_required",
+            },
+        )
+    ]
+
+    events.clear()
+    authorized = conception_services._mechanism_retry_gate(
+        motif_hits=motifs,
+        echo_report=[],
+        debt_hit=False,
+        death_hit=False,
+        ontology_hit=("现代法医",),
+        intent_violations=(),
+        heavy_tone_hits=(),
+        emit=lambda stage, payload: events.append((stage, payload)),
+    )
+    if authorized:
+        retry_calls += 1
+    assert retry_calls == 1
+    assert events == [
+        (
+            "conception_mechanism_echo_retry",
+            {
+                "mode": "retry_assisted",
+                "retry_started": True,
+                "policy": "authoritative_trigger_required",
+            },
+        )
+    ]
+    assert conception_services._mechanism_retry_has_non_motif_trigger(
+        echo_report=[],
+        debt_hit=False,
+        death_hit=False,
+        ontology_hit=(),
+        intent_violations=("tone mismatch",),
+        heavy_tone_hits=(),
+    )
+
+
 def test_retry_cannot_trade_debt_pollution_for_death_pollution() -> None:
     assert conception_services._should_adopt_mechanism_retry(
         retry_result={"premise": "亡亲归来"},

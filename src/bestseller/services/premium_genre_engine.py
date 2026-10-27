@@ -286,13 +286,27 @@ def _build_entry_system_context_blocks(
     metadata: Mapping[str, object],
     story_bible_context: Mapping[str, object],
 ) -> tuple[str, str, str, tuple[str, ...]]:
+    from bestseller.services.planning_capability_selection import (
+        PlanningCapabilitySelectionError, planning_capability_selected,
+    )
+
+    if not planning_capability_selected(metadata, "entry_system_kernel"):
+        return "", "", "", ()
     warnings: list[str] = []
     kernel_block = ""
     registry_block = ""
     ledger_block = ""
-    kernel_payload = _as_mapping(
-        metadata.get("entry_system_kernel") or story_bible_context.get("entry_system_kernel")
-    )
+    def selected_payload(key: str, *, required: bool = False) -> Mapping[str, object]:
+        # A malformed supplied asset must not be hidden by a fallback channel.
+        raw = metadata.get(key) if key in metadata else story_bible_context.get(key)
+        if raw is None and not required:
+            return {}
+        if not isinstance(raw, Mapping) or not raw:
+            suffix = "missing_or_invalid" if required else "invalid"
+            raise PlanningCapabilitySelectionError(f"selected_{key}_{suffix}")
+        return raw
+
+    kernel_payload = selected_payload("entry_system_kernel", required=True)
     if kernel_payload:
         try:
             # Scene-writer diet: the full kernel (8 types / 5 ladders / 6 axes)
@@ -304,27 +318,22 @@ def _build_entry_system_context_blocks(
                 max_types=4,
                 max_ladders=2,
                 max_axes=4,
+                metadata=dict(metadata),
             )
         except Exception as exc:
-            warnings.append(f"entry_system_kernel_invalid:{exc.__class__.__name__}")
+            raise PlanningCapabilitySelectionError("selected_entry_system_kernel_invalid") from exc
 
-    registry_payload = _as_mapping(
-        metadata.get("entry_registry") or story_bible_context.get("entry_registry")
-    )
+    registry_payload = selected_payload("entry_registry")
     registry = None
     if registry_payload:
         try:
             registry = entry_registry_from_dict(registry_payload)
             registry_block = render_entry_registry_prompt_block(registry, max_entries=6)
         except Exception as exc:
-            warnings.append(f"entry_registry_invalid:{exc.__class__.__name__}")
+            raise PlanningCapabilitySelectionError("selected_entry_registry_invalid") from exc
 
-    snapshot_payload = _as_mapping(
-        metadata.get("entry_state_snapshot") or story_bible_context.get("entry_state_snapshot")
-    )
-    ledger_payload = _as_mapping(
-        metadata.get("entry_state_ledger") or story_bible_context.get("entry_state_ledger")
-    )
+    snapshot_payload = selected_payload("entry_state_snapshot")
+    ledger_payload = selected_payload("entry_state_ledger")
     if snapshot_payload:
         try:
             ledger_block = render_entry_state_ledger_block(snapshot_payload)
@@ -335,7 +344,7 @@ def _build_entry_system_context_blocks(
                     max_entries=6,
                 )
         except Exception as exc:
-            warnings.append(f"entry_state_snapshot_invalid:{exc.__class__.__name__}")
+            raise PlanningCapabilitySelectionError("selected_entry_state_snapshot_invalid") from exc
     elif registry is not None and ledger_payload:
         events = (
             ledger_payload.get("events")
@@ -351,7 +360,7 @@ def _build_entry_system_context_blocks(
                 max_entries=6,
             )
         except Exception as exc:
-            warnings.append(f"entry_state_ledger_invalid:{exc.__class__.__name__}")
+            raise PlanningCapabilitySelectionError("selected_entry_state_ledger_invalid") from exc
 
     return kernel_block, registry_block, ledger_block, tuple(warnings)
 

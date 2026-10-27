@@ -10,7 +10,7 @@ Public API:
 
 * ``extract_open_threads(prev_chapter_tail)`` -- run heuristics over the last
   ~800 chars of the previous chapter and emit a list of ``OpenThread`` records
-  (location / participants / immediate_threat / body_state / unanswered_question).
+  (location / immediate_threat / body_state / unanswered_question).
 * ``validate_chapter_seam(prev_tail, current_opening)`` -- check whether each
   open thread is acknowledged inside the first ``opening_window_chars`` chars
   of the current chapter, returning ``SeamReport``.
@@ -18,6 +18,10 @@ Public API:
 All checks are local computation -- zero LLM cost. The output feeds critic's
 ``chapter_seam_continuity`` dimension and, on failure, drives editor's
 ``chapter_seam_bridge_paragraph`` repair action.
+
+Participant presence is unsupported here: name-like text does not prove
+that an actor was present at the chapter boundary. Actor continuity remains
+part of the primary cited review and explicit chapter seam contracts.
 """
 
 from __future__ import annotations
@@ -40,11 +44,22 @@ _LOCATION_HINTS = (
     "码头", "客栈", "酒楼", "校场", "刑场",
 )
 
-_THREAT_VERBS = (
-    "围", "围住", "围困", "封", "封住", "拦", "截", "堵", "追", "扑", "袭", "杀",
-    "斩", "刺", "捉", "擒", "锁", "缚", "抓", "扣", "审", "逼", "迫", "胁", "胁迫",
-    "挡", "挟", "盯", "监视", "盯上", "盯梢",
+# An isolated character (e.g. a glance, a lock or a grip) cannot establish
+# immediate danger. Require an explicit attack or coercive-action predicate.
+_THREAT_PREDICATE_RE = re.compile(
+    r"(?P<surrounded>围住|围在)|"
+    r"围困|追杀|追击|袭击|刺杀|扑杀|砍向|刺向|杀来|"
+    r"绑架|劫持|挟持|胁迫|拔刀|拔剑|持枪|封锁退路|堵住去路"
 )
+_SURROUND_DANGER_RE = re.compile(
+    r"持刀|持枪|拔刀|拔剑|刀锋|剑锋|枪口|追兵|卫兵|守卫|歹徒|刺客|敌军|匪徒|执法|"
+    r"挟持|退路|逃路|不得离开|不准离开|不许离开|杀气"
+)
+_NEGATED_THREAT_PREFIX_RE = re.compile(
+    r"(?:没有|并未|并不|不再|未曾|无须|停止|放弃)[^，,。！？!?；;\n]{0,5}$"
+)
+_RESOLVED_THREAT_SUFFIX_RE = re.compile(r"(?:已经|早已)?(?:停止|结束|解除)")
+
 
 _BODY_STATE_KEYWORDS = (
     "受伤", "重伤", "断", "骨碎", "流血", "昏迷", "晕厥", "失血", "失力", "虚脱",
@@ -55,72 +70,6 @@ _BODY_STATE_KEYWORDS = (
 _QUESTION_END_PUNCT = ("？", "?")
 
 _QUESTION_PATTERN = re.compile(r"[^。！!？?…\n]{4,40}[？?]")
-
-# Common 2-3 char prose tokens that LOOK like names but aren't (must be kept
-# in sync with the same list in :mod:`deduplication`).
-_NAME_STOPWORDS = frozenset({
-    "他们", "她们", "你们", "我们", "自己", "别人", "众人", "众弟", "那人", "这人",
-    "门口", "门外", "屋内", "屋外", "丹房", "藏经", "演武", "宿舍", "院子", "山门",
-    "庄严", "突然", "忽然", "刚才", "片刻", "片晌", "瞬间", "果然", "终于", "原来",
-    "其实", "其中", "另一", "其他", "其余", "那个", "这个", "什么", "怎么", "怎样",
-    "为什么", "怎么办", "没料", "没想", "想到", "似乎", "仿佛", "宛如", "好像",
-    "月光", "晨光", "夜色", "黄昏", "傍晚", "深夜",
-    # Body / location prepositional words (frequent false positives in CJK prose)
-    "掌中", "袖中", "胸中", "心中", "手中", "怀中", "眼中", "嘴中", "口中",
-    "头顶", "身前", "身后", "身上", "身侧", "脚下", "面前", "眼前", "面上",
-    "腰间", "肩头", "肩上", "膝上",
-    # Common dialogue / mood tokens that surface inside quoted speech
-    "跑不", "跑得", "跑了", "走了", "走开", "走吧", "知道", "不知", "不是",
-    "不能", "不行", "不要", "还是", "已经", "现在",
-    # Folk-horror prose fragments that showed up as fake participants in
-    # chapter seams ("镜子" / "然后" blocked 青囊 ch2 despite the actual
-    # cliffhanger being the man with the old copper key).
-    "然后", "镜子", "镜里", "镜中", "声音", "男人", "钥匙", "铜钱", "门外",
-})
-
-_NAME_BOUNDARY_CHARS = set("\n\t 　，。：；！？、「」『』\"\"''（）()【】…·—-")
-
-
-def _scan_names(text: str) -> dict[str, list[int]]:
-    """Return ``{name: [positions]}`` for 2-3 char Han words at word boundaries.
-
-    The position is the *start* offset of each occurrence. False positives
-    are filtered downstream by frequency (most plot-relevant names appear
-    multiple times in any non-trivial chapter tail).
-    """
-    out: dict[str, list[int]] = {}
-    if not text:
-        return out
-    n = len(text)
-    for i in range(n):
-        if i > 0 and text[i - 1] not in _NAME_BOUNDARY_CHARS:
-            continue
-        for length in (2, 3):
-            end = i + length
-            if end > n:
-                continue
-            cand = text[i:end]
-            if not all("一" <= c <= "鿿" for c in cand):
-                continue
-            if cand in _NAME_STOPWORDS:
-                continue
-            out.setdefault(cand, []).append(i)
-
-    # Drop 3-char tokens whose 2-char prefix is either (a) in the pool with
-    # equal-or-higher frequency, or (b) already a known stopword (because
-    # then the 3-char form is just stopword+1-char like "掌中令"/"袖中物").
-    dropped: list[str] = []
-    for token in out:
-        if len(token) != 3:
-            continue
-        prefix = token[:2]
-        if prefix in _NAME_STOPWORDS:
-            dropped.append(token)
-        elif prefix in out and len(out[prefix]) >= len(out[token]):
-            dropped.append(token)
-    for t in dropped:
-        del out[t]
-    return out
 
 # Latin POV-friendly fallbacks (rough heuristics, used when CJK density < 30%)
 _LATIN_THREAT_RE = re.compile(
@@ -182,23 +131,45 @@ class ThreadResolution:
 
 @dataclass(frozen=True)
 class SeamReport:
-    """Result of validating a chapter seam."""
+    """Raw observations with supported threads exposed for enforcement.
+
+    Keep legacy participant observations intact for inspection, but never
+    give them authority through scores, findings or repair instructions.
+    """
 
     open_threads: tuple[OpenThread, ...]
     resolutions: tuple[ThreadResolution, ...]
     silent_drops: tuple[ThreadResolution, ...] = field(default_factory=tuple)
 
     @property
+    def eligible_open_threads(self) -> tuple[OpenThread, ...]:
+        return tuple(t for t in self.open_threads if t.kind != ThreadKind.PARTICIPANT)
+
+    @property
+    def eligible_resolutions(self) -> tuple[ThreadResolution, ...]:
+        return tuple(r for r in self.resolutions if r.thread.kind != ThreadKind.PARTICIPANT)
+
+    @property
+    def eligible_silent_drops(self) -> tuple[ThreadResolution, ...]:
+        return tuple(d for d in self.silent_drops if d.thread.kind != ThreadKind.PARTICIPANT)
+
+    @property
+    def participant_coverage(self) -> dict[str, str]:
+        return {"status": "unsupported", "reason": "no_source_bound_end_presence"}
+
+    @property
     def passed(self) -> bool:
-        return not self.silent_drops
+        """No supported drops; does not certify participant continuity."""
+        return not self.eligible_silent_drops
 
     @property
     def score(self) -> float:
-        """Continuity score in [0, 1]. 1.0 if all threads resolved; linear penalty per silent drop."""
-        if not self.open_threads:
+        """Supported-thread score; unsupported participants are excluded."""
+        threads = self.eligible_open_threads
+        if not threads:
             return 1.0
-        resolved = len(self.open_threads) - len(self.silent_drops)
-        return max(0.0, resolved / len(self.open_threads))
+        resolved = len(threads) - len(self.eligible_silent_drops)
+        return max(0.0, resolved / len(threads))
 
 
 # ---------------------------------------------------------------------------
@@ -255,24 +226,30 @@ def extract_open_threads(prev_chapter_tail: str) -> list[OpenThread]:
     if best_loc is not None:
         add(ThreadKind.LOCATION, best_loc[0], best_loc[1])
 
-    # 2. Participants: rank by frequency, keep top 3.
-    name_positions = _scan_names(text)
-    name_counts = {n: len(positions) for n, positions in name_positions.items()}
-    # In a short tail a name only needs to appear once to count -- we are
-    # cataloguing actors present at the cliffhanger, not finding nicknames.
-    for name in sorted(name_counts, key=lambda n: (-name_counts[n], name_positions[n][0]))[:3]:
-        add(ThreadKind.PARTICIPANT, name, name_positions[name][0])
+    # 2. Participant presence is unsupported. A spelling or name catalogue
+    # cannot establish who was actually present at this chapter boundary.
 
     # 3. Immediate threat: scan whole tail for threat verbs in the last 200 chars
     threat_window = text[-200:]
     threat_offset = len(text) - len(threat_window)
     cjk = _is_cjk_dominant(text)
     if cjk:
-        for verb in _THREAT_VERBS:
-            idx = threat_window.rfind(verb)
-            if idx >= 0:
-                add(ThreadKind.IMMEDIATE_THREAT, verb, threat_offset + idx)
-                break
+        for match in reversed(list(_THREAT_PREDICATE_RE.finditer(threat_window))):
+            prefix = threat_window[max(0, match.start() - 12):match.start()]
+            suffix = threat_window[match.end():]
+            if match.group("surrounded"):
+                clause = (
+                    re.split(r"[，,。！？!?；;\n]", threat_window[:match.start()])[-1]
+                    + match.group(0)
+                    + re.split(r"[，,。！？!?；;\n]", suffix, maxsplit=1)[0]
+                )
+                if not _SURROUND_DANGER_RE.search(clause):
+                    continue
+            if _NEGATED_THREAT_PREFIX_RE.search(prefix) or _RESOLVED_THREAT_SUFFIX_RE.match(suffix):
+                continue
+            marker = match.group("surrounded") or match.group(0)
+            add(ThreadKind.IMMEDIATE_THREAT, marker, threat_offset + match.start())
+            break
     else:
         m = _LATIN_THREAT_RE.search(threat_window)
         if m:
@@ -332,13 +309,6 @@ def _classify_resolution(
             return "relocation", marker
 
     # 4. Kind-specific fallbacks
-    if thread.kind == ThreadKind.PARTICIPANT:
-        # The other named character doesn't appear, but the protagonist might be
-        # alone now -- we don't penalize this if some explanation marker appears
-        # later. Treat it as on_screen if any first/third-person body-state cue
-        # is in the opening.
-        if any(cue in opening for cue in ("醒", "脱身", "逃", "甩开", "摆脱", "独自", "孤身")):
-            return "on_screen", "状态过渡词"
     if thread.kind == ThreadKind.IMMEDIATE_THREAT:
         if any(cue in opening for cue in ("脱险", "逃出", "甩开", "甩脱", "摆脱", "突围", "撤离", "退去")):
             return "on_screen", "脱险词"
@@ -381,7 +351,8 @@ def validate_chapter_seam(
         opening_window_chars: how many chars of the current chapter to scan.
 
     Returns:
-        ``SeamReport`` -- ``passed`` is ``True`` iff zero silent drops.
+        ``SeamReport`` -- ``passed`` means zero supported silent drops;
+        participant continuity remains unsupported.
     """
     threads = extract_open_threads(prev_chapter_tail)
     if not threads:
@@ -392,28 +363,6 @@ def validate_chapter_seam(
     for thread in threads:
         kind, evidence = _classify_resolution(thread, opening_window)
         resolutions.append(ThreadResolution(thread=thread, resolution=kind, evidence=evidence))
-
-    # Two-pass refinement: if both LOCATION and at least one PARTICIPANT
-    # continued directly into the opening, an outstanding IMMEDIATE_THREAT
-    # marked ``silent_drop`` is almost certainly being continued in place
-    # (the antagonist is still pressing the cliffhanger). Upgrade it to
-    # ``continuation``.
-    has_loc_continuation = any(
-        r.thread.kind == ThreadKind.LOCATION and r.resolution == "continuation"
-        for r in resolutions
-    )
-    has_participant_continuation = any(
-        r.thread.kind == ThreadKind.PARTICIPANT and r.resolution == "continuation"
-        for r in resolutions
-    )
-    if has_loc_continuation and has_participant_continuation:
-        for idx, r in enumerate(resolutions):
-            if r.thread.kind == ThreadKind.IMMEDIATE_THREAT and r.resolution == "silent_drop":
-                resolutions[idx] = ThreadResolution(
-                    thread=r.thread,
-                    resolution="continuation",
-                    evidence="威胁场景延续（场景 + 参与者均承接）",
-                )
 
     drops = [r for r in resolutions if r.resolution == "silent_drop"]
     return SeamReport(
@@ -438,14 +387,12 @@ def build_seam_bridge_repair_prompt(report: SeamReport) -> str:
         return ""
 
     bullets: list[str] = []
-    for drop in report.silent_drops:
+    for drop in report.eligible_silent_drops:
         thread = drop.thread
         if thread.kind == ThreadKind.IMMEDIATE_THREAT:
             bullets.append(f"- 前章末尾尚有威胁未处理（标志：「{thread.marker}」）；请在本章开篇 200-300 字内交代主角如何脱身 / 被压制 / 暂时摆脱该威胁。")
         elif thread.kind == ThreadKind.LOCATION:
             bullets.append(f"- 前章末尾主角位于「{thread.marker}」；本章开篇若已换场景，请明示空间转场（被拖走 / 主动脱身 / 时间跳跃后醒来）。")
-        elif thread.kind == ThreadKind.PARTICIPANT:
-            bullets.append(f"- 前章末尾「{thread.marker}」在场；本章开篇请说明该角色去向（追丢 / 退去 / 同行 / 仍在监视）。")
         elif thread.kind == ThreadKind.BODY_STATE:
             bullets.append(f"- 前章末尾主角身体处于「{thread.marker}」状态；本章开篇请承接该身体感知或交代缓和过程。")
         elif thread.kind == ThreadKind.UNANSWERED_QUESTION:

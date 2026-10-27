@@ -73,6 +73,12 @@ FORCES_PER_VOLUME_RATIO: int = 4
 # Above this ratio the plan will collapse into a one-antagonist arc.
 MAX_FORCE_SHARE: float = 0.40
 
+
+def _max_force_volumes(volume_count: int) -> int:
+    """A force can occupy at least one indivisible volume; longer plans keep 40%."""
+    return max(1, math.floor(volume_count * MAX_FORCE_SHARE))
+
+
 # The union of all active_volumes across forces should cover at least this
 # fraction of the volume plan. Below this, downstream volumes fall through
 # to the single-antagonist fallback in ``_build_volume_plan_fallback``.
@@ -154,8 +160,8 @@ class FoundationRichnessReport:
             )
             lines.append(
                 f"- No single force may span more than "
-                f"{int(MAX_FORCE_SHARE * 100)}% of the volume count (≤ "
-                f"{max(1, int(self.volume_count * MAX_FORCE_SHARE))} volumes)."
+                f"{int(MAX_FORCE_SHARE * 100)}% rounded down, with a minimum of 1 volume (≤ "
+                f"{_max_force_volumes(self.volume_count)} volumes)."
             )
             lines.append(
                 "- Use at least 2 distinct `force_type` values across the "
@@ -187,8 +193,8 @@ class FoundationRichnessReport:
             )
             lines.append(
                 f"- 任何单一 force 的 active_volumes 不得超过 "
-                f"{int(MAX_FORCE_SHARE * 100)}%（≤ "
-                f"{max(1, int(self.volume_count * MAX_FORCE_SHARE))} 卷）。"
+                f"{int(MAX_FORCE_SHARE * 100)}%向下取整、至少1卷（≤ "
+                f"{_max_force_volumes(self.volume_count)} 卷）。"
             )
             lines.append(
                 "- 整个 roster 至少要有 2 种不同的 `force_type`"
@@ -381,7 +387,8 @@ def scan_cast_foundation_richness(
             )
         )
 
-    if forces and max_share > MAX_FORCE_SHARE:
+    max_force_volumes = _max_force_volumes(volume_count)
+    if forces and max(len(active) for _, active in per_force_volumes) > max_force_volumes:
         dominant = max(per_force_volumes, key=lambda t: len(t[1]))
         findings.append(
             FoundationRichnessFinding(
@@ -391,14 +398,15 @@ def scan_cast_foundation_richness(
                     f"Force '{dominant[0]}' spans "
                     f"{len(dominant[1])}/{volume_count} volumes "
                     f"({int(max_share * 100)}%); max allowed is "
-                    f"{int(MAX_FORCE_SHARE * 100)}%."
+                    f"{max_force_volumes} volumes (40% rounded down, minimum 1)."
                     if is_en
                     else f"单一 force「{dominant[0]}」覆盖 "
                     f"{len(dominant[1])}/{volume_count} 卷"
                     f"（{int(max_share * 100)}%），超过上限 "
-                    f"{int(MAX_FORCE_SHARE * 100)}%。"
+                    f"{max_force_volumes} 卷（40%向下取整，至少1卷）。"
                 ),
-                payload={"force": dominant[0], "active_volumes": list(dominant[1])},
+                payload={"force": dominant[0], "active_volumes": list(dominant[1]),
+                         "max_active_volumes": max_force_volumes},
             )
         )
 
@@ -537,7 +545,7 @@ def render_foundation_constraints_block(
     required_supporting = max(
         1, math.ceil(volume_count / SUPPORTING_ANTAGONIST_PER_VOLUME_RATIO)
     )
-    max_single = max(1, int(volume_count * MAX_FORCE_SHARE))
+    max_single = _max_force_volumes(volume_count)
 
     if _is_english(language):
         return (
@@ -548,7 +556,7 @@ def render_foundation_constraints_block(
             "numbers). The union MUST cover at least "
             f"{int(MIN_VOLUME_COVERAGE * 100)}% of volumes 1..{volume_count}.\n"
             f"- No single force may span more than {max_single} volumes "
-            f"(≤ {int(MAX_FORCE_SHARE * 100)}%).\n"
+            f"({int(MAX_FORCE_SHARE * 100)}% rounded down, minimum 1 volume).\n"
             "- Use at least 2 distinct `force_type` values across the roster.\n"
             f"- `supporting_cast` should include at least {required_supporting} "
             "antagonist-role entries, one per force when feasible.\n"
@@ -564,7 +572,7 @@ def render_foundation_constraints_block(
         f"active_volumes 并集必须覆盖 1..{volume_count} 中至少 "
         f"{int(MIN_VOLUME_COVERAGE * 100)}% 的卷。\n"
         f"- 任何单一 force 的 active_volumes 不得超过 {max_single} 卷"
-        f"（≤ {int(MAX_FORCE_SHARE * 100)}%）。\n"
+        f"（{int(MAX_FORCE_SHARE * 100)}%向下取整，至少1卷）。\n"
         "- 整个 roster 至少要有 2 种不同的 `force_type`。\n"
         f"- `supporting_cast` 至少包含 {required_supporting} 个 antagonist 类角色，"
         "力求每个 force 都有对应人物。\n"

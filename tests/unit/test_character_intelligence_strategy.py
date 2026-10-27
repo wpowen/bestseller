@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
+from bestseller.infra.db.models import ProjectModel
 from bestseller.services.character_intelligence.strategy import (
+    AdoptedReferenceUnavailable,
+    ReferenceContextRequiredError,
+    adopt_reference_projection,
     build_character_strategy_from_distillation,
     character_strategy_from_project_metadata,
 )
+from bestseller.services.prompt_source_policy import stamp_reference_cache
 
 pytestmark = pytest.mark.unit
 
@@ -109,21 +116,54 @@ def test_character_strategy_from_project_metadata_prefers_explicit_strategy() ->
         ],
     }
 
-    inferred = character_strategy_from_project_metadata({"distilled_strategy_card": card})
+    project = ProjectModel(
+        id=uuid4(), slug="author-selected-strategy", title="Author Selected Strategy",
+        genre="异界", sub_genre="cross-system", language="zh-CN", audience="general",
+        target_word_count=100000, target_chapters=40, reader_contract_json={},
+        dramatic_question="如何守住自己的选择？", theme_statement="协作与责任",
+        metadata_json={"distilled_strategy_card": card},
+    )
+    assert character_strategy_from_project_metadata(project.metadata_json) == {}
+    assert character_strategy_from_project_metadata(project.metadata_json, project=project) == {}
+    with pytest.raises(ValueError, match="unavailable reference"):
+        adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author")
+    stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+    adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author")
+    inferred = character_strategy_from_project_metadata(project.metadata_json, project=project)
 
     assert "identity_pressure" in inferred["required_axes"]
     assert inferred["reader_reward_contracts"] == ["Identity payoff with visible cost"]
     assert inferred["evidence"][-1]["id"] == "host-identity-debt"
 
-    explicit = character_strategy_from_project_metadata(
-        {
-            "character_strategy": {
-                "required_axes": ["agency"],
-                "agency_policy": {"choice_with_cost_required": False},
-            },
-            "distilled_strategy_card": card,
-        }
-    )
+    project.metadata_json = {
+        **project.metadata_json,
+        "character_strategy": {
+            "required_axes": ["agency"],
+            "agency_policy": {"choice_with_cost_required": False},
+        },
+    }
+    stamp_reference_cache(project, ("character_strategy",), producer="strategy_compiler")
+    adopt_reference_projection(project, "character_strategy", adopted_by="fixture-author", required=True)
+    explicit = character_strategy_from_project_metadata(project.metadata_json, project=project)
 
     assert explicit["required_axes"] == ["agency"]
     assert explicit["agency_policy"]["choice_with_cost_required"] is False
+
+    with pytest.raises(ReferenceContextRequiredError):
+        character_strategy_from_project_metadata(project.metadata_json)
+    project.metadata_json["character_strategy"]["required_axes"] = ["identity_pressure"]
+    with pytest.raises(AdoptedReferenceUnavailable):
+        character_strategy_from_project_metadata(project.metadata_json, project=project)
+
+
+@pytest.mark.parametrize("adopted_by", ["", "   "])
+def test_character_strategy_rejects_invalid_adopting_author(adopted_by: str) -> None:
+    project = ProjectModel(
+        id=uuid4(), slug="invalid-adoption", title="Invalid Adoption", genre="现实生活",
+        sub_genre=None, language="zh-CN", audience="general", target_chapters=40,
+        target_word_count=100000, metadata_json={"character_strategy": {"required_axes": ["agency"]}},
+    )
+    stamp_reference_cache(project, ("character_strategy",), producer="strategy_compiler")
+    with pytest.raises(ValueError, match="adopting author"):
+        adopt_reference_projection(project, "character_strategy", adopted_by=adopted_by)
+    assert "reference_projection_adoptions" not in project.metadata_json

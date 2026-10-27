@@ -17,7 +17,15 @@ def test_chapter_rewrite_prompt_injects_p1_retention_blocks() -> None:
         genre="fantasy",
         sub_genre=None,
         language="zh-CN",
-        metadata_json={},
+        # These template-retention assertions exercise the explicitly selected
+        # legacy methodology suite, rather than the ordinary source-only editor.
+        metadata_json={"creation_intent_contract": {
+            "field_sources": {"hook_spec": "explicit"},
+            "hook_spec": {
+                "require_methodology_overlay": True,
+                "methodology_contract_mode": "strict",
+            },
+        }},
     )
     chapter = SimpleNamespace(
         chapter_number=2,
@@ -29,6 +37,7 @@ def test_chapter_rewrite_prompt_injects_p1_retention_blocks() -> None:
     rewrite_task = SimpleNamespace(
         instructions="修复留存闸门失败。",
         rewrite_strategy="retention_repair",
+        metadata_json={"editor_prompt_protocol": "3.1-lossless-source-time"},
     )
     context = ChapterWriterContextPacket(
         project_id=uuid4(),

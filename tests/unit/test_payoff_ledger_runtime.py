@@ -121,8 +121,10 @@ def test_render_payoff_ledger_planner_contract_when_enabled_zh() -> None:
     assert "方法论 v2 兑现清单合同" in block
     assert "payoffs_due" in block
     assert "payoff_evidence_paths" in block
-    assert "至少兑现 1 个到期 payoff" in block
-    assert "setup distance" in block
+    assert "至少兑现 1 个到期 payoff" not in block
+    assert "至少 2 章" not in block
+    assert "同章铺垫并兑现" in block
+    assert "setup distance" in block.lower()
 
 
 def test_render_payoff_ledger_planner_contract_when_enabled_en() -> None:
@@ -131,5 +133,8 @@ def test_render_payoff_ledger_planner_contract_when_enabled_en() -> None:
 
     assert "Methodology v2 payoff ledger contract" in block
     assert "payoffs_due" in block
-    assert "setup distance" in block
+    assert "setup distance" in block.lower()
     assert "visible in-prose callback" in block
+    assert "at least 2 chapters" not in block
+    assert "at least one due payoff" not in block
+    assert "same-chapter setup and payment" in block

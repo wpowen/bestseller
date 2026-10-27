@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 import copy
 from datetime import datetime, timezone
 import logging
@@ -8,10 +10,11 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete as _sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from bestseller.services.execution_stage import attach_workflow_failure
 
 from bestseller.domain.enums import ArtifactType, ChapterStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.narrative import NarrativeGraphMaterializationResult
@@ -60,12 +63,11 @@ from bestseller.services.methodology_overlay import (
 from bestseller.services.methodology_selection_engine import select_lineage_for_chapter_outline
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_contracts import (
-    _extract_purpose_character_names,
-    _identity_index_from_manifest,
     _is_generic_time_label,
-    _normalize_identity_token,
     build_identity_manifest,
+    is_framework_scene_emotion_placeholder,
     repair_legacy_foundation_identity_locks,
+    strip_framework_effect_landing_labels,
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
 )
@@ -107,9 +109,24 @@ from bestseller.services.word_targets import (
     normalize_chapter_word_target,
 )
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
-from bestseller.settings import load_settings
+from bestseller.settings import AppSettings, apply_runtime_llm_profile, load_settings
 
 logger = logging.getLogger(__name__)
+
+_PIPELINE_OWNER = ContextVar("native_workflow_pipeline_owner", default=None)
+
+
+@contextmanager
+def bind_acquired_pipeline_owner(*, slug, token, assert_owned):
+    """Worker-only seam: installed after actual acquisition, rechecked per WF.
+
+    This is in-process authority, never metadata supplied by an API caller.
+    """
+    binding = _PIPELINE_OWNER.set((slug, token, assert_owned))
+    try:
+        yield
+    finally:
+        _PIPELINE_OWNER.reset(binding)
 
 
 WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE = "materialize_chapter_outline_batch"
@@ -1136,6 +1153,9 @@ async def ensure_project_identity_manifest(
     project: ProjectModel,
     *,
     project_slug: str,
+    expected_cast_source_hash: str | None = None,
+    migration_actor: str = "ensure_project_identity_manifest",
+    migration_evidence: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Ensure a project has a locked identity manifest before writing resumes.
 
@@ -1147,31 +1167,49 @@ async def ensure_project_identity_manifest(
 
     existing_manifest = _project_identity_manifest(project)
     metadata = getattr(project, "metadata_json", None) or {}
-    characters = list(
-        await session.scalars(
-            select(CharacterModel).where(CharacterModel.project_id == project.id)
-        )
-    )
     if (
         existing_manifest
         and isinstance(metadata, dict)
         and metadata.get("identity_manifest_status") == "locked"
     ):
-        merged_manifest = _merge_identity_manifest_entries(
-            existing_manifest,
-            _identity_hints_from_characters(characters),
+        from bestseller.services.identity_manifest_migration import (
+            apply_identity_manifest_extension,
+            propose_identity_manifest_extension,
         )
-        if merged_manifest != existing_manifest:
-            project.metadata_json = {
-                **metadata,
-                "identity_manifest": merged_manifest,
-                "identity_manifest_status": "locked",
-            }
-            _apply_identity_manifest_to_characters(characters, merged_manifest)
-            await session.flush()
-            return merged_manifest
-        return existing_manifest
 
+        approved_cast = await get_latest_approved_planning_artifact(
+            session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC,
+        )
+        if approved_cast is None:
+            if expected_cast_source_hash is not None:
+                raise ValueError("Expected approved Cast source is unavailable.")
+            return existing_manifest
+        cast_source = {
+            "id": str(approved_cast.id), "project_id": str(approved_cast.project_id),
+            "artifact_type": approved_cast.artifact_type, "status": approved_cast.status,
+            "version_no": approved_cast.version_no, "content": approved_cast.content,
+        }
+        proposal = propose_identity_manifest_extension(
+            existing_manifest, project_id=str(project.id), cast_source=cast_source,
+        )
+        updated_metadata = apply_identity_manifest_extension(
+            metadata, proposal, cast_source=cast_source,
+            expected_source_hash=expected_cast_source_hash or proposal["source"]["content_hash"],
+            actor=migration_actor,
+            evidence=migration_evidence or {"reason": "approved_cast_name_projection_entry_guard"},
+        )
+        if updated_metadata != metadata:
+            project.metadata_json = updated_metadata
+            await session.flush()
+        return copy.deepcopy(updated_metadata["identity_manifest"])
+
+    if expected_cast_source_hash is not None:
+        raise ValueError("Source-bound manifest extension requires existing locked identities.")
+    characters = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
     artifact = await get_latest_planning_artifact(
         session,
         project_id=project.id,
@@ -1270,7 +1308,6 @@ def _repair_chapter_outline_contract_inputs(
     """Backfill deterministic scene contract fields before outline validation."""
 
     protagonist_name = _outline_default_protagonist(identity_manifest)
-    identity_index = _identity_index_from_manifest(identity_manifest)
     repaired = 0
 
     generic_contract_markers = (
@@ -1758,38 +1795,20 @@ def _repair_chapter_outline_contract_inputs(
                     chapter_label=chapter_label,
                 )
                 repaired += 1
-            if not scene.participants:
-                scene.participants = [protagonist_name]
-                repaired += 1
             purpose = dict(scene.purpose or {})
-            if not _text_value(purpose.get("emotion")):
-                _story_hint = (_text_value(purpose.get("story")) or "")[:40]
-                purpose["emotion"] = (
-                    f"围绕「{_story_hint}」写出当事人一个具体的怕、要或误判，"
-                    "让读者看见情绪来源，并把选择或代价推到下一拍。"
-                    if _story_hint
-                    else "写出当事人此刻一个具体的怕、要或误判，让读者看见情绪来源。"
-                )
+            if is_framework_scene_emotion_placeholder(purpose.get("emotion")):
+                purpose.pop("emotion", None)
+                repaired += 1
+            stripped_story = strip_framework_effect_landing_labels(
+                purpose.get("story"),
+                chapter.selected_effect_skills,
+            )
+            if stripped_story and stripped_story != _text_value(purpose.get("story")):
+                purpose["story"] = stripped_story
                 repaired += 1
             if purpose != scene.purpose:
                 scene.purpose = purpose
             story_purpose = _text_value(purpose.get("story"))
-            if story_purpose and identity_index:
-                participant_tokens = {
-                    _normalize_identity_token(participant)
-                    for participant in scene.participants
-                    if _text_value(participant)
-                }
-                for referenced_name in _extract_purpose_character_names(
-                    story_purpose,
-                    identity_index,
-                ):
-                    token = _normalize_identity_token(referenced_name)
-                    if token and token not in participant_tokens:
-                        scene.participants.append(referenced_name)
-                        participant_tokens.add(token)
-                        repaired += 1
-
             if not scene.entry_state:
                 # Scene N (N≥2) must enter from where scene N-1 actually
                 # ended — a purpose-summary placeholder leaves the writer
@@ -2021,6 +2040,7 @@ async def _sync_existing_chapter_from_outline(
     chapter: ChapterModel,
     chapter_outline: Any,
     force: bool = False,
+    preserve_source_semantics: bool = False,
 ) -> bool:
     """Update an existing planned/outlining chapter from the latest outline.
 
@@ -2039,7 +2059,7 @@ async def _sync_existing_chapter_from_outline(
         ),
     )
     chapter.volume_id = volume.id
-    if chapter_outline.title:
+    if chapter_outline.title or preserve_source_semantics:
         chapter.title = chapter_outline.title
     chapter.chapter_goal = chapter_outline.chapter_goal
     chapter.opening_situation = chapter_outline.opening_situation
@@ -2047,6 +2067,9 @@ async def _sync_existing_chapter_from_outline(
     chapter.hook_type = chapter_outline.hook_type
     chapter.hook_description = chapter_outline.hook_description
     chapter.target_word_count = chapter_outline.target_word_count
+    if preserve_source_semantics:
+        chapter.primary_emotion = None
+        chapter.information_revealed = []
     _sync_chapter_outline_semantics(chapter, chapter_outline)
     return True
 
@@ -2275,6 +2298,7 @@ def _sync_existing_scene_from_outline(
     scene_outline: Any,
     *,
     force: bool = False,
+    preserve_source_semantics: bool = False,
 ) -> bool:
     if not force and scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
         return False
@@ -2290,7 +2314,8 @@ def _sync_existing_scene_from_outline(
     scene.forbidden_actions = list(getattr(scene_outline, "forbidden_actions", None) or [])
     scene.hook_requirement = (
         getattr(scene_outline, "hook_requirement", None)
-        or scene.hook_requirement
+        if preserve_source_semantics
+        else (getattr(scene_outline, "hook_requirement", None) or scene.hook_requirement)
     )
     scene.target_word_count = scene_outline.target_word_count
     _sync_scene_methodology_metadata(scene, scene_outline)
@@ -2380,15 +2405,57 @@ async def create_workflow_run(
     metadata: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
 ) -> WorkflowRunModel:
+    from bestseller.services.budget import current_execution_scope
+
+    workflow_metadata = dict(metadata or {})
+    if any(key in workflow_metadata for key in ("execution_owner", "native_pipeline_owner")):
+        raise ValueError("workflow_owner_metadata_not_accepted")
+    actual_scope = current_execution_scope()
+    supplied_scope = workflow_metadata.get("execution_scope_id")
+    if actual_scope:
+        if supplied_scope not in (None, "") and supplied_scope != actual_scope:
+            raise ValueError("workflow_execution_scope_conflict")
+        workflow_metadata["execution_scope_id"] = actual_scope
+    expected_scope = actual_scope or supplied_scope
+    identity_keys = ("id", "project_id", "workflow_type")
     if idempotency_key:
-        existing = await session.scalar(
-            select(WorkflowRunModel).where(
-                WorkflowRunModel.workflow_type == workflow_type,
-                WorkflowRunModel.idempotency_key == idempotency_key,
+        with session.no_autoflush:
+            existing = await session.scalar(
+                select(WorkflowRunModel).where(
+                    WorkflowRunModel.workflow_type == workflow_type,
+                    WorkflowRunModel.idempotency_key == idempotency_key,
+                )
             )
-        )
         if existing is not None:
+            existing_scope = (existing.metadata_json or {}).get("execution_scope_id")
+            if (
+                expected_scope
+                and existing_scope not in (None, "")
+                and existing_scope != expected_scope
+            ):
+                raise ValueError("workflow_execution_scope_conflict")
+            # Missing historical binding remains unknown. Idempotent lookup
+            # must never backfill it from a new caller's ambient context.
+            # Snapshot the returned row, never the possibly different request.
+            if all(key in existing.__dict__ for key in identity_keys):
+                existing.__dict__["_failure_identity"] = {
+                    key: existing.__dict__[key] for key in identity_keys
+                }
             return existing
+    owner = _PIPELINE_OWNER.get()
+    if owner is not None and project_id is not None:
+        from bestseller.services.retry_ledger import project_execution_scope
+        slug, token, assert_owned = owner
+        await assert_owned()
+        project = await session.get(ProjectModel, project_id)
+        if (project is None or project.slug != slug or UUID(token).version != 4
+                or actual_scope != project_execution_scope(project)):
+            raise ValueError("workflow_native_owner_binding_conflict")
+        workflow_metadata.update(execution_owner=token, native_pipeline_owner={
+            "schema": "acquired-pipeline-owner.v1", "project_id": str(project.id),
+            "project_slug": slug, "execution_scope_id": actual_scope,
+            "token": token, "lease_key": "bestseller:pipeline-live:" + slug,
+        })
     workflow_run = WorkflowRunModel(
         project_id=project_id,
         workflow_type=workflow_type,
@@ -2397,11 +2464,16 @@ async def create_workflow_run(
         scope_id=scope_id,
         requested_by=requested_by,
         current_step=current_step,
-        metadata_json=metadata or {},
+        metadata_json=workflow_metadata,
         idempotency_key=idempotency_key,
     )
     session.add(workflow_run)
     await session.flush()
+    # Unmapped attributes survive flush-error expiration of mapped columns.
+    if all(key in workflow_run.__dict__ for key in identity_keys):
+        workflow_run.__dict__["_failure_identity"] = {
+            key: workflow_run.__dict__[key] for key in identity_keys
+        }
     return workflow_run
 
 
@@ -2498,6 +2570,247 @@ async def get_latest_planning_artifact(
     )
 
 
+async def get_latest_approved_planning_artifact(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    artifact_type: ArtifactType,
+    scope_ref_id: UUID | None = None,
+    settings: AppSettings | None = None,
+) -> PlanningArtifactVersionModel | None:
+    """Return the newest approved artifact for production consumers.
+
+    ``get_latest_planning_artifact`` intentionally remains an unfiltered
+    version-history/read-review primitive.  Materializers must never promote
+    a newer ``needs_review`` or draft version into canonical story state.
+    """
+
+    if artifact_type in (
+        ArtifactType.BOOK_SPEC, ArtifactType.WORLD_SPEC,
+        ArtifactType.CAST_SPEC, ArtifactType.VOLUME_PLAN,
+    ):
+        project = await session.get(ProjectModel, project_id)
+        if project is not None and "active_foundation_selection" in (project.metadata_json or {}):
+            from bestseller.services.foundation_selection import load_selected_foundation_artifacts
+
+            selected = await load_selected_foundation_artifacts(
+                session, project=project,
+                settings=settings if settings is not None else apply_runtime_llm_profile(load_settings()),
+            )
+            if selected is None:
+                raise ValueError("foundation_selection_pointer_unresolved")
+            artifact = selected[artifact_type.value]
+            if scope_ref_id is not None and artifact.scope_ref_id != scope_ref_id:
+                raise ValueError("foundation_selection_scope_mismatch")
+            return artifact
+
+    filters = [
+        PlanningArtifactVersionModel.project_id == project_id,
+        PlanningArtifactVersionModel.artifact_type == artifact_type.value,
+        PlanningArtifactVersionModel.status == "approved",
+    ]
+    if scope_ref_id is not None:
+        filters.append(PlanningArtifactVersionModel.scope_ref_id == scope_ref_id)
+    artifact = await session.scalar(
+        select(PlanningArtifactVersionModel)
+        .where(*filters)
+        .order_by(
+            PlanningArtifactVersionModel.version_no.desc(),
+            PlanningArtifactVersionModel.created_at.desc(),
+        )
+        .limit(1)
+    )
+
+    if artifact is not None and artifact_type in (
+        ArtifactType.BOOK_SPEC, ArtifactType.WORLD_SPEC, ArtifactType.CAST_SPEC, ArtifactType.VOLUME_PLAN,
+    ) and artifact.source_run_id is not None:
+        content = artifact.content
+        roots = content if isinstance(content,list) else [content]
+        marked = any(isinstance(root,dict) and isinstance(root.get('_meta'),dict)
+                     and root['_meta'].get('foundation_consumer_kind') is not None for root in roots)
+        owner_meta = await session.scalar(select(WorkflowRunModel.metadata_json).where(
+            WorkflowRunModel.id == artifact.source_run_id))
+        if marked or (isinstance(owner_meta,dict) and owner_meta.get('foundation_consumer_kind') is not None):
+            # A lost pin must not turn the new proved cohort into four
+            # independent latest-row reads which skip its consumption fence.
+            raise ValueError('foundation_selection_reviewed_edit_pointer_required')
+    return artifact
+
+
+async def _prepare_unadopted_outline_reconciliation(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    batch: ChapterOutlineBatchInput,
+    numbers: set[int],
+) -> dict[int, dict[str, Any]]:
+    """Lock and prove exact unwritten targets; never infer adoption from status."""
+    import json
+
+    from sqlalchemy import inspect, or_
+
+    from bestseller.infra.db.models import ChapterDraftVersionModel
+    from bestseller.services.chapter_outline_readiness import outline_prefix_projection_hash
+    from bestseller.services.chapter_scene_contract_materializer import (
+        chapter_contract_has_adopted_source,
+    )
+    from bestseller.services.prompt_source_policy import content_hash
+
+    # Serialize explicit migrations for this project. Chapter locks are also
+    # shared with the chapter review/adoption boundary; do not commit here.
+    await session.scalar(
+        select(ProjectModel.id).where(ProjectModel.id == project.id).with_for_update()
+    )
+    prepared = {}
+    outlines = {chapter.chapter_number: chapter for chapter in batch.chapters}
+    for number in sorted(numbers):
+        chapter = await session.scalar(
+            select(ChapterModel)
+            .where(ChapterModel.project_id == project.id, ChapterModel.chapter_number == number)
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        if chapter is None:
+            raise ValueError("outline_reconcile_chapter_missing")
+        adopted = await chapter_contract_has_adopted_source(session, chapter=chapter)
+        if type(adopted) is not bool or adopted:
+            raise ValueError("outline_reconcile_adopted_or_ambiguous")
+        scenes = list(
+            await session.scalars(
+                select(SceneCardModel)
+                .where(
+                    SceneCardModel.chapter_id == chapter.id, SceneCardModel.project_id == project.id
+                )
+                .order_by(SceneCardModel.scene_number)
+                .execution_options(populate_existing=True)
+                .with_for_update()
+            )
+        )
+        # Removing a card could cascade-delete retained drafts. A changed range
+        # needs a separate retirement protocol, never prune through migration.
+        if {s.scene_number for s in scenes} - {s.scene_number for s in outlines[number].scenes}:
+            raise ValueError("outline_reconcile_scene_retirement_required")
+        recent = await session.scalar(
+            select(ChapterDraftVersionModel.created_at)
+            .where(
+                ChapterDraftVersionModel.project_id == project.id,
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .order_by(ChapterDraftVersionModel.created_at.desc())
+            .limit(1)
+        )
+        active = await session.scalar(
+            select(WorkflowRunModel.id)
+            .where(
+                WorkflowRunModel.project_id == project.id,
+                WorkflowRunModel.status.in_(("pending", "queued", "running")),
+                or_(
+                    (WorkflowRunModel.scope_type == "chapter")
+                    & (WorkflowRunModel.scope_id == chapter.id),
+                    (WorkflowRunModel.scope_type == "scene_card")
+                    & WorkflowRunModel.scope_id.in_([s.id for s in scenes]),
+                    (WorkflowRunModel.scope_type == "project")
+                    & (WorkflowRunModel.scope_id == project.id)
+                    & WorkflowRunModel.workflow_type.in_(("project_pipeline", "project_repair")),
+                ),
+            )
+            .limit(1)
+        )
+        if (
+            active is not None
+            or _is_recent_draft_timestamp(recent)
+            or await _chapter_has_recent_active_draft(session, chapter_id=chapter.id)
+        ):
+            raise ValueError("outline_reconcile_active_writing")
+
+        def raw_row(row: ChapterModel | SceneCardModel) -> dict[str, Any]:
+            raw = {
+                attr.key: copy.deepcopy(getattr(row, attr.key))
+                for attr in inspect(type(row)).column_attrs
+            }
+            if isinstance(raw.get("metadata_json"), dict):
+                raw["metadata_json"].pop("outline_materialization_history", None)
+            return json.loads(json.dumps(raw, default=str))
+
+        raw = {"chapter": raw_row(chapter), "scenes": [raw_row(s) for s in scenes]}
+        prepared[number] = {
+            "previous_raw": raw,
+            "previous_raw_hash": content_hash(raw),
+            "previous_projection_hash": outline_prefix_projection_hash(chapter, scenes),
+        }
+    return prepared
+
+
+def _record_unadopted_outline_reconciliation(
+    *,
+    chapter: ChapterModel,
+    scenes: Sequence[SceneCardModel],
+    previous: dict[str, Any],
+    source: PlanningArtifactVersionModel,
+    receipt: Mapping[str, Any],
+    workflow: WorkflowRunModel,
+    requested_by: str,
+) -> None:
+    from bestseller.services.chapter_outline_readiness import outline_prefix_projection_hash
+    from bestseller.services.prompt_source_policy import content_hash
+
+    metadata = copy.deepcopy(chapter.metadata_json or {})
+    marker = {
+        "artifact_id": str(source.id),
+        "workflow_run_id": receipt["workflow_run_id"],
+        "projection_hash": outline_prefix_projection_hash(chapter, scenes),
+    }
+    previous_marker = metadata.get("outline_prefix_readiness")
+    history = list(metadata.get("outline_materialization_history") or [])
+    if (
+        previous["previous_projection_hash"] != marker["projection_hash"]
+        or previous_marker != marker
+    ):
+        event = {
+            "schema": "unadopted-outline-reconciliation.v1",
+            **copy.deepcopy(previous),
+            "project_id": str(chapter.project_id),
+            "chapter_id": str(chapter.id),
+            "source_artifact_id": str(source.id),
+            "source_content_hash": content_hash(source.content),
+            "prefix_receipt": copy.deepcopy(dict(receipt)),
+            "replacement": marker,
+            "materialization_workflow_run_id": str(workflow.id),
+            "requested_by": requested_by,
+        }
+        # Keep superseded prose-bearing inputs in the audit workflow, not in
+        # the chapter metadata bag consumed by generation-context builders.
+        workflow_metadata = copy.deepcopy(workflow.metadata_json or {})
+        workflow.metadata_json = {
+            **workflow_metadata,
+            "unadopted_outline_reconciliation_history": [
+                *(workflow_metadata.get("unadopted_outline_reconciliation_history") or []),
+                event,
+            ],
+        }
+        history.append(
+            {
+                key: copy.deepcopy(value)
+                for key, value in event.items()
+                if key not in {"previous_raw", "prefix_receipt"}
+            }
+        )
+    marker_history = list(metadata.get("outline_prefix_readiness_history") or [])
+    if (
+        previous_marker is not None
+        and previous_marker != marker
+        and previous_marker not in marker_history
+    ):
+        marker_history.append(copy.deepcopy(previous_marker))
+    chapter.metadata_json = {
+        **metadata,
+        "outline_materialization_history": history,
+        "outline_prefix_readiness_history": marker_history,
+        "outline_prefix_readiness": marker,
+    }
+
+
 async def materialize_chapter_outline_batch(
     session: AsyncSession,
     project_slug: str,
@@ -2507,12 +2820,62 @@ async def materialize_chapter_outline_batch(
     source_artifact_id: UUID | None = None,
     prune_missing_planned: bool = False,
     force_chapter_numbers: list[int] | None = None,
+    reconcile_unadopted_chapter_numbers: list[int] | None = None,
 ) -> WorkflowMaterializationResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
     settings = load_settings()
-
+    # Approved planning is immutable input. Materialization may validate and
+    # project it, but cannot invent participants, pressure or methodology beats.
+    verified_prefix_receipt = None
+    verified_full_source_receipt = None
+    reconcile_numbers = list(reconcile_unadopted_chapter_numbers or [])
+    if (any(type(n) is not int or n <= 0 for n in reconcile_numbers)
+        or len(reconcile_numbers) != len(set(reconcile_numbers))
+        or not set(reconcile_numbers) <= {c.chapter_number for c in batch.chapters}):
+        raise ValueError("outline_reconcile_exact_chapters_required")
+    if reconcile_numbers and (source_artifact_id is None or prune_missing_planned or force_chapter_numbers):
+        raise ValueError("outline_reconcile_requires_source_without_force_or_prune")
+    preserve_source_semantics = source_artifact_id is not None
+    if preserve_source_semantics:
+        source = await session.get(PlanningArtifactVersionModel, source_artifact_id)
+        if (source is None or source.project_id != project.id or source.status != "approved"
+            or source.artifact_type != ArtifactType.CHAPTER_OUTLINE_BATCH.value):
+            raise ValueError("Materialization requires an approved outline source from this project")
+        expected = ChapterOutlineBatchInput.model_validate(copy.deepcopy(source.content))
+        if ([c.model_dump(mode="json") for c in expected.chapters]
+            != [c.model_dump(mode="json") for c in batch.chapters]):
+            raise ValueError("Supplied chapter plan differs from its approved source")
+        # A producer-bound prefix cannot shed its proof and fall back to the
+        # ordinary legacy asset path. Legacy sources keep their existing path.
+        producer = await session.get(WorkflowRunModel, source.source_run_id) if source.source_run_id else None
+        protected_prefix = producer is not None and producer.workflow_type == "approve_chapter_outline_prefix"
+        source_meta = source.content.get("_meta") or {}
+        if protected_prefix or "sourcebound_readiness_receipt" in source_meta:
+            from bestseller.services.chapter_outline_readiness import verify_outline_prefix_readiness
+            verified_prefix_receipt = await verify_outline_prefix_readiness(
+                session, project=project, artifact_id=source.id, settings=settings)
+        elif "full_outline_revision" in source_meta or (
+            producer is not None
+            and producer.workflow_type == "materialized_outline_source_admission"
+        ):
+            from bestseller.services.materialized_outline_revision import (
+                validate_full_outline_revision_for_materialization,
+            )
+            verified_full_source_receipt = await validate_full_outline_revision_for_materialization(
+                session, settings, project=project, artifact=source)
+    if reconcile_numbers and not (verified_prefix_receipt or verified_full_source_receipt):
+        raise ValueError("outline_reconcile_current_prefix_proof_required")
+    reconcile_set = set(reconcile_numbers)
+    if verified_full_source_receipt and (
+        reconcile_set != set(verified_full_source_receipt["chapter_numbers"])
+        or reconcile_set != {c.chapter_number for c in batch.chapters}
+    ):
+        raise ValueError("outline_reconcile_full_source_exact_scope_required")
+    reconciliations = await _prepare_unadopted_outline_reconciliation(
+        session, project=project, batch=batch, numbers=reconcile_set,
+    ) if reconcile_set and not verified_full_source_receipt else {}
     workflow_run = await create_workflow_run(
         session,
         project_id=project.id,
@@ -2528,9 +2891,46 @@ async def materialize_chapter_outline_batch(
             "chapter_count": len(batch.chapters),
             "source_artifact_id": str(source_artifact_id) if source_artifact_id else None,
         },
+        idempotency_key=(f"full-outline-materialization:{source_artifact_id}:"
+            f"{verified_full_source_receipt['workflow_run_id']}")
+            if verified_full_source_receipt else None,
     )
 
     step_order = 1
+    if verified_full_source_receipt:
+        if workflow_run.status == "completed":
+            # A crash after projection commit resumes the same materializer,
+            # with a full current-source readback and no repeated model gates.
+            from bestseller.services.materialized_outline_source_recovery import _read_sources
+            await _read_sources(session, settings, project_slug=project.slug,
+                artifact_id=source_artifact_id, materialization_workflow_id=workflow_run.id)
+            return WorkflowMaterializationResult(workflow_run_id=workflow_run.id,
+                project_id=project.id, batch_name=batch.batch_name,
+                chapters_created=int((workflow_run.metadata_json or {}).get("chapters_created", 0)),
+                scenes_created=int((workflow_run.metadata_json or {}).get("scenes_created", 0)),
+                source_artifact_id=source_artifact_id)
+        if (workflow_run.project_id != project.id
+                or workflow_run.scope_type != "planning_artifact"
+                or workflow_run.scope_id != source_artifact_id
+                or workflow_run.status not in {"running", "failed"}
+                or (workflow_run.metadata_json or {}).get("source_artifact_id") != str(source_artifact_id)):
+            raise ValueError("outline_reconcile_materializer_owner_changed")
+        if workflow_run.status == "failed":
+            history = list((workflow_run.metadata_json or {}).get("previous_failures") or [])
+            prior = {"status": workflow_run.status, "current_step": workflow_run.current_step,
+                "error_message": workflow_run.error_message}
+            if prior not in history:
+                history.append(prior)
+            workflow_run.metadata_json = {**workflow_run.metadata_json, "previous_failures": history}
+            workflow_run.status = "running"
+            workflow_run.current_step = "validate_outline_batch"
+            workflow_run.error_message = None
+        last_order = await session.scalar(select(WorkflowStepRunModel.step_order).where(
+            WorkflowStepRunModel.workflow_run_id == workflow_run.id).order_by(
+                WorkflowStepRunModel.step_order.desc()).limit(1))
+        step_order = int(last_order or 0) + 1
+        from bestseller.services.pipelines import _checkpoint_commit
+        await _checkpoint_commit(session)
     chapters_created = 0
     scenes_created = 0
     chapters_updated = 0
@@ -2565,11 +2965,13 @@ async def materialize_chapter_outline_batch(
         "",
     )
     _batch_content = batch.model_dump(mode="json")
-    _batch_content, _enrich_stats = enrich_outline_batch_fields(
-        _batch_content,
-        _identity_names,
-        protagonist=_protagonist_name,
-    )
+    _enrich_stats = {"total": 0}
+    if not preserve_source_semantics:
+        _batch_content, _enrich_stats = enrich_outline_batch_fields(
+            _batch_content,
+            _identity_names,
+            protagonist=_protagonist_name,
+        )
     if _enrich_stats.get("total"):
         batch = ChapterOutlineBatchInput.model_validate(_batch_content)
         workflow_run.metadata_json = {
@@ -2582,7 +2984,9 @@ async def materialize_chapter_outline_batch(
     # can survive outline rewrites as stale residue the narrative layer no
     # longer supports — and would be fed verbatim into writer prompts. Detect
     # disconnected fields via char-2-gram overlap and clear them (non-blocking).
-    _coherence_warnings, _coherence_cleared = _apply_metadata_narrative_coherence(batch)
+    _coherence_warnings, _coherence_cleared = (
+        ([], 0) if preserve_source_semantics else _apply_metadata_narrative_coherence(batch)
+    )
     if _coherence_warnings:
         logger.warning(
             "Metadata-narrative coherence check flagged %d suspected residue "
@@ -2614,14 +3018,14 @@ async def materialize_chapter_outline_batch(
             },
         )
         step_order += 1
-        _chapter_number_normalization = _normalize_outline_chapter_numbers(batch)
+        _chapter_number_normalization = None if preserve_source_semantics else _normalize_outline_chapter_numbers(batch)
         if _chapter_number_normalization:
             workflow_run.metadata_json = {
                 **(workflow_run.metadata_json or {}),
                 "chapter_number_normalization": _chapter_number_normalization,
             }
         outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
-        if resolve_story_engine_mode(project, settings) == "dual_write":
+        if not preserve_source_semantics and resolve_story_engine_mode(project, settings) == "dual_write":
             try:
                 _dual_write_window = await _ensure_dual_write_story_engine_window(
                     session,
@@ -2653,7 +3057,7 @@ async def materialize_chapter_outline_batch(
                         "writer_authority": False,
                     },
                 }
-        _story_engine_projections = await _load_story_engine_materialization_projections(
+        _story_engine_projections = {} if preserve_source_semantics else await _load_story_engine_materialization_projections(
             session,
             project=project,
             settings=settings,
@@ -2713,8 +3117,14 @@ async def materialize_chapter_outline_batch(
                 .options(selectinload(ChapterModel.scenes))
             )
         )
+        materialization_batch = ChapterOutlineBatchInput(
+            batch_name=batch.batch_name,
+            chapters=[c for c in batch.chapters if c.chapter_number in reconcile_set],
+        ) if reconcile_set else batch
+        validation_existing = [c for c in _existing_project_chapters
+            if c.chapter_number not in reconcile_set]
         _validation_batch, _validation_skipped_count = (
-            _outline_materialization_validation_batch(batch, _existing_project_chapters)
+            _outline_materialization_validation_batch(materialization_batch, validation_existing)
         )
         workflow_run.metadata_json = {
             **(workflow_run.metadata_json or {}),
@@ -2735,8 +3145,8 @@ async def materialize_chapter_outline_batch(
             from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 
             _fp_batch_chapters, _existing_for_fp = _outline_fingerprint_scan_inputs(
-                batch,
-                _existing_project_chapters,
+                materialization_batch,
+                validation_existing,
             )
             workflow_run.metadata_json = {
                 **(workflow_run.metadata_json or {}),
@@ -2810,10 +3220,12 @@ async def materialize_chapter_outline_batch(
                 project,
                 project_slug=project_slug,
             )
-            repair_count = _repair_chapter_outline_contract_inputs(
-                _validation_batch,
-                identity_manifest=identity_manifest,
-            )
+            repair_count = 0
+            if not preserve_source_semantics:
+                repair_count = _repair_chapter_outline_contract_inputs(
+                    _validation_batch,
+                    identity_manifest=identity_manifest,
+                )
             if repair_count:
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
@@ -2938,9 +3350,21 @@ async def materialize_chapter_outline_batch(
             sub_genre=getattr(project, "sub_genre", None),
         )
 
+        if verified_prefix_receipt:
+            await create_workflow_step_run(
+                session, workflow_run_id=workflow_run.id,
+                step_name="reuse_verified_outline_prefix", step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={"source_receipt": verified_prefix_receipt,
+                            "commercial_passed": verified_prefix_receipt.get("commercial_passed", True),
+                            "editorial_debt_retained": verified_prefix_receipt.get("commercial_passed") is False,
+                            "review_reused_without_new_provider_call": True},
+            )
+            step_order += 1
+
         if (
             getattr(settings.pipeline, "enable_outline_llm_commercial_judge", False)
-            and _validation_batch.chapters
+            and _validation_batch.chapters and not verified_prefix_receipt
         ):
             current_step_name = "outline_llm_commercial_judge"
             workflow_run.current_step = current_step_name
@@ -2962,8 +3386,11 @@ async def materialize_chapter_outline_batch(
                     or 0.82
                 ),
                 workflow_run_id=workflow_run.id,
+                project_id=project.id,
                 pack=_pack,
             )
+            from bestseller.services.outline_llm_judge import require_available_outline_judgement
+            require_available_outline_judgement(_outline_llm_result)
             _outline_llm_payload = _outline_llm_result.model_dump(
                 mode="json",
                 by_alias=True,
@@ -3016,28 +3443,33 @@ async def materialize_chapter_outline_batch(
                 _round = int(_md.get("outline_commercial_repair_round", 0) or 0)
                 if _round < _MAX_OUTLINE_COMMERCIAL_REPAIR_ROUNDS:
                     _md["outline_commercial_repair_directives"] = (
-                        build_outline_repair_directives(_outline_llm_result)
+                        build_outline_repair_directives(
+                            _outline_llm_result,
+                            source_authority=bool(_project_metadata.get("world_spec")),
+                        )
                     )
                     _md["outline_commercial_repair_round"] = _round + 1
                     project.metadata_json = _md
-                    # Invalidate the stale outline so the retry regenerates it
-                    # (otherwise autowrite reuses the existing artifact and just
-                    # re-judges the same low-quality outline). With the artifact
-                    # gone, the planner regenerates using the injected directives.
-                    await session.execute(
-                        _sa_delete(PlanningArtifactVersionModel).where(
-                            PlanningArtifactVersionModel.project_id == project.id,
-                            PlanningArtifactVersionModel.artifact_type.in_(
-                                [
-                                    ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
-                                    ArtifactType.CHAPTER_OUTLINE_BATCH.value,
-                                ]
-                            ),
-                        )
-                    )
-                    # Persist the directives + invalidation before raising so the
-                    # gate-driven regeneration retry can actually consume them.
-                    await session.commit()
+                # Preserve every version. Only the exact rejected source is
+                # withdrawn from new planning reuse, with its old approval
+                # and unchanged content recorded for historical readers.
+                if source_artifact_id is not None:
+                    rejected_source = await session.get(PlanningArtifactVersionModel, source_artifact_id)
+                    if rejected_source is not None and rejected_source.project_id == project.id:
+                        from bestseller.services.prompt_source_policy import content_hash
+                        _md = dict(project.metadata_json or {})
+                        withdrawals = list(_md.get("outline_source_withdrawals") or [])
+                        withdrawals.append({"artifact_id": str(rejected_source.id),
+                            "previous_status": rejected_source.status,
+                            "content_hash": content_hash(rejected_source.content),
+                            "workflow_run_id": str(workflow_run.id),
+                            "reason": "current_source_commercial_rejection",
+                            "report": _outline_llm_payload})
+                        project.metadata_json = {**_md, "outline_source_withdrawals": withdrawals}
+                        rejected_source.status = "needs_review"
+                # Persist the directives + invalidation before raising so the
+                # gate-driven regeneration retry can actually consume them.
+                await session.commit()
                 issue_summary = "; ".join(
                     f"{issue.code}:{issue.evidence}"
                     for issue in _outline_llm_result.blocking_issues[:3]
@@ -3051,7 +3483,7 @@ async def materialize_chapter_outline_batch(
 
         if (
             getattr(settings.pipeline, "enable_outline_reader_experience_judge", True)
-            and _validation_batch.chapters
+            and _validation_batch.chapters and not verified_prefix_receipt
         ):
             current_step_name = "outline_reader_experience_judge"
             workflow_run.current_step = current_step_name
@@ -3148,7 +3580,7 @@ async def materialize_chapter_outline_batch(
                     f"{len(_story_principle_report.findings)} finding(s)."
                 )
 
-        _word_target_repairs = _normalize_outline_word_targets(
+        _word_target_repairs = 0 if preserve_source_semantics else _normalize_outline_word_targets(
             batch,
             project=project,
             settings=settings,
@@ -3169,10 +3601,12 @@ async def materialize_chapter_outline_batch(
         # raise mismatched scene targets (warning-only, never blocks) so dense
         # scenes stop oscillating between SCENE_COMPLETION_INCOMPLETE and
         # LENGTH_OVER at draft time.
-        _capacity_warnings = _apply_scene_capacity_normalization(batch)
+        _capacity_warnings = _apply_scene_capacity_normalization(
+            batch.model_copy(deep=True) if preserve_source_semantics else batch
+        )
         _capacity_adjusted_chapters: set[int] = set()
         if _capacity_warnings:
-            _capacity_adjusted_chapters = {
+            _capacity_adjusted_chapters = set() if preserve_source_semantics else {
                 int(warning["chapter_number"]) for warning in _capacity_warnings
             }
             logger.warning(
@@ -3185,9 +3619,38 @@ async def materialize_chapter_outline_batch(
             workflow_run.metadata_json = {
                 **(workflow_run.metadata_json or {}),
                 "scene_capacity_warnings": _capacity_warnings,
+                "scene_capacity_diagnostic_only": preserve_source_semantics,
             }
 
+        if verified_full_source_receipt:
+            # Full-source revisions retain the normal commercial/reader gates
+            # above. No project/chapter row lock spans their provider calls.
+            from bestseller.infra.db.models import BookProductionControlModel
+            from bestseller.services.materialized_outline_revision import (
+                validate_full_outline_revision_for_materialization,
+            )
+            await session.scalar(select(BookProductionControlModel.project_id).where(
+                BookProductionControlModel.project_id == project.id).with_for_update())
+            reconciliations = await _prepare_unadopted_outline_reconciliation(
+                session, project=project, batch=batch, numbers=reconcile_set)
+            live_owner = await session.scalar(select(WorkflowRunModel.id).where(
+                WorkflowRunModel.id == workflow_run.id,
+                WorkflowRunModel.status == "running",
+                WorkflowRunModel.project_id == project.id,
+                WorkflowRunModel.scope_id == source_artifact_id).with_for_update())
+            if live_owner is None:
+                raise ValueError("outline_reconcile_materializer_halted")
+            renewed = await validate_full_outline_revision_for_materialization(
+                session, settings, project=project, artifact=source)
+            if renewed != verified_full_source_receipt:
+                raise ValueError("outline_reconcile_full_source_changed_during_review")
+            workflow_run.metadata_json = {**workflow_run.metadata_json,
+                "reconciliation_admission_kind": "full_source",
+                "full_source_admission_receipt": copy.deepcopy(renewed)}
+
         for chapter_outline in batch.chapters:
+            if reconcile_set and chapter_outline.chapter_number not in reconcile_set:
+                continue
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"
             workflow_run.current_step = current_step_name
 
@@ -3201,9 +3664,12 @@ async def materialize_chapter_outline_batch(
                 )
             )
             force_this_chapter = False
+            if existing_chapter is not None and chapter_outline.chapter_number in reconcile_set:
+                force_this_chapter = True
             if (
                 existing_chapter is not None
                 and existing_chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES
+                and not force_this_chapter
             ):
                 if chapter_outline.chapter_number not in _force_set:
                     chapters_skipped_immutable += 1
@@ -3229,6 +3695,13 @@ async def materialize_chapter_outline_batch(
                 force_this_chapter = True
                 _forced_chapters.append(chapter_outline.chapter_number)
 
+            if (existing_chapter is not None and preserve_source_semantics
+                and chapter_outline.chapter_number not in reconcile_set):
+                from bestseller.services.chapter_scene_contract_materializer import chapter_contract_has_adopted_source
+                adopted = await chapter_contract_has_adopted_source(session, chapter=existing_chapter)
+                if type(adopted) is not bool or adopted:
+                    raise ValueError("outline_materialization_adopted_or_ambiguous")
+
             should_sync_causality_metadata = False
             if existing_chapter is not None:
                 chapter = existing_chapter
@@ -3238,6 +3711,7 @@ async def materialize_chapter_outline_batch(
                     chapter=chapter,
                     chapter_outline=chapter_outline,
                     force=force_this_chapter,
+                    preserve_source_semantics=preserve_source_semantics,
                 ):
                     chapters_updated += 1
                     should_sync_causality_metadata = True
@@ -3318,6 +3792,7 @@ async def materialize_chapter_outline_batch(
                         scene,
                         scene_outline,
                         force=force_this_chapter,
+                        preserve_source_semantics=preserve_source_semantics,
                     ):
                         scenes_updated += 1
                 else:
@@ -3422,6 +3897,7 @@ async def materialize_chapter_outline_batch(
             _num_scenes = len(chapter_outline.scenes)
             if (
                 _num_scenes > 0
+                and not preserve_source_semantics
                 and chapter_outline.chapter_number not in _capacity_adjusted_chapters
             ):
                 chapter.target_word_count = normalize_chapter_word_target(
@@ -3437,6 +3913,47 @@ async def materialize_chapter_outline_batch(
                     materialized_scenes_for_chapter, _scene_targets, strict=True
                 ):
                     _sc.target_word_count = _scene_target
+
+            if verified_prefix_receipt:
+                from bestseller.services.chapter_outline_readiness import (
+                    _verify_materialized_content, outline_prefix_projection_hash,
+                )
+                approved = next(c for c in source.content["chapters"]
+                    if c["chapter_number"] == chapter.chapter_number)
+                _verify_materialized_content(chapter, materialized_scenes_for_chapter, approved)
+                if chapter.chapter_number not in reconciliations:
+                    # Initial materialization needs the same body-bound source
+                    # marker as explicit reconciliation. An approved artifact
+                    # alone does not bind the chapter/scenes just projected.
+                    marker = {"artifact_id": str(source.id),
+                        "workflow_run_id": verified_prefix_receipt["workflow_run_id"],
+                        "projection_hash": outline_prefix_projection_hash(
+                            chapter, materialized_scenes_for_chapter)}
+                    metadata = copy.deepcopy(chapter.metadata_json or {})
+                    previous_marker = metadata.get("outline_prefix_readiness")
+                    if previous_marker and previous_marker != marker:
+                        history = list(metadata.get("outline_prefix_readiness_history") or [])
+                        if previous_marker not in history:
+                            history.append(copy.deepcopy(previous_marker))
+                        metadata["outline_prefix_readiness_history"] = history
+                    metadata["outline_prefix_readiness"] = marker
+                    chapter.metadata_json = metadata
+            if chapter.chapter_number in reconciliations:
+                if verified_full_source_receipt:
+                    from bestseller.services.chapter_outline_readiness import _verify_materialized_content
+                    from bestseller.services.outline_full_source_reconciliation import record_full_source_reconciliation
+                    approved = next(c for c in source.content["chapters"]
+                        if c["chapter_number"] == chapter.chapter_number)
+                    _verify_materialized_content(chapter, materialized_scenes_for_chapter, approved)
+                    record_full_source_reconciliation(chapter=chapter,
+                        scenes=materialized_scenes_for_chapter, previous=reconciliations[chapter.chapter_number],
+                        source=source, receipt=verified_full_source_receipt, workflow=workflow_run,
+                        requested_by=requested_by)
+                else:
+                    _record_unadopted_outline_reconciliation(chapter=chapter,
+                        scenes=materialized_scenes_for_chapter, previous=reconciliations[chapter.chapter_number],
+                        source=source, receipt=verified_prefix_receipt, workflow=workflow_run,
+                        requested_by=requested_by)
 
             if prune_missing_planned:
                 for existing_scene in existing_scenes:
@@ -3472,6 +3989,11 @@ async def materialize_chapter_outline_batch(
                 },
             }
 
+        if preserve_source_semantics and (
+            [c.model_dump(mode="json") for c in batch.chapters]
+            != [c.model_dump(mode="json") for c in expected.chapters]
+        ):
+            raise ValueError("approved_outline_mutated_during_materialization")
         workflow_run.current_step = "completed"
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
@@ -3484,6 +4006,7 @@ async def materialize_chapter_outline_batch(
             "chapters_pruned": chapters_pruned,
             "scenes_pruned": scenes_pruned,
             "chapters_skipped_immutable": chapters_skipped_immutable,
+            "reconciled_unadopted_chapters": sorted(reconciliations),
         }
         await session.flush()
 
@@ -3496,6 +4019,7 @@ async def materialize_chapter_outline_batch(
             source_artifact_id=source_artifact_id,
         )
     except Exception as exc:
+        attach_workflow_failure(exc, workflow_run)
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
@@ -3522,7 +4046,7 @@ async def materialize_latest_chapter_outline_batch(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
-    artifact = await get_latest_planning_artifact(
+    artifact = await get_latest_approved_planning_artifact(
         session,
         project_id=project.id,
         artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
@@ -3662,6 +4186,24 @@ async def materialize_story_bible(
         "cast_spec": cast_spec_content,
         "volume_plan": volume_plan_content,
     }
+    if "active_foundation_selection" in (project.metadata_json or {}):
+        from bestseller.services.foundation_selection import load_selected_foundation_artifacts
+        from bestseller.services.prompt_source_policy import content_hash
+
+        selected = await load_selected_foundation_artifacts(
+                session, project=project,
+                settings=apply_runtime_llm_profile(load_settings()),
+            )
+        if selected is None:
+            raise ValueError("foundation_selection_pointer_unresolved")
+        supplied = {name for name, payload in requested_payloads.items() if payload is not None}
+        if set(artifact_ids) != supplied:
+            raise ValueError("foundation_selection_materialization_binding_mismatch")
+        for name in supplied:
+            if (name not in selected or artifact_ids[name] != selected[name].id
+                    or content_hash(requested_payloads[name]) != content_hash(selected[name].content)):
+                raise ValueError("foundation_selection_materialization_binding_mismatch")
+
     applied_artifacts = [name for name, payload in requested_payloads.items() if payload is not None]
     if not applied_artifacts:
         raise ValueError("No story bible content was provided.")
@@ -3919,6 +4461,7 @@ async def materialize_story_bible(
             **counts,
         )
     except Exception as exc:
+        attach_workflow_failure(exc, workflow_run)
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
@@ -3944,21 +4487,30 @@ async def materialize_latest_story_bible(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
-    artifacts: dict[str, PlanningArtifactVersionModel] = {}
-    for artifact_type in (
-        ArtifactType.BOOK_SPEC,
-        ArtifactType.WORLD_SPEC,
-        ArtifactType.CAST_SPEC,
-        ArtifactType.VOLUME_PLAN,
-    ):
-        artifact = await get_latest_planning_artifact(
-            session,
-            project_id=project.id,
-            artifact_type=artifact_type,
-        )
-        if artifact is not None:
-            artifacts[artifact_type.value] = artifact
+    if "active_foundation_selection" in (project.metadata_json or {}):
+        from bestseller.services.foundation_selection import load_selected_foundation_artifacts
 
+        artifacts = await load_selected_foundation_artifacts(
+            session, project=project,
+            settings=apply_runtime_llm_profile(load_settings()),
+        )
+        if artifacts is None:
+            raise ValueError("foundation_selection_pointer_unresolved")
+    else:
+        artifacts: dict[str, PlanningArtifactVersionModel] = {}
+        for artifact_type in (
+            ArtifactType.BOOK_SPEC,
+            ArtifactType.WORLD_SPEC,
+            ArtifactType.CAST_SPEC,
+            ArtifactType.VOLUME_PLAN,
+        ):
+            artifact = await get_latest_approved_planning_artifact(
+                session,
+                project_id=project.id,
+                artifact_type=artifact_type,
+            )
+            if artifact is not None:
+                artifacts[artifact_type.value] = artifact
     if not artifacts:
         raise ValueError(f"Project '{project_slug}' does not have any stored story bible artifacts.")
 
@@ -4060,6 +4612,7 @@ async def materialize_narrative_graph(
             **counts,
         )
     except Exception as exc:
+        attach_workflow_failure(exc, workflow_run)
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
@@ -4087,7 +4640,7 @@ async def materialize_latest_narrative_graph(
 
     source_artifact_ids: dict[str, UUID] = {}
     volume_plan_content = None
-    volume_plan_artifact = await get_latest_planning_artifact(
+    volume_plan_artifact = await get_latest_approved_planning_artifact(
         session,
         project_id=project.id,
         artifact_type=ArtifactType.VOLUME_PLAN,
@@ -4152,6 +4705,7 @@ async def materialize_narrative_tree(
             node_type_counts=dict(counts.get("node_type_counts", {})),
         )
     except Exception as exc:
+        attach_workflow_failure(exc, workflow_run)
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)

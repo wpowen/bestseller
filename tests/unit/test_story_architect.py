@@ -290,6 +290,33 @@ class TestBuildPrompts:
         assert "hype_satisfaction_engine" in prompt
         assert "must not be replaced by a darker" in prompt
 
+    def test_non_cross_genre_direction_forbids_external_genre_labels(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        contract = contract_from_selection(
+            {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+            },
+            enhancers=StoryEnhancerSelection(
+                creativity_direction="distilled-mechanism-remix",
+                cost_style="minimal",
+            ),
+        )
+
+        prompt = _build_user_prompt(
+            primary_genre="xuanhuan",
+            language="zh-CN",
+            user_hints={"concept_seed": "收费站班组长穿成废城城主，用界碑经营关卡。"},
+            existing_facets=[],
+            genre_intent=contract,
+        )
+
+        assert "Do not add external-genre labels" in prompt
+        assert "authoritative story facts" in prompt
+
     def test_selected_tone_is_reasserted_at_the_architect_boundary(self) -> None:
         from bestseller.services.story_architect import _apply_genre_intent_to_facets
 
@@ -352,6 +379,125 @@ class TestStoryFacetsOntologyBoundary:
             facets,
             genre_intent=contract,
             user_hints={"concept_seed": "守墓人调查尸体并用账本追查债务"},
+        ) == []
+
+    def test_minimal_cost_rejects_invented_recurring_punishment(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        contract = contract_from_selection(
+            {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+            },
+            enhancers=StoryEnhancerSelection(
+                creativity_direction="distilled-mechanism-remix",
+                cost_style="minimal",
+            ),
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            narrative_drive="每章一笔新过路费，代价立刻滚回城里",
+            trope_tags=("越赚越亏的诅咒收益",),
+        )
+
+        findings = _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"concept_seed": "收费站班组长穿成废城城主，用界碑经营关卡。"},
+        )
+
+        assert {item.code for item in findings} == {"STORY_FACETS_MINIMAL_COST_VIOLATION"}
+        assert "越赚越亏" not in findings[0].actual
+        assert "诅咒收益" not in findings[0].repair_action
+
+    def test_explicit_seed_rejects_invented_literal_debt_mechanic(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        contract = contract_from_selection(
+            {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+            },
+            enhancers=StoryEnhancerSelection(
+                creativity_direction="distilled-mechanism-remix",
+                cost_style="minimal",
+            ),
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            narrative_drive="报价单推动城池经营",
+            trope_tags=("负债簿翻倍", "界碑开价"),
+        )
+
+        findings = _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"concept_seed": "收费站班组长穿成废城城主，用界碑经营关卡。"},
+        )
+
+        assert {item.code for item in findings} == {"STORY_FACETS_INVENTED_LITERAL_DEBT"}
+        assert "负债" not in findings[0].actual
+        assert "负债" not in findings[0].repair_action
+
+    def test_non_cross_genre_rejects_invented_suspense_label(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        contract = contract_from_selection(
+            {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+            },
+            enhancers=StoryEnhancerSelection(
+                creativity_direction="distilled-mechanism-remix",
+                cost_style="minimal",
+            ),
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            sub_genres=("异世大陆",),
+            trope_tags=("轻悬疑侦查", "经营升级"),
+        )
+
+        findings = _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"concept_seed": "收费站班组长穿成废城城主，用界碑经营关卡。"},
+        )
+
+        assert {item.code for item in findings} == {"STORY_FACETS_UNREQUESTED_GENRE_FUSION"}
+        assert "悬疑" not in findings[0].actual
+        assert "悬疑" not in findings[0].repair_action
+
+    def test_explicit_cross_genre_direction_allows_suspense_label(self) -> None:
+        from bestseller.services.story_enhancers import StoryEnhancerSelection
+
+        contract = contract_from_selection(
+            {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "经营"],
+            },
+            enhancers=StoryEnhancerSelection(
+                creativity_direction="cross-genre-friction",
+                cost_style="minimal",
+            ),
+        )
+        facets = StoryFacets(
+            primary_genre="xuanhuan",
+            trope_tags=("轻悬疑侦查", "经营升级"),
+        )
+
+        assert _story_facets_default_motif_findings(
+            facets,
+            genre_intent=contract,
+            user_hints={"concept_seed": "废城城主追查商路中的失踪货物。"},
         ) == []
 
     def test_explicit_concept_lab_and_hook_motifs_are_not_rejected(self) -> None:

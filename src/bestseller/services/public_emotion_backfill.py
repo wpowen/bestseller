@@ -18,6 +18,10 @@ from bestseller.services.compliance_boundary_kernel import (
     compliance_boundary_kernel_from_dict,
     compliance_boundary_kernel_to_dict,
 )
+from bestseller.services.planning_capability_selection import (
+    PlanningCapabilitySelectionError,
+    planning_capability_selected,
+)
 from bestseller.services.projects import import_planning_artifact
 from bestseller.services.public_emotion_kernel import (
     build_public_emotion_kernel_seed,
@@ -161,12 +165,22 @@ async def ensure_project_public_emotion_kernels(
 ) -> PublicEmotionBackfillResult:
     """Ensure legacy projects have metadata kernels without touching prose.
 
-    Existing valid kernels are preserved. Missing or invalid kernels are rebuilt
-    from metadata and latest planning artifacts using deterministic seeds.
+    Public methods require selection and a valid existing asset. An unselected
+    historical public cache is untouched; compliance is maintained independently.
     """
 
     metadata = dict(project.metadata_json or {})
-    existing_public = _existing_public_kernel(metadata.get("public_emotion_kernel"))
+    public_selected = planning_capability_selected(metadata, "public_emotion_kernel")
+    if not public_selected:
+        return await _ensure_compliance_only(
+            session, project, metadata=metadata, requested_by=requested_by,
+            persist_artifact=persist_artifact, force=force,
+        )
+    raw_public = metadata.get("public_emotion_kernel")
+    existing_public = _existing_public_kernel(raw_public)
+    if (not raw_public or existing_public is None
+            or not set(raw_public).intersection(existing_public)):
+        raise PlanningCapabilitySelectionError("selected_public_emotion_kernel_missing_or_invalid")
     existing_compliance = _existing_compliance_kernel(
         metadata.get("compliance_boundary_kernel")
     )
@@ -300,6 +314,51 @@ async def ensure_project_public_emotion_kernels(
         source="legacy_backfill",
         artifact_ids=artifact_ids,
         version_nos=version_nos,
+    )
+
+
+async def _ensure_compliance_only(
+    session: AsyncSession,
+    project: ProjectModel,
+    *,
+    metadata: dict[str, Any],
+    requested_by: str,
+    persist_artifact: bool,
+    force: bool,
+) -> PublicEmotionBackfillResult:
+    """Do not inspect, normalize or replace an inactive public method cache."""
+    compliance = _existing_compliance_kernel(metadata.get("compliance_boundary_kernel"))
+    if compliance is not None and not force:
+        return PublicEmotionBackfillResult(
+            status="not_applicable", public_emotion_kernel=None,
+            compliance_boundary_kernel=compliance, source="author_selection",
+            skipped_reason="planning_capability_not_selected",
+        )
+    compliance = compliance_boundary_kernel_to_dict(compliance_boundary_kernel_from_dict(
+        build_compliance_boundary_kernel_seed(platform=_target_platform(project, metadata)),
+    ))
+    artifact_ids: dict[str, UUID] = {}
+    version_nos: dict[str, int] = {}
+    if persist_artifact:
+        artifact = await import_planning_artifact(
+            session, project.slug,
+            PlanningArtifactCreate(
+                artifact_type=ArtifactType.COMPLIANCE_BOUNDARY_KERNEL, content=compliance,
+                notes=(f"Independent compliance backfill by {requested_by}; "
+                       "public emotion is not selected"),
+            ),
+        )
+        artifact_ids["compliance_boundary_kernel"] = artifact.id
+        version_nos["compliance_boundary_kernel"] = artifact.version_no
+    # Merge after persistence so independently committed metadata is retained.
+    project.metadata_json = {
+        **(project.metadata_json or {}), "compliance_boundary_kernel": compliance,
+    }
+    return PublicEmotionBackfillResult(
+        status="partial_created", public_emotion_kernel=None,
+        compliance_boundary_kernel=compliance, source="independent_compliance",
+        skipped_reason="planning_capability_not_selected",
+        artifact_ids=artifact_ids, version_nos=version_nos,
     )
 
 

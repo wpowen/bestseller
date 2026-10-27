@@ -105,6 +105,13 @@ def resolve_persona(
     (不再硬套男频爽文,避免非爽文题材被固化成打脸逆袭模板)。"""
     blob = " ".join(str(x or "") for x in (genre, sub_genre, *tags))
     channel_norm = str(channel or "").strip()
+    channel_aliases = {
+        "male": "男频",
+        "female": "女频",
+        "男": "男频",
+        "女": "女频",
+    }
+    channel_norm = channel_aliases.get(channel_norm.lower(), channel_norm)
     # An EXPLICIT 通用/general pick means "give me the neutral reader, do NOT
     # infer 男频 from the genre". Without this, choosing 通用 on a 玄幻 book still
     # fell through to genre inference and got the 打脸/扮猪吃虎 persona — the very

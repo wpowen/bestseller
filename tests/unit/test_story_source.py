@@ -12,7 +12,7 @@ from bestseller.services import story_source
 async def test_existing_project_resume_uses_latest_accepted_premise(monkeypatch) -> None:
     artifact = SimpleNamespace(content={"premise": "  已批准创意  "})
     lookup = AsyncMock(return_value=artifact)
-    monkeypatch.setattr(story_source, "get_latest_planning_artifact", lookup)
+    monkeypatch.setattr(story_source, "get_latest_approved_planning_artifact", lookup)
     project = SimpleNamespace(
         id="project-id",
         title="标题回退",
@@ -33,7 +33,7 @@ async def test_locked_design_is_fail_safe_fallback_when_artifact_is_missing(
 ) -> None:
     monkeypatch.setattr(
         story_source,
-        "get_latest_planning_artifact",
+        "get_latest_approved_planning_artifact",
         AsyncMock(return_value=None),
     )
     project = SimpleNamespace(

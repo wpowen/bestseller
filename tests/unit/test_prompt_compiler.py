@@ -326,7 +326,7 @@ def test_combined_channels_obey_budget_margin_and_report_is_serializable() -> No
 def test_default_settings_expose_total_writer_budget_and_margin() -> None:
     settings = load_settings(env={})
 
-    assert settings.llm.writer_total_input_budget_tokens == 8000
+    assert settings.llm.writer_total_input_budget_tokens == 14800
     assert settings.llm.writer_prompt_safety_margin == pytest.approx(0.10)
 
 

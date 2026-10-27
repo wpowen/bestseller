@@ -49,18 +49,27 @@ def test_a_challenger_failing_the_deterministic_gate_loses():
     assert bad and "length_out_of_band" in bad[0]["rejected_by"]
 
 
-def test_default_family_demotion_now_reaches_the_shipped_title():
-    """债务族降权此前只保护被丢弃的冠军。用户没点名该族时挑战者要被降权。"""
-    adopted, _ = _adj("擀面胖婶的三息辨火", "我替全宗门还灵债")
-    assert adopted == "擀面胖婶的三息辨火"
+def test_default_family_observation_cannot_veto_the_shipped_title():
+    """词面命中留审计，但挑战者仍由原确定性资格门决定。"""
+    adopted, receipt = _adj("擀面胖婶的三息辨火", "我替全宗门还灵债")
+    assert adopted == "我替全宗门还灵债"
+    challenger = next(
+        row for row in receipt["candidates"] if row["title"] == "我替全宗门还灵债"
+    )
+    assert challenger["default_family_observed"] is True
+    assert challenger["default_family_blocking"] is False
+    assert challenger["default_family_selection_changed"] is False
 
 
-def test_user_named_family_is_not_demoted():
-    """用户自己点名了债务族 → 不降权（既有原则：用户点名即豁免）。"""
-    adopted, _ = _adj(
+def test_user_named_family_is_observed_without_framework_policy_action():
+    """用户自己点名了债务族，保留选择并如实记录用户意图。"""
+    adopted, receipt = _adj(
         "擀面胖婶的三息辨火", "我替全宗门还灵债", user_named_default_family=True
     )
     assert adopted == "我替全宗门还灵债"
+    assert receipt["default_family"]["observed"] == ["我替全宗门还灵债"]
+    assert receipt["default_family"]["user_requested"] is True
+    assert receipt["default_family"]["selection_changed"] is False
 
 
 def test_a_receipt_is_written_even_when_nothing_changes():

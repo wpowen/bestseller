@@ -85,8 +85,18 @@ def extract_role_bound_name(text: str) -> str:
     因为「温符徒」是本书自造的身份词；这里靠**通用**身份词 + 位置形状。
     """
 
-    match = _ROLE_THEN_NAME_RE.search(_text(text))
-    return match.group(1) if match else ""
+    # Later clauses introduce opponents and actions, not creation identity.
+    from bestseller.services.book_design import (
+        _acceptable_protagonist_name,
+        _starts_with_a_surname,
+    )
+
+    head = "，".join(re.split(r"[，,。；;：:!?！？\n]", _text(text))[:2])
+    for match in _ROLE_THEN_NAME_RE.finditer(head + "，"):
+        candidate = match.group(1)
+        if _starts_with_a_surname(candidate) and _acceptable_protagonist_name(candidate):
+            return candidate
+    return ""
 
 
 def is_placeholder_name(value: str) -> bool:

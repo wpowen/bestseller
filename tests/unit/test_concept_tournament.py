@@ -21,6 +21,10 @@ import pytest
 from bestseller.services.concept_tournament import (
     ConceptCandidate,
     ConceptTournamentResult,
+    _build_expansion_editor_messages,
+    _build_narrow_card_revision_context,
+    _build_story_layer_judge_messages,
+    _seriality_severe_collapse,
     load_concept_tournament_config,
     render_high_concept_block,
     resolve_banned_cliches,
@@ -28,6 +32,46 @@ from bestseller.services.concept_tournament import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_story_layer_and_editor_keep_authority_seed_and_full_card_context() -> None:
+    card = {
+        "protagonist_identity": "矿奴陆衡",
+        "core_abnormality": "能看见灵脉走向",
+        "current_goal": "夺回矿脉",
+        "private_unmentioned_field": "必须保留的细节",
+    }
+    seed = "边城矿奴陆衡能看见灵脉走向，并烧毁卖身契。"
+    _, story_user = _build_story_layer_judge_messages(
+        card,
+        genre="玄幻",
+        sub_genre="东方玄幻",
+        authoritative_seed_concept=seed,
+        candidate_seed="陆衡改写同一矿脉能力",
+    )
+    _, editor_user = _build_expansion_editor_messages(
+        card,
+        genre="玄幻",
+        sub_genre="东方玄幻",
+        authoritative_seed_concept=seed,
+        candidate_seed="陆衡改写同一矿脉能力",
+    )
+    for prompt in (story_user, editor_user):
+        assert seed in prompt
+        assert "陆衡改写同一矿脉能力" in prompt
+        assert "private_unmentioned_field" in prompt
+
+    revision = _build_narrow_card_revision_context(
+        card=card,
+        authoritative_seed_concept=seed,
+        candidate_seed="陆衡改写同一矿脉能力",
+        failed_axes=["s1_wants_aggression"],
+        directions="把目标改为主动夺取并保留其余字段",
+    )
+    assert seed in revision
+    assert json.dumps(card, ensure_ascii=False) in revision
+    assert "s1_wants_aggression" in revision
+    assert "不得换主角、能力源" in revision
 
 # 一个合格的高概念候选（杂交=电网调度×仙侠，引擎字段齐全，不撞俗套）
 GOOD_PAYLOAD = {
@@ -48,7 +92,10 @@ GOOD_PAYLOAD = {
     "core_promise_invariant": "看凡人调度员用真实配电权迫使高位者重新谈判资源规则",
     "unit_families": ["事故诊断", "配额交易", "团队分歧", "公开听证", "对手绕路反制"],
     "progress_bar": "调度权限等级：村级电闸→坊市→州府→天庭主干网",
-    "unit_frequency": "每天至少一桩新的配额冲突或线路事故",
+    # Ranking seriality requires an explicit chapter-level cadence; retain the
+    # daily in-world incident in the mechanism while stating the contract's
+    # 2-4 chapter publication rhythm.
+    "unit_frequency": "每2-4章一次；章内每天至少一桩新的配额冲突或线路事故",
     "unit_count_estimate": 180,
     "question_ladder": ["谁建的灵气电网", "功德账户由谁记账", "第一任调度员为什么消失"],
     "ch50": "州府断电七日之战：三大宗门联手要夺调度台改自由市场",
@@ -85,6 +132,25 @@ WEAK_PAYLOAD = {
 }
 
 
+def _finite_payload(payload: dict, chapter_count: int = 20) -> dict:
+    """Keep screening fixtures inside their declared finite story horizon."""
+    first = chapter_count // 3
+    second = chapter_count * 2 // 3
+    return {
+        **payload,
+        "ch50": "",
+        "phase_transitions": [
+            f"第1-{first}章发现配额争端并建立调度规则",
+            f"第{first + 1}-{second}章对手绕路反制并改变资源谈判",
+            f"第{second + 1}-{chapter_count}章完成公共资源争端的最终选择",
+        ],
+    }
+
+
+def _finite_gen_from(payloads: list[dict]) -> callable:
+    return _gen_from([_finite_payload(payload) for payload in payloads])
+
+
 def _gen_from(payloads: list[dict]) -> callable:
     calls = iter(payloads)
 
@@ -103,21 +169,30 @@ def _judge_scoring(scores: dict[str, tuple[float, float, float]]) -> callable:
             if needle in user:
                 return (
                     json.dumps(
-                        {"freshness": fresh, "click": click, "predictable": pred,
-                         "character_logic": 8,
-                         "mechanism_causality": 8,
-                         "genre_fidelity": 8,
-                         "plain_language": 8,
-                         "story_motion": 8,
-                         "reason": "test"},
+                        {
+                            "freshness": fresh,
+                            "click": click,
+                            "predictable": pred,
+                            "character_logic": 8,
+                            "mechanism_causality": 8,
+                            "genre_fidelity": 8,
+                            "plain_language": 8,
+                            "story_motion": 8,
+                            "reason": "test",
+                        },
                         ensure_ascii=False,
                     ),
                     None,
                 )
-        return json.dumps({
-            "freshness": 2, "click": 2, "predictable": 9,
-            "character_logic": 6, "reason": "平庸",
-        }), None
+        return json.dumps(
+            {
+                "freshness": 2,
+                "click": 2,
+                "predictable": 9,
+                "character_logic": 6,
+                "reason": "平庸",
+            }
+        ), None
 
     return _judge
 
@@ -199,12 +274,8 @@ class TestDeterministicScreens:
         }
         assert _hard_floor_failed_axes(scores, strict)
         assert _hard_floor_failed_axes(scores, calibrated) == []
-        assert _hard_floor_failed_axes(
-            {**scores, "plain_language": 4}, calibrated
-        )
-        assert _hard_floor_failed_axes(
-            {**scores, "freshness": 3}, calibrated
-        )
+        assert _hard_floor_failed_axes({**scores, "plain_language": 4}, calibrated)
+        assert _hard_floor_failed_axes({**scores, "freshness": 3}, calibrated)
 
     def test_incomplete_engine_verdict_is_not_coerced_to_zero(self):
         from bestseller.services.concept_tournament import (
@@ -212,9 +283,7 @@ class TestDeterministicScreens:
         )
 
         axes = ("freshness", "action_conflict", "reader_promise")
-        scores, missing = _parse_complete_axis_scores(
-            {"freshness": 8, "reader_promise": 9}, axes
-        )
+        scores, missing = _parse_complete_axis_scores({"freshness": 8, "reader_promise": 9}, axes)
 
         assert scores is None
         assert missing == ["action_conflict"]
@@ -288,9 +357,7 @@ class TestDeterministicScreens:
         assert "数组只能直接包含非空字符串" in prompt
 
     def test_tournament_result_with_repair_run_id_is_json_serializable(self):
-        result = ConceptTournamentResult(
-            premise_cards=[{"repair": {"run_id": str(uuid4())}}]
-        )
+        result = ConceptTournamentResult(premise_cards=[{"repair": {"run_id": str(uuid4())}}])
 
         json.dumps(result.to_dict(), ensure_ascii=False)
 
@@ -328,7 +395,7 @@ class TestDeterministicScreens:
         )
         assert "HOOK_DISTILL" in hook_prompt
         assert "主角不断改变灵气分配规则" in hook_prompt
-        assert "独立写3条最想让人点开" in hook_prompt
+        assert "提取3条最想点开的" in hook_prompt
         assert "不要解释500章" in hook_prompt
         assert "每条30-75字" in hook_prompt
         # 2026-08-24 负例种词修复：被禁词/句式不得逐字进生成 prompt
@@ -582,7 +649,7 @@ class TestDeterministicScreens:
             return json.dumps(GOOD_PAYLOAD, ensure_ascii=False), None
 
         weak_card_scores = {
-            "seed_fidelity": 6,
+            "seed_fidelity": 8,
             "freshness": 6,
             "click_seed": 6,
             "action_conflict": 6,
@@ -630,6 +697,101 @@ class TestDeterministicScreens:
         assert len(hook_calls) == 2
         assert result.candidates
 
+    @pytest.mark.asyncio
+    async def test_engine_batch_survivor_quota_never_waives_seed_fidelity(self):
+        """A paid-card quota cannot authorize replacing the user's book."""
+
+        kernel = {
+            "protagonist_identity": "陌生脚夫卫七签",
+            "protagonist_private_desire": "开一家合单脚夫铺",
+            "protagonist_flaw": "见单就想合",
+            "core_abnormality": "看见脚夫是否愿意合单",
+            "current_goal": "合并三家急件",
+            "effective_resistance": "旧行规禁止混背",
+            "failure_cost": "铺子关门",
+            "success_cost": "被行会盯上",
+            "irreversible_change": "三家开始合单",
+            "reader_promise": "合单经营",
+            "difference_point": "异世物流",
+            "deformable_loop": "每轮合单引来下一轮反制",
+            "expansion_axes": ["商号", "行会", "跨驿"],
+            "opposing_ecology": ["脚夫帮", "行会"],
+            "scene_seeds": ["场面1", "场面2", "场面3", "场面4", "场面5"],
+            "post_reveal_scene_seeds": ["后续1", "后续2", "后续3"],
+            "opening_crisis": "三单急件积压",
+            "emotional_promise": "经营翻盘",
+        }
+        hook_calls: list[str] = []
+
+        async def generator(system: str, user: str):
+            del system
+            if '"ideas"' in user:
+                return json.dumps(
+                    {
+                        "ideas": [
+                            {"lane": "职业处境", "seed": "错误故事甲"},
+                            {"lane": "身份变化", "seed": "错误故事乙"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ), None
+            if "PREMISE_CARD" in user:
+                return json.dumps(kernel, ensure_ascii=False), None
+            hook_calls.append(user)
+            return json.dumps(GOOD_PAYLOAD, ensure_ascii=False), None
+
+        scores = {
+            "seed_fidelity": 4,
+            "freshness": 8,
+            "click_seed": 8,
+            "action_conflict": 8,
+            "reader_promise": 8,
+            "character_choice": 8,
+            "scene_generation": 8,
+            "promise_survival": 8,
+            "deformable_loop": 8,
+            "post_reveal_engine": 8,
+            "genre_fidelity": 8,
+            "reason": "主角、场域和经营对象均被替换",
+        }
+
+        async def premise_judge(system: str, user: str):
+            del system, user
+            return json.dumps(
+                {"verdicts": [{**scores, "index": 0}, {**scores, "index": 1}]},
+                ensure_ascii=False,
+            ), None
+
+        result = await run_concept_tournament(
+            None,
+            None,
+            genre="玄幻",
+            sub_genre="异世大陆",
+            chapter_count=60,
+            config={
+                **_CFG,
+                "n_candidates": 2,
+                "candidate_prompt_mode": "engine_first",
+                "raw_idea_prompt_arm": "methodology",
+                "raw_idea_pool_multiplier": 1,
+                "premise_card_min_survivors": 2,
+            },
+            generator=generator,
+            judge=_judge_scoring({}),
+            premise_judge=premise_judge,
+            seed_concept="林策经营七日一迁的移动驿城。",
+            authoritative_seed=True,
+            rng=random.Random(7),
+        )
+
+        assert hook_calls == []
+        assert result.winner is None
+        assert all(
+            "seed_fidelity" in rejection.get("failed_axes", [])
+            for rejection in result.engine_rejections
+            if rejection.get("scores")
+        )
+
     def test_engine_judge_does_not_trust_claimed_unit_count(self):
         from bestseller.services.concept_tournament import _build_engine_judge_messages
 
@@ -655,15 +817,19 @@ class TestDeterministicScreens:
         payload = {
             **GOOD_PAYLOAD,
             "hooks": [
-                {"angle": "promise", "concept": "收殓师替枉死者整理遗容时，能看见他们没来得及活完的明天。"},
-                {"angle": "paradox", "concept": "他在老人没来得及活完的明天里，看见了第二天就会死去的自己。"},
+                {
+                    "angle": "promise",
+                    "concept": "收殓师替枉死者整理遗容时，能看见他们没来得及活完的明天。",
+                },
+                {
+                    "angle": "paradox",
+                    "concept": "他在老人没来得及活完的明天里，看见了第二天就会死去的自己。",
+                },
                 {"angle": "scene", "concept": "雨夜缝合老人伤口时，他看见停尸柜里的自己睁开了眼。"},
             ],
         }
 
-        variants = _parse_hook_variants(
-            json.dumps(payload, ensure_ascii=False), "职业处境"
-        )
+        variants = _parse_hook_variants(json.dumps(payload, ensure_ascii=False), "职业处境")
 
         assert len(variants) == 3
         assert {candidate.dimension for candidate in variants} == {
@@ -678,9 +844,7 @@ class TestDeterministicScreens:
             _parse_raw_idea_pool,
         )
 
-        _, prompt = _build_raw_idea_pool_messages(
-            genre="仙侠", sub_genre="古典仙侠", count=4
-        )
+        _, prompt = _build_raw_idea_pool_messages(genre="仙侠", sub_genre="古典仙侠", count=4)
         assert "一个具体的人，遇到一个让人立刻想追问的异常处境" in prompt
         assert "不写大纲、世界观说明" in prompt
         parsed = _parse_raw_idea_pool(
@@ -699,6 +863,28 @@ class TestDeterministicScreens:
             ("职业处境", "收尸人看见死者明天"),
             ("纯题材直觉", "矿工听见灵脉求救"),
         ]
+
+    def test_raw_idea_pool_treats_literal_user_seed_as_book_identity(self):
+        from bestseller.services.concept_tournament import _build_raw_idea_pool_messages
+
+        system, prompt = _build_raw_idea_pool_messages(
+            genre="玄幻",
+            sub_genre="异世大陆",
+            count=8,
+            seed_concept=(
+                "应急调度员林策穿越成移动驿城代理城主，城市每七天必须迁移；"
+                "他只能看见交换意愿和单次风险。"
+            ),
+            authoritative_seed=True,
+            prompt_arm="author_pitch",
+        )
+
+        surface = system + prompt
+        assert "用户已经决定要写哪一本书" in surface
+        assert "同一本书" in surface
+        assert "林策" in surface
+        assert "不得换主角、换能力、换经营对象、换场域" in surface
+        assert "禁止沿用它的句式、开头词、人物身份和能力设定" not in surface
 
     def test_raw_idea_pool_focus_is_a_single_lightweight_hint(self):
         from bestseller.services.concept_tournament import (
@@ -752,7 +938,8 @@ class TestDeterministicScreens:
             prompt_arm="author_pitch",
         )
 
-        assert "先把人物、开篇和故事为什么会继续想通" in prompt
+        assert "先把故事讲成立" in prompt
+        assert "人物要得到或保住什么" in prompt
         assert '"seed":"一句话故事"' in prompt
         assert '"opening":"具体开篇"' in prompt
         assert '"future_situations"' in prompt
@@ -1021,7 +1208,8 @@ class TestDeterministicScreens:
             seed_concept="镖师成为荒山驿官",
         )
 
-        assert "不要套promise/paradox/scene模板" in prompt
+        assert "先复述冻结项目卡已经成立的故事" in prompt
+        assert "不要套promise/paradox/scene模板" not in prompt
         assert "一个具体主角" in prompt
         assert "允许选择并压缩" in prompt
         # 2026-08-24 负例种词修复：旧断言钉的是「一步步」逐字在 prompt 里，
@@ -1315,20 +1503,32 @@ class TestDeterministicScreens:
         from bestseller.services.concept_tournament import _build_candidate_messages
 
         _, hybrid = _build_candidate_messages(
-            genre="仙侠", sub_genre="古典仙侠", dimension="电网调度",
-            chapter_count=500, banned=(), avoid_mechanisms_block="",
+            genre="仙侠",
+            sub_genre="古典仙侠",
+            dimension="电网调度",
+            chapter_count=500,
+            banned=(),
+            avoid_mechanisms_block="",
         )
         _, control = _build_candidate_messages(
-            genre="仙侠", sub_genre="古典仙侠", dimension="纯题材对照",
-            chapter_count=500, banned=(), avoid_mechanisms_block="",
+            genre="仙侠",
+            sub_genre="古典仙侠",
+            dimension="纯题材对照",
+            chapter_count=500,
+            banned=(),
+            avoid_mechanisms_block="",
         )
 
         assert "第一眼意外，解释后必然" in hybrid
         assert "第一眼意外，解释后必然" not in control
 
         _, character_control = _build_candidate_messages(
-            genre="仙侠", sub_genre="古典仙侠", dimension="纯题材人物困局对照",
-            chapter_count=500, banned=(), avoid_mechanisms_block="",
+            genre="仙侠",
+            sub_genre="古典仙侠",
+            dimension="纯题材人物困局对照",
+            chapter_count=500,
+            banned=(),
+            avoid_mechanisms_block="",
         )
         assert "第一人称" in character_control
         assert "第一眼意外，解释后必然" not in character_control
@@ -1336,15 +1536,25 @@ class TestDeterministicScreens:
         assert "不断换地图" in hybrid
 
     @pytest.mark.asyncio
-    async def test_cliche_candidate_rejected(self):
+    async def test_default_cliche_match_is_advisory_without_replacing_quality_review(self):
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
             rng=random.Random(7),
         )
-        rejected = [c for c in result.candidates if c.rejected_reason]
-        assert any("俗套命中" in (c.rejected_reason or "") for c in rejected)
+        assert not any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
+        assert any(
+            finding.get("finding") == "default_cliche_reference_match"
+            and finding.get("authority") == "default_reference"
+            and finding.get("action") == "advisory"
+            for finding in result.quality_findings
+        )
         assert result.winner is not None
         assert result.winner.concept == GOOD_PAYLOAD["concept"]
 
@@ -1353,19 +1563,30 @@ class TestDeterministicScreens:
         finite = {
             key: value
             for key, value in GOOD_PAYLOAD.items()
-            if key not in {
-                "renewal_sources", "accumulation_tracks", "phase_transitions",
-                "opposing_ecology", "endgame_direction",
+            if key
+            not in {
+                "renewal_sources",
+                "accumulation_tracks",
+                "phase_transitions",
+                "opposing_ecology",
+                "endgame_direction",
             }
         }
         finite["concept"] = "灵气电网只有一个总闸，主角拉下它就能结束天庭垄断。"
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=500,
-            config={**_CFG, "n_candidates": 2}, generator=_gen_from([finite, GOOD_PAYLOAD]),
-            judge=_judge_scoring({
-                finite["concept"][:12]: (8, 8, 2),
-                GOOD_PAYLOAD["concept"][:12]: (9, 9, 2),
-            }),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=500,
+            config={**_CFG, "n_candidates": 2},
+            generator=_gen_from([finite, GOOD_PAYLOAD]),
+            judge=_judge_scoring(
+                {
+                    finite["concept"][:12]: (8, 8, 2),
+                    GOOD_PAYLOAD["concept"][:12]: (9, 9, 2),
+                }
+            ),
             rng=random.Random(7),
         )
 
@@ -1383,8 +1604,13 @@ class TestDeterministicScreens:
         }
         incomplete["concept"] = "凡人调度员发现灵气配额可以被远程切断，却没有任何人物动机。"
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([incomplete, GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([incomplete, GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
             rng=random.Random(7),
         )
@@ -1399,8 +1625,13 @@ class TestDeterministicScreens:
             "concept": "这是一个关于凡人调度员的故事，" + "他需要解释灵气电网如何运行" * 12,
         }
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([verbose, GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([verbose, GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
             rng=random.Random(7),
         )
@@ -1429,8 +1660,13 @@ class TestDeterministicScreens:
     @pytest.mark.asyncio
     async def test_short_candidate_is_not_forced_to_write_long_plan_during_hook_round(self):
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([NO_ENGINE_PAYLOAD, GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([NO_ENGINE_PAYLOAD, GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
             rng=random.Random(7),
         )
@@ -1498,6 +1734,62 @@ class TestJudgeTournament:
         assert captured[1].logical_role == "critic"
         assert captured[1].model_catalog_key == "nim-mistral-large-3"
 
+    @pytest.mark.asyncio
+    async def test_bound_conception_model_wins_generation_default_but_not_critics(
+        self, monkeypatch
+    ):
+        from bestseller.services import concept_tournament as module
+        from bestseller.services.llm import bind_conception_model
+
+        calls = []
+
+        async def fake_default(session, settings, **kwargs):
+            calls.append(kwargs)
+
+            async def generate(system_prompt, user_prompt):
+                return "{}", None
+
+            return generate
+
+        monkeypatch.setattr(module, "_default_generator", fake_default)
+        config = {
+            "enabled": True,
+            "generation_model_key": "minimax-m3",
+            "judge_model_key": "judge-model",
+            "n_candidates": 2,
+            "candidate_prompt_mode": "engine_first",
+            "control_candidates": 1,
+            "raw_idea_generation_batch_size": 1,
+            "premise_card_count": 1,
+            "premise_card_min_survivors": 0,
+            "seriality_advisory_min_chapters": 999,
+            "seriality_min_chapters": 999,
+        }
+
+        with bind_conception_model("user-model"):
+            result = await module.run_concept_tournament(
+                None,
+                SimpleNamespace(pipeline=SimpleNamespace(concept_tournament_batch_concurrency=1)),
+                genre="测试题材",
+                sub_genre="测试子类",
+                chapter_count=1,
+                config=config,
+            )
+
+        assert result.generation_model_key == "user-model"
+        planner_keys = [
+            call["model_catalog_key"]
+            for call in calls
+            if call["logical_role"] == "planner"
+        ]
+        critic_keys = [
+            call["model_catalog_key"]
+            for call in calls
+            if call["logical_role"] == "critic"
+        ]
+        assert planner_keys and set(planner_keys) == {"user-model"}
+        assert critic_keys and set(critic_keys) == {"judge-model"}
+
     def test_plain_language_rubric_is_calibrated_for_genre_vocabulary(self):
         from bestseller.services.concept_tournament import _build_judge_messages
 
@@ -1533,9 +1825,17 @@ class TestJudgeTournament:
     @pytest.mark.asyncio
     async def test_long_target_expands_only_top_two_hook_finalists(self):
         seed_keys = {
-            "concept", "mechanism", "hook_question", "protagonist_identity",
-            "protagonist_private_desire", "protagonist_flaw", "core_abnormality",
-            "opening_crisis", "opponent_system", "decision_proof", "emotional_promise",
+            "concept",
+            "mechanism",
+            "hook_question",
+            "protagonist_identity",
+            "protagonist_private_desire",
+            "protagonist_flaw",
+            "core_abnormality",
+            "opening_crisis",
+            "opponent_system",
+            "decision_proof",
+            "emotional_promise",
         }
         seeds = []
         for label in ("甲", "乙", "丙"):
@@ -1565,17 +1865,30 @@ class TestJudgeTournament:
             return json.dumps(payload, ensure_ascii=False), None
 
         async def _seriality_judge(system: str, user: str):
-            return json.dumps({
-                "renewability": 8, "escalation": 8, "anti_reset": 8,
-                "coherence": 8, "promise_survival": 8, "unit_density": 8,
-                "reason": "可持续",
-            }, ensure_ascii=False), None
+            return json.dumps(
+                {
+                    "renewability": 8,
+                    "escalation": 8,
+                    "anti_reset": 8,
+                    "coherence": 8,
+                    "promise_survival": 8,
+                    "unit_density": 8,
+                    "reason": "可持续",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=500,
-            config=_CFG, generator=_gen_from(seeds),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=500,
+            config=_CFG,
+            generator=_gen_from(seeds),
             judge=_judge_scoring({"概念甲": (9, 9, 1), "概念乙": (8, 8, 2), "概念丙": (7, 7, 3)}),
-            expander=_expand, seriality_judge=_seriality_judge,
+            expander=_expand,
+            seriality_judge=_seriality_judge,
             rng=random.Random(7),
         )
 
@@ -1590,9 +1903,17 @@ class TestJudgeTournament:
         compact = {
             key: GOOD_PAYLOAD[key]
             for key in (
-                "concept", "mechanism", "hook_question", "protagonist_identity",
-                "protagonist_private_desire", "protagonist_flaw", "core_abnormality",
-                "opening_crisis", "opponent_system", "decision_proof", "emotional_promise",
+                "concept",
+                "mechanism",
+                "hook_question",
+                "protagonist_identity",
+                "protagonist_private_desire",
+                "protagonist_flaw",
+                "core_abnormality",
+                "opening_crisis",
+                "opponent_system",
+                "decision_proof",
+                "emotional_promise",
             )
         }
         calls = 0
@@ -1620,18 +1941,30 @@ class TestJudgeTournament:
             return json.dumps(payload, ensure_ascii=False), None
 
         async def _seriality_judge(system: str, user: str):
-            return json.dumps({
-                "renewability": 8, "escalation": 8, "anti_reset": 8,
-                "coherence": 8, "promise_survival": 8, "unit_density": 8,
-                "reason": "修复后通过",
-            }, ensure_ascii=False), None
+            return json.dumps(
+                {
+                    "renewability": 8,
+                    "escalation": 8,
+                    "anti_reset": 8,
+                    "coherence": 8,
+                    "promise_survival": 8,
+                    "unit_density": 8,
+                    "reason": "修复后通过",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=500,
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=500,
             config={**_CFG, "n_candidates": 2},
             generator=_gen_from([compact, WEAK_PAYLOAD]),
             judge=_judge_scoring({compact["concept"][:12]: (9, 9, 2)}),
-            expander=_expand, seriality_judge=_seriality_judge,
+            expander=_expand,
+            seriality_judge=_seriality_judge,
             rng=random.Random(7),
         )
 
@@ -1645,23 +1978,261 @@ class TestJudgeTournament:
         assert "三级发动机" in prompts[1]
 
     @pytest.mark.asyncio
-    async def test_implausible_character_decision_is_hard_vetoed(self):
-        async def _judge_without_human_logic(system: str, user: str):
-            return json.dumps({
-                "freshness": 10,
-                "click": 10,
-                "predictable": 0,
-                "character_logic": 3,
-                "mechanism_causality": 8,
-                "genre_fidelity": 8,
-                "plain_language": 8,
-                "story_motion": 8,
-                "reason": "主角明知没有收益且必死，仍只为推动情节主动入局",
-            }, ensure_ascii=False), None
+    async def test_advisory_mode_does_not_promote_a_severe_seriality_collapse(self):
+        """Regression for the live Docker canary's 4/5/6/6/3/5 promotion."""
+
+        seed_keys = {
+            "concept",
+            "mechanism",
+            "hook_question",
+            "protagonist_identity",
+            "protagonist_private_desire",
+            "protagonist_flaw",
+            "core_abnormality",
+            "opening_crisis",
+            "opponent_system",
+            "decision_proof",
+            "emotional_promise",
+        }
+        seeds = []
+        for label in ("甲", "乙"):
+            seed = {key: GOOD_PAYLOAD[key] for key in seed_keys}
+            seed["concept"] = f"概念{label}：边境经营循环第一次揭晓后就只剩重复加量。"
+            seeds.append(seed)
+
+        async def _expand(system: str, user: str):
+            del system, user
+            return json.dumps(
+                {
+                    "core_promise_invariant": GOOD_PAYLOAD["core_promise_invariant"],
+                    "repeatable_story_unit": GOOD_PAYLOAD["mechanism"],
+                    "unit_families": GOOD_PAYLOAD["unit_families"],
+                    "progress_bar": GOOD_PAYLOAD["progress_bar"],
+                    "unit_frequency": GOOD_PAYLOAD["unit_frequency"],
+                    "unit_count_estimate": GOOD_PAYLOAD["unit_count_estimate"],
+                    "renewal_sources": GOOD_PAYLOAD["renewal_sources"],
+                    "accumulation_tracks": GOOD_PAYLOAD["accumulation_tracks"],
+                    "phase_transitions": _finite_payload(GOOD_PAYLOAD, 30)["phase_transitions"],
+                    "opposing_ecology": GOOD_PAYLOAD["opposing_ecology"],
+                    "mystery_ladder": GOOD_PAYLOAD["question_ladder"],
+                    "ch50": "",
+                    "endgame_direction": GOOD_PAYLOAD["endgame_direction"],
+                },
+                ensure_ascii=False,
+            ), None
+
+        async def _severe_judge(system: str, user: str):
+            del system, user
+            return json.dumps(
+                {
+                    "renewability": 4,
+                    "escalation": 5,
+                    "anti_reset": 6,
+                    "coherence": 6,
+                    "promise_survival": 3,
+                    "unit_density": 5,
+                    "reason": "主承诺首次揭晓后只能重复加量",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="玄幻",
+            sub_genre="异世大陆",
+            chapter_count=30,
+            config={**_CFG, "n_candidates": 2},
+            generator=_gen_from(seeds),
+            judge=_judge_scoring({"概念甲": (9, 9, 2), "概念乙": (8, 8, 2)}),
+            expander=_expand,
+            seriality_judge=_severe_judge,
+            rng=random.Random(7),
+        )
+
+        assert result.winner is None
+        severe_candidates = [
+            candidate
+            for candidate in result.candidates
+            if candidate.seriality_judge.get("severe_collapse")
+        ]
+        assert severe_candidates
+        assert all(
+            "SEVERE_SERIALITY_COLLAPSE" in (candidate.seriality_report.get("blocking_codes") or [])
+            for candidate in severe_candidates
+        )
+        assert result.seriality_stage["mode"] == "advisory"
+        assert all(
+            finding["blocking"] for finding in result.seriality_stage.get("advisory_findings", [])
+        )
+
+    @pytest.mark.asyncio
+    async def test_advisory_nonsevere_judge_finding_does_not_trigger_second_expansion(self):
+        """A normal advisory miss is recorded without rewriting the proof."""
+
+        expansion_calls = 0
+        judge_calls = 0
+
+        async def _expand(system: str, user: str):
+            nonlocal expansion_calls
+            expansion_calls += 1
+            payload = {
+                "core_promise_invariant": GOOD_PAYLOAD["core_promise_invariant"],
+                "repeatable_story_unit": GOOD_PAYLOAD["mechanism"],
+                "unit_families": GOOD_PAYLOAD["unit_families"],
+                "progress_bar": GOOD_PAYLOAD["progress_bar"],
+                "unit_frequency": GOOD_PAYLOAD["unit_frequency"],
+                "unit_count_estimate": GOOD_PAYLOAD["unit_count_estimate"],
+                "renewal_sources": GOOD_PAYLOAD["renewal_sources"],
+                "accumulation_tracks": GOOD_PAYLOAD["accumulation_tracks"],
+                "phase_transitions": _finite_payload(GOOD_PAYLOAD, 30)["phase_transitions"],
+                "opposing_ecology": GOOD_PAYLOAD["opposing_ecology"],
+                "mystery_ladder": GOOD_PAYLOAD["question_ladder"],
+                "endgame_direction": GOOD_PAYLOAD["endgame_direction"],
+            }
+            return json.dumps(payload, ensure_ascii=False), None
+
+        async def _advisory_judge(system: str, user: str):
+            nonlocal judge_calls
+            judge_calls += 1
+            return json.dumps(
+                {
+                    "renewability": 8,
+                    "escalation": 7,
+                    "anti_reset": 8,
+                    "coherence": 8,
+                    "promise_survival": 8,
+                    "unit_density": 7,
+                    "reason": "整体可持续，但部分轴低于配置参考线",
+                },
+                ensure_ascii=False,
+            ), None
+
+        result = await run_concept_tournament(
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=30,
+            config={
+                **_CFG,
+                "n_candidates": 1,
+                "seriality_finalist_count": 1,
+                "seriality_hard_floors": {"escalation": 7.5, "unit_density": 7.5},
+            },
+            generator=_gen_from([GOOD_PAYLOAD]),
+            judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
+            expander=_expand,
+            seriality_judge=_advisory_judge,
+            rng=random.Random(7),
+        )
+
+        assert expansion_calls == 1
+        assert judge_calls == 1
+        assert result.winner is not None
+        assert result.seriality_stage["mode"] == "advisory"
+        finding = result.seriality_stage["advisory_findings"][0]
+        assert finding["policy"] == "ADVISORY_ONLY"
+        assert finding["blocking"] is False
+
+    def test_seriality_severe_collapse_accepts_density_as_second_load_bearing_axis(self):
+        scores = {
+            "renewability": 4,
+            "escalation": 5,
+            "anti_reset": 7,
+            "coherence": 7,
+            "promise_survival": 5,
+            "unit_density": 4,
+        }
+
+        assert _seriality_severe_collapse(scores, _CFG)
+
+    def test_seriality_severe_collapse_still_requires_multi_axis_consensus(self):
+        scores = {
+            "renewability": 4,
+            "escalation": 7,
+            "anti_reset": 7,
+            "coherence": 7,
+            "promise_survival": 7,
+            "unit_density": 4,
+        }
+
+        assert not _seriality_severe_collapse(scores, _CFG)
+
+    def test_seriality_severe_collapse_accepts_exhausted_promise_with_consensus(self):
+        scores = {
+            "renewability": 5,
+            "escalation": 5,
+            "anti_reset": 6,
+            "coherence": 7,
+            "promise_survival": 4,
+            "unit_density": 5,
+        }
+
+        assert _seriality_severe_collapse(scores, _CFG)
+
+    def test_seriality_severe_collapse_rejects_isolated_promise_noise(self):
+        scores = {
+            "renewability": 7,
+            "escalation": 7,
+            "anti_reset": 7,
+            "coherence": 7,
+            "promise_survival": 4,
+            "unit_density": 7,
+        }
+
+        assert not _seriality_severe_collapse(scores, _CFG)
+
+    def test_seriality_severe_collapse_accepts_exhausted_promise_density_pair(self):
+        scores = {
+            "renewability": 6,
+            "escalation": 7,
+            "anti_reset": 7,
+            "coherence": 6,
+            "promise_survival": 4,
+            "unit_density": 5,
+        }
+
+        assert _seriality_severe_collapse(scores, _CFG)
+
+    def test_seriality_severe_collapse_rejects_exhausted_promise_without_density_signal(self):
+        scores = {
+            "renewability": 7,
+            "escalation": 7,
+            "anti_reset": 7,
+            "coherence": 7,
+            "promise_survival": 4,
+            "unit_density": 6,
+        }
+
+        assert not _seriality_severe_collapse(scores, _CFG)
+
+    @pytest.mark.asyncio
+    async def test_implausible_character_decision_is_hard_vetoed(self):
+        async def _judge_without_human_logic(system: str, user: str):
+            return json.dumps(
+                {
+                    "freshness": 10,
+                    "click": 10,
+                    "predictable": 0,
+                    "character_logic": 3,
+                    "mechanism_causality": 8,
+                    "genre_fidelity": 8,
+                    "plain_language": 8,
+                    "story_motion": 8,
+                    "reason": "主角明知没有收益且必死，仍只为推动情节主动入局",
+                },
+                ensure_ascii=False,
+            ), None
+
+        result = await run_concept_tournament(
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
             judge=_judge_without_human_logic,
             rng=random.Random(7),
         )
@@ -1673,22 +2244,31 @@ class TestJudgeTournament:
     @pytest.mark.asyncio
     async def test_arbitrary_supernatural_cost_is_hard_vetoed(self):
         async def _judge_arbitrary_cost(system: str, user: str):
-            return json.dumps({
-                "freshness": 9,
-                "click": 9,
-                "predictable": 2,
-                "character_logic": 8,
-                "mechanism_causality": 3,
-                "genre_fidelity": 8,
-                "plain_language": 8,
-                "story_motion": 8,
-                "reason": "器官衰竭是外置惩罚，不是排序行为的自然后果",
-            }, ensure_ascii=False), None
+            return json.dumps(
+                {
+                    "freshness": 9,
+                    "click": 9,
+                    "predictable": 2,
+                    "character_logic": 8,
+                    "mechanism_causality": 3,
+                    "genre_fidelity": 8,
+                    "plain_language": 8,
+                    "story_motion": 8,
+                    "reason": "器官衰竭是外置惩罚，不是排序行为的自然后果",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="悬疑", sub_genre="民俗悬疑", chapter_count=20,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
-            judge=_judge_arbitrary_cost, rng=random.Random(7),
+            None,
+            None,
+            genre="悬疑",
+            sub_genre="民俗悬疑",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
+            judge=_judge_arbitrary_cost,
+            rng=random.Random(7),
         )
 
         assert result.winner is None
@@ -1697,22 +2277,31 @@ class TestJudgeTournament:
     @pytest.mark.asyncio
     async def test_jargon_or_genre_replacement_is_hard_vetoed(self):
         async def _judge_jargon(system: str, user: str):
-            return json.dumps({
-                "freshness": 8,
-                "click": 8,
-                "predictable": 3,
-                "character_logic": 8,
-                "mechanism_causality": 8,
-                "genre_fidelity": 4,
-                "plain_language": 3,
-                "story_motion": 8,
-                "reason": "更像保险职业文，且术语需要解释",
-            }, ensure_ascii=False), None
+            return json.dumps(
+                {
+                    "freshness": 8,
+                    "click": 8,
+                    "predictable": 3,
+                    "character_logic": 8,
+                    "mechanism_causality": 8,
+                    "genre_fidelity": 4,
+                    "plain_language": 3,
+                    "story_motion": 8,
+                    "reason": "更像保险职业文，且术语需要解释",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="民俗悬疑", sub_genre="民俗悬疑", chapter_count=20,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
-            judge=_judge_jargon, rng=random.Random(7),
+            None,
+            None,
+            genre="民俗悬疑",
+            sub_genre="民俗悬疑",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
+            judge=_judge_jargon,
+            rng=random.Random(7),
         )
 
         assert result.winner is None
@@ -1723,18 +2312,31 @@ class TestJudgeTournament:
     @pytest.mark.asyncio
     async def test_witty_setup_without_story_motion_is_hard_vetoed(self):
         async def _judge_static_setup(system: str, user: str):
-            return json.dumps({
-                "freshness": 8, "click": 8, "predictable": 3,
-                "character_logic": 8, "mechanism_causality": 8,
-                "genre_fidelity": 8, "plain_language": 9,
-                "story_motion": 4,
-                "reason": "只有反差设定，没有持续行动与阻力",
-            }, ensure_ascii=False), None
+            return json.dumps(
+                {
+                    "freshness": 8,
+                    "click": 8,
+                    "predictable": 3,
+                    "character_logic": 8,
+                    "mechanism_causality": 8,
+                    "genre_fidelity": 8,
+                    "plain_language": 9,
+                    "story_motion": 4,
+                    "reason": "只有反差设定，没有持续行动与阻力",
+                },
+                ensure_ascii=False,
+            ), None
 
         result = await run_concept_tournament(
-            None, None, genre="都市", sub_genre="都市异能", chapter_count=500,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
-            judge=_judge_static_setup, rng=random.Random(7),
+            None,
+            None,
+            genre="都市",
+            sub_genre="都市异能",
+            chapter_count=500,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
+            judge=_judge_static_setup,
+            rng=random.Random(7),
         )
 
         assert result.winner is None
@@ -1745,8 +2347,13 @@ class TestJudgeTournament:
         # 2026-07-17 双层地板语义:click 5.0(平庸)作为唯一软失可容忍,
         # 但灾难线(<5.0)以下仍然一票死——高新颖救不了没人想点的概念。
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (10, 4, 0)}),
             rng=random.Random(7),
         )
@@ -1758,12 +2365,19 @@ class TestJudgeTournament:
     async def test_higher_composite_wins_order_independent(self):
         # 弱候选排第一个生成——若选择退化成 list 顺序会选错。
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([WEAK_PAYLOAD, GOOD_PAYLOAD]),
-            judge=_judge_scoring({
-                WEAK_PAYLOAD["concept"][:10]: (3, 4, 9),
-                GOOD_PAYLOAD["concept"][:10]: (9, 8, 2),
-            }),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([WEAK_PAYLOAD, GOOD_PAYLOAD]),
+            judge=_judge_scoring(
+                {
+                    WEAK_PAYLOAD["concept"][:10]: (3, 4, 9),
+                    GOOD_PAYLOAD["concept"][:10]: (9, 8, 2),
+                }
+            ),
             rng=random.Random(7),
         )
         assert result.winner is not None
@@ -1776,8 +2390,13 @@ class TestJudgeTournament:
     @pytest.mark.asyncio
     async def test_all_below_winner_min_yields_no_winner(self):
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([WEAK_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([WEAK_PAYLOAD]),
             judge=_judge_scoring({WEAK_PAYLOAD["concept"][:10]: (3, 3, 9)}),
             rng=random.Random(7),
         )
@@ -1791,12 +2410,19 @@ class TestJudgeTournament:
         a = {**GOOD_PAYLOAD, "concept": "概念Alpha：灵气电网调度员的拉闸权战争。"}
         b = {**GOOD_PAYLOAD, "concept": "概念Beta：灵气保险精算师给渡劫定保费。"}
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([a, b]),
-            judge=_judge_scoring({
-                "概念Alpha": (7, 7, 9),   # composite 5.8
-                "概念Beta": (7, 7, 1),    # composite 7.4
-            }),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_finite_gen_from([a, b]),
+            judge=_judge_scoring(
+                {
+                    "概念Alpha": (7, 7, 9),  # composite 5.8
+                    "概念Beta": (7, 7, 1),  # composite 7.4
+                }
+            ),
             rng=random.Random(7),
         )
         assert result.winner is not None
@@ -1813,8 +2439,13 @@ class TestFailOpen:
             return "{}", None
 
         result = await run_concept_tournament(
-            None, None, genre="仙侠", sub_genre="", chapter_count=20,
-            config={"enabled": False}, generator=_gen,
+            None,
+            None,
+            genre="仙侠",
+            sub_genre="",
+            chapter_count=20,
+            config={"enabled": False},
+            generator=_gen,
         )
         assert called["n"] == 0
         assert result.winner is None
@@ -1826,8 +2457,15 @@ class TestFailOpen:
             raise RuntimeError("llm down")
 
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="", chapter_count=20,
-            config=_CFG, generator=_boom, judge=_boom, rng=random.Random(7),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="",
+            chapter_count=20,
+            config=_CFG,
+            generator=_boom,
+            judge=_boom,
+            rng=random.Random(7),
         )
         assert result.winner is None
 
@@ -1837,8 +2475,14 @@ class TestFailOpen:
             return "不是JSON", None
 
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="", chapter_count=20,
-            config=_CFG, generator=_gen_from([GOOD_PAYLOAD]), judge=_garbage,
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([GOOD_PAYLOAD]),
+            judge=_garbage,
             rng=random.Random(7),
         )
         # 判官全废 → 无 composite → 无冠军(宁缺毋滥),但不 raise
@@ -1858,14 +2502,19 @@ class TestRenderHighConceptBlock:
             composite=8.0,
         )
         result = ConceptTournamentResult(
-            winner=winner, banned_cliches=("废脉其实是宝脉",),
+            winner=winner,
+            banned_cliches=("废脉其实是宝脉",),
         )
         block = render_high_concept_block(result)
         assert GOOD_PAYLOAD["concept"] in block
         assert "进度条=" in block and "问题梯=" in block and "第50章" in block
         assert "废脉其实是宝脉" not in block
-        assert "禁用样本文本不向下游传播" in block
-        assert "禁止回归题材默认套路" in block
+        assert "禁用样本文本不向下游传播" not in block
+        assert "禁止回归题材默认套路" not in block
+        references = result.to_dict()["default_cliche_references"]
+        assert references["entries"] == ["废脉其实是宝脉"]
+        assert references["authority"] == "default_reference"
+        assert references["action"] == "advisory"
 
     def test_no_winner_renders_empty(self):
         assert render_high_concept_block(ConceptTournamentResult()) == ""
@@ -1914,8 +2563,8 @@ class TestConceptionWiring:
         assert "if isinstance(exc, ConceptContractError):" in source
         assert 'logger.warning("Concept tournament failed (non-fatal)' in source
         # 注入=augment description(全 prompt 源头) + high_concept 观测键 + 消毒。
-        assert '_sanitize_forbidden_default_motifs(' in region
-        assert 'ctx["description"] = f"{ctx.get(\'description\') or \'\'}\\n{_hc_block}"' in region
+        assert "_sanitize_forbidden_default_motifs(" in region
+        assert "ctx[\"description\"] = f\"{ctx.get('description') or ''}\\n{_hc_block}\"" in region
         assert 'ctx["high_concept"] = _ct_result.winner.to_dict()' in region
 
     def test_tournament_record_lands_in_conception_log(self):
@@ -1926,9 +2575,10 @@ class TestConceptionWiring:
 
     def test_long_book_retries_then_stops_before_downstream_agents(self):
         source = self._source()
-        # 2026-07-17: short/mid books get 2 attempts so the near-miss retry
-        # branch is reachable (1 attempt made it dead code for 50-chapter books).
-        retry_pos = source.index("max_concept_attempts = 3 if chapter_count >= 200 else 2")
+        # 2026-09-03: 30+ chapter serials get a third attempt so a late
+        # seriality veto can feed structured repair feedback into a genuine
+        # regeneration round instead of merely increasing failed tasks.
+        retry_pos = source.index("max_concept_attempts = 3 if chapter_count >= 30 else 2")
         stop_pos = source.index("已在市场/角色/世界观生成前终止")
         round0_pos = source.index("Round 0: Autonomous Commercial Positioning")
 
@@ -1990,7 +2640,10 @@ class TestHighConceptDownstreamConsumers:
         source = inspect.getsource(conception_services.run_conception_pipeline)
         assert '"logline": _hc_concept or premise,' in source
         idx = source.index('"logline": _hc_concept or premise,')
-        region = source[max(0, idx - 800) : idx]
+        # Title grounding now derives approved entity groups between the high
+        # concept source and the profile.  Keep asserting source precedence
+        # without coupling the contract to an arbitrary character distance.
+        region = source[max(0, idx - 1800) : idx]
         assert '(ctx.get("high_concept") or {}).get("concept")' in region
 
     def test_copywriter_prompt_demands_plain_speech_translation(self):
@@ -2000,10 +2653,18 @@ class TestHighConceptDownstreamConsumers:
 
         _, user = _build_candidate_messages(
             "scene_hook",
-            spine={"who": "x"}, premise="p", golden_finger_line="g",
-            title="t", tags=[], genre="古典仙侠", sub_genre="古典仙侠",
-            platform=None, persona=None, emotion_exemplars=(),
-            book_jargon_terms=(), band=(80, 220),
+            spine={"who": "x"},
+            premise="p",
+            golden_finger_line="g",
+            title="t",
+            tags=[],
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            platform=None,
+            persona=None,
+            emotion_exemplars=(),
+            book_jargon_terms=(),
+            band=(80, 220),
         )
         assert "翻译成" in user and "大白话" in user
 
@@ -2016,7 +2677,7 @@ class TestHighConceptDownstreamConsumers:
         assert '"high_concept": ctx.get("high_concept")' in source
 
 
-# ── P1b 脑洞全开(wild_concept):三道收敛闸门 eliminate→penalize + 降 winner_min ──
+# ── Legacy wild configs: default references cannot gain veto/penalty authority ──
 
 
 _WILD = {
@@ -2068,57 +2729,82 @@ class TestResolveTournamentConfig:
         load_concept_tournament_config.cache_clear()
         merged = resolve_tournament_config(wild=True)
         assert float(merged["winner_min"]) == 5.5
-        assert merged["cliche_mode"] == "penalize"
+        assert merged["cliche_mode"] == "advisory"
         # 真实基线未被污染。
         assert float(load_concept_tournament_config()["winner_min"]) == 5.5
 
 
 class TestWildConceptMode:
-    """penalize 模式：俗套/审计命中不淘汰，改 composite 罚分；降 winner_min 收留大胆概念。"""
+    """Legacy cliché modes stay advisory; independent audit/quality gates remain."""
 
     @pytest.mark.asyncio
-    async def test_penalize_keeps_cliche_candidate_alive(self):
-        # eliminate 下 CLICHE 被毙(见 TestDeterministicScreens);penalize 下存活并打分。
+    async def test_legacy_penalize_keeps_cliche_candidate_without_score_penalty(self):
+        # Even a legacy penalize config cannot reduce default-reference scores.
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_WILD, generator=_gen_from([CLICHE_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_WILD,
+            generator=_finite_gen_from([CLICHE_PAYLOAD]),
             judge=_judge_scoring({CLICHE_PAYLOAD["concept"][:8]: (9, 9, 1)}),
             rng=random.Random(7),
         )
         assert not any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
         assert result.winner is not None
         assert result.winner.concept == CLICHE_PAYLOAD["concept"]
-        # raw = 9*0.4+9*0.4+(10-1)*0.2 = 9.0; 减俗套罚分 1.5 = 7.5。
-        assert abs((result.winner.composite or 0.0) - 7.5) < 1e-6
+        # raw = 9*0.4+9*0.4+(10-1)*0.2 = 9.0, with no reference penalty.
+        assert abs((result.winner.composite or 0.0) - 9.0) < 1e-6
 
     @pytest.mark.asyncio
-    async def test_penalty_flips_ranking_vs_clean_candidate(self):
-        # 俗套候选原始分更高(8.2),罚分后(6.7)输给干净候选(7.2)——证明罚分真扣。
+    async def test_default_reference_cannot_flip_ranking_vs_clean_candidate(self):
+        # Keep the original 8.2 vs 7.2 scores and their order despite reference hits.
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_WILD, generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
-            judge=_judge_scoring({
-                CLICHE_PAYLOAD["concept"][:8]: (8, 8, 1),
-                GOOD_PAYLOAD["concept"][:12]: (7, 7, 2),
-            }),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_WILD,
+            generator=_finite_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
+            judge=_judge_scoring(
+                {
+                    CLICHE_PAYLOAD["concept"][:8]: (8, 8, 1),
+                    GOOD_PAYLOAD["concept"][:12]: (7, 7, 2),
+                }
+            ),
             rng=random.Random(7),
         )
         assert result.winner is not None
-        assert result.winner.concept == GOOD_PAYLOAD["concept"]
+        assert result.winner.concept == CLICHE_PAYLOAD["concept"]
+        scored = {c.concept: c.composite for c in result.candidates}
+        assert scored[CLICHE_PAYLOAD["concept"]] == pytest.approx(8.2)
+        assert scored[GOOD_PAYLOAD["concept"]] == pytest.approx(7.2)
 
     @pytest.mark.asyncio
     async def test_wild_mode_cannot_bypass_quality_floor(self):
         # 生成策略可以更野，但低新颖度/低点击欲不能借 wild 模式绕过验收。
         bold = {**GOOD_PAYLOAD, "concept": "概念Gamma：殡葬入殓师给渡劫失败者办身后事的暗黑仙侠。"}
         wild_res = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_WILD, generator=_gen_from([bold]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_WILD,
+            generator=_gen_from([bold]),
             judge=_judge_scoring({"概念Gamma": (4, 5, 6)}),
             rng=random.Random(7),
         )
         base_res = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([bold]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([bold]),
             judge=_judge_scoring({"概念Gamma": (4, 5, 6)}),
             rng=random.Random(7),
         )
@@ -2126,15 +2812,25 @@ class TestWildConceptMode:
         assert base_res.winner is None
 
     @pytest.mark.asyncio
-    async def test_default_mode_still_eliminates_cliche(self):
-        # no-op 守卫：不给 penalize 键 → 与现状一致，CLICHE 仍被毙。
+    async def test_default_mode_records_cliche_without_eliminating_it(self):
+        # Missing the legacy mode key grants no authority to default references.
         result = await run_concept_tournament(
-            None, None, genre="古典仙侠", sub_genre="古典仙侠", chapter_count=20,
-            config=_CFG, generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
+            None,
+            None,
+            genre="古典仙侠",
+            sub_genre="古典仙侠",
+            chapter_count=20,
+            config=_CFG,
+            generator=_gen_from([CLICHE_PAYLOAD, GOOD_PAYLOAD]),
             judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
             rng=random.Random(7),
         )
-        assert any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
+        assert not any("俗套命中" in (c.rejected_reason or "") for c in result.candidates)
+        assert any(
+            finding.get("finding") == "default_cliche_reference_match"
+            and finding.get("action") == "advisory"
+            for finding in result.quality_findings
+        )
 
 
 class TestWildConceptWiring:
@@ -2151,7 +2847,7 @@ class TestWildConceptWiring:
         config_idx = source.index("resolve_tournament_config(")
         call_end = source.index("retry_feedback=concept_retry_feedback", config_idx)
         region = source[config_idx:call_end]
-        assert 'resolve_tournament_config(\n                wild=bool(ctx.get("wild_concept"))' in region
+        assert 'wild=bool(ctx.get("wild_concept"))' in region
         assert 'ctx.get("wild_concept")' in region
         assert "config=attempt_config," in region
 
@@ -2220,8 +2916,11 @@ class TestEngineFirstAudienceAnchoring:
         from bestseller.services.concept_tournament import _build_engine_kernel_messages
 
         _, user = _build_engine_kernel_messages(
-            genre="玄幻", sub_genre="玄幻", lane="纯题材直觉",
-            chapter_count=50, audience_orientation="男频",
+            genre="玄幻",
+            sub_genre="玄幻",
+            lane="纯题材直觉",
+            chapter_count=50,
+            audience_orientation="男频",
         )
         assert "男频" in user
 
@@ -2229,7 +2928,9 @@ class TestEngineFirstAudienceAnchoring:
         from bestseller.services.concept_tournament import _build_hook_from_engine_messages
 
         _, user = _build_hook_from_engine_messages(
-            genre="玄幻", sub_genre="玄幻", kernel={"protagonist_identity": "外门弟子"},
+            genre="玄幻",
+            sub_genre="玄幻",
+            kernel={"protagonist_identity": "外门弟子"},
             audience_orientation="男频",
         )
         assert "男频" in user
@@ -2238,9 +2939,84 @@ class TestEngineFirstAudienceAnchoring:
         from bestseller.services.concept_tournament import _build_engine_kernel_messages
 
         _, user = _build_engine_kernel_messages(
-            genre="玄幻", sub_genre="玄幻", lane="纯题材直觉", chapter_count=50,
+            genre="玄幻",
+            sub_genre="玄幻",
+            lane="纯题材直觉",
+            chapter_count=50,
         )
         assert "频道/受众" not in user
+
+
+class TestAuthoritativeSeedFidelityWiring:
+    """The seed-fidelity judge must compare against the user's seed, not a model rewrite."""
+
+    def test_engine_kernel_keeps_user_seed_above_the_candidate_angle(self):
+        from bestseller.services.concept_tournament import _build_engine_kernel_messages
+
+        authoritative = "废城城主用道路与市场流量规则经营边境城，代价会转移真实风险。"
+        candidate = "他在三族货栈里靠手感分货。"
+        _, user = _build_engine_kernel_messages(
+            genre="玄幻",
+            sub_genre="异世大陆",
+            lane="成长道路#conflict",
+            chapter_count=30,
+            seed_concept=candidate,
+            authoritative_seed_concept=authoritative,
+        )
+
+        assert f"用户上位创意（唯一事实锚点）：{authoritative}" in user
+        assert f"候选提炼角度（只能扩写，不得替换上位创意）：{candidate}" in user
+        assert user.index(authoritative) < user.index(candidate)
+        assert "谁触发、谁接收或观察结果、谁向谁交付什么" in user
+
+    def test_batch_judge_compares_every_card_to_the_authoritative_seed(self):
+        from bestseller.services.concept_tournament import (
+            _build_engine_batch_judge_messages,
+        )
+
+        authoritative = "废城城主重建跨族交通网，并对抗旧帝国封锁。"
+        _, user = _build_engine_batch_judge_messages(
+            cards=[("lane", "货栈分货", {"protagonist_identity": "货栈搬运工"})],
+            genre="玄幻",
+            sub_genre="异世大陆",
+            chapter_count=30,
+            authoritative_seed_concept=authoritative,
+        )
+
+        assert "触发者、结果接收者、交易方向" in user
+        assert "颠倒付款方" in user
+
+        assert f"用户上位创意={authoritative}" in user
+        assert "seed_fidelity必须只对比用户上位创意" in user
+        assert '"candidate_seed": "货栈分货"' in user
+
+    def test_repair_prompt_preserves_the_same_authority_boundary(self):
+        from bestseller.services.concept_tournament import (
+            _build_engine_kernel_repair_messages,
+        )
+
+        authoritative = "废城城主经营道路、关卡、市场与多族联盟。"
+        _, user = _build_engine_kernel_repair_messages(
+            genre="玄幻",
+            sub_genre="异世大陆",
+            lane="成长道路#conflict",
+            chapter_count=30,
+            seed_concept="货栈分货",
+            authoritative_seed_concept=authoritative,
+            card={},
+            missing_fields=["current_goal"],
+        )
+
+        assert authoritative in user
+        assert "用户上位创意（唯一事实锚点）" in user
+
+    def test_tournament_threads_authority_into_generation_and_every_judge_path(self):
+        import inspect
+
+        from bestseller.services import concept_tournament as ct
+
+        source = inspect.getsource(ct.run_concept_tournament)
+        assert source.count("authoritative_seed_concept=seed_concept") >= 5
 
 
 class TestJudgePersonaPriming:
@@ -2255,13 +3031,21 @@ class TestJudgePersonaPriming:
         from types import SimpleNamespace
 
         cand = SimpleNamespace(
-            concept="c", mechanism="m", hook_question="q",
-            protagonist_identity="i", protagonist_private_desire="d",
-            opening_crisis="o", opponent_system="s", decision_proof="p",
+            concept="c",
+            mechanism="m",
+            hook_question="q",
+            protagonist_identity="i",
+            protagonist_private_desire="d",
+            opening_crisis="o",
+            opponent_system="s",
+            decision_proof="p",
             emotional_promise="e",
         )
         _, user = _build_judge_messages(
-            candidate=cand, genre="玄幻", sub_genre="玄幻", references=[],
+            candidate=cand,
+            genre="玄幻",
+            sub_genre="玄幻",
+            references=[],
             audience_orientation="男频",
         )
         assert "男频" in user and "划走" in user
@@ -2271,13 +3055,21 @@ class TestJudgePersonaPriming:
         from types import SimpleNamespace
 
         cand = SimpleNamespace(
-            concept="c", mechanism="m", hook_question="q",
-            protagonist_identity="i", protagonist_private_desire="d",
-            opening_crisis="o", opponent_system="s", decision_proof="p",
+            concept="c",
+            mechanism="m",
+            hook_question="q",
+            protagonist_identity="i",
+            protagonist_private_desire="d",
+            opening_crisis="o",
+            opponent_system="s",
+            decision_proof="p",
             emotional_promise="e",
         )
         _, user = _build_judge_messages(
-            candidate=cand, genre="玄幻", sub_genre="玄幻", references=[],
+            candidate=cand,
+            genre="玄幻",
+            sub_genre="玄幻",
+            references=[],
         )
         assert "划走" not in user
 
@@ -2291,18 +3083,28 @@ class TestTwoTierHardFloors:
     remain the real authority."""
 
     _FLOORS = {
-        "freshness": 6.0, "click": 7.0, "predictable_max": 5.5,
-        "character_logic": 7.0, "mechanism_causality": 7.0,
-        "genre_fidelity": 7.0, "plain_language": 7.0, "story_motion": 7.0,
+        "freshness": 6.0,
+        "click": 7.0,
+        "predictable_max": 5.5,
+        "character_logic": 7.0,
+        "mechanism_causality": 7.0,
+        "genre_fidelity": 7.0,
+        "plain_language": 7.0,
+        "story_motion": 7.0,
     }
 
     def _verdict(self, **scores):
         from bestseller.services.concept_tournament import _hard_floor_failed_axes
 
         base = {
-            "freshness": 7.0, "click": 8.0, "predictable": 4.0,
-            "character_logic": 8.0, "mechanism_causality": 8.0,
-            "genre_fidelity": 8.0, "plain_language": 8.0, "story_motion": 8.0,
+            "freshness": 7.0,
+            "click": 8.0,
+            "predictable": 4.0,
+            "character_logic": 8.0,
+            "mechanism_causality": 8.0,
+            "genre_fidelity": 8.0,
+            "plain_language": 8.0,
+            "story_motion": 8.0,
         }
         base.update(scores)
         return _hard_floor_failed_axes(base, self._FLOORS)
@@ -2323,3 +3125,161 @@ class TestTwoTierHardFloors:
 
     def test_predictable_soft_miss_is_tolerated(self):
         assert self._verdict(predictable=6.0) == []
+
+
+def _seriality_source_candidate() -> ConceptCandidate:
+    return ConceptCandidate(
+        dimension="公开技法成长",
+        concept="矿奴陆衡把已公开的血脉技法教给弟子，夺回矿脉。",
+        protagonist_identity="矿奴陆衡",
+        mechanism="教徒使公开技法被更多人掌握，对手调整擂台规则",
+        repeatable_story_unit="教徒、试招、挑战和应对规则反制",
+        progress_bar="弟子的协作水平与擂台成绩增长",
+        question_ladder=(
+            "第一阶段如何教会弟子",
+            "第二阶段如何应对擂台规则变化",
+            "第三阶段，主角把已公开的血脉技法教给弟子，并赢下擂台",
+        ),
+        endgame_direction="弟子协作赢下擂台并夺回矿脉",
+    )
+
+
+@pytest.mark.parametrize("seed", ["", "模型近失候选：商队靠交易修复城门。"])
+def test_seriality_audit_allows_public_world_growth_without_user_seed(seed: str) -> None:
+    from bestseller.services.concept_tournament import _seriality_audit
+
+    assert _seriality_audit(
+        _seriality_source_candidate(),
+        target_chapters=20,
+        genre="东方玄幻",
+        seed_concept=seed,
+    ) is None
+
+
+def test_seriality_audit_preserves_explicit_user_protagonist() -> None:
+    from dataclasses import replace
+    from bestseller.services.concept_tournament import _seriality_audit
+
+    original = _seriality_source_candidate()
+    seed = "陆衡，能看见灵脉走向的矿奴，烧毁卖身契。"
+    assert _seriality_audit(
+        original, target_chapters=20, authoritative_seed_concept=seed,
+    ) is None
+    replaced = replace(original, concept="弟子林川夺回矿脉。", protagonist_identity="弟子林川")
+    finding = _seriality_audit(
+        replaced, target_chapters=20, authoritative_seed_concept=seed,
+    )
+    assert "authoritative_protagonist_missing:陆衡" in (finding or "")
+
+
+@pytest.mark.parametrize("repair", [False, True])
+@pytest.mark.parametrize("authority", ["", "矿奴陆衡能看见灵脉走向，并烧毁卖身契。"])
+def test_seriality_prompt_separates_user_authority_from_model_retry(
+    repair: bool, authority: str,
+) -> None:
+    from bestseller.services.concept_tournament import (
+        _build_seriality_messages, _build_seriality_repair_messages,
+    )
+
+    builder = _build_seriality_repair_messages if repair else _build_seriality_messages
+    _, user = builder(
+        candidate=_seriality_source_candidate(),
+        genre="东方玄幻",
+        chapter_count=20,
+        seed_concept="MODEL_RETRY_SENTINEL：未被选中的旧候选",
+        authoritative_seed_concept=authority,
+        **({"feedback": "修复阶段覆盖"} if repair else {}),
+    )
+
+    assert "forward_question_ladder" in user
+    assert "不是默认的秘密/真相梯" in user
+    assert _seriality_source_candidate().concept in user
+    assert "MODEL_RETRY_SENTINEL" not in user
+    assert "该原文未提供的中心谜团不得进入" not in user
+    assert "原始种子未选择隐藏历史" not in user
+    assert ("【用户上位创意事实边界】" in user) is bool(authority)
+    if authority:
+        assert authority in user
+        assert "新增人物、资源、场景、阻力或后续信息不自动算替换" in user
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authoritative", [False, True])
+async def test_tournament_threads_seriality_authority_through_initial_and_repair(
+    authoritative: bool,
+) -> None:
+    captured: list[str] = []
+    seed = "用户选择凡人调度员保住灵气配额。" if authoritative else "MODEL_DRY_RETRY_SENTINEL"
+    compact = {
+        key: GOOD_PAYLOAD[key] for key in (
+            "concept", "mechanism", "hook_question", "protagonist_identity",
+            "protagonist_private_desire", "protagonist_flaw", "core_abnormality",
+            "opening_crisis", "opponent_system", "decision_proof", "emotional_promise",
+        )
+    }
+
+    async def expand(system: str, user: str):
+        captured.append(user)
+        payload = _finite_payload(GOOD_PAYLOAD)
+        payload["repeatable_story_unit"] = GOOD_PAYLOAD["mechanism"]
+        payload["forward_question_ladder"] = (
+            [] if len(captured) == 1 else GOOD_PAYLOAD["question_ladder"]
+        )
+        payload["mystery_ladder"] = payload["forward_question_ladder"]
+        payload["question_ladder"] = payload["forward_question_ladder"]
+        return json.dumps(payload, ensure_ascii=False), None
+
+    result = await run_concept_tournament(
+        None, None, genre="东方玄幻", sub_genre="东方玄幻", chapter_count=20,
+        config={**_CFG, "n_candidates": 1, "seriality_finalist_count": 1},
+        generator=_gen_from([compact]),
+        judge=_judge_scoring({GOOD_PAYLOAD["concept"][:12]: (9, 9, 2)}),
+        expander=expand, seed_concept=seed, authoritative_seed=authoritative,
+        rng=random.Random(7),
+    )
+
+    assert len(captured) == 2
+    assert "问题梯不足" in captured[1]
+    for prompt in captured:
+        assert GOOD_PAYLOAD["concept"] in prompt
+        assert ("【用户上位创意事实边界】" in prompt) is authoritative
+        assert (seed in prompt) is authoritative
+    assert result.winner is not None
+    assert result.winner.concept == GOOD_PAYLOAD["concept"]
+
+
+def test_seriality_audit_rejects_future_chapter_accumulation_claim() -> None:
+    from bestseller.services.concept_tournament import _seriality_audit
+
+    candidate = ConceptCandidate(
+        dimension="经营处境",
+        concept="废城城主用界碑报价重开商路",
+        repeatable_story_unit="报价、交易、扩城、对手反制",
+        progress_bar="商路与城池规模持续增长",
+        question_ladder=("第1-10章成交", "第11-30章扩城", "第31-60章争路"),
+        ch50="第50章摊开六十章累计账本",
+        endgame_direction="扩建跨族商路",
+    )
+
+    reason = _seriality_audit(candidate, target_chapters=60, genre="异世大陆")
+
+    assert reason == "第50章阶段声称已有60章累计成果"
+
+
+def test_seriality_payload_prefers_forward_question_ladder() -> None:
+    from bestseller.services.concept_tournament import _apply_seriality_payload
+
+    expanded = _apply_seriality_payload(
+        ConceptCandidate(dimension="经营处境", concept="废城重开商路"),
+        json.dumps(
+            {
+                "repeatable_story_unit": "交易后对手反制",
+                "forward_question_ladder": ["先成交", "再扩城", "后争路"],
+                "mystery_ladder": ["旧字段不应优先"],
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    assert expanded is not None
+    assert expanded.question_ladder == ("先成交", "再扩城", "后争路")

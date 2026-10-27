@@ -127,6 +127,20 @@ def build_signal_pack(
     novelty = _bounded(novelty_score, default=0.55)
     consistency = _bounded(consistency_score, default=0.75)
     prose = _bounded(prose_quality_score, default=0.65)
+    # 2026-09-10 (W4-3)：三个批评器输出是**可选**的，缺省会用固定常数代替
+    # （0.55 / 0.75 / 0.65）。生产调用点（`pipelines.py` 的 `_grade_chapter(...)`
+    # 调用）**只传了 `prose_quality_score`**——于是 `novelty` / `consistency`
+    # 两个通道**每章都在用常数计分**。这里如实记录哪些通道没有实测，
+    # 让"测出来的低分"与"默认值带来的分"可分辨（诊断与门禁都用得上）。
+    defaulted_channels = tuple(
+        name
+        for name, provided in (
+            ("novelty", novelty_score is not None),
+            ("consistency", consistency_score is not None),
+            ("prose_quality", prose_quality_score is not None),
+        )
+        if not provided
+    )
 
     return ChapterSignalPack(
         chapter_position=chapter_position,
@@ -147,6 +161,7 @@ def build_signal_pack(
         action_ratio=action_ratio,
         interior_ratio=interior_ratio,
         prose_quality_score=prose,
+        defaulted_channels=defaulted_channels,
     )
 
 

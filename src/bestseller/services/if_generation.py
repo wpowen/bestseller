@@ -313,68 +313,16 @@ def _load_story_package_characters(project: ProjectModel) -> list[dict[str, Any]
     the bible LLM invent a fresh cast, producing stories whose characters had
     nothing in common with the user's configured setting.
     """
-    # Resolve candidate directories from the project metadata.
-    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    candidates: list[Path] = []
-
-    explicit = metadata.get("story_package_path")
-    if isinstance(explicit, str) and explicit:
-        candidates.append(Path(explicit))
-
-    # Conventional location: story-factory/projects/<slug>/story_package.json
-    # (slug with dashes → underscores). Walk upwards from CWD to find the
-    # project root that contains this directory.
-    slug_underscored = project.slug.replace("-", "_")
-    cwd = Path.cwd()
-    for anchor in (cwd, *cwd.parents):
-        candidates.append(
-            anchor / "story-factory" / "projects" / slug_underscored / "story_package.json"
-        )
-    # Dedupe while preserving order
-    seen: set[Path] = set()
-    unique_candidates: list[Path] = []
-    for path in candidates:
-        try:
-            resolved = path.resolve()
-        except OSError:
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        unique_candidates.append(resolved)
-
-    for path in unique_candidates:
-        if not path.is_file():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        book = data.get("book") if isinstance(data, dict) else None
-        if not isinstance(book, dict):
-            continue
-        characters = book.get("characters")
-        if not isinstance(characters, list):
-            continue
-        normalized: list[dict[str, Any]] = []
-        for char in characters:
-            if not isinstance(char, dict):
-                continue
-            name = char.get("name")
-            if not isinstance(name, str) or not name.strip():
-                continue
-            normalized.append(
-                {
-                    "id": char.get("id"),
-                    "name": name.strip(),
-                    "title": char.get("title"),
-                    "description": char.get("description"),
-                    "role": char.get("role"),
-                }
-            )
-        if normalized:
-            return normalized
-    return []
+    from bestseller.services.prompt_source_policy import load_adopted_story_package
+    data = load_adopted_story_package(project)
+    book = data.get("book")
+    if not isinstance(book, dict):
+        return []
+    return [
+        {key: char.get(key) for key in ("id", "name", "title", "description", "role")}
+        for char in book.get("characters", [])
+        if isinstance(char, dict) and isinstance(char.get("name"), str) and char["name"].strip()
+    ]
 
 
 def build_concept_json(cfg: InteractiveFictionConfig, project: ProjectModel) -> dict[str, Any]:

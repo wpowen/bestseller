@@ -15,11 +15,150 @@ from bestseller.infra.db.models import (
     RewriteTaskModel,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.planning_capability_selection import (
+    CAPABILITIES,
+    resolve_planning_capability,
+)
 from bestseller.services.projects import get_project_by_slug
 from bestseller.settings import AppSettings
 
 PREWRITE_REVIEW_METADATA_KEY = "prewrite_review"
 PREWRITE_REVIEW_SCHEMA_VERSION = "prewrite-review.v1"
+
+# evaluate_and_persist_fanqie_long_readiness consumes chapter prose. Its
+# result is downstream evidence, not a changed input to write-start approval.
+# Unknown artifact types remain reviewable sources; do not use a prefix rule.
+_DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES = frozenset({"fanqie_long_ranking_readiness"})
+
+# Exact producer finding codes, not word/genre matching. Other planning,
+# reference, Canon, Timeline and authored instructions retain their behavior.
+_SCENE_METHOD_FINDINGS = {
+    "story_design_kernel_missing": "story_design_kernel",
+    "story_design_contract_invalid": "story_design_kernel",
+    "story_design_contract_thin": "story_design_kernel",
+    "distilled_worldview_not_bound": "story_design_kernel",
+    "emotion_driven_kernel_missing": "emotion_driven_kernel",
+    "empathy_contract_missing": "emotion_driven_kernel",
+    "bomb_contract_not_consumed": "emotion_driven_kernel",
+    "antagonist_moral_contract_thin": "emotion_driven_kernel",
+    "ending_texture_missing": "emotion_driven_kernel",
+    "public_emotion_kernel_missing": "public_emotion_kernel",
+    "public_emotion_bridge_missing": "public_emotion_kernel",
+    "entry_system_kernel_invalid": "entry_system_kernel",
+}
+
+
+def project_scene_prewrite_directives(
+    project_or_metadata: Any,
+    *,
+    language: str | None = None,
+) -> dict[str, Any]:
+    """Reproject only exact framework-method directives against live selection.
+
+    The reserved prewrite cache's exact producer templates identify method
+    instructions; unknown/authored text is never inferred from words or an old
+    receipt. Existing context warnings are not inputs to this projection.
+    Original caches/reports remain untouched; this returns no grade or waiver.
+    """
+    from collections.abc import Mapping
+    from copy import deepcopy
+
+    from bestseller.services.planning_kernel import (
+        _DIRECTIVE_TEMPLATES_EN,
+        _DIRECTIVE_TEMPLATES_ZH,
+        PrewriteReadinessReport,
+        build_prewrite_repair_directives,
+    )
+    from bestseller.services.prompt_source_policy import content_hash
+
+    metadata = (
+        project_or_metadata
+        if isinstance(project_or_metadata, Mapping)
+        else getattr(project_or_metadata, "metadata_json", None)
+    )
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    selections = {key: resolve_planning_capability(metadata, key) for key in CAPABILITIES}
+    catalog: dict[str, list[str]] = {}
+    for templates in (_DIRECTIVE_TEMPLATES_EN, _DIRECTIVE_TEMPLATES_ZH):
+        for code, text in templates.items():
+            if code in _SCENE_METHOD_FINDINGS:
+                catalog.setdefault(text, []).append(code)
+    excluded, retained = [], []
+    cached = metadata.get("prewrite_repair_directives")
+    report = metadata.get("prewrite_readiness_report")
+    report_data = report.to_dict() if isinstance(report, PrewriteReadinessReport) else report
+    directives = []
+    if cached:
+        origin = "prewrite_repair_directives"
+        producer_cache = isinstance(cached, (list, tuple))
+        items = (
+            cached
+            if isinstance(cached, (list, tuple, Mapping))
+            else [cached]
+            if isinstance(cached, str)
+            else []
+        )
+        for index, item in enumerate(items):
+            text = str(item).strip()
+            if not text:
+                continue
+            codes = catalog.get(text, []) if producer_cache and isinstance(item, str) else []
+            # A future producer reusing a template for multiple capabilities
+            # cannot silently discard it if any owning capability is selected.
+            inactive = codes and all(
+                not selections[_SCENE_METHOD_FINDINGS[code]]["selected"] for code in codes
+            )
+            evidence = {"loc": [origin, index], "text_sha256": content_hash(text), "codes": codes}
+            if inactive:
+                excluded.append({**evidence, "reason": "current_method_not_selected"})
+            else:
+                directives.append(text)
+                retained.append(evidence)
+    elif isinstance(report_data, Mapping):
+        origin = "prewrite_readiness_report"
+        projected = deepcopy(dict(report_data))
+        for field in ("blocking_findings", "warnings"):
+            items = projected.get(field)
+            if not isinstance(items, list):
+                continue
+            keep = []
+            for index, item in enumerate(items):
+                code = item.get("code") if isinstance(item, Mapping) else None
+                capability = _SCENE_METHOD_FINDINGS.get(code) if isinstance(code, str) else None
+                if capability and not selections[capability]["selected"]:
+                    excluded.append(
+                        {
+                            "loc": [origin, field, index],
+                            "code": code,
+                            "reason": "current_method_not_selected",
+                            "finding_sha256": content_hash(item),
+                        }
+                    )
+                else:
+                    keep.append(item)
+            projected[field] = keep
+        directives = build_prewrite_repair_directives(projected, language=language)
+    else:
+        origin = "none"
+    return {
+        "directives": directives,
+        "receipt": {
+            "schema": "scene-prewrite-directive-projection.v1",
+            "origin": origin,
+            "current_selections": selections,
+            "excluded": excluded,
+            "retained": retained,
+            "cached_directives_sha256": content_hash(cached),
+            "report_sha256": content_hash(report_data),
+            "producer_contract_sha256": content_hash(
+                {"finding_capabilities": _SCENE_METHOD_FINDINGS, "exact_templates": catalog}
+            ),
+            "projected_directives_sha256": content_hash(directives),
+            "projected_count": len(directives),
+            "raw_history_modified": False,
+        },
+    }
+
 
 # The planner only materializes an act-level plan for genuinely long serials
 # (see ``settings.pipeline.act_plan_threshold``).  Keeping ``act_plan`` in the
@@ -44,7 +183,11 @@ PREWRITE_REQUIRED_ARTIFACT_TYPES: tuple[str, ...] = (
 )
 
 
-def required_prewrite_artifact_types(*, target_chapters: int | None) -> tuple[str, ...]:
+def required_prewrite_artifact_types(
+    *,
+    target_chapters: int | None,
+    project_metadata: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
     """Return the write-start contract for a project of the given size.
 
     ``act_plan`` is a long-serial planning layer.  Short books still have
@@ -52,7 +195,15 @@ def required_prewrite_artifact_types(*, target_chapters: int | None) -> tuple[st
     blocked waiting for an artifact the planner intentionally skipped.
     """
 
-    required = list(PREWRITE_REQUIRED_ARTIFACT_TYPES)
+    selections = {key: resolve_planning_capability(project_metadata, key) for key in CAPABILITIES}
+    required = [
+        key
+        for key in PREWRITE_REQUIRED_ARTIFACT_TYPES
+        if key not in selections or selections[key]["selected"]
+    ]
+    for key, receipt in selections.items():
+        if receipt["selected"] and key not in required:
+            required.append(key)
     try:
         chapters = int(target_chapters or 0)
     except (TypeError, ValueError):
@@ -60,7 +211,7 @@ def required_prewrite_artifact_types(*, target_chapters: int | None) -> tuple[st
     if chapters >= PREWRITE_ACT_PLAN_MIN_CHAPTERS:
         # Keep the macro artifact adjacent to the foundation/macro-plan
         # surfaces when it is applicable; ordering is part of the UI contract.
-        required.insert(5, "act_plan")
+        required.insert(required.index("volume_plan"), "act_plan")
     return tuple(required)
 
 
@@ -101,6 +252,8 @@ async def load_prewrite_review_payload(
     for row in rows:
         latest_by_type.setdefault(str(row.artifact_type), row)
 
+    selections = {key: resolve_planning_capability(project, key) for key in CAPABILITIES}
+    inactive = {key for key, receipt in selections.items() if not receipt["selected"]}
     snapshot = {
         artifact_type: {
             "artifact_id": str(row.id),
@@ -109,13 +262,22 @@ async def load_prewrite_review_payload(
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
         for artifact_type, row in latest_by_type.items()
+        if artifact_type not in inactive | _DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES
     }
     review = dict((project.metadata_json or {}).get(PREWRITE_REVIEW_METADATA_KEY) or {})
     approved_snapshot = review.get("approved_snapshot")
-    approved = review.get("status") == "approved" and approved_snapshot == snapshot
+    active_approved = (
+        {
+            key: value for key, value in approved_snapshot.items()
+            if key not in inactive | _DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES
+        }
+        if isinstance(approved_snapshot, dict)
+        else approved_snapshot
+    )
+    approved = review.get("status") == "approved" and active_approved == snapshot
     stale_artifact_types: list[str] = []
-    if review.get("status") == "approved" and approved_snapshot != snapshot:
-        old = approved_snapshot if isinstance(approved_snapshot, dict) else {}
+    if review.get("status") == "approved" and active_approved != snapshot:
+        old = active_approved if isinstance(active_approved, dict) else {}
         for artifact_type, current in snapshot.items():
             if old.get(artifact_type) != current:
                 stale_artifact_types.append(artifact_type)
@@ -124,9 +286,15 @@ async def load_prewrite_review_payload(
         artifact_type
         for artifact_type in required_prewrite_artifact_types(
             target_chapters=getattr(project, "target_chapters", None),
+            project_metadata=project.metadata_json,
         )
         if artifact_type not in latest_by_type
     ]
+    selected_material_missing = any(
+        key in selections and selections[key]["selected"] for key in missing_required
+    )
+    if selected_material_missing:
+        approved = False
     issue_rows = list(
         (
             await session.execute(
@@ -157,14 +325,35 @@ async def load_prewrite_review_payload(
     return {
         "schema_version": PREWRITE_REVIEW_SCHEMA_VERSION,
         "project_slug": project_slug,
-        "status": "approved" if approved else review.get("status") or "needs_review",
+        "status": "approved"
+        if approved
+        else (
+            "needs_review" if selected_material_missing else review.get("status") or "needs_review"
+        ),
         "is_approved": approved,
         "approved_at": review.get("approved_at"),
         "approved_by": review.get("approved_by"),
         "approved_snapshot": approved_snapshot if isinstance(approved_snapshot, dict) else {},
         "current_snapshot": snapshot,
+        "snapshot_projection": {
+            "policy": "prewrite-source-vs-downstream-evidence.v1",
+            "historical_approval_unchanged": True,
+            "excluded_downstream_current": {
+                str(row.artifact_type): {
+                    "artifact_id": str(row.id), "version_no": int(row.version_no),
+                    "status": row.status,
+                }
+                for row in latest_by_type.values()
+                if str(row.artifact_type) in _DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES
+            },
+            "excluded_downstream_approved": {
+                key: value for key, value in (approved_snapshot or {}).items()
+                if key in _DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES
+            } if isinstance(approved_snapshot, dict) else {},
+        },
         "missing_required_artifacts": missing_required,
         "stale_artifact_types": stale_artifact_types,
+        "planning_capabilities": selections,
         "materials": [
             {
                 "artifact_id": str(row.id),
@@ -177,8 +366,14 @@ async def load_prewrite_review_payload(
                 "created_by": row.created_by,
                 "notes": row.notes,
                 "content_preview": _artifact_content_preview(row.content),
+                "applicability": "downstream_evidence"
+                if str(row.artifact_type) in _DOWNSTREAM_EVIDENCE_ARTIFACT_TYPES
+                else selections[str(row.artifact_type)]["status"]
+                if str(row.artifact_type) in selections
+                else "required_or_reviewable",
                 "approved_in_snapshot": (
-                    isinstance(approved_snapshot, dict)
+                    str(row.artifact_type) in snapshot
+                    and isinstance(approved_snapshot, dict)
                     and approved_snapshot.get(str(row.artifact_type))
                     == snapshot.get(str(row.artifact_type))
                 ),
@@ -228,7 +423,11 @@ async def approve_prewrite_materials(
             ).scalars()
         )
         for row in artifact_rows:
-            row.status = "approved"
+            # Canonical is a stronger source-authority state, not a pending
+            # editorial decision. Reviewing materials must not demote it and
+            # invalidate an otherwise unchanged pinned foundation cohort.
+            if row.status != "canonical":
+                row.status = "approved"
         await session.flush()
         payload = await load_prewrite_review_payload(session, project_slug)
     review = {

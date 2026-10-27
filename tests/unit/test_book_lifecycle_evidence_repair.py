@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from uuid import uuid4
+
 import pytest
 
 from bestseller.infra.db.models import ChapterModel, CharacterModel, ProjectModel
@@ -8,6 +11,7 @@ from bestseller.services.book_lifecycle_evidence import (
 )
 from bestseller.services.book_lifecycle_evidence_repair import (
     _bind_distilled_strategy_to_planning,
+    _distilled_strategy_payload,
     build_lifecycle_book_spec,
     build_lifecycle_cast_spec,
     build_lifecycle_story_design_kernel,
@@ -16,11 +20,17 @@ from bestseller.services.book_lifecycle_evidence_repair import (
     build_reverse_outline_payload,
     repair_character_identity_and_personhood,
 )
+from bestseller.services.character_intelligence.strategy import (
+    AdoptedReferenceUnavailable,
+    adopt_reference_projection,
+    required_reference_projection,
+)
 from bestseller.services.planning_kernel import (
     build_project_planning_kernel,
     evaluate_prewrite_readiness,
 )
 from bestseller.services.reverse_outline_gate import evaluate_reverse_outline_gate
+from bestseller.services.prompt_source_policy import stamp_reference_cache
 from bestseller.services.story_design_kernel import story_design_kernel_from_dict
 
 pytestmark = pytest.mark.unit
@@ -28,6 +38,7 @@ pytestmark = pytest.mark.unit
 
 def _project() -> ProjectModel:
     return ProjectModel(
+        id=uuid4(),
         slug="legacy-test",
         title="青囊不语问阴阳",
         language="zh-CN",
@@ -36,6 +47,9 @@ def _project() -> ProjectModel:
         target_word_count=1_500_000,
         target_chapters=500,
         audience="男频",
+        reader_contract_json={"core_fantasy": "证据推进必须改变人物选择"},
+        dramatic_question="林渊如何查明公开证据背后的真相？",
+        theme_statement="真相与关系代价",
         metadata_json={"canonical_category": "suspense-mystery"},
     )
 
@@ -106,6 +120,9 @@ def test_lifecycle_evidence_repair_consumes_distilled_strategy_card() -> None:
         "maturity_score": 0.72,
         "maturity_status": "review",
         "source_count": 3,
+        "provenance_status": "anonymous_aggregate",
+        "privacy_status": "redacted",
+        "genre_profile_key": "suspense-mystery",
         "selected_mechanisms": [
             {
                 "mechanism_id": "evidence-ledger-pressure",
@@ -177,10 +194,21 @@ def test_lifecycle_evidence_repair_consumes_distilled_strategy_card() -> None:
         cast_spec=cast_spec,
         volume_plan=volume_plan,
     )
+    # Receipts bind the actual final context, including the generated hook.
+    project.metadata_json = {
+        **metadata,
+        "benchmark_works": ["anonymous-category-benchmark:suspense-mystery"],
+        "unique_hook": book_spec["unique_hook"],
+    }
+    stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+    adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author", required=True)
+    metadata = dict(project.metadata_json)
+    adopted_card = required_reference_projection(metadata, "distilled_strategy_card", project=project)
+    assert adopted_card == strategy_card
     story_design, volume_plan, bound = _bind_distilled_strategy_to_planning(
         story_design=story_design,
         volume_plan=volume_plan,
-        strategy_card=strategy_card,
+        strategy_card=adopted_card,
     )
 
     assert bound is True
@@ -191,11 +219,7 @@ def test_lifecycle_evidence_repair_consumes_distilled_strategy_card() -> None:
 
     kernel = build_project_planning_kernel(
         project,
-        project_metadata={
-            **metadata,
-            "benchmark_works": ["anonymous-category-benchmark:suspense-mystery"],
-            "unique_hook": book_spec["unique_hook"],
-        },
+        project_metadata=metadata,
         book_spec=book_spec,
         world_spec=world_spec,
         cast_spec=cast_spec,
@@ -213,6 +237,53 @@ def test_lifecycle_evidence_repair_consumes_distilled_strategy_card() -> None:
     assert report.passed is True
     assert "distilled_strategy_not_consumed" not in codes
     assert report.capability_snapshot["distilled_strategy_ready"] is True
+
+
+@pytest.mark.parametrize("receipted", [False, True])
+def test_optional_lifecycle_card_does_not_rewrite_planning(receipted: bool) -> None:
+    project = _project()
+    project.metadata_json["distilled_strategy_card"] = {
+        "aggregate_key": "suspense-mystery",
+        "required_state_variables": ["unselected_state"],
+        "required_change_vectors": ["unselected_change"],
+    }
+    if receipted:
+        stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+        adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author", required=False)
+    metadata = deepcopy(project.metadata_json)
+    story = {"reader_promise": "作者原有承诺"}
+    volumes = [{"volume_number": 1, "core_payoff": "作者原有兑现"}]
+    required_card = required_reference_projection(metadata, "distilled_strategy_card", project=project)
+
+    patched_story, patched_volumes, bound = _bind_distilled_strategy_to_planning(
+        story_design=story, volume_plan=volumes, strategy_card=required_card,
+    )
+
+    assert required_card is None
+    assert bound is False
+    assert patched_story == story
+    assert patched_volumes == volumes
+    assert project.metadata_json == metadata
+    if not receipted:
+        assert _distilled_strategy_payload(
+            project, metadata, category_key=None, protagonist_name="林渊",
+        ) is None
+
+
+def test_lifecycle_required_card_without_receipt_is_not_rebound_from_raw_value() -> None:
+    project = _project()
+    project.metadata_json["distilled_strategy_card"] = {
+        "aggregate_key": "suspense-mystery", "required_state_variables": ["evidence_pressure"],
+    }
+    stamp_reference_cache(project, ("distilled_strategy_card",), producer="strategy_compiler")
+    adopt_reference_projection(project, "distilled_strategy_card", adopted_by="fixture-author", required=True)
+    project.metadata_json["prompt_reference_receipts"].pop("distilled_strategy_card")
+    metadata = deepcopy(project.metadata_json)
+
+    with pytest.raises(AdoptedReferenceUnavailable):
+        _distilled_strategy_payload(project, metadata, category_key=None, protagonist_name="林渊")
+
+    assert project.metadata_json == metadata
 
 
 def test_lifecycle_evidence_repair_builds_reverse_outline_that_passes_gate() -> None:

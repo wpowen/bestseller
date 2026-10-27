@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -58,7 +59,9 @@ def _validate_quickstart_client_schema(payload: Mapping[str, object]) -> None:
         if manifest.get(key) != value:
             raise ValueError("快速建书输入校验不一致，请刷新页面后重新提交。")
 
+
 from bestseller.domain.enums import ProjectStatus
+from bestseller.api.routers.tasks import _project_task_events, _task_event_payload
 from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import (
@@ -81,6 +84,14 @@ from bestseller.services.chapter_revision import (
     create_chapter_revision_task,
 )
 from bestseller.services.concept_contract import ConceptContractError
+from bestseller.services.conception_approval_bridge import (
+    approve_pending_conception,
+    assert_conception_approved,
+    build_planning_handoff_payload,
+    build_conception_options,
+    canonical_snapshot_content_hash,
+    canonical_snapshot_premise,
+)
 from bestseller.services.concept_lab import (
     build_concept_lab_catalog,
     concept_lab_to_user_hints,
@@ -89,7 +100,7 @@ from bestseller.services.concept_lab import (
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.genre_creativity import (
     creative_direction_to_user_hints,
-    get_genre_creative_direction,
+    get_genre_creative_direction_for_preset,
     get_genre_creativity_catalog_payload,
 )
 from bestseller.services.hook_propagation import coerce_hook_spec
@@ -106,6 +117,7 @@ from bestseller.services.pipelines import (
     run_chapter_pipeline,
 )
 from bestseller.services.planner import PlannerFallbackError
+from bestseller.services.production_control import ProductionControlHaltedError
 from bestseller.services.prewrite_review import (
     approve_prewrite_materials,
     assert_prewrite_review_approved,
@@ -117,7 +129,17 @@ from bestseller.services.prewrite_review import (
 from bestseller.services.progress_context import (
     TIER_KEY,
     TIER_MILESTONE,
+    TaskCancelledError,
     bind_progress,
+    set_cancellation_checker,
+)
+from bestseller.services.budget import (
+    ExecutionBudgetError, bind_execution_scope, current_execution_scope,
+    raise_if_execution_stopped, ExecutionLedger, ExecutionReconciliation,
+)
+from bestseller.services.retry_ledger import (
+    execution_terminal_code,
+    assert_execution_scope_open, project_execution_scope,
 )
 from bestseller.services.projects import (
     delete_project_completely,
@@ -126,6 +148,11 @@ from bestseller.services.projects import (
     list_projects,
 )
 from bestseller.services.repair import run_project_repair
+from bestseller.services.runtime_provenance import (
+    disk_runtime_provenance,
+    initialize_process_runtime,
+    task_runtime_provenance,
+)
 from bestseller.services.story_appeal import AppealBarNotMetError
 from bestseller.services.story_enhancers import STORY_ENHANCERS_METADATA_KEY
 from bestseller.services.writing_presets import (
@@ -205,6 +232,19 @@ def _timestamp_seconds(value: object) -> float | None:
         return None
 
 
+def _normalise_event_timestamp(value: object) -> object:
+    """Expose progress timestamps in one browser-safe ISO representation."""
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), UTC).isoformat()
+    if isinstance(value, str):
+        # Numeric strings can be emitted by a Redis client configured without
+        # response decoding; ISO strings are already the public contract.
+        numeric = value.strip().replace(".", "", 1)
+        if numeric.isdigit():
+            return datetime.fromtimestamp(float(value), UTC).isoformat()
+    return value
+
+
 def _json_default(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
@@ -234,6 +274,11 @@ _HEAL_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
         "arq:in-progress:repair:heal:",
         "arq:retry:repair:heal:",
     ),
+}
+_HEAL_RESULT_KEY_PREFIXES: dict[str, str] = {
+    "outline_replan": "arq:result:outline-replan:heal:",
+    "autowrite": "arq:result:autowrite:heal:",
+    "repair": "arq:result:repair:heal:",
 }
 
 
@@ -324,6 +369,41 @@ def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
     slugs: set[str] = set()
     for heal_kind in _HEAL_KEY_PREFIXES:
         slugs.update(_fetch_heal_owned_slugs_by_kind(redis_url, heal_kind))
+    return slugs
+
+
+def _fetch_heal_result_slugs_by_kind(redis_url: str, heal_kind: str) -> set[str]:
+    """Return deterministic heal jobs whose terminal ARQ result is retained.
+
+    ``_fetch_heal_owned_slugs_by_kind`` intentionally only reports live queue
+    ownership.  The dashboard also needs the most recent completed/failed
+    worker receipt, however, because the in-process web task may be an older
+    conception failure for the same project.  Result keys are evidence of a
+    worker receipt, not evidence that a job is still running.
+    """
+    import redis as _redis
+
+    prefix = _HEAL_RESULT_KEY_PREFIXES.get(heal_kind)
+    if prefix is None:
+        return set()
+    try:
+        client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+    except Exception:
+        return set()
+    slugs: set[str] = set()
+    try:
+        for key in client.scan_iter(match=prefix + "*", count=200):
+            slug = key[len(prefix) :]
+            if slug:
+                slugs.add(slug)
+    except Exception:
+        logger.exception("task list: Redis result scan failed")
+        return set()
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
     return slugs
 
 
@@ -461,7 +541,7 @@ def _normalise_worker_progress_events(
             evt = json.loads(raw)
         except Exception:
             continue
-        ts = evt.get("ts", evt.get("timestamp"))
+        ts = _normalise_event_timestamp(evt.get("ts", evt.get("timestamp")))
         if not isinstance(ts, (int, float, str)):
             continue
         stage = evt.get("message") or evt.get("stage")
@@ -478,6 +558,12 @@ def _normalise_worker_progress_events(
                 "payload": payload_dict,
             }
         )
+        if isinstance(evt.get("event_type"), str):
+            events[-1]["event_type"] = evt["event_type"]
+        for identity_key in ("job_id", "task_id", "attempt_id", "task_attempt_id", "workflow_run_id",
+                             "project_id", "project_slug", "execution_scope_id", "scope_id"):
+            if evt.get(identity_key) is not None:
+                events[-1][identity_key] = evt[identity_key]
         latest_stage = stage
         latest_payload = payload_dict
     return events, latest_stage, latest_payload
@@ -548,21 +634,17 @@ def _load_worker_heal_progress_snapshot(
     milestone_events, _ms_stage, _ms_payload = _normalise_worker_progress_events(
         raw_milestones or []
     )
-    if job_state == "running":
-        status = "running"
-    elif job_state == "queued":
-        status = "queued"
-    else:
-        status = "incomplete"
-    if latest_stage in {"failed", "error"}:
-        status = "failed"
-    elif latest_stage in {
-        "repairable_auto_continue_pending",
-        "machine_repair_required",
-    }:
-        status = "running" if job_state == "running" else "queued"
-    elif latest_stage in {"completed", "done", "finished"} and job_state == "result":
-        status = "completed"
+    evidence = sorted(milestone_events + events,
+                      key=lambda event: _timestamp_seconds(event.get("timestamp")) or 0)
+    projection = _project_task_events(evidence, task_id=job_id)
+    decisive = projection["event"]
+    latest_stage = decisive.get("stage") or latest_stage
+    latest_payload = _task_event_payload(decisive) or latest_payload
+    status = projection["status"]
+    if not projection["terminal"]:
+        status = "incomplete" if job_state == "result" else job_state
+    elif status == "completed" and job_state != "result":
+        status = job_state
     return {
         "job_state": job_state,
         "status": status,
@@ -617,6 +699,8 @@ def _attach_repair_heal_owner_to_db_summary(
     worker_progress: dict[str, object] | None,
 ) -> dict[str, object]:
     summary["worker_job_id"] = job_id
+    summary["activity_status"] = "active"
+    summary["execution_active"] = True
     if worker_progress:
         return _merge_worker_progress_into_db_repair_summary(summary, worker_progress)
     if str(summary.get("status") or "").strip().lower() != "running":
@@ -654,6 +738,16 @@ def _task_progress_payload(task: dict[str, object]) -> dict[str, object]:
         "chapter_word_stats": task.get("chapter_word_stats"),
         "error": task.get("error"),
         "result": task.get("result"),
+        "updated_at": task.get("updated_at"),
+        "current_workflow": task.get("current_workflow"),
+        "workflow_run_id": task.get("workflow_run_id"),
+        "activity_status": task.get("activity_status"),
+        "execution_active": task.get("execution_active"),
+        "projection_authority": task.get("projection_authority"),
+        "projection_migration": task.get("projection_migration"),
+        "task_history": task.get("task_history"),
+        "delivery_closure": task.get("delivery_closure"),
+        "book_state": task.get("book_state"),
     }
 
 
@@ -699,21 +793,118 @@ def _load_worker_task_summary(
     worker_progress = _load_worker_heal_progress_snapshot(settings.redis.url, task_id)
     if not worker_progress:
         return None
+    latest_payload = worker_progress.get("latest_payload")
+    latest_payload = latest_payload if isinstance(latest_payload, dict) else {}
+    status = str(worker_progress.get("status") or "running")
+    # A terminal ARQ result can represent an incomplete hand-off.  Preserve
+    # its worker-provided reason at the top level so the dashboard does not
+    # render a misleading blank error beside a pending/failed card.
+    error = None
+    if status in {"failed", "incomplete", "cancelled"} and latest_payload.get("error"):
+        error = str(latest_payload["error"])
+    events = worker_progress.get("progress_events")
+    events = events if isinstance(events, list) else []
+    updated_at = None
+    if events and isinstance(events[-1], dict):
+        updated_at = events[-1].get("timestamp")
+        if isinstance(updated_at, (int, float)):
+            updated_at = datetime.fromtimestamp(float(updated_at), UTC).isoformat()
     return {
         "task_id": task_id,
         "worker_job_id": task_id,
         "task_type": task_type,
-        "status": worker_progress.get("status") or "running",
+        "status": status,
+        "updated_at": updated_at,
         "title": slug,
         "project_title": slug,
         "project_slug": slug,
         "current_stage": worker_progress.get("current_stage") or "delegated_to_worker_self_heal",
         "progress_events": worker_progress.get("progress_events") or [],
         "milestone_events": worker_progress.get("milestone_events") or [],
-        "result": worker_progress.get("latest_payload") or {},
-        "error": None,
+        "result": latest_payload,
+        "error": error,
         "synthetic_worker_task": True,
     }
+
+
+def _resolve_worker_task_resume_target(
+    settings: AppSettings,
+    task_id: str,
+) -> tuple[str, str] | None:
+    """Resolve a resumable worker card only from a matching Redis receipt."""
+    prefixes = {
+        "outline-replan:heal:": "outline_replan",
+        "autowrite:heal:": "autowrite",
+        "repair:heal:": "repair",
+    }
+    task_type = next((kind for prefix, kind in prefixes.items() if task_id.startswith(prefix)), None)
+    if task_type is None:
+        return None
+    prefix = next(prefix for prefix, kind in prefixes.items() if kind == task_type)
+    requested_slug = task_id.removeprefix(prefix).strip()
+    if not requested_slug:
+        return None
+    receipt = _load_worker_task_summary(settings, task_id)
+    if receipt is None or _task_project_slug(receipt) != requested_slug:
+        return None
+    return task_type, requested_slug
+
+
+def _worker_resume_enqueue_kind(task_type: str, *, outline_replan_available: bool) -> str:
+    """Choose the route from current project truth, not the historical card."""
+    if task_type == "outline_replan" and not outline_replan_available:
+        # Once prose exists, worker/tasks.py intentionally skips outline
+        # regeneration and requires suffix-preserving ordinary continuation.
+        return "autowrite"
+    return task_type
+
+
+def _worker_resume_requires_autowrite_block(
+    task_type: str,
+    *,
+    outline_replan_available: bool,
+) -> bool:
+    """Apply prose block gates only to ordinary continuation routes."""
+    return task_type != "outline_replan" or not outline_replan_available
+
+
+def _worker_summary_timestamp(summary: Mapping[str, object]) -> float:
+    value = summary.get("updated_at")
+    parsed = _timestamp_seconds(value)
+    return parsed if parsed is not None else float("-inf")
+
+
+def _load_worker_task_summaries(settings: AppSettings) -> list[dict[str, object]]:
+    """Load the newest retained worker receipt for each project slug.
+
+    This is deliberately separate from DB repair summaries: a worker result
+    is a receipt of a real delegated run and must not be synthesized into a
+    running/completed state when Redis has no corresponding evidence.
+    """
+    candidates: list[dict[str, object]] = []
+    for kind in ("outline_replan", "autowrite", "repair"):
+        slugs = _fetch_heal_owned_slugs_by_kind(settings.redis.url, kind)
+        slugs.update(_fetch_heal_result_slugs_by_kind(settings.redis.url, kind))
+        task_type = kind
+        for slug in slugs:
+            job_id = _worker_heal_job_id(task_type, slug)
+            if job_id is None:
+                continue
+            summary = _load_worker_task_summary(settings, job_id)
+            if summary is not None:
+                candidates.append(summary)
+
+    newest_by_slug: dict[str, dict[str, object]] = {}
+    for summary in candidates:
+        slug = _task_project_slug(summary)
+        if not slug:
+            continue
+        previous = newest_by_slug.get(slug)
+        if previous is None or _worker_summary_timestamp(summary) >= _worker_summary_timestamp(
+            previous
+        ):
+            newest_by_slug[slug] = summary
+    return list(newest_by_slug.values())
 
 
 def _arq_redis_settings_from_url(redis_url: str) -> Any:
@@ -914,6 +1105,8 @@ async def _clear_outline_replan_resume_abandonment(settings: AppSettings, slug: 
         if project is None:
             return False
         metadata = dict(getattr(project, "metadata_json", None) or {})
+        if execution_terminal_code(metadata):
+            return False
         needs_replan = (
             str(getattr(project, "status", "") or "").lower() == "needs_replan"
             or str(metadata.get("planning_status") or "").lower() == "needs_replan"
@@ -975,6 +1168,8 @@ def _clear_repair_resume_focus_pause_on_project(project: Any) -> bool:
     if not isinstance(metadata, dict):
         return False
 
+    if execution_terminal_code(metadata):
+        return False
     focus_pause = metadata.get("focus_pause")
     focus_reason = ""
     if isinstance(focus_pause, dict):
@@ -1287,7 +1482,6 @@ def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
 
 
-
 async def _load_chapter_prompt_manifest_payload(
     settings: AppSettings, project_slug: str, chapter_number: int
 ) -> dict[str, object]:
@@ -1316,11 +1510,9 @@ def _match_project_route(path: str, suffix: str) -> str | None:
     return middle
 
 
-def _model_catalog_payload(
-    settings: AppSettings, slug: str | None = None
-) -> dict[str, object]:
+def _model_catalog_payload(settings: AppSettings, slug: str | None = None) -> dict[str, object]:
     """Return the switchable model catalog plus the project's current selection."""
-    from bestseller.services.model_catalog import load_model_catalog, selected_model_id
+    from bestseller.services.model_catalog import load_model_catalog, selected_model_id, default_new_project_model_id
 
     selected: str | None = None
     if slug:
@@ -1336,6 +1528,7 @@ def _model_catalog_payload(
     return {
         "models": [entry.model_dump(mode="json") for entry in load_model_catalog()],
         "selected": selected,
+        "default_model_id": default_new_project_model_id(settings),
     }
 
 
@@ -1364,12 +1557,8 @@ def _set_project_model_payload(
         if entry is None:
             raise ValueError(f"Unknown model id: {normalized}")
         if not entry.available:
-            reason = entry.unavailable_reason or (
-                f"set its API key ({entry.api_key_env})."
-            )
-            raise ValueError(
-                f"Model '{entry.display_name}' is not available — {reason}"
-            )
+            reason = entry.unavailable_reason or (f"set its API key ({entry.api_key_env}).")
+            raise ValueError(f"Model '{entry.display_name}' is not available — {reason}")
 
     async def _apply() -> bool:
         async with session_scope(settings) as session:
@@ -1389,9 +1578,7 @@ def _set_project_model_payload(
     if applied:
         return {"slug": slug, "selected": normalized, "ok": True}
     # No DB project row yet — defer to the in-flight conception task if any.
-    if task_manager is not None and task_manager.set_pending_project_model(
-        slug, normalized
-    ):
+    if task_manager is not None and task_manager.set_pending_project_model(slug, normalized):
         return {"slug": slug, "selected": normalized, "ok": True, "deferred": True}
     raise ValueError(f"Project '{slug}' was not found.")
 
@@ -1434,9 +1621,7 @@ def _delete_project_full(
 
             async with session_scope(settings) as session:
                 project = (
-                    await session.execute(
-                        select(ProjectModel.id).where(ProjectModel.slug == slug)
-                    )
+                    await session.execute(select(ProjectModel.id).where(ProjectModel.slug == slug))
                 ).scalar_one_or_none()
                 if project is None:
                     return False
@@ -1623,9 +1808,7 @@ def _try_load_chapter_draft_from_db(
         return None
 
     async def _fetch_content() -> str | None:
-        payload = await _async_load_chapter_draft_payload(
-            settings, project_slug, artifact_name
-        )
+        payload = await _async_load_chapter_draft_payload(settings, project_slug, artifact_name)
         if payload is None:
             return None
         return str(payload.get("content") or "")
@@ -1933,10 +2116,6 @@ def build_preview_payload(
     }
 
 
-class TaskCancelledError(Exception):
-    """Raised inside a task worker when the user requested cancellation."""
-
-
 @dataclass
 class WebTaskState:
     task_id: str
@@ -1958,8 +2137,12 @@ class WebTaskState:
     error: str | None = None
     cancel_requested: bool = False
     payload: dict[str, object] | None = None  # original payload for resume
+    runtime_provenance: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
+        title = self.title
+        if self.status == "failed" and title and "·构思中" in title:
+            title = title.replace("·构思中", "·构思失败", 1)
         return {
             "task_id": self.task_id,
             "task_type": self.task_type,
@@ -1967,7 +2150,7 @@ class WebTaskState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "project_slug": self.project_slug,
-            "title": self.title,
+            "title": title,
             "current_stage": self.current_stage,
             "progress_events": list(self.progress_events),
             "milestone_events": list(self.milestone_events),
@@ -1975,6 +2158,7 @@ class WebTaskState:
             "error": self.error,
             "cancel_requested": self.cancel_requested,
             "payload": self.payload,
+            "runtime_provenance": self.runtime_provenance,
         }
 
     def record_event(
@@ -2088,6 +2272,7 @@ _MACHINE_REPAIR_STAGES = frozenset(
         "skipped_requires_machine_repair",
         "exported_requires_human_review",
         "skipped_requires_human_review",
+        "draft_exported_requires_human_review",
     }
 )
 _ATTENTION_VERDICTS = frozenset(
@@ -2103,6 +2288,7 @@ _ATTENTION_VERDICTS = frozenset(
         "skipped_requires_machine_repair",
         "exported_requires_human_review",
         "skipped_requires_human_review",
+        "draft_exported_requires_human_review",
     }
 )
 # Per-call wall-clock cap for conception LLM calls. Conception's calls are small
@@ -2185,10 +2371,96 @@ def _payload_requires_machine_attention(payload: dict[str, Any]) -> bool:
     return verdict in _ATTENTION_VERDICTS
 
 
+def _is_output_recovery_cache_record(item: Mapping[str, object]) -> bool:
+    """Recognize this producer, never infer provenance from a prefix alone."""
+    slug = str(item.get("project_slug") or "")
+    result = item.get("result")
+    if (not slug or item.get("task_id") != f"recovered-{slug}"
+        or item.get("task_type") not in {"autowrite", "export_history"}
+        or item.get("runtime_provenance") or not isinstance(result, Mapping)
+        or result.get("project_slug") != slug):
+        return False
+    if result.get("recovered_from_output") is True:
+        return True
+    # Baseline producer v0 had exactly these three result keys. Its events
+    # were bare file-derived started/completed records, without executor IDs.
+    if set(result) == {"project_slug", "chapters_written", "target_chapters"}:
+        events = item.get("progress_events")
+        allowed_item_keys = {"task_id", "task_type", "status", "created_at", "updated_at", "project_slug",
+                             "title", "current_stage", "progress_events", "milestone_events", "result",
+                             "error", "cancel_requested", "payload", "runtime_provenance"}
+        if (set(item) - allowed_item_keys or type(result.get("chapters_written")) is not int
+            or result["chapters_written"] <= 0 or type(result.get("target_chapters")) is not int
+            or result["target_chapters"] <= 0 or not isinstance(events, list)
+            or len(events) != result["chapters_written"] + 1
+            or not all(isinstance(e, Mapping) and set(e) == {"timestamp", "stage", "payload"} for e in events)):
+            return False
+        return (events[0].get("stage") == "project_pipeline_started"
+                and events[0].get("payload") == {"chapter_count": result["target_chapters"]}
+                and all(e.get("stage") == "chapter_pipeline_completed"
+                        and isinstance(e.get("payload"), Mapping) and set(e["payload"]) == {"chapter_number"}
+                        and type(e["payload"]["chapter_number"]) is int and e["payload"]["chapter_number"] > 0
+                        for e in events[1:]))
+    # Exact legacy output-scanner result shape, with no execution provenance.
+    if (set(result) != {"project_slug", "chapters_written", "chapters_on_disk", "adopted", "project_exists", "target_chapters"}
+        or result.get("adopted") is not False
+        or type(result.get("project_exists")) is not bool
+        or type(result.get("chapters_on_disk")) is not int
+        or result["chapters_on_disk"] <= 0
+        or type(result.get("target_chapters")) is not int
+        or result.get("chapters_written") != (result["chapters_on_disk"] if result["project_exists"] else 0)):
+        return False
+    events = item.get("progress_events")
+    if not isinstance(events, list) or not events or not all(isinstance(e, Mapping) for e in events):
+        return False
+    first = events[0]
+    if first.get("stage") not in {"project_pipeline_started", "export_history_found"}:
+        return False
+    if first.get("payload") != {"chapter_count": result["target_chapters"]}:
+        return False
+    allowed = {"project_pipeline_started", "chapter_pipeline_completed", "export_history_found",
+               "chapter_export_found", "blocked_structural_repair", "auto_resume_queued"}
+    chapters = [e for e in events if e.get("stage") in {"chapter_pipeline_completed", "chapter_export_found"}]
+    return (all(e.get("stage") in allowed for e in events)
+            and len(chapters) == result["chapters_on_disk"]
+            and all(set(e) == {"timestamp", "stage", "payload"} and isinstance(e.get("payload"), Mapping)
+                    and set(e["payload"]) == {"chapter_number"} for e in chapters))
+
+
+def _output_history_record(item: Mapping[str, object], *, archive_legacy: bool = False) -> dict[str, object]:
+    """An export observation has no execution actor, business clock or resume payload."""
+    result = dict(item.get("result") or {})
+    if archive_legacy:
+        result["legacy_cache_entry"] = json.loads(json.dumps(dict(item)))
+    result.setdefault("chapters_on_disk", sum(e.get("stage") in {"chapter_pipeline_completed", "chapter_export_found"}
+                                             for e in item.get("progress_events") or []))
+    result.update(recovered_from_output=True, adopted=False, chapters_written=0,
+                  export_recovery={"schema": "export-history.v2",
+                                   "producer": "WebTaskManager._recover_tasks_from_output",
+                                   "execution_evidence": False, "business_timestamps": "unknown"})
+    events = [{"timestamp": None, "stage": "export_history_found",
+               "payload": {"source": "output_export", "execution_evidence": False,
+                           "chapters_on_disk": result.get("chapters_on_disk", 0)}}]
+    for event in item.get("progress_events") or []:
+        if event.get("stage") not in {"chapter_pipeline_completed", "chapter_export_found"}:
+            continue
+        source = dict(event.get("payload") or {})
+        source.update(source="output_export", execution_evidence=False)
+        if event.get("timestamp"):
+            source["export_mtime_at"] = event["timestamp"]
+        events.append({"timestamp": None, "stage": "chapter_export_found", "payload": source})
+    return {**dict(item), "task_type": "export_history", "status": "history",
+            "created_at": "", "updated_at": "", "payload": None, "cancel_requested": False,
+            "current_stage": "export_history_found" if result.get("project_exists") else "export_history_unverified",
+            "progress_events": events, "milestone_events": [], "result": result,
+            "runtime_provenance": None, "error": None}
+
+
 class WebTaskManager:
     def __init__(self, persist_path: Path | None = None) -> None:
         self._lock = threading.Lock()
         self._tasks: dict[str, WebTaskState] = {}
+        self._executing_task_ids: set[str] = set()
         self._persist_path = persist_path
         # Bounded concurrency for long-running writing tasks. Each autowrite /
         # repair / interactive-fiction task acquires one slot before doing any
@@ -2205,6 +2477,10 @@ class WebTaskManager:
         if persist_path is not None:
             self._load_from_disk()
 
+    @staticmethod
+    def _task_runtime_provenance(task_id: str, started_at: str) -> dict[str, object]:
+        return task_runtime_provenance(task_id, started_at)
+
     def _run_with_slot(
         self,
         task_id: str,
@@ -2215,8 +2491,32 @@ class WebTaskManager:
         # Keep the task visibly in "queued" state until a slot is acquired.
         self._task_slots.acquire()
         try:
-            worker(task_id, payload)
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is not None and execution_terminal_code(task.result or {}):
+                    return
+                self._executing_task_ids.add(task_id)
+            self._check_cancelled(task_id)
+            async def check_task_cancelled() -> None:
+                self._check_cancelled(task_id)
+            # asyncio.run copies this thread's context. Cancellation is checked
+            # at each actual LLM attempt/backoff, not just progress callbacks.
+            set_cancellation_checker(check_task_cancelled)
+            scope = current_execution_scope() or asyncio.run(self._task_execution_scope(task_id))
+            with bind_execution_scope(scope):
+                worker(task_id, payload)
+                raise_if_execution_stopped()
+            # Budget errors can be swallowed by old advisory/static fallbacks.
+            # Their persisted ledger state still wins over a completed card.
+            asyncio.run(self._assert_task_execution_open(task_id))
+        except TaskCancelledError as error:
+            self._stop_execution_task(task_id, error)
+        except ExecutionBudgetError as error:
+            self._stop_execution_task(task_id, error)
         finally:
+            with self._lock:
+                self._executing_task_ids.discard(task_id)
+            set_cancellation_checker(None)
             self._task_slots.release()
 
     # ── Disk persistence ──────────────────────────────────────────────────
@@ -2226,9 +2526,30 @@ class WebTaskManager:
         if self._persist_path is None or not self._persist_path.exists():
             return
         try:
-            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            original_bytes = self._persist_path.read_bytes()
+            data = json.loads(original_bytes)
             changed = False
+            legacy_records = [item for item in data if _is_output_recovery_cache_record(item)
+                              and (item.get("result", {}).get("export_recovery") or {}).get("schema") != "export-history.v2"]
+            if legacy_records:
+                digest = hashlib.sha256(original_bytes).hexdigest()
+                backup = self._persist_path.with_name(f"{self._persist_path.name}.before-export-recovery-{digest}.json")
+                try:
+                    try:
+                        descriptor = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                        with os.fdopen(descriptor, "wb") as stream:
+                            stream.write(original_bytes)
+                    except FileExistsError:
+                        if backup.read_bytes() != original_bytes:
+                            raise OSError("export-recovery backup differs from original cache")
+                        backup.chmod(0o600)
+                except OSError as exc:
+                    # Never overwrite the only original or auto-resume its synthetic payload.
+                    raise RuntimeError("Cannot preserve original export-recovery task cache") from exc
             for item in data:
+                if item in legacy_records:
+                    item = _output_history_record(item, archive_legacy=True)
+                    changed = True
                 task = WebTaskState(
                     task_id=item["task_id"],
                     task_type=item.get("task_type", "autowrite"),
@@ -2244,6 +2565,7 @@ class WebTaskManager:
                     error=item.get("error"),
                     cancel_requested=bool(item.get("cancel_requested", False)),
                     payload=item.get("payload"),
+                    runtime_provenance=item.get("runtime_provenance"),
                 )
                 normalized_stage = _normalize_machine_repair_stage(str(task.current_stage or ""))
                 if normalized_stage != task.current_stage:
@@ -2280,6 +2602,11 @@ class WebTaskManager:
                     if normalized_payload != task.payload:
                         task.payload = normalized_payload
                         changed = True
+                terminal_code = execution_terminal_code(task.result or {})
+                if terminal_code:
+                    task.status = "cancelled" if terminal_code == "execution_cancelled" else "failed"
+                    task.current_stage = terminal_code
+                    changed = True
                 if (
                     task.status == "failed"
                     and str(task.error or "").startswith(_WATCHDOG_STALE_PREFIX)
@@ -2407,14 +2734,10 @@ class WebTaskManager:
     # ── Task recovery from output directory ─────────────────────────────
 
     async def _recover_tasks_from_output(self, settings: AppSettings) -> int:
-        """Scan output directory and create synthetic task records for projects
-        that have chapter files on disk but no corresponding task entry.
+        """Inventory export history, never infer execution/adoption from files.
 
-        Looks up each project in the database so the synthesised task has
-        an accurate ``target_chapters`` target, a rebuildable ``payload``, and
-        a status that correctly reflects whether the project is complete.
-
-        Returns the number of recovered tasks.
+        PostgreSQL supplies project identity only. Export count and mtime
+        cannot establish completion, a business timestamp, or resume authority.
         """
         import re as _re
 
@@ -2482,27 +2805,8 @@ class WebTaskManager:
                         except OSError:
                             pass
 
-                block_payload = (
-                    _project_autowrite_block_payload(project) if project is not None else None
-                )
-                is_incomplete = num_chapters < target_chapters
-                if block_payload:
-                    status = "cancelled"
-                    current_stage = "blocked_structural_repair"
-                    error = str(block_payload.get("error") or "")
-                else:
-                    # ``incomplete`` is a dedicated status for recovered projects
-                    # that have some chapters on disk but never reached their
-                    # target — distinct from user-initiated ``cancelled``.
-                    status = "incomplete" if is_incomplete else "completed"
-                    current_stage = (
-                        "incomplete_recovered" if is_incomplete else "project_pipeline_completed"
-                    )
-                    error = (
-                        f"Recovered: {num_chapters}/{target_chapters} chapters on disk"
-                        if is_incomplete
-                        else None
-                    )
+                status = "history"
+                current_stage = "export_history_found" if project is not None else "export_history_unverified"
 
                 # Directory mtime → timestamps
                 try:
@@ -2511,11 +2815,11 @@ class WebTaskManager:
                     dir_mtime = 0.0
                 dir_ts = datetime.fromtimestamp(dir_mtime, UTC).isoformat()
 
-                # Build progress events so the UI can render a real progress bar.
+                # These are file observations, not writing progress events.
                 events: list[dict[str, object]] = [
                     {
-                        "timestamp": dir_ts,
-                        "stage": "project_pipeline_started",
+                        "timestamp": None,
+                        "stage": "export_history_found",
                         "payload": {"chapter_count": target_chapters},
                     },
                 ]
@@ -2532,44 +2836,33 @@ class WebTaskManager:
                     events.append(
                         {
                             "timestamp": ch_ts,
-                            "stage": "chapter_pipeline_completed",
+                            "stage": "chapter_export_found",
                             "payload": {"chapter_number": ch_num},
                         }
                     )
-                if block_payload:
-                    events.append(
-                        {
-                            "timestamp": dir_ts,
-                            "stage": "blocked_structural_repair",
-                            "payload": {"reason": block_payload.get("reason")},
-                        }
-                    )
-
-                # Rebuild a resumable payload when we can — this is the whole
-                # point of this pass: recovered tasks that the user wants to
-                # continue later need a payload ready for ``create_autowrite_task``.
-                payload: dict[str, object] | None = None
-                if project is not None:
-                    payload = _payload_from_project_model(project)
-
                 task = WebTaskState(
                     task_id=f"recovered-{slug}",
-                    task_type="autowrite",
+                    task_type="export_history",
                     status=status,
-                    created_at=dir_ts,
-                    updated_at=dir_ts,
+                    created_at="",
+                    updated_at="",
                     project_slug=slug,
                     title=title,
                     current_stage=current_stage,
                     progress_events=events,
                     result={
                         "project_slug": slug,
-                        "chapters_written": num_chapters,
+                        "chapters_written": 0,
+                        "chapters_on_disk": num_chapters,
+                        # A synthetic history card is never an adoption receipt,
+                        # even when a corresponding project already exists.
+                        "adopted": False,
+                        "project_exists": project is not None,
                         "target_chapters": target_chapters,
                     },
-                    error=error,
-                    payload=payload,
+                    payload=None,
                 )
+                task = WebTaskState(**_output_history_record(task.to_dict()))
 
                 with self._lock:
                     self._tasks[task.task_id] = task
@@ -2655,6 +2948,12 @@ class WebTaskManager:
             value = task.payload.get("llm_model_id")
             return str(value).strip() or None if value else None
 
+    def is_task_executing(self, task_id: str) -> bool:
+        # Current-process ownership only: never serialized or inferred from a
+        # cached running flag, so a restart cannot revive fake execution.
+        with self._lock:
+            return task_id in self._executing_task_ids
+
     def get_task(self, task_id: str) -> dict[str, object] | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -2674,11 +2973,7 @@ class WebTaskManager:
             # Reuse a stuck card for the same slug in place (same task_id) rather
             # than minting a new one, so blocked books don't accumulate duplicate
             # zombie cards in the dashboard.
-            reusable = (
-                self._latest_task_for_slug(slug, _REUSABLE_TASK_STATUSES)
-                if slug
-                else None
-            )
+            reusable = self._latest_task_for_slug(slug, _REUSABLE_TASK_STATUSES) if slug else None
             now = _utc_now()
             if reusable is not None:
                 task_id = reusable.task_id
@@ -2696,13 +2991,19 @@ class WebTaskManager:
                 task.progress_events = []
                 task.cancel_requested = False
                 task.updated_at = now
+                task.runtime_provenance = self._task_runtime_provenance(task_id, now)
                 if title:
                     task.title = title
-                task.record_event(
-                    "queued", {"reason": "reused_stuck_card"}, timestamp=now
-                )
+                task.record_event("queued", {"reason": "reused_stuck_card"}, timestamp=now)
             else:
-                task_id = str(uuid4())
+                armed_task_id = None
+                if os.environ.get("BESTSELLER_ARMED_UI_ACCEPTANCE") == "1":
+                    async def consume_acceptance():
+                        from bestseller.services.independent_acceptance import consume_ui
+                        async with session_scope(load_settings()) as acceptance_session:
+                            return await consume_ui(acceptance_session.bind, serialized_payload)
+                    armed_task_id = asyncio.run(consume_acceptance())
+                task_id = armed_task_id or str(uuid4())
                 task = WebTaskState(
                     task_id=task_id,
                     task_type="autowrite",
@@ -2712,12 +3013,14 @@ class WebTaskManager:
                     project_slug=slug,
                     title=title,
                     current_stage="queued",
+                    runtime_provenance=self._task_runtime_provenance(task_id, now),
                 )
                 self._tasks[task_id] = task
             # Persist the exact creation envelope before returning or starting
             # the worker.  A refresh/restart between enqueue and worker startup
             # must not turn a seeded book into an unseeded resume.
             task.payload = serialized_payload
+            task.runtime_provenance = self._task_runtime_provenance(task_id, now)
             self._save_to_disk()
             snapshot = task.to_dict()
         thread = threading.Thread(
@@ -2727,6 +3030,45 @@ class WebTaskManager:
         )
         thread.start()
         return snapshot
+
+    async def rearm_authorized_budget_resume(self, task_id: str) -> bool:
+        """Journal native authorization before rearming a stopped creation task."""
+        from copy import deepcopy
+        from bestseller.services.execution_budget_resume import (
+            prepare_authorized_budget_resume,
+        )
+
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task_id in self._executing_task_ids:
+                return False
+            previous = deepcopy(task.to_dict())
+        async with session_scope(load_settings()) as session:
+            receipt = await prepare_authorized_budget_resume(
+                session, task_id=task_id, task_snapshot=previous,
+            )
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if (task is None or task.to_dict() != previous
+                    or task_id in self._executing_task_ids):
+                raise ValueError("task changed during budget authorization verification")
+            result = deepcopy(task.result or {})
+            result.pop("execution_terminal", None)
+            if execution_terminal_code(result):
+                raise ValueError("another execution stop cannot be superseded")
+            task.record_event("execution_budget_authorization_applied", {
+                "previous_terminal": deepcopy(previous.get("result")),
+                "previous_error": previous.get("error"),
+                "previous_stage": previous.get("current_stage"),
+                "receipt": receipt,
+            }, milestone=True)
+            result["last_execution_budget_authorization"] = receipt
+            task.result = result
+            task.error = None
+            task.current_stage = "execution_budget_authorized_manual_resume_required"
+            task.updated_at = _utc_now()
+            self._save_to_disk()
+        return True
 
     def resume_autowrite_task(
         self,
@@ -2749,9 +3091,20 @@ class WebTaskManager:
             task = self._tasks.get(task_id)
             if task is None:
                 return None
+            if execution_terminal_code(task.result or {}):
+                return task.to_dict()
             if task.status in ("running", "queued"):
                 return "busy"
+            # A resume reuses the original semantic inputs and spend history.
+            # A new UI default must never silently reroll old paid candidates.
+            from bestseller.services.production_strategy import freeze_resume_profile
+            serialized_payload = freeze_resume_profile(task.payload, serialized_payload)
+            if serialized_payload.get("_run_conception") and not delegate_to_self_heal:
+                # A fresh conception retry must not append new provider receipts
+                # to the terminal workflow returned by an old idempotency key.
+                serialized_payload["_conception_attempt_id"] = f"{task_id}:retry:{uuid4()}"
             now = _utc_now()
+            task.runtime_provenance = self._task_runtime_provenance(task_id, now)
             if delegate_to_self_heal:
                 reason = (
                     "ARQ heal job already active"
@@ -2784,26 +3137,136 @@ class WebTaskManager:
             task_snapshot = task.to_dict()
         thread = threading.Thread(
             target=self._run_with_slot,
-            args=(task_id, self._run_autowrite_worker, payload),
+            args=(task_id, self._run_autowrite_worker, serialized_payload),
             daemon=True,
         )
         thread.start()
         return task_snapshot
 
+    async def approved_project_resume_payload(self, task_id: str, *, original=None, slug=None):
+        if original is None:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is None or task.status != "failed" or task.cancel_requested:
+                    raise ValueError("stopped original task required")
+                original = json.loads(json.dumps(task.payload, default=_json_default))
+                slug = task.project_slug
+        rebuilt = await _rebuild_payload_from_db(load_settings(), slug)
+        if not rebuilt:
+            raise ValueError("approved project payload unavailable")
+        payload = _merge_resume_payload_with_project_truth(original, rebuilt)
+        payload["slug"] = slug
+        payload["_run_conception"] = False
+        return payload
+
+    def resume_approved_project(self, task_id: str) -> dict:
+        from bestseller.services.execution_phase_handoff import create
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != "failed" or task.cancel_requested:
+                raise ValueError("stopped original task required")
+            previous = {"result": task.result, "error": task.error, "updated_at": task.updated_at}
+            async def prepare():
+                payload = await self.approved_project_resume_payload(task_id,
+                    original=json.loads(json.dumps(task.payload, default=_json_default)), slug=task.project_slug)
+                async with session_scope(load_settings()) as session:
+                    receipt = await create(session, task_id=task_id, payload=payload)
+                    await session.commit()
+                payload["_execution_phase_handoff"] = receipt["receipt_key"]
+                return payload, receipt
+            payload, receipt = asyncio.run(prepare())
+            history = list(payload.get("_phase_handoff_control_history") or [])
+            if not history or history[-1].get("receipt_key") != receipt["receipt_key"]:
+                history.append({"receipt_key": receipt["receipt_key"], "previous_task": previous})
+            payload["_phase_handoff_control_history"] = history
+            task.payload = payload
+            task.result = None
+            task.error = None
+            task.cancel_requested = False
+            task.status = "queued"
+            task.current_stage = "approved_project_phase_handoff"
+            task.updated_at = _utc_now()
+            task.record_event("approved_project_phase_handoff", {"receipt_key": receipt["receipt_key"],
+                "canonical_id": receipt["binding"]["canonical_id"], "original_binding_preserved": True}, timestamp=task.updated_at)
+            self._save_to_disk()
+            result = task.to_dict()
+        threading.Thread(target=self._run_with_slot,
+            args=(task_id,self._run_autowrite_worker,payload),daemon=True).start()
+        return result
+
+    def resume_reviewed_conception(self, task_id: str) -> dict:
+        from bestseller.services.conception_continuation import consume, pending, resume_allowed, resumable_control_error
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status not in {"failed", "cancelled"}:
+                raise ValueError("stopped original task required")
+            if not execution_terminal_code(task.result or {}) and not (
+                task.payload.get("_active_continuation_scope")
+                and resumable_control_error(task.error)
+                and execution_terminal_code((task.payload.get("_prior_terminal_receipt") or {}).get("result") or {})):
+                raise ValueError("original unknown terminal receipt required")
+            payload = json.loads(json.dumps(task.payload, default=_json_default))
+            old_terminal = {"result": task.result, "error": task.error,
+                            "updated_at": task.updated_at}
+            async def activate():
+                async with session_scope(load_settings()) as session:
+                    # A separately audited repair allocation freezes its predecessor;
+                    # consuming it never reopens an unknown scope or slides time.
+                    if (not payload.get("_active_continuation_scope")
+                        or not resumable_control_error(task.error)):
+                        if await pending(session.bind, task_id):
+                            return await consume(session.bind, task_id, payload)
+                    if payload.get("_active_continuation_scope"):
+                        if not resumable_control_error(task.error):
+                            raise ValueError("this terminal outcome needs separate reconciliation")
+                        scope = await resume_allowed(session.bind, task_id, payload)
+                        if "CONCEPT_RECONCILIATION_UNRESOLVED" in str(task.error):
+                            from bestseller.services.conception_continuation import assert_reconciliation_recovery_source
+                            await assert_reconciliation_recovery_source(session.bind, scope, payload)
+                        if task.error == "execution_operation_identity_required":
+                            from bestseller.services.conception_continuation import recover_completed_market_identity_stop
+                            await recover_completed_market_identity_stop(session, task_id=task_id, scope=scope, payload=payload)
+                            await session.commit()
+                        return scope
+                    return await consume(session.bind, task_id, payload)
+            scope = asyncio.run(activate())
+            payload["_active_continuation_scope"] = scope
+            if "_prior_terminal_receipt" not in payload:
+                payload["_prior_terminal_receipt"] = old_terminal
+            else:
+                payload["_continuation_control_failures"] = [
+                    *(payload.get("_continuation_control_failures") or []), old_terminal]
+            task.payload = payload
+            task.result = None
+            task.error = None
+            task.cancel_requested = False
+            task.status = "queued"
+            task.current_stage = "reviewed_conception_continuation"
+            task.updated_at = _utc_now()
+            task.record_event("reviewed_conception_continuation", {"scope_id": scope,
+                "unknown_preserved": True, "original_request_replayed": False}, timestamp=task.updated_at)
+            self._save_to_disk()
+            result = task.to_dict()
+        threading.Thread(target=self._run_with_slot,
+            args=(task_id,self._run_autowrite_worker,payload),daemon=True).start()
+        return result
+
     def create_repair_task(self, payload: dict[str, object]) -> dict[str, object]:
         payload = dict(payload)
         payload.setdefault("include_pending_rewrite_tasks", True)
         task_id = str(uuid4())
+        now = _utc_now()
         task = WebTaskState(
             task_id=task_id,
             task_type="repair",
             status="queued",
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
+            created_at=now,
+            updated_at=now,
             project_slug=str(payload.get("project_slug") or ""),
             title=f"Repair {payload.get('project_slug') or ''}",
             current_stage="queued",
             payload=json.loads(json.dumps(payload, default=_json_default)),
+            runtime_provenance=self._task_runtime_provenance(task_id, now),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -2818,16 +3281,18 @@ class WebTaskManager:
 
     def create_prewrite_repair_task(self, payload: dict[str, object]) -> dict[str, object]:
         task_id = str(uuid4())
+        now = _utc_now()
         task = WebTaskState(
             task_id=task_id,
             task_type="prewrite_repair",
             status="queued",
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
+            created_at=now,
+            updated_at=now,
             project_slug=str(payload.get("project_slug") or ""),
             title=f"Prewrite repair {payload.get('project_slug') or ''}",
             current_stage="queued",
             payload=json.loads(json.dumps(payload, default=_json_default)),
+            runtime_provenance=self._task_runtime_provenance(task_id, now),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -2842,20 +3307,21 @@ class WebTaskManager:
 
     def create_chapter_revision_task(self, payload: dict[str, object]) -> dict[str, object]:
         task_id = str(uuid4())
+        now = _utc_now()
         operation = str(payload.get("operation") or "")
         task = WebTaskState(
             task_id=task_id,
             task_type="chapter_revision",
             status="queued",
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
+            created_at=now,
+            updated_at=now,
             project_slug=str(payload.get("project_slug") or ""),
             title=(
-                f"Chapter {payload.get('chapter_number') or ''} "
-                f"{operation or 'revision'}"
+                f"Chapter {payload.get('chapter_number') or ''} {operation or 'revision'}"
             ).strip(),
             current_stage="queued",
             payload=json.loads(json.dumps(payload, default=_json_default)),
+            runtime_provenance=self._task_runtime_provenance(task_id, now),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -2904,6 +3370,11 @@ class WebTaskManager:
     ) -> None:
         with self._lock:
             task = self._tasks[task_id]
+            if execution_terminal_code(task.result or {}):
+                # Retain late events for diagnosis, without reopening the task.
+                task.record_event(stage, payload)
+                self._save_to_disk()
+                return
             task.updated_at = _utc_now()
             task.current_stage = stage
             normalized_stage = stage.lower()
@@ -2919,9 +3390,7 @@ class WebTaskManager:
                 task.error = None
             tier = payload.get(TIER_KEY) if isinstance(payload, dict) else None
             is_milestone = tier == TIER_MILESTONE or stage in _MILESTONE_STAGES
-            task.record_event(
-                stage, payload, timestamp=task.updated_at, milestone=is_milestone
-            )
+            task.record_event(stage, payload, timestamp=task.updated_at, milestone=is_milestone)
             # Persist immediately for key milestones; batch minor updates
             # to avoid excessive disk I/O during large pipelines.
             if (
@@ -2948,6 +3417,8 @@ class WebTaskManager:
     def _mark_running(self, task_id: str) -> None:
         with self._lock:
             task = self._tasks[task_id]
+            if execution_terminal_code(task.result or {}):
+                return
             task.status = "running"
             task.updated_at = _utc_now()
             task.current_stage = "running"
@@ -2957,9 +3428,23 @@ class WebTaskManager:
     def _mark_completed(self, task_id: str, result: dict[str, object]) -> None:
         with self._lock:
             task = self._tasks[task_id]
+            if execution_terminal_code(task.result or {}):
+                return
             task.updated_at = _utc_now()
             task.result = result
-            if _payload_requires_machine_attention(result):
+            terminal_code = execution_terminal_code(result)
+            if terminal_code:
+                task.status = "cancelled" if terminal_code == "execution_cancelled" else "failed"
+                task.current_stage = terminal_code
+                task.error = terminal_code
+                self._save_to_disk()
+                return
+            from bestseller.services.autonomous_continuation import is_partial_window_result
+            if is_partial_window_result(result) and not _payload_requires_machine_attention(result):
+                task.status = "incomplete"
+                task.current_stage = "continuation_required"
+                task.error = None
+            elif _payload_requires_machine_attention(result):
                 task.status = "incomplete"
                 task.current_stage = "machine_repair_required"
                 task.error = str(
@@ -2977,15 +3462,307 @@ class WebTaskManager:
     def _mark_failed(self, task_id: str, error: str) -> None:
         with self._lock:
             task = self._tasks[task_id]
+            if execution_terminal_code(task.result or {}):
+                return
             task.status = "failed"
             task.updated_at = _utc_now()
             task.current_stage = "failed"
             task.error = error
+            # The placeholder is persisted before conception starts.  Leaving
+            # “构思中” in a terminal failed card makes a durable failure look
+            # like a job that survived a reboot and is still consuming time.
+            if task.title and "·构思中" in task.title:
+                task.title = task.title.replace("·构思中", "·构思失败", 1)
             self._save_to_disk()
         try:
             logger.error("Task %s failed: %s", task_id, error.splitlines()[-1] if error else "")
         except Exception:
             pass
+
+    def _mark_execution_terminal(self, task_id: str, error: BaseException) -> None:
+        """Durable receipt consumed by resume, restart and late-event paths."""
+        code = execution_terminal_code(error)
+        if code is None:
+            raise ValueError("An execution terminal error is required")
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            task.result = {**(task.result or {}),
+                           "execution_terminal": {"terminal": True, "code": code}}
+            if isinstance(getattr(error, "diagnostic", None), dict):
+                task.result["continuation_diagnostic"] = error.diagnostic
+            task.status = "cancelled" if code == "execution_cancelled" else "failed"
+            task.current_stage = code
+            task.error = code
+            task.updated_at = _utc_now()
+            task.record_event(code, {"terminal": True, "code": code}, milestone=True)
+            self._save_to_disk()
+
+    def _stop_execution_task(self, task_id: str, error: BaseException) -> None:
+        if getattr(error, "terminal", True) is False and execution_terminal_code(error) is None:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is None or execution_terminal_code(task.result or {}):
+                    return  # A late unsent error cannot supersede an earlier stop.
+            # A definite unsent/busy admission is recoverable only while the
+            # authoritative scope is still open; never clear a money fence.
+            try:
+                asyncio.run(self._assert_task_execution_open(task_id))
+            except ExecutionBudgetError as current_error:
+                error = current_error
+            else:
+                self._mark_failed(task_id, "请求未发出；排除本地故障后可恢复，已消耗次数保留。")
+                with self._lock:
+                    task = self._tasks.get(task_id)
+                    if task is not None:
+                        task.result = {**(task.result or {}), "execution_recoverable": {
+                            "terminal": False, "code": getattr(error, "code", None)}}
+                        task.record_event("provider_admission_failed", {"terminal": False,
+                            "code": getattr(error, "code", None)})
+                        self._save_to_disk()
+                return
+        self._mark_execution_terminal(task_id, error)
+        with self._lock:
+            task = self._tasks.get(task_id)
+            slug = str(task.project_slug or "") if task is not None else ""
+        if slug:
+            try:
+                from bestseller.worker.tasks import _persist_execution_terminal
+                asyncio.run(_persist_execution_terminal(
+                    slug, error, session_context=lambda: session_scope(load_settings())))
+            except Exception:
+                # Task receipt is already durable; never retry this operation
+                # because reporting its terminal state failed.
+                logger.exception("Could not persist project execution stop for %s", slug)
+
+    async def _assert_task_execution_open(self, task_id: str) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or execution_terminal_code(task.result or {}):
+                return
+            slug = str(task.project_slug or "")
+        try:
+            async with session_scope(load_settings()) as session:
+                await assert_execution_scope_open(session, await self._task_execution_scope(task_id))
+                if slug:
+                    project = await get_project_by_slug(session, slug)
+                    if project is not None:
+                        await assert_execution_scope_open(session, project_execution_scope(project))
+        except ExecutionBudgetError:
+            raise
+        except Exception as error:
+            raise ExecutionBudgetError("execution_ledger_unavailable") from error
+
+    async def _task_execution_scope(self, task_id: str, *, audit_only: bool = False) -> str:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            payload = dict(task.payload) if task else {}
+            slug = str(task.project_slug or "") if task is not None else ""
+        if payload.get("_active_continuation_scope"):
+            from bestseller.services.conception_continuation import active_scope
+            async with session_scope(load_settings()) as session:
+                if audit_only:
+                    return await active_scope(session.bind, task_id, payload, audit_only=True)
+                return await active_scope(session.bind, task_id, payload)
+        if slug:
+            try:
+                async with session_scope(load_settings()) as session:
+                    project = await get_project_by_slug(session, slug)
+                    if project is not None:
+                        return project_execution_scope(project)
+            except Exception as error:
+                raise ExecutionBudgetError("execution_ledger_unavailable") from error
+        return f"conception:{task_id}"
+
+    async def execution_reconciliation(self, task_id: str, payload: dict | None = None,
+                                       *, settings: AppSettings | None = None) -> dict:
+        """Inspect/resolve paid unknown outcomes; no automatic task dispatch."""
+        from copy import deepcopy
+        from bestseller.services import historical_binding_unknown_recovery as historical
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                raise ValueError("task not found")
+            if payload is not None and task.status in _ACTIVE_TASK_STATUSES:
+                raise ValueError("stop the task before reconciling its remote outcome")
+            slug = str(task.project_slug or "")
+            previous_task = historical.task_snapshot(task)
+            previous_full_task = deepcopy(task.to_dict())
+        scope = await self._task_execution_scope(task_id, audit_only=True)
+        effective_settings = settings or load_settings()
+        evidence = ExecutionReconciliation.model_validate(payload) if payload is not None else None
+        async with session_scope(effective_settings) as session:
+            ledger = ExecutionLedger(session.bind, scope, effective_settings.budget)
+            if evidence is None:
+                return await ledger.reconciliation_status()
+            receipt = await ledger.reconcile(evidence)
+            # A replayed receipt must not clear a newly re-frozen scope. Query
+            # the current authoritative status after the idempotent operation.
+            current = await ledger.reconciliation_status()
+            ready = (receipt["remaining_unknown"] == 0 and current["status"] == "active"
+                     and current["execution_open"])
+            project_ready = not slug
+            ledger_stream_quarantine = False
+            binding_reclassification = None
+            projectless_quarantine_proof = None
+            if ready and slug:
+                from sqlalchemy import select
+                from bestseller.infra.db.models import ProjectModel
+                from bestseller.worker.tasks import clear_reconciled_execution_terminal
+                project = await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug).with_for_update())
+                if project is not None:
+                    binding_reclassification = await historical.derive_reclassification(
+                        session, project=project, scope_id=scope, task_id=task_id,
+                        task=previous_task, receipt=receipt, evidence=evidence)
+                    previous_metadata = deepcopy(project.metadata_json)
+                    if binding_reclassification:
+                        with self._lock:
+                            current_task = self._tasks.get(task_id)
+                            if current_task is None or historical.task_snapshot(current_task) != previous_task:
+                                binding_reclassification = None
+                        if binding_reclassification:
+                            historical.project_unknown(project, binding_reclassification)
+                    project_ready = await clear_reconciled_execution_terminal(session, project, scope_id=scope, receipt=receipt)
+                    if binding_reclassification and not project_ready:
+                        project.metadata_json = previous_metadata
+                        binding_reclassification = None
+                    if project_ready:
+                        from bestseller.services.failed_stream_recovery import verified_quarantine
+                        ledger_stream_quarantine = await verified_quarantine(session,project=project,scope_id=scope,receipt=receipt)
+                else:
+                    from bestseller.services.conception_logline_recovery import verified_projectless_quarantine
+                    from bestseller.services.prompt_source_policy import content_hash
+                    projectless_quarantine_proof = await verified_projectless_quarantine(
+                        session, effective_settings, task_id=task_id,
+                        task_snapshot=previous_full_task, scope_id=scope, receipt=receipt,
+                    )
+                    project_ready = bool(
+                        projectless_quarantine_proof
+                        and projectless_quarantine_proof.get("task_id") == task_id
+                        and projectless_quarantine_proof.get("scope_id") == scope
+                        and projectless_quarantine_proof.get("task_snapshot_sha256") == content_hash(previous_full_task)
+                    )
+                ready = ready and project_ready
+        if ready:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                task_code = execution_terminal_code(task.result or {}) if task is not None else None
+                if projectless_quarantine_proof:
+                    # The source reader is SELECT-only. Task ownership and the
+                    # COMPLETE persisted projection must still match afterward.
+                    if (task is None or task.to_dict() != previous_full_task
+                            or task_id in self._executing_task_ids
+                            or task_code != "execution_result_unknown"
+                            or task.status != "failed" or task.cancel_requested):
+                        ready = False
+                legacy_proven = bool(binding_reclassification and task is not None
+                    and task_code == historical.LEGACY_CODE
+                    and historical.task_snapshot(task) == binding_reclassification["previous_task"])
+                if task_code not in {None, "execution_result_unknown"} and not (
+                    task_code == "execution_ledger_unavailable" and ledger_stream_quarantine) and not legacy_proven:
+                    ready = False
+                if ready and task is not None and (legacy_proven or task_code in {"execution_result_unknown", "execution_ledger_unavailable"}):
+                    old_result = deepcopy(task.result or {})
+                    event = {"previous_terminal": old_result.get("execution_terminal"), "receipt": receipt}
+                    if projectless_quarantine_proof:
+                        event["projectless_quarantine_proof"] = deepcopy(projectless_quarantine_proof)
+                        event["previous_projection"] = {
+                            key: deepcopy(previous_full_task.get(key)) for key in
+                            ("status", "result", "error", "current_stage", "updated_at", "cancel_requested")
+                        }
+                        old_result["last_projectless_quarantine_proof"] = deepcopy(projectless_quarantine_proof)
+                    if legacy_proven:
+                        old_result[historical.HISTORY] = [*old_result.get(historical.HISTORY, []), binding_reclassification]
+                        event["historical_reclassification"] = binding_reclassification
+                    # Retain the original task terminal and controls before clearing.
+                    task.record_event("execution_reconciled", event,
+                                      milestone=legacy_proven or bool(projectless_quarantine_proof))
+                    old_result.pop("execution_terminal", None)
+                    # execution_terminal_code also recognises a top-level code.
+                    old_result.pop("code", None)
+                    old_result.pop("terminal", None)
+                    if str(old_result.get("status") or "").startswith("execution_"):
+                        old_result.pop("status", None)
+                    task.result = {**old_result, "last_execution_reconciliation": receipt}
+                    task.status = "failed"
+                    task.current_stage = "execution_reconciled_manual_resume_required"
+                    task.error = None
+                    task.updated_at = _utc_now()
+                    self._save_to_disk()
+        return {**receipt, "ready_for_manual_resume": ready, "automatic_resume": False,
+                **({"projectless_quarantine_proof": projectless_quarantine_proof}
+                   if projectless_quarantine_proof else {})}
+
+    async def recover_unsent_admission(self, task_id: str, payload: dict,
+                                     *, settings: AppSettings | None = None) -> dict:
+        """Explicit local migration; never launch or extend the original task."""
+        from bestseller.services.unsent_admission_recovery import reconcile_confirmed_unsent_admission
+        if set(payload) - {"expected_attempt_id", "dry_run"}:
+            raise ValueError("unsupported unsent recovery field")
+        if not isinstance(payload.get("expected_attempt_id"), str) or not payload["expected_attempt_id"]:
+            raise ValueError("expected_attempt_id is required")
+        dry_run = payload.get("dry_run", True)
+        if type(dry_run) is not bool:
+            raise ValueError("dry_run must be boolean")
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != "failed" or task.cancel_requested:
+                raise ValueError("only a stopped pre-project task can be migrated")
+            before = task.to_dict()
+            allocated_slug = str(task.project_slug or "")
+            prior = (task.result or {}).get("last_unsent_admission_reconciliation")
+            projection = (prior.get("previous_projection") if isinstance(prior, dict) else None)
+            if projection is not None and execution_terminal_code(task.result or {}) not in {
+                None, (prior.get("budget_at_recovery") or {}).get("block_code")
+            }:
+                raise ValueError("a later task stop cannot be superseded by an old migration")
+            if projection is None:
+                result = dict(task.result or {})
+                terminal = result.pop("execution_terminal", None)
+                if execution_terminal_code(result):
+                    raise ValueError("another task stop cannot be superseded")
+                projection = {"terminal": terminal, "current_stage": task.current_stage, "error": task.error}
+            workflow_id = str((task.payload or {}).get("_conception_workflow_run_id") or "")
+        async with session_scope(settings or load_settings()) as session:
+            if allocated_slug and await get_project_by_slug(session, allocated_slug) is not None:
+                raise ValueError("a materialized project requires project-level recovery")
+            outcome = await reconcile_confirmed_unsent_admission(session, task_id=task_id,
+                expected_attempt_id=payload["expected_attempt_id"], workflow_id=workflow_id,
+                previous_projection=projection, dry_run=dry_run)
+        block = outcome["current_budget"]["block_code"]
+        if not dry_run:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is None or task.to_dict() != before:
+                    raise ValueError("task changed during recovery; receipt retained, inspect before retrying")
+                renewed = (outcome.get("time_renewal_receipt") is not None
+                    and (task.result or {}).get("last_execution_time_renewal") != outcome["time_renewal_receipt"])
+                if (task.result or {}).get("last_unsent_admission_reconciliation") != outcome["receipt"] or renewed:
+                    result = dict(task.result or {})
+                    result.pop("execution_terminal", None)
+                    result.pop("execution_recoverable", None)
+                    result["last_unsent_admission_reconciliation"] = outcome["receipt"]
+                    if renewed:
+                        result["last_execution_time_renewal"] = outcome["time_renewal_receipt"]
+                    if block:
+                        result["execution_terminal"] = {"terminal": True, "code": block}
+                    else:
+                        result["execution_recoverable"] = {"terminal": False, "code": "execution_provider_not_sent"}
+                    task.result = result
+                    task.current_stage = block or "provider_admission_reconciled_manual_resume_required"
+                    task.error = block
+                    task.updated_at = _utc_now()
+                    task.record_event("execution_time_renewal_applied" if renewed else "unsent_admission_reconciled", {
+                        "receipt_key": outcome["receipt_key"], "previous_projection": projection,
+                        "previous_task_terminal": (before.get("result") or {}).get("execution_terminal"),
+                        "current_block_code": block, "automatic_resume": False}, milestone=True)
+                    self._save_to_disk()
+        with self._lock:
+            task = self._tasks.get(task_id)
+            projected_block = execution_terminal_code(task.result or {}) if task is not None else "task_missing"
+        return {**outcome, "task_projection_block_code": projected_block,
+            "ready_for_manual_resume": block is None and (dry_run or projected_block is None)}
 
     def mark_task_blocked_by_structural_repair(self, task_id: str, error: str) -> None:
         with self._lock:
@@ -3021,9 +3798,7 @@ class WebTaskManager:
             task.current_stage = stage
             task.error = error
             task.cancel_requested = False
-            task.record_event(
-                stage, {"reason": error}, timestamp=task.updated_at, milestone=True
-            )
+            task.record_event(stage, {"reason": error}, timestamp=task.updated_at, milestone=True)
             self._save_to_disk()
         logger.info("Task %s blocked by project gate %s", task_id, stage)
 
@@ -3046,9 +3821,7 @@ class WebTaskManager:
             force = bool(task.cancel_requested)
             task.cancel_requested = True
             task.updated_at = _utc_now()
-            task.record_event(
-                "cancel_requested", {"force": force}, timestamp=task.updated_at
-            )
+            task.record_event("cancel_requested", {"force": force}, timestamp=task.updated_at)
             self._save_to_disk()
         logger.info("Cancellation requested for task %s (force=%s)", task_id, force)
         if force:
@@ -3064,6 +3837,8 @@ class WebTaskManager:
             task.updated_at = _utc_now()
             task.current_stage = "cancelled"
             task.error = task.error or "Task cancelled by user"
+            task.result = {**(task.result or {}), "execution_terminal": {
+                "terminal": True, "code": "execution_cancelled"}}
             self._save_to_disk()
         logger.info("Task %s cancelled", task_id)
 
@@ -3220,9 +3995,10 @@ class WebTaskManager:
     def evict_old_tasks(self, max_age_seconds: int = 86400) -> int:
         """Remove finished tasks older than *max_age_seconds*.
 
-        Only tasks in terminal states (completed, failed, cancelled) are
-        eligible.  This prevents the ``_tasks`` dict from growing without
-        bound in long-running server processes.
+        Active tasks and recoverable original autowrite envelopes are kept.
+        A nonempty autowrite payload is retained until the result explicitly
+        proves whole-book completion, even while book identity is unresolved.
+        Other tasks retain the existing age-based eviction policy.
 
         Returns the number of tasks evicted.
         """
@@ -3232,6 +4008,17 @@ class WebTaskManager:
             survivors: dict[str, WebTaskState] = {}
             for tid, t in self._tasks.items():
                 if t.status in ("running", "queued"):
+                    survivors[tid] = t
+                    continue
+                if (
+                    t.task_type == "autowrite"
+                    and isinstance(t.payload, dict)
+                    and t.payload
+                    and not (
+                        isinstance(t.result, dict)
+                        and t.result.get("whole_book_complete") is True
+                    )
+                ):
                     survivors[tid] = t
                     continue
                 try:
@@ -3258,10 +4045,8 @@ class WebTaskManager:
     def watchdog_sweep(self, stale_after_seconds: int = 2700) -> int:
         """Mark running tasks as failed if no progress event for *stale_after_seconds*.
 
-        Before declaring a task stale, consult a disk-level heartbeat: if the
-        project directory has a ``chapter-*.md`` file whose mtime is within the
-        stale window, the pipeline is still alive (just deep inside a long
-        LLM call) and the task is rescued instead of failed.
+        Export mtimes are diagnostic only: a reader GET can rebuild those
+        files. Only independent worker ownership can rescue a stale task.
 
         Returns the number of tasks marked failed.
         """
@@ -3371,11 +4156,7 @@ class WebTaskManager:
         task_id: str,
         stale_after_seconds: int,
     ) -> bool:
-        """Refresh *task_id*'s ``updated_at`` if a chapter file was recently written.
-
-        Returns True when the task was rescued (pipeline still alive), False
-        when no recent chapter mtime was found and the task should be failed.
-        """
+        """Observe recent exports for diagnosis; they never prove worker liveness."""
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None or not task.project_slug:
@@ -3395,19 +4176,14 @@ class WebTaskManager:
                     continue
             if latest <= 0 or (now_ts - latest) > stale_after_seconds:
                 return False
-            with self._lock:
-                t = self._tasks.get(task_id)
-                if t is not None:
-                    t.updated_at = datetime.fromtimestamp(latest, UTC).isoformat()
-                    self._save_to_disk()
             logger.info(
-                "Task %s rescued by disk heartbeat: chapter mtime %.0fs ago",
+                "Task %s has a recent export (%.0fs ago); file mtime is not execution heartbeat",
                 task_id,
                 now_ts - latest,
             )
-            return True
+            return False
         except Exception:
-            logger.exception("disk heartbeat rescue failed for %s", task_id)
+            logger.exception("export diagnostic scan failed for %s", task_id)
             return False
 
     def auto_resume_zombies(
@@ -3438,6 +4214,8 @@ class WebTaskManager:
         with self._lock:
             pending = list(self._pending_auto_resume_ids)
             self._pending_auto_resume_ids = []
+        if not pending:
+            return []
 
         # Wait for worker to publish its scan-done marker before trusting
         # the heal-owner set. Without this wait the marker would still be
@@ -3456,8 +4234,7 @@ class WebTaskManager:
             pending_slugs = {
                 str(self._tasks[task_id].project_slug or "").strip()
                 for task_id in pending
-                if task_id in self._tasks
-                and str(self._tasks[task_id].project_slug or "").strip()
+                if task_id in self._tasks and str(self._tasks[task_id].project_slug or "").strip()
             }
         active_workflow_slugs: set[str] = set()
         existing_project_slugs: set[str] = set()
@@ -3496,6 +4273,8 @@ class WebTaskManager:
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task is None or not task.payload:
+                    continue
+                if execution_terminal_code(task.result or {}):
                     continue
                 if task.status != "queued":
                     # Already transitioned (e.g. user cancelled between
@@ -3771,7 +4550,12 @@ class WebTaskManager:
                 )
 
                 creation_intent_contract = load_creation_intent(payload)
-                attempt_id = str(payload.get("_conception_attempt_id") or f"{task_id}:initial")
+                source_conception_workflow_run_id = payload.get("_conception_workflow_run_id")
+                attempt_id = (
+                    f"{task_id}:resume:{uuid4().hex}"
+                    if source_conception_workflow_run_id
+                    else str(payload.get("_conception_attempt_id") or f"{task_id}:initial")
+                )
                 conception_attempt = ConceptionAttemptInput(
                     contract=creation_intent_contract,
                     input_payload={
@@ -3789,10 +4573,38 @@ class WebTaskManager:
             # to ensure transactional consistency.
             async with session_scope(settings) as session:
                 conception_workflow_run = None
+                conception_checkpoint = None
+                conception_replay_context = None
+                conception_input_hash = None
                 if run_conception:
                     from bestseller.domain.enums import WorkflowStatus
+
                     if creation_intent_contract is not None and hasattr(session, "scalar"):
                         from bestseller.services.workflows import create_workflow_run
+                        from bestseller.services.conception_checkpoints import (
+                            load_conception_checkpoint,
+                            load_replay_context, save_replay_context,
+                            stable_conception_input_hash,
+                        )
+
+                        conception_input_hash = stable_conception_input_hash(conception_attempt)
+                        source_run_id = payload.get("_conception_workflow_run_id")
+                        if source_run_id:
+                            resume_project = await get_project_by_slug(session, str(payload.get("slug") or ""))
+                            checkpoint_read_binding = {
+                                "expected_project_id": resume_project.id if resume_project else None,
+                                "expected_intent_hash": creation_intent_contract.contract_hash(),
+                            }
+                            conception_checkpoint = await load_conception_checkpoint(
+                                session,
+                                workflow_run_id=UUID(str(source_run_id)),
+                                input_hash=conception_input_hash,
+                                **checkpoint_read_binding,
+                            )
+
+                            conception_replay_context = await load_replay_context(
+                                session, workflow_run_id=UUID(str(source_run_id)), input_hash=conception_input_hash,
+                                **checkpoint_read_binding)
 
                         attempt_id = conception_attempt.attempt_id
                         conception_workflow_run = await create_workflow_run(
@@ -3806,12 +4618,45 @@ class WebTaskManager:
                             current_step="conception",
                             idempotency_key=attempt_id,
                             metadata={
+                                "execution_scope_id": current_execution_scope(),
                                 "attempt_id": attempt_id,
                                 "creation_intent_hash": creation_intent_contract.contract_hash(),
                                 "creation_intent_schema": creation_intent_contract.schema_version,
                                 "input_hash": conception_attempt.input_hash(),
+                                "conception_checkpoint_input_hash": conception_input_hash,
+                                "source_conception_workflow_run_id": str(source_run_id)
+                                if source_run_id
+                                else None,
                             },
                         )
+                        if conception_checkpoint is not None:
+                            from bestseller.services.conception_checkpoints import (
+                                save_conception_checkpoint,
+                            )
+
+                            await save_conception_checkpoint(
+                                session,
+                                workflow_run_id=conception_workflow_run.id,
+                                checkpoint={
+                                    **conception_checkpoint,
+                                    "source_workflow_run_id": str(source_run_id),
+                                },
+                            )
+                        if conception_replay_context is not None:
+                            await save_replay_context(session, workflow_run_id=conception_workflow_run.id,
+                                                      record=conception_replay_context)
+                        # LLM receipts are written by separate provider/session
+                        # paths and reference this workflow row.  Commit the
+                        # run before the first conception call so its FK is
+                        # visible to those paths.
+                        raise_if_execution_stopped()
+                        await session.commit()
+                        payload["_conception_workflow_run_id"] = str(conception_workflow_run.id)
+                        with self._lock:
+                            task = self._tasks.get(task_id)
+                            if task is not None:
+                                task.payload = json.loads(json.dumps(payload, default=_json_default))
+                                self._save_to_disk()
                     from bestseller.services.conception import (
                         run_conception_pipeline,
                     )
@@ -3827,53 +4672,77 @@ class WebTaskManager:
                         # ── Story Architect: generate StoryFacets before conception ──
                         story_facets_obj = None
                         try:
+                            from bestseller.services.production_strategy import (
+                                protect_architect_headroom,
+                            )
                             from bestseller.services.story_architect import (
                                 architect_story_facets,
                             )
 
-                            with bind_conception_model(
-                                _conception_model,
-                                call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
-                            ):
-                                story_facets_obj = await architect_story_facets(
-                                    session,
-                                    settings,
-                                    primary_genre=genre_key,
-                                    language=str(payload.get("language", "zh-CN")),
-                                    genre_key=genre_key,
-                                    user_hints=user_hints,
-                                    genre_intent=genre_intent_contract,
+                            # The validated pre-tournament replay context already
+                            # freezes facets. Regenerating them would spend on an
+                            # unused proposal before restoring that context.
+                            if conception_checkpoint is None and conception_replay_context is None:
+                                with protect_architect_headroom(
+                                    (user_hints or {}).get("production_profile"),
+                                    int(payload["target_chapters"]),
+                                    stop_after_conception=bool(
+                                        payload.get("stop_after_conception", False)
+                                    ),
+                                ), bind_conception_model(
+                                    _conception_model,
+                                    call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
+                                    task_id=task_id,
+                                    workflow_run_id=(
+                                        getattr(conception_workflow_run, "id", None)
+                                    ),
+                                ):
+                                    story_facets_obj = await architect_story_facets(
+                                        session,
+                                        settings,
+                                        primary_genre=genre_key,
+                                        language=str(payload.get("language", "zh-CN")),
+                                        genre_key=genre_key,
+                                        user_hints=user_hints,
+                                        genre_intent=genre_intent_contract,
+                                    )
+                            else:
+                                progress("story_architect_skipped_checkpoint", {
+                                    "source_conception_workflow_run_id": source_conception_workflow_run_id,
+                                })
+                            if conception_checkpoint is None and conception_replay_context is None:
+                                progress(
+                                    "story_architect_complete",
+                                    {
+                                        "genre_intent_contract_hash": (
+                                            genre_intent_contract.contract_hash()
+                                            if genre_intent_contract is not None
+                                            else None
+                                        ),
+                                        "genre_key": (
+                                            genre_intent_contract.genre_key
+                                            if genre_intent_contract is not None
+                                            else genre_key
+                                        ),
+                                        "sub_genre": (
+                                            genre_intent_contract.sub_genre_label
+                                            if genre_intent_contract is not None
+                                            else str(payload.get("sub_genre") or "")
+                                        ),
+                                        "prompt_pack_key": (
+                                            genre_intent_contract.prompt_pack_key
+                                            if genre_intent_contract is not None
+                                            else None
+                                        ),
+                                        "tone": story_facets_obj.tone,
+                                        "narrative_drive": story_facets_obj.narrative_drive,
+                                        "trope_tags": list(story_facets_obj.trope_tags),
+                                        "setting": story_facets_obj.setting,
+                                        "source": story_facets_obj.generation_source,
+                                    },
                                 )
-                            progress(
-                                "story_architect_complete",
-                                {
-                                    "genre_intent_contract_hash": (
-                                        genre_intent_contract.contract_hash()
-                                        if genre_intent_contract is not None
-                                        else None
-                                    ),
-                                    "genre_key": (
-                                        genre_intent_contract.genre_key
-                                        if genre_intent_contract is not None
-                                        else genre_key
-                                    ),
-                                    "sub_genre": (
-                                        genre_intent_contract.sub_genre_label
-                                        if genre_intent_contract is not None
-                                        else str(payload.get("sub_genre") or "")
-                                    ),
-                                    "prompt_pack_key": (
-                                        genre_intent_contract.prompt_pack_key
-                                        if genre_intent_contract is not None
-                                        else None
-                                    ),
-                                    "tone": story_facets_obj.tone,
-                                    "narrative_drive": story_facets_obj.narrative_drive,
-                                    "trope_tags": list(story_facets_obj.trope_tags),
-                                    "setting": story_facets_obj.setting,
-                                    "source": story_facets_obj.generation_source,
-                                },
-                            )
+                        except (TaskCancelledError, ExecutionBudgetError):
+                            raise
                         except Exception:
                             logger.warning(
                                 "Story Architect failed; proceeding without facets", exc_info=True
@@ -3883,7 +4752,51 @@ class WebTaskManager:
                             with bind_conception_model(
                                 _conception_model,
                                 call_timeout_seconds=_CONCEPTION_CALL_TIMEOUT_SECONDS,
+                                task_id=task_id,
+                                workflow_run_id=(
+                                    getattr(conception_workflow_run, "id", None)
+                                ),
                             ):
+                                async def _save_conception_replay_context(record):
+                                    from bestseller.services.conception_checkpoints import save_replay_context
+                                    async with session_scope(settings) as checkpoint_session:
+                                        await save_replay_context(checkpoint_session,
+                                            workflow_run_id=conception_workflow_run.id, record=record)
+
+                                async def _save_conception_checkpoint(
+                                    checkpoint: dict[str, object],
+                                ) -> None:
+                                    from bestseller.services.conception_checkpoints import (
+                                        save_conception_checkpoint,
+                                    )
+
+                                    async with session_scope(settings) as checkpoint_session:
+                                        await save_conception_checkpoint(
+                                            checkpoint_session,
+                                            workflow_run_id=conception_workflow_run.id,
+                                            checkpoint={
+                                                **checkpoint,
+                                                "input_hash": conception_input_hash,
+                                                "source_workflow_run_id": str(
+                                                    source_conception_workflow_run_id
+                                                )
+                                                if source_conception_workflow_run_id
+                                                else None,
+                                            },
+                                        )
+
+                                _conception_pipeline_options: dict[str, object] = {
+                                    "resume_checkpoint": conception_checkpoint,
+                                }
+                                if conception_workflow_run is not None:
+                                    _conception_pipeline_options.update(
+                                        {
+                                            "checkpoint_callback": _save_conception_checkpoint,
+                                            "checkpoint_input_hash": conception_input_hash,
+                                            "resume_replay_context": conception_replay_context,
+                                            "replay_context_callback": _save_conception_replay_context,
+                                        }
+                                    )
                                 conception_result = await run_conception_pipeline(
                                     session,
                                     settings,
@@ -3894,41 +4807,36 @@ class WebTaskManager:
                                     user_hints=user_hints,
                                     story_facets=story_facets_obj,
                                     genre_intent_contract=genre_intent_contract,
+                                    creation_intent_contract=(
+                                        creation_intent_contract.model_dump(mode="json")
+                                        if creation_intent_contract is not None else None
+                                    ),
                                     progress=progress,
+                                    **_conception_pipeline_options,
                                 )
-                        except (AppealBarNotMetError, ConceptContractError):
-                            # A deliberate gate block, not a crash. The success
-                            # path below sets this row COMPLETED, but these
-                            # exceptions unwind the outer ``session_scope`` which
-                            # ROLLS BACK without closing it — so the row leaks as
-                            # ``running`` until the 2h safety reaper, and (being
-                            # keyed on attempt_id under
-                            # ``uq_conception_workflow_idempotency``) blocks
-                            # retrying the same attempt. Close it in a FRESH
-                            # session that commits independently of the rollback,
-                            # then re-raise for the sync handler's user-facing
-                            # _mark_failed. Observed 2026-07-24 on
-                            # custom-xuanhuan-1784875202 (logline gate blocked it
-                            # correctly; the row stuck at running for 35 min).
-                            # ConceptContractError joined 2026-07-24: the dry-
-                            # tournament fail-fast raises it from the same spot.
-                            _blocked_wf_id = getattr(
-                                conception_workflow_run, "id", None
-                            )
+                                raise_if_execution_stopped()
+                        except Exception as exc:
+                            # The success path below closes the conception row,
+                            # but *any* exception unwinds the outer session before
+                            # that assignment.  Quality blocks were handled here
+                            # first; user cancellation and unexpected conception
+                            # errors were not, leaving project-less rows stuck at
+                            # ``running`` even after the visible task had reached
+                            # ``cancelled`` or ``failed``.  Close every ordinary
+                            # exception in a fresh transaction, preserve cancelled
+                            # as its own terminal state, then re-raise unchanged.
+                            _blocked_wf_id = getattr(conception_workflow_run, "id", None)
                             if _blocked_wf_id is not None:
                                 try:
                                     from sqlalchemy import (
                                         update as _sql_update,
                                     )
 
-                                    async with session_scope(
-                                        settings
-                                    ) as _close_session:
+                                    async with session_scope(settings) as _close_session:
                                         await _close_session.execute(
                                             _sql_update(WorkflowRunModel)
                                             .where(
-                                                WorkflowRunModel.id
-                                                == _blocked_wf_id,
+                                                WorkflowRunModel.id == _blocked_wf_id,
                                                 WorkflowRunModel.status.in_(
                                                     [
                                                         WorkflowStatus.PENDING.value,
@@ -3938,13 +4846,22 @@ class WebTaskManager:
                                                 ),
                                             )
                                             .values(
-                                                status=WorkflowStatus.FAILED.value,
-                                                current_step="blocked",
+                                                status=(
+                                                    WorkflowStatus.CANCELLED.value
+                                                    if isinstance(exc, TaskCancelledError)
+                                                    else WorkflowStatus.FAILED.value
+                                                ),
+                                                current_step=(
+                                                    "cancelled"
+                                                    if isinstance(exc, TaskCancelledError)
+                                                    else "failed"
+                                                ),
+                                                error_message=str(exc)[:4000],
                                             )
                                         )
                                 except Exception:
                                     logger.debug(
-                                        "closing blocked conception workflow row "
+                                        "closing terminal conception workflow row "
                                         "failed (non-fatal); the periodic reaper "
                                         "will catch it",
                                         exc_info=True,
@@ -3977,9 +4894,7 @@ class WebTaskManager:
                         conception_hook_candidates = getattr(
                             conception_result, "hook_candidates", None
                         )
-                        conception_story_appeal = getattr(
-                            conception_result, "story_appeal", None
-                        )
+                        conception_story_appeal = getattr(conception_result, "story_appeal", None)
                         conception_motif_amplification = getattr(
                             conception_result, "motif_amplification", None
                         )
@@ -4000,8 +4915,7 @@ class WebTaskManager:
                                 "metadata": event.metadata,
                             }
                             for event in (
-                                getattr(conception_result, "degradation_events", None)
-                                or ()
+                                getattr(conception_result, "degradation_events", None) or ()
                             )
                         ]
                         progress(
@@ -4071,6 +4985,18 @@ class WebTaskManager:
                                 ).hexdigest(),
                             }
 
+                if run_conception:
+                    # Revalidate before materialisation: a missing result must
+                    # not silently turn a newly conceived book into a legacy one.
+                    from bestseller.services.concept_contract import (
+                        require_conception_contract_for_target,
+                    )
+
+                    conception_contract = require_conception_contract_for_target(
+                        conception_contract,
+                        target_chapters=int(payload["target_chapters"]),
+                    )
+
                 project_metadata: dict[str, object] = {"premise": effective_premise}
                 if isinstance(payload.get("genre_intent_contract"), dict):
                     project_metadata["genre_intent_contract"] = json.loads(
@@ -4122,9 +5048,7 @@ class WebTaskManager:
                     )
                 if conception_degradation:
                     project_metadata["conception_degraded"] = True
-                    project_metadata["conception_degradation_events"] = (
-                        conception_degradation
-                    )
+                    project_metadata["conception_degradation_events"] = conception_degradation
                 # Persist conception artifacts so they are inspectable in the
                 # book document view (/design/{slug}) alongside planning output.
                 conception_artifacts: dict[str, object] = {}
@@ -4137,8 +5061,8 @@ class WebTaskManager:
                     # treat it as authoritative, so a winning concept such as a
                     # herb-garden story could retain an unrelated bloodline-island
                     # setting.  Keep it only as an auditable conception artifact.
-                    conception_artifacts["story_architect_proposal"] = (
-                        story_facets_obj.model_dump(mode="json")
+                    conception_artifacts["story_architect_proposal"] = story_facets_obj.model_dump(
+                        mode="json"
                     )
                 if conception_methodology:
                     conception_artifacts["concept_methodology"] = conception_methodology
@@ -4147,17 +5071,11 @@ class WebTaskManager:
                 if conception_story_appeal:
                     conception_artifacts["story_appeal"] = conception_story_appeal
                 if conception_motif_amplification:
-                    conception_artifacts["motif_amplification"] = (
-                        conception_motif_amplification
-                    )
+                    conception_artifacts["motif_amplification"] = conception_motif_amplification
                 if conception_title_tournament:
-                    conception_artifacts["title_tournament"] = (
-                        conception_title_tournament
-                    )
+                    conception_artifacts["title_tournament"] = conception_title_tournament
                 if conception_default_family:
-                    conception_artifacts["default_family"] = (
-                        conception_default_family
-                    )
+                    conception_artifacts["default_family"] = conception_default_family
                 if conception_brief:
                     conception_artifacts["commercial_brief"] = conception_brief
                 creative_brief = payload.get("creative_brief")
@@ -4170,10 +5088,27 @@ class WebTaskManager:
                 if isinstance(extra_meta, dict):
                     project_metadata.update(extra_meta)
                 if run_conception:
+                    # The direct autowrite API accepts caller metadata for
+                    # compatibility, but it must not replace the canonical
+                    # result produced by this conception run.  Re-assert only
+                    # these generated story fields here; resume/rebuild paths
+                    # keep their existing metadata because run_conception is
+                    # false there.
+                    project_metadata["premise"] = effective_premise
+                    project_metadata["synopsis"] = effective_synopsis
+                    project_metadata["tags"] = list(effective_tags)
+                    _canonical_spine = getattr(conception_result, "story_spine", None)
+                    if isinstance(_canonical_spine, dict) and _canonical_spine:
+                        project_metadata["story_spine"] = _canonical_spine
                     # A request may carry a stale preview copy in extra metadata.
                     # Once conception has produced the validated winner, no
                     # preliminary facets may shadow that winner downstream.
                     project_metadata.pop("story_facets", None)
+                    # create_project() consumes the immutable packaging receipt
+                    # synchronously. Keep the verified conception artifact on
+                    # the payload after the untrusted metadata merge.
+                    if conception_artifacts:
+                        project_metadata["conception_artifacts"] = conception_artifacts
                 # Request metadata may contain stale preview values. Re-assert
                 # the validated creation-time genre contract after the merge.
                 if genre_intent_contract is not None:
@@ -4192,18 +5127,17 @@ class WebTaskManager:
                     project_metadata["creation_intent_contract"] = json.loads(
                         json.dumps(payload["creation_intent_contract"])
                     )
+                if isinstance(user_hints, dict) and user_hints.get("production_profile"):
+                    project_metadata["production_profile"] = user_hints["production_profile"]
+                    project_metadata["user_hints"] = dict(user_hints)
                 if creation_intent_contract is not None:
                     # Keep an audit-friendly projection alongside the frozen
                     # contract. Older downstream readers and support queries
                     # still inspect these top-level keys; without the projection
                     # a correctly transported seed/tone looked absent after
                     # project materialisation even though it was nested in V1.
-                    project_metadata["concept_seed"] = (
-                        creation_intent_contract.concept_seed
-                    )
-                    project_metadata["tone_preference"] = (
-                        creation_intent_contract.tone_preference
-                    )
+                    project_metadata["concept_seed"] = creation_intent_contract.concept_seed
+                    project_metadata["tone_preference"] = creation_intent_contract.tone_preference
                     project_metadata["audience_orientation"] = (
                         creation_intent_contract.audience_orientation
                     )
@@ -4211,16 +5145,10 @@ class WebTaskManager:
                         "schema_version": creation_intent_contract.schema_version,
                         "contract_hash": creation_intent_contract.contract_hash(),
                         "field_sources": {
-                            key: (
-                                value.value
-                                if hasattr(value, "value")
-                                else str(value)
-                            )
+                            key: (value.value if hasattr(value, "value") else str(value))
                             for key, value in creation_intent_contract.field_sources.items()
                         },
-                        "concept_seed_present": bool(
-                            creation_intent_contract.concept_seed
-                        ),
+                        "concept_seed_present": bool(creation_intent_contract.concept_seed),
                     }
                 # Request metadata is user-controlled and may contain stale
                 # preview values.  Re-assert the verified concept contract
@@ -4233,9 +5161,7 @@ class WebTaskManager:
                     project_metadata["seriality_proof"] = conception_contract.get(
                         "seriality_proof", {}
                     )
-                    project_metadata["story_spine"] = conception_contract.get(
-                        "story_spine", {}
-                    )
+                    project_metadata["story_spine"] = conception_contract.get("story_spine", {})
                     project_metadata.pop("hook_spec", None)
                 # A per-book model picked from the dashboard *during* conception
                 # (before this project row existed) was stashed on the task
@@ -4303,12 +5229,12 @@ class WebTaskManager:
                             {
                                 "score": _mv_summary["verdict"]["score"],
                                 "band": _mv_summary["verdict"]["band"],
-                                "title_verdicts": _mv_summary["title_check"][
-                                    "verdicts"
-                                ],
+                                "title_verdicts": _mv_summary["title_check"]["verdicts"],
                                 "platforms": _mv_summary["platforms_used"],
                             },
                         )
+                    except (TaskCancelledError, ExecutionBudgetError):
+                        raise
                     except Exception:
                         market_validation_report_obj = None
                         logger.warning(
@@ -4329,9 +5255,7 @@ class WebTaskManager:
                     )
 
                     project_id = project.id
-                    attempt_id = str(
-                        payload.get("_conception_attempt_id") or f"{task_id}:initial"
-                    )
+                    attempt_id = conception_attempt.attempt_id if conception_attempt is not None else str(payload.get("_conception_attempt_id") or f"{task_id}:initial")
                     source_run_id = (
                         conception_workflow_run.id if conception_workflow_run is not None else None
                     )
@@ -4350,7 +5274,9 @@ class WebTaskManager:
                     conception_content = {
                         "schema_version": "conception-snapshot.v1",
                         "attempt_id": attempt_id,
-                        "input_hash": conception_attempt.input_hash() if conception_attempt else None,
+                        "input_hash": conception_attempt.input_hash()
+                        if conception_attempt
+                        else None,
                         "conception_mode": "initial",
                         "creation_intent_hash": creation_intent_contract.contract_hash(),
                         "title": effective_title,
@@ -4358,9 +5284,20 @@ class WebTaskManager:
                         "synopsis": effective_synopsis,
                         "tags": effective_tags,
                         "writing_profile": effective_writing_profile or {},
-                        "hook_spec": conception_hook_spec or payload_hook_spec.model_dump(mode="json")
-                        if payload_hook_spec is not None
-                        else {},
+                        "world_model": getattr(conception_result, "world_model", {}) or {},
+                        # Keep the generated conception hook when the user did
+                        # not provide a legacy HookSpec.  Parenthesising this
+                        # precedence-sensitive choice avoids the conditional
+                        # expression swallowing the generated value.
+                        "hook_spec": (
+                            conception_hook_spec
+                            if conception_hook_spec
+                            else (
+                                payload_hook_spec.model_dump(mode="json")
+                                if payload_hook_spec is not None
+                                else {}
+                            )
+                        ),
                         "concept_contract": conception_contract or {},
                         "story_spine": getattr(conception_result, "story_spine", {}) or {},
                         "commercial_brief": conception_brief or {},
@@ -4378,20 +5315,32 @@ class WebTaskManager:
                         created_by="web-ui",
                     )
                     metadata = dict(project.metadata_json or {})
+                    if current_execution_scope():
+                        metadata["execution_scope_id"] = current_execution_scope()
                     metadata.update(
                         {
                             "creation_intent_snapshot_id": str(intent_artifact.id),
                             "creation_intent_contract_hash": creation_intent_contract.contract_hash(),
                             "conception_snapshot_id": str(snapshot_artifact.id),
                             "conception_snapshot_status": snapshot_artifact.status,
-                            "conception_workflow_run_id": str(source_run_id) if source_run_id else None,
+                            "conception_workflow_run_id": str(source_run_id)
+                            if source_run_id
+                            else None,
                         }
                     )
                     project.metadata_json = metadata
+                    if not stop_after_conception:
+                        from bestseller.services.reviewed_conception_selection import select_reviewed_conception_snapshot
+                        selection = await select_reviewed_conception_snapshot(
+                            session, settings, project_id=project_id, snapshot_id=snapshot_artifact.id,
+                            expected_hash=snapshot_hash(snapshot_artifact.content), actor="web-ui complete-book selection",
+                            reason="Select the same successfully reviewed source version for the requested complete book")
+                        progress("conception_canonical_selected", {"project_id":str(project_id), **selection})
                     if conception_workflow_run is not None:
                         conception_workflow_run.project_id = project_id
                         conception_workflow_run.metadata_json = {
                             **(conception_workflow_run.metadata_json or {}),
+                            "execution_scope_id": current_execution_scope(),
                             "project_id": str(project_id),
                             "creation_intent_snapshot_id": str(intent_artifact.id),
                             "conception_snapshot_id": str(snapshot_artifact.id),
@@ -4414,16 +5363,13 @@ class WebTaskManager:
                             )
                         except Exception:
                             logger.debug(
-                                "market validation artifact persist failed "
-                                "(non-fatal)",
+                                "market validation artifact persist failed (non-fatal)",
                                 exc_info=True,
                             )
 
                 if stop_after_conception and run_conception:
                     if not conception_contract:
-                        raise ValueError(
-                            "构思未形成通过门禁的创意合同，未创建书籍、未进入规划。"
-                        )
+                        raise ValueError("构思未形成通过门禁的创意合同，未创建书籍、未进入规划。")
                     project_metadata["planning_status"] = "awaiting_concept_approval"
                     project_metadata["conception_only"] = True
                 target_chapters = int(payload["target_chapters"])
@@ -4436,6 +5382,8 @@ class WebTaskManager:
                     resolved_project_type = DomainProjectType(project_type_raw)
                 except ValueError:
                     resolved_project_type = DomainProjectType.LINEAR
+                if current_execution_scope():
+                    project_metadata["execution_scope_id"] = current_execution_scope()
                 project_create = ProjectCreate(
                     slug=str(payload["slug"]),
                     title=effective_title,
@@ -4485,6 +5433,38 @@ class WebTaskManager:
                     "auto_repair_on_attention": bool(payload.get("auto_repair", True)),
                     "progress": progress,
                 }
+                # Materialise the project and commit the creation handoff
+                # before planning starts.  This makes the intent/conception
+                # snapshots durable even when planning fails part-way through.
+                # Resume payloads have ``run_conception=False`` and therefore
+                # deliberately bypass this block and never mint a new initial
+                # snapshot.
+                if (
+                    run_conception
+                    and creation_intent_contract is not None
+                    and hasattr(session, "scalar")
+                ):
+                    from bestseller.services.projects import create_project
+
+                    project = await get_project_by_slug(session, str(payload["slug"]))
+                    if project is None:
+                        project = await create_project(session, project_create, settings)
+                    await persist_creation_snapshots(project)
+                    raise_if_execution_stopped()
+                    await session.commit()
+                if payload.get('autonomous_book') is True:
+                    from bestseller.services.draft_continuity import draft_mode_enabled
+                    existing_book=await get_project_by_slug(session,str(payload['slug']))
+                    if existing_book is not None and await draft_mode_enabled(session,project_id=existing_book.id,project=existing_book):
+                        from bestseller.services.book_run import submit
+                        from arq.connections import create_pool,RedisSettings
+                        pool=await create_pool(RedisSettings.from_dsn(settings.redis.url))
+                        try:
+                            goal=await submit(session,settings,pool,project=existing_book,requested_model=payload.get('requested_model'))
+                        finally:await pool.aclose()
+                        from bestseller.services.creation_configuration import read_window
+                        window=read_window(existing_book)
+                        return {**goal,'execution_window':window.model_dump(mode='json') if window else {},'final_verdict':'book_objective_recorded'}
                 # Progressive routing (large novels → per-volume plan/write
                 # feedback loop) lives inside run_autowrite_pipeline so the
                 # web-ui path and worker self-heal path pick the same pipeline
@@ -4497,42 +5477,47 @@ class WebTaskManager:
                 # market_validation report entirely — precisely the books whose
                 # concept you most need to inspect. Live case: 《废脉炉子天天骂我》
                 # died in foundation and left zero conception artifacts behind.
-                pipeline_succeeded = False
-                try:
-                    result = await run_autowrite_pipeline(**common_kwargs)
-                    pipeline_succeeded = True
-                finally:
-                    if creation_intent_contract is not None and hasattr(
-                        session, "scalar"
-                    ):
+                from bestseller.services.chapter_review_reconciliation import prepare_native_review_resume
+                resume_project = await get_project_by_slug(session, str(payload["slug"]))
+                if resume_project is not None:
+                    from bestseller.services.project_style_invariant_boundary import prepare_creation_style_invariant_boundary
+                    style_boundary = await prepare_creation_style_invariant_boundary(
+                        session, project_id=resume_project.id, requested_by="web-ui",
+                    )
+                    if style_boundary["changed"]:
+                        await session.commit()
+                    resume = await prepare_native_review_resume(
+                        session, settings, project_id=resume_project.id, requested_by="web-ui",
+                    )
+                    if resume["status"] == "prepared":
+                        await session.commit()
+                result = await run_autowrite_pipeline(**common_kwargs)
+                raise_if_execution_stopped()
+                from bestseller.services.autonomous_continuation import record_window_continuation
+                continuation = await record_window_continuation(session, project_id=result.project_id,
+                    result=result.model_dump(mode="json"), dispatch_authorized=payload.get("autonomous_book") is True, requested_model=payload.get("requested_model"))
+                if continuation is not None:
+                    await session.commit()
+                    if payload.get("autonomous_book") is True:
+                        from bestseller.services.autonomous_dispatch import enqueue_checkpoint
+                        from arq.connections import create_pool, RedisSettings
+                        queue = await create_pool(RedisSettings.from_dsn(settings.redis.url))
                         try:
-                            project = await get_project_by_slug(
-                                session, str(payload["slug"])
-                            )
-                            if project is not None:
-                                await persist_creation_snapshots(project)
-                            elif pipeline_succeeded:
-                                raise RuntimeError(
-                                    "autowrite completed without a project row"
-                                )
-                        except Exception:
-                            if pipeline_succeeded:
-                                raise
-                            # Mid-failure: snapshot persistence is evidence,
-                            # never the outcome. It must not replace the
-                            # pipeline's own exception with its own.
-                            logger.warning(
-                                "creation snapshot persistence failed for %s",
-                                payload.get("slug"),
-                                exc_info=True,
-                            )
+                            await enqueue_checkpoint(session, queue, continuation['continuation_workflow_run_id'])
+                        finally:
+                            await queue.aclose()
+                    return {**result.model_dump(mode="json"), **continuation}
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         # Overall pipeline cap: 24h. Long enough for 100+ chapters.
         pipeline_timeout = float(os.environ.get("BESTSELLER_PIPELINE_TIMEOUT", "86400"))
 
         async def guarded_runner() -> dict[str, object]:
-            return await asyncio.wait_for(runner(), timeout=pipeline_timeout)
+            from bestseller.services.model_context_capacity import bind_selected_model_capacity
+            from bestseller.services.web_pipeline_owner import web_pipeline_owner
+            with bind_selected_model_capacity(payload):
+                async with web_pipeline_owner(load_settings(), str(payload["slug"])):
+                    return await asyncio.wait_for(runner(), timeout=pipeline_timeout)
 
         try:
             # Bind the ambient progress emitter so deep pipeline actions
@@ -4541,15 +5526,51 @@ class WebTaskManager:
             with bind_progress(progress):
                 result = asyncio.run(guarded_runner())
             self._mark_completed(task_id, result)
+        except ExecutionBudgetError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(), task_id=task_id, payload=payload, status="failed",
+                error_message=exc.code,
+            )
+            self._stop_execution_task(task_id, exc)
         except TaskCancelledError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="cancelled",
+                error_message=str(exc) or "Task cancelled by user",
+            )
             self._mark_cancelled(task_id)
             logger.info("Task %s exited via cancellation: %s", task_id, exc)
         except TimeoutError:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=f"Pipeline exceeded timeout of {pipeline_timeout:.0f}s",
+            )
             self._mark_failed(
                 task_id,
                 f"Pipeline exceeded timeout of {pipeline_timeout:.0f}s",
             )
+        except ProductionControlHaltedError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(), task_id=task_id, payload=payload,
+                status="cancelled", error_message=str(exc),
+            )
+            self._push_progress(task_id, "fanqie_halted_by_operator", exc.control)
+            self.mark_task_blocked_by_project_gate(
+                task_id, stage=f"production_{exc.intent}_by_operator", error=str(exc),
+            )
         except ProjectRepairPauseError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=str(exc),
+            )
             project_slug = str(payload.get("slug") or "")
             self.mark_task_blocked_by_structural_repair(
                 task_id,
@@ -4560,6 +5581,13 @@ class WebTaskManager:
             )
             logger.info("Autowrite task %s blocked by structural repair pause: %s", task_id, exc)
         except PlannerFallbackError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=str(exc),
+            )
             # A deliberate planning block, not a crash. Without this handler it
             # fell through to the generic ``except Exception`` and the user saw
             # a raw Python traceback (2026-07-26,
@@ -4577,12 +5605,19 @@ class WebTaskManager:
             logger.info("Autowrite task %s blocked during planning: %s", task_id, detail)
             self._mark_failed(
                 task_id,
-                "规划阶段未通过门禁，已停止；书籍已创建但未进入正文。\n\n"
+                "规划阶段已停止；已有成果保留，正文进度以正式采用内容为准。\n\n"
                 f"{detail}\n\n"
-                "整改方向：在书籍详情页查看大纲诊断，修正被点名的章节后重新规划；"
-                "若同一诊断反复出现，说明该门禁与本书的核心设定冲突，需要调整设定或该门禁阈值。",
+                "恢复方向：查看具体诊断，区分格式、来源或基础设施故障与内容审校问题；"
+                "修复对应原因后，从原任务的失败步骤恢复。",
             )
         except ConceptContractError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=str(exc),
+            )
             reasons = list(exc.violations)
             try:
                 progress(
@@ -4616,6 +5651,13 @@ class WebTaskManager:
                 + (f"\n\n（构思全过程已存档：{_cc_log_path}）" if _cc_log_path else ""),
             )
         except AppealBarNotMetError as exc:
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=str(exc),
+            )
             # 这是【刻意拦截】不是崩溃：一句话故事大纲或上架文案未过硬门，
             # 必须在 create_project/run_autowrite_pipeline 之前终止，不留僵尸项目。
             # NOTE: the conception workflow row is closed inside ``runner()``
@@ -4709,24 +5751,31 @@ class WebTaskManager:
             if isinstance(title_total, (int, float)) and title_total < _title_min:
                 _unmet.append(f"书名 {title_total:.1f} < {_title_min:.0f}")
             msg = (
-                "未达榜单达标线（"
+                "未达内部吸引力评审门槛（"
                 + ("；".join(_unmet) if _unmet else "综合未达标")
                 + "），已拦截，未进入规划。\n"
                 f"简介点击力：{blurb_total}（线 {_blurb_min:.0f}）　"
                 f"书名点击力：{title_total}（线 {_title_min:.0f}）\n\n"
-                + (
-                    f"（构思全过程已存档：{_failed_log_path}）\n"
-                    if _failed_log_path
-                    else ""
-                )
+                + (f"（构思全过程已存档：{_failed_log_path}）\n" if _failed_log_path else "")
                 + "（已自动多轮重生仍未达标，需调整设定/方向后重建。整改建议：）\n"
                 f"{exc.feedback}"
             )
-            logger.info("Autowrite task %s blocked: appeal bar not met (blurb=%s title=%s)",
-                        task_id, blurb_total, title_total)
+            logger.info(
+                "Autowrite task %s blocked: appeal bar not met (blurb=%s title=%s)",
+                task_id,
+                blurb_total,
+                title_total,
+            )
             self._mark_failed(task_id, msg)
         except Exception:
             tb = traceback.format_exc()
+            _close_creation_workflow_after_task_exit(
+                load_settings(),
+                task_id=task_id,
+                payload=payload,
+                status="failed",
+                error_message=tb,
+            )
             logger.exception("Autowrite task %s crashed", task_id)
             self._mark_failed(task_id, tb)
 
@@ -4794,13 +5843,15 @@ class WebTaskManager:
             contract_from_selection,
         )
         from bestseller.services.genre_taxonomy import resolve_selection
-        from bestseller.services.story_enhancers import resolve_story_enhancers
+        from bestseller.services.story_enhancers import capture_story_enhancer_input
 
         raw_enhancers = payload.get("story_enhancers")
-        selected_enhancers = resolve_story_enhancers(
-            {"story_enhancers": raw_enhancers} if isinstance(raw_enhancers, dict) else {}
+        selected_enhancers, enhancer_input_sources = capture_story_enhancer_input(
+            raw_enhancers if isinstance(raw_enhancers, dict) else None
         )
-        audience_orientation = str(payload.get("audience_orientation") or "").strip().lower() or None
+        audience_orientation = (
+            str(payload.get("audience_orientation") or "").strip().lower() or None
+        )
         _narrative_scale = str(payload.get("narrative_scale") or "").strip() or None
         _tone_preference = str(payload.get("tone_preference") or "").strip() or None
         if audience_orientation not in {None, "male", "female"}:
@@ -4809,7 +5860,7 @@ class WebTaskManager:
             raise ValueError("narrative_scale must be serial, epic, or omitted")
         if _tone_preference not in {None, "epic", "light", "dark", "hot"}:
             raise ValueError("tone_preference must be epic, light, dark, hot, or omitted")
-        for flag in ("draft_mode", "stop_after_conception"):
+        for flag in ("draft_mode", "stop_after_conception", "autonomous_book"):
             if flag in payload and not isinstance(payload[flag], bool):
                 raise ValueError(f"{flag} must be a boolean when provided")
         try:
@@ -4866,7 +5917,26 @@ class WebTaskManager:
                 else 30
             )
 
-        words_per_chapter = load_settings().generation.words_per_chapter.target
+        configuration_submission = None
+        supplied_configuration = payload.get("configuration_submission")
+        prior_contract = payload.get("creation_intent_contract") or {}
+        if supplied_configuration is None and isinstance(prior_contract, dict) and prior_contract.get("configuration"):
+            prior_window = payload.get("execution_window") or (payload.get("metadata") or {}).get("execution_window")
+            if not prior_window:
+                raise ValueError("configuration_resume_window_missing")
+            supplied_configuration = {"configuration": prior_contract["configuration"], "execution_window": prior_window}
+        if supplied_configuration is not None:
+            from bestseller.services.creation_configuration import parse_configuration_submission
+            configuration_submission = parse_configuration_submission(supplied_configuration)
+            if is_fanqie_short or not genre_preset.language.startswith("zh"):
+                raise ValueError("creation configuration currently targets Chinese chaptered fiction")
+            if payload.get("chapter_count") is not None and (
+                type(payload["chapter_count"]) is not int or payload["chapter_count"] != configuration_submission.configuration.book.total_chapters
+            ):
+                raise ValueError("chapter_count must equal configuration whole-book count")
+            chapter_count = configuration_submission.configuration.book.total_chapters
+        words_per_chapter = (configuration_submission.configuration.book.chapter_target
+            if configuration_submission is not None else load_settings().generation.words_per_chapter.target)
         target_words = chapter_count * words_per_chapter
         fanqie_meta: dict[str, object] | None = None
         fanqie_pov = "first_person"
@@ -4939,7 +6009,7 @@ class WebTaskManager:
                 getattr(selected_enhancers, "creativity_direction", "") or ""
             ).strip()
         creative_direction = (
-            get_genre_creative_direction(genre_key, explicit_creative_key)
+            get_genre_creative_direction_for_preset(genre_preset, explicit_creative_key)
             if (is_new_project and explicit_creative_key)
             else None
         )
@@ -4953,7 +6023,8 @@ class WebTaskManager:
         explicit_bundle_id = str(payload.get("concept_lab_bundle_id") or "").strip()
         explicit_bundle_payload = (
             payload.get("concept_lab_bundle")
-            if isinstance(payload.get("concept_lab_bundle"), dict) and payload.get("concept_lab_bundle")
+            if isinstance(payload.get("concept_lab_bundle"), dict)
+            and payload.get("concept_lab_bundle")
             else None
         )
         concept_bundle = (
@@ -4997,7 +6068,11 @@ class WebTaskManager:
                 pov=fanqie_pov,
             )
 
+        from bestseller.services.production_strategy import normalize_profile
+        production_profile = normalize_profile(payload.get("production_profile"))
+        creative_hints = {**(creative_hints or {}), "production_profile": production_profile}
         autowrite_payload: dict[str, object] = {
+            "production_profile": production_profile,
             "slug": slug,
             "title": title,
             "genre": genre_preset.genre,
@@ -5037,9 +6112,13 @@ class WebTaskManager:
         }
         # Per-book writing model chosen in the creation form (Step 3). Validated
         # against the catalog. An explicit unknown/unavailable pick is rejected;
-        # omission alone means the global default. Rides payload → task.payload → project metadata
+        # omission freezes the current global default for a NEW book only. Rides payload → task.payload → project metadata
         # (llm_model_id) via _pending_project_model at materialization.
         _model_id = str(payload.get("llm_model_id") or "").strip()
+        _model_explicit = bool(_model_id)
+        if not _model_id and is_new_project:
+            from bestseller.services.model_catalog import default_new_project_model_id
+            _model_id = default_new_project_model_id(load_settings()) or ""
         if _model_id:
             from bestseller.services.model_catalog import get_model_catalog_entry
 
@@ -5062,19 +6141,27 @@ class WebTaskManager:
 
         creation_intent = build_creation_intent_contract(
             contract,
+            schema_version="creation-intent.v2" if configuration_submission else "creation-intent.v1",
+            configuration=configuration_submission.configuration if configuration_submission else None,
             field_sources={
+                **({"configuration": "explicit"} if configuration_submission else {}),
                 "audience_orientation": "explicit" if audience_orientation else "default",
                 "narrative_scale": "explicit" if _narrative_scale == "epic" else "default",
                 "tone_preference": "explicit" if _tone_preference else "default",
-                "chapter_count": "explicit" if payload.get("chapter_count") not in (None, "") else "default",
+                "chapter_count": "explicit"
+                if payload.get("chapter_count") not in (None, "")
+                else "default",
                 "length_key": "explicit" if length_key else "default",
                 "pov": "explicit" if payload.get("pov") else "default",
                 "draft_mode": "explicit" if bool(payload.get("draft_mode")) else "default",
                 "stop_after_conception": "explicit"
                 if bool(payload.get("stop_after_conception"))
                 else "default",
-                "llm_model_id": "explicit" if _model_id else "default",
-                "story_enhancers": "explicit" if not selected_enhancers.is_default() else "default",
+                "llm_model_id": "explicit" if _model_explicit else "default",
+                "story_enhancers": "explicit" if (
+                    not selected_enhancers.is_default()
+                    or enhancer_input_sources["cost_style"] == "explicit"
+                ) else "default",
                 "creative_direction": "explicit" if creative_direction else "default",
                 "concept_seed": "explicit" if explicit_concept_seed else "default",
                 "hook_spec": "explicit" if selected_hook_spec else "default",
@@ -5089,36 +6176,44 @@ class WebTaskManager:
             # product.  It must not leak into long-serial books whose form has
             # no POV selector; those retain the framework's third-limited
             # default unless a caller explicitly supplies a POV.
-            pov=(
-                fanqie_pov
-                if is_fanqie_short
-                else str(payload.get("pov") or "third-limited")
-            ),
+            pov=(fanqie_pov if is_fanqie_short else str(payload.get("pov") or "third-limited")),
             draft_mode=bool(payload.get("draft_mode", False)),
             stop_after_conception=bool(payload.get("stop_after_conception", False)),
             llm_model_id=_model_id or None,
             story_enhancers=selected_enhancers,
             concept_lab=(
-                concept_bundle.model_dump(mode="json")
-                if concept_bundle is not None
-                else None
+                concept_bundle.model_dump(mode="json") if concept_bundle is not None else None
             ),
             creative_direction=(creative_direction.key if creative_direction else None),
             concept_seed=explicit_concept_seed or None,
-            hook_spec=selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {},
+            hook_spec={
+                **(selected_hook_spec.model_dump(mode="json") if selected_hook_spec else {}),
+                "_story_enhancer_input_sources": enhancer_input_sources,
+            },
             language=genre_preset.language,
             project_type=project_type_value,
             creation_mode=creation_mode,
         )
         autowrite_payload["creation_intent_contract"] = creation_intent.model_dump(mode="json")
+        if configuration_submission is not None:
+            from bestseller.services.creation_configuration import configuration_metadata
+            autowrite_payload["metadata"] = configuration_metadata({
+                **(autowrite_payload.get("metadata") or {}),
+                "creation_intent_contract": creation_intent.model_dump(mode="json")}, configuration_submission)
+            autowrite_payload["configuration_submission"] = configuration_submission.model_dump(mode="json")
+            if configuration_submission.configuration.readers.primary:
+                autowrite_payload["audience"] = configuration_submission.configuration.readers.primary
         autowrite_payload["_conception_attempt_id"] = f"{slug}:initial"
+        autowrite_payload["autonomous_book"] = payload.get("autonomous_book") is True
+        autowrite_payload["requested_model"] = payload.get("requested_model")
         # Optional reader-orientation override (男频/女频). Empty/None lets the
         # heat-search agent + genre preset decide; an explicit pick is threaded
         # through as the project audience and a conception hint.
         _orientation = str(payload.get("audience_orientation") or "").strip().lower()
         _explicit_audience = {"male": "男频", "female": "女频"}.get(_orientation)
         if _explicit_audience:
-            autowrite_payload["audience"] = _explicit_audience
+            if not (configuration_submission and configuration_submission.configuration.readers.primary):
+                autowrite_payload["audience"] = _explicit_audience
             autowrite_payload["audience_orientation"] = _orientation
             if isinstance(autowrite_payload.get("user_hints"), dict):
                 autowrite_payload["user_hints"]["audience_orientation"] = _explicit_audience
@@ -5135,6 +6230,7 @@ class WebTaskManager:
             "tone_preference": creation_intent.tone_preference,
             "effect_skills": list(creation_intent.story_enhancers.effect_skills),
             "contract_hash": creation_intent.contract_hash(),
+            "production_profile": production_profile,
         }
         # Store the browser-visible controls and receipt in the durable task
         # envelope, not only in the one-shot HTTP response.  Failed conception
@@ -5145,9 +6241,7 @@ class WebTaskManager:
                 "tone_preference": _tone_preference or None,
                 "audience_orientation": _orientation or None,
                 "narrative_scale": _narrative_scale or None,
-                "client_schema_version": str(
-                    payload.get("client_schema_version") or ""
-                ),
+                "client_schema_version": str(payload.get("client_schema_version") or ""),
                 "client_intent_manifest": json.loads(
                     json.dumps(payload.get("client_intent_manifest") or {})
                 ),
@@ -5159,9 +6253,7 @@ class WebTaskManager:
             # envelope on the materialized project and its latest accepted
             # premise so generic preset text or refreshed form defaults cannot
             # become a competing story source.
-            rebuilt_payload = asyncio.run(
-                _rebuild_payload_from_db(load_settings(), resume_slug)
-            )
+            rebuilt_payload = asyncio.run(_rebuild_payload_from_db(load_settings(), resume_slug))
             if not rebuilt_payload:
                 raise ValueError(f"Project '{resume_slug}' cannot be rebuilt for resume")
             autowrite_payload = _merge_resume_payload_with_project_truth(
@@ -5173,6 +6265,8 @@ class WebTaskManager:
         task["creation_input_receipt"] = creation_input_receipt
         # Enrich response with quickstart metadata
         task["quickstart_meta"] = {
+            "production_profile": production_profile,
+            **({"configuration_submission": configuration_submission.model_dump(mode="json")} if configuration_submission else {}),
             "creation_mode": creation_mode,
             "genre_key": genre_key,
             "genre_intent_contract": (
@@ -5196,9 +6290,7 @@ class WebTaskManager:
                     "reader_promise": concept_bundle.reader_promise,
                     "one_liner": concept_bundle.one_liner,
                     "title_seed": (
-                        concept_bundle.title_seeds[0].text
-                        if concept_bundle.title_seeds
-                        else ""
+                        concept_bundle.title_seeds[0].text if concept_bundle.title_seeds else ""
                     ),
                 }
                 if concept_bundle is not None
@@ -5214,15 +6306,18 @@ class WebTaskManager:
 
     def create_if_task(self, payload: dict[str, object]) -> dict[str, object]:
         task_id = str(uuid4())
+        now = _utc_now()
         task = WebTaskState(
             task_id=task_id,
             task_type="if_generation",
             status="queued",
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
+            created_at=now,
+            updated_at=now,
             project_slug=str(payload.get("project_slug") or ""),
             title=f"IF Generation: {payload.get('project_slug') or ''}",
             current_stage="queued",
+            payload=json.loads(json.dumps(payload, default=_json_default)),
+            runtime_provenance=self._task_runtime_provenance(task_id, now),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -5270,7 +6365,7 @@ class WebTaskManager:
                         {**cfg_dict, "enabled": True}
                     )
                     title = str(payload.get("title") or project_slug)
-                    genre = cfg_dict.get("if_genre") or "修仙升级"
+                    genre = if_cfg_for_profile.if_genre
                     wp_override = WritingProfile(interactive_fiction=if_cfg_for_profile)
                     new_project = await create_project(
                         session,
@@ -5281,10 +6376,12 @@ class WebTaskManager:
                             target_word_count=int(cfg_dict.get("target_chapters", 100)) * 2000,
                             target_chapters=int(cfg_dict.get("target_chapters", 100)),
                             project_type=ProjectType.INTERACTIVE,
+                            metadata={"execution_scope_id": current_execution_scope()},
                             writing_profile=wp_override,
                         ),
                         settings,
                     )
+                    raise_if_execution_stopped()
                     await session.commit()
                     return new_project
 
@@ -5307,11 +6404,14 @@ class WebTaskManager:
                     resume=resume,
                     on_progress=progress,
                 )
+                raise_if_execution_stopped()
                 return str(out_path)
 
             with bind_progress(progress):
                 out_path = asyncio.run(_run_if())
             self._mark_completed(task_id, {"story_package": out_path})
+        except ExecutionBudgetError as exc:
+            self._stop_execution_task(task_id, exc)
         except TaskCancelledError:
             self._mark_cancelled(task_id)
         except Exception:
@@ -5335,7 +6435,16 @@ class WebTaskManager:
         async def runner() -> dict[str, object]:
             settings = load_settings()
             project_slug = str(payload["project_slug"])
-            async with session_scope(settings) as session:
+            from bestseller.services.web_pipeline_owner import web_pipeline_owner
+            async with web_pipeline_owner(settings, project_slug), session_scope(settings) as session:
+                from bestseller.services.chapter_review_reconciliation import prepare_native_review_resume
+                resume_project = await get_project_by_slug(session, project_slug)
+                if resume_project is not None:
+                    resume = await prepare_native_review_resume(
+                        session, settings, project_id=resume_project.id, requested_by="web-ui-repair",
+                    )
+                    if resume["status"] == "prepared":
+                        await session.commit()
                 result = await run_project_repair(
                     session,
                     settings,
@@ -5351,12 +6460,15 @@ class WebTaskManager:
                     ),
                     progress=progress,
                 )
+                raise_if_execution_stopped()
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         try:
             with bind_progress(progress):
                 result = asyncio.run(runner())
             self._mark_completed(task_id, result)
+        except ExecutionBudgetError as exc:
+            self._stop_execution_task(task_id, exc)
         except TaskCancelledError:
             self._mark_cancelled(task_id)
         except Exception:
@@ -5388,13 +6500,15 @@ class WebTaskManager:
                     "rewrite_task_id": str(rewrite_task_id),
                 },
             )
-            async with session_scope(settings) as session:
+            from bestseller.services.web_pipeline_owner import web_pipeline_owner
+            async with web_pipeline_owner(settings, project_slug), session_scope(settings) as session:
                 result = await repair_prewrite_material_from_task(
                     session,
                     settings,
                     project_slug,
                     rewrite_task_id=rewrite_task_id,
                 )
+                raise_if_execution_stopped()
             progress("prewrite_material_repair_completed", result)
             return json.loads(json.dumps(result, default=_json_default))
 
@@ -5402,6 +6516,8 @@ class WebTaskManager:
             with bind_progress(progress):
                 result = asyncio.run(runner())
             self._mark_completed(task_id, result)
+        except ExecutionBudgetError as exc:
+            self._stop_execution_task(task_id, exc)
         except TaskCancelledError:
             self._mark_cancelled(task_id)
         except Exception:
@@ -5437,7 +6553,8 @@ class WebTaskManager:
                     "rewrite_task_id": str(rewrite_task_id),
                 },
             )
-            async with session_scope(settings) as session:
+            from bestseller.services.web_pipeline_owner import web_pipeline_owner
+            async with web_pipeline_owner(settings, project_slug), session_scope(settings) as session:
                 if operation == "regenerate":
                     chapter_result = await run_chapter_pipeline(
                         session,
@@ -5449,6 +6566,7 @@ class WebTaskManager:
                         supersede_pending_rewrites=True,
                         progress=progress,
                     )
+                    raise_if_execution_stopped()
                     task = await session.get(RewriteTaskModel, rewrite_task_id)
                     if task is not None:
                         task.status = "completed"
@@ -5483,13 +6601,35 @@ class WebTaskManager:
                         rewrite_task_id=rewrite_task_id,
                         operation=operation,  # type: ignore[arg-type]
                     )
-            progress("chapter_revision_completed", result)
+                    raise_if_execution_stopped()
+            progress(
+                "chapter_revision_rejected" if result.get("ok") is False
+                else "chapter_revision_completed",
+                result,
+            )
             return json.loads(json.dumps(result, default=_json_default))
 
         try:
             with bind_progress(progress):
                 result = asyncio.run(runner())
-            self._mark_completed(task_id, result)
+            if result.get("ok") is False:
+                # A rejected edit is a finished attempt, not a successful edit.
+                # Persist the full service receipt for UI requirement feedback.
+                with self._lock:
+                    task = self._tasks[task_id]
+                    task.result = result
+                    task.status = "failed"
+                    task.current_stage = "chapter_revision_rejected"
+                    task.updated_at = _utc_now()
+                    task.error = str(
+                        result.get("rejected_reason") or result.get("error")
+                        or "Chapter revision did not satisfy the edit requirements."
+                    )
+                    self._save_to_disk()
+            else:
+                self._mark_completed(task_id, result)
+        except ExecutionBudgetError as exc:
+            self._stop_execution_task(task_id, exc)
         except TaskCancelledError:
             self._mark_cancelled(task_id)
         except Exception:
@@ -5543,9 +6683,12 @@ class WebTaskManager:
         # Snapshot task_id → (project_slug, task_type, known_event_ts_set) to avoid
         # holding the manager lock across Redis I/O.
         with self._lock:
-            snapshot: list[tuple[str, str, str, set[float], float]] = []
+            snapshot: list[tuple[str, str, str, set[float], float, str | None]] = []
             for tid, task in self._tasks.items():
-                if task.status not in ("running", "queued", "failed", "incomplete"):
+                cached_projection = (task.result or {}).get("_worker_event_projection")
+                if task.status not in ("running", "queued", "failed", "incomplete") and not (
+                    task.status in {"completed", "cancelled"} and isinstance(cached_projection, dict)
+                ):
                     continue
                 slug = (task.project_slug or "").strip()
                 if not slug:
@@ -5562,11 +6705,13 @@ class WebTaskManager:
                         task.task_type,
                         known_ts,
                         _timestamp_seconds(task.updated_at) or 0.0,
+                        cached_projection.get("job_id")
+                        if isinstance(cached_projection, dict) else None,
                     )
                 )
 
         updated = 0
-        for tid, slug, task_type, known_ts, task_updated_ts in snapshot:
+        for tid, slug, task_type, known_ts, task_updated_ts, projected_job_id in snapshot:
             # The arq worker task id follows either ``autowrite:heal:<slug>``
             # or ``repair:heal:<slug>``. A recovered project normally has one
             # durable autowrite card in the UI; when self-heal chooses a repair
@@ -5616,6 +6761,7 @@ class WebTaskManager:
                 state_rank = 1 if job_state == "active" else 0
                 if (
                     job_state == "result"
+                    and projected_job_id != job_id
                     and candidate_latest_ts > 0
                     and candidate_latest_ts <= task_updated_ts
                 ):
@@ -5630,40 +6776,12 @@ class WebTaskManager:
             if selected is None or not raw_events:
                 continue
 
-            fresh: list[dict[str, Any]] = []
-            latest_stage: str | None = None
-            latest_payload: dict[str, Any] = {}
-            latest_ts: float = 0.0
-            for raw in raw_events:
-                try:
-                    evt = json.loads(raw)
-                except Exception:
-                    continue
-                ts = evt.get("ts")
-                if not isinstance(ts, (int, float)):
-                    continue
-                ts_f = float(ts)
-                msg = evt.get("message")
-                if not isinstance(msg, str):
-                    continue
-                msg = _normalize_machine_repair_stage(msg)
-                payload = evt.get("data") if isinstance(evt.get("data"), dict) else {}
-                payload = _normalize_machine_repair_payload(payload)
-                if ts_f > latest_ts:
-                    latest_ts = ts_f
-                    latest_stage = msg
-                    latest_payload = payload
-                if ts_f in known_ts:
-                    continue
-                fresh.append(
-                    {
-                        "timestamp": ts_f,
-                        "stage": msg,
-                        "payload": payload,
-                    }
-                )
-
-            if not fresh and latest_stage is None:
+            normalized, _, _ = _normalise_worker_progress_events(raw_events)
+            # Keep numeric timestamps on the existing card history for deduplication.
+            for event in normalized:
+                event["timestamp"] = _timestamp_seconds(event["timestamp"])
+            fresh = [event for event in normalized if event["timestamp"] not in known_ts]
+            if not normalized:
                 continue
 
             with self._lock:
@@ -5672,59 +6790,66 @@ class WebTaskManager:
                     continue
                 if fresh:
                     task.progress_events = (task.progress_events + fresh)[-300:]
-                if latest_stage is not None:
-                    normalized_stage = latest_stage.lower()
-                    task.current_stage = latest_stage
-                    is_machine_repair_stage = (
-                        normalized_stage in _MACHINE_REPAIR_STAGES
-                        or "machine_repair" in normalized_stage
-                    )
-                    if is_machine_repair_stage or (
-                        normalized_stage in _TERMINAL_ATTENTION_STAGES
-                        and _payload_requires_machine_attention(latest_payload)
-                    ):
-                        task.current_stage = (
-                            "machine_repair_required"
-                            if normalized_stage in _TERMINAL_ATTENTION_STAGES
-                            else latest_stage
-                        )
-                        task.status = "incomplete"
-                        error = latest_payload.get("error") or latest_payload.get("message")
-                        reason = latest_payload.get("reason")
-                        task.error = str(
-                            error or reason or "Task reached a machine-repair or attention gate."
-                        )
-                    elif normalized_stage in {"completed", "done", "finished"}:
-                        task.status = "completed"
-                        task.result = latest_payload or task.result
+                result = dict(task.result or {})
+                cached = result.get("_worker_event_projection") or {}
+                cached = cached if isinstance(cached, dict) else {}
+                # Retain root + decisive receipt across Redis tail trimming. This
+                # is display evidence only, never an execution or adoption write.
+                prior = cached.get("events", []) if cached.get("job_id") == selected[0] else []
+                evidence = sorted(prior + normalized,
+                                  key=lambda event: _timestamp_seconds(event.get("timestamp")) or 0)
+                projection = _project_task_events(evidence, task_id=selected[0])
+                decisive = projection["event"]
+                current_events = projection["events"]
+                retained = current_events[:1]
+                if decisive and decisive not in retained:
+                    retained.append(decisive)
+                result["_worker_event_projection"] = {"job_id": selected[0], "events": retained}
+                terminal_code = projection["code"]
+                # An unattributed pre-existing execution stop cannot be retired
+                # by heartbeat/progress. Only our own superseded projection is
+                # replaceable, and its original receipt remains in the history.
+                existing_code = execution_terminal_code(task.result or {})
+                prior_code = _project_task_events(prior, task_id=selected[0])["code"]
+                if existing_code and existing_code != prior_code:
+                    terminal_code = existing_code
+                elif prior_code and not terminal_code:
+                    result.pop("execution_terminal", None)
+                if terminal_code:
+                    result["execution_terminal"] = {"terminal": True, "code": terminal_code}
+                    task.status = "cancelled" if terminal_code == "execution_cancelled" else "failed"
+                    task.current_stage = terminal_code
+                    task.error = terminal_code
+                else:
+                    payload = _task_event_payload(decisive)
+                    stage = str(decisive.get("stage") or "delegated_to_worker_self_heal")
+                    task.current_stage = stage
+                    projected_status = projection["status"]
+                    if not projection["terminal"]:
+                        projected_status = "running" if selected_state_rank == 1 else "incomplete"
+                    task.status = projected_status
+                    if projected_status in {"failed", "incomplete", "cancelled"}:
+                        reason = payload.get("reason")
+                        task.error = str(payload.get("error") or payload.get("message") or reason or {
+                            "failed": "Worker self-heal task failed",
+                            "incomplete": "Task reached a machine-repair or attention gate.",
+                            "cancelled": "Stopped by operator",
+                        }[projected_status])
+                        if stage in _TERMINAL_ATTENTION_STAGES and projected_status == "incomplete":
+                            task.current_stage = "machine_repair_required"
+                        if (
+                            stage in {"machine_blocked", "machine_repair_required",
+                                      "blocked_generation_gate"}
+                            and reason and ":" in str(reason)
+                        ):
+                            task.current_stage = f"{stage}:{str(reason).split(':', 1)[1].strip()}"
+                        if projected_status == "cancelled":
+                            task.cancel_requested = False
+                    else:
                         task.error = None
-                    elif normalized_stage in {"failed", "error"}:
-                        task.status = "failed"
-                        error = latest_payload.get("error") or latest_payload.get("message")
-                        task.error = str(error or "Worker self-heal task failed")
-                    elif normalized_stage in {
-                        "machine_blocked",
-                        "machine_repair_required",
-                        "blocked_generation_gate",
-                    }:
-                        task.status = "incomplete"
-                        error = latest_payload.get("error") or latest_payload.get("message")
-                        reason = latest_payload.get("reason")
-                        task.error = str(
-                            error or reason or "Task is waiting for planning-gate repair."
-                        )
-                        # When the worker emitted a structured sub-code (e.g.
-                        # ``write_safety_gate_failed:identity_pronoun_mismatch``),
-                        # tack the actionable suffix onto the stage so the UI
-                        # badge can surface the precise cause without the user
-                        # having to expand the error blob.
-                        if reason and ":" in str(reason):
-                            subcode = str(reason).split(":", 1)[1].strip()
-                            if subcode:
-                                task.current_stage = f"{normalized_stage}:{subcode}"
-                    elif task.status in {"failed", "incomplete"}:
-                        task.status = "running"
-                        task.error = None
+                    if projection["terminal"]:
+                        result.update(payload)
+                task.result = result
                 task.updated_at = _utc_now()
                 self._save_to_disk()
                 updated += 1
@@ -5809,6 +6934,8 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
     # persisted project row lose user-authored intent and drift into generic
     # defaults.
     creative_transfer_fields = {
+        "configuration_submission": ({"configuration": metadata["creation_configuration"],
+            "execution_window": metadata["execution_window"]} if metadata.get("creation_configuration") else None),
         "creation_intent_contract": metadata.get("creation_intent_contract"),
         "genre_intent_contract": metadata.get("genre_intent_contract"),
         "creative_key": metadata.get("creative_key"),
@@ -5817,8 +6944,7 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
         "audience_orientation": metadata.get("audience_orientation"),
         "story_enhancers": metadata.get(STORY_ENHANCERS_METADATA_KEY),
         "hook_spec": metadata.get("hook_spec"),
-        "concept_lab_bundle": metadata.get("concept_lab")
-        or metadata.get("concept_lab_bundle"),
+        "concept_lab_bundle": metadata.get("concept_lab") or metadata.get("concept_lab_bundle"),
         "length_key": metadata.get("length_key"),
         "pov": metadata.get("pov"),
     }
@@ -5884,6 +7010,54 @@ async def _rebuild_payload_from_db(
         from bestseller.services.story_source import load_accepted_project_premise
 
         payload["premise"] = await load_accepted_project_premise(session, project)
+        canonical_id = (project.metadata_json or {}).get("creation_canonical_snapshot_id")
+        if canonical_id:
+            canonical = await session.get(PlanningArtifactVersionModel, UUID(str(canonical_id)))
+            if (
+                canonical is None
+                or canonical.project_id != project.id
+                or canonical.artifact_type != "conception_snapshot"
+            ):
+                raise ValueError("approved conception snapshot is missing")
+            payload["premise"] = canonical_snapshot_premise(
+                {"status": canonical.status, "content": canonical.content}
+            )
+            metadata = project.metadata_json or {}
+            if canonical_snapshot_content_hash(
+                {"status": canonical.status, "content": canonical.content}
+            ) != str(metadata.get("creation_canonical_snapshot_hash") or ""):
+                raise ValueError("approved conception snapshot hash is inconsistent")
+            payload["approved_conception_snapshot_id"] = str(canonical.id)
+            payload["approved_conception_snapshot_hash"] = (
+                metadata.get("creation_canonical_snapshot_hash")
+            )
+            intent_id = metadata.get("creation_intent_snapshot_id")
+            if intent_id:
+                intent = await session.get(PlanningArtifactVersionModel, UUID(str(intent_id)))
+                if (
+                    intent is None
+                    or intent.project_id != project.id
+                    or intent.artifact_type != "creation_intent"
+                ):
+                    raise ValueError("creation intent snapshot is missing")
+                intent_content = intent.content if isinstance(intent.content, Mapping) else {}
+                authoritative_seed = str(intent_content.get("concept_seed") or "").strip()
+                if authoritative_seed:
+                    payload["approved_authoritative_seed"] = authoritative_seed
+            if (
+                metadata.get("conception_approved") is True
+                and str(metadata.get("planning_status") or "").lower()
+                == "conception_approved"
+            ):
+                payload = build_planning_handoff_payload(
+                    payload,
+                    project=project,
+                    canonical_snapshot={
+                        "id": str(canonical.id),
+                        "status": canonical.status,
+                        "content": canonical.content,
+                    },
+                )
         return payload
 
 
@@ -5907,12 +7081,21 @@ async def _load_project_autowrite_block_payload(
         return _project_autowrite_block_payload(project)
 
 
-async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str, object]]:
-    """Scan the output directory and re-create DB records for any projects
-    that have chapter files on disk but no corresponding DB entry.
+async def _recover_projects_from_output(
+    settings: AppSettings,
+    *,
+    operator_opt_in: bool = False,
+) -> list[dict[str, object]]:
+    """Explicitly import legacy exports into DB records, preserving the files.
 
-    Returns a list of recovered project summaries.
+    PostgreSQL is authoritative. Merely finding exports or starting the Web
+    server must never adopt them. Imported records retain unverified-export
+    provenance; this recovery does not create promoted drafts or review proof.
     """
+    if operator_opt_in is not True:
+        logger.info("Export-to-database recovery skipped: explicit operator opt-in required")
+        return []
+
     import re as _re
 
     output_base = Path(settings.output.base_dir)
@@ -6000,6 +7183,7 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                     "source": f"output/{slug}",
                     "genre_key": genre_key,
                     "chapters_on_disk": chapter_count,
+                    "recovery_authority": "operator_opt_in_unverified_export",
                 },
             )
             session.add(project)
@@ -6041,7 +7225,11 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                         current_word_count=len(body),
                         target_word_count=2000,
                         status=ChapterStatus.COMPLETE.value,
-                        metadata_json={"recovered": True, "source_file": ch_file.name},
+                        metadata_json={
+                            "recovered": True,
+                            "source_file": ch_file.name,
+                            "recovery_authority": "operator_opt_in_unverified_export",
+                        },
                     )
                 )
             recovered.append(
@@ -6072,23 +7260,33 @@ async def _load_projects_payload(
     settings: AppSettings,
     *,
     light: bool = False,
+    project_slug: str | None = None,
+    progress_readback: bool = False,
 ) -> list[dict[str, object]]:
     async with session_scope(settings) as session:
-        rows = await list_projects(session)
+        if project_slug is None:
+            rows = await list_projects(session)
+        else:
+            project = await get_project_by_slug(session, project_slug)
+            rows = [project] if project is not None else []
         content_stats = await _load_project_content_stats(
             session,
             rows,
             settings=settings,
             include_filesystem=not light,
         )
-        active_project_slugs = await _load_active_workflow_project_slugs(
+        project_activity = await _load_workflow_activity_by_project(
             session,
             [row.id for row in rows],
         )
+        active_project_slugs = {slug for slug, value in project_activity.items() if value["execution_active"]}
         redis_url = getattr(getattr(settings, "redis", None), "url", None)
         if redis_url:
             active_project_slugs.update(_fetch_heal_owned_slugs(str(redis_url)))
         if light:
+            project_ids = [row.id for row in rows]
+            repair_counts = await _load_project_chapter_state_counts(session, project_ids)
+            repair_tasks = await _load_project_autonomous_repair_task_counts(session, project_ids)
             payload_rows: list[dict[str, object]] = []
             for row in rows:
                 meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
@@ -6096,7 +7294,13 @@ async def _load_projects_payload(
                 stats = content_stats.get(row.id, {})
                 completed_units = _safe_int(stats.get("completed_chapters"))
                 word_total = _safe_int(stats.get("word_count_total"))
-                is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
+                repair_status = _build_project_repair_status_payload(
+                    row, repair_counts.get(row.id, []), repair_tasks.get(row.id, {}),
+                )
+                delivery = await _read_project_delivery_status(
+                    session, row, **({"progress_only": True} if progress_readback else {}),
+                )
+                is_closed = delivery["is_complete"] is True
                 has_active_workflow = (
                     row.slug in active_project_slugs
                     and not is_closed
@@ -6106,10 +7310,18 @@ async def _load_projects_payload(
                     status=row.status,
                     completed_units=completed_units,
                     target_units=int(row.target_chapters or 0),
-                    has_content=word_total > 0 or completed_units > 0,
+                    has_content=(
+                        word_total > 0 or completed_units > 0
+                        or _safe_int(stats.get("candidate_chapters")) > 0
+                    ),
                     archived=_project_library_archived(meta),
+                    repair_status=repair_status,
                     has_active_workflow=has_active_workflow,
+                    delivery_closure=delivery,
                 )
+                if (not has_active_workflow and project_activity.get(row.slug, {}).get("status") == "stale"
+                    and book_state not in {"closed_complete", "archived", "delivery_pending"}):
+                    book_state = "needs_attention"
                 payload_rows.append(
                     {
                         "id": str(row.id),
@@ -6118,7 +7330,16 @@ async def _load_projects_payload(
                         "genre": row.genre,
                         "status": row.status,
                         "book_state": book_state,
+                        "delivery_closure": delivery,
                         "book_state_label": _library_book_state_label(book_state),
+                        "library_archived": _project_library_archived(meta),
+                        "archived_at": meta.get("library_archived_at"),
+                        "task_visibility": (
+                            "library_archive" if _project_library_archived(meta) else "library"
+                        ),
+                        "can_trigger_revision": bool(row.slug),
+                        "llm_model_id": meta.get("llm_model_id"),
+                        "repair_status": repair_status,
                         "project_type": row.project_type,
                         "content_mode": meta.get("content_mode"),
                         "length_key": meta.get("length_key"),
@@ -6128,14 +7349,25 @@ async def _load_projects_payload(
                         "target_chapters": row.target_chapters,
                         "segment_count": row.target_chapters if is_short else None,
                         "completed_chapters": completed_units,
+                        **_adoption_projection_fields(stats),
                         "completed_segments": completed_units if is_short else 0,
                         "words_on_disk": word_total,
+                        "word_count_total": word_total,
                         "current_chapter_number": row.current_chapter_number,
                         "has_active_workflow": has_active_workflow,
+                        **_project_activity_fields(project_activity.get(row.slug), has_active_workflow),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                     }
                 )
+            if progress_readback:
+                for row, payload in zip(rows, payload_rows, strict=True):
+                    if is_fanqie_short_project(row):
+                        exported = _build_fanqie_short_export_task_stats(settings, row, include_chapters=False)
+                        if exported:
+                            payload.update({key: exported.get(key) for key in (
+                                "current_export_filename", "current_export_modified_at")})
+                            payload["export_word_count_total"] = exported.get("word_count_total", 0)
             return payload_rows
         repair_counts = await _load_project_chapter_state_counts(
             session,
@@ -6156,7 +7388,8 @@ async def _load_projects_payload(
             stats = content_stats.get(row.id, {})
             completed_units = _safe_int(stats.get("completed_chapters"))
             word_total = _safe_int(stats.get("word_count_total"))
-            is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
+            delivery = await _read_project_delivery_status(session, row)
+            is_closed = delivery["is_complete"] is True
             has_active_workflow = (
                 row.slug in active_project_slugs
                 and not is_closed
@@ -6176,7 +7409,11 @@ async def _load_projects_payload(
                 archived=_project_library_archived(meta),
                 repair_status=repair_status,
                 has_active_workflow=has_active_workflow,
+                delivery_closure=delivery,
             )
+            if (not has_active_workflow and project_activity.get(row.slug, {}).get("status") == "stale"
+                and book_state not in {"closed_complete", "archived", "delivery_pending"}):
+                book_state = "needs_attention"
             payload_rows.append(
                 {
                     "id": str(row.id),
@@ -6185,6 +7422,7 @@ async def _load_projects_payload(
                     "genre": row.genre,
                     "status": row.status,
                     "book_state": book_state,
+                    "delivery_closure": delivery,
                     "book_state_label": _library_book_state_label(book_state),
                     "project_type": row.project_type,
                     "content_mode": meta.get("content_mode"),
@@ -6195,16 +7433,247 @@ async def _load_projects_payload(
                     "target_chapters": row.target_chapters,
                     "segment_count": row.target_chapters if is_short else None,
                     "completed_chapters": completed_units,
+                    **_adoption_projection_fields(stats),
                     "completed_segments": completed_units if is_short else 0,
                     "words_on_disk": word_total,
+                    "word_count_total": word_total,
                     "current_chapter_number": row.current_chapter_number,
                     "has_active_workflow": has_active_workflow,
+                    **_project_activity_fields(project_activity.get(row.slug), has_active_workflow),
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                     "repair_status": repair_status,
                 }
             )
         return payload_rows
+
+
+def _adopted_knowledge_evidence(chapter: Any, draft: Any, snapshot: Any, mode: str) -> tuple[bool, bool, str]:
+    """Project exact applied receipts only; never extract, repair or adopt."""
+    from bestseller.services.feedback import KNOWLEDGE_LINEAGE_SCHEMA
+
+    source = {
+        "schema": KNOWLEDGE_LINEAGE_SCHEMA,
+        "project_id": str(chapter.project_id), "chapter_id": str(chapter.id),
+        "source_chapter_draft_version_id": str(draft.id),
+        "source_version_no": draft.version_no,
+        "source_body_sha256": hashlib.sha256(draft.content_md.encode("utf-8")).hexdigest(),
+    }
+
+    def matches(value: Any) -> bool:
+        return isinstance(value, Mapping) and all(value.get(k) == v for k, v in source.items())
+
+    feedback_ok = False
+    receipts = (chapter.metadata_json or {}).get("knowledge_feedback_receipts", [])
+    for receipt in reversed(receipts if isinstance(receipts, list) else []):
+        if isinstance(receipt, Mapping) and receipt.get("status") in {"ok", "empty", "already_applied"}:
+            # The latest applied source wins; an older matching receipt is history.
+            from bestseller.services.knowledge_evidence_reconciliation import feedback_evidence_complete
+            feedback_ok = matches(receipt.get("source_lineage")) and feedback_evidence_complete(
+                chapter, receipt, draft.content_md,
+            )
+            break
+    facts = snapshot.facts if snapshot is not None else None
+    contract = facts.get("snapshot_contract") if isinstance(facts, Mapping) else None
+    snapshot_ok = bool(
+        snapshot is not None and snapshot.project_id == chapter.project_id
+        and snapshot.chapter_id == chapter.id and snapshot.chapter_number == chapter.chapter_number
+        and snapshot.extraction_status == f"ok_{mode}"
+        and matches(contract) and contract.get("is_usable") is True
+    )
+    bible_receipts = (chapter.metadata_json or {}).get("story_bible_update_receipts", [])
+    bible_state = "unknown"  # historical debt paths never required this optional extraction
+    if bible_receipts:
+        latest = next((r for r in reversed(bible_receipts) if isinstance(r, Mapping)), None) if isinstance(bible_receipts, list) else None
+        if latest is None:
+            bible_state = "pending"
+        elif latest.get("status") in {"llm_error", "rejected_source"}:
+            bible_state = "error"
+        elif latest.get("status") in {"ok", "empty", "already_applied"} and matches(latest.get("source_lineage")):
+            bible_state = "closed"
+        else:
+            # Includes explicit reconciliation and an applied projection of a
+            # different draft/body. Older successes cannot erase this state.
+            bible_state = "pending"
+    return feedback_ok, snapshot_ok, bible_state
+
+
+async def _load_adopted_chapter_progress(
+    session: Any,
+    project_ids: list[UUID],
+    *,
+    project_languages: Mapping[UUID, str] | None = None,
+) -> dict[UUID, dict[str, object]]:
+    """Read adoption evidence; candidate text and export files are separate work.
+
+    A promoted incumbent can differ from the current editing candidate.
+    Numeric debt counts only after the production service revalidates its exact
+    current draft, score and review. This projection never promotes or repairs.
+    """
+    from sqlalchemy import and_, or_, select
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel
+    from bestseller.services.adopted_chapter_source import (
+        choose_usable_promoted_chapter_source,
+        select_adopted_chapter_source,
+    )
+    from bestseller.services.chapter_word_count_truth import authoritative_zh_word_count
+    from bestseller.services.continuity import snapshot_evidence_for_sources
+
+    stats = {
+        project_id: {
+            "source": "db", "adoption_evidence": "verified",
+            "completed_chapters": 0, "adopted_chapters": 0,
+            "promoted_chapters": 0, "accepted_with_debt_chapters": 0,
+            "candidate_chapters": 0, "word_count_total": 0,
+            "candidate_word_count_total": 0, "adopted_chapter_numbers": [], "chapters": [],
+            "knowledge": {"status": "pending", "label": "未开始", "adopted_chapters": 0,
+                          "closed_chapters": 0, "feedback_chapters": 0, "snapshot_chapters": 0,
+                          "pending_chapters": 0, "closed_chapter_numbers": [],
+                          "bible": {"status": "unknown", "closed_chapters": 0,
+                                    "pending_chapters": 0, "error_chapters": 0, "unknown_chapters": 0}},
+        }
+        for project_id in project_ids
+    }
+    if not project_ids:
+        return stats
+    rows = await session.execute(
+        select(ChapterModel, ChapterDraftVersionModel)
+        .outerjoin(ChapterDraftVersionModel, and_(
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+            or_(ChapterDraftVersionModel.promotion_state == "promoted",
+                ChapterDraftVersionModel.is_current.is_(True)),
+        ))
+        .where(ChapterModel.project_id.in_(project_ids))
+        .order_by(ChapterModel.chapter_number, ChapterDraftVersionModel.version_no)
+        .execution_options(populate_existing=True, autoflush=False)
+    )
+    by_chapter: dict[UUID, tuple[Any, list[Any]]] = {}
+    for chapter, draft in rows:
+        if chapter.project_id not in stats:
+            continue
+        entry = by_chapter.setdefault(chapter.id, (chapter, []))
+        if (draft is not None and draft.project_id == chapter.project_id
+            and draft.chapter_id == chapter.id and str(draft.content_md or "").strip()):
+            entry[1].append(draft)
+    snapshots = {}
+    if by_chapter:
+        for snapshot, in await session.execute(
+            select(ChapterStateSnapshotModel).where(ChapterStateSnapshotModel.project_id.in_(project_ids))
+            .execution_options(populate_existing=True, autoflush=False)
+        ):
+            snapshots[(snapshot.project_id, snapshot.chapter_id)] = snapshot
+    knowledge_sources = {project_id: {} for project_id in project_ids}
+    knowledge_source_bodies = {project_id: {} for project_id in project_ids}
+    bible_sources = {project_id: {} for project_id in project_ids}
+    for chapter, drafts in by_chapter.values():
+        snapshot = snapshots.get((chapter.project_id, chapter.id))
+        knowledge_sources[chapter.project_id][chapter.chapter_number] = (chapter.id, None, snapshot)
+        target = stats[chapter.project_id]
+        language = (project_languages or {}).get(chapter.project_id, "zh-CN")
+        promoted = choose_usable_promoted_chapter_source(chapter=chapter, drafts=drafts)
+        current = next((d for d in drafts if d.is_current), None)
+        accepted = promoted
+        mode = "promoted"
+        metadata = chapter.metadata_json or {}
+        debt = metadata.get("numeric_promotion_debt")
+        if (current is not None and isinstance(debt, Mapping)
+            and debt.get("draft_id") == str(current.id)
+            and metadata.get("chapter_quality_debt") and chapter.production_state == "quality_debt"
+            and current.promotion_state not in {"promoted", "superseded", "rejected", "quarantined"}):
+            numeric_source, numeric_receipt = await select_adopted_chapter_source(
+                session, chapter=chapter, lock=False,
+            )
+            if numeric_source is current and numeric_receipt is not None:
+                accepted, mode = current, "accepted_with_debt"
+        if current is not None and (accepted is None or current.id != accepted.id):
+            target["candidate_chapters"] += 1
+            target["candidate_word_count_total"] += authoritative_zh_word_count(
+                current.content_md, language=language,
+            )
+        if accepted is None:
+            continue
+        knowledge_sources[chapter.project_id][chapter.chapter_number] = (chapter.id, {
+            "schema": "adopted-knowledge.v1", "project_id": str(chapter.project_id),
+            "chapter_id": str(chapter.id), "source_chapter_draft_version_id": str(accepted.id),
+            "source_version_no": accepted.version_no,
+            "source_body_sha256": hashlib.sha256(accepted.content_md.encode("utf-8")).hexdigest(),
+            "adoption_state": mode,
+        }, snapshot)
+        knowledge_source_bodies[chapter.project_id][chapter.chapter_number] = accepted.content_md
+        words = authoritative_zh_word_count(accepted.content_md, language=language)
+        target["adopted_chapters"] += 1
+        target["completed_chapters"] += 1  # compatibility alias, evidence-based
+        target["promoted_chapters" if mode == "promoted" else "accepted_with_debt_chapters"] += 1
+        target["word_count_total"] += words
+        target["adopted_chapter_numbers"].append(int(chapter.chapter_number))
+        target["chapters"].append({
+            "number": int(chapter.chapter_number), "title": chapter.title,
+            "word_count": words, "estimated_read_minutes": (words + 499) // 500,
+            "target_word_count": int(chapter.target_word_count or 0),
+            "status": chapter.status, "acceptance": mode, "draft_id": str(accepted.id),
+        })
+        feedback_ok, snapshot_ok, bible_state = _adopted_knowledge_evidence(
+            chapter, accepted, snapshots.get((chapter.project_id, chapter.id)), mode,
+        )
+        if bible_state == 'closed':
+            bible_sources[chapter.project_id][chapter.id] = {
+                **knowledge_sources[chapter.project_id][chapter.chapter_number][1],
+                'chapter_number': chapter.chapter_number,
+            }
+        knowledge = target["knowledge"]
+        knowledge["adopted_chapters"] += 1
+        knowledge["feedback_chapters"] += int(feedback_ok)
+        knowledge["snapshot_chapters"] += int(snapshot_ok)
+        knowledge["bible"][f"{bible_state}_chapters"] += 1
+        if feedback_ok and snapshot_ok and bible_state == "closed":
+            knowledge["closed_chapters"] += 1
+            knowledge["closed_chapter_numbers"].append(int(chapter.chapter_number))
+    for project_id, target in stats.items():
+        # Revalidate the predecessor chain once over this same SQL readback.
+        # A legacy/changed dependency cannot remain a green closed progress row.
+        dependency_status = snapshot_evidence_for_sources(
+            knowledge_sources[project_id], source_bodies=knowledge_source_bodies[project_id],
+        )
+        target["adopted_chapter_numbers"].sort()
+        target["chapters"].sort(key=lambda item: item["number"])
+        knowledge = target["knowledge"]
+        pending_bible_numbers = set()
+        if bible_sources[project_id]:
+            from bestseller.services.story_bible_projection import adopted_bible_projection_statuses
+
+            projections = await adopted_bible_projection_statuses(
+                session, project_id=project_id, source_lineages=bible_sources[project_id],
+            )
+            pending_bible_numbers = {
+                source['chapter_number'] for chapter_id, source in bible_sources[project_id].items()
+                if projections[chapter_id] not in {'current', 'legacy_current'}
+            }
+            knowledge['bible']['closed_chapters'] -= len(pending_bible_numbers)
+            knowledge['bible']['pending_chapters'] += len(pending_bible_numbers)
+        knowledge["snapshot_chapters"] = sum(dependency_status.get(number, False)
+            for number in target["adopted_chapter_numbers"])
+        knowledge["closed_chapter_numbers"] = [number for number in knowledge["closed_chapter_numbers"]
+            if dependency_status.get(number, False) and number not in pending_bible_numbers]
+        knowledge["closed_chapters"] = len(knowledge["closed_chapter_numbers"])
+        knowledge["closed_chapter_numbers"].sort()
+        knowledge["pending_chapters"] = knowledge["adopted_chapters"] - knowledge["closed_chapters"]
+        bible = knowledge["bible"]
+        bible["status"] = ("error" if bible["error_chapters"] else "pending" if bible["pending_chapters"]
+                           else "closed" if bible["closed_chapters"] and not bible["unknown_chapters"] else "unknown")
+        if knowledge["adopted_chapters"]:
+            closed = knowledge["pending_chapters"] == 0
+            knowledge.update(status="closed" if closed else "pending", label="已闭合" if closed else "待闭合")
+    return stats
+
+
+def _adoption_projection_fields(stats: Mapping[str, object]) -> dict[str, object]:
+    """Small, shared evidence surface for library and task projections."""
+    return {key: stats.get(key) for key in (
+        "adoption_evidence", "adopted_chapters", "promoted_chapters",
+        "accepted_with_debt_chapters", "candidate_chapters",
+        "candidate_word_count_total", "adopted_chapter_numbers",
+        "knowledge",
+    )}
 
 
 async def _load_project_content_stats(
@@ -6217,49 +7686,13 @@ async def _load_project_content_stats(
     if not rows:
         return {}
 
-    from sqlalchemy import and_, func, select
-
-    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
-
     project_ids = [row.id for row in rows]
-    stats: dict[UUID, dict[str, object]] = {
-        row.id: {
-            "completed_chapters": 0,
-            "word_count_total": 0,
-            "chapters_on_disk": 0,
-            "project_md_exists": False,
-        }
-        for row in rows
-    }
-    word_expr = func.coalesce(
-        func.nullif(ChapterModel.current_word_count, 0),
-        ChapterDraftVersionModel.word_count,
-        0,
+    stats = await _load_adopted_chapter_progress(
+        session, project_ids,
+        project_languages={row.id: getattr(row, "language", "zh-CN") for row in rows},
     )
-    result = await session.execute(
-        select(
-            ChapterModel.project_id,
-            func.count(ChapterModel.id),
-            func.coalesce(func.sum(word_expr), 0),
-        )
-        .outerjoin(
-            ChapterDraftVersionModel,
-            and_(
-                ChapterDraftVersionModel.chapter_id == ChapterModel.id,
-                ChapterDraftVersionModel.is_current.is_(True),
-            ),
-        )
-        .where(
-            ChapterModel.project_id.in_(project_ids),
-            word_expr > 0,
-        )
-        .group_by(ChapterModel.project_id)
-    )
-    for project_id, completed_chapters, word_total in result:
-        if project_id not in stats:
-            continue
-        stats[project_id]["completed_chapters"] = int(completed_chapters or 0)
-        stats[project_id]["word_count_total"] = int(word_total or 0)
+    for current in stats.values():
+        current.update(chapters_on_disk=0, project_md_exists=False, export_word_count_total=0)
 
     if settings is not None and include_filesystem:
         output_base = Path(settings.output.base_dir)
@@ -6277,40 +7710,137 @@ async def _load_project_content_stats(
                     continue
             current = stats[row.id]
             current["chapters_on_disk"] = len(chapter_files)
-            current["word_count_total"] = max(
-                _safe_int(current.get("word_count_total")),
-                words_on_disk,
-            )
-            current["completed_chapters"] = max(
-                _safe_int(current.get("completed_chapters")),
-                len(chapter_files),
-            )
+            current["export_word_count_total"] = words_on_disk
             current["project_md_exists"] = (slug_dir / "project.md").exists()
 
     return stats
 
 
-async def _load_active_workflow_project_slugs(
+def _workflow_activity_evidence(
+    run: Any, *, latest_step_at: Any = None, now: datetime | None = None, owner_active: bool = False,
+) -> dict[str, object]:
+    """Read liveness separately from durable workflow status; never rewrite it."""
+    from bestseller.services.planning_concurrency import PLANNING_STALE_AFTER_SECONDS
+
+    def field(obj: Any, key: str, default: Any = None) -> Any:
+        return obj.get(key, default) if isinstance(obj, Mapping) else getattr(obj, key, default)
+
+    def timestamp(value: Any) -> datetime | None:
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+            if not isinstance(value, datetime):
+                return None
+            return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    current = now or datetime.now(UTC)
+    status = str(field(run, "status", "") or "").lower()
+    if status not in {"pending", "queued", "running"}:
+        return {"status": "inactive", "execution_active": False, "evidence": []}
+    metadata = field(run, "metadata_json", {}) or field(run, "metadata", {}) or {}
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    candidates = [("workflow_updated", field(run, "updated_at")),
+                  ("workflow_created", field(run, "created_at")),
+                  ("workflow_step", latest_step_at),
+                  ("planner_heartbeat", metadata.get("planner_last_heartbeat_at"))]
+    for step in field(run, "steps", []) or []:
+        candidates.append(("workflow_step", field(step, "created_at")))
+    valid = [(kind, stamp) for kind, raw in candidates if (stamp := timestamp(raw)) is not None
+             and (current - stamp).total_seconds() >= -300]
+    fresh = sorted({kind for kind, stamp in valid
+                    if (current - stamp).total_seconds() <= PLANNING_STALE_AFTER_SECONDS})
+    if owner_active:
+        fresh.append("worker_owner")
+    return {"status": "active" if fresh else "stale" if valid else "unknown",
+            "execution_active": bool(fresh), "evidence": fresh,
+            "last_evidence_at": max((stamp for _, stamp in valid), default=None).isoformat() if valid else None,
+            "stale_after_seconds": PLANNING_STALE_AFTER_SECONDS}
+
+
+def _aggregate_workflow_activity(states: list[dict[str, object]]) -> dict[str, object]:
+    active = any(s["execution_active"] for s in states)
+    stale = sum(s["status"] == "stale" for s in states)
+    unknown = sum(s["status"] == "unknown" for s in states)
+    return {"status": "active" if active else "stale" if stale else "unknown" if unknown else "inactive",
+            "execution_active": active, "stale_workflow_count": stale, "unknown_workflow_count": unknown,
+            "evidence": sorted({str(e) for s in states for e in s.get("evidence", [])})}
+
+
+def _project_activity_fields(activity: Mapping[str, object] | None, active: bool) -> dict[str, object]:
+    value = dict(activity or _aggregate_workflow_activity([]))
+    if active and not value.get("execution_active"):
+        value.update(status="active", execution_active=True, evidence=["worker_owner"])
+    elif not active and value.get("execution_active"):
+        value.update(status="inactive", execution_active=False)
+    return {"activity_status": value["status"], "execution_active": active, "workflow_activity": value,
+            "current_workflow": value.get("current_workflow")}
+
+
+async def _load_workflow_activity_by_project(
     session: Any,
     project_ids: list[UUID],
-) -> set[str]:
+) -> dict[str, dict[str, object]]:
     if not project_ids:
-        return set()
+        return {}
 
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
-    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel, WorkflowStepRunModel
 
+    latest_step = select(func.max(WorkflowStepRunModel.created_at)).where(
+        WorkflowStepRunModel.workflow_run_id == WorkflowRunModel.id,
+    ).correlate(WorkflowRunModel).scalar_subquery()
     result = await session.execute(
-        select(ProjectModel.slug)
+        select(ProjectModel.slug, WorkflowRunModel.id, WorkflowRunModel.workflow_type,
+            WorkflowRunModel.status, WorkflowRunModel.current_step,
+            WorkflowRunModel.created_at, WorkflowRunModel.updated_at,
+            WorkflowRunModel.metadata_json["planner_last_heartbeat_at"].as_string().label("planner_heartbeat_at"),
+            latest_step.label("latest_step_at"))
         .join(WorkflowRunModel, WorkflowRunModel.project_id == ProjectModel.id)
         .where(
             ProjectModel.id.in_(project_ids),
-            WorkflowRunModel.status.in_(("running", "queued")),
         )
-        .distinct()
+        .execution_options(autoflush=False)
     )
-    return {str(slug) for slug in result.scalars() if slug}
+    grouped: dict[str, list[tuple[Any, dict[str, object]]]] = {}
+    from types import SimpleNamespace
+    for item in result.mappings():
+        # Liveness needs only this one metadata scalar, not old prompt/result
+        # documents or implicit ORM relationship loading on every UI poll.
+        run = SimpleNamespace(**dict(item), metadata_json={
+            "planner_last_heartbeat_at":item["planner_heartbeat_at"]})
+        slug = item["slug"]
+        state = _workflow_activity_evidence(run, latest_step_at=item["latest_step_at"])
+        snapshot = {
+            "workflow_run_id": str(getattr(run, "id", "") or ""),
+            "workflow_type": getattr(run, "workflow_type", None),
+            "status": getattr(run, "status", None),
+            "current_step": getattr(run, "current_step", None),
+            "created_at": getattr(run, "created_at", None).isoformat() if getattr(run, "created_at", None) else None,
+            "updated_at": getattr(run, "updated_at", None).isoformat() if getattr(run, "updated_at", None) else None,
+            "last_evidence_at": state.get("last_evidence_at"),
+        }
+        grouped.setdefault(str(slug), []).append((snapshot, state))
+    payload = {}
+    for slug, entries in grouped.items():
+        # A currently evidenced run wins over old repair history. Persisted
+        # status alone never establishes a live executor. No events are made up.
+        snapshot, current_state = max(entries, key=lambda pair: (
+            bool(pair[1]["execution_active"]),
+            pair[0].get("last_evidence_at") or pair[0].get("updated_at") or pair[0].get("created_at") or "",
+            pair[0].get("created_at") or "",
+        ))
+        aggregate = _aggregate_workflow_activity([state for _, state in entries])
+        if not aggregate["execution_active"]:
+            aggregate["status"] = current_state["status"]
+        payload[slug] = {**aggregate, "current_workflow": snapshot}
+    return payload
+
+
+async def _load_active_workflow_project_slugs(session: Any, project_ids: list[UUID]) -> set[str]:
+    activity = await _load_workflow_activity_by_project(session, project_ids)
+    return {slug for slug, value in activity.items() if value["execution_active"]}
 
 
 async def _load_active_workflow_slugs_by_slug(
@@ -6371,6 +7901,10 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
     output_base = Path(settings.output.base_dir)
     async with session_scope(settings) as session:
         rows = await list_projects(session)
+        adopted_progress = await _load_adopted_chapter_progress(
+            session, [row.id for row in rows],
+            project_languages={row.id: row.language for row in rows},
+        )
         repair_counts = await _load_project_chapter_state_counts(
             session,
             [row.id for row in rows],
@@ -6379,10 +7913,11 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
             session,
             [row.id for row in rows],
         )
-        active_project_slugs = await _load_active_workflow_project_slugs(
+        project_activity = await _load_workflow_activity_by_project(
             session,
             [row.id for row in rows],
         )
+        active_project_slugs = {slug for slug, value in project_activity.items() if value["execution_active"]}
         redis_url = getattr(getattr(settings, "redis", None), "url", None)
         if redis_url:
             active_project_slugs.update(_fetch_heal_owned_slugs(str(redis_url)))
@@ -6391,12 +7926,9 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
             slug = row.slug
             is_short = is_fanqie_short_project(row)
             is_archived = _project_library_archived(row.metadata_json)
-            is_closed = str(row.status or "").strip().lower() in _BOOK_CLOSED_STATUSES
-            has_active_workflow = (
-                slug in active_project_slugs
-                and not is_closed
-                and not is_archived
-            )
+            delivery = await _read_project_delivery_status(session, row)
+            is_closed = delivery["is_complete"] is True
+            has_active_workflow = slug in active_project_slugs and not is_closed and not is_archived
             slug_dir = output_base / slug if slug else None
             chapter_files: list[Path] = []
             project_md_exists = False
@@ -6419,7 +7951,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 if str(c.get("status") or "").lower() in {"complete", "completed"}
             )
             db_total = sum(int(c.get("count") or 0) for c in db_counters)
-            completed_chapters = max(db_completed, chapters_on_disk)
+            completed_chapters = int(adopted_progress[row.id]["adopted_chapters"])
 
             # Last updated — prefer the most recent chapter file mtime
             last_mtime = 0.0
@@ -6480,15 +8012,21 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 db_counters,
                 autonomous_repair_counts.get(row.id, {}),
             )
+            # Export files and lifecycle COMPLETE cannot manufacture adoption.
+            completed_chapters = int(adopted_progress[row.id]["adopted_chapters"])
             book_state = _library_book_state(
                 status=row.status,
                 completed_units=completed_chapters,
                 target_units=target_chapters,
-                has_content=words_on_disk > 0 or project_md_exists,
+                has_content=completed_chapters > 0 or words_on_disk > 0 or project_md_exists,
                 archived=_project_library_archived(row.metadata_json),
                 repair_status=repair_status,
                 has_active_workflow=has_active_workflow,
+                delivery_closure=delivery,
             )
+            if (not has_active_workflow and project_activity.get(row.slug, {}).get("status") == "stale"
+                and book_state not in {"closed_complete", "archived", "delivery_pending"}):
+                book_state = "needs_attention"
             results.append(
                 {
                     "id": str(row.id),
@@ -6499,6 +8037,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "llm_model_id": (row.metadata_json or {}).get("llm_model_id"),
                     "status": row.status,
                     "book_state": book_state,
+                    "delivery_closure": delivery,
                     "book_state_label": _library_book_state_label(book_state),
                     "library_archived": is_archived,
                     "archived_at": (
@@ -6519,6 +8058,9 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "target_chapters": target_chapters,
                     "target_word_count": row.target_word_count,
                     "completed_chapters": completed_chapters,
+                    **_adoption_projection_fields(adopted_progress[row.id]),
+                    "adopted_word_count_total": adopted_progress[row.id]["word_count_total"],
+                    "word_count_total": adopted_progress[row.id]["word_count_total"],
                     "chapters_on_disk": chapters_on_disk,
                     "db_chapter_total": db_total,
                     "words_on_disk": words_on_disk,
@@ -6527,6 +8069,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "current_export_modified_at": current_export_modified_at,
                     "has_project_md": project_md_exists,
                     "has_active_workflow": has_active_workflow,
+                    **_project_activity_fields(project_activity.get(row.slug), has_active_workflow),
                     "tags": tags,
                     "tagline": tagline,
                     "repair_status": repair_status,
@@ -6591,7 +8134,7 @@ async def _set_project_library_archived(
                 .where(
                     WorkflowRunModel.project_id == project.id,
                     WorkflowRunModel.status.in_(
-                        ("pending", "queued", "running", "machine_blocked")
+                        ("pending", "queued", "running", "machine_blocked", "awaiting_authority", "awaiting_reference")
                     ),
                 )
                 .values(
@@ -6742,6 +8285,81 @@ async def _cancel_project_task_async(settings: AppSettings, task_id: str) -> str
     return "not_running"
 
 
+async def _close_creation_workflow_after_task_exit_async(
+    settings: AppSettings,
+    *,
+    attempt_id: str,
+    status: str,
+    error_message: str,
+) -> int:
+    """Close a project-less conception row after its web task exits.
+
+    The conception row is created before a project exists, so the synthetic
+    ``project:<slug>`` cancellation path cannot find it. This task-scoped
+    fallback uses the persisted attempt id and only updates active
+    ``conception_initial`` rows; a later workflow or a different book cannot be
+    cancelled accidentally.
+    """
+    attempt = str(attempt_id or "").strip()
+    if not attempt or status not in {"failed", "cancelled"}:
+        return 0
+    from sqlalchemy import select
+
+    async with session_scope(settings) as session:
+        result = await session.execute(
+            select(WorkflowRunModel).where(
+                WorkflowRunModel.workflow_type == "conception_initial",
+                WorkflowRunModel.status.in_(("pending", "queued", "running")),
+            )
+        )
+        rows = list(result.scalars().all())
+        closed = 0
+        for row in rows:
+            metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+            if str(metadata.get("attempt_id") or "") != attempt:
+                continue
+            row.status = status
+            row.current_step = "cancelled" if status == "cancelled" else "failed"
+            row.error_message = str(error_message or "")[:4000] or None
+            row.metadata_json = {
+                **metadata,
+                "terminal_status_source": "web_task_exit",
+            }
+            closed += 1
+        return closed
+
+
+def _close_creation_workflow_after_task_exit(
+    settings: AppSettings,
+    *,
+    task_id: str,
+    payload: Mapping[str, object],
+    status: str,
+    error_message: str,
+) -> int:
+    """Best-effort synchronous bridge for the web worker's terminal handlers."""
+    if not bool(payload.get("_run_conception")):
+        return 0
+    attempt_id = str(payload.get("_conception_attempt_id") or f"{task_id}:initial")
+    try:
+        return asyncio.run(
+            _close_creation_workflow_after_task_exit_async(
+                settings,
+                attempt_id=attempt_id,
+                status=status,
+                error_message=error_message,
+            )
+        )
+    except Exception:
+        logger.warning(
+            "failed to close conception workflow after task %s exited (%s)",
+            task_id,
+            status,
+            exc_info=True,
+        )
+        return 0
+
+
 async def _has_live_pipeline_run_async(settings: AppSettings, slug: str) -> bool:
     """DB 里这本书还有正在跑的流水线吗？
 
@@ -6769,9 +8387,7 @@ async def _has_live_pipeline_run_async(settings: AppSettings, slug: str) -> bool
     try:
         async with session_scope(settings) as session:
             project = (
-                await session.execute(
-                    select(ProjectModel).where(ProjectModel.slug == slug)
-                )
+                await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
             ).scalar_one_or_none()
             if project is None:
                 return False
@@ -6794,44 +8410,74 @@ async def _has_live_pipeline_run_async(settings: AppSettings, slug: str) -> bool
         return False
 
 
-async def _clear_production_halt_async(settings: AppSettings, slug: str) -> bool:
-    """Clear an operator halt because the operator explicitly asked to write.
+async def _prepare_failed_fanqie_beat_resume_async(settings: AppSettings, slug: str) -> dict:
+    """Reconcile a proven failed paid Beat before a new native owner is acquired."""
+    from sqlalchemy import and_, or_, select
+    from bestseller.infra.db.models import ChapterModel, ProjectModel, WorkflowRunModel
+    from bestseller.services.fanqie_beat_recovery import prepare_failed_beat_projection_recovery
+
+    async with session_scope(settings) as session:
+        project = await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
+        if project is None or project.project_type != "fanqie_short":
+            return {"status": "unchanged", "provider_calls": 0}
+        chapter = await session.scalar(
+            select(ChapterModel.id).where(ChapterModel.project_id == project.id).limit(1)
+        )
+        producer = await session.scalar(select(WorkflowRunModel.id).where(
+            WorkflowRunModel.project_id == project.id,
+            WorkflowRunModel.workflow_type == "generate_fanqie_beat_sheet",
+            or_(WorkflowRunModel.status == "running", and_(
+                WorkflowRunModel.status == "failed",
+                WorkflowRunModel.metadata_json["beat_projection_failure_receipt"]["schema"]
+                .as_string().is_not(None),
+            )),
+        ).limit(1))
+        if chapter is not None or producer is None:
+            return {"status": "unchanged", "provider_calls": 0}
+        return await prepare_failed_beat_projection_recovery(
+            session, settings, project_id=project.id, requested_by="web_dashboard",
+        )
+
+
+async def _clear_production_halt_async(
+    settings: AppSettings,
+    slug: str,
+    *,
+    strict: bool = False,
+) -> bool:
+    """Apply an explicit dashboard RUN and synchronize its paused projection.
 
     Starting a book from the dashboard *is* an instruction to run, so it must
     lift a previous stop. Without this a stopped book would be permanently
     unstartable — trading the zombie-resume bug for a stuck-forever one.
+    A RUN row can also coexist with a stale paused status; the trusted helper
+    repairs that projection without changing automatic recovery guards.
     """
 
     slug = (slug or "").strip()
     if not slug:
         return False
 
-    from sqlalchemy import select
-
-    from bestseller.infra.db.models import ProjectModel
-    from bestseller.services.production_control import load_control_state, request_run
+    from bestseller.services.budget import ExecutionBudgetError
+    from bestseller.services.web_project_resume import (
+        WebProjectResumeBlockedError,
+        request_explicit_web_resume,
+    )
 
     try:
         async with session_scope(settings) as session:
-            project = (
-                await session.execute(
-                    select(ProjectModel).where(ProjectModel.slug == slug)
-                )
-            ).scalar_one_or_none()
-            if project is None:
-                return False
-            state = await load_control_state(session, project.id)
-            if not state.halted:
-                return False
-            await request_run(
+            return await request_explicit_web_resume(
                 session,
-                project.id,
+                slug=slug,
                 actor="web_dashboard",
                 reason="operator started writing",
             )
-            return True
+    except (WebProjectResumeBlockedError, ExecutionBudgetError):
+        raise
     except Exception:
         logger.exception("failed to clear production halt for %s", slug)
+        if strict:
+            raise
         return False
 
 
@@ -6856,22 +8502,59 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
     slug = str(row.get("slug") or "").strip()
     title = str(row.get("title") or slug or "未命名").strip()
     book_state = str(row.get("book_state") or "").lower()
+    if book_state == "closed_complete" and not (
+        (row.get("delivery_closure") or {}).get("status") == "verified"
+        and (row.get("delivery_closure") or {}).get("is_complete") is True
+    ):
+        book_state = ("delivery_pending" if int(row.get("target_chapters") or 0) > 0
+                      and int(row.get("completed_chapters") or 0) >= int(row.get("target_chapters") or 0)
+                      else "needs_attention")
     status = (
         "completed"
-        if book_state == "closed_complete"
+        if (book_state == "closed_complete" and (row.get("delivery_closure") or {}).get("status") == "verified"
+            and (row.get("delivery_closure") or {}).get("is_complete") is True)
         else ("archived" if book_state == "archived" else "project")
     )
-    updated_at = (
-        row.get("last_updated") or row.get("updated_at") or row.get("created_at") or _utc_now()
+    historical_delivery_pending = (
+        (row.get("delivery_closure") or {}).get("status") == "not_checked"
+        and str(row.get("status") or "").lower() in _BOOK_CLOSED_STATUSES
+        and row.get("adoption_evidence") == "verified"
+        and int(row.get("target_chapters") or 0) > 0
+        and int(row.get("completed_chapters") or 0) >= int(row.get("target_chapters") or 0)
+        and int(row.get("candidate_chapters") or 0) == 0
     )
+    stale_activity = row.get("activity_status") == "stale" and not historical_delivery_pending
+    verified_activity = (row.get("has_active_workflow") is True
+                         and status == "project"
+                         and row.get("activity_status") not in {"stale", "unknown", "inactive"})
+    if status == "project" and stale_activity:
+        status = "incomplete"
+    elif status == "project" and verified_activity:
+        status = "running"
+    elif (status == "project" and row.get("adoption_evidence") == "verified"
+          and int(row.get("candidate_chapters") or 0) > 0):
+        status = "incomplete"
+    workflow = row.get("current_workflow") or (row.get("workflow_activity") or {}).get("current_workflow") or {}
+    updated_at = (workflow.get("last_evidence_at") or workflow.get("updated_at")
+                  or row.get("updated_at") or row.get("last_updated") or row.get("created_at") or "")
     target_units = int(row.get("target_chapters") or 0)
     completed_units = int(row.get("completed_chapters") or 0)
-    word_count = int(row.get("words_on_disk") or 0)
+    word_count = int(row.get("adopted_word_count_total", row.get("word_count_total")) or 0) if (
+        row.get("adoption_evidence") == "verified"
+    ) else int(row.get("words_on_disk") or 0)
     unit_kind = str(row.get("unit_kind") or "chapter")
     unit_label = str(row.get("unit_label") or ("全文" if unit_kind == "single_story" else "章节"))
     return {
         "task_id": f"project:{slug}",
         "task_type": "project",
+        "has_active_workflow": verified_activity,
+        "execution_active": verified_activity,
+        "activity_status": row.get("activity_status"),
+        "workflow_activity": row.get("workflow_activity"),
+        "current_workflow": workflow or None,
+        "workflow_run_id": workflow.get("workflow_run_id"),
+        "projection_authority": "postgresql",
+        "evidence_status": "stale_workflow" if stale_activity else "workflow_record" if row.get("has_active_workflow") is True else "no_workflow",
         "status": status,
         "created_at": row.get("created_at") or updated_at,
         "updated_at": updated_at,
@@ -6880,23 +8563,12 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
         "project_title": title,
         "project_status": row.get("status") or "",
         "book_state": book_state,
+        "delivery_closure": row.get("delivery_closure"),
         "book_state_label": row.get("book_state_label") or "",
         "project_type": row.get("project_type") or "",
         "content_mode": row.get("content_mode") or "",
-        "current_stage": "project_closed" if status == "completed" else "project_registered",
-        "progress_events": [
-            {
-                "timestamp": updated_at,
-                "stage": "project_pipeline_completed"
-                if status == "completed"
-                else "project_registered",
-                "payload": {
-                    "project_slug": slug,
-                    "book_state": book_state,
-                    "unit_kind": unit_kind,
-                },
-            }
-        ],
+        "current_stage": "project_closed" if status == "completed" else "delivery_pending" if book_state == "delivery_pending" else "workflow_activity_stale" if stale_activity else "project_candidate_review" if status == "incomplete" and int(row.get("candidate_chapters") or 0) > 0 else "project_registered",
+        "progress_events": [],  # a library projection cannot invent execution events
         "result": {
             "project_slug": slug,
             "project_type": row.get("project_type") or "",
@@ -6916,6 +8588,7 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
         },
         "chapter_word_stats": {
             "source": "library_project",
+            **_adoption_projection_fields(row),
             "project_slug": slug,
             "project_title": title,
             "project_type": row.get("project_type") or "",
@@ -6933,7 +8606,106 @@ def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
         },
         "synthetic_project": True,
         "library_archived": bool(row.get("library_archived")),
-    }
+    } | ({"current_stage": workflow.get("current_step") or workflow.get("workflow_type") or "project_pipeline_started"}
+         if status == "running" and workflow else {})
+
+
+def _reconcile_dashboard_tasks_with_projects(
+    tasks: list[dict[str, object]], projects: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Read-through migration: PG owns the card; cached history stays intact.
+
+    Never modifies task-manager records, cache files, workflows or draft state.
+    Keep superseded display evidence separately; never replay it as live events.
+    """
+    result = list(tasks)
+    for row in projects:
+        slug = str(row.get("slug") or "").strip()
+        delivered = ((row.get("delivery_closure") or {}).get("status") == "verified"
+                     and (row.get("delivery_closure") or {}).get("is_complete") is True)
+        authoritative = (delivered or row.get("current_workflow") or (row.get("workflow_activity") or {}).get("current_workflow")
+                         or row.get("has_active_workflow") is True
+                         or (row.get("adoption_evidence") == "verified" and int(row.get("candidate_chapters") or 0) > 0))
+        if not slug or not authoritative:
+            continue
+        previous = [task for task in result if _task_project_slug(task) == slug]
+        # A completed creation workflow proves registration, not that a later
+        # planning call succeeded. Retain the newer real failure until a live
+        # PG workflow or a completed book supersedes that evidence.
+        inactive = row.get("has_active_workflow") is not True
+        closed = delivered or str(row.get("book_state") or "") == "archived"
+        pg_time = _timestamp_seconds(str((row.get("current_workflow") or {}).get("updated_at") or row.get("updated_at") or ""))
+        failures = [task for task in previous if task.get("status") in {"failed", "cancelled"}
+                    and not task.get("synthetic_project") and pg_time is not None
+                    and (_timestamp_seconds(task.get("updated_at")) or 0) >= pg_time]
+        owners = [task for task in previous if task.get("execution_owner_verified") is True
+                  and task.get("status") in {"running", "queued"}]
+        if inactive and not closed and (failures or owners):
+            chosen = max(owners or failures, key=lambda task:str(task.get("updated_at") or ""))
+            enriched = {**_project_row_to_dashboard_task(row), **chosen,
+                "synthetic_project": False, "projection_authority": "task_execution",
+                "project_status":row.get("status"), "execution_active":bool(owners),
+                "activity_status":"active" if owners else "inactive"}
+            result = [task for task in result if _task_project_slug(task) != slug]
+            result.append(enriched)
+            continue
+        history = []
+        for task in previous:
+            history.extend(task.get("task_history") or [])
+            if task.get("synthetic_project"):
+                continue
+            history.append({key: task.get(key) for key in (
+                "task_id", "task_type", "status", "current_stage", "created_at", "updated_at",
+                "progress_events", "error",
+            )})
+        unique = {json.dumps(item, sort_keys=True, default=str): item for item in history}
+        card = _project_row_to_dashboard_task(row)
+        card["task_history"] = list(unique.values())
+        card["projection_migration"] = {"schema": "pg-task-projection.v1", "cache_preserved": True,
+                                         "superseded_task_ids": [t.get("task_id") for t in card["task_history"]]}
+        result = [task for task in result if _task_project_slug(task) != slug]
+        result.append(card)
+    return result
+
+
+async def _load_current_dashboard_tasks(
+    settings: AppSettings, tasks: list[dict[str, object]], *, slug: str | None = None,
+    delivery_statuses: dict[str, dict[str, object]] | None = None,
+    progress_readback: bool = False,
+    same_request_stats: dict[str, dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
+    try:
+        projects = await _load_projects_payload(
+            settings, light=True, **({"project_slug": slug} if slug is not None else {}),
+            **({"progress_readback": True} if progress_readback else {}),
+        )
+    except Exception:
+        logger.warning("Current project task projection unavailable", exc_info=True)
+        # Cache is retained as history, but an unavailable readback cannot
+        # certify that a historical RUNNING record is executing now.
+        return [{**task, "activity_status": "unknown", "execution_active": False,
+                 "delivery_closure": {"status": "unverified", "is_complete": False},
+                 "evidence_status": "project_readback_unavailable"} if _task_project_slug(task) else task
+                for task in tasks]
+    if slug is not None:
+        projects = [row for row in projects if str(row.get("slug") or "") == slug]
+    if progress_readback and same_request_stats is not None:
+        for row in projects:
+            stats = deepcopy(_project_row_to_dashboard_task(row)["chapter_word_stats"])
+            is_short = row.get("project_type") == "fanqie_short"
+            stats.update(source="db", chapters=[],
+                         unit_kind="segment" if is_short else "chapter",
+                         unit_label="段" if is_short else "章")
+            for key in ("current_export_filename", "current_export_modified_at", "export_word_count_total"):
+                if row.get(key) is not None:
+                    stats[key] = row[key]
+            same_request_stats[str(row["slug"])] = stats
+    delivery_by_slug = {str(row.get("slug")): row.get("delivery_closure") for row in projects}
+    if delivery_statuses is not None:
+        delivery_statuses.update({key: value for key, value in delivery_by_slug.items() if value})
+    tasks = [{**task, "delivery_closure": delivery_by_slug.get(_task_project_slug(task))
+              or {"status": "unverified", "is_complete": False}} for task in tasks]
+    return _reconcile_dashboard_tasks_with_projects(tasks, projects)
 
 
 async def _load_project_dashboard_task_payload(
@@ -6943,7 +8715,7 @@ async def _load_project_dashboard_task_payload(
     slug = str(slug or "").strip()
     if not slug:
         return None
-    rows = await _load_library_payload(settings)
+    rows = await _load_projects_payload(settings, light=True, project_slug=slug)
     for row in rows:
         if str(row.get("slug") or "") == slug:
             return _project_row_to_dashboard_task(row)
@@ -7186,6 +8958,9 @@ def _project_repair_workflow_snapshot(
     return {
         "workflow_run_id": str(getattr(run, "id", "")),
         "status": status,
+        "workflow_activity": _workflow_activity_evidence(
+            run, latest_step_at=max((step.created_at for step in steps if getattr(step, "created_at", None)), default=None),
+        ),
         "current_step": current_step,
         "error_message": getattr(run, "error_message", None),
         "requested_by": getattr(run, "requested_by", None),
@@ -7300,7 +9075,12 @@ def _build_db_repair_task_summary(
     latest_error = str(latest_workflow.get("error_message") or "").strip()
     latest_events = latest_workflow.get("progress_events")
     workflow_events = latest_events if isinstance(latest_events, list) else []
-    if latest_status in {"pending", "queued"}:
+    latest_activity = latest_workflow.get("workflow_activity") or _workflow_activity_evidence(latest_workflow)
+    if latest_status in {"pending", "queued", "running"} and not latest_activity["execution_active"]:
+        status = "incomplete"
+        stage = "workflow_activity_stale" if latest_activity["status"] == "stale" else "workflow_activity_unknown"
+        error = "历史运行状态缺少当前执行证据，等待核验或恢复。"
+    elif latest_status in {"pending", "queued"}:
         status = "queued"
         stage = latest_stage
         error = None
@@ -7379,9 +9159,7 @@ def _build_db_repair_task_summary(
             "rejected_autonomous_repair_candidates": rejected,
             "latest_repair_workflow_id": latest_workflow.get("workflow_run_id"),
             "target_chapter_numbers": latest_workflow.get("target_chapter_numbers"),
-            "repair_gate_chapter_numbers": latest_workflow.get(
-                "repair_gate_chapter_numbers"
-            ),
+            "repair_gate_chapter_numbers": latest_workflow.get("repair_gate_chapter_numbers"),
             "processed_chapter_numbers": latest_workflow.get("processed_chapter_numbers"),
         },
         "error": error,
@@ -7390,12 +9168,12 @@ def _build_db_repair_task_summary(
             "title": title,
             "include_pending_rewrite_tasks": True,
             "target_chapter_numbers": latest_workflow.get("target_chapter_numbers"),
-            "repair_gate_chapter_numbers": latest_workflow.get(
-                "repair_gate_chapter_numbers"
-            ),
+            "repair_gate_chapter_numbers": latest_workflow.get("repair_gate_chapter_numbers"),
         },
         "repair_status": repair_status,
         "synthetic_db_repair_task": True,
+        "activity_status": latest_activity["status"],
+        "execution_active": bool(latest_activity["execution_active"]),
     }
 
 
@@ -7478,6 +9256,88 @@ async def _load_db_repair_task_summary(
         if summary.get("task_id") == task_id:
             return summary
     return None
+
+
+def _find_original_autowrite_task(
+    task_manager: "WebTaskManager",
+    slug: str,
+) -> dict[str, object] | None:
+    """Find a persisted autowrite envelope for a project slug.
+
+    Completion is deliberately checked against current DB/filesystem dashboard
+    stats by the async wrapper below; the task manager result is often ``None``
+    after cancellation. A historical false-completed envelope is recoverable
+    here too, but only when the wrapper confirms the manuscript is incomplete.
+    """
+
+    slug = str(slug or "").strip()
+    if not slug:
+        return None
+    for task in task_manager.list_tasks():
+        if (
+            str(task.get("task_type") or "") != "autowrite"
+            or str(task.get("project_slug") or "") != slug
+            or str(task.get("status") or "") not in (_REUSABLE_TASK_STATUSES | {"completed"})
+        ):
+            continue
+        payload = task.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        return task
+    return None
+
+
+async def _load_incomplete_original_autowrite_task(
+    settings: AppSettings,
+    task_manager: "WebTaskManager",
+    slug: str,
+) -> dict[str, object] | None:
+    task = _find_original_autowrite_task(task_manager, slug)
+    if task is None:
+        return None
+    dashboard = await _load_project_dashboard_task_payload(settings, slug)
+    stats = dashboard.get("chapter_word_stats") if isinstance(dashboard, dict) else None
+    if not isinstance(stats, dict):
+        return None
+    if "target_chapters" not in stats or "completed_chapters" not in stats:
+        return None
+    try:
+        target = int(stats.get("target_chapters") or 0)
+        completed = int(stats.get("completed_chapters") or 0)
+    except (TypeError, ValueError):
+        return None
+    return task if target > 0 and 0 <= completed < target else None
+
+
+def _resume_original_autowrite_task(
+    task_manager: "WebTaskManager",
+    original: dict[str, object],
+    saved_payload: dict[str, object],
+    *,
+    heal_owned: bool,
+) -> dict[str, object] | str | None:
+    task_id = str(original.get("task_id") or "")
+    if not task_id:
+        return None
+    return task_manager.resume_autowrite_task(
+        task_id,
+        saved_payload,
+        delegate_to_self_heal=heal_owned,
+        heal_owned=heal_owned,
+    )
+
+
+def _mark_db_repair_resume_block(
+    task_manager: "WebTaskManager",
+    task_id: str,
+    block_payload: dict[str, object],
+) -> None:
+    stage = str(block_payload.get("current_stage", "blocked_structural_repair"))
+    error = str(block_payload.get("error") or "")
+    if block_payload.get("blocked_generation_gate"):
+        task_manager.mark_task_blocked_by_project_gate(task_id, stage=stage, error=error)
+    else:
+        task_manager.mark_task_blocked_by_structural_repair(task_id, error)
 
 
 async def _cancel_db_repair_task_async(settings: AppSettings, task_id: str) -> str:
@@ -7756,15 +9616,24 @@ def _build_project_repair_status_payload(
     production_paused = bool(metadata.get("production_paused"))
     production_pause_reason = str(metadata.get("production_pause_reason") or "").strip()
     resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
-    generation_gate_blocked = any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS) or any(
-        str(metadata.get(flag) or "").strip().lower() == "needs_replan"
-        for flag in ("planning_status", "outline_semantic_gate_status", "rolling_outline_status")
-    ) or bool(metadata.get("outline_replan_required"))
+    generation_gate_blocked = (
+        any(bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS)
+        or any(
+            str(metadata.get(flag) or "").strip().lower() == "needs_replan"
+            for flag in (
+                "planning_status",
+                "outline_semantic_gate_status",
+                "rolling_outline_status",
+            )
+        )
+        or bool(metadata.get("outline_replan_required"))
+    )
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     latest_workflow = latest_repair_workflow if isinstance(latest_repair_workflow, dict) else {}
     latest_workflow_status = str(latest_workflow.get("status") or "").strip().lower()
     latest_workflow_error = str(latest_workflow.get("error_message") or "").strip()
-    latest_workflow_active = latest_workflow_status in {"pending", "queued", "running"}
+    latest_activity = latest_workflow.get("workflow_activity") or _workflow_activity_evidence(latest_workflow)
+    latest_workflow_active = bool(latest_activity.get("execution_active"))
     latest_workflow_interrupted = latest_workflow_status in {"cancelled", "failed"}
     project_status = str(getattr(project, "status", "") or "")
     library_archived = bool(metadata.get("library_archived")) or project_status == "archived"
@@ -7792,6 +9661,10 @@ def _build_project_repair_status_payload(
         phase = "repair_gate"
         label = "结构修复执行中"
         detail = "后台正在执行项目结构修复，页面会按 workflow 记录回填章节进度。"
+    elif latest_activity.get("status") == "stale":
+        phase = "needs_attention"
+        label = "历史任务待恢复"
+        detail = "持久化运行状态已过期，缺少近期步骤、心跳或执行者证据；原记录保留。"
     elif latest_workflow_interrupted and (blocked_chapters > 0 or project_status == "paused"):
         phase = "needs_attention"
         label = "修复已中断"
@@ -7953,6 +9826,7 @@ def _build_project_identity_payload(
     *,
     fanqie_stats: Mapping[str, object] | None = None,
     include_id: bool = False,
+    delivery_closure: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     meta = (
         getattr(project, "metadata_json", {})
@@ -7991,13 +9865,17 @@ def _build_project_identity_payload(
         stats = fanqie_stats or {}
         current_export = listing_profile.get("current_export")
         current_export = current_export if isinstance(current_export, Mapping) else {}
-        book_state = str(meta.get("book_state") or "").strip()
-        serialization_status = str(listing_profile.get("serialization_status") or "").strip()
+        book_state = _library_book_state(
+            status=getattr(project, "status", None),
+            completed_units=int(stats.get("completed_chapters") or 0),
+            target_units=int(stats.get("target_chapters") or 1),
+            has_content=bool(stats.get("word_count_total") or current_export.get("word_count")),
+            archived=_project_library_archived(meta), delivery_closure=delivery_closure,
+        )
         payload.update(
             {
                 "status": "completed"
-                if book_state in {"closed_complete", "archived"}
-                or serialization_status == "completed"
+                if book_state == "closed_complete"
                 else getattr(project, "status", None),
                 "book_state": book_state or None,
                 "library_archived": _project_library_archived(meta),
@@ -8020,6 +9898,7 @@ def _build_project_identity_payload(
                 "premise": listing_profile.get("logline") or meta.get("premise", ""),
             }
         )
+    payload["delivery_closure"] = delivery_closure
     return payload
 
 
@@ -8276,6 +10155,7 @@ async def _load_project_summary_payload(
         project = await get_project_by_slug(session, project_slug)
         if project is None:
             raise ValueError(f"Project '{project_slug}' was not found.")
+        delivery = await _read_project_delivery_status(session, project)
         structure = await build_project_structure(session, project_slug)
         story_bible = await build_story_bible_overview(session, project_slug)
         narrative = await build_narrative_overview(session, project_slug)
@@ -8319,14 +10199,24 @@ async def _load_project_summary_payload(
         story_bible,
         current_chapter_number=int(project.current_chapter_number or 0),
     )
-    listing_profile = _build_fanqie_short_current_listing_profile(
-        settings, project
-    ) or build_book_listing_profile(
-        project=project,
-        writing_profile=writing_profile,
-        story_bible=story_bible,
-        output_base_dir=settings.output.base_dir,
-    )
+    listing_error = None
+    try:
+        listing_profile = _build_fanqie_short_current_listing_profile(
+            settings, project
+        ) or build_book_listing_profile(
+            project=project,
+            writing_profile=writing_profile,
+            story_bible=story_bible,
+            output_base_dir=settings.output.base_dir,
+        )
+    except ValueError as exc:
+        from bestseller.services.listing_errors import listing_conflict_detail
+
+        listing_error = listing_conflict_detail(exc)
+        if listing_error is None:
+            raise
+        # Keep chapter/workflow inspection available, without serving stale copy.
+        listing_profile = {}
     display_title = str(
         listing_profile.get("primary_title")
         or listing_profile.get("current_content_title")
@@ -8343,6 +10233,7 @@ async def _load_project_summary_payload(
         listing_profile,
         fanqie_stats=fanqie_stats,
         include_id=True,
+        delivery_closure=delivery,
     )
     output_stats = {
         "markdown_output_count": len(markdown_entries),
@@ -8396,6 +10287,7 @@ async def _load_project_summary_payload(
         "title": display_title,
         "project": project_payload,
         "listing_profile": listing_profile,
+        "listing_error": listing_error,
         "repair_status": repair_status,
         "writing_profile": writing_profile,
         "structure_summary": structure_summary,
@@ -8453,6 +10345,7 @@ async def _load_project_listing_payload(
         project = await get_project_by_slug(session, project_slug)
         if project is None:
             raise ValueError(f"Project '{project_slug}' was not found.")
+        delivery = await _read_project_delivery_status(session, project)
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         story_bible = await build_story_bible_overview(session, project_slug)
@@ -8476,6 +10369,7 @@ async def _load_project_listing_payload(
             listing,
             fanqie_stats=fanqie_stats,
             include_id=False,
+            delivery_closure=delivery,
         ),
     }
 
@@ -8518,7 +10412,7 @@ _EXECUTION_PHASES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("outline", "章节细纲 · Outline", ("volume_chapter_outline", "chapter_outline_batch")),
     ("materialize", "章节物化 · Materialize", ()),
     ("writing", "正文写作 · Writing", ()),
-    ("export", "导出 · Export", ("promotional_brief", "export_artifact")),
+    ("export", "导出 · Export", ()),
 )
 
 _ARTIFACT_LABELS: dict[str, str] = {
@@ -8630,26 +10524,43 @@ async def _load_project_reviews_payload(
     }
 
 
+def _export_artifact_bytes_verified(artifact: Any, settings: Any, project_slug: str) -> bool:
+    """Resolve immutable bytes across host/container mounts without trusting a mirror."""
+    checksum = str(artifact.checksum or "")
+    if len(checksum) != 64 or any(c not in "0123456789abcdef" for c in checksum):
+        return False
+    stored = Path(artifact.storage_uri)
+    portable = Path(settings.output.base_dir) / project_slug / ".export-artifacts" / checksum / stored.name
+    for path in (stored, portable):
+        try:
+            if hashlib.sha256(path.read_bytes()).hexdigest() == checksum:
+                return True
+        except (OSError, ValueError):
+            pass
+    return False
+
+
 async def _load_execution_progress_payload(
     settings: AppSettings,
     project_slug: str,
 ) -> dict[str, object]:
     """聚合一本书的执行进度:阶段状态 + 已产出规划 + 当前活动 + 实时步骤流 + 章节进度。"""
 
-    from sqlalchemy import func, select
+    from sqlalchemy import case, func, select
 
     from bestseller.infra.db.models import (
+        ChapterDraftVersionModel,
         ChapterModel,
+        ExportArtifactModel,
         PlanningArtifactVersionModel,
     )
+    from bestseller.services.web_progress_queries import load_execution_workflow_summary
 
     async with session_scope(settings) as session:
         project = await get_project_by_slug(session, project_slug)
         if project is None:
             raise ValueError(f"Project '{project_slug}' was not found.")
-        overview = (await build_project_workflow_overview(session, project_slug)).model_dump(
-            mode="json"
-        )
+        overview = await load_execution_workflow_summary(session, project.id)
 
         # 最新版本的各类规划产物
         rows = list(
@@ -8657,7 +10568,11 @@ async def _load_execution_progress_payload(
                 select(
                     PlanningArtifactVersionModel.artifact_type,
                     PlanningArtifactVersionModel.version_no,
-                    PlanningArtifactVersionModel.content,
+                    case(
+                        (PlanningArtifactVersionModel.artifact_type == "story_design_kernel",
+                         PlanningArtifactVersionModel.content),
+                        else_=None,
+                    ),
                 )
                 .where(PlanningArtifactVersionModel.project_id == project.id)
                 .order_by(
@@ -8679,33 +10594,88 @@ async def _load_execution_progress_payload(
             )
             or 0
         )
-        chapters_written = int(
-            await session.scalar(
-                select(func.count(ChapterModel.id)).where(
-                    ChapterModel.project_id == project.id,
-                    ChapterModel.current_word_count > 0,
-                )
-            )
-            or 0
-        )
+        adoption = (await _load_adopted_chapter_progress(
+            session, [project.id],
+            project_languages={project.id: getattr(project, "language", "zh-CN")},
+        ))[project.id]
+        chapters_written = int(adoption["adopted_chapters"])
+        exported_numbers: set[int] = set()
+        adopted_sources = {row["draft_id"]: row for row in adoption["chapters"]}
+        for artifact, in await session.execute(select(ExportArtifactModel).where(
+            ExportArtifactModel.project_id == project.id,
+        )):
+            if not adopted_sources:
+                break
+            data = artifact.metadata_json or {}
+            if not data.get("immutable_bytes"):
+                continue
+            if not _export_artifact_bytes_verified(artifact, settings, project.slug):
+                continue
+            for source in data.get("source_drafts", []):
+                if not isinstance(source, Mapping):
+                    continue
+                adopted = adopted_sources.get(source.get("draft_id"))
+                if not adopted:
+                    continue
+                draft = await session.get(ChapterDraftVersionModel, UUID(source["draft_id"]))
+                if (draft is not None and draft.project_id == project.id
+                    and str(draft.chapter_id) == source.get("chapter_id")
+                    and source.get("chapter_number") == adopted["number"]
+                    and source.get("version_no") == draft.version_no
+                    and source.get("promotion_state") == draft.promotion_state
+                    and source.get("adoption_state") == adopted["acceptance"]
+                    and hashlib.sha256((draft.content_md or "").encode()).hexdigest()
+                    == source.get("body_sha256")):
+                    exported_numbers.add(adopted["number"])
         target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+        # Canonical adoption supplies premise only. A design lock or an in-memory
+        # compilation is not evidence that foundation artifacts were persisted.
+        canonical_premise_verified = False
+        metadata = getattr(project, "metadata_json", None) or {}
+        canonical_id = metadata.get("creation_canonical_snapshot_id")
+        if metadata.get("conception_approved") is True and canonical_id:
+            try:
+                source = await session.get(PlanningArtifactVersionModel, UUID(str(canonical_id)))
+                if (source is not None and source.project_id == project.id
+                    and str(source.id) == str(canonical_id)
+                    and source.artifact_type == "conception_snapshot"):
+                    saved = {"status": source.status, "content": source.content}
+                    canonical_premise_verified = bool(
+                        canonical_snapshot_premise(saved)
+                        and canonical_snapshot_content_hash(saved)
+                        == metadata.get("creation_canonical_snapshot_hash")
+                        and int(source.content["concept_contract"]["target_chapters"]) == target_chapters
+                    )
+            except (ValueError, TypeError, KeyError):
+                canonical_premise_verified = False
 
     # ---- 阶段状态 ----
     runs = overview.get("runs", [])
-    latest_run = runs[0] if runs else None
-    active = bool(latest_run and latest_run.get("status") == "running")
+    run_activity = [
+        _workflow_activity_evidence(r, latest_step_at=r.get("latest_step_at")) for r in runs
+    ]
+    activity = _aggregate_workflow_activity(run_activity)
+    active_runs = [r for r, state in zip(runs, run_activity) if state["execution_active"]]
+    latest_run = active_runs[0] if active_runs else (runs[0] if runs else None)
+    active = bool(active_runs)
     failed_run = bool(latest_run and latest_run.get("status") == "failed")
 
     phases: list[dict[str, object]] = []
     current_marked = False
     for key, label, atypes in _EXECUTION_PHASES:
-        if key == "materialize":
+        if key == "premise":
+            done = canonical_premise_verified or "premise" in count_by_type
+        elif key == "materialize":
             done = chapters_total > 0
         elif key == "writing":
             done = chapters_written > 0 and chapters_written >= target_chapters > 0
+        elif key == "export":
+            done = chapters_written > 0 and len(exported_numbers) == chapters_written
         else:
             done = any(t in count_by_type for t in atypes)
         detail = ""
+        if key == "premise" and canonical_premise_verified:
+            detail = "canonical 构思已采用；基础规划按各自落库产物判定"
         if key == "story_design_kernel" and "story_design_kernel" in latest_by_type:
             content = latest_by_type["story_design_kernel"][1]
             meta = content.get("oracle_meta") if isinstance(content, dict) else None
@@ -8722,6 +10692,8 @@ async def _load_execution_progress_payload(
             detail = f"已写 {chapters_written}/{target_chapters or '—'} 章"
         elif key == "materialize" and chapters_total:
             detail = f"已建 {chapters_total} 章"
+        elif key == "export":
+            detail = f"已采用正文导出 {len(exported_numbers)}/{chapters_written} 章"
 
         status = "done" if done else "pending"
         if not done and not current_marked:
@@ -8731,6 +10703,13 @@ async def _load_execution_progress_payload(
                 status = "running"
             current_marked = True
         phases.append({"key": key, "label": label, "status": status, "detail": detail})
+
+    knowledge = adoption["knowledge"]
+    phases.append({
+        "key": "knowledge", "label": "知识入库",
+        "status": "done" if knowledge["status"] == "closed" else "pending",
+        "detail": f"知识入库{knowledge['closed_chapters']}/{knowledge['adopted_chapters']}（{knowledge['label']}）",
+    })
 
     # ---- 已产出规划产物清单 ----
     artifacts = [
@@ -8744,30 +10723,23 @@ async def _load_execution_progress_payload(
     ]
 
     # ---- 最近步骤流水(跨所有 run,按时间倒序)----
-    all_steps: list[dict[str, object]] = []
-    for run in runs:
-        for step in run.get("steps", []):
-            all_steps.append(
-                {
-                    "name": step.get("step_name"),
-                    "status": step.get("status"),
-                    "created_at": step.get("created_at"),
-                    "run_type": run.get("workflow_type"),
-                    "error": step.get("error_message"),
-                }
-            )
-    all_steps.sort(key=lambda s: str(s.get("created_at") or ""), reverse=True)
-    recent_steps = all_steps[:18]
+    recent_steps = overview["recent_steps"]
 
     # ---- 当前活动 + 健康 ----
-    health = "ok"
+    health = "unknown"  # absence of failures is not positive health evidence
     if failed_run:
         health = "failed"
     elif any(int(r.get("failed_step_count") or 0) > 0 for r in runs):
         health = "warning"
+    elif activity["status"] == "stale":
+        health = "warning"
     current = {
         "workflow_type": latest_run.get("workflow_type") if latest_run else None,
         "status": latest_run.get("status") if latest_run else None,
+        "activity_status": _workflow_activity_evidence(
+            latest_run, latest_step_at=latest_run.get("latest_step_at"),
+        )["status"] if latest_run else "inactive",
+        "execution_active": active,
         "current_step": latest_run.get("current_step") if latest_run else None,
         "updated_at": latest_run.get("updated_at") if latest_run else None,
         "error": latest_run.get("error_message") if latest_run else None,
@@ -8781,12 +10753,18 @@ async def _load_execution_progress_payload(
             "target_chapters": target_chapters,
             "chapters_total": chapters_total,
             "chapters_written": chapters_written,
+            **_adoption_projection_fields(adoption),
         },
         "phases": phases,
+        "knowledge": knowledge,
         "artifacts": artifacts,
         "current": current,
         "recent_steps": recent_steps,
         "health": health,
+        "execution_active": active,
+        "activity_status": activity["status"],
+        "workflow_activity": activity,
+        "evidence_status": "stale_workflow" if activity["status"] == "stale" else "workflow_record" if runs else "no_workflow",
         "run_count": overview.get("run_count", 0),
     }
 
@@ -8818,13 +10796,108 @@ async def _load_pipeline_flow_payload(
         break
 
     async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        adoption = await _load_adopted_chapter_progress(
+            session, [project.id], project_languages={project.id: project.language},
+        )
         overview = await build_pipeline_flow_overview(
             session,
             project_slug,
             settings=settings,
             task_timeline=task_timeline,
+            adoption_progress=adoption[project.id],
         )
     return overview.model_dump(mode="json")
+
+
+async def _load_project_conception_options_payload(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    """Expose only the current project-bound conception snapshot."""
+    from sqlalchemy import select
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        current_snapshot_id = str(
+            (project.metadata_json or {}).get("conception_snapshot_id") or ""
+        )
+        if not current_snapshot_id:
+            raise ValueError("Project has no current conception snapshot")
+        snapshot = await session.scalar(
+            select(PlanningArtifactVersionModel)
+            .where(
+                PlanningArtifactVersionModel.id == UUID(current_snapshot_id),
+                PlanningArtifactVersionModel.project_id == project.id,
+                PlanningArtifactVersionModel.artifact_type == "conception_snapshot",
+            )
+            .with_for_update()
+        )
+        if snapshot is None:
+            raise ValueError("Current conception snapshot is missing for this project")
+        authoritative_seed = None
+        intent_id = str((project.metadata_json or {}).get("creation_intent_snapshot_id") or "")
+        intent_hash = str((project.metadata_json or {}).get("creation_intent_contract_hash") or "")
+        if intent_id and intent_hash:
+            intent = await session.scalar(
+                select(PlanningArtifactVersionModel).where(
+                    PlanningArtifactVersionModel.id == UUID(intent_id),
+                    PlanningArtifactVersionModel.project_id == project.id,
+                    PlanningArtifactVersionModel.artifact_type == "creation_intent",
+                )
+            )
+            from bestseller.services.conception_snapshots import snapshot_hash
+
+            snapshot_intent_hash = str((snapshot.content or {}).get("creation_intent_hash") or "")
+            if (
+                intent is not None
+                and intent.status == "validated"
+                and intent.schema_version == "creation-intent.v1"
+                and snapshot_intent_hash == intent_hash == snapshot_hash(intent.content)
+            ):
+                intent_content = intent.content if isinstance(intent.content, Mapping) else {}
+                authoritative_seed = str(intent_content.get("concept_seed") or "").strip() or None
+        conception_log = None
+        run = (
+            await session.scalar(
+                select(WorkflowRunModel).where(WorkflowRunModel.id == snapshot.source_run_id)
+            )
+            if snapshot.source_run_id
+            else None
+        )
+        log_path_value = None
+        if run is not None and isinstance(run.metadata_json, Mapping):
+            log_path_value = run.metadata_json.get("conception_log_path")
+        if log_path_value:
+            base = Path(settings.output.base_dir).resolve() / "conception-logs"
+            candidate_path = Path(str(log_path_value)).resolve()
+            if candidate_path.is_relative_to(base) and candidate_path.is_file():
+                try:
+                    parsed = json.loads(candidate_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    parsed = None
+                if isinstance(parsed, Mapping):
+                    conception_log = parsed
+        return build_conception_options(
+            project={
+                "slug": project.slug,
+                "lock_version": project.lock_version,
+                "target_chapters": project.target_chapters,
+            },
+            snapshot={
+                "id": str(snapshot.id),
+                "status": snapshot.status,
+                "version_no": snapshot.version_no,
+                "source_run_id": str(snapshot.source_run_id) if snapshot.source_run_id else None,
+                "content": snapshot.content,
+            },
+            conception_log=conception_log,
+            authoritative_seed=authoritative_seed,
+        )
 
 
 async def _load_project_design_dossier_payload(
@@ -8911,8 +10984,7 @@ async def _load_project_design_dossier_payload(
     from bestseller.services.artifact_view import build_artifact_view
 
     conception_views = {
-        key: build_artifact_view(key, value)
-        for key, value in conception_artifacts.items()
+        key: build_artifact_view(key, value) for key, value in conception_artifacts.items()
     }
     # 榜单对标回归（P4.2 产物，advisory）：最近一次 vs 真书 Arena win-rate。
     try:
@@ -9274,9 +11346,7 @@ async def _load_reader_review_payload(
         ).all()
         if all(p.id != project.id for p in recent_projects):
             recent_projects = [project, *recent_projects][: max(1, recent_books)]
-        skeletons = [
-            await _reader_review_book_skeleton(session, p) for p in recent_projects
-        ]
+        skeletons = [await _reader_review_book_skeleton(session, p) for p in recent_projects]
 
     refs = resolve_reference_set(project.genre, project.sub_genre, min_refs=3)
     arena_win_rate: float | None = None
@@ -9544,9 +11614,7 @@ async def _regenerate_listing_module(
             text = _listing_limit_chars(text, max_chars=max_chars or 1_000_000)
             min_chars = int(spec.get("min_chars") or 1)
             if len(text) < min_chars:
-                raise ValueError(
-                    f"listing.{module} is too short: {len(text)} < {min_chars}"
-                )
+                raise ValueError(f"listing.{module} is too short: {len(text)} < {min_chars}")
             return text
         if kind == "json_list":
             return _parse_json_list_response(raw_value)
@@ -10019,9 +12087,7 @@ def _load_methodology_course_markdown(language: str = "zh") -> tuple[str, str, s
     if doc_path.exists():
         content_md = doc_path.read_text(encoding="utf-8")
         status = "ready"
-        updated_at = datetime.fromtimestamp(
-            doc_path.stat().st_mtime, tz=UTC
-        ).isoformat()
+        updated_at = datetime.fromtimestamp(doc_path.stat().st_mtime, tz=UTC).isoformat()
     else:
         content_md = str(config["missing_markdown"])
         status = "missing"
@@ -10421,12 +12487,14 @@ def _load_reader_project_summary(
                         "genre": "",
                         "language": None,
                         "is_fanqie_short": False,
+                        "project_exists": False,
                     }
                 return {
                     "title": proj.title or project_slug,
                     "genre": getattr(proj, "genre", "") or "",
                     "language": getattr(proj, "language", None),
                     "is_fanqie_short": is_fanqie_short_project(proj),
+                    "project_exists": True,
                 }
 
         return asyncio.run(_fetch())
@@ -10436,6 +12504,7 @@ def _load_reader_project_summary(
             "genre": "",
             "language": None,
             "is_fanqie_short": False,
+            "project_exists": None,
         }
 
 
@@ -10973,10 +13042,15 @@ def _reader_chapter_availability(production_state: str | None, word_count: int) 
 
 
 _READER_STATE_LABELS: dict[str, str] = {
-    "formal": "正式版",
+    "adopted": "已采用",
+    "accepted_with_debt": "已采用（含质量债）",
+    "formal": "已保存稿",
+    "paused": "待编辑",
+    "stopped": "已停止",
     "active_repair": "正在修复",
     "queued_repair": "排队修复",
     "blocked": "阻塞待修",
+    "quality_debt": "待编辑",
     "drafting": "生成中",
     "planned": "待生成",
 }
@@ -10989,6 +13063,8 @@ def _reader_chapter_state(
     availability: str | None,
     pending_rewrite_task_count: int = 0,
     auto_repair_in_progress: bool = False,
+    production_intent: str | None = None,
+    adoption_state: str | None = None,
 ) -> tuple[str, str]:
     """Return the reader-facing state, separating queued work from live repair.
 
@@ -11001,21 +13077,61 @@ def _reader_chapter_state(
     status = str(chapter_status or "").lower()
     production = str(production_state or "").lower()
     avail = str(availability or "").lower()
-    if production == "ok" or avail == "available":
+    if adoption_state == "accepted_with_debt":
+        state = "accepted_with_debt"
+    elif adoption_state == "promoted":
+        state = "adopted"
+    elif production == "ok" or avail == "available":
         state = "formal"
     elif avail == "planned":
         state = "planned"
+    elif production_intent == "pause":
+        state = "paused"
+    elif production_intent == "stop":
+        state = "stopped"
     elif auto_repair_in_progress:
         state = "active_repair"
+    elif production == "blocked":
+        # Pending rewrite records can outlive a failed workflow, without a worker.
+        state = "blocked"
     elif pending_rewrite_task_count > 0:
         state = "queued_repair"
-    elif production == "blocked":
-        state = "blocked"
+    elif production == "quality_debt":
+        state = "quality_debt"
     elif status in {"drafting", "review"} or production == "pending":
         state = "drafting"
     else:
         state = "blocked"
     return state, _READER_STATE_LABELS[state]
+
+
+def _reader_state_payload(chapter: dict[str, object]) -> dict[str, object]:
+    """Share automatic-production state between TOC and chapter responses."""
+    payload = {
+        key: chapter.get(key)
+        for key in (
+            "reader_state", "reader_label", "pending_rewrite_task_count", "production_intent"
+        )
+    }
+    payload.update({key: chapter[key] for key in (
+        "adoption_state", "source_draft_id", "source_body_sha256"
+    ) if key in chapter})
+    return payload
+
+
+async def _reader_source_adoption(session, project_id, chapter_id, draft_id, content_md):
+    """Classify only the exact displayed draft using read-only database evidence."""
+    from bestseller.services.feedback import validate_adopted_knowledge_source
+
+    lineage, rejection = await validate_adopted_knowledge_source(
+        session, project_id=project_id, chapter_id=chapter_id,
+        source_chapter_draft_version_id=draft_id, chapter_md=content_md, lock=False,
+    )
+    return {
+        "adoption_state": lineage.get("adoption_state") if rejection is None else "not_adopted",
+        "source_draft_id": str(draft_id),
+        "source_body_sha256": lineage["source_body_sha256"],
+    }
 
 
 def _load_project_chapter_index(
@@ -11063,6 +13179,9 @@ def _load_project_chapter_index(
                 proj = await get_project_by_slug(sess, project_slug)
                 if proj is None:
                     return [], {}, []
+                from bestseller.services.production_control import load_control_state
+
+                control = await load_control_state(sess, proj.id)
                 volume_rows = list(
                     await sess.scalars(
                         select(VolumeModel)
@@ -11094,6 +13213,8 @@ def _load_project_chapter_index(
                             ChapterDraftVersionModel.word_count,
                             ChapterDraftVersionModel.version_no,
                             ChapterDraftVersionModel.created_at,
+                            ChapterDraftVersionModel.id,
+                            ChapterDraftVersionModel.content_md,
                         )
                         .where(ChapterDraftVersionModel.project_id == proj.id)
                         .order_by(
@@ -11105,10 +13226,16 @@ def _load_project_chapter_index(
                     )
                 )
                 draft_meta_by_chapter_id: dict[object, dict[str, object]] = {}
-                for chapter_id, word_count, version_no, created_at in draft_rows:
+                for chapter_id, word_count, version_no, created_at, draft_id, content_md in draft_rows:
+                    if chapter_id in draft_meta_by_chapter_id:
+                        continue
+                    adoption = await _reader_source_adoption(
+                        sess, proj.id, chapter_id, draft_id, content_md or "",
+                    )
                     draft_meta_by_chapter_id.setdefault(
                         chapter_id,
                         {
+                            **adoption,
                             "word_count": int(word_count or 0),
                             "version_no": int(version_no or 0),
                             "updated_at": created_at.isoformat()
@@ -11200,7 +13327,7 @@ def _load_project_chapter_index(
                         ch.metadata_json if isinstance(ch.metadata_json, dict) else {}
                     )
 
-                    # production_state=ok means "正式版"; other readable drafts
+                    # production_state=ok is readable, not proof of review approval; other drafts
                     # are split into blocked/queued/active states so the reader
                     # does not imply every blocked chapter is being edited live.
                     availability = _reader_chapter_availability(
@@ -11216,13 +13343,18 @@ def _load_project_chapter_index(
                         production_state=production_state,
                         availability=availability,
                         pending_rewrite_task_count=pending_rewrite_task_count,
+                        production_intent=control.intent.value,
                         auto_repair_in_progress=bool(
                             chapter_metadata.get("auto_repair_in_progress")
                         ),
+                        adoption_state=draft_meta.get("adoption_state"),
                     )
 
                     chapters_out.append(
                         {
+                            **{key: draft_meta.get(key) for key in (
+                                "adoption_state", "source_draft_id", "source_body_sha256"
+                            )},
                             "number": ch.chapter_number,
                             "title": ch.title or f"第{ch.chapter_number}章",
                             "word_count": word_count,
@@ -11236,6 +13368,7 @@ def _load_project_chapter_index(
                             "revision_count": revision_count,
                             "has_draft": has_draft,
                             "availability": availability,
+                            "production_intent": control.intent.value,
                             "reader_state": reader_state,
                             "reader_label": reader_label,
                             "pending_rewrite_task_count": pending_rewrite_task_count,
@@ -11324,40 +13457,92 @@ def _task_project_slug(task: Mapping[str, object]) -> str:
 def _settle_task_cards_from_project_status(
     tasks: list[dict[str, object]],
     project_statuses: dict[str, str],
+    delivery_statuses: dict[str, dict[str, object]] | None = None,
 ) -> None:
-    """Let a finished book close its own task card.
+    """Project fresh native delivery onto response copies, retaining run history.
 
-    Task status is derived from the ARQ job plus the last stage it emitted.
-    An autowrite task ends when it hands the book to self-heal, and nothing
-    ever emits onto it again — so when the book later completes, the card
-    stays frozen at the hand-off. A real run finished with
-    ``status=completed`` and its debt recorded while its card still read
-    ``project_repair_requires_machine_repair`` (2026-07-28), which is what
-    "every task failed" looks like from the dashboard.
-
-    The project is the authority on whether a book is written; the card is a
-    view of the run that produced it. Only completion is imported, and only
-    onto a card that is not already completed: a task that genuinely failed
-    in conception has no project row at all, so it can never be resurrected
-    here.
+    Lifecycle status alone grants no completion. Callers supply results of the
+    read-only closure reader, never project metadata or cached task receipts.
     """
 
     for task in tasks:
         slug = _task_project_slug(task)
         if not slug:
             continue
-        if project_statuses.get(slug) != "completed":
+        delivery = (delivery_statuses or {}).get(slug)
+        if not delivery:
             continue
-        if str(task.get("status") or "") == "completed":
+        previous_delivery = task.get("delivery_closure")
+        task["delivery_closure"] = delivery
+        if delivery.get("status") == "not_checked":
+            # Deferred verification is neither a new success nor a failed proof.
+            # Preserve the historical lifecycle in this response copy.
+            task["delivery_verification_pending"] = True
             continue
+        if delivery.get("status") != "verified" or delivery.get("is_complete") is not True:
+            if task.get("current_stage") == "project_closed" or task.get("book_state") == "closed_complete":
+                history = list(task.get("task_history") or [])
+                previous = {key: task.get(key) for key in (
+                    "task_id", "status", "current_stage", "current_stage_label", "book_state", "error",
+                )}
+                previous["delivery_closure"] = previous_delivery
+                if previous not in history:
+                    history.append(previous)
+                task["task_history"] = history
+                task["status"] = "incomplete"
+                task["current_stage"] = "delivery_pending" if delivery.get("body_complete") is True else "delivery_unverified"
+                task["current_stage_label"] = "正文齐备，待交付" if delivery.get("body_complete") is True else "交付待核验"
+                task["book_state"] = "delivery_pending" if delivery.get("body_complete") is True else "needs_attention"
+            continue
+        if task.get("status") != "completed" or task.get("current_stage") != "project_closed" or task.get("error"):
+            history = list(task.get("task_history") or [])
+            previous = {key: task.get(key) for key in (
+                "task_id", "task_type", "status", "current_stage", "created_at", "updated_at", "error",
+            )}
+            if previous not in history:
+                history.append(previous)
+            task["task_history"] = history
         task["status"] = "completed"
-        # The hand-off reason described a book that was still unfinished.
+        task["current_stage"] = "project_closed"
+        task["book_state"] = "closed_complete"
+        task["current_stage_label"] = "正式交付已核验"
         task["error"] = None
+
+
+async def _read_project_delivery_status(
+    session: Any, project: Any, *, progress_only: bool = False,
+) -> dict[str, object]:
+    """Fresh readonly authority; exceptions never fall back to status/counts."""
+    from bestseller.services.book_delivery_readiness import read_book_delivery_closure
+
+    if progress_only:
+        # A frequent progress projection never issues a delivery certificate.
+        # Full/default reads, the reader and export retain native verification.
+        return {"status": "not_checked", "is_complete": False, "body_complete": False,
+                "reason": "delivery_verification_not_requested",
+                "reader": "read_book_delivery_closure"}
+    try:
+        result = await read_book_delivery_closure(session, project, lock=False)
+        verdict = result.verdict
+        return {
+            "status": "verified" if verdict.is_complete is True else "pending",
+            "is_complete": verdict.is_complete is True,
+            "body_complete": verdict.body_complete is True,
+            "reason": verdict.reason,
+            "reader": "read_book_delivery_closure",
+        }
+    except Exception:
+        logger.warning("Native delivery readback unavailable for %s", project.slug, exc_info=True)
+        return {"status": "unverified", "is_complete": False, "body_complete": False,
+                "reason": "delivery_readback_unavailable", "reader": "read_book_delivery_closure"}
 
 
 async def _apply_project_titles_to_tasks(
     settings: AppSettings,
     tasks: list[dict[str, object]],
+    *,
+    delivery_statuses: dict[str, dict[str, object]] | None = None,
+    progress_readback: bool = False,
 ) -> list[dict[str, object]]:
     """Use DB project titles as the authoritative task-card display names."""
     slugs = sorted({_task_project_slug(task) for task in tasks if _task_project_slug(task)})
@@ -11369,30 +13554,32 @@ async def _apply_project_titles_to_tasks(
         from bestseller.infra.db.models import ProjectModel
 
         async with session_scope(settings) as sess:
-            rows = list(
-                await sess.execute(
-                    select(
-                        ProjectModel.slug,
-                        ProjectModel.title,
-                        ProjectModel.status,
-                    ).where(ProjectModel.slug.in_(slugs))
-                )
-            )
+            rows = list(await sess.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs))))
             titles = {
-                str(slug): str(title)
-                for slug, title, _status in rows
-                if slug and str(title or "").strip()
+                str(row.slug): str(row.title) for row in rows
+                if row.slug and str(row.title or "").strip()
             }
             project_statuses = {
-                str(slug): str(status or "").strip().lower() for slug, _title, status in rows if slug
+                str(row.slug): str(row.status or "").strip().lower() for row in rows if row.slug
             }
+            # Only the handler's current-request reader results may be reused.
+            # Never read this cache from task JSON or retain it across GETs.
+            fresh_deliveries = {slug: {"status": "unverified", "is_complete": False} for slug in slugs}
+            for row in rows:
+                if row.slug:
+                    fresh_deliveries[str(row.slug)] = ((delivery_statuses or {}).get(str(row.slug))
+                        or await _read_project_delivery_status(sess, row,
+                            **({"progress_only": True} if progress_readback else {})))
     except Exception:
         logger.warning("Failed to apply DB project titles to task cards", exc_info=True)
+        _settle_task_cards_from_project_status(tasks, {}, {
+            slug: {"status": "unverified", "is_complete": False} for slug in slugs
+        })
         return tasks
 
     # Runs before the title early-return: a completed book must close its card
     # even if its title happens to be blank.
-    _settle_task_cards_from_project_status(tasks, project_statuses)
+    _settle_task_cards_from_project_status(tasks, project_statuses, fresh_deliveries)
     if not titles:
         return tasks
 
@@ -11421,14 +13608,16 @@ def _library_book_state(
     archived: bool = False,
     repair_status: dict[str, object] | None = None,
     has_active_workflow: bool = False,
+    delivery_closure: Mapping[str, object] | None = None,
 ) -> str:
     if archived:
         return "archived"
     normalized = str(status or "").lower()
-    if normalized in _BOOK_CLOSED_STATUSES:
+    if (delivery_closure and delivery_closure.get("status") == "verified"
+        and delivery_closure.get("is_complete") is True):
         return "closed_complete"
     if target_units > 0 and completed_units >= target_units and has_content:
-        return "closed_complete"
+        return "delivery_pending"
     if has_active_workflow:
         return "in_progress"
     if normalized in _BOOK_ATTENTION_STATUSES:
@@ -11446,6 +13635,7 @@ def _library_book_state_label(state: str) -> str:
     return {
         "archived": "已归档",
         "closed_complete": "已闭环",
+        "delivery_pending": "正文齐备，待交付",
         "in_progress": "编写中",
         "needs_attention": "需处理",
         "draft": "草稿",
@@ -11456,103 +13646,9 @@ def _load_task_chapter_word_stats_summary(
     settings: AppSettings,
     project_slugs: list[str],
 ) -> dict[str, dict[str, object]]:
-    """Aggregate-only chapter stats for dashboard (no per-chapter list)."""
-    slugs = sorted({slug for slug in project_slugs if slug})
-    if not slugs:
-        return {}
-
-    try:
-        from sqlalchemy import and_, func, select
-
-        from bestseller.infra.db.models import (
-            ChapterDraftVersionModel,
-            ChapterModel,
-            ProjectModel,
-        )
-
-        async def _fetch() -> dict[str, dict[str, object]]:
-            async with session_scope(settings) as sess:
-                project_rows = list(
-                    await sess.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs)))
-                )
-                if not project_rows:
-                    return {}
-
-                project_by_id = {project.id: project for project in project_rows}
-                project_ids = list(project_by_id)
-                stats_by_slug: dict[str, dict[str, object]] = {}
-                for project in project_rows:
-                    meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-                    is_short = is_fanqie_short_project(project)
-                    if is_short:
-                        export_stats = _build_fanqie_short_export_task_stats(
-                            settings,
-                            project,
-                            include_chapters=False,
-                        )
-                        if export_stats is not None:
-                            stats_by_slug[project.slug] = export_stats
-                            continue
-                    stats_by_slug[project.slug] = {
-                        "source": "db",
-                        "project_slug": project.slug,
-                        "project_title": project.title,
-                        "project_type": project.project_type,
-                        "content_mode": meta.get("content_mode"),
-                        "length_key": meta.get("length_key"),
-                        "unit_kind": "segment" if is_short else "chapter",
-                        "unit_label": "段" if is_short else "章",
-                        "target_chapters": int(project.target_chapters or 0),
-                        "target_segments": int(project.target_chapters or 0) if is_short else 0,
-                        "target_word_count": int(project.target_word_count or 0),
-                        "completed_chapters": 0,
-                        "completed_segments": 0,
-                        "word_count_total": 0,
-                        "chapters": [],
-                    }
-
-                word_expr = func.coalesce(
-                    func.nullif(ChapterModel.current_word_count, 0),
-                    ChapterDraftVersionModel.word_count,
-                    0,
-                )
-                agg_rows = await sess.execute(
-                    select(
-                        ChapterModel.project_id,
-                        func.count(ChapterModel.id),
-                        func.coalesce(func.sum(word_expr), 0),
-                    )
-                    .outerjoin(
-                        ChapterDraftVersionModel,
-                        and_(
-                            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
-                            ChapterDraftVersionModel.is_current.is_(True),
-                        ),
-                    )
-                    .where(
-                        ChapterModel.project_id.in_(project_ids),
-                        word_expr > 0,
-                    )
-                    .group_by(ChapterModel.project_id)
-                )
-                for project_id, completed_chapters, word_total in agg_rows:
-                    project = project_by_id.get(project_id)
-                    if project is None:
-                        continue
-                    stats = stats_by_slug[project.slug]
-                    if stats.get("source") == "fanqie_short_export":
-                        continue
-                    stats["completed_chapters"] = int(completed_chapters or 0)
-                    if stats.get("unit_kind") == "segment":
-                        stats["completed_segments"] = int(completed_chapters or 0)
-                    stats["word_count_total"] = int(word_total or 0)
-
-                return stats_by_slug
-
-        return asyncio.run(_fetch())
-    except Exception:
-        logger.warning("Failed to load dashboard chapter word stats", exc_info=True)
-        return {}
+    """Use the same adoption evidence as detail; omit the per-chapter rows."""
+    stats = _load_task_chapter_word_stats(settings, project_slugs, summary_only=False)
+    return {slug: {**value, "chapters": []} for slug, value in stats.items()}
 
 
 def _load_task_chapter_word_stats(
@@ -11561,131 +13657,55 @@ def _load_task_chapter_word_stats(
     *,
     summary_only: bool = False,
 ) -> dict[str, dict[str, object]]:
-    """Return DB-authoritative chapter counts for quickstart task cards."""
+    """Return adopted progress, separately from candidates and export previews."""
     if summary_only:
         return _load_task_chapter_word_stats_summary(settings, project_slugs)
     slugs = sorted({slug for slug in project_slugs if slug})
     if not slugs:
         return {}
-
     try:
         from sqlalchemy import select
-
-        from bestseller.infra.db.models import (
-            ChapterDraftVersionModel,
-            ChapterModel,
-            ProjectModel,
-        )
+        from bestseller.infra.db.models import ProjectModel
 
         async def _fetch() -> dict[str, dict[str, object]]:
-            async with session_scope(settings) as sess:
-                project_rows = list(
-                    await sess.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs)))
+            async with session_scope(settings) as session:
+                projects = list(await session.scalars(
+                    select(ProjectModel).where(ProjectModel.slug.in_(slugs))
+                ))
+                progress = await _load_adopted_chapter_progress(
+                    session, [p.id for p in projects],
+                    project_languages={p.id: p.language for p in projects},
                 )
-                if not project_rows:
-                    return {}
-
-                project_by_id = {project.id: project for project in project_rows}
-                project_ids = list(project_by_id)
-                stats_by_slug: dict[str, dict[str, object]] = {}
-                for project in project_rows:
+                result = {}
+                for project in projects:
                     meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
                     is_short = is_fanqie_short_project(project)
-                    if is_short:
-                        export_stats = _build_fanqie_short_export_task_stats(
-                            settings,
-                            project,
-                            include_chapters=True,
-                        )
-                        if export_stats is not None:
-                            stats_by_slug[project.slug] = export_stats
-                            continue
-                    stats_by_slug[project.slug] = {
-                        "source": "db",
-                        "project_slug": project.slug,
-                        "project_title": project.title,
-                        "project_type": project.project_type,
-                        "content_mode": meta.get("content_mode"),
-                        "length_key": meta.get("length_key"),
+                    value = {
+                        **progress[project.id], "project_slug": project.slug,
+                        "project_title": project.title, "project_type": project.project_type,
+                        "content_mode": meta.get("content_mode"), "length_key": meta.get("length_key"),
                         "unit_kind": "segment" if is_short else "chapter",
                         "unit_label": "段" if is_short else "章",
                         "target_chapters": int(project.target_chapters or 0),
                         "target_segments": int(project.target_chapters or 0) if is_short else 0,
+                        "completed_segments": progress[project.id]["adopted_chapters"] if is_short else 0,
                         "target_word_count": int(project.target_word_count or 0),
-                        "completed_chapters": 0,
-                        "completed_segments": 0,
-                        "word_count_total": 0,
-                        "chapters": [],
                     }
-
-                draft_rows = list(
-                    await sess.execute(
-                        select(
-                            ChapterDraftVersionModel.chapter_id,
-                            ChapterDraftVersionModel.word_count,
-                        ).where(
-                            ChapterDraftVersionModel.project_id.in_(project_ids),
-                            ChapterDraftVersionModel.is_current.is_(True),
+                    if is_short:
+                        exported = _build_fanqie_short_export_task_stats(
+                            settings, project, include_chapters=False,
                         )
-                    )
-                )
-                draft_word_count_by_chapter_id = {
-                    chapter_id: int(word_count or 0) for chapter_id, word_count in draft_rows
-                }
-
-                chapter_rows = list(
-                    await sess.scalars(
-                        select(ChapterModel)
-                        .where(ChapterModel.project_id.in_(project_ids))
-                        .order_by(ChapterModel.project_id, ChapterModel.chapter_number)
-                    )
-                )
-                for chapter in chapter_rows:
-                    project = project_by_id.get(chapter.project_id)
-                    if project is None:
-                        continue
-                    stats = stats_by_slug[project.slug]
-                    if stats.get("source") == "fanqie_short_export":
-                        continue
-                    word_count = int(chapter.current_word_count or 0)
-                    if word_count <= 0:
-                        word_count = draft_word_count_by_chapter_id.get(chapter.id, 0)
-                    if chapter.id not in draft_word_count_by_chapter_id and word_count <= 0:
-                        continue
-
-                    is_short = stats.get("unit_kind") == "segment"
-                    unit_label = str(stats.get("unit_label") or ("段" if is_short else "章"))
-                    chapter_payload = {
-                        "number": int(chapter.chapter_number),
-                        "title": chapter.title or f"第{chapter.chapter_number}{unit_label}",
-                        "unit_kind": "segment" if is_short else "chapter",
-                        "unit_label": unit_label,
-                        "word_count": word_count,
-                        "estimated_read_minutes": (
-                            (word_count + 499) // 500 if word_count > 0 else 0
-                        ),
-                        "target_word_count": int(chapter.target_word_count or 0),
-                        "status": chapter.status,
-                    }
-                    stats["chapters"].append(chapter_payload)  # type: ignore[index]
-                    stats["word_count_total"] = int(stats["word_count_total"]) + word_count
-
-                for stats in stats_by_slug.values():
-                    if stats.get("source") == "fanqie_short_export":
-                        continue
-                    chapters = list(stats["chapters"])  # type: ignore[arg-type]
-                    chapters.sort(key=lambda item: int(item.get("number") or 0))
-                    stats["chapters"] = chapters
-                    stats["completed_chapters"] = len(chapters)
-                    if stats.get("unit_kind") == "segment":
-                        stats["completed_segments"] = len(chapters)
-
-                return stats_by_slug
-
+                        if exported:
+                            # Exported preview bytes are not adoption evidence.
+                            for key in ("current_export_filename", "current_export_modified_at"):
+                                value[key] = exported.get(key)
+                            value["export_word_count_total"] = exported.get("word_count_total", 0)
+                    result[project.slug] = value
+                return result
         return asyncio.run(_fetch())
     except Exception:
-        logger.warning("Failed to load quickstart chapter word stats", exc_info=True)
-        return {}
+        logger.warning("Failed to load adopted chapter progress", exc_info=True)
+        return {}  # missing stats remain unknown; never synthesize completion
 
 
 def _attach_task_chapter_word_stats(
@@ -11693,16 +13713,25 @@ def _attach_task_chapter_word_stats(
     tasks: list[dict[str, object]],
     *,
     summary_only: bool = False,
+    same_request_stats: dict[str, dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
-    stats_by_slug = _load_task_chapter_word_stats(
-        settings,
-        [str(task.get("project_slug") or "") for task in tasks],
-        summary_only=summary_only,
-    )
-    if not stats_by_slug:
+    stats_by_slug = (deepcopy(same_request_stats) if same_request_stats is not None
+                     else _load_task_chapter_word_stats(
+                         settings, [str(task.get("project_slug") or "") for task in tasks],
+                         summary_only=summary_only,
+                     ))
+    if not stats_by_slug and same_request_stats is None:
         return tasks
     for task in tasks:
         slug = str(task.get("project_slug") or "")
+        if same_request_stats is not None and slug not in stats_by_slug:
+            previous = task.get("chapter_word_stats")
+            if isinstance(previous, dict):
+                task["chapter_word_stats"] = {
+                    "source": "unverified", "adoption_evidence": "unverified",
+                    "previous_snapshot": deepcopy(previous),
+                }
+            continue
         if slug in stats_by_slug:
             stats = stats_by_slug[slug]
             task["chapter_word_stats"] = stats
@@ -11753,6 +13782,61 @@ def _web_auth_ok(expected_token: str, provided_token: str) -> bool:
     return bool(provided_token) and hmac.compare_digest(provided_token, expected_token)
 
 
+
+async def _configuration_project_choices(settings):
+    from sqlalchemy import select
+    from bestseller.infra.db.models import ProjectModel
+    async with session_scope(settings) as session:
+        rows = await session.scalars(select(ProjectModel).order_by(ProjectModel.title))
+        return [{"slug": row.slug, "title": row.title} for row in rows]
+
+
+async def _project_creation_configuration(settings, slug, payload=None):
+    from bestseller.services.creation_configuration import configuration_view, save_project_configuration
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            raise ValueError("configuration_project_not_found")
+        if payload is None:
+            from sqlalchemy import select
+            from bestseller.infra.db.models import WorkflowRunModel
+            value = configuration_view(project)
+            pending = list(await session.scalars(select(WorkflowRunModel).where(
+                WorkflowRunModel.project_id == project.id, WorkflowRunModel.workflow_type == "creation_configuration_change",
+                WorkflowRunModel.current_step == "proposal_requires_replan").order_by(WorkflowRunModel.created_at.desc()).limit(10)))
+            if pending:
+                value["pending_changes"] = [{"receipt_id": str(row.id), **row.metadata_json} for row in pending]
+            return value
+        if "expected_hash" not in payload or "expected_window_hash" not in payload:
+            raise ValueError("configuration_expected_versions_required")
+        result = await save_project_configuration(session, project, payload["submission"],
+            expected_hash=payload["expected_hash"], expected_window_hash=payload["expected_window_hash"])
+        await session.commit()
+        return result
+
+def _web_status_payload(settings, task_manager, *, light: bool = False) -> dict[str, object]:
+    """Cheap UI status; full process/disk provenance remains the default audit API."""
+    effective_settings = apply_runtime_llm_profile(settings)
+    payload = {
+        "app": "BestSeller Web Studio",
+        "database_connected": bool(effective_settings.database.url),
+        "llm_mock": effective_settings.llm.mock,
+        "planner_model": effective_settings.llm.planner.model,
+        "writer_model": effective_settings.llm.writer.model,
+        "llm_profile": runtime_llm_profile_payload(settings),
+        "output_base_dir": str(Path(settings.output.base_dir).resolve()),
+        "max_concurrent_tasks": task_manager._max_concurrent_tasks,
+    }
+    if light:
+        payload["runtime_provenance_available"] = True
+    else:
+        payload["runtime_provenance"] = {
+            "process_runtime": initialize_process_runtime(settings),
+            "disk_runtime": disk_runtime_provenance(settings),
+        }
+    return payload
+
+
 def serve_web_app(
     host: str = "127.0.0.1",
     port: int = 8787,
@@ -11760,10 +13844,11 @@ def serve_web_app(
     open_browser: bool = False,
 ) -> None:
     settings = load_settings()
+    initialize_process_runtime(settings)
     tasks_persist_path = Path(settings.output.base_dir) / ".web_tasks.json"
     task_manager = WebTaskManager(persist_path=tasks_persist_path)
 
-    # Run BOTH recovery passes inside a single ``asyncio.run()`` so they
+    # Keep recovery passes inside a single ``asyncio.run()`` so they
     # share one event loop. Splitting them across two ``asyncio.run()``
     # calls used to crash the second one with ``Future attached to a
     # different loop`` because the legacy ``_shared_engine`` cache held
@@ -11772,18 +13857,30 @@ def serve_web_app(
     # the engine-creation cost twice.
     async def _run_startup_recovery() -> None:
         try:
-            recovered = await _recover_projects_from_output(settings)
+            # Independent of AUTO_RESUME: task history is not authorization
+            # to adopt old exports as PostgreSQL truth during a migration.
+            recover_exports = os.environ.get(
+                "BESTSELLER_RECOVER_EXPORTS_ON_STARTUP", "false"
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            recovered = await _recover_projects_from_output(
+                settings, operator_opt_in=recover_exports,
+            )
             if recovered:
                 print(f"Auto-recovered {len(recovered)} projects from output directory")
         except Exception:
             logger.exception("Project recovery from output directory failed")
 
         # Recover task history from output directories (for quickstart
-        # dashboard). Must run AFTER ``_recover_projects_from_output`` so
-        # DB records exist and this pass can derive ``target_chapters`` and
-        # a resumable payload from them.
+        # dashboard). File observations never get executable payloads, even
+        # for existing projects; project progress remains a PostgreSQL projection.
         try:
-            recovered_tasks = await task_manager._recover_tasks_from_output(settings)
+            recover_task_history = os.environ.get(
+                "BESTSELLER_RECOVER_TASK_HISTORY_ON_STARTUP", "true"
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            recovered_tasks = (
+                await task_manager._recover_tasks_from_output(settings)
+                if recover_task_history else 0
+            )
             if recovered_tasks:
                 print(f"Auto-recovered {recovered_tasks} task(s) from output directory")
         except Exception:
@@ -11999,6 +14096,9 @@ def serve_web_app(
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
         def _route_error(self, exc: Exception) -> None:
+            if isinstance(exc, ExecutionBudgetError):
+                self._send_json({"error": exc.code, "scope_id": exc.scope_id}, status=HTTPStatus.CONFLICT)
+                return
             if isinstance(exc, (ValueError, FileNotFoundError)):
                 error_msg = str(exc)
             else:
@@ -12137,9 +14237,9 @@ def serve_web_app(
                     self._send_json(payload)
                     return
                 if path.startswith("/api/methodology-course-en/lessons/"):
-                    lesson_slug = path.removeprefix(
-                        "/api/methodology-course-en/lessons/"
-                    ).strip("/")
+                    lesson_slug = path.removeprefix("/api/methodology-course-en/lessons/").strip(
+                        "/"
+                    )
                     if not re.fullmatch(r"\d{1,2}", lesson_slug or ""):
                         self._route_not_found()
                         return
@@ -12150,20 +14250,8 @@ def serve_web_app(
                     self._send_json(payload)
                     return
                 if path == "/api/status":
-                    llm_profile = runtime_llm_profile_payload(settings)
-                    effective_settings = apply_runtime_llm_profile(settings)
-                    self._send_json(
-                        {
-                            "app": "BestSeller Web Studio",
-                            "database_connected": bool(effective_settings.database.url),
-                            "llm_mock": effective_settings.llm.mock,
-                            "planner_model": effective_settings.llm.planner.model,
-                            "writer_model": effective_settings.llm.writer.model,
-                            "llm_profile": llm_profile,
-                            "output_base_dir": str(Path(settings.output.base_dir).resolve()),
-                            "max_concurrent_tasks": task_manager._max_concurrent_tasks,
-                        }
-                    )
+                    light_mode = _query_bool((query.get("light") or ["0"])[0])
+                    self._send_json(_web_status_payload(settings, task_manager, light=light_mode))
                     return
                 if path == "/api/llm-profile":
                     self._send_json(runtime_llm_profile_payload(settings))
@@ -12171,7 +14259,9 @@ def serve_web_app(
                 if path == "/api/projects":
                     light_mode = _query_bool((query.get("light") or ["0"])[0])
                     if light_mode:
-                        self._send_json(asyncio.run(_load_library_payload(settings)))
+                        progress_readback = _query_bool((query.get("progress_readback") or ["0"])[0])
+                        self._send_json(asyncio.run(_load_projects_payload(settings, light=True,
+                            **({"progress_readback": True} if progress_readback else {}))))
                         return
                     self._send_json(asyncio.run(_load_projects_payload(settings, light=False)))
                     return
@@ -12204,6 +14294,19 @@ def serve_web_app(
                     packs = list_prompt_packs()
                     self._send_json([p.model_dump(mode="json") for p in packs])
                     return
+                if path == "/api/creation-configuration":
+                    from bestseller.services.writing_presets import list_platform_presets
+                    self._send_json({"platforms": [{"key": p.key, "name": p.name} for p in list_platform_presets()],
+                        "chapter_presets": [20, 500, 1000, 2000], "chapter_target_default": 2000,
+                        "unit": "zh_body_chars", "dispatch_started": False})
+                    return
+                if path == "/api/creation-configuration/projects":
+                    self._send_json(asyncio.run(_configuration_project_choices(settings)))
+                    return
+                configuration_slug = _match_project_route(path, "creation-configuration")
+                if configuration_slug is not None:
+                    self._send_json(asyncio.run(_project_creation_configuration(settings, configuration_slug)))
+                    return
                 if path == "/api/model-catalog":
                     slug = (query.get("slug") or [None])[0] or None
                     self._send_json(_model_catalog_payload(settings, slug))
@@ -12221,15 +14324,20 @@ def serve_web_app(
                 if path == "/api/tasks":
                     summary_mode = _query_bool((query.get("summary") or ["0"])[0])
                     include_inactive = _query_bool((query.get("include_inactive") or ["0"])[0])
-                    tasks = task_manager.list_tasks()
+                    progress_readback = summary_mode and _query_bool((query.get("progress_readback") or ["0"])[0])
+                    # Export observations are retained in the cache/audit, not
+                    # execution cards. Existing books are projected from PG.
+                    tasks = [task for task in task_manager.list_tasks()
+                             if task.get("task_type") != "export_history"]
                     if not include_inactive:
                         tasks = _filter_dashboard_visible_tasks(tasks)
                     if summary_mode:
                         tasks = [_compact_task_for_dashboard(task) for task in tasks]
+                    worker_tasks = _load_worker_task_summaries(settings)
+                    if summary_mode:
+                        worker_tasks = [_compact_task_for_dashboard(task) for task in worker_tasks]
+                    tasks.extend(worker_tasks)
                     db_repair_tasks = asyncio.run(_load_db_repair_task_summaries(settings, tasks))
-                    db_repair_tasks = asyncio.run(
-                        _apply_project_titles_to_tasks(settings, db_repair_tasks)
-                    )
                     db_repair_slugs = {
                         str(task.get("project_slug") or "")
                         for task in db_repair_tasks
@@ -12243,7 +14351,8 @@ def serve_web_app(
                                 (
                                     str(task.get("task_id") or "").startswith("recovered-")
                                     and str(task.get("project_slug") or "") in db_repair_slugs
-                                    and str(task.get("status") or "") in {
+                                    and str(task.get("status") or "")
+                                    in {
                                         "failed",
                                         "incomplete",
                                     }
@@ -12255,14 +14364,21 @@ def serve_web_app(
                             )
                         ]
                     tasks.extend(db_repair_tasks)
+                    tasks = [{**task, "execution_owner_verified":task_manager.is_task_executing(str(task.get("task_id") or ""))} for task in tasks]
+                    delivery_statuses = {}
+                    same_request_stats = {} if progress_readback else None
+                    tasks = asyncio.run(_load_current_dashboard_tasks(settings, tasks, delivery_statuses=delivery_statuses,
+                        **({"progress_readback": True, "same_request_stats": same_request_stats} if progress_readback else {})))
                     if not include_inactive:
                         tasks = _filter_dashboard_visible_tasks(tasks)
-                    tasks = asyncio.run(_apply_project_titles_to_tasks(settings, tasks))
+                    tasks = asyncio.run(_apply_project_titles_to_tasks(settings, tasks, delivery_statuses=delivery_statuses,
+                        **({"progress_readback": True} if progress_readback else {})))
                     self._send_json(
                         _attach_task_chapter_word_stats(
                             settings,
                             tasks,
                             summary_only=summary_mode,
+                            **({"same_request_stats": same_request_stats} if same_request_stats is not None else {}),
                         )
                     )
                     return
@@ -12282,6 +14398,40 @@ def serve_web_app(
                         self._route_not_found()
                         return
                     self._send_json(item)
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/phase-handoff-authorization"):
+                    if not self._require_auth(): return
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/phase-handoff-authorization")
+                    async def inspect_phase():
+                        from bestseller.services.execution_phase_handoff import proof
+                        payload = await task_manager.approved_project_resume_payload(task_id)
+                        async with session_scope(settings) as session:
+                            binding, _, _ = await proof(session, task_id=task_id, payload=payload)
+                        return {"available": True, "canonical_id": binding["canonical_id"]}
+                    try:
+                        self._send_json(asyncio.run(inspect_phase()))
+                    except (ValueError, TypeError, KeyError):
+                        self._send_json({"available": False})
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/continuation-authorization"):
+                    if not self._require_auth(): return
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/continuation-authorization")
+                    from bestseller.services.conception_continuation import pending, resume_allowed, resumable_control_error
+                    async def inspect_continuation():
+                        async with session_scope(settings) as session:
+                            current = task_manager.get_task(task_id) or {}
+                            if (resumable_control_error(current.get("error"))
+                                and current.get("payload", {}).get("_active_continuation_scope")):
+                                return await resume_allowed(session.bind, task_id, current["payload"]), True
+                            return await pending(session.bind, task_id), False
+                    scope, existing_window = asyncio.run(inspect_continuation())
+                    self._send_json({"available": bool(scope), "scope_id": scope, "existing_window": existing_window})
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/execution"):
+                    if not self._require_auth():
+                        return
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/execution")
+                    self._send_json(asyncio.run(task_manager.execution_reconciliation(task_id, settings=settings)))
                     return
                 if path.startswith("/api/tasks/"):
                     progress_detail = path.endswith("/progress")
@@ -12317,7 +14467,19 @@ def serve_web_app(
                     if task is None:
                         self._route_not_found()
                         return
-                    titled_tasks = asyncio.run(_apply_project_titles_to_tasks(settings, [task]))
+                    task = {**task, "execution_owner_verified":task_manager.is_task_executing(str(task.get("task_id") or ""))}
+                    delivery_statuses = {}
+                    current_tasks = asyncio.run(_load_current_dashboard_tasks(
+                        settings, [task], slug=_task_project_slug(task),
+                        delivery_statuses=delivery_statuses,
+                    ))
+                    projected = current_tasks[0] if current_tasks else task
+                    if task.get("task_id") == task_id and not task.get("synthetic_project") and projected.get("task_id") != task_id:
+                        task = {**projected, **task, "synthetic_project":False,
+                                "project_projection": {key:projected.get(key) for key in ("task_id","status","current_stage","project_status","execution_active")}}
+                    else:
+                        task = projected
+                    titled_tasks = asyncio.run(_apply_project_titles_to_tasks(settings, [task], delivery_statuses=delivery_statuses))
                     task = titled_tasks[0] if titled_tasks else task
                     enriched_tasks = _attach_task_chapter_word_stats(settings, [task])
                     enriched_task = enriched_tasks[0] if enriched_tasks else task
@@ -12362,9 +14524,17 @@ def serve_web_app(
                     return
                 project_slug = _match_project_route(path, "listing")
                 if project_slug is not None:
-                    self._send_json(
-                        asyncio.run(_load_project_listing_payload(settings, project_slug))
-                    )
+                    from bestseller.services.listing_errors import listing_conflict_detail
+
+                    try:
+                        payload = asyncio.run(_load_project_listing_payload(settings, project_slug))
+                    except ValueError as exc:
+                        detail = listing_conflict_detail(exc)
+                        if detail is None:
+                            raise
+                        self._send_json({"detail": detail}, status=HTTPStatus.CONFLICT)
+                        return
+                    self._send_json(payload)
                     return
                 project_slug = _match_project_route(path, "structure")
                 if project_slug is not None:
@@ -12388,9 +14558,7 @@ def serve_web_app(
                 if project_slug is not None:
                     try:
                         self._send_json(
-                            asyncio.run(
-                                _load_execution_progress_payload(settings, project_slug)
-                            )
+                            asyncio.run(_load_execution_progress_payload(settings, project_slug))
                         )
                     except ValueError as exc:
                         self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
@@ -12421,6 +14589,17 @@ def serve_web_app(
                         asyncio.run(_load_project_design_dossier_payload(settings, project_slug))
                     )
                     return
+                project_slug = _match_project_route(path, "conception/options")
+                if project_slug is not None:
+                    try:
+                        self._send_json(
+                            asyncio.run(
+                                _load_project_conception_options_payload(settings, project_slug)
+                            )
+                        )
+                    except ValueError as exc:
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    return
                 project_slug = _match_project_route(path, "reader-review")
                 if project_slug is not None:
                     try:
@@ -12432,6 +14611,7 @@ def serve_web_app(
                     return
                 project_slug = _match_project_route(path, "prewrite-review")
                 if project_slug is not None:
+
                     async def _load_prewrite() -> dict[str, object]:
                         async with session_scope(settings) as session:
                             return await load_prewrite_review_payload(session, project_slug)
@@ -12688,6 +14868,7 @@ def serve_web_app(
                                 "volumes": [],
                                 "single_piece": True,
                                 "content_mode": "fanqie_short_story",
+                                "project_exists": project_summary.get("project_exists"),
                             }
                         )
                         return
@@ -12732,6 +14913,7 @@ def serve_web_app(
                                 availability = "drafting"
                             merged_toc.append(
                                 {
+                                    **_reader_state_payload(ch),
                                     "number": n,
                                     "title": fs_entry.get("title") or ch.get("title") or f"第{n}章",
                                     "filename": fs_entry.get("filename") or f"chapter-{n:03d}.md",
@@ -12760,6 +14942,7 @@ def serve_web_app(
                             "title": project_title,
                             "chapters": toc,
                             "volumes": volumes,
+                            "project_exists": project_summary.get("project_exists"),
                         }
                     )
                     return
@@ -12874,8 +15057,13 @@ def serve_web_app(
                     volume_number: int | None = None
                     volume_title: str | None = None
                     chapter_title: str | None = None
+                    reader_state_payload: dict[str, object] = {}
                     try:
-                        _, vol_map, _ = _load_project_chapter_index(settings, project_slug)
+                        chapter_index, vol_map, _ = _load_project_chapter_index(settings, project_slug)
+                        chapter_entry = next(
+                            (entry for entry in chapter_index if entry.get("number") == chapter_n), {}
+                        )
+                        reader_state_payload = _reader_state_payload(chapter_entry)
                         vol_info = vol_map.get(chapter_n) if vol_map else None
                         if vol_info:
                             volume_number = vol_info.get("volume_number")  # type: ignore[assignment]
@@ -12884,6 +15072,7 @@ def serve_web_app(
                         pass
                     self._send_json(
                         {
+                            **reader_state_payload,
                             "number": chapter_n,
                             "filename": chapter_file.name,
                             "html": html_content,
@@ -12925,6 +15114,39 @@ def serve_web_app(
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
+                if path.startswith("/api/tasks/") and path.endswith("/continue-approved-project"):
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/continue-approved-project")
+                    self._send_json(task_manager.resume_approved_project(task_id), status=HTTPStatus.ACCEPTED)
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/continue-reviewed-conception"):
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/continue-reviewed-conception")
+                    if int(self.headers.get("Content-Length") or "0") > 4096:
+                        raise ValueError("continuation payload exceeds bound")
+                    self._send_json(task_manager.resume_reviewed_conception(task_id), status=HTTPStatus.ACCEPTED)
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/execution/reconcile"):
+                    if int(self.headers.get("Content-Length") or "0") > 2_100_000:
+                        raise ValueError("reconciliation body exceeds bound")
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/execution/reconcile")
+                    payload = self._read_json_body()
+                    self._send_json(asyncio.run(task_manager.execution_reconciliation(task_id, payload, settings=settings)))
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/execution/recover-unsent"):
+                    if int(self.headers.get("Content-Length", "0")) > 4096:
+                        raise ValueError("unsent recovery body exceeds bound")
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/execution/recover-unsent")
+                    self._send_json(asyncio.run(task_manager.recover_unsent_admission(
+                        task_id, self._read_json_body(), settings=settings)))
+                    return
+                if path == "/api/creation-configuration/preview":
+                    from bestseller.services.creation_configuration import preview_submission
+                    self._send_json(preview_submission(self._read_json_body()))
+                    return
+                configuration_slug = _match_project_route(path, "creation-configuration")
+                if configuration_slug is not None:
+                    result = asyncio.run(_project_creation_configuration(settings, configuration_slug, self._read_json_body()))
+                    self._send_json(result)
+                    return
                 model_post_slug = _match_project_route(path, "model")
                 if model_post_slug is not None:
                     payload = self._read_json_body()
@@ -12966,9 +15188,7 @@ def serve_web_app(
                     # An explicit start is an operator instruction to run, so it
                     # lifts any earlier stop/pause.
                     asyncio.run(
-                        _clear_production_halt_async(
-                            settings, str(payload.get("slug") or "")
-                        )
+                        _clear_production_halt_async(settings, str(payload.get("slug") or ""))
                     )
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
@@ -12995,6 +15215,32 @@ def serve_web_app(
 
                     self._send_json({"ok": True, "prewrite_review": asyncio.run(_approve())})
                     return
+                conception_approve_slug = _match_project_route(path, "conception/approve")
+                if conception_approve_slug is not None:
+                    payload = self._read_json_body()
+
+                    async def _approve_conception() -> dict[str, object]:
+                        async with session_scope(settings) as session:
+                            project = await get_project_by_slug(session, conception_approve_slug)
+                            if project is None:
+                                raise ValueError("Project not found")
+                            return await approve_pending_conception(
+                                session,
+                                project_id=project.id,
+                                snapshot_id=UUID(str(payload.get("snapshot_id") or "")),
+                                expected_lock_version=int(payload.get("expected_lock_version")),
+                                source_hash=str(payload.get("source_hash") or ""),
+                                option_id=str(payload.get("option_id") or ""),
+                                idempotency_key=str(payload.get("idempotency_key") or ""),
+                                actor=str(payload.get("actor") or "web-ui"),
+                                reason=str(payload.get("reason") or "conception approved from design dossier"),
+                            )
+
+                    try:
+                        self._send_json({"ok": True, "conception": asyncio.run(_approve_conception())})
+                    except (ValueError, TypeError) as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+                    return
                 enter_writing_slug = _match_project_route(path, "enter-writing")
                 if enter_writing_slug is not None:
                     active = task_manager.find_active_task_by_project_slug(enter_writing_slug)
@@ -13004,12 +15250,24 @@ def serve_web_app(
 
                     async def _assert_and_payload() -> dict[str, object] | None:
                         async with session_scope(settings) as session:
-                            await assert_prewrite_review_approved(session, enter_writing_slug)
+                            project = await get_project_by_slug(session, enter_writing_slug)
+                            if project is None:
+                                return None
+                            assert_conception_approved(project)
+                            metadata = project.metadata_json if isinstance(project.metadata_json, Mapping) else {}
+                            planning_handoff = (
+                                metadata.get("conception_approved") is True
+                                and str(metadata.get("planning_status") or "").lower()
+                                == "conception_approved"
+                            )
+                            if not planning_handoff:
+                                await assert_prewrite_review_approved(session, enter_writing_slug)
                         return await _rebuild_payload_from_db(settings, enter_writing_slug)
 
                     try:
                         payload = asyncio.run(_assert_and_payload())
                     except PermissionError as exc:
+
                         async def _load_block() -> dict[str, object]:
                             async with session_scope(settings) as session:
                                 return await load_prewrite_review_payload(
@@ -13034,8 +15292,18 @@ def serve_web_app(
                         return
                     payload = dict(payload)
                     payload["_run_conception"] = False
-                    payload["revision_mode"] = True
-                    payload["prewrite_review_approved"] = True
+                    project_metadata = payload.get("metadata")
+                    planning_handoff = isinstance(project_metadata, Mapping) and (
+                        project_metadata.get("conception_approved") is True
+                        and str(project_metadata.get("planning_status") or "").lower()
+                        == "conception_approved"
+                    )
+                    if planning_handoff:
+                        payload["planning_handoff"] = True
+                        payload.pop("prewrite_review_approved", None)
+                    else:
+                        payload["revision_mode"] = True
+                        payload["prewrite_review_approved"] = True
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json({"ok": True, **task}, status=HTTPStatus.ACCEPTED)
                     return
@@ -13193,12 +15461,14 @@ def serve_web_app(
                         )
                         return
                     try:
+
                         async def _assert_revision_prewrite() -> None:
                             async with session_scope(settings) as session:
                                 await assert_prewrite_review_approved(session, revision_slug)
 
                         asyncio.run(_assert_revision_prewrite())
                     except PermissionError as exc:
+
                         async def _load_revision_block() -> dict[str, object]:
                             async with session_scope(settings) as session:
                                 return await load_prewrite_review_payload(session, revision_slug)
@@ -13277,16 +15547,20 @@ def serve_web_app(
                     # Accept either a legacy genre_key (热门开局模板) OR a structured
                     # taxonomy selection (频道·题材·子题材·标签 free picker).
                     if not _quickstart_payload_has_genre(payload):
-                        raise ValueError("请先选择题材(选一个频道·题材·子题材,或一张热门开局模板)。")
+                        raise ValueError(
+                            "请先选择题材(选一个频道·题材·子题材,或一张热门开局模板)。"
+                        )
                     resume_slug = str(payload.get("project_slug") or "")
                     if resume_slug:
                         try:
+
                             async def _assert_quickstart_resume_prewrite() -> None:
                                 async with session_scope(settings) as session:
                                     await assert_prewrite_review_approved(session, resume_slug)
 
                             asyncio.run(_assert_quickstart_resume_prewrite())
                         except PermissionError as exc:
+
                             async def _load_quickstart_block() -> dict[str, object]:
                                 async with session_scope(settings) as session:
                                     return await load_prewrite_review_payload(session, resume_slug)
@@ -13348,9 +15622,7 @@ def serve_web_app(
                         locale=str(payload.get("locale") or "zh-CN"),
                         count=count_value,
                         seed=seed_value,
-                        min_h_norm=float(
-                            getattr(settings.hook_engine, "min_h_norm", 30.0)
-                        ),
+                        min_h_norm=float(getattr(settings.hook_engine, "min_h_norm", 30.0)),
                     )
                     serialized: list[dict[str, object]] = []
                     for candidate in candidates:
@@ -13422,14 +15694,188 @@ def serve_web_app(
                 if path.startswith("/api/tasks/") and path.endswith("/resume"):
                     task_id = path.removeprefix("/api/tasks/").removesuffix("/resume")
                     old = task_manager.get_task(task_id)
+                    if old is not None and execution_terminal_code(old.get("result") or {}) in {
+                        "execution_budget_exhausted", "execution_deadline_exhausted",
+                        "execution_downstream_budget_reserved",
+                        "execution_authorization_paused",
+                    }:
+                        try:
+                            if not asyncio.run(task_manager.rearm_authorized_budget_resume(task_id)):
+                                raise ValueError("task is busy or missing")
+                        except ValueError:
+                            self._send_json({
+                                "ok": False,
+                                "error": "当前预算停止未通过新授权复验，原始回执已保留。",
+                            }, status=HTTPStatus.CONFLICT)
+                            return
+                        old = task_manager.get_task(task_id)
                     if old is None:
+                        worker_resume = _resolve_worker_task_resume_target(settings, task_id)
+                        if worker_resume is not None:
+                            task_type, slug = worker_resume
+                            if _worker_heal_job_is_active(settings.redis.url, task_id):
+                                self._send_json(
+                                    {
+                                        "ok": False,
+                                        "error": "该 worker 任务仍在运行或排队中，不能重复恢复。",
+                                    },
+                                    status=HTTPStatus.CONFLICT,
+                                )
+                                return
+                            if asyncio.run(_has_live_pipeline_run_async(settings, slug)):
+                                self._send_json(
+                                    {
+                                        "ok": False,
+                                        "error": "这本书还有正在运行的流水线，不能重复恢复。",
+                                    },
+                                    status=HTTPStatus.CONFLICT,
+                                )
+                                return
+                            outline_resume_available = (
+                                task_type == "outline_replan"
+                                and _clear_outline_replan_resume_abandonment_sync(settings, slug)
+                            )
+                            if _worker_resume_requires_autowrite_block(
+                                task_type,
+                                outline_replan_available=outline_resume_available,
+                            ):
+                                block_payload = asyncio.run(
+                                    _load_project_autowrite_block_payload(settings, slug)
+                                )
+                                if block_payload:
+                                    self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                                    return
+                            asyncio.run(_clear_production_halt_async(settings, slug, strict=True))
+                            _clear_repair_resume_focus_pause_sync(settings, slug)
+                            task_type = _worker_resume_enqueue_kind(
+                                task_type,
+                                outline_replan_available=outline_resume_available,
+                            )
+                            outline_resume = task_type == "outline_replan"
+                            if outline_resume:
+                                job_id = _enqueue_outline_replan_heal_job(
+                                    settings,
+                                    settings.redis.url,
+                                    slug,
+                                )
+                            elif task_type == "repair":
+                                job_id = _enqueue_repair_heal_job(settings.redis.url, slug)
+                            else:
+                                job_id = _enqueue_autowrite_heal_job(settings.redis.url, slug)
+                            if job_id:
+                                self._send_json(
+                                    {
+                                        "ok": True,
+                                        "task_id": task_id,
+                                        "project_slug": slug,
+                                        "status": "queued",
+                                        "current_stage": (
+                                            "delegated_to_worker_outline_replan"
+                                            if outline_resume
+                                            else "delegated_to_worker_self_heal"
+                                        ),
+                                        "worker_job_id": job_id,
+                                    },
+                                    status=HTTPStatus.ACCEPTED,
+                                )
+                                return
+                            self._send_json(
+                                {
+                                    "ok": False,
+                                    "error": "Worker task receipt is valid but could not be re-enqueued",
+                                },
+                                status=HTTPStatus.CONFLICT,
+                            )
+                            return
                         if task_id.startswith("db-repair:"):
                             slug = task_id.removeprefix("db-repair:").strip()
+                            # A synthetic repair card still resumes the same
+                            # production project.  Its worker must not inherit
+                            # the durable operator halt written by Stop.
+                            if slug:
+                                asyncio.run(
+                                    _clear_production_halt_async(settings, slug, strict=True)
+                                )
                             _clear_repair_resume_focus_pause_sync(settings, slug)
                             outline_resume = _clear_outline_replan_resume_abandonment_sync(
                                 settings,
                                 slug,
                             )
+                            original = asyncio.run(
+                                _load_incomplete_original_autowrite_task(
+                                    settings,
+                                    task_manager,
+                                    slug,
+                                )
+                            )
+                            if original is not None and not outline_resume:
+                                if asyncio.run(_has_live_pipeline_run_async(settings, slug)):
+                                    self._send_json(
+                                        {
+                                            "ok": False,
+                                            "error": "这本书还有正在运行的流水线，不能重复恢复。",
+                                        },
+                                        status=HTTPStatus.CONFLICT,
+                                    )
+                                    return
+                                original_task_id = str(original.get("task_id") or "")
+                                original_payload = original.get("payload")
+                                if original_task_id and isinstance(original_payload, dict):
+                                    saved_payload = dict(original_payload)
+                                    rebuilt = asyncio.run(
+                                        _rebuild_payload_from_db(settings, slug)
+                                    )
+                                    saved_payload = _merge_resume_payload_with_project_truth(
+                                        saved_payload,
+                                        rebuilt,
+                                    )
+                                    saved_payload["slug"] = slug
+                                    saved_payload["project_slug"] = slug
+                                    saved_payload["_run_conception"] = False
+                                    block_payload = asyncio.run(
+                                        _load_project_autowrite_block_payload(settings, slug)
+                                    )
+                                    if block_payload:
+                                        _mark_db_repair_resume_block(
+                                            task_manager,
+                                            original_task_id,
+                                            block_payload,
+                                        )
+                                        self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                                        return
+                                    heal_owned = bool(
+                                        settings.redis.url
+                                        and slug
+                                        in _fetch_heal_owned_slugs_by_kind(
+                                            settings.redis.url,
+                                            "autowrite",
+                                        )
+                                    )
+                                    resumed = _resume_original_autowrite_task(
+                                        task_manager,
+                                        original,
+                                        saved_payload,
+                                        heal_owned=heal_owned,
+                                    )
+                                    if isinstance(resumed, dict):
+                                        self._send_json(
+                                            {
+                                                "ok": True,
+                                                "resume_mode": "full_autowrite",
+                                                **resumed,
+                                            },
+                                            status=HTTPStatus.ACCEPTED,
+                                        )
+                                        return
+                                    if resumed == "busy":
+                                        self._send_json(
+                                            {
+                                                "ok": False,
+                                                "error": "Task is already running or queued",
+                                            },
+                                            status=HTTPStatus.CONFLICT,
+                                        )
+                                        return
                             job_id = (
                                 _enqueue_outline_replan_heal_job(
                                     settings,
@@ -13488,9 +15934,13 @@ def serve_web_app(
                         # generic premise or exploratory world/material data.
                         # Preserve only saved-only controls; every field that
                         # can be rebuilt from the project must win.
-                        rebuilt = asyncio.run(
-                            _rebuild_payload_from_db(settings, slug),
-                        ) if slug else None
+                        rebuilt = (
+                            asyncio.run(
+                                _rebuild_payload_from_db(settings, slug),
+                            )
+                            if slug
+                            else None
+                        )
                         saved_payload = _merge_resume_payload_with_project_truth(
                             dict(saved_payload),
                             rebuilt,
@@ -13512,8 +15962,7 @@ def serve_web_app(
                     # conception ON so resume re-runs it; forcing it off would
                     # try to write chapters for a project that never got built.
                     project_exists = bool(
-                        slug
-                        and asyncio.run(_load_existing_project_slugs(settings, {slug}))
+                        slug and asyncio.run(_load_existing_project_slugs(settings, {slug}))
                     )
                     if project_exists:
                         saved_payload["_run_conception"] = False
@@ -13555,9 +16004,7 @@ def serve_web_app(
                     # workflow_runs 仍是 running，resume 放行后两个
                     # project_pipeline 并发写同一本书，几分钟后 Postgres
                     # 报 DeadlockDetectedError，整本书失败在第 22 章。
-                    if slug and asyncio.run(
-                        _has_live_pipeline_run_async(settings, slug)
-                    ):
+                    if slug and asyncio.run(_has_live_pipeline_run_async(settings, slug)):
                         self._send_json(
                             {
                                 "ok": False,
@@ -13584,6 +16031,11 @@ def serve_web_app(
                     # 漏了，不是设计如此。
                     if slug:
                         asyncio.run(_clear_production_halt_async(settings, slug))
+                        if project_exists and str(old.get("error") or "").rstrip().endswith((
+                            "ValueError: fanqie_projection_scene_field_type:entry_state",
+                            "ValueError: fanqie_projection_scene_field_type:exit_state",
+                        )):
+                            asyncio.run(_prepare_failed_fanqie_beat_resume_async(settings, slug))
                     resumed = task_manager.resume_autowrite_task(
                         task_id,
                         saved_payload,
@@ -13638,7 +16090,11 @@ def serve_web_app(
                     self._send_json({"removed": removed, "statuses": sorted(statuses)})
                     return
                 if path == "/api/projects/recover":
-                    recovered = asyncio.run(_recover_projects_from_output(settings))
+                    # This authenticated, explicit operator action is separate
+                    # from displaying task history or starting the server.
+                    recovered = asyncio.run(
+                        _recover_projects_from_output(settings, operator_opt_in=True)
+                    )
                     self._send_json(
                         {
                             "recovered": len(recovered),

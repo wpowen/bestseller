@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import lru_cache
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Project metadata key holding the selected catalog entry id.
 PROJECT_MODEL_ID_KEY = "llm_model_id"
+LEGACY_MODEL_DEFAULTS_FILE = "legacy-project-model-defaults.v1.json"
 
 
 class ModelCatalogEntry(BaseModel):
@@ -167,6 +169,35 @@ def selected_model_id(project_metadata: Mapping[str, Any] | None) -> str | None:
         return None
     value = project_metadata.get(PROJECT_MODEL_ID_KEY)
     return str(value) if value else None
+
+
+def default_new_project_model_id(settings) -> str | None:
+    """Freeze the current configured default at creation, never at resume."""
+    from bestseller.settings import apply_runtime_llm_profile
+    role = apply_runtime_llm_profile(settings).llm.writer
+    entry = next((item for item in load_model_catalog()
+                  if item.model == role.model and item.api_base == role.api_base), None)
+    if entry is not None and not entry.available:
+        raise ValueError(f"Unavailable default model: {entry.id} — {entry.unavailable_reason}")
+    return entry.id if entry is not None else None
+
+
+def legacy_project_role(settings, project_id, role_name):
+    """Read a captured pre-upgrade default without changing existing book data."""
+    from bestseller.settings import LLMRoleSettings
+    path = Path(settings.artifact_store.local_dir) / "runtime" / LEGACY_MODEL_DEFAULTS_FILE
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text())
+    if data.get("schema") != "legacy-project-model-defaults.v1":
+        raise ValueError("legacy_project_model_defaults_schema_invalid")
+    binding = (data.get("projects") or {}).get(str(project_id))
+    if binding is None:
+        return None
+    from bestseller.services.prompt_source_policy import content_hash
+    if content_hash(binding["roles"]) != binding["roles_sha256"]:
+        raise ValueError("legacy_project_model_defaults_changed")
+    return LLMRoleSettings.model_validate(binding["roles"][role_name])
 
 
 def resolve_project_model_entry(

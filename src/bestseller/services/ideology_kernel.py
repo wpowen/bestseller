@@ -1,25 +1,17 @@
-"""Derivation of the per-book :class:`IdeologyKernel`.
+"""Materialize literal author ideology clauses without inventing a mandatory spine.
 
-Turns ``(premise, BookSpec)`` into a structured core-ideology kernel: one primary
-theme (主主题) + woven sub-themes (子题) drawn from a large, genre-DECOUPLED theme
-corpus, organised by a 4-layer motif scaffold.
-
-**Genre never drives theme selection.** Selection is driven by a per-book
-*diversity seed* (premise + title identity), so two same-genre books get
-different themes. ``genre`` is passed only as soft prompt context with an explicit
-"avoid the genre cliché" instruction.
-
-Split into pure, unit-testable pieces (reused by the pilot's standalone runner):
-* :func:`build_ideology_system_prompt` / :func:`build_ideology_user_prompt`
-* :func:`fallback_ideology_kernel` — deterministic, always-valid, seed-diverse.
-* :func:`parse_ideology_kernel` — JSON → validated kernel (fallback-safe).
-* :func:`derive_ideology_kernel` — production entry via ``complete_text``.
+The existing full v1 kernel remains readable and old artifacts remain intact.
+Production v2 is an effective projection of current author methodology; unknown
+or omitted fields stay empty. The optional motif-library helpers remain available
+as reference utilities and do not grant author authority or generate paid work.
 """
 
 # ruff: noqa: RUF001, E501, ANN401, S112
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+import hashlib
 import json
 import re
 from typing import Any
@@ -37,15 +29,104 @@ from bestseller.services.ideology_library import (
     MotifLibrary,
     ThemeEntry,
     book_diversity_seed,
-    load_motif_library,
-    render_motif_library_prompt_block,
-    select_themes,
     stable_seed_int,
-    suggest_motif_formula,
 )
-from bestseller.services.llm import LLMCompletionRequest, complete_text
-from bestseller.services.story_enhancers import COST_STYLE_DEFAULT
+from bestseller.services.story_enhancers import COST_STYLE_DEFAULT, resolve_cost_style
 from bestseller.settings import AppSettings
+
+
+def _cost_source_hash(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def resolve_cached_ideology_cost_source(
+    kernel: IdeologyKernel | Mapping[str, Any],
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve current author policy without treating a cached label as approval.
+
+    This is an effective read projection. All cached fields, established facts,
+    prior approvals and overrides remain untouched. Renderers must not fall
+    back to standard when the current author source is unknown.
+    """
+    payload = kernel.model_dump(mode="json") if isinstance(kernel, IdeologyKernel) else dict(kernel)
+    creation = (metadata or {}).get("creation_intent_contract")
+    creation = dict(creation) if isinstance(creation, Mapping) else {}
+    effective = resolve_cost_style(metadata)
+    superseded = not effective or payload.get("cost_style") != effective
+    return {
+        "version": "ideology-cost-source.v1",
+        "source_kernel_sha256": _cost_source_hash(payload),
+        "source_creation_sha256": _cost_source_hash(creation),
+        "cached_cost_style": str(payload.get("cost_style") or ""),
+        "effective_cost_style": effective,
+        "authority": "explicit_creation_entry" if effective else "unknown",
+        "cached_policy_superseded": superseded,
+        "suppressed_projection_fields": (
+            ["motif_to_world_bindings", "forbidden_resolutions"] if superseded else []
+        )
+        + (["cost_system"] if not effective else []),
+    }
+
+
+def build_ideology_cost_source_supersession(
+    project: Any,
+    source_artifact: Any,
+    *,
+    expected_source_sha256: str,
+    expected_creation_sha256: str,
+) -> dict[str, Any]:
+    """Build a bound, deterministic operator dry-run receipt; never write rows.
+
+    The caller supplies exact project/artifact rows from its authorized read.
+    An approved planning artifact is not proof of author approval of its cost
+    label. This receipt supersedes only that label's authority, never its facts
+    or artifact status, and does not release any quality or publication gate.
+    """
+    if not getattr(project, "id", None) or str(source_artifact.project_id) != str(project.id):
+        raise ValueError("ideology cost source project mismatch")
+    if not getattr(source_artifact, "id", None) or source_artifact.status != "approved":
+        raise ValueError("ideology cost source must be an exact approved artifact")
+    content = source_artifact.content
+    if not isinstance(content, Mapping):
+        raise ValueError("ideology cost source content missing")
+    if source_artifact.artifact_type == "story_design_kernel":
+        kernel = content.get("ideology_kernel")
+    elif source_artifact.artifact_type == "ideology_kernel":
+        kernel = content
+    else:
+        raise ValueError("ideology cost source artifact type mismatch")
+    if not isinstance(kernel, Mapping) or not kernel:
+        raise ValueError("ideology cost source kernel missing")
+    receipt = resolve_cached_ideology_cost_source(kernel, project.metadata_json or {})
+    if receipt["source_kernel_sha256"] != expected_source_sha256:
+        raise ValueError("ideology cost source hash mismatch")
+    if receipt["source_creation_sha256"] != expected_creation_sha256:
+        raise ValueError("ideology cost creation hash mismatch")
+    metadata = project.metadata_json or {}
+    cache = metadata.get("story_design_kernel")
+    current_kernel = cache.get("ideology_kernel") if isinstance(cache, Mapping) else None
+    if current_kernel is None:
+        current_kernel = metadata.get("ideology_kernel")
+    if current_kernel is not None and (
+        not isinstance(current_kernel, Mapping)
+        or _cost_source_hash(dict(current_kernel)) != expected_source_sha256
+    ):
+        raise ValueError("ideology cost source is not the current cached kernel")
+    receipt.update(
+        {
+            "project_id": str(project.id),
+            "source_artifact_id": str(source_artifact.id),
+            "source_artifact_sha256": _cost_source_hash(dict(content)),
+            "dry_run": True,
+            "writes": [],
+            "cache_binding": "current_cache_match" if current_kernel is not None else "artifact_only",
+        }
+    )
+    receipt["idempotency_key"] = "ideology-cost-source:" + _cost_source_hash(receipt)
+    return receipt
 
 # ---------------------------------------------------------------------------
 # Diversity seed — premise/title identity, NEVER genre
@@ -124,7 +205,6 @@ _EXTERNAL_COST_DIMENSIONS: tuple[str, ...] = (
     "招来更高位者的注意，压力落到整个阵营头上",
 )
 _MINIMAL_COST_DIMENSIONS: tuple[str, ...] = (
-    "短暂脱力，睡一觉能缓过来",
     "一次性的资源消耗，点到为止",
     "轻微且可控的暴露风险",
 )
@@ -177,10 +257,19 @@ def _cost_laws_from_formula(
     ]
 
 
-def _forbidden_from_thesis(thesis: str, formula: MotifFormula) -> list[str]:
+def _forbidden_from_thesis(
+    thesis: str, formula: MotifFormula, *, cost_style: str = COST_STYLE_DEFAULT
+) -> list[str]:
+    satisfaction_forward = str(cost_style or COST_STYLE_DEFAULT).strip().lower() in {
+        "minimal", "external"
+    }
     out = [
         f"不要让结局推翻主主题「{thesis}」(例如最后世界其实会奖励善者/天道有情)。",
-        "不要用'系统暗中保护主角/无偿气运搭救'来取消代价系统。",
+        (
+            "结局的胜利应兑现主角此前的行动与选择，承接已建立的世界规则。"
+            if satisfaction_forward
+            else "不要用'系统暗中保护主角/无偿气运搭救'来取消代价系统。"
+        ),
     ]
     if formula.primary.trap_guard:
         out.append(f"避免陷阱：{formula.primary.common_traps}；做法：{formula.primary.trap_guard}")
@@ -208,10 +297,25 @@ def _per_volume_pressure(formula: MotifFormula, thesis: str, *, volumes: int) ->
     return out
 
 
-def _world_bindings(formula: MotifFormula) -> list[str]:
+def _world_bindings(
+    formula: MotifFormula, *, cost_style: str = COST_STYLE_DEFAULT
+) -> list[str]:
+    style = str(cost_style or COST_STYLE_DEFAULT).strip().lower()
+    if style == "minimal":
+        pressure = (
+            f"力量体系服务于{formula.secondary_action.display_name}的行动兑现；"
+            "主角的优势稳定可用，压力由外部对抗和局势承载，轻量消耗点到为止。"
+        )
+    elif style == "external":
+        pressure = (
+            f"用外置代价承接{formula.secondary_action.display_name}的后果；"
+            "由世界、对手或资源承担，保持主角能力与身心状态稳定。"
+        )
+    else:
+        pressure = f"用代价系统绑定力量体系：每一次{formula.secondary_action.display_name}都要有可见的、非金融的具身代价（反噬/损耗/树敌/暴露/关系后果）。"
     return [
         f"用主母题「{formula.primary.display_name}」长出世界 invariant：{formula.primary.worldview_setting}",
-        f"用代价系统绑定力量体系：每一次{formula.secondary_action.display_name}都要有可见的、非金融的具身代价（反噬/损耗/树敌/暴露/关系后果）。",
+        pressure,
         f"用副母题「{formula.secondary_suspense.display_name}」组织揭秘阶梯：每解一层, 前一层改义。",
     ]
 
@@ -225,67 +329,17 @@ def fallback_ideology_kernel(
     title: str = "",
     genre: str | None = None,  # accepted for back-compat; NOT used for selection
     cost_style: str = COST_STYLE_DEFAULT,
+    metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a deterministic, schema-valid, SEED-DIVERSE IdeologyKernel payload.
+    """Return only current author clauses; absence is a valid neutral v2 kernel.
 
-    Never raises. Genre is ignored for selection — the per-book seed (premise +
-    title) drives the motif spine and the 主主题/子题 so same-genre books differ.
-
-    ``cost_style`` matters because this payload doubles as the ``schema_hint``
-    worked example inside the ideology prompt: a 纯爽 (external/minimal) book
-    used to be shown a self-harm cost example that its own directive then forbade.
+    Legacy arguments remain accepted for call compatibility. They cannot grant
+    authority to a library-generated theme, cosmology, or hidden conclusion.
     """
 
-    library = load_motif_library()
-    seed = seed or _seed_for(premise, book_spec, title)
-    formula = suggest_motif_formula(seed=seed, library=library)
-    selection = select_themes(library, formula=formula, seed=seed)
+    from bestseller.services.ideology_methodology import project_ideology_kernel
 
-    p = formula.primary
-    emphasis_motif = (
-        library.by_key(selection.primary_theme.motif) if selection.primary_theme else None
-    ) or p
-    thesis = selection.primary_theme.proposition if selection.primary_theme else p.thesis_template
-    core_question = emphasis_motif.core_question_template or p.core_question_template
-    cosmic_premise = (
-        p.worldview_setting.strip()
-        or f"这个世界不会因为主角善良就奖励他（{p.display_name}）。"
-    )
-
-    sub_themes = [
-        {"proposition": t.proposition, "motif_key": t.motif, "layer": t.layer}
-        for t in selection.sub_themes
-    ]
-
-    payload: dict[str, Any] = {
-        "version": 1,
-        "cosmic_premise": cosmic_premise,
-        "thesis_statement": thesis,
-        "core_question": core_question,
-        "sub_themes": sub_themes,
-        "primary_motif": _binding_from_motif(p, library, seed),
-        "secondary_motifs": [
-            _binding_from_motif(formula.secondary_action, library, seed, role="action"),
-            _binding_from_motif(formula.secondary_suspense, library, seed, role="suspense"),
-        ],
-        "hidden_endgame_motif": _binding_from_motif(
-            formula.hidden,
-            library,
-            seed,
-            reveal_after=max(1, int(volumes * 0.6)) if volumes and volumes > 1 else None,
-        ),
-        "belief_arc": {
-            "initial_belief": p.belief_initial,
-            "midpoint_shatter": p.belief_shatter,
-            "final_reconstruction": p.belief_reconstruction,
-        },
-        "cost_system": _cost_laws_from_formula(formula, seed=seed, cost_style=cost_style),
-        "layer_coverage": {m.layer: m.display_name for m in formula.all_motifs()},
-        "motif_to_world_bindings": _world_bindings(formula),
-        "per_volume_thesis_pressure": _per_volume_pressure(formula, thesis, volumes=volumes),
-        "forbidden_resolutions": _forbidden_from_thesis(thesis, formula),
-    }
-    return payload
+    return project_ideology_kernel(None, metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -294,26 +348,12 @@ def fallback_ideology_kernel(
 
 
 def build_ideology_system_prompt(*, language: str = "zh") -> str:
-    is_en = str(language or "").lower().startswith("en")
-    if is_en:
-        return (
-            "You are a literary architect specialising in the THESIS (core ideology) of a long "
-            "novel — one primary theme (主主题) plus woven sub-themes (子题) that run through the "
-            "whole book and grow its world & arc. Output ONE valid JSON IdeologyKernel object only. "
-            "HARD RULE: the theme MUST be driven by THIS premise — never default to the genre's "
-            "stock theme. Two same-genre books must get different themes. Bind every motif to this "
-            "book's concrete material; never leave a label abstract. Keep strings ≤ 60 chars, JSON ≤ 6500 chars."
-        )
-    return (
-        "你是长篇小说『核心理念』架构师——负责给一本书定 1 个主主题 + 若干穿插子题, "
-        "贯穿全书并长出世界观与走向。只输出一个合法的 IdeologyKernel JSON 对象, 不要解释。"
-        "【硬性规则·主题必须主流且接地】主主题必须取自公认、读者耳熟能详的主流主题"
-        "(如爱与牺牲/成长/守护/复仇/权力与腐化/正义/救赎/命运与选择/真相与欺骗…), 再据本书前提"
-        "做分化与具体化, 写成一句本书专属的论断; 严禁为标新立异硬造一个扭曲、不符合常识的理念"
-        "(否则读者会觉得『理念不对』而弃读)。"
-        "【硬性多样性规则】主题由『本书前提』决定, 同题材两本书必须得到不同主题, 严禁套用题材默认主题。"
-        "把每个母题『具体化』到本书, 绝不停留在空泛标签。所有字符串 ≤ 60 字, 整个 JSON ≤ 6500 字符。"
-    )
+    if str(language or "").lower().startswith("en"):
+        return ("Return JSON containing only explicit author methodology clauses. Unselected "
+                "themes, cosmology, layers, belief transitions and endings remain empty. "
+                "Cost preference does not authorize story methodology.")
+    return ("仅输出作者明确选择的理念条款JSON。未选主题、宇宙前提、结构层、信念转折和结局留空。"
+            "代价偏好不授权主题方法论，不从范例或资料库补造故事要求。")
 
 
 def _book_spec_digest(book_spec: dict[str, Any] | None, *, limit: int = 1200) -> str:
@@ -330,7 +370,7 @@ def _book_spec_digest(book_spec: dict[str, Any] | None, *, limit: int = 1200) ->
 
 
 def _cost_style_directive(cost_style: str, *, is_en: bool) -> str:
-    """纯正爽文代价风格指令（standard → 空串，保持 prompt 逐字节不变）。"""
+    """纯正爽文代价风格指令 (standard → 空串, 保持 prompt 逐字节不变)。"""
 
     cs = str(cost_style or "standard").strip().lower()
     if cs == "external":
@@ -404,59 +444,14 @@ def build_ideology_user_prompt(
     seed: str | None = None,
     language: str = "zh",
     cost_style: str = "standard",
+    metadata: Mapping[str, Any] | None = None,
 ) -> str:
-    is_en = str(language or "").lower().startswith("en")
-    seed = seed or _seed_for(premise, book_spec)
-    library_block = render_motif_library_prompt_block(seed=seed)
-    # The fallback doubles as the worked example (``schema_hint``) below, so it
-    # MUST honour cost_style — otherwise an external/minimal book is shown a
-    # self-harm cost example and only afterwards told not to inflict one.
-    fallback = fallback_payload or fallback_ideology_kernel(
-        premise=premise,
-        book_spec=book_spec,
-        volumes=volumes,
-        seed=seed,
-        cost_style=cost_style,
-    )
-    schema_hint = json.dumps(fallback, ensure_ascii=False, indent=2)
-    # The rule must PRECEDE the example: a few-shot example outranks a trailing
-    # instruction, so appending the directive after schema_hint taught the model
-    # exactly what the directive forbade.
-    cost_directive = _cost_style_directive(cost_style, is_en=is_en)
-    genre_ctx = (
-        f"题材(仅作背景, 不得据此套用默认主题)：{genre}\n" if genre else ""
-    )
-    if is_en:
-        return (
-            f"Premise:\n{premise}\n\n"
-            f"{('Genre (context only — do NOT default to its stock theme): ' + genre + chr(10)) if genre else ''}"
-            f"Planned volumes: {volumes}\nBookSpec digest: {_book_spec_digest(book_spec)}\n\n"
-            f"{library_block}\n\n"
-            "Produce an IdeologyKernel JSON with: cosmic_premise, thesis_statement (the ONE 主主题, "
-            "premise-driven, NOT a genre cliché), core_question, sub_themes (3-6 woven 子题, each "
-            "{proposition, motif_key, layer}), primary_motif, secondary_motifs (exactly two — one "
-            "role=action, one role=suspense), hidden_endgame_motif (with reveal_after_volume), "
-            "belief_arc, cost_system (>=2 laws), motif_to_world_bindings, per_volume_thesis_pressure, "
-            "forbidden_resolutions. Cover all four layers.\n"
-            f"{cost_directive}\n"
-            f"Schema-valid MINIMUM (make it premise-specific, do not copy verbatim; "
-            f"its cost_system already follows the cost rule above):\n{schema_hint}"
-        )
-    return (
-        f"前提：\n{premise}\n\n"
-        f"{genre_ctx}"
-        f"规划卷数：{volumes}\nBookSpec 摘要：{_book_spec_digest(book_spec)}\n\n"
-        f"{library_block}\n\n"
-        "请产出 IdeologyKernel JSON, 必须包含：cosmic_premise(宇宙前提)、thesis_statement(唯一的主主题, "
-        "由前提决定, 绝不能是题材套话)、core_question(贯穿全书的核心问题)、sub_themes(3-6 个穿插子题, "
-        "每个 {proposition, motif_key, layer})、primary_motif、secondary_motifs(恰好两个: 一个 "
-        "role=action 管行动, 一个 role=suspense 管悬念)、hidden_endgame_motif(含 reveal_after_volume)、"
-        "belief_arc、cost_system(≥2 条)、motif_to_world_bindings、per_volume_thesis_pressure、"
-        "forbidden_resolutions。必须覆盖四层。\n"
-        f"{cost_directive}\n"
-        f"以下为 schema 最低结构(请据前提做出本书独有的具体化, 不要照抄；"
-        f"其 cost_system 已按上面的代价规则给出)：\n{schema_hint}"
-    )
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+
+    source = resolve_ideology_methodology_source(None, metadata)
+    request = {key: source[key] for key in ("effective_fields", "required_layers", "required_secondary_roles")}
+    prefix = "Explicit author clauses only; absent fields stay empty. " if str(language).lower().startswith("en") else "仅以下作者明确条款生效；缺省字段保持空，不补造四层、宇宙前提或隐藏结局。"
+    return prefix + json.dumps(request, ensure_ascii=False, sort_keys=True)
 
 
 # ---------------------------------------------------------------------------
@@ -506,50 +501,11 @@ def _motif_key_of(binding: Any) -> str:
 
 
 def _ensure_structure(merged: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
-    """Guarantee the required spine even when the LLM under-delivers.
+    """Compatibility container normalization without structural backfill."""
 
-    The LLM sometimes returns 1 secondary / no hidden / a layer-thin spine. Rather
-    than let its partial output override the complete fallback pair, backfill the
-    missing action/suspense role + hidden from the fallback (deduped by motif), so
-    the kernel always carries the 2-secondary (action+suspense) + hidden structure.
-    """
-
-    used: set[str] = set()
-    primary_key = _motif_key_of(merged.get("primary_motif"))
-    if primary_key:
-        used.add(primary_key)
-
-    sec_raw = merged.get("secondary_motifs")
-    sec_in = [s for s in sec_raw if isinstance(s, dict)] if isinstance(sec_raw, list) else []
-    sec: list[Any] = []
-    for s in sec_in:
-        k = _motif_key_of(s)
-        if k and k in {_motif_key_of(x) for x in sec}:
-            continue  # drop duplicate motif
-        sec.append(s)
-        if k:
-            used.add(k)
-
-    roles_present = {_role_of(s) for s in sec if _role_of(s)}
-    fb_sec = [s for s in fallback.get("secondary_motifs", []) if isinstance(s, dict)]
-    for needed in ("action", "suspense"):
-        if needed in roles_present:
-            continue
-        for f in fb_sec:
-            if _role_of(f) == needed and _motif_key_of(f) not in used:
-                sec.append(f)
-                used.add(_motif_key_of(f))
-                break
-    merged["secondary_motifs"] = sec
-
-    if not merged.get("hidden_endgame_motif"):
-        merged["hidden_endgame_motif"] = fallback.get("hidden_endgame_motif")
-    # Ensure a non-trivial cost system + at least one sub-theme survive.
-    if not merged.get("cost_system"):
-        merged["cost_system"] = fallback.get("cost_system")
-    if not merged.get("sub_themes"):
-        merged["sub_themes"] = fallback.get("sub_themes")
-    return merged
+    # Kept for older callers: normalize containers without materializing missing
+    # story clauses from any fallback. Empty is a legitimate selection.
+    return dict(merged)
 
 
 def parse_ideology_kernel(
@@ -560,26 +516,20 @@ def parse_ideology_kernel(
     volumes: int = 1,
     seed: str | None = None,
     genre: str | None = None,  # back-compat; not used for selection
+    cost_style: str = COST_STYLE_DEFAULT,
+    metadata: Mapping[str, Any] | None = None,
 ) -> IdeologyKernel:
-    """Parse LLM JSON into a validated kernel, falling back deterministically.
+    """Resolve current author clauses without promoting model proposals.
 
-    Keeps the LLM's rich theme content (thesis, sub_themes, motif theses) but
-    backfills any missing structural piece (2 secondaries with both roles, hidden,
-    cost system) from the deterministic fallback so the spine is always complete.
+    Existing LLM run/artifact records retain the original output. Parsing here
+    never uses a seed corpus to fill absent story requirements.
     """
 
-    payload = _parse_json_object(text)
-    fallback = fallback_ideology_kernel(
-        premise=premise, book_spec=book_spec, volumes=volumes, seed=seed
-    )
-    if not payload:
-        return ideology_kernel_from_dict(fallback)
-    merged = {**fallback, **{k: v for k, v in payload.items() if v not in (None, "", [], {})}}
-    merged = _ensure_structure(merged, fallback)
-    try:
-        return ideology_kernel_from_dict(merged)
-    except Exception:
-        return ideology_kernel_from_dict(fallback)
+    from bestseller.services.ideology_methodology import project_ideology_kernel
+
+    # A model response is a proposal, not author selection. Explicit fields are
+    # preserved exactly from the current author entry; missing fields stay empty.
+    return ideology_kernel_from_dict(project_ideology_kernel(None, metadata))
 
 
 # ---------------------------------------------------------------------------
@@ -600,45 +550,13 @@ async def derive_ideology_kernel(
     cost_style: str = "standard",
     project_id: Any | None = None,
     workflow_run_id: Any | None = None,
+    metadata: Mapping[str, Any] | None = None,
 ) -> IdeologyKernel:
-    """Derive the book's IdeologyKernel via the planner LLM (fallback-safe).
+    """Build the effective source projection without an unnecessary model call."""
 
-    ``cost_style`` (纯正爽文三档 standard|external|minimal) shapes the cost-system
-    derivation prompt and is stamped onto the returned kernel so downstream render
-    picks the matching 代价系统 variant. Default standard → prompt/render byte-identical.
-    """
-
-    seed = _seed_for(premise, book_spec, title)
-    fallback = fallback_ideology_kernel(
-        premise=premise, book_spec=book_spec, volumes=volumes, seed=seed
-    )
-    completion = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="planner",
-            system_prompt=build_ideology_system_prompt(language=language),
-            user_prompt=build_ideology_user_prompt(
-                premise=premise, genre=genre, book_spec=book_spec,
-                volumes=volumes, fallback_payload=fallback, seed=seed, language=language,
-                cost_style=cost_style,
-            ),
-            fallback_response=json.dumps(fallback, ensure_ascii=False),
-            prompt_template="ideology_kernel",
-            prompt_version="v2",
-            project_id=project_id,
-            workflow_run_id=workflow_run_id,
-            metadata={"artifact": "ideology_kernel", "genre": genre or "", "diversity_seed": seed[:64]},
-            max_tokens_override=4200,
-        ),
-    )
-    kernel = parse_ideology_kernel(
-        completion.content, premise=premise, book_spec=book_spec, volumes=volumes, seed=seed
-    )
-    cs = str(cost_style or "standard").strip().lower()
-    if cs != "standard" and cs != kernel.cost_style:
-        kernel = kernel.model_copy(update={"cost_style": cs})
-    return kernel
+    # The exact author contract already contains the literal clauses. A paid
+    # intermediate model must not invent a mandatory ideology for every book.
+    return parse_ideology_kernel("{}", metadata=metadata)
 
 
 def ideology_kernel_health_summary(kernel: IdeologyKernel) -> dict[str, Any]:
@@ -648,7 +566,7 @@ def ideology_kernel_health_summary(kernel: IdeologyKernel) -> dict[str, Any]:
         "thesis_statement": kernel.thesis_statement,
         "sub_theme_count": len(kernel.sub_themes),
         "sub_themes": [t.proposition for t in kernel.sub_themes[:6]],
-        "primary_motif": kernel.primary_motif.display_name,
+        "primary_motif": kernel.primary_motif.display_name if kernel.primary_motif else None,
         "secondary_motifs": [b.display_name for b in kernel.secondary_motifs],
         "secondary_roles": sorted(kernel.secondary_roles()),
         "hidden_motif": (
@@ -679,6 +597,7 @@ def cost_style_directive(cost_style: str, *, is_en: bool = False) -> str:
 
 
 __all__ = [
+    "build_ideology_cost_source_supersession",
     "build_ideology_system_prompt",
     "build_ideology_user_prompt",
     "cost_style_directive",
@@ -686,4 +605,5 @@ __all__ = [
     "fallback_ideology_kernel",
     "ideology_kernel_health_summary",
     "parse_ideology_kernel",
+    "resolve_cached_ideology_cost_source",
 ]

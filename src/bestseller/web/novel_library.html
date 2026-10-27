@@ -846,6 +846,33 @@
   let libraryFilter = 'all';
   let libraryQuery = '';
 
+  // Each resource has one in-flight read; failed reads back off independently.
+  const pollingResources = new Map();
+  async function pollResource(key, interval, load, force = false) {
+    if (!force && document.visibilityState === 'hidden') return;
+    let state = pollingResources.get(key);
+    if (!state) {
+      state = { promise: null, nextAt: 0, failures: 0 };
+      pollingResources.set(key, state);
+    }
+    if (state.promise) return state.promise;
+    if (!force && Date.now() < state.nextAt) return;
+    const startedAt = Date.now();
+    state.promise = Promise.resolve().then(load).then(result => {
+      state.failures = result === false ? state.failures + 1 : 0;
+      return result;
+    }).catch(() => {
+      state.failures += 1;
+      return false;
+    }).finally(() => {
+      state.nextAt = state.failures
+        ? Date.now() + Math.min(Math.max(60000, interval * 4), interval * 2 ** Math.min(state.failures, 5))
+        : startedAt + interval;
+      state.promise = null;
+    });
+    return state.promise;
+  }
+
   function pad2(n) { return String(n).padStart(2, '0'); }
 
   function fmtWords(n) {
@@ -1089,13 +1116,18 @@
     if (dateEl) dateEl.textContent = s;
   }
 
-  async function loadLibrary() {
+  async function loadLibrary(force = true) {
+    return pollResource('library', 30000, fetchLibrary, force);
+  }
+
+  async function fetchLibrary() {
     try {
       const r = await fetch('/api/library');
-      if (r.ok) allBooks = await r.json();
+      if (!r.ok) throw new Error(`library: ${r.status}`);
+      allBooks = await r.json();
     } catch (err) {
       console.warn('library load failed', err);
-      allBooks = [];
+      return false;
     }
     renderLibrary();
   }
@@ -1131,8 +1163,11 @@
 
   // Refresh every 30s while page is visible
   setInterval(() => {
-    if (document.visibilityState === 'visible') loadLibrary();
+    if (document.visibilityState === 'visible') loadLibrary(false);
   }, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') loadLibrary();
+  });
 })();
 </script>
 </body>

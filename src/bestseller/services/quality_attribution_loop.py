@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 import json
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,11 @@ from bestseller.services.autonomous_book_repair import (
 )
 from bestseller.services.causal_attribution import AttributionRecord, attribute_root_causes
 from bestseller.services.material_self_repair import plan_material_self_repair
-from bestseller.services.reader_panel_judge import ReaderFeedback, run_reader_panel
+from bestseller.services.reader_panel_judge import (
+    ReaderFeedback,
+    ReaderPanelUnavailableError,
+    run_reader_panel,
+)
 from bestseller.settings import AppSettings
 
 
@@ -27,6 +31,7 @@ class LoopResult(TypedDict):
     final_feedback: list[ReaderFeedback]
     converged: bool
     repair_log: list[dict[str, Any]]
+    unavailable_reason: NotRequired[str]
 
 
 ReaderPanelRunner = Callable[..., Awaitable[list[ReaderFeedback]]]
@@ -65,14 +70,28 @@ async def run_quality_attribution_loop(
     repairer = artifact_repairer or plan_quality_artifact_repair
     for iteration in range(1, max_iterations + 1):
         chapter_texts = load_chapter_texts(root, chapter_range=chapter_range)
-        final_feedback = await reader_panel_runner(
-            session,
-            settings,
-            chapter_texts,
-            panel=panel,
-            distilled_refs=distilled_refs,
-            target_chapter_range=chapter_range,
-        )
+        try:
+            final_feedback = await reader_panel_runner(
+                session,
+                settings,
+                chapter_texts,
+                panel=panel,
+                distilled_refs=distilled_refs,
+                target_chapter_range=chapter_range,
+            )
+        except ReaderPanelUnavailableError as exc:
+            repair_log.append(
+                {"iteration": iteration, "status": "evaluation_unavailable", "reason": str(exc)}
+            )
+            if write_reports:
+                _write_reports(root, report_rows)
+            return {
+                "iterations": iteration,
+                "final_feedback": final_feedback,
+                "converged": False,
+                "repair_log": repair_log,
+                "unavailable_reason": str(exc),
+            }
         report_rows["reader_feedback"].extend(final_feedback)
         if not final_feedback:
             if write_reports:
@@ -117,9 +136,7 @@ async def run_quality_attribution_loop(
         report_rows["artifact_health"].extend(health_records)
 
         unhealthy_paths = {
-            health["artifact_path"]
-            for health in health_records
-            if not health["is_healthy"]
+            health["artifact_path"] for health in health_records if not health["is_healthy"]
         }
         repair_targets = [
             record

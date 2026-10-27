@@ -1,8 +1,9 @@
-"""空白用户创意时，Story Architect 产物必须真正进入构思主链。"""
+"""空白用户创意时，Story Architect 产物只保留审计，不污染主池。"""
 
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,13 +43,14 @@ def test_blank_setting_does_not_invent_an_automatic_seed() -> None:
     assert conception._build_automatic_story_seed(_facets(setting="")) == ""
 
 
-def test_conception_feeds_the_automatic_seed_to_the_tournament() -> None:
+def test_conception_does_not_feed_automatic_seed_to_the_tournament() -> None:
     source = inspect.getsource(conception.run_conception_pipeline)
     call = source[source.index("run_concept_tournament(") :]
     head = call[: call.index("retry_feedback=")]
 
-    assert "_automatic_seed_for_attempt" in head
-    assert "creation_intent_block=" in head
+    assert "_automatic_seed_for_attempt" not in head
+    assert "creation_intent_block=_creation_intent_prompt_block(ctx)" in head
+    assert "seed_concept=(\n                        _user_owned_story_seed" in head
 
 
 def test_dry_tournament_does_not_bypass_the_winner_gate_with_automatic_seed() -> None:
@@ -110,5 +112,91 @@ def test_retry_prompt_cannot_reinject_the_first_attempt_automatic_seed() -> None
     end = source.index("retry_feedback=concept_retry_feedback", start)
     tournament_call = source[start:end]
 
-    assert "_automatic_seed_for_attempt" in tournament_call
-    assert "_creation_intent_prompt_block(ctx) + _automatic_seed_for_attempt" in tournament_call
+    assert "_automatic_seed_for_attempt" not in tournament_call
+    assert "creation_intent_block=_creation_intent_prompt_block(ctx)" in tournament_call
+
+
+@pytest.mark.asyncio
+async def test_zero_input_real_conception_entry_keeps_story_architect_out_of_pool(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _StopAfterTournament(BaseException):
+        pass
+
+    async def _stop_tournament(*_args: object, **kwargs: object):
+        captured.update(kwargs)
+        raise _StopAfterTournament
+
+    async def _noop(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def _names(*_args: object, **_kwargs: object) -> list[str]:
+        return []
+
+    monkeypatch.setattr(conception, "_attach_concept_methodology", _noop)
+    monkeypatch.setattr(conception, "_prefetch_market_competitors", _noop)
+    monkeypatch.setattr(conception, "_attach_mechanism_dedup", _noop)
+    monkeypatch.setattr(conception, "_recent_cast_names", _names)
+    monkeypatch.setattr(concept_tournament, "run_concept_tournament", _stop_tournament)
+
+    with pytest.raises(_StopAfterTournament):
+        await conception.run_conception_pipeline(
+            None,
+            SimpleNamespace(
+                hook_engine=SimpleNamespace(enabled=False),
+                pipeline=SimpleNamespace(),
+            ),
+            genre_key="xianxia",
+            chapter_count=20,
+            story_facets=_facets(),
+            user_hints={},
+        )
+
+    assert captured["seed_concept"] == ""
+    assert "守山杂役误触残碑" not in str(captured["creation_intent_block"])
+    assert "阵法共鸣" not in str(captured["creation_intent_block"])
+
+
+@pytest.mark.asyncio
+async def test_explicit_seed_real_conception_entry_reaches_tournament(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _StopAfterTournament(BaseException):
+        pass
+
+    async def _stop_tournament(*_args: object, **kwargs: object):
+        captured.update(kwargs)
+        raise _StopAfterTournament
+
+    async def _noop(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def _names(*_args: object, **_kwargs: object) -> list[str]:
+        return []
+
+    async def _empty_effect_contract(*_args: object, **_kwargs: object):
+        return {}, []
+
+    monkeypatch.setattr(conception, "_attach_concept_methodology", _noop)
+    monkeypatch.setattr(conception, "_prefetch_market_competitors", _noop)
+    monkeypatch.setattr(conception, "_attach_mechanism_dedup", _noop)
+    monkeypatch.setattr(conception, "_recent_cast_names", _names)
+    monkeypatch.setattr(conception, "_llm_call_json", _empty_effect_contract)
+    monkeypatch.setattr(concept_tournament, "run_concept_tournament", _stop_tournament)
+
+    seed = "修复师听见失踪者录音，封锁档案前必须交出证据。"
+    with pytest.raises(_StopAfterTournament):
+        await conception.run_conception_pipeline(
+            None,
+            SimpleNamespace(
+                hook_engine=SimpleNamespace(enabled=False),
+                pipeline=SimpleNamespace(),
+            ),
+            genre_key="xianxia",
+            chapter_count=20,
+            story_facets=_facets(),
+            user_hints={"concept_seed": seed},
+        )
+
+    assert captured["seed_concept"] == seed
+    assert seed in str(captured["creation_intent_block"]) or seed == captured["seed_concept"]

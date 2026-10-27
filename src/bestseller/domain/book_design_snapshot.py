@@ -15,7 +15,7 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from bestseller.services.creation_intent_contract import (
     CreationIntentContract,
@@ -283,13 +283,32 @@ class BookDesignSnapshot(BaseModel, frozen=True):
     chapter_budget: ChapterBudget = Field(default_factory=ChapterBudget)
     reader_promise: str | None = None
     core_story_engine: str | None = None
+    # A bounded projection of the validated conception contract.  It is
+    # optional so legacy locked snapshots keep their original hash and remain
+    # readable; new snapshots can carry approved story detail without making
+    # the whole conception payload canonical.
+    approved_story_design: dict[str, Any] = Field(default_factory=dict)
     entity_registry: EntityRegistry = Field(default_factory=EntityRegistry)
     derived_assets: tuple[AssetSourceRef, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def _serialize_legacy_compatible(self, handler: Any) -> dict[str, Any]:  # noqa: ANN401
+        """Keep an empty optional projection absent from legacy shapes."""
+
+        data = handler(self)
+        if not self.approved_story_design:
+            data.pop("approved_story_design", None)
+        return data
 
     def canonical_payload(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")
         data.pop("snapshot_id", None)
         data.pop("source_hash", None)
+        # Keep hashes of pre-projection locked snapshots stable.  A non-empty
+        # approved story projection is part of the new creation contract and
+        # is therefore included in its hash.
+        if not data.get("approved_story_design"):
+            data.pop("approved_story_design", None)
         return data
 
     def canonical_hash(self) -> str:
@@ -340,6 +359,7 @@ class BookDesignSnapshot(BaseModel, frozen=True):
             entities=entities_raw,
             reader_promise=raw.get("reader_promise") or book_spec.get("reader_promise"),
             core_story_engine=raw.get("core_story_engine") or book_spec.get("core_story_engine"),
+            approved_story_design=raw.get("approved_story_design"),
             version=int(raw.get("version") or 1),
             derived_assets=raw.get("derived_assets") or (),
         )
@@ -355,6 +375,7 @@ def build_book_design_snapshot(
     entities: Sequence[Mapping[str, Any] | EntityRecord] | None = None,
     reader_promise: str | None = None,
     core_story_engine: str | None = None,
+    approved_story_design: Mapping[str, Any] | None = None,
     version: int = 1,
     derived_assets: Sequence[Mapping[str, Any] | AssetSourceRef] = (),
 ) -> BookDesignSnapshot:
@@ -394,6 +415,7 @@ def build_book_design_snapshot(
         ),
         reader_promise=_normalise_text(reader_promise) or None,
         core_story_engine=_normalise_text(core_story_engine) or None,
+        approved_story_design=dict(approved_story_design or {}),
         entity_registry=registry,
         derived_assets=tuple(
             item if isinstance(item, AssetSourceRef) else AssetSourceRef.model_validate(item)

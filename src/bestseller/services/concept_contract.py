@@ -15,6 +15,7 @@ from bestseller.services.seriality_capacity import (
 
 CONCEPT_CONTRACT_VERSION = "concept-contract.v2"
 STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS = 36
+RANKING_CONCEPT_REQUIRED_MIN_CHAPTERS = 30
 
 
 class ConceptContractError(RuntimeError):
@@ -22,6 +23,9 @@ class ConceptContractError(RuntimeError):
 
     def __init__(self, violations: Sequence[str]) -> None:
         self.violations = tuple(str(item) for item in violations)
+        # Project-less conception failures carry candidate/review receipts to
+        # the existing task handler, which persists them before reporting failure.
+        self.conception_log: list[dict[str, Any]] = []
         super().__init__("Concept contract invalid: " + "; ".join(self.violations))
 
 
@@ -39,7 +43,8 @@ def _items(value: object) -> list[str]:
 
 def _nonnegative_int(value: object) -> int:
     try:
-        return max(0, int(value or 0))
+        candidate: int | float | str = value if isinstance(value, (int, float, str)) else 0
+        return max(0, int(candidate or 0))
     except (TypeError, ValueError):
         return 0
 
@@ -59,6 +64,91 @@ def _stable_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+_QUALITY_EVIDENCE_HOOK_FIELDS = (
+    "one_liner",
+    "story_motion",
+    "protagonist",
+    "private_desire",
+    "protagonist_flaw",
+    "abnormality",
+    "opening_event",
+    "central_contradiction",
+    "decision_proof",
+    "emotional_promise",
+    "reader_question",
+)
+
+
+def _quality_evidence_hook_source(hook: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the semantic hook fields covered by a tournament verdict.
+
+    Lineage bookkeeping fields are intentionally excluded: changing a database
+    identity must not make the *hook text* look different, while changing any
+    reviewed story fact must invalidate the old verdict.
+    """
+
+    return {key: hook.get(key) for key in _QUALITY_EVIDENCE_HOOK_FIELDS}
+
+
+def _quality_evidence_story_source(spine: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the reviewed story facts in the evidence binding."""
+
+    return {
+        key: value
+        for key, value in spine.items()
+        if key not in {"champion_id", "input_hash", "target_chapters"}
+    }
+
+
+def _quality_evidence_payload(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(evidence)
+    payload.pop("evidence_hash", None)
+    return payload
+
+
+def verify_concept_quality_evidence(
+    contract: Mapping[str, Any] | None,
+) -> tuple[bool, str]:
+    """Verify that tournament evidence is authentic and bound to this contract.
+
+    Older contracts without a binding are deliberately reported as
+    ``missing_binding``.  Rehashing an old score blob would only prove that the
+    blob was copied intact; it would not prove that the current story was the
+    story the judges reviewed.
+    """
+
+    if not isinstance(contract, Mapping) or not contract:
+        return False, "missing_contract"
+    evidence = contract.get("quality_evidence")
+    if not isinstance(evidence, Mapping):
+        return False, "missing_evidence"
+    if evidence.get("review_status") == "requires_review":
+        return False, "reconciled_story_requires_review"
+    stored_hash = _text(evidence.get("evidence_hash"))
+    if len(stored_hash) != 64 or stored_hash != _stable_hash(_quality_evidence_payload(evidence)):
+        return False, "evidence_hash_mismatch"
+    binding = evidence.get("evidence_binding")
+    hook = contract.get("hook_card")
+    spine = contract.get("story_spine")
+    if (
+        not isinstance(binding, Mapping)
+        or not isinstance(hook, Mapping)
+        or not isinstance(spine, Mapping)
+    ):
+        return False, "missing_binding"
+    expected = {
+        "contract_schema_version": _text(contract.get("schema_version")),
+        "input_hash": _text(contract.get("input_hash")),
+        "champion_id": _text(contract.get("champion_id")),
+        "hook_hash": _stable_hash(_quality_evidence_hook_source(hook)),
+        "story_spine_hash": _stable_hash(_quality_evidence_story_source(spine)),
+    }
+    for key, value in expected.items():
+        if _text(binding.get(key)) != value:
+            return False, f"binding_mismatch:{key}"
+    return True, "verified"
+
+
 def _mapping(value: object) -> Mapping[str, Any]:
     """把 dataclass/pydantic/dict 统一成只读映射；取不到就是空。
 
@@ -75,6 +165,58 @@ def _mapping(value: object) -> Mapping[str, Any]:
             return {}
         return data if isinstance(data, Mapping) else {}
     return {}
+
+
+def _run_ranking_seriality_gate(
+    contract: Mapping[str, Any],
+    *,
+    target_chapters: int,
+) -> list[str]:
+    """Run the ranking-candidate seriality gate for new 30+ chapter books.
+
+    This deliberately lives at the contract boundary rather than in the
+    tournament.  A contract can be reconstructed or loaded from metadata
+    after the tournament has finished, so the promotion gate must be rerun at
+    every validation boundary.  Importing lazily keeps legacy short-form
+    operations and installations that do not validate long-form contracts
+    compatible, while an unavailable gate is a hard validation failure for a
+    new ranking candidate (never a silent pass).
+    """
+
+    try:
+        from bestseller.services import ranking_seriality_gate
+    except ImportError:
+        return [
+            "ranking_seriality_gate 不可用；30章以上新构思禁止进入书籍规划"
+        ]
+
+    evaluator = getattr(ranking_seriality_gate, "evaluate_ranking_seriality_gate", None)
+    if not callable(evaluator):
+        evaluator = getattr(ranking_seriality_gate, "evaluate_ranking_seriality", None)
+    if not callable(evaluator):
+        return [
+            "ranking_seriality_gate 缺少可执行的榜单候选续航评估器；"
+            "30章以上新构思禁止进入书籍规划"
+        ]
+
+    proof = contract.get("seriality_proof")
+    report = evaluator(
+        proof if isinstance(proof, Mapping) else {},
+        target_chapters=int(target_chapters),
+    )
+    if isinstance(report, Mapping):
+        passed = bool(report.get("passed"))
+        codes = report.get("blocking_codes") or report.get("failure_axes") or []
+    else:
+        passed = bool(getattr(report, "passed", False))
+        codes = getattr(report, "blocking_codes", None) or getattr(
+            report, "failure_axes", ()
+        )
+    if passed:
+        return []
+    normalized = _items(codes)
+    detail = "/".join(normalized) if normalized else "未提供失败轴"
+    return ["榜单候选续航门失败: " + detail]
 
 
 def build_concept_contract(
@@ -143,31 +285,6 @@ def build_concept_contract(
     }
     input_hash = _stable_hash(source)
     champion_id = f"concept-{input_hash[:16]}"
-    quality_evidence = {
-        "schema_version": "concept-quality-evidence.v1",
-        "approved": not bool(_text(selected.get("rejected_reason"))),
-        "composite": selected.get("composite"),
-        "hook_judge": {
-            key.removeprefix("judge_"): selected.get(key)
-            for key in (
-                "judge_freshness",
-                "judge_click",
-                "judge_predictable",
-                "judge_character_logic",
-                "judge_mechanism_causality",
-                "judge_genre_fidelity",
-                "judge_plain_language",
-                "judge_story_motion",
-            )
-        },
-        "seriality_judge": (
-            dict(selected.get("seriality_judge"))
-            if isinstance(selected.get("seriality_judge"), Mapping)
-            else {}
-        ),
-    }
-    quality_evidence["evidence_hash"] = _stable_hash(quality_evidence)
-
     capacity_report = evaluate_seriality_capacity(
         {
             "repeatable_story_unit": repeatable_story_unit,
@@ -249,6 +366,56 @@ def build_concept_contract(
         "phase_desire_ladder": phase_transitions,
         "world_faction_evolution": opposing_ecology,
     }
+    quality_evidence = {
+        "schema_version": "concept-quality-evidence.v1",
+        "approved": not bool(_text(selected.get("rejected_reason"))),
+        "composite": selected.get("composite"),
+        "hook_judge": {
+            key.removeprefix("judge_"): selected.get(key)
+            for key in (
+                "judge_freshness",
+                "judge_click",
+                "judge_predictable",
+                "judge_character_logic",
+                "judge_mechanism_causality",
+                "judge_genre_fidelity",
+                "judge_plain_language",
+                "judge_story_motion",
+            )
+        },
+        "seriality_judge": dict(_mapping(selected.get("seriality_judge"))),
+        # A score blob is not portable evidence. Bind it to the exact contract
+        # identity and story/hook that the tournament actually reviewed.
+        "evidence_binding": {
+            "contract_schema_version": CONCEPT_CONTRACT_VERSION,
+            "input_hash": input_hash,
+            "champion_id": champion_id,
+            "hook_hash": _stable_hash(_quality_evidence_hook_source(hook_card)),
+            "story_spine_hash": _stable_hash(_quality_evidence_story_source(layered_spine)),
+        },
+    }
+    reconciliation = selected.get("reconciliation_lineage") or story_architecture.get(
+        "reconciliation_lineage"
+    )
+    if isinstance(reconciliation, Mapping) and reconciliation:
+        # Synchronizing facts creates a different story version. Keep the old
+        # scores as history, but let the existing independent logline review
+        # evaluate the resulting text instead of resealing its predecessor's
+        # approval under a fresh hash.
+        quality_evidence["historical_tournament_evidence"] = {
+            key: quality_evidence[key]
+            for key in ("composite", "hook_judge", "seriality_judge")
+        }
+        quality_evidence.update(
+            approved=False,
+            review_status="requires_review",
+            composite=None,
+            hook_judge={},
+            seriality_judge={},
+            evidence_binding={},
+            reconciliation_lineage=dict(reconciliation),
+        )
+    quality_evidence["evidence_hash"] = _stable_hash(quality_evidence)
     layered_architecture = (
         {
             **story_architecture,
@@ -433,6 +600,16 @@ def validate_concept_contract(
             expected_hash = _stable_hash(source)
             if expected_hash != input_hash:
                 violations.append("concept_contract.input_hash 与当前内容或目标篇幅不一致")
+    # 30章是榜单候选续航门的最低目标，不等同于 story_architecture.v1
+    # 当前要求的36章阈值，也不应再被旧的200章 seriality proof 阈值绕过。
+    # 该门禁必须在 validate / require 两条入口都生效；require 复用本函数。
+    if int(target_chapters) >= RANKING_CONCEPT_REQUIRED_MIN_CHAPTERS:
+        violations.extend(
+            _run_ranking_seriality_gate(
+                contract,
+                target_chapters=target_chapters,
+            )
+        )
     proof = contract.get("seriality_proof")
     # Only demand the full capacity proof in the band where it is actually
     # generated. ``concept_tournament`` runs its seriality expansion / repair /
@@ -495,11 +672,16 @@ def require_conception_contract_for_target(
     """Fail closed before project creation for newly conceived long books."""
 
     if not contract:
-        if int(target_chapters) >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS:
+        if int(target_chapters) >= RANKING_CONCEPT_REQUIRED_MIN_CHAPTERS:
+            proof_name = (
+                "可执行故事架构证明"
+                if int(target_chapters) >= STORY_ARCHITECTURE_REQUIRED_MIN_CHAPTERS
+                else "连载续航证明"
+            )
             raise ConceptContractError(
                 [
                     f"目标为 {int(target_chapters)} 章，但没有候选通过一句话钩子与"
-                    "可执行故事架构证明；禁止进入书籍规划"
+                    f"{proof_name}；禁止进入书籍规划"
                 ]
             )
         return None
@@ -776,4 +958,5 @@ __all__ = [
     "require_story_architecture_for_operation",
     "require_valid_concept_contract",
     "validate_concept_contract",
+    "verify_concept_quality_evidence",
 ]

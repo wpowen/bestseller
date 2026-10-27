@@ -85,6 +85,11 @@ class GenreIntentContract(BaseModel, frozen=True):
 
     schema_version: Literal["genre-intent.v1"] = "genre-intent.v1"
     source: Literal["user", "legacy_inferred"] = "user"
+    # Provenance of the tag split is separate from the contract's overall
+    # source for compatibility with creation-intent source accounting.
+    # Missing on pre-split persisted contracts, so the validation default must
+    # remain honest about that unknown provenance.
+    tag_source: Literal["user", "legacy_inferred"] = "legacy_inferred"
     channel_key: str | None = None
     genre_key: str = Field(min_length=1, max_length=64)
     genre_label: str = Field(min_length=1, max_length=120)
@@ -133,6 +138,7 @@ def build_genre_intent_contract(
     resolved: ResolvedSelection,
     *,
     source: Literal["user", "legacy_inferred"] = "user",
+    tag_source: Literal["user", "legacy_inferred"] | None = None,
     audience_orientation: str | None = None,
     narrative_scale: str | None = None,
     tone_preference: str | None = None,
@@ -144,6 +150,7 @@ def build_genre_intent_contract(
         raise ValueError("A genre intent requires a resolved genre and prompt pack")
     return GenreIntentContract(
         source=source,
+        tag_source=tag_source or source,
         channel_key=resolved.channel,
         genre_key=resolved.genre_key,
         genre_label=resolved.genre_str,
@@ -165,24 +172,56 @@ def build_genre_intent_contract(
 def contract_from_selection(
     selection: dict[str, Any],
     *,
-    source: Literal["user", "legacy_inferred"] = "user",
+    source: Literal["user", "legacy_inferred"] | None = None,
     audience_orientation: str | None = None,
     narrative_scale: str | None = None,
     tone_preference: str | None = None,
     enhancers: StoryEnhancerSelection | None = None,
 ) -> GenreIntentContract:
-    """Resolve a UI selection and immediately freeze its downstream intent."""
+    """Resolve a UI selection and immediately freeze its downstream intent.
 
-    tags = [item for item in (selection.get("tags") or []) if isinstance(item, str)]
+    The split ``default_tags``/``user_tags`` fields are the current web
+    contract.  Older callers only supplied the merged ``tags`` list; preserve
+    that behavior while marking its provenance as inferred so downstream
+    prompts cannot describe taxonomy defaults as explicit user requirements.
+    """
+
+    def _clean_tags(value: object) -> list[str]:
+        if not isinstance(value, (list, tuple, set)):
+            return []
+        return list(dict.fromkeys(
+            item.strip() for item in value if isinstance(item, str) and item.strip()
+        ))
+
+    has_explicit_tag_provenance = "default_tags" in selection or "user_tags" in selection
+    user_tags = _clean_tags(
+        selection.get("user_tags") if has_explicit_tag_provenance else selection.get("tags")
+    )
     resolved = resolve_selection(
         selection.get("channel"),
         selection.get("genre"),
         selection.get("sub_genre"),
-        tags,
+        user_tags,
     )
+    if has_explicit_tag_provenance:
+        # ``tags`` is the effective UI state.  resolve_selection intentionally
+        # adds every taxonomy default, which would resurrect defaults the user
+        # deliberately deselected in the current web form.
+        effective_tags = _clean_tags(selection.get("tags"))
+        if "tags" not in selection:
+            effective_tags = list(dict.fromkeys((*resolved.default_tags, *user_tags)))
+        resolved = resolved.model_copy(
+            update={
+                "tags": tuple(effective_tags),
+                "user_tags": tuple(user_tags),
+            }
+        )
     return build_genre_intent_contract(
         resolved,
-        source=source,
+        source=source or "user",
+        tag_source=("user" if has_explicit_tag_provenance else "legacy_inferred")
+        if source is None
+        else source,
         audience_orientation=audience_orientation,
         narrative_scale=narrative_scale,
         tone_preference=tone_preference,

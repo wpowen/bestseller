@@ -786,12 +786,15 @@ def evaluate_commercial_planning_readiness(
     require_package_artifacts: bool = True,
     genre: str | None = None,
     sub_genre: str | None = None,
+    enforce_solo_pressure_contract: bool = False,
 ) -> CommercialPlanningReadinessReport:
     """Validate the first three chapter/scene plans against commercial needs.
 
     ``genre``/``sub_genre`` make the concrete-pressure check genre-aware so plans are
     scored against their own genre's conflict vocabulary, not one book's hand-tuned
     detective terms. Omitting them preserves the legacy (genre-neutral core) behaviour.
+    Solo/pressure heuristics are advisory unless the caller explicitly enables
+    an applicable project contract; genre or chapter position cannot enable it.
     """
 
     concrete_pressure_terms = _augmented_concrete_pressure_terms(genre, sub_genre)
@@ -972,7 +975,7 @@ def evaluate_commercial_planning_readiness(
                 findings.append(
                     _finding(
                         "golden_three_solo_scene_chain",
-                        "critical",
+                        "critical" if enforce_solo_pressure_contract else "medium",
                         "Golden-three scene chain is effectively solo and low-pressure.",
                         f"chapter.{chapter_no}.scenes",
                         chapter_no=chapter_no,
@@ -981,10 +984,12 @@ def evaluate_commercial_planning_readiness(
                                 _meaningful_participant_count(scene.participants)
                                 for scene in chapter.scenes
                             ],
+                            "explicit_solo_pressure_contract": enforce_solo_pressure_contract,
                         },
                         suggestion=(
-                            "Add an external pressure agent to at least one scene "
-                            "and bind it to a visible loss."
+                            "Verify scene pressure against the explicit project contract. "
+                            "A solo scene may be intentional; do not invent participants "
+                            "from roster membership or text mentions."
                         ),
                     )
                 )

@@ -83,6 +83,7 @@ class WriterLeverContext:
     distilled_strategy_card: dict[str, Any] | None = None
     emotion_driven_kernel: dict[str, Any] | None = None
     public_emotion_kernel: dict[str, Any] | None = None
+    project_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,22 @@ def build_writer_quality_levers_block(context: WriterLeverContext) -> str:
     """
 
     blocks: list[str] = []
+    # Give explicitly selected project contracts priority over generic craft advice.
+    blocks.append(
+        render_emotion_driven_kernel_prompt_block(
+            context.emotion_driven_kernel,
+            chapter_number=context.chapter_number,
+            language=context.language,
+            metadata=context.project_metadata,
+        )
+    )
+    blocks.append(
+        render_public_emotion_prompt_block(
+            context.public_emotion_kernel,
+            language=context.language,
+            metadata=context.project_metadata,
+        )
+    )
     if context.platform:
         blocks.append(
             render_platform_profile_block(
@@ -179,21 +196,6 @@ def build_writer_quality_levers_block(context: WriterLeverContext) -> str:
     blocks.append(
         render_scene_grounding_block(chapter_number=context.chapter_number)
     )
-    if context.emotion_driven_kernel:
-        blocks.append(
-            render_emotion_driven_kernel_prompt_block(
-                context.emotion_driven_kernel,
-                chapter_number=context.chapter_number,
-                language=context.language,
-            )
-        )
-    if context.public_emotion_kernel:
-        blocks.append(
-            render_public_emotion_prompt_block(
-                context.public_emotion_kernel,
-                language=context.language,
-            )
-        )
     if context.rejection_cause_ids:
         blocks.append(
             render_repair_actions_block(cause_ids=context.rejection_cause_ids)

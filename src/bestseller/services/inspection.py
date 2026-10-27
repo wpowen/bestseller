@@ -5,8 +5,15 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
-from bestseller.domain.enums import ArtifactType, ChapterStatus, ProjectStatus, SceneStatus, VolumeStatus
+from bestseller.domain.enums import (
+    ArtifactType,
+    ChapterStatus,
+    ProjectStatus,
+    SceneStatus,
+    VolumeStatus,
+)
 from bestseller.domain.inspection import (
     ProjectWorkflowOverviewRead,
     WorkflowRunRead,
@@ -25,8 +32,8 @@ from bestseller.domain.story_bible import (
     ExpansionGateRead,
     StoryBibleCharacterRead,
     StoryBibleFactionRead,
-    StoryBibleOverview,
     StoryBibleLocationRead,
+    StoryBibleOverview,
     StoryBibleRelationshipRead,
     StoryBibleWorldRuleRead,
     VolumeFrontierRead,
@@ -44,8 +51,8 @@ from bestseller.infra.db.models import (
     RelationshipModel,
     SceneCardModel,
     SceneDraftVersionModel,
-    VolumeModel,
     VolumeFrontierModel,
+    VolumeModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
     WorldBackboneModel,
@@ -250,6 +257,8 @@ async def build_project_structure(
 async def build_project_workflow_overview(
     session: AsyncSession,
     project_slug: str,
+    *,
+    include_details: bool = True,
 ) -> ProjectWorkflowOverviewRead:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -260,6 +269,14 @@ async def build_project_workflow_overview(
             select(WorkflowRunModel)
             .where(WorkflowRunModel.project_id == project.id)
             .order_by(WorkflowRunModel.created_at.desc())
+            .options(*([] if include_details else [load_only(
+                WorkflowRunModel.id, WorkflowRunModel.workflow_type, WorkflowRunModel.status,
+                WorkflowRunModel.scope_type, WorkflowRunModel.scope_id,
+                WorkflowRunModel.requested_by,
+                WorkflowRunModel.current_step, WorkflowRunModel.error_message,
+                WorkflowRunModel.created_at, WorkflowRunModel.updated_at,
+                raiseload=True,
+            )]))
         )
     )
     workflow_run_ids = [row.id for row in workflow_runs]
@@ -268,7 +285,17 @@ async def build_project_workflow_overview(
             await session.scalars(
                 select(WorkflowStepRunModel)
                 .where(WorkflowStepRunModel.workflow_run_id.in_(workflow_run_ids))
-                .order_by(WorkflowStepRunModel.workflow_run_id.asc(), WorkflowStepRunModel.step_order.asc())
+                .order_by(
+                    WorkflowStepRunModel.workflow_run_id.asc(),
+                    WorkflowStepRunModel.step_order.asc(),
+                )
+                .options(*([] if include_details else [load_only(
+                    WorkflowStepRunModel.id, WorkflowStepRunModel.workflow_run_id,
+                    WorkflowStepRunModel.step_name, WorkflowStepRunModel.step_order,
+                    WorkflowStepRunModel.status, WorkflowStepRunModel.created_at,
+                    WorkflowStepRunModel.output_ref, WorkflowStepRunModel.error_message,
+                    raiseload=True,
+                )]))
             )
         )
         if workflow_run_ids
@@ -296,7 +323,7 @@ async def build_project_workflow_overview(
                 error_message=row.error_message,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
-                metadata=dict(row.metadata_json or {}),
+                metadata=dict(row.metadata_json or {}) if include_details else {},
                 step_count=len(steps),
                 completed_step_count=completed_step_count,
                 failed_step_count=failed_step_count,
@@ -307,7 +334,7 @@ async def build_project_workflow_overview(
                         step_order=item.step_order,
                         status=item.status,
                         created_at=item.created_at,
-                        input_ref=dict(item.input_ref or {}),
+                        input_ref=dict(item.input_ref or {}) if include_details else {},
                         output_ref=dict(item.output_ref or {}),
                         error_message=item.error_message,
                     )
@@ -336,6 +363,14 @@ async def build_project_workflow_overview(
     )
 
 
+async def _world_rules_for_current_read(
+    session: AsyncSession, project_id, world_rules: list[WorldRuleModel],
+) -> list[WorldRuleModel]:
+    from bestseller.services.world_rule_current import current_world_rules
+
+    return await current_world_rules(session, project_id=project_id, world_rules=world_rules)
+
+
 async def build_story_bible_overview(
     session: AsyncSession,
     project_slug: str,
@@ -354,6 +389,7 @@ async def build_story_bible_overview(
             .order_by(WorldRuleModel.rule_code.asc(), WorldRuleModel.name.asc())
         )
     )
+    world_rules = await _world_rules_for_current_read(session, project.id, world_rules)
     locations = list(
         await session.scalars(
             select(LocationModel)
@@ -417,6 +453,8 @@ async def build_story_bible_overview(
         )
     )
 
+    from bestseller.services.character_snapshot_sources import read_character_snapshot_knowledge
+
     character_name_by_id = {character.id: character.name for character in characters}
     character_views: list[StoryBibleCharacterRead] = []
     for character in characters:
@@ -436,10 +474,14 @@ async def build_story_bible_overview(
                 flaw=character.flaw,
                 secret=character.secret,
                 arc_trajectory=character.arc_trajectory,
-                arc_state=(latest_state.arc_state if latest_state is not None else character.arc_state),
-                power_tier=(latest_state.power_tier if latest_state is not None else character.power_tier),
+                arc_state=(latest_state.arc_state if latest_state is not None else None),
+                power_tier=(latest_state.power_tier if latest_state is not None else None),
                 is_pov_character=character.is_pov_character,
-                knowledge_state=dict(character.knowledge_state_json or {}),
+                knowledge_state=await read_character_snapshot_knowledge(
+                    session, project_id=project.id, character=character,
+                    before_chapter_number=before_chapter_number,
+                    before_scene_number=before_scene_number,
+                ),
                 voice_profile=dict(character.voice_profile_json or {}),
                 moral_framework=dict(character.moral_framework_json or {}),
                 latest_state=(

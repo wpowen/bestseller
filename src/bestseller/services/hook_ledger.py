@@ -33,6 +33,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
+from bestseller.services.narrative_obligation_migration import is_reference_obligation
 
 # Defaults from inventory rules (Step 1 evidence).
 DEFAULT_MAX_AGE_CHAPTERS = 15  # wm.hook_system.max_age
@@ -202,6 +203,9 @@ def build_hook_ledger_view(
     """
     entries: list[HookLedgerEntry] = []
     for clue in clues:
+        if is_reference_obligation({"status": clue.status,
+                                   "metadata_json": getattr(clue, "metadata_json", {})}):
+            continue
         status = _compute_hook_status(clue, current_chapter, max_age_chapters)
         age: int | None
         if clue.planted_in_chapter_number is None:

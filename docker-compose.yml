@@ -37,6 +37,14 @@ x-llm-env: &env-llm
   VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
   BESTSELLER__LLM__MOCK: ${BESTSELLER_LLM_MOCK:-false}
 
+# Docker Desktop's embedded DNS can become unavailable while host HTTPS still
+# works (observed during real-book acceptance on 2026-09-03).  Keep the active
+# MiniMax endpoint independently resolvable for every LLM-capable service.  The
+# address remains operator-overridable so it can be refreshed without editing
+# this compose file when the provider rotates its A record.
+x-llm-extra-hosts: &llm-extra-hosts
+  - "api.minimaxi.com:${MINIMAX_API_IP:-47.79.117.67}"
+
 x-volumes: &app-volumes
   - ./docs:/app/docs:ro
   - ./output:/app/output
@@ -179,6 +187,7 @@ services:
       <<: [*env-common, *env-llm, *env-py-malloc]
     env_file:
       - .env
+    extra_hosts: *llm-extra-hosts
     ports:
       - "${API_PORT:-8000}:8000"
     volumes: *app-volumes
@@ -211,6 +220,7 @@ services:
       BESTSELLER_MCP_API_KEY: ${BESTSELLER_MCP_API_KEY:-}
     env_file:
       - .env
+    extra_hosts: *llm-extra-hosts
     ports:
       - "${MCP_PORT:-3000}:3000"
     depends_on:
@@ -239,6 +249,7 @@ services:
       BESTSELLER_TRACE_SCENE_PROMPTS: ${BESTSELLER_TRACE_SCENE_PROMPTS:-full}
     env_file:
       - .env
+    extra_hosts: *llm-extra-hosts
     volumes: *app-volumes
     depends_on:
       db:
@@ -268,6 +279,7 @@ services:
       <<: [*env-common, *env-py-malloc]
     env_file:
       - .env
+    extra_hosts: *llm-extra-hosts
     volumes: *app-volumes
     depends_on:
       db:
@@ -307,6 +319,7 @@ services:
       BESTSELLER_AUTO_RESUME_ON_STARTUP: ${BESTSELLER_AUTO_RESUME_ON_STARTUP:-1}
     env_file:
       - .env
+    extra_hosts: *llm-extra-hosts
     ports:
       # Publish to host loopback only by default — the Web Studio UI has no
       # auth unless BESTSELLER_WEB_TOKEN is set. To expose it on the network,

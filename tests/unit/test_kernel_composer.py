@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from planning_capability_test_helpers import explicit_planning_metadata
 import pytest
+from test_story_design_kernel import _kernel_payload
 
 from bestseller.domain.cultural_texture import CulturalTextureModule, MaterialPaletteItem
 from bestseller.domain.ethical_dilemma import EthicalDilemmaKernel, EthicalDilemmaSlot
@@ -191,14 +193,12 @@ def test_metadata_context_feeds_current_workflow_shape() -> None:
 
 
 def test_metadata_context_can_extract_worldview_cultural_module() -> None:
+    kernel = _kernel_payload()
+    kernel["worldview_kernel"]["cultural_texture_module"] = _culture().model_dump(mode="json")
     context = narrative_richness_context_from_metadata(
-        {
-            "story_design_kernel": {
-                "worldview_kernel": {
-                    "cultural_texture_module": _culture().model_dump(mode="json")
-                }
-            }
-        }
+        explicit_planning_metadata(
+            "story_design_kernel", metadata={"story_design_kernel": kernel}
+        )
     )
     assert context is not None
     block = render_narrative_richness_prompt_block(context, chapter_no=1)

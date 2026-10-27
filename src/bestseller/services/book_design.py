@@ -8,6 +8,7 @@ carry the snapshot lineage and may not silently replace those decisions.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import re
 from typing import Any
@@ -51,9 +52,7 @@ class BookDesignValidationReport:
         user's decision is a different thing entirely.
         """
 
-        return tuple(
-            item for item in self.issues if item.code not in self.advisory_codes
-        )
+        return tuple(item for item in self.issues if item.code not in self.advisory_codes)
 
     @property
     def blocks_production(self) -> bool:
@@ -95,23 +94,63 @@ _NON_NAME_PREFIXES = (
 # Role/title words that sit immediately before a name in Chinese premises
 # (废太子姬衡 / 少年剑修陆沉). Peeled off longest-first so 废太子 wins over 太子.
 _NAME_LEADING_TITLES = (
-    "废太子", "皇太子", "太子", "废皇子", "皇子", "公主", "郡主", "王爷", "世子",
-    "矿场贱民", "贱民",
-    "少年剑修", "剑修", "剑客", "书生", "画师", "捕快", "仵作", "医师", "药师",
-    "审计员", "审计师", "工程监理", "监理", "会计师", "记者", "律师", "警察",
-    "少年", "少女", "青年", "男人", "女人", "凡人", "落魄", "前世", "重生",
+    "废太子",
+    "皇太子",
+    "太子",
+    "废皇子",
+    "皇子",
+    "公主",
+    "郡主",
+    "王爷",
+    "世子",
+    "矿场贱民",
+    "贱民",
+    "少年剑修",
+    "剑修",
+    "剑客",
+    "书生",
+    "画师",
+    "捕快",
+    "仵作",
+    "医师",
+    "药师",
+    "审计员",
+    "审计师",
+    "工程监理",
+    "监理",
+    "会计师",
+    "记者",
+    "律师",
+    "警察",
+    "少年",
+    "少女",
+    "青年",
+    "男人",
+    "女人",
+    "凡人",
+    "落魄",
+    "前世",
+    "重生",
 )
 # A "name" containing these is a phrase, not a person.
 _NAME_DISQUALIFYING_TOKENS = (
-    "的", "了", "着", "在", "是", "被", "把", "和", "与", "他", "她", "它",
+    "的",
+    "了",
+    "着",
+    "在",
+    "是",
+    "被",
+    "把",
+    "和",
+    "与",
+    "他",
+    "她",
+    "它",
 )
 # Longest-first so 废太子 beats 太子 and 少年剑修 beats 少年.
 _TITLED_NAME_RE = re.compile(
     "(?:"
-    + "|".join(
-        re.escape(t)
-        for t in sorted(_NAME_LEADING_TITLES, key=len, reverse=True)
-    )
+    + "|".join(re.escape(t) for t in sorted(_NAME_LEADING_TITLES, key=len, reverse=True))
     + r")([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|天生|醒来|发现|得到|拥有|[在被把与和了是的])"
 )
 # 2026-08-25：职业称谓的**类别级**后缀。真机 custom-xuanhuan-1787658935 的
@@ -123,8 +162,18 @@ _TITLED_NAME_RE = re.compile(
 # 「重生为婴儿」被读成「重生」+「为婴儿」，把测试用例 test_name_at_the_very_start
 # 的句子解析成人名「为婴儿」。
 _OCCUPATION_NAME_RE = re.compile(
-    r"[一-鿿]{1,4}(?:师|士|者|匠|徒|官|卫|将|童|郎|娘|婆|尉|吏|监|使|修|医|工|夫)"
-    r"([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|[执持握带走来去看说做在被把与和了的])"
+    # 师傅/师父 can be honorifics rather than an occupation followed by a
+    # surname. Leave this ambiguous boundary unknown instead of inventing a
+    # person from 傅/父 plus the following verb phrase.
+    r"[一-鿿]{1,4}(?:师(?![傅父])|士|者|匠|徒|官|卫|将|童|郎|娘|婆|尉|吏|监|使|修|医|工|夫)"
+    # A one-character look-ahead such as ``来``/``去`` is not a reliable
+    # name boundary: in ``学徒纪年揣借来的`` the greedy group consumed
+    # ``纪年揣借`` merely because the following ``来`` happened to be in the
+    # old continuation list.  Keep only punctuation/whitespace and the
+    # unambiguous grammatical markers used by the existing occupation forms.
+    # Ambiguous prose is handled by the corroborated legacy-repair path below,
+    # rather than by guessing a two-character name here.
+    r"([一-鿿]{2,4})(?=[，,。；;：:\s!?！？]|$|[在被把与和了的])"
 )
 # 后缀字有时只是动词的一部分（开工那日 / 竣工验收 / 雨天使不出来），单靠后缀
 # 会造出「那日」「验收」「不出来」这种假人名。用**姓氏**这个封闭集收口：
@@ -146,8 +195,23 @@ _SURNAMES = frozenset(
     "楚墨洛岳阳商牟督鄢蓟晋佟"
 )
 _COMPOUND_SURNAMES = (
-    "欧阳", "司马", "上官", "诸葛", "东方", "独孤", "南宫", "慕容",
-    "西门", "皇甫", "尉迟", "长孙", "宇文", "夏侯", "司徒", "端木", "公孙",
+    "欧阳",
+    "司马",
+    "上官",
+    "诸葛",
+    "东方",
+    "独孤",
+    "南宫",
+    "慕容",
+    "西门",
+    "皇甫",
+    "尉迟",
+    "长孙",
+    "宇文",
+    "夏侯",
+    "司徒",
+    "端木",
+    "公孙",
 )
 # 「老/小/阿 + 姓」是中文里极常见的称呼式人名（农夫老秦）。
 _NAME_ADDRESS_PREFIXES = ("老", "小", "阿")
@@ -158,17 +222,35 @@ def _starts_with_a_surname(name: str) -> bool:
         return True
     if name and name[0] in _SURNAMES:
         return True
-    return (
-        len(name) >= 2
-        and name[0] in _NAME_ADDRESS_PREFIXES
-        and name[1] in _SURNAMES
-    )
+    return len(name) >= 2 and name[0] in _NAME_ADDRESS_PREFIXES and name[1] in _SURNAMES
+
+
 # 时代/地域短语的后缀类。只对**四字**候选生效：这些字做人名尾字在 2-3 字姓名里
 # 很常见（王海、陈山），但「四字且以它结尾」几乎必是设定短语而非人名。
 # 真机：「末法乱世」被句首规则当成主角名写进快照/cast/identity_manifest。
 _SETTING_PHRASE_SUFFIXES = (
-    "世", "纪", "代", "界", "域", "洲", "国", "城", "镇", "村",
-    "谷", "渊", "川", "林", "原", "宫", "殿", "寺", "观", "宗", "派", "盟",
+    "世",
+    "纪",
+    "代",
+    "界",
+    "域",
+    "洲",
+    "国",
+    "城",
+    "镇",
+    "村",
+    "谷",
+    "渊",
+    "川",
+    "林",
+    "原",
+    "宫",
+    "殿",
+    "寺",
+    "观",
+    "宗",
+    "派",
+    "盟",
 )
 
 
@@ -281,6 +363,16 @@ def _protagonist_name_from_text(value: object) -> str:
     if not text:
         return ""
 
+    # Age is an explicit grammatical boundary even without punctuation.
+    age_name = re.match(
+        r"^([一-鿿]{2,4}?)(?=(?:[0-9]{1,3}|[零〇一二两三四五六七八九十百]{1,4})岁)",
+        text,
+    )
+    if age_name:
+        candidate = age_name.group(1)
+        if _starts_with_a_surname(candidate) and _acceptable_protagonist_name(candidate):
+            return candidate
+
     # 职业称谓锚定优先于句首位置。位置是最弱的证据——句首那几个字既可能是
     # 主角名，也可能是时代/地点状语（真机「末法乱世，落纸镇上…测灵师余白」）；
     # 而「称谓 + 名字」是强得多的信号。限定在前两个分句内，保留原设计意图
@@ -289,9 +381,7 @@ def _protagonist_name_from_text(value: object) -> str:
     _head = "，".join(c for c in _clauses[:2] if c)
     for _match in _OCCUPATION_NAME_RE.finditer(_head):
         _candidate = _match.group(1)
-        if _starts_with_a_surname(_candidate) and _acceptable_protagonist_name(
-            _candidate
-        ):
+        if _starts_with_a_surname(_candidate) and _acceptable_protagonist_name(_candidate):
             return _candidate
 
     # 句首分支同样要求姓氏开头。位置本身几乎不携带信息——句首那 2-4 个字可以是
@@ -302,6 +392,12 @@ def _protagonist_name_from_text(value: object) -> str:
     if (
         match
         and _starts_with_a_surname(match.group(1))
+        # A four-character sentence head beginning with a single surname is
+        # too weak to lock creation identity: it can be a subject + verb
+        # clause (for example, ``宗门宣布``).  Keep explicit/occupation/title
+        # anchors above, and only admit four-character compound-surname names
+        # here; an ambiguous head must remain unknown for semantic review.
+        and (len(match.group(1)) < 4 or match.group(1).startswith(_COMPOUND_SURNAMES))
         and _acceptable_protagonist_name(match.group(1))
     ):
         return match.group(1)
@@ -321,12 +417,37 @@ def _protagonist_name_from_text(value: object) -> str:
     return latin.group(1).strip() if latin else ""
 
 
+def _competing_identity_name_from_text(value: object) -> str:
+    """Extract only enough extra evidence to confirm an existing split.
+
+    The general protagonist extractor intentionally rejects the ambiguous
+    ``姓名+年龄`` shape because treating every age-prefixed clause as canonical
+    identity caused false project snapshots. At the advisory decision below we
+    already know the frozen canonical name is absent from most prose assets;
+    here the same shape is safe as corroborating evidence for a *different*
+    concrete name, without promoting it to project truth.
+    """
+
+    ordinary = _protagonist_name_from_text(value)
+    if ordinary:
+        return ordinary
+    text = _text(value)
+    age_prefixed = re.match(
+        r"^([\u4e00-\u9fff]{2,3}?)(?=[零〇一二三四五六七八九十百两0-9]{1,4}岁)",
+        text,
+    )
+    if not age_prefixed:
+        return ""
+    candidate = age_prefixed.group(1)
+    if _starts_with_a_surname(candidate) and _acceptable_protagonist_name(candidate):
+        return candidate
+    return ""
+
+
 def _asset_protagonist(payload: object) -> str:
     asset = _mapping(payload)
     return _protagonist_name_from_text(
-        asset.get("who")
-        or asset.get("protagonist")
-        or asset.get("protagonist_name")
+        asset.get("who") or asset.get("protagonist") or asset.get("protagonist_name")
     )
 
 
@@ -375,6 +496,12 @@ def _has_explicit_protagonist_choice(metadata: Mapping[str, Any]) -> bool:
 
 def extract_creation_protagonist_name(metadata: Mapping[str, Any]) -> str:
     """Resolve the protagonist from the approved conception before cast design."""
+
+    # An inferred cache cannot outrank a concrete creation-premise identity.
+    if _text(metadata.get("creation_protagonist_source")) == "llm_premise_identity_resolution":
+        premise_name = _protagonist_name_from_text(metadata.get("premise"))
+        if premise_name:
+            return premise_name
 
     for key in (
         "creation_protagonist_name",
@@ -427,6 +554,96 @@ def _authoritative_creation_protagonist_name(metadata: Mapping[str, Any]) -> str
     return extract_role_bound_name(_text(metadata.get("premise")))
 
 
+def _legacy_boundary_repair_name(metadata: Mapping[str, Any], stale_name: str) -> str:
+    """Return a *corroborated* short name for a bad ``original_premise`` lock.
+
+    The occupation extractor used to let a greedy four-character group absorb
+    the beginning of a verb phrase (``纪年揣借`` in ``学徒纪年揣借来的``).  A
+    stale snapshot must not be repaired from the premise alone: the premise is
+    precisely the source whose boundary is in doubt.  We therefore require a
+    shorter prefix to be present in two independent, creation-side surfaces:
+    the protagonist entry in ``identity_manifest`` and story-conception text.
+    ``cast_spec`` is deliberately excluded because it is a derived asset and
+    can already contain the bad lock.
+
+    This is intentionally conservative.  Explicit user names never enter this
+    path; a second concrete identity that is not the same prefix vetoes the
+    repair; and no evidence means the existing snapshot remains untouched.
+    """
+
+    if not stale_name:
+        return ""
+    if _text(metadata.get("creation_protagonist_source")) == "user":
+        return ""
+    if _text(metadata.get("creation_protagonist_source")) != "original_premise":
+        return ""
+    premise = _text(metadata.get("premise"))
+    if not premise or stale_name not in premise:
+        return ""
+
+    manifest_names: list[str] = []
+    manifest = metadata.get("identity_manifest")
+    if isinstance(manifest, Sequence) and not isinstance(manifest, (str, bytes)):
+        for row in manifest:
+            if not isinstance(row, Mapping):
+                continue
+            role = _text(row.get("role") or row.get("character_role"))
+            name = _text(row.get("name") or row.get("canonical_name"))
+            if role.casefold() in {"protagonist", "main_character", "hero", "主角"} and name:
+                manifest_names.append(name)
+    if not manifest_names:
+        return ""
+
+    # A manifest name is a candidate only when it is a strict, plausible
+    # prefix of the stale lock.  This prevents silently shortening two real
+    # names and keeps compound surnames intact.
+    manifest_names = list(dict.fromkeys(manifest_names))
+    # Every protagonist entry is evidence.  An unrelated protagonist must
+    # veto the repair even when a shorter prefix also happens to be present.
+    if any(name != stale_name and not stale_name.startswith(name) for name in manifest_names):
+        return ""
+    candidates = {
+        name
+        for name in manifest_names
+        if name != stale_name
+        and stale_name.startswith(name)
+        and len(name) >= 2
+        and _starts_with_a_surname(name)
+        and _acceptable_protagonist_name(name)
+    }
+    if not candidates:
+        return ""
+    # Two protagonist rows naming different people are a real split.  Do not
+    # resolve that split by prefix or occurrence counts.
+    if len(candidates) > 1:
+        return ""
+
+    spine_sources: list[str] = []
+    for payload in (
+        _mapping(metadata.get("story_spine")),
+        _mapping(_mapping(metadata.get("concept_contract")).get("story_spine")),
+    ):
+        if payload:
+            spine_sources.extend(_text(value) for value in payload.values() if _text(value))
+    # Distinct fields within the approved story spine count as independent
+    # conception evidence; duplicate copies under concept_contract do not.
+    unique_spine_sources = list(dict.fromkeys(source for source in spine_sources if source))
+    if not unique_spine_sources:
+        return ""
+
+    valid: list[str] = []
+    for candidate in sorted(candidates, key=len, reverse=True):
+        supporting_sources = sum(
+            candidate in source.replace(stale_name, "") for source in unique_spine_sources
+        )
+        if supporting_sources < 2:
+            continue
+        valid.append(candidate)
+    if len(valid) != 1:
+        return ""
+    return valid[0]
+
+
 _CONCEPT_TEXT_KEYS = ("logline", "premise", "synopsis")
 
 
@@ -471,12 +688,26 @@ def _identity_mismatch_is_advisory(metadata: Mapping[str, Any]) -> bool:
     present, populated = _canonical_name_coverage(metadata, canonical)
     if not populated:
         return True
-    return present * 2 >= populated
+    if present * 2 >= populated:
+        return True
+
+    # 规范名缺席只证明“文案没有使用这个名字”，不能单独证明“文案写的是
+    # 另一个人”。新书的构思正文经常只写职业/身份（负责人、城主、少年），
+    # 规划器随后才为同一个人补出姓名；把 0/3 姓名覆盖直接视作身份分裂，会让
+    # 规划器自己生成的名字反过来否决无竞争姓名的构思正文。
+    #
+    # 只有从最终构思正文中能确定抽出另一个具体姓名时，才保留阻断。抽取器本身
+    # 刻意 fail-closed：抽不到名字就返回空串，不会把职业词或普通短语当姓名。
+    competing_names = {
+        _protagonist_core_name(_competing_identity_name_from_text(metadata.get(key)))
+        for key in _CONCEPT_TEXT_KEYS
+        if _text(metadata.get(key))
+    }
+    competing_names.discard("")
+    return not any(not _same_protagonist(name, canonical) for name in competing_names)
 
 
-def _canonical_name_coverage(
-    metadata: Mapping[str, Any], canonical: str
-) -> tuple[int, int]:
+def _canonical_name_coverage(metadata: Mapping[str, Any], canonical: str) -> tuple[int, int]:
     """规范名出现在几份构思正文里 / 一共有几份非空正文。
 
     只数**非空**产物：一份没写主角名的 premise 不该被算作「反对票」，否则
@@ -520,9 +751,7 @@ def declared_protagonist_gender(metadata: Mapping[str, Any]) -> str:
     return gender if gender in _PRONOUN_BY_GENDER else ""
 
 
-def protagonist_pronoun_coverage(
-    metadata: Mapping[str, Any], gender: str
-) -> tuple[int, int]:
+def protagonist_pronoun_coverage(metadata: Mapping[str, Any], gender: str) -> tuple[int, int]:
     """构思正文里「声明性别的代词」出现次数 / 第三人称代词总次数。"""
 
     expected = _PRONOUN_BY_GENDER.get(gender, "")
@@ -599,9 +828,7 @@ def _creation_intent_payload(project: Any, metadata: Mapping[str, Any]) -> dict[
         if intent:
             payload["genre_intent"] = dict(intent)
         payload["chapter_count"] = int(
-            getattr(project, "target_chapters", 0)
-            or payload.get("chapter_count")
-            or 1
+            getattr(project, "target_chapters", 0) or payload.get("chapter_count") or 1
         )
         if tone_preference:
             payload["tone_preference"] = tone_preference
@@ -638,7 +865,50 @@ def ensure_project_book_design_snapshot(
             raise ValueError("book design snapshot metadata id mismatch")
         if stored_hash and stored_hash != snapshot.source_hash:
             raise ValueError("book design snapshot metadata hash mismatch")
-        authoritative_name = _authoritative_creation_protagonist_name(metadata)
+        # ``original_premise`` is an inferred source.  If its historical
+        # occupation regex produced a greedy name, only the corroborated
+        # legacy path may supersede the frozen snapshot; a premise-only
+        # reparsing would repeat the same boundary error.
+        used_legacy_boundary_repair = False
+        if _text(metadata.get("creation_protagonist_source")) == "original_premise":
+            premise_name = _protagonist_name_from_text(metadata.get("premise"))
+            if premise_name:
+                # A punctuation-delimited creation name is stronger than any
+                # shortened prefix inferred from derived fields.
+                authoritative_name = premise_name
+            else:
+                authoritative_name = _legacy_boundary_repair_name(
+                    metadata, snapshot.protagonist.name
+                )
+                used_legacy_boundary_repair = bool(authoritative_name)
+        else:
+            authoritative_name = _authoritative_creation_protagonist_name(metadata)
+        cached_creation_name = _text(metadata.get("creation_protagonist_name"))
+        superseded = metadata.get("book_design_snapshot_superseded")
+        if (
+            (not authoritative_name or authoritative_name == snapshot.protagonist.name)
+            and _text(metadata.get("creation_protagonist_source")) == "original_premise"
+            and cached_creation_name
+            and cached_creation_name != snapshot.protagonist.name
+            and cached_creation_name.startswith(snapshot.protagonist.name)
+            and isinstance(superseded, Sequence)
+            and not isinstance(superseded, (str, bytes))
+            and any(
+                isinstance(item, Mapping)
+                and _text(item.get("replacement_name")) == snapshot.protagonist.name
+                and _text(item.get("protagonist_name")) == cached_creation_name
+                for item in superseded
+            )
+            and _legacy_boundary_repair_name(metadata, cached_creation_name)
+            == snapshot.protagonist.name
+        ):
+            # A prior safe repair may have persisted the snapshot before the
+            # cached creation fields.  Synchronize only that audited lineage;
+            # never rewrite a raw cached name by string replacement.
+            metadata["creation_protagonist_name"] = snapshot.protagonist.name
+            metadata["creation_protagonist_source"] = "legacy_boundary_repair"
+            project.metadata_json = metadata
+            return snapshot
         if (
             authoritative_name
             and not _is_generic_protagonist_name(authoritative_name)
@@ -647,8 +917,7 @@ def ensure_project_book_design_snapshot(
             superseded = metadata.get("book_design_snapshot_superseded")
             history = (
                 [dict(item) for item in superseded if isinstance(item, Mapping)]
-                if isinstance(superseded, Sequence)
-                and not isinstance(superseded, (str, bytes))
+                if isinstance(superseded, Sequence) and not isinstance(superseded, (str, bytes))
                 else []
             )
             history.append(
@@ -660,9 +929,10 @@ def ensure_project_book_design_snapshot(
                 }
             )
             metadata["book_design_snapshot_superseded"] = history[-5:]
-            metadata["book_design_snapshot_repair_reason"] = (
-                "authoritative_creation_identity_drift"
-            )
+            metadata["book_design_snapshot_repair_reason"] = "authoritative_creation_identity_drift"
+            metadata["creation_protagonist_name"] = authoritative_name
+            if used_legacy_boundary_repair:
+                metadata["creation_protagonist_source"] = "legacy_boundary_repair"
             project.metadata_json = metadata
             return ensure_project_book_design_snapshot(
                 project,
@@ -686,17 +956,13 @@ def ensure_project_book_design_snapshot(
         or _manifest_protagonist(metadata)
     )
     if not canonical_name or _is_generic_protagonist_name(canonical_name):
-        raise ValueError(
-            "book design snapshot requires an explicit, named creation protagonist"
-        )
+        raise ValueError("book design snapshot requires an explicit, named creation protagonist")
     entities: list[dict[str, Any]] = []
     legacy_entities = metadata.get("entities")
     registry = metadata.get("entity_registry")
     if legacy_entities is None and isinstance(registry, Mapping):
         legacy_entities = registry.get("entities")
-    if isinstance(legacy_entities, Sequence) and not isinstance(
-        legacy_entities, (str, bytes)
-    ):
+    if isinstance(legacy_entities, Sequence) and not isinstance(legacy_entities, (str, bytes)):
         entities.extend(dict(row) for row in legacy_entities if isinstance(row, Mapping))
     manifest = metadata.get("identity_manifest")
     if isinstance(manifest, Sequence) and not isinstance(manifest, (str, bytes)):
@@ -705,14 +971,12 @@ def ensure_project_book_design_snapshot(
                 continue
             name = _text(row.get("name") or row.get("canonical_name"))
             if name:
-                entity = (
-                    {
+                entity = {
                         "entity_type": "character",
                         "canonical_name": name,
                         "aliases": list(row.get("aliases") or ()),
                         "metadata": {"role": row.get("role")},
                     }
-                )
                 if not any(
                     _text(item.get("canonical_name") or item.get("name")) == name
                     and _text(item.get("entity_type") or item.get("type") or "entity")
@@ -722,6 +986,27 @@ def ensure_project_book_design_snapshot(
                     entities.append(entity)
     concept = _mapping(metadata.get("concept_contract"))
     spine = _mapping(metadata.get("story_spine"))
+    approved_story_design: dict[str, Any] = {}
+    if concept:
+        try:
+            from bestseller.services.concept_contract import validate_concept_contract
+
+            violations = validate_concept_contract(
+                concept, target_chapters=target_chapters,
+            )
+        except (TypeError, ValueError):
+            violations = ["concept_contract_invalid"]
+        if not violations:
+            approved_story_design = {
+                "source_contract_hash": _text(concept.get("input_hash")),
+                "source_champion_id": _text(concept.get("champion_id")),
+                "source_target_chapters": target_chapters,
+                "hook_card": copy.deepcopy(dict(_mapping(concept.get("hook_card")))),
+                "story_spine": copy.deepcopy(dict(_mapping(concept.get("story_spine")))),
+                "seriality_proof": copy.deepcopy(
+                    dict(_mapping(concept.get("seriality_proof")))
+                ),
+            }
     snapshot = build_book_design_snapshot(
         creation_intent=creation_intent,
         protagonist=canonical_name,
@@ -735,10 +1020,9 @@ def ensure_project_book_design_snapshot(
             or spine.get("question")
         )
         or None,
-        core_story_engine=_text(
-            concept.get("unit_engine_ref") or spine.get("unit_engine_ref")
-        )
+        core_story_engine=_text(concept.get("unit_engine_ref") or spine.get("unit_engine_ref"))
         or None,
+        approved_story_design=approved_story_design,
     )
     metadata.update(
         {
@@ -856,9 +1140,7 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
 
     # 2026-08-26：性别同样要比对。频道钢印盖在结构化字段上，散文却可以完全
     # 不理它——真机 male/「他」的声明配 premise+synopsis 24 次「她」0 次「他」。
-    _pron_ok, _pron_gender, _pron_hits, _pron_total = _check_protagonist_pronoun(
-        metadata
-    )
+    _pron_ok, _pron_gender, _pron_hits, _pron_total = _check_protagonist_pronoun(metadata)
     if not _pron_ok:
         issues.append(
             BookDesignIssue(
@@ -893,17 +1175,13 @@ def validate_project_book_design(project: Any) -> BookDesignValidationReport:
     # 真机上它与 `issues: []` 同时出现，读起来像「抓到了但放行」，实际是
     # 「压根没抓到」。我据此得出过错误结论。一个长得像回执、实为策略标志的
     # 字段，本身就是要消除的歧义：只在真有同码 issue 时才标 advisory。
-    _has_identity_issue = any(
-        item.code == "protagonist_identity_mismatch" for item in issues
-    )
+    _has_identity_issue = any(item.code == "protagonist_identity_mismatch" for item in issues)
     advisory: frozenset[str] = (
         frozenset({"protagonist_identity_mismatch"})
         if _has_identity_issue and _identity_mismatch_is_advisory(metadata)
         else frozenset()
     )
-    return BookDesignValidationReport(
-        snapshot.snapshot_id, tuple(issues), advisory_codes=advisory
-    )
+    return BookDesignValidationReport(snapshot.snapshot_id, tuple(issues), advisory_codes=advisory)
 
 
 def planning_snapshot_lineage(project: Any) -> dict[str, str]:
@@ -933,11 +1211,61 @@ def planning_snapshot_lineage(project: Any) -> dict[str, str]:
     }
 
 
+def assert_current_world_snapshot(project: Any, artifact: Any) -> Any:
+    """Reject a stale WORLD_SPEC before a snapshot-bound resume can consume it.
+
+    Legacy projects without any book-design snapshot metadata retain their
+    historical behavior. Snapshot-bound projects must carry an approved world
+    artifact whose embedded lineage exactly matches the current locked
+    snapshot; this assertion never mutates either object.
+    """
+
+    metadata = getattr(project, "metadata_json", None)
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    # Presence of any creation/snapshot marker means the project opted into binding;
+    # malformed values must fail closed rather than silently reverting to the
+    # legacy path.
+    snapshot_bound = any(
+        key in metadata
+        for key in (
+            "creation_intent_contract",
+            "book_design_snapshot",
+            "book_design_snapshot_hash",
+            "book_design_snapshot_id",
+            "book_design_snapshot_status",
+        )
+    )
+    if not snapshot_bound:
+        return artifact
+    current_hash = metadata.get("book_design_snapshot_hash")
+    if not isinstance(current_hash, str) or not current_hash.strip():
+        raise ValueError("WORLD_SPEC_SNAPSHOT_HASH_MISSING")
+    current_hash = current_hash.strip()
+    if artifact is None:
+        raise ValueError("WORLD_SPEC_ARTIFACT_MISSING")
+    if str(getattr(artifact, "status", "") or "") != "approved":
+        raise ValueError("WORLD_SPEC_ARTIFACT_NOT_APPROVED")
+    content = getattr(artifact, "content", None)
+    if not isinstance(content, Mapping):
+        raise ValueError("WORLD_SPEC_ARTIFACT_INVALID")
+    meta = content.get("_meta")
+    if not isinstance(meta, Mapping):
+        raise ValueError("WORLD_SPEC_LINEAGE_MISSING")
+    artifact_hash = meta.get("source_snapshot_hash")
+    if not isinstance(artifact_hash, str) or not artifact_hash.strip():
+        raise ValueError("WORLD_SPEC_LINEAGE_MISSING")
+    artifact_hash = artifact_hash.strip()
+    if artifact_hash != current_hash:
+        raise ValueError("WORLD_SPEC_SNAPSHOT_MISMATCH")
+    return artifact
+
+
 __all__ = [
     "BookDesignIssue",
     "BookDesignValidationReport",
     "ensure_project_book_design_snapshot",
     "extract_creation_protagonist_name",
     "planning_snapshot_lineage",
+    "assert_current_world_snapshot",
     "validate_project_book_design",
 ]

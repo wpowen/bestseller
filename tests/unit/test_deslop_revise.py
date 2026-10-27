@@ -6,6 +6,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import DBAPIError
 
 import bestseller.services.deslop_revise as deslop
 from bestseller.services.deslop_revise import revise_prose_deslop
@@ -44,6 +45,31 @@ def test_dirty_draft_gets_rewritten_clean(monkeypatch) -> None:
     assert len(calls) == 1  # round 1 rewrote to clean; round 2 detected clean, stopped
 
 
+@pytest.mark.parametrize("binding", ["full", "workflow_only", "project_only", "unbound"])
+def test_rewrite_preserves_supplied_binding_on_every_round(monkeypatch, binding) -> None:
+    calls = []
+    context = {}
+    if binding != "unbound":
+        context["project_id"] = uuid4()
+    if binding in {"full", "workflow_only"}:
+        context["workflow_run_id"] = uuid4()
+    if binding == "full":
+        context["step_run_id"] = uuid4()
+
+    async def fake_complete(_s, _set, req):
+        calls.append(req)
+        # Keep the detector dirty so both bounded rounds issue a request.
+        return _fake_result(_DIRTY)
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    assert _run(_DIRTY, rounds=2, **context) == _DIRTY
+    assert len(calls) == 2
+    for request in calls:
+        assert request.project_id == context.get("project_id")
+        assert request.workflow_run_id == context.get("workflow_run_id")
+        assert request.step_run_id == context.get("step_run_id")
+
+
 def test_clean_draft_skips_rewrite(monkeypatch) -> None:
     calls = []
 
@@ -64,6 +90,55 @@ def test_short_rewrite_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr(deslop, "complete_text", fake_complete)
     out = _run(_DIRTY, rounds=2)
     assert out == _DIRTY  # kept original, not the truncated rewrite
+
+
+def test_candidate_observer_sees_model_run_even_when_rewrite_is_rejected(monkeypatch) -> None:
+    observed = []
+    run_id = uuid4()
+
+    async def fake_complete(_s, _set, req):
+        return LLMCompletionResult(
+            content="太短", provider="mock", model_name="mock", llm_run_id=run_id
+        )
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    out = _run(
+        _DIRTY,
+        rounds=1,
+        observe_candidate=lambda item: observed.append(item),
+    )
+    assert out == _DIRTY
+    information = observed[0].pop("information_preservation")
+    assert information["schema"] == "deslop-information-selection.v1"
+    assert information["automatic_selection_allowed"] is True
+    assert information["semantic_grade_asserted"] is False
+    assert observed == [
+        {
+            "content": "太短",
+            "llm_run_id": run_id,
+            "round": 1,
+            "parent_content": _DIRTY,
+        }
+    ]
+
+
+def test_candidate_observer_database_failure_is_not_hidden(monkeypatch) -> None:
+    run_id = uuid4()
+
+    async def fake_complete(_s, _set, req):
+        return LLMCompletionResult(
+            content=_CLEAN,
+            provider="mock",
+            model_name="mock",
+            llm_run_id=run_id,
+        )
+
+    async def fail_observation(_item):
+        raise DBAPIError("INSERT candidate", {}, RuntimeError("receipt write failed"))
+
+    monkeypatch.setattr(deslop, "complete_text", fake_complete)
+    with pytest.raises(DBAPIError, match="receipt write failed"):
+        _run(_DIRTY, rounds=1, observe_candidate=fail_observation)
 
 
 def test_empty_input_noop(monkeypatch) -> None:

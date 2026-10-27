@@ -21,25 +21,29 @@ from __future__ import annotations
 # ruff: noqa: RUF002, RUF003 — 中文标点是刻意的。
 from collections.abc import Mapping, Sequence
 import hashlib
+import re
 from typing import Any
 
-from bestseller.services.chapter_length_gate import cjk_chars_only, count_zh_chars
+from bestseller.services.chapter_length_gate import count_zh_chars
 
 # 认领时回看的报告条数。一次修复轮最多落几份报告，10 条足够跨过
 # 「同一秒三份」的情形，又不会把很久以前旧稿的报告拉进来。
 REPORT_CLAIM_LOOKBACK = 10
 
 
-def _cjk_only(text: str) -> str:
-    """只留 CJK 字符——与 :func:`count_zh_chars` 同一个字符集。
+FINGERPRINT_VERSION = 2
+_WHITESPACE = re.compile(r"\s+")
 
-    指纹刻意**不含标点**：同一版稿被标点规范化（全角/半角、行末句号）
-    后仍认得出自己，否则指纹会在无关改动上失效、退回「按时间取最新」
-    的旧错路径。代价是两版只差标点的稿指纹相同——重写必然改字，实践中
-    不会发生。
+
+def _normalized_text(text: str) -> str:
+    """Normalize layout whitespace while retaining all content characters.
+
+    The previous fingerprint kept only CJK characters, so English and numeric
+    changes could collide.  Version 2 deliberately hashes the complete text;
+    only whitespace runs are normalized because line wrapping is not content.
     """
 
-    return cjk_chars_only(str(text or ""))
+    return _WHITESPACE.sub(" ", str(text or "")).strip()
 
 
 def graded_text_fingerprint(text: str) -> dict[str, Any]:
@@ -50,11 +54,13 @@ def graded_text_fingerprint(text: str) -> dict[str, Any]:
     报告评的是哪一版」对不上号。这正是本模块要修的病的微型版。
     """
 
-    body = _cjk_only(text)
     return {
+        "version": FINGERPRINT_VERSION,
         "chars": count_zh_chars(str(text or "")),
         # 内容寻址用，不是安全用途——显式声明，免得被当成弱哈希告警。
-        "sha1": hashlib.sha1(body.encode("utf-8"), usedforsecurity=False).hexdigest()[:16],
+        "sha1": hashlib.sha1(
+            _normalized_text(text).encode("utf-8"), usedforsecurity=False
+        ).hexdigest()[:16],
     }
 
 
@@ -62,17 +68,19 @@ def report_grades_text(report_json: Mapping[str, Any] | None, text: str) -> bool
     """这份报告评的就是 ``text`` 吗？
 
     旧行没有指纹，一律返回 False：**认不出来比认错版安全**——认错版正是
-    这个模块要修的 bug。调用方对认不出来的处理是退回旧行为并留痕。
+    这个模块要修的 bug。未知来源只能展示历史，不能授权修复或放行。
     """
 
-    graded = dict((report_json or {}).get("graded") or {})
-    if not graded:
+    if not isinstance(report_json, Mapping):
+        return False
+    graded = report_json.get("graded")
+    if not isinstance(graded, Mapping) or not graded:
         return False
     return graded == graded_text_fingerprint(text)
 
 
 def claim_report_for_draft(
-    rows: Sequence[Any], current_draft_text: str | None
+    rows: Sequence[Any], current_draft_text: str | None, *, allow_historical: bool = False
 ) -> tuple[Any | None, str]:
     """从（按时间倒序的）报告行里挑出「评的就是在架稿」的那份。
 
@@ -84,18 +92,22 @@ def claim_report_for_draft(
     * ``"no_draft"``        — 在架稿读不到。
     * ``"empty"``           — 一份报告都没有。
 
-    除 ``"claimed"`` 外一律退回最新那份（旧行为）。
+    除 ``"claimed"`` 外返回 None。展示历史的只读调用方可以显式传入
+    ``allow_historical=True``，但必须保留 reason，不能用于修复或晋升。
     """
 
     rows = list(rows)
     if not rows:
         return None, "empty"
-    newest = rows[0]
+    newest = rows[0] if allow_historical else None
     if current_draft_text is None:
         return newest, "no_draft"
     for row in rows:
         if report_grades_text(getattr(row, "report_json", None), current_draft_text):
             return row, "claimed"
-    if any((getattr(row, "report_json", None) or {}).get("graded") for row in rows):
+    if any(
+        isinstance(getattr(row, "report_json", None), Mapping) and row.report_json.get("graded")
+        for row in rows
+    ):
         return newest, "no_claim"
     return newest, "unfingerprinted"

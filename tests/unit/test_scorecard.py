@@ -8,22 +8,26 @@ helpers so the blended quality_score is reproducible and auditable.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
+from bestseller.services.hype_engine import HypeScheme, HypeType
+from bestseller.services.quality_report_claim import graded_text_fingerprint
 from bestseller.services.scorecard import (
     NovelScorecard,
+    _aggregate_hype_metrics,
+    _claim_scorecard_quality_report,
+    _latest_audit_is_fresher,
+    _quality_report_applies_to_current_state,
+    _quality_report_is_fresh,
     compute_quality_score,
+    compute_scorecard,
     herfindahl_index,
     length_stats,
     normalized_entropy,
-    _latest_audit_is_fresher,
-    _aggregate_hype_metrics,
-    _quality_report_applies_to_current_state,
-    _quality_report_is_fresh,
 )
-from bestseller.services.hype_engine import HypeScheme, HypeType
 
 pytestmark = pytest.mark.unit
 
@@ -163,6 +167,155 @@ class TestQualityReportFreshness:
             is True
         )
 
+
+class TestScorecardQualityReportClaims:
+    def _row(
+        self,
+        text: str | None,
+        *,
+        blocks_write: bool = False,
+        created_at: datetime | None = None,
+        legacy: bool = False,
+    ) -> SimpleNamespace:
+        report = {"violations": []}
+        if text is not None and not legacy:
+            report["graded"] = graded_text_fingerprint(text)
+        return SimpleNamespace(
+            report_json=report,
+            blocks_write=blocks_write,
+            created_at=created_at or datetime(2026, 5, 11, tzinfo=timezone.utc),
+        )
+
+    def test_old_newer_report_for_other_body_is_unknown(self) -> None:
+        current = "当前在架稿。" * 40
+        rejected = current + "被拒候选。" * 40
+        selected, reason = _claim_scorecard_quality_report(
+            [self._row(rejected, blocks_write=True)],
+            current_draft_text=current,
+            current_draft_created_at=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            production_state="pending",
+        )
+        assert selected is None
+        assert reason == "no_claim"
+
+    def test_current_body_claim_wins_over_newer_wrong_body(self) -> None:
+        current = "当前在架稿。" * 40
+        rejected = current + "被拒候选。" * 40
+        selected, reason = _claim_scorecard_quality_report(
+            [
+                self._row(rejected, blocks_write=True),
+                self._row(current, blocks_write=False),
+            ],
+            current_draft_text=current,
+            current_draft_created_at=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            production_state="pending",
+        )
+        assert selected is not None
+        assert selected.blocks_write is False
+        assert reason == "claimed"
+
+    def test_legacy_report_is_explicitly_unknown(self) -> None:
+        selected, reason = _claim_scorecard_quality_report(
+            [self._row("旧正文。" * 20, legacy=True)],
+            current_draft_text="当前正文。" * 20,
+            current_draft_created_at=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            production_state="pending",
+        )
+        assert selected is None
+        assert reason == "unfingerprinted"
+
+    def test_all_ascii_bodies_are_not_claimed_by_zero_cjk_fingerprint(self) -> None:
+        selected, reason = _claim_scorecard_quality_report(
+            [self._row("one body", legacy=False)],
+            current_draft_text="a different body",
+            current_draft_created_at=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            production_state="pending",
+        )
+        assert selected is None
+        assert reason == "ambiguous_fingerprint"
+
+    def test_matching_block_is_not_counted_after_current_state_is_ok(self) -> None:
+        current = "当前正文。" * 20
+        selected, reason = _claim_scorecard_quality_report(
+            [self._row(current, blocks_write=True)],
+            current_draft_text=current,
+            current_draft_created_at=datetime(2026, 5, 11, tzinfo=timezone.utc),
+            production_state="ok",
+        )
+        assert selected is None
+        assert reason == "claimed_not_applicable"
+
+
+class _FakeResult:
+    def __init__(self, *, rows=(), scalar=None) -> None:
+        self._rows = list(rows)
+        self._scalar = scalar
+
+    def all(self):
+        return self._rows
+
+    def scalar_one_or_none(self):
+        return self._scalar
+
+    def scalar_one(self):
+        return self._scalar
+
+
+class _ScorecardSession:
+    def __init__(self, results) -> None:
+        self._results = iter(results)
+
+    async def execute(self, _statement):
+        return next(self._results)
+
+
+@pytest.mark.asyncio
+async def test_compute_scorecard_marks_unclaimed_report_provisional() -> None:
+    """The DB-facing driver must not count a rejected body as current evidence."""
+
+    project_id = uuid4()
+    chapter_id = uuid4()
+    current = "当前在架稿。" * 40
+    rejected = current + "被拒候选。" * 40
+    draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    report = {
+        "graded": graded_text_fingerprint(rejected),
+        "violations": [{"code": "DIALOG_UNPAIRED"}],
+    }
+    session = _ScorecardSession(
+        [
+            _FakeResult(
+                rows=[
+                    (
+                        chapter_id,
+                        1,
+                        current,
+                        draft_time,
+                        None,
+                        None,
+                        "pending",
+                    )
+                ]
+            ),
+            _FakeResult(
+                rows=[(True, report, chapter_id, draft_time + timedelta(seconds=1))]
+            ),
+            _FakeResult(rows=[]),
+            _FakeResult(scalar=None),
+            _FakeResult(rows=[]),
+            _FakeResult(scalar=None),
+            _FakeResult(scalar=0),
+            _FakeResult(rows=[]),
+        ]
+    )
+
+    scorecard = await compute_scorecard(session, project_id)
+
+    assert scorecard.chapters_blocked == 0
+    assert scorecard.dialog_integrity_violations == 0
+    assert scorecard.quality_report_coverage["no_claim"] == 1
+    assert scorecard.quality_report_unknown_chapters == (1,)
+    assert scorecard.quality_score_status == "provisional"
 
 class TestLatestAuditFreshness:
     def test_audit_after_quality_report_wins(self) -> None:

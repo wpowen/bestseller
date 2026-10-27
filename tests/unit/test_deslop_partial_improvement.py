@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ast
 import inspect
 
 import pytest
@@ -30,11 +31,18 @@ def test_partial_improvement_is_kept():
 def test_still_blocking_improvement_updates_outcome():
     """采纳改进后 outcome 必须一并更新，否则下游按旧分数走修复=对账错。"""
     src = inspect.getsource(pipelines)
-    idx = src.find("_af_improved")
-    window = src[idx : idx + 900]
-    assert "ai_flavor_outcome = _recheck" in window
+    adoption = next(
+        node
+        for node in ast.walk(ast.parse(src))
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "_recheck.decision != 'block' or _af_improved"
+    )
+    # Follow the adoption branch, not a character window whose width changes
+    # when version persistence is added before the outcome assignment.
+    branch = ast.unparse(ast.Module(body=adoption.body, type_ignores=[]))
+    assert "ai_flavor_outcome = _recheck" in branch
     # 仍 block 的情况要留痕可查
-    assert "kept as improvement (still blocking)" in window
+    assert "kept as improvement (still blocking)" in branch
 
 
 def test_block_routing_survives():

@@ -442,3 +442,31 @@ def test_unique_force_names_do_not_trigger_duplicate_flag():
     report = scan_cast_foundation_richness(cast, volume_count=12)
     codes = {f.code for f in report.findings}
     assert "duplicate_force_names" not in codes
+
+
+@pytest.mark.parametrize('volume_count,active_count,blocked', [
+    (1,1,False), (2,1,False), (2,2,True),
+    (3,1,False), (3,2,True), (4,1,False), (4,2,True),
+    (5,2,False), (5,3,True), (10,4,False), (10,5,True),
+    (24,9,False), (24,10,True), (24,24,True),
+])
+def test_force_dominance_uses_feasible_discrete_volume_cap(volume_count, active_count, blocked):
+    cast={'antagonist_forces':[{'name':'灰港商会','force_type':'faction',
+        'active_volumes':list(range(1,active_count+1))}], 'supporting_cast':[]}
+    report=scan_cast_foundation_richness(cast,volume_count=volume_count)
+    assert any(f.code=='single_force_dominance' for f in report.findings) is blocked
+
+
+def test_single_volume_complete_roster_has_no_critical_richness_failure():
+    cast = {'antagonist_forces': [
+        {'name':'灰港商会','force_type':'faction','active_volumes':[1]}],
+        'supporting_cast':[{'name':'许澄','role':'antagonist'}]}
+    report = scan_cast_foundation_richness(cast, volume_count=1)
+    assert not any(f.severity == 'critical' for f in report.findings)
+
+
+@pytest.mark.parametrize('language', ['zh','en'])
+def test_single_volume_prompt_explains_integer_cap(language):
+    prompt = render_foundation_constraints_block(volume_count=1,language=language)
+    assert ('至少1卷' if language=='zh' else 'minimum 1 volume') in prompt
+    assert ('≤ 40%' not in prompt)

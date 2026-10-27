@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from uuid import uuid4
 
 import pytest
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.unit
 class FakeSession:
     def __init__(self, *, scalars_results: list[list[object]] | None = None) -> None:
         self.scalars_results = list(scalars_results or [])
+        self.no_autoflush = nullcontext()
         self.added: list[object] = []
         self.executed: list[object] = []
         self.scalar_statements: list[object] = []

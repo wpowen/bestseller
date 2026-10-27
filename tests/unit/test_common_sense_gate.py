@@ -176,6 +176,45 @@ def test_common_sense_gate_flags_unintroduced_mentor_reference() -> None:
     )
 
 
+def test_common_sense_gate_allows_locally_established_mentor_reference() -> None:
+    report = evaluate_common_sense_gate(
+        "沈砚拜顾老师为师，师父教他听声辨位。",
+        genre="现实",
+        chapter_number=2,
+    )
+
+    assert not any(
+        finding.code == "unintroduced_authority_reference"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_does_not_bind_another_characters_mentor() -> None:
+    report = evaluate_common_sense_gate(
+        "顾老师收甲为徒。乙说：师父教的破门法，他也会。",
+        genre="现实",
+        chapter_number=2,
+    )
+
+    assert any(
+        finding.code == "unintroduced_authority_reference"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_does_not_bind_same_sentence_to_another_speaker() -> None:
+    report = evaluate_common_sense_gate(
+        "顾老师收甲为徒，乙说：师父教的破门法，他也会。",
+        genre="现实",
+        chapter_number=2,
+    )
+
+    assert any(
+        finding.code == "unintroduced_authority_reference"
+        for finding in report.findings
+    )
+
+
 def test_common_sense_gate_flags_repeated_rescue_or_debt_beat() -> None:
     report = evaluate_common_sense_gate(
         "林渊把账印押上去，陈默的身体猛地往外一弹。"
@@ -283,7 +322,82 @@ def test_common_sense_gate_flags_non_expert_rule_knowledge_leak() -> None:
         chapter_number=1,
     )
 
-    assert report.passed is False
+    assert report.passed is True
+    assert any(
+        finding.code == "lay_character_rule_knowledge_leak" and not finding.blocking
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_allows_verified_character_rule_knowledge() -> None:
+    report = evaluate_common_sense_gate(
+        "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
+        "谁碰了名册谁录名。张建军：“我是不是已经录名了？”",
+        genre="灵异",
+        chapter_number=1,
+        known_rule_terms_by_character={"张建军": ("录名",)},
+    )
+
+    assert not any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_keeps_unbound_rule_term_positive() -> None:
+    report = evaluate_common_sense_gate(
+        "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
+        "谁碰了名册谁录名。张建军：“我是不是已经录名了？”",
+        genre="灵异",
+        chapter_number=1,
+        known_rule_terms_by_character={"另一个人": ("录名",)},
+    )
+
+    assert any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_does_not_treat_fact_sentence_as_rule_term_knowledge() -> None:
+    report = evaluate_common_sense_gate(
+        "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
+        "谁碰了名册谁录名。张建军：“我是不是已经录名了？”",
+        genre="灵异",
+        chapter_number=1,
+        known_rule_terms_by_character={"张建军": ("张建军已经知道录名规则",)},
+    )
+
+    assert any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_requires_knowledge_for_all_current_rule_terms() -> None:
+    report = evaluate_common_sense_gate(
+        "墙上写着「录名」和「封门」两条规则。录名会留痕，封门会锁死。"
+        "录名封门都不能碰。张建军：“我知道录名和封门。”",
+        genre="灵异",
+        chapter_number=1,
+        known_rule_terms_by_character={"张建军": ("录名",)},
+    )
+
+    assert any(
+        finding.code == "lay_character_rule_knowledge_leak"
+        for finding in report.findings
+    )
+
+
+def test_common_sense_gate_does_not_use_prefix_character_knowledge() -> None:
+    report = evaluate_common_sense_gate(
+        "墙上贴着三条：「录名」者不得出门。录名之后，名字归局里。"
+        "谁碰了名册谁录名。张三丰：“我是不是已经录名了？”",
+        genre="灵异",
+        chapter_number=1,
+        known_rule_terms_by_character={"张三": ("录名",)},
+    )
+
     assert any(
         finding.code == "lay_character_rule_knowledge_leak"
         for finding in report.findings

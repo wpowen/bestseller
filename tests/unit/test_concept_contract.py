@@ -6,12 +6,13 @@ import pytest
 from bestseller.services.concept_contract import (
     apply_concept_contract_to_book_spec,
     build_concept_contract,
-    reseal_concept_contract_lineage,
     render_concept_contract_block,
     render_volume_seriality_execution_block,
     require_conception_contract_for_target,
     require_valid_concept_contract,
+    reseal_concept_contract_lineage,
     validate_concept_contract,
+    verify_concept_quality_evidence,
 )
 from bestseller.services.logline_gate import (
     LoglineAction,
@@ -77,6 +78,25 @@ SPINE = {
     "stakes": "他会继承一场无法摆脱的谋杀",
     "question": "他能否查出谁偷走了死者的余生？",
 }
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_reconciled_story_cannot_rebind_old_tournament_scores(nested: bool) -> None:
+    lineage = {"reconciliation_lineage": {"schema_version": "concept-reconciliation.v1"}}
+    winner = {**WINNER, **({"story_architecture": lineage} if nested else lineage)}
+    contract = build_concept_contract(
+        winner=winner, story_spine=SPINE, target_chapters=500,
+        genre="悬疑", sub_genre="悬疑推理",
+    )
+    evidence = contract["quality_evidence"]
+    assert evidence["approved"] is False
+    assert evidence["review_status"] == "requires_review"
+    assert evidence["hook_judge"] == {}
+    assert evidence["historical_tournament_evidence"]["hook_judge"]["click"] == 8.5
+    assert verify_concept_quality_evidence(contract) == (False, "reconciled_story_requires_review")
+    assert verdict_from_approved_concept_contract(
+        contract, target_chapters=500, logline_text=contract["hook_card"]["one_liner"],
+    ) is None
 
 
 def test_contract_has_one_lineage_and_passes_capacity() -> None:
@@ -158,6 +178,67 @@ def test_approved_contract_is_authoritative_logline_evidence() -> None:
     assert verdict.weakest_axis == "concept_contract_evidence"
 
 
+def test_quality_evidence_is_bound_to_the_reviewed_contract_and_hook() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+
+    assert verify_concept_quality_evidence(contract) == (True, "verified")
+
+    contract["hook_card"]["protagonist"] = "被篡改的主角"
+    assert verify_concept_quality_evidence(contract)[0] is False
+
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    contract["story_spine"]["stakes"] = "被篡改的代价"
+    assert verify_concept_quality_evidence(contract)[0] is False
+
+
+def test_quality_evidence_hash_tampering_is_not_repaired_by_rehashing() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    contract["quality_evidence"]["hook_judge"]["click"] = 0.1
+
+    assert verify_concept_quality_evidence(contract)[0] is False
+
+
+def test_legacy_quality_evidence_without_binding_is_explicitly_unverified() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=500,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    evidence = contract["quality_evidence"]
+    evidence.pop("evidence_binding")
+    from bestseller.services.concept_contract import _stable_hash
+
+    evidence.pop("evidence_hash")
+    evidence["evidence_hash"] = _stable_hash(evidence)
+
+    assert verify_concept_quality_evidence(contract) == (False, "missing_binding")
+    assert verdict_from_approved_concept_contract(
+        contract,
+        target_chapters=500,
+        logline_text=contract["hook_card"]["one_liner"],
+    ) is None
+
+
 def test_rewritten_logline_cannot_ride_the_champions_verdict() -> None:
     """证据转移要求文本同一（2026-08-11 真机《摆摊求死》）。
 
@@ -224,6 +305,41 @@ def test_contract_rejects_target_or_lineage_tampering() -> None:
 
     assert any("champion_id" in item for item in violations)
     assert any("target_chapters" in item for item in violations)
+
+
+def test_thirty_chapter_new_contract_runs_ranking_seriality_gate() -> None:
+    """30章候选不能靠旧200章容量阈值绕过续航门。"""
+
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=30,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    contract["seriality_proof"]["unit_count_estimate"] = 1
+
+    violations = validate_concept_contract(contract, target_chapters=30)
+
+    assert any("榜单候选续航门失败" in item for item in violations)
+    assert any("unit_count_below_minimum" in item for item in violations)
+
+
+def test_require_conception_contract_for_thirty_chapters_preserves_gate_axis() -> None:
+    contract = build_concept_contract(
+        winner=WINNER,
+        story_spine=SPINE,
+        target_chapters=30,
+        genre="悬疑",
+        sub_genre="都市奇幻",
+    )
+    contract["seriality_proof"]["renewal_sources"] = []
+
+    with pytest.raises(Exception) as exc_info:
+        require_conception_contract_for_target(contract, target_chapters=30)
+
+    assert "榜单候选续航门失败" in str(exc_info.value)
+    assert "renewal_sources_thin" in str(exc_info.value)
 
 
 def test_contract_applies_serial_engine_without_hook_cost_pollution() -> None:

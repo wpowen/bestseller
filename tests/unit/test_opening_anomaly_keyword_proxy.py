@@ -71,18 +71,14 @@ def test_the_signal_is_still_reported() -> None:
     )
 
 
-def test_structural_opening_defects_still_block() -> None:
-    """No blanket loosening: defects a lexical check CAN judge stay blocking.
-
-    A 200-character run-on first sentence is measurable without semantics, so
-    it keeps its severity.
-    """
+def test_sentence_measurement_without_approved_limit_is_advisory() -> None:
+    """Measurable sentence length does not authorize a fixed creative limit."""
 
     long_first_sentence = "他" + "又想起了那些事情" * 30 + "。后面还有内容。"
 
     severities = _codes(long_first_sentence)
 
-    assert severities.get("OPENING_FIRST_SENTENCE_TOO_LONG") in {"critical", "high"}
+    assert severities.get("OPENING_FIRST_SENTENCE_TOO_LONG") == "medium"
 
 
 def test_write_safety_only_promotes_high_and_critical() -> None:

@@ -1,4 +1,4 @@
-"""上架简介的候选里，默认族的让位给不在族里的——降权，不是杀权。
+"""上架简介默认族词面信号只做审计，不改变候选资格或排序。
 
 用户 2026-08-24 报「债务这块的问题反反复复一直出现」。取证：书9 读者实际
 看到的三行（书名+简介+一句话）合起来 `is_debt_dominated=True`，3 个子族：
@@ -42,19 +42,19 @@ _ALSO_CLEAN = BlurbCandidate(
 )
 
 
-class TestDemotion:
-    def test_dominated_candidate_yields_to_a_clean_one(self) -> None:
-        kept, demoted = demote_default_family_candidates(
+class TestAdvisoryObservation:
+    def test_dominated_candidate_stays_eligible_and_is_observed(self) -> None:
+        kept, observed = demote_default_family_candidates(
             [_DIRTY, _CLEAN], user_named_family=False
         )
-        assert [c.strategy for c in kept] == ["forge"]
-        assert [c.strategy for c in demoted] == ["ledger"]
+        assert [c.strategy for c in kept] == ["ledger", "forge"]
+        assert [c.strategy for c in observed] == ["ledger"]
 
     def test_order_is_preserved_among_survivors(self) -> None:
         kept, _ = demote_default_family_candidates(
             [_CLEAN, _DIRTY, _ALSO_CLEAN], user_named_family=False
         )
-        assert [c.strategy for c in kept] == ["forge", "thunder"]
+        assert [c.strategy for c in kept] == ["forge", "ledger", "thunder"]
 
 
 class TestNeverEmpty:
@@ -62,23 +62,25 @@ class TestNeverEmpty:
         """全池同族照常放行——清空池比留下同族更坏。"""
 
         dirty2 = BlurbCandidate(strategy="ledger2", synopsis=_DIRTY.synopsis)
-        kept, demoted = demote_default_family_candidates(
+        kept, observed = demote_default_family_candidates(
             [_DIRTY, dirty2], user_named_family=False
         )
-        assert len(kept) == 2 and not demoted
+        assert len(kept) == 2
+        assert observed == [_DIRTY, dirty2]
 
     def test_empty_input_is_safe(self) -> None:
         assert demote_default_family_candidates([], user_named_family=False) == ([], [])
 
 
 class TestUserIntent:
-    def test_user_named_family_is_never_demoted(self) -> None:
-        """用户自己要写债务题材 = 用户的选择，框架不许替他改主意。"""
+    def test_user_named_family_is_untouched_and_observed(self) -> None:
+        """用户自己要写债务题材，框架保留选择并如实记录。"""
 
-        kept, demoted = demote_default_family_candidates(
+        kept, observed = demote_default_family_candidates(
             [_DIRTY, _CLEAN], user_named_family=True
         )
-        assert len(kept) == 2 and not demoted
+        assert len(kept) == 2
+        assert observed == [_DIRTY]
 
 
 class TestAllClean:

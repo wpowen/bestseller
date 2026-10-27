@@ -138,13 +138,13 @@ def render_emotion_choreography_block() -> str:
         return ""
     lines: list[str] = ["【emotion_choreography · 情绪契约】"]
     lines.append(
-        "- 情绪用 ≥ 2 种表达层承载: "
+        "- 关键情绪节点从这些表达层选择 ≥ 2 种组成动作—后果链，不为凑数并列堆叠: "
         + ", ".join(config.expression_layers.keys())
     )
     lines.append(
-        "- 叙述中禁用情绪标签词: "
-        + ", ".join(config.banned_emotion_labels[:12])
-        + "（角色对白除外）"
+        "- 情绪标签不按词面一律禁用：只改写替读者下结论且不增加信息的用法；"
+        "对白、人物自我命名可以保留，过场和必要内心导航允许简洁概括。"
     )
+    lines.append("- 不得用通用身体反应或感官清单补位；细节必须改变信息、因果、人物或节奏。")
     lines.append("- 每章必有 compress → release → aftermath 完整弧")
     return "\n".join(lines)

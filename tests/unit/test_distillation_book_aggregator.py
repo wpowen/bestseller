@@ -8,13 +8,38 @@ import pytest
 import yaml
 
 from bestseller.services.distillation_book_aggregator import (
-    aggregate_source_package_async,
+    _coerce_tail_bundle,
     batch_chapter_cards,
     infer_aggregate_key,
     material_passes_active_gate,
     package_book_phase_complete,
+    package_book_phase_structurally_complete,
     promote_review_rows_to_active,
 )
+
+
+def test_tail_material_schema_alias_stays_review_only() -> None:
+    _mechs, _ledger, rows = _coerce_tail_bundle(
+        {
+            "material_entries_review": [
+                {
+                    "slug": "abstract-control",
+                    "summary": "通过外部约束推动关系状态变化。",
+                    "content_json": {"control": "review"},
+                    "status": "active",
+                    "reuse_scope": "approved_reusable",
+                    "abstraction_status": "abstract_only",
+                    "prompt_reuse": True,
+                }
+            ]
+        },
+        source_id="source-0001",
+    )
+    assert rows[0]["narrative_summary"] == "通过外部约束推动关系状态变化。"
+    assert rows[0]["status"] == "review"
+    assert rows[0]["reuse_scope"] == "review_only"
+    assert rows[0]["abstraction_status"] == "unreviewed"
+    assert rows[0]["prompt_reuse"] is False
 
 
 def test_infer_aggregate_key_otherworld() -> None:
@@ -110,6 +135,99 @@ def test_package_book_phase_complete(tmp_path: Path) -> None:
     assert package_book_phase_complete(root) is True
 
 
+def test_package_book_phase_complete_rejects_fallback_artifact(tmp_path: Path) -> None:
+    root = tmp_path / "source-fallback"
+    root.mkdir()
+    for name, body in (
+        ("volume_cards.jsonl", '{"distillation_fallback": true}\n'),
+        ("book_design_card.json", '{"status": "draft_review", "distillation_fallback": true}'),
+        ("author_craft_card.json", "{}"),
+        ("mechanism_candidates.jsonl", "{}\n"),
+        ("material_entries.review.jsonl", "{}\n"),
+        ("anti_copy_ledger.json", "{}"),
+        ("grammar_patch.yaml", "key: k\n"),
+    ):
+        (root / name).write_text(body, encoding="utf-8")
+    assert package_book_phase_complete(root) is False
+
+
+def test_package_book_phase_complete_rejects_legacy_fallback_card(tmp_path: Path) -> None:
+    root = tmp_path / "source-legacy-fallback"
+    root.mkdir()
+    for name, body in (
+        ("volume_cards.jsonl", '{"source_id":"source-legacy-fallback"}\n'),
+        (
+            "book_design_card.json",
+            '{"reader_promise":"LLM structured distillation fallback.","core_engine":"unknown"}',
+        ),
+        ("author_craft_card.json", "{}"),
+        ("mechanism_candidates.jsonl", "{}\n"),
+        ("material_entries.review.jsonl", "{}\n"),
+        ("anti_copy_ledger.json", "{}"),
+        ("grammar_patch.yaml", "key: k\n"),
+    ):
+        (root / name).write_text(body, encoding="utf-8")
+    assert package_book_phase_structurally_complete(root) is True
+    assert package_book_phase_complete(root) is False
+
+
+def test_package_book_phase_complete_rejects_fallback_tail_artifact(tmp_path: Path) -> None:
+    root = tmp_path / "source-tail-fallback"
+    root.mkdir()
+    for name, body in (
+        ("volume_cards.jsonl", '{"source_id":"source-tail-fallback"}\n'),
+        ("book_design_card.json", "{}"),
+        ("author_craft_card.json", "{}"),
+        ("mechanism_candidates.jsonl", '{"distillation_fallback": true}\n'),
+        ("material_entries.review.jsonl", "{}\n"),
+        ("anti_copy_ledger.json", "{}"),
+        ("grammar_patch.yaml", "key: k\n"),
+    ):
+        (root / name).write_text(body, encoding="utf-8")
+    assert package_book_phase_complete(root) is False
+
+
+def test_package_book_phase_complete_rejects_craft_fallback_artifact(tmp_path: Path) -> None:
+    root = tmp_path / "source-craft-fallback"
+    root.mkdir()
+    for name, body in (
+        ("volume_cards.jsonl", '{"source_id":"source-craft-fallback"}\n'),
+        ("book_design_card.json", "{}"),
+        ("author_craft_card.json", '{"distillation_fallback": true}'),
+        ("mechanism_candidates.jsonl", "{}\n"),
+        ("material_entries.review.jsonl", "{}\n"),
+        ("anti_copy_ledger.json", "{}"),
+        ("grammar_patch.yaml", "key: k\n"),
+    ):
+        (root / name).write_text(body, encoding="utf-8")
+    assert package_book_phase_complete(root) is False
+
+
+@pytest.mark.asyncio
+async def test_complete_distillation_json_preserves_provider_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bestseller.services import distillation_book_aggregator as mod
+
+    class _FallbackResult:
+        content = "{}"
+        fallback_used = True
+        fallback_source = "static_response"
+
+    async def fake_complete_text(*_args: Any, **_kwargs: Any) -> Any:
+        return _FallbackResult()
+
+    monkeypatch.setattr(mod, "complete_text", fake_complete_text)
+    result = await mod.complete_distillation_json(
+        object(),
+        object(),
+        logical_role="summarizer",
+        system_prompt="system",
+        user_prompt="user",
+        prompt_template="test",
+    )
+    assert result["distillation_fallback"] is True
+    assert result["fallback_source"] == "static_response"
+
+
 def test_coerce_book_design_card_fills_required_defaults() -> None:
     from bestseller.services import distillation_book_aggregator as mod
 
@@ -127,6 +245,22 @@ def test_coerce_book_design_card_fills_required_defaults() -> None:
     assert row["genre_tags"]
     assert row["core_engine"] == "unknown"
     assert row["state_variables"]
+
+
+def test_coerce_book_design_card_expands_mapping_state_without_python_repr() -> None:
+    from bestseller.services import distillation_book_aggregator as mod
+
+    row = mod._coerce_book_design_card(
+        {"state_variables": [{"protagonist_state": "oppressed", "quest_state": {"open": True}}]},
+        source_id="source-0004",
+        source_ref="distillation:abc123",
+    )
+
+    assert row["state_variables"] == [
+        "protagonist_state: oppressed",
+        'quest_state: {"open": true}',
+    ]
+    assert "'protagonist_state'" not in " ".join(row["state_variables"])
 
 
 @pytest.mark.asyncio
@@ -201,6 +335,7 @@ async def test_aggregate_source_package_async_with_mock_llm(
     (pkg / "chapter_cards.jsonl").write_text(json.dumps(cc, ensure_ascii=False) + "\n", encoding="utf-8")
 
     calls: list[str] = []
+    tail_systems: list[str] = []
 
     async def fake_complete_json(*_a: Any, user_prompt: str, **_k: Any) -> Any:
         if "DISTILLATION_TASK: volume_card" in user_prompt:
@@ -255,6 +390,7 @@ async def test_aggregate_source_package_async_with_mock_llm(
             }
         if "DISTILLATION_TASK: book_tail_bundle" in user_prompt:
             calls.append("tail")
+            tail_systems.append(str(_k.get("system_prompt") or ""))
             return {
                 "mechanism_candidates": [
                     {
@@ -330,9 +466,14 @@ async def test_aggregate_source_package_async_with_mock_llm(
     )
     assert result.source_id == "source-0998"
     assert set(calls) >= {"volume", "book", "craft", "tail", "grammar"}
+    assert tail_systems and "narrative_summary" in tail_systems[0]
+    assert "reuse_scope='review_only'" in tail_systems[0]
+    assert "executable structural key" in tail_systems[0]
     assert (pkg / "volume_cards.jsonl").is_file()
     assert (pkg / "book_design_card.json").is_file()
     assert (pkg / "author_craft_card.json").is_file()
+    book_card = json.loads((pkg / "book_design_card.json").read_text(encoding="utf-8"))
+    assert book_card["observation_scope"]["macro_arc_inference_allowed"] is False
     assert (pkg / "material_entries.active.jsonl").is_file()
     loaded = yaml.safe_load((pkg / "grammar_patch.yaml").read_text(encoding="utf-8"))
     assert loaded.get("key") == "eastern-progression-fantasy"

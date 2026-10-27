@@ -1,43 +1,30 @@
-"""Decide, without a human, whether a book is finished.
+"""Close delivery only after exact adopted knowledge and verified export bytes.
 
-Nothing in the pipeline could reach ``ProjectStatus.COMPLETED``. The only
-writer of that value is a manual web endpoint that stamps
-``manually_marked_completed``; every automatic path writes ``needs_replan``,
-``revising``, ``writing`` or ``paused``. The autowrite pipeline's terminal
-assignment is::
-
-    project.status = REVISING if requires_human_review else WRITING
-
-so even a flawless run left the book in ``writing`` — a state that claims work
-is in progress when nothing is running. Two real three-chapter books finished
-every chapter with zero failed workflows and sat there indefinitely
-(2026-07-26).
-
-``writing`` as a resting state is not merely cosmetic: the self-heal sweeps,
-the dashboard and the export retry all read project status to decide what
-still needs doing, so a finished book keeps presenting itself as unfinished
-work forever.
-
-This module supplies the missing predicate. It is deliberately free of any
-"wait for a human" outcome: a book either is finished (every planned chapter
-settled) or it is not (chapters still missing or still in flight). Quality
-debt does not park a book — the repair loop already decided to ship those
-chapters, and the export gate records the debt on the artifact.
+The synchronous evaluator is a progress/census check, never adoption authority.
+Call ``settle_project_status_on_closure`` for delivery, or the read-only readiness
+reader for a dry run. No function in this module promotes a draft.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import Any, Final
+from collections import Counter
+from collections.abc import Callable, Iterable
+from copy import deepcopy
+from dataclasses import dataclass, replace
+import hashlib
+from pathlib import Path
+from typing import TYPE_CHECKING, Final
+from uuid import UUID
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-# States the repair loop leaves behind when it has stopped working on a
-# chapter. Mirrors ``exports.EXPORT_SHIPPABLE_PRODUCTION_STATES`` — a book is
-# finished exactly when every chapter is exportable.
-SETTLED_PRODUCTION_STATES: Final[frozenset[str]] = frozenset(
+    from bestseller.infra.db.models import ExportArtifactModel, ProjectModel
+    from bestseller.services.book_delivery_readiness import BookDeliveryReadiness
+    from bestseller.services.pipelines import FinalQualityGateResult
+    from bestseller.settings import AppSettings
+
+SETTLED_PRODUCTION_STATES: Final = frozenset(
     {
         "ok",
         "quality_debt",
@@ -46,280 +33,119 @@ SETTLED_PRODUCTION_STATES: Final[frozenset[str]] = frozenset(
         "needs_human_review",
     }
 )
-
-# Debt-carrying settled states, reported so a caller can tell a clean book from
-# a shipped-with-defects one without re-deriving the rule.
-_DEBT_STATES: Final[frozenset[str]] = SETTLED_PRODUCTION_STATES - {"ok"}
+_DEBT_STATES = SETTLED_PRODUCTION_STATES - {"ok"}
+DELIVERY_SCHEMA = "book_delivery.v2"
 
 
 @dataclass(frozen=True)
 class BookClosureVerdict:
-    """Whether the book is done, and what it is carrying if so."""
-
     is_complete: bool
     reason: str
     settled_chapters: int
     expected_chapters: int
     debt_chapters: tuple[int, ...]
     unsettled_chapters: tuple[int, ...]
+    body_complete: bool = False
 
     @property
     def is_clean(self) -> bool:
-        """Complete with no chapter shipped on debt."""
-
         return self.is_complete and not self.debt_chapters
 
 
-def _chapter_number(chapter: Any) -> int:
+def _chapter_number(chapter: object) -> int:
     try:
         return int(getattr(chapter, "chapter_number", 0) or 0)
     except (TypeError, ValueError):
         return 0
 
 
-def _production_state(chapter: Any) -> str:
+def _production_state(chapter: object) -> str:
     return str(getattr(chapter, "production_state", "") or "").strip().lower()
 
 
 def evaluate_book_closure(
-    chapters: Iterable[Any],
+    chapters: Iterable[object],
     *,
     expected_chapters: int | None = None,
 ) -> BookClosureVerdict:
-    """Return whether every planned chapter has settled.
+    """Check the complete planned census without granting delivery authority.
 
-    ``expected_chapters`` is the book's plan (``projects.target_chapters``).
-    When it is unknown or non-positive the chapter rows themselves define the
-    book — a project that never recorded a target must still be able to finish
-    rather than being stranded by missing metadata.
-
-    A book with no chapters at all is never complete; that is a book which has
-    not started, not one that has ended.
+    State-only legacy callers now fail closed. A positive target is necessary:
+    inferring a plan from existing rows could call a partially planned book done.
+    Extra rows cannot be ignored because the project exporter includes them.
     """
-
-    rows = [chapter for chapter in chapters if chapter is not None]
-    numbers = sorted({_chapter_number(row) for row in rows if _chapter_number(row) > 0})
-
+    rows = [row for row in chapters if row is not None]
+    counts = Counter(_chapter_number(row) for row in rows)
     try:
-        planned = int(expected_chapters or 0)
+        planned = max(0, int(expected_chapters or 0))
     except (TypeError, ValueError):
         planned = 0
-    planned = planned if planned > 0 else len(numbers)
-
-    if not numbers or planned <= 0:
-        return BookClosureVerdict(
-            is_complete=False,
-            reason="no_chapters",
-            settled_chapters=0,
-            expected_chapters=max(planned, 0),
-            debt_chapters=(),
-            unsettled_chapters=(),
-        )
-
-    state_by_number: dict[int, str] = {}
+    unsettled = set(range(1, planned + 1)) - set(counts)
+    debt, settled = [], 0
     for row in rows:
         number = _chapter_number(row)
-        if number > 0:
-            state_by_number[number] = _production_state(row)
-
-    unsettled: list[int] = []
-    debt: list[int] = []
-    settled = 0
-    for number in range(1, planned + 1):
-        state = state_by_number.get(number)
-        if state is None:
-            unsettled.append(number)
-            continue
-        if state not in SETTLED_PRODUCTION_STATES:
-            unsettled.append(number)
-            continue
-        settled += 1
-        if state in _DEBT_STATES:
-            debt.append(number)
-
-    if unsettled:
-        return BookClosureVerdict(
-            is_complete=False,
-            reason="chapters_unsettled",
-            settled_chapters=settled,
-            expected_chapters=planned,
-            debt_chapters=tuple(debt),
-            unsettled_chapters=tuple(unsettled),
-        )
-
+        if (
+            counts[number] != 1
+            or not 1 <= number <= planned
+            or _production_state(row) not in SETTLED_PRODUCTION_STATES
+            or str(getattr(row, "status", "")).strip().lower() not in {"complete", "revision"}
+        ):
+            unsettled.add(number)
+        else:
+            settled += 1
+            if _production_state(row) in _DEBT_STATES:
+                debt.append(number)
+    if not rows:
+        reason = "no_chapters"
+    elif not planned:
+        reason = "chapter_target_missing"
+    elif any(count > 1 for count in counts.values()):
+        reason = "duplicate_chapters"
+    elif any(not 1 <= number <= planned for number in counts):
+        reason = "unexpected_chapters"
+    elif unsettled:
+        reason = "chapters_unsettled"
+    else:
+        reason = "adoption_knowledge_required"
     return BookClosureVerdict(
-        is_complete=True,
-        reason="all_chapters_settled" if not debt else "all_chapters_settled_with_debt",
-        settled_chapters=settled,
-        expected_chapters=planned,
-        debt_chapters=tuple(debt),
-        unsettled_chapters=(),
+        False, reason, settled, planned, tuple(sorted(debt)), tuple(sorted(unsettled))
     )
 
 
-async def _promote_settled_chapter_drafts(session: Any, project: Any) -> None:
-    """Record that a settled chapter's current draft is the one being shipped.
+async def _promote_settled_chapter_drafts(session: AsyncSession, project: ProjectModel) -> None:
+    """Compatibility tombstone: closure can no longer confer adoption authority."""
+    raise ValueError("book_closure_promotion_removed: use normal reviewed adoption")
 
-    ``promotion_state`` only reaches ``promoted`` when the chapter review
-    returns ``pass``. A ``quality_debt`` chapter never gets that verdict — the
-    state means "stop repairing and ship the best draft" — so its draft stays
-    ``candidate``, and the combined export, which requires promoted drafts,
-    fails with "chapters without a promoted draft: 1, 2, 3" on a book whose
-    every chapter is terminal (2026-07-28, urban-power-reversal-1785219308).
 
-    Settling *is* the decision to ship. Promotion records that decision; it is
-    not a second approval the draft has to earn again. Only terminal chapters
-    qualify — an in-flight draft can still be rewritten — and the audited
-    transition is used rather than assigning the column, so the promotion
-    leaves the same trail any other promotion would.
+def _closure_quality_gate(
+    debt_chapters: tuple[int, ...], conceded: list[str]
+) -> Callable[..., FinalQualityGateResult]:
+    """Compatibility adapter only; no failure, including evaluator errors, is waived.
+
+    Closure uses exports' default terminal gate, which supplies chapter metadata.
+    Numeric adoption debt belongs to the adoption receipt and is not permission
+    to bypass an unrelated terminal failure or mutate the adopted text.
     """
 
-    from sqlalchemy import select
-
-    from bestseller.domain.promotion import DraftPromotionState
-    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
-    from bestseller.services.draft_promotion import transition_draft_state
-
-    try:
-        rows = list(
-            await session.execute(
-                select(ChapterModel, ChapterDraftVersionModel)
-                .join(
-                    ChapterDraftVersionModel,
-                    ChapterDraftVersionModel.chapter_id == ChapterModel.id,
-                )
-                .where(
-                    ChapterModel.project_id == project.id,
-                    ChapterDraftVersionModel.is_current.is_(True),
-                )
-            )
-        )
-    except Exception:  # noqa: BLE001 - a finished book must not fail on bookkeeping
-        return
-
-    # Promotion is a state machine: candidate → under_review → eligible →
-    # promoted, and it rejects a jump straight to promoted. Walking the same
-    # path the pass-verdict route walks keeps one set of rules; skipping steps
-    # was silently refused with "invalid automated promotion transition".
-    ladder = (
-        DraftPromotionState.UNDER_REVIEW,
-        DraftPromotionState.ELIGIBLE,
-        DraftPromotionState.PROMOTED,
-    )
-    failures: list[str] = []
-    for chapter, draft in rows:
-        state = str(getattr(chapter, "production_state", "") or "").strip().lower()
-        if state not in SETTLED_PRODUCTION_STATES:
-            continue
-        if str(getattr(draft, "promotion_state", "")) == DraftPromotionState.PROMOTED.value:
-            continue
-        for step in ladder:
-            if str(getattr(draft, "promotion_state", "")) == step.value:
-                continue
-            try:
-                await transition_draft_state(
-                    session,
-                    project_id=project.id,
-                    draft_kind="chapter",
-                    draft_id=draft.id,
-                    to_state=step,
-                    decision_source="book_closure",
-                    reason_codes=["settled_at_closure"],
-                    reason=f"chapter settled as {state}",
-                )
-            except Exception as exc:  # noqa: BLE001 - one chapter must not sink the book
-                # Recorded, not swallowed. The first version of this loop hid
-                # its own rejection and left no trace of why nothing promoted.
-                failures.append(
-                    f"ch{getattr(chapter, 'chapter_number', '?')}"
-                    f"->{step.value}: {str(exc)[:120]}"
-                )
-                break
-    if failures:
-        project.metadata_json = {
-            **(getattr(project, "metadata_json", None) or {}),
-            "closure_promotion_errors": failures[:10],
-        }
-
-
-def _closure_quality_gate(debt_chapters: tuple[int, ...], conceded: list[str]) -> Any:
-    """The terminal export gate, minus what the quality system already settled.
-
-    Before export, the exact bytes are re-checked by the final quality gates.
-    That is a worthwhile last line of defence against corruption between
-    production and export. It is *not* a licence to re-try the content verdicts
-    the production pipeline already reached — doing so refused a real book with
-    three promoted chapters (2026-07-28: "第2章：常识因果门禁
-    rule_term_onboarding_failure"), the same deadlock as the publication gate
-    and the promotion gate, one layer further down.
-
-    That fix conceded ``quality_debt`` chapters only, which left the identical
-    trap open for the clean ones: on 2026-08-04 a finished 50-chapter book
-    (custom-xuanhuan-1785767368) reached ``completed`` with all 50 drafts
-    promoted, and produced **no combined export** because chapter 28 — settled
-    ``ok`` by its own pipeline — was failed here for
-    ``ANTI_META_ENDING_OUT_OF_SCENE``. One artifact, two gates, opposite
-    verdicts; the reader got 50 loose files instead of a book.
-
-    Every chapter of a completed book is settled by definition, so the gate
-    concedes them all and records what it found. Nothing is dropped silently:
-    every downgrade lands in the artifact's warnings, and a chapter that is
-    *not* settled still gets the full veto.
-    """
-
-    debt = set(int(number) for number in debt_chapters)
-
-    def _gate(**kwargs: Any) -> Any:
+    def gate(**kwargs: object) -> FinalQualityGateResult:
         from bestseller.services.pipelines import run_final_quality_gates
 
-        result = run_final_quality_gates(**kwargs)
-        number = int(kwargs.get("chapter_number") or 0)
-        if bool(getattr(result, "passed", False)):
-            return result
-        # Reached only from ``settle_project_status_on_closure``, i.e. after
-        # ``evaluate_book_closure`` confirmed every planned chapter is settled.
-        # So there is no "unsettled chapter" case here to keep teeth for — the
-        # verdict this gate would overturn has already been made.
-        details = "; ".join(
-            [
-                *list(getattr(result, "errors", ()) or ()),
-                *list(getattr(result, "issues", ()) or ()),
-            ]
-        )
-        origin = "修复预算耗尽" if number in debt else "本章已判合格但终局门复审不过"
-        conceded.append(
-            f"第{number}章带缺陷发布（{origin}），未过终局质量门：{details[:200]}"
-        )
+        return run_final_quality_gates(**kwargs)
 
-        class _Conceded:
-            passed = True
-            patched_text = getattr(result, "patched_text", None)
-            errors: tuple[str, ...] = ()
-            issues: tuple[str, ...] = ()
-
-        return _Conceded()
-
-    return _gate
+    return gate
 
 
 async def settle_outstanding_rewrite_tasks(
-    session: Any,
+    session: AsyncSession,
     *,
-    project_id: Any,
+    project_id: UUID,
     reason: str,
 ) -> int:
-    """把书上还开着的重写工单一并封档，返回封掉的条数。
+    """Legacy explicit task-settlement API; call only after verified delivery.
 
-    2026-08-24 真机（书9）：收尾 09:05 把书标记 completed，同一分钟还留着
-    12 个 pending 重写任务。自愈每 5 分钟捞一次，指纹恒为
-    ``repair|pending_rewrite_tasks||50|50`` —— 50/50 章、50 章有在架稿，
-    毫无「卡住」可言，修了 20 次全无进展，最后给一本**已完本**的书盖上
-    requires_human_review 和 production_pause_reason。
-
-    书是好的，是账没结干净。只碰 pending/queued，已完成/已失败的历史是账
-    不许改。失败不许撤销完本——完本已经成立（同该函数上方 export 的先例）。
+    The closure path invokes this inside the successful export savepoint. Failed
+    delivery never cancels pending/queued work or changes historical task rows.
     """
-
     from sqlalchemy import select
 
     from bestseller.infra.db.models import RewriteTaskModel
@@ -338,119 +164,191 @@ async def settle_outstanding_rewrite_tasks(
     )
     settled = 0
     for row in rows:
-        if str(getattr(row, "status", "") or "") not in {"pending", "queued"}:
+        if row.status not in {"pending", "queued"}:
             continue
         row.status = "cancelled"
-        row.metadata_json = {
-            **(getattr(row, "metadata_json", None) or {}),
-            "cancelled_reason": reason,
-        }
+        row.metadata_json = {**(row.metadata_json or {}), "cancelled_reason": reason}
         settled += 1
     if settled:
         await session.flush()
     return settled
 
 
+def _supersede_completion(metadata: dict, *, old_status: str, now_iso: str, reason: str) -> dict:
+    """Preserve old completion claims before replacing the current materialization.
+
+    Generic lazy migration, replayable for every project: dry-run with the
+    readiness reader first, then call settlement. Never deletes drafts, audits,
+    knowledge, export artifacts, or the original completion receipt.
+    """
+    metadata = deepcopy(metadata)
+    keys = [
+        key
+        for key in metadata
+        if key == "completed_at" or (key.startswith("completion_") and key != "completion_history")
+    ]
+    if keys or old_status == "completed":
+        previous = {key: metadata.pop(key) for key in keys}
+        previous.update(project_status=old_status, book_delivery=metadata.get("book_delivery"))
+        history = list(metadata.get("completion_history") or [])
+        history.append(
+            {
+                "schema": DELIVERY_SCHEMA,
+                "superseded_at": now_iso,
+                "reason": reason,
+                "previous": previous,
+            }
+        )
+        metadata["completion_history"] = history
+    return metadata
+
+
+def _verify_export(
+    project: ProjectModel,
+    artifact: ExportArtifactModel,
+    path: str | Path,
+    readiness: BookDeliveryReadiness,
+) -> str:
+    """Reopen both immutable artifact and returned UTF-8 mirror, binding all sources."""
+    from bestseller.services.exports import build_project_markdown
+
+    if (
+        not artifact.id
+        or artifact.project_id != project.id
+        or artifact.source_id != project.id
+        or artifact.source_scope != "project"
+        or artifact.export_type != "markdown"
+    ):
+        raise ValueError("completion_export_artifact_identity_mismatch")
+    metadata = artifact.metadata_json or {}
+    if metadata.get("source_drafts") != list(readiness.sources):
+        raise ValueError("completion_export_source_mismatch")
+    expected = build_project_markdown(project, list(readiness.payloads)).encode("utf-8")
+    for filename in (Path(artifact.storage_uri), Path(path)):
+        data = filename.read_bytes()
+        if not data or data.decode("utf-8").encode("utf-8") != expected:
+            raise ValueError("completion_export_content_mismatch")
+        if hashlib.sha256(data).hexdigest() != artifact.checksum:
+            raise ValueError("completion_export_checksum_mismatch")
+    return str(artifact.checksum)
+
+
 async def settle_project_status_on_closure(
-    session: Any,
-    project: Any,
+    session: AsyncSession,
+    project: ProjectModel,
     *,
-    settings: Any,
+    settings: AppSettings,
     fallback_status: str,
     now_iso: str,
 ) -> BookClosureVerdict:
-    """Stamp COMPLETED when the book has finished; otherwise leave the caller's
-    status. Returns the verdict so the caller can also settle its workflow row.
+    """Verify delivery atomically in the caller's transaction; retry failed exports.
 
-    Both terminal paths must call this. ``run_project_pipeline`` and
-    ``run_project_repair`` each carry their own copy of
-
-        project.status = REVISING if requires_human_review else WRITING
-
-    and a live run (2026-07-28, urban-power-reversal-1785201018) exited through
-    the *repair* copy: all three chapters settled, the pipeline copy had already
-    run minutes earlier while chapters were still in flight, and the book
-    finished in ``revising`` with no export. Patching one copy fixes nothing —
-    the last writer wins, and which one that is depends on where the run
-    happens to end.
+    ``is_complete`` is true only for verified delivery. ``body_complete`` records
+    adopted knowledge readiness separately, so an I/O failure does not require
+    rewriting/rejudging already adopted prose. No commit or model call is made.
     """
+    from bestseller.services.book_delivery_readiness import (
+        read_book_delivery_closure,
+        read_book_delivery_readiness,
+    )
+    from bestseller.services.exports import export_project_markdown
 
-    from sqlalchemy import select
-
-    from bestseller.infra.db.models import ChapterModel
-
+    await session.flush()
+    await session.refresh(project, with_for_update=True)
+    old_status = project.status
+    previous_metadata = deepcopy(project.metadata_json or {})
+    verdict = evaluate_book_closure([], expected_chapters=project.target_chapters)
+    blockers: list[dict] = []
+    sources: list[dict] = []
     try:
-        chapters = list(
-            (
-                await session.execute(
-                    select(ChapterModel).where(ChapterModel.project_id == project.id)
+        async with session.begin_nested():
+            if old_status == "completed":
+                verified = await read_book_delivery_closure(session, project, lock=True)
+                if verified.verdict.is_complete:
+                    return verified.verdict
+            readiness = await read_book_delivery_readiness(session, project, lock=True)
+            verdict = readiness.verdict
+            blockers = list(readiness.blockers)
+            sources = list(readiness.sources)
+            if verdict.body_complete:
+                if project.project_type == "fanqie_short":
+                    # Platform completion binds its own package and whole-source
+                    # receipt. A generic project.md must never substitute for it.
+                    raise ValueError("fanqie_delivery_requires_platform_export")
+                # The default exporter already checks structure, terminal quality,
+                # source identity, and frozen bytes. Do not wrap away its failures.
+                artifact, path = await export_project_markdown(session, settings, project.slug)
+                await session.flush()
+                await session.refresh(artifact)
+                current = await read_book_delivery_readiness(session, project, lock=True)
+                if not current.verdict.body_complete or current.sources != readiness.sources:
+                    raise ValueError("completion_source_changed_during_export")
+                checksum = _verify_export(project, artifact, path, current)
+                settled_tasks = await settle_outstanding_rewrite_tasks(
+                    session,
+                    project_id=project.id,
+                    reason="book_delivery_verified",
                 )
-            )
-            .scalars()
-            .all()
+                verdict = replace(
+                    current.verdict,
+                    is_complete=True,
+                    reason="all_chapters_delivered_with_debt"
+                    if current.verdict.debt_chapters
+                    else "all_chapters_delivered",
+                )
+                export_receipt = {
+                    "completion_export_artifact_id": str(artifact.id),
+                    "completion_export_path": str(path),
+                    "completion_export_storage_uri": str(artifact.storage_uri),
+                    "completion_export_checksum": checksum,
+                    "completion_settled_rewrite_tasks": settled_tasks,
+                }
+    except Exception as exc:
+        # A savepoint restores task/artifact writes after an I/O or DB failure;
+        # caller-owned work outside it remains intact. CancelledError propagates.
+        await session.refresh(project)
+        verdict = replace(
+            verdict,
+            is_complete=False,
+            reason="export_pending" if verdict.body_complete else "readiness_error",
         )
-        verdict = evaluate_book_closure(
-            chapters,
-            expected_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        blockers.append(
+            {"reason": verdict.reason, "error_type": type(exc).__name__, "detail": str(exc)[:500]}
         )
-    except Exception:  # noqa: BLE001 - closure must never abort a finished run
-        verdict = evaluate_book_closure([], expected_chapters=0)
 
-    if not verdict.is_complete:
-        project.status = fallback_status
-        return verdict
-
-    project.status = "completed"
-    await _promote_settled_chapter_drafts(session, project)
-    # 书封档，书上开着的工单一起封 —— 留下 pending 会让自愈把一本完本的
-    # 书当卡住的书反复修（书9 真机：20 次无进展后给它盖了「需人工介入」）。
-    try:
-        _settled_tasks = await settle_outstanding_rewrite_tasks(
-            session, project_id=project.id, reason="book_completed"
-        )
-    except Exception:  # noqa: BLE001 - 结账失败不许撤销已经成立的完本
-        _settled_tasks = 0
-        logger.warning("closure could not settle rewrite tasks", exc_info=True)
-    metadata = {
-        **(getattr(project, "metadata_json", None) or {}),
-        "completed_at": now_iso,
-        "completion_reason": verdict.reason,
-        "completion_debt_chapters": list(verdict.debt_chapters),
-        "completion_is_clean": verdict.is_clean,
-        "completion_settled_rewrite_tasks": _settled_tasks,
+    metadata = _supersede_completion(
+        previous_metadata, old_status=old_status, now_iso=now_iso, reason=verdict.reason
+    )
+    metadata["book_delivery"] = {
+        "schema": DELIVERY_SCHEMA,
+        "checked_at": now_iso,
+        "state": "completed"
+        if verdict.is_complete
+        else "export_pending"
+        if verdict.body_complete
+        else "readiness_blocked",
+        "reason": verdict.reason,
+        "body_complete": verdict.body_complete,
+        "sources": sources,
+        "debt_chapters": list(verdict.debt_chapters),
+        "blockers": blockers,
     }
-
-    # Export here, where completion is decided, so the two cannot diverge.
-    # They already did: the first working closure marked a book completed with
-    # its debt correctly recorded and produced no combined export, because the
-    # `no_actionable_repair` exit returns export_artifact_id=None and the
-    # pipeline's own export had run earlier, while chapters were still
-    # unsettled and the publication gate still (correctly) refused them.
-    #
-    # Non-fatal: the book *is* finished — a failed export must not revoke that,
-    # and the next settle attempt retries it.
-    try:
-        from bestseller.services.exports import export_project_markdown
-
-        conceded: list[str] = []
-        artifact, path = await export_project_markdown(
-            session,
-            settings,
-            str(getattr(project, "slug", "") or ""),
-            final_quality_gate=_closure_quality_gate(verdict.debt_chapters, conceded),
+    if verdict.is_complete:
+        metadata.update(
+            export_receipt,
+            completed_at=now_iso,
+            completion_reason=verdict.reason,
+            completion_debt_chapters=list(verdict.debt_chapters),
+            completion_is_clean=verdict.is_clean,
         )
-        metadata["completion_export_artifact_id"] = str(getattr(artifact, "id", ""))
-        metadata["completion_export_path"] = str(path)
-        # A successful export clears the previous failure. Leaving it behind
-        # showed a completed, exported book still carrying the error that a
-        # since-fixed gate had raised.
-        metadata.pop("completion_export_error", None)
-        if conceded:
-            metadata["completion_conceded_gate_findings"] = conceded[:10]
-    except Exception as exc:  # noqa: BLE001 - completion stands on its own
-        metadata["completion_export_error"] = str(exc)[:500]
-
+        project.status = "completed"
+    else:
+        # A caller retrying a legacy completed book may pass that status back.
+        project.status = fallback_status if fallback_status != "completed" else "revising"
+        if verdict.body_complete:
+            metadata["completion_export_error"] = blockers[-1]["detail"]
     project.metadata_json = metadata
+    await session.flush()
     return verdict
 
 

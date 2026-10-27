@@ -28,7 +28,7 @@ def test_copywriting_call_precedes_champion_assignment_and_appeal_block():
     cw_call_pos = source.index("_copywriting_result = await run_blurb_copywriting(")
     champion_assign_pos = source.index("_copywriting_result.champion", cw_call_pos + 1)
     appeal_block_pos = source.index("Story/blurb appeal evaluation")
-    title_invariant_pos = source.index("title_profile[\"primary_title\"] = title")
+    title_invariant_pos = source.index('title_profile["primary_title"] = title')
 
     assert title_invariant_pos < cw_call_pos, (
         "copywriting must run after the title finalization invariant"
@@ -59,9 +59,7 @@ def test_copywriting_champion_is_sanitized_and_truncated():
     # 另一个注释当边界：改成切到**包住本段的 except 处理器**，那是语法结构，
     # 不会被人顺手删掉。
     _tail = source[cw_call_pos:]
-    _except_pos = _tail.find(
-        'logger.warning("Blurb copywriting tournament failed (non-fatal)"'
-    )
+    _except_pos = _tail.find('logger.warning("Blurb copywriting tournament failed (non-fatal)"')
     assert _except_pos > 0, "文案工序的 fail-open except 不见了"
     surrounding = _tail[:_except_pos]
     assert "_sanitize_forbidden_default_motifs(_copywriting_result.champion" in surrounding
@@ -71,10 +69,12 @@ def test_copywriting_champion_is_sanitized_and_truncated():
 def test_copywriting_call_receives_v0_synopsis_and_book_jargon_terms():
     source = _source()
     call_start = source.index("_copywriting_result = await run_blurb_copywriting(")
-    call_region = source[call_start : call_start + 800]
+    call_end = source.index("\n            _copywriting_ran = True", call_start)
+    call_region = source[call_start:call_end]
     assert "v0_synopsis=synopsis" in call_region
     assert "book_jargon_terms=_book_jargon_terms" in call_region
     assert "spine=story_spine" in call_region
+    assert "channel=_conception_persona_channel" in call_region
 
 
 def test_copywriting_block_is_wrapped_in_fail_open_try_except():
@@ -84,9 +84,7 @@ def test_copywriting_block_is_wrapped_in_fail_open_try_except():
     # 断言的本意是「这一段被 fail-open 的 try/except 包住」——直接按结构验：
     # except 处理器必须存在，且 try 必须在它之前、在本段开头之后。
     tail = source[block_start:]
-    handler = tail.find(
-        'logger.warning("Blurb copywriting tournament failed (non-fatal)"'
-    )
+    handler = tail.find('logger.warning("Blurb copywriting tournament failed (non-fatal)"')
     assert handler > 0, "文案工序必须有 fail-open 的 except 处理器"
     assert "try:" in tail[:handler], "except 之前必须有对应的 try"
 
@@ -97,7 +95,9 @@ def test_tournament_report_persisted_independent_of_appeal_system_state():
     的淘汰赛报告永远进不了 story_appeal_report，分段验收就看不到它。"""
 
     source = _source()
-    except_pos = source.index('logger.warning("Story appeal evaluation failed (non-fatal)"')
+    except_pos = source.index(
+        'logger.exception("Story appeal evaluation failed; blocking conception")'
+    )
     persist_pos = source.index(
         'story_appeal_report["copywriting_tournament"] = _copywriting_result.to_dict()'
     )
@@ -168,8 +168,14 @@ def test_prompt_encodes_board_research_form() -> None:
     from bestseller.services import blurb_copywriter as bc
 
     source = inspect.getsource(bc)
-    for token in ("标签行", "体验样本，缺失即废稿", "短句分行", "预期违背",
-                  "第三方反应", "禁止编造出版/短剧/评分"):
+    for token in (
+        "标签行",
+        "体验样本，缺失即废稿",
+        "短句分行",
+        "预期违背",
+        "第三方反应",
+        "禁止编造出版/短剧/评分",
+    ):
         assert token in source, token
     assert "三五个长句" not in source, "42 条语料的旧形态规则不得回潮"
 

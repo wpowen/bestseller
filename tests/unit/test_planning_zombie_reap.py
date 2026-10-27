@@ -45,7 +45,8 @@ def test_planning_types_reap_on_medium_window():
 def test_reaper_query_uses_planning_cutoff():
     src = inspect.getsource(self_heal)
     assert "planning_cutoff = now - _dt.timedelta(" in src
-    assert "_PLANNING_HEARTBEAT_REAP_WORKFLOW_TYPES),\n            WorkflowRunModel.updated_at < planning_cutoff," in src
+    assert "WorkflowRunModel.updated_at < planning_cutoff" in src
+    assert '!= "DEAD"' in src  # age alone cannot authorize reaping
 
 
 def test_planning_types_are_reapable_and_blocking():

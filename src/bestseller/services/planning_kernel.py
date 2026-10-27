@@ -26,6 +26,10 @@ from bestseller.services.emotion_driven_kernel import (
     emotion_driven_kernel_from_dict,
     evaluate_emotion_contracts,
 )
+from bestseller.services.planning_capability_selection import (
+    CAPABILITIES,
+    resolve_planning_capability,
+)
 from bestseller.services.public_emotion_kernel import (
     evaluate_public_emotion_kernel,
 )
@@ -44,6 +48,11 @@ _ALWAYS_BLOCK_CODES = {
     "seriality_volume_mapping_invalid",
     "story_capacity_insufficient",
 }
+# Benchmark alignment is a commercial/P1 signal. Preserve its finding and
+# repair guidance, but do not prevent an otherwise structurally valid first
+# draft from starting. Any structural or source-integrity finding still
+# blocks normally.
+_NON_BLOCKING_PREWRITE_CODES = {"benchmark_alignment_missing"}
 
 _PROGRESSION_MARKERS = (
     "xianxia",
@@ -254,9 +263,7 @@ def prewrite_readiness_report_to_dict(
     return {
         "passed": report.passed,
         "score": report.score,
-        "blocking_findings": [
-            finding.to_dict() for finding in report.blocking_findings
-        ],
+        "blocking_findings": [finding.to_dict() for finding in report.blocking_findings],
         "warnings": [finding.to_dict() for finding in report.warnings],
         "recommended_repair_actions": list(report.recommended_repair_actions),
         "capability_snapshot": dict(report.capability_snapshot),
@@ -284,23 +291,22 @@ def decide_prewrite_readiness_gate(
     score = _optional_int(data.get("score"))
     blocking_findings = _mapping_list(data.get("blocking_findings"))
     warning_findings = _mapping_list(data.get("warnings"))
-    blocking_codes = tuple(
-        str(item.get("code")) for item in blocking_findings if item.get("code")
-    )
+    blocking_codes = tuple(str(item.get("code")) for item in blocking_findings if item.get("code"))
     critical_codes = tuple(
         str(item.get("code"))
         for item in blocking_findings
         if item.get("code") and str(item.get("severity") or "").lower() == "critical"
     )
-    warning_codes = tuple(
-        str(item.get("code")) for item in warning_findings if item.get("code")
-    )
+    warning_codes = tuple(str(item.get("code")) for item in warning_findings if item.get("code"))
     normalized_mode = _normalize_prewrite_gate_mode(mode)
     if block_on_failure:
         normalized_mode = "block"
 
+    effective_blocking_codes = tuple(
+        code for code in blocking_codes if code not in _NON_BLOCKING_PREWRITE_CODES
+    )
     invariant_failures = tuple(
-        code for code in blocking_codes if code in _ALWAYS_BLOCK_CODES
+        code for code in effective_blocking_codes if code in _ALWAYS_BLOCK_CODES
     )
     if invariant_failures:
         should_block = True
@@ -312,11 +318,19 @@ def decide_prewrite_readiness_gate(
         should_block = False
         reason = "warn_only"
     elif normalized_mode == "block_on_critical":
-        should_block = bool(critical_codes)
+        should_block = bool(
+            tuple(code for code in critical_codes if code not in _NON_BLOCKING_PREWRITE_CODES)
+        )
         reason = "critical_findings" if should_block else "non_critical_findings_warned"
     else:
-        should_block = bool(blocking_codes) or not passed
-        reason = "readiness_failed" if should_block else "passed"
+        should_block = bool(effective_blocking_codes) or not passed and not blocking_codes
+        reason = (
+            "readiness_failed"
+            if should_block
+            else "non_blocking_findings_warned"
+            if blocking_codes
+            else "passed"
+        )
 
     return PrewriteReadinessGateDecision(
         mode=normalized_mode,
@@ -354,11 +368,7 @@ def build_prewrite_repair_directives(
 ) -> list[str]:
     """Convert readiness findings into prompt-ready execution constraints."""
 
-    templates = (
-        _DIRECTIVE_TEMPLATES_EN
-        if _is_en_language(language)
-        else _DIRECTIVE_TEMPLATES_ZH
-    )
+    templates = _DIRECTIVE_TEMPLATES_EN if _is_en_language(language) else _DIRECTIVE_TEMPLATES_ZH
     directives: list[str] = []
     for code in _finding_codes_from_report(report):
         if code in {
@@ -580,13 +590,9 @@ def _series_engine_from(
     serialization = _as_mapping(writing_profile.get("serialization"))
     return {
         "core_engine": _text(
-            engine.get("core_serial_engine")
-            or engine.get("core_engine")
-            or engine.get("engine")
+            engine.get("core_serial_engine") or engine.get("core_engine") or engine.get("engine")
         ),
-        "reader_promise": _text(
-            engine.get("reader_promise") or market.get("reader_promise")
-        ),
+        "reader_promise": _text(engine.get("reader_promise") or market.get("reader_promise")),
         "first_three_chapter_hook": _text(
             engine.get("first_three_chapter_hook")
             or serialization.get("first_three_chapter_goal")
@@ -651,9 +657,7 @@ def _story_design_kernel_from(
                 [node for node in plot_tree if _text(node.get("line_type")) == "main"]
             ),
             "beat_count": len(beat_schedule),
-            "worldview_state_variable_count": len(
-                _mapping_list(worldview.get("state_variables"))
-            ),
+            "worldview_state_variable_count": len(_mapping_list(worldview.get("state_variables"))),
             "worldview_asset_count": len(_mapping_list(worldview.get("asset_ledger"))),
             "worldview_authority_claim_count": len(
                 _mapping_list(worldview.get("authority_claims"))
@@ -661,8 +665,7 @@ def _story_design_kernel_from(
             "worldview_distilled_binding_count": len(
                 _mapping_list(worldview.get("distilled_mechanism_bindings"))
             ),
-            "reverse_outline_status": _text(raw.get("reverse_outline_status"))
-            or "not_started",
+            "reverse_outline_status": _text(raw.get("reverse_outline_status")) or "not_started",
         }
 
     worldview = kernel.worldview_kernel
@@ -681,9 +684,7 @@ def _story_design_kernel_from(
         "worldview_state_variable_count": len(worldview.state_variables)
         if worldview is not None
         else 0,
-        "worldview_asset_count": len(worldview.asset_ledger)
-        if worldview is not None
-        else 0,
+        "worldview_asset_count": len(worldview.asset_ledger) if worldview is not None else 0,
         "worldview_authority_claim_count": len(worldview.authority_claims)
         if worldview is not None
         else 0,
@@ -698,9 +699,7 @@ def _emotion_driven_kernel_from(
     metadata: Mapping[str, object],
     emotion_driven_kernel: Mapping[str, object] | None,
 ) -> dict[str, object]:
-    raw = _as_mapping(emotion_driven_kernel) or _as_mapping(
-        metadata.get("emotion_driven_kernel")
-    )
+    raw = _as_mapping(emotion_driven_kernel) or _as_mapping(metadata.get("emotion_driven_kernel"))
     if not raw:
         return {
             "present": False,
@@ -772,6 +771,23 @@ def _compliance_boundary_kernel_from(metadata: Mapping[str, object]) -> dict[str
     return report.to_dict()
 
 
+def _inactive_planning_capability(receipt: Mapping[str, object]) -> dict[str, object]:
+    return {"present": False, "valid": None, "status": "not_applicable", "selection": dict(receipt)}
+
+
+def _entry_system_kernel_from(metadata: Mapping[str, object]) -> dict[str, object]:
+    from bestseller.services.entry_system_kernel import entry_system_kernel_from_dict
+
+    raw = _as_mapping(metadata.get("entry_system_kernel"))
+    if not raw:
+        return {"present": False, "valid": False}
+    try:
+        entry_system_kernel_from_dict(raw)
+    except (ValueError, TypeError) as exc:
+        return {"present": True, "valid": False, "validation_error": str(exc)[:500]}
+    return {"present": True, "valid": True}
+
+
 def build_project_planning_kernel(
     project: object | None = None,
     *,
@@ -792,7 +808,8 @@ def build_project_planning_kernel(
         **_project_metadata(project),
         **_as_mapping(project_metadata),
     }
-    if public_emotion_kernel:
+    selections = {key: resolve_planning_capability(metadata, key) for key in CAPABILITIES}
+    if selections["public_emotion_kernel"]["selected"] and public_emotion_kernel:
         metadata["public_emotion_kernel"] = dict(public_emotion_kernel)
     if compliance_boundary_kernel:
         metadata["compliance_boundary_kernel"] = dict(compliance_boundary_kernel)
@@ -825,8 +842,7 @@ def build_project_planning_kernel(
         )
 
         target_for_contract = int(
-            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0)
-            or 0
+            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0) or 0
         )
         contract_payload = _as_mapping(raw_contract)
         violations = validate_concept_contract(
@@ -864,18 +880,59 @@ def build_project_planning_kernel(
         writing_profile,
         book,
     )
-    story_design = _story_design_kernel_from(metadata, story_design_kernel)
-    emotion_driven = _emotion_driven_kernel_from(metadata, emotion_driven_kernel)
-    public_emotion = _public_emotion_kernel_from(metadata)
-    compliance_boundary = _compliance_boundary_kernel_from(metadata)
-    distilled_strategy_card = metadata.get("distilled_strategy_card")
-    distilled_strategy_expected = bool(
-        distilled_strategy_card
-        or metadata.get("distilled_strategy_expected")
-        or metadata.get("distilled_design_reference_blocks")
+    story_design = (
+        _story_design_kernel_from(metadata, story_design_kernel)
+        if selections["story_design_kernel"]["selected"]
+        else _inactive_planning_capability(selections["story_design_kernel"])
     )
+    emotion_driven = (
+        _emotion_driven_kernel_from(metadata, emotion_driven_kernel)
+        if selections["emotion_driven_kernel"]["selected"]
+        else _inactive_planning_capability(selections["emotion_driven_kernel"])
+    )
+    public_emotion = (
+        _public_emotion_kernel_from(metadata)
+        if selections["public_emotion_kernel"]["selected"]
+        else _inactive_planning_capability(selections["public_emotion_kernel"])
+    )
+    entry_system = (
+        _entry_system_kernel_from(metadata)
+        if selections["entry_system_kernel"]["selected"]
+        else _inactive_planning_capability(selections["entry_system_kernel"])
+    )
+    compliance_metadata = (
+        metadata
+        if selections["public_emotion_kernel"]["selected"]
+        else {key: value for key, value in metadata.items() if key != "public_emotion_kernel"}
+    )
+    compliance_boundary = _compliance_boundary_kernel_from(compliance_metadata)
+    from bestseller.services.character_intelligence.strategy import (
+        AdoptedReferenceUnavailable,
+        reference_projection_required,
+        reference_projection_value,
+        required_reference_projection,
+    )
+
+    distilled_strategy_card = reference_projection_value(
+        metadata, "distilled_strategy_card", project=project
+    )
+    unavailable_adoption = None
+    unavailable_adoption_code = None
+    for key in ("distilled_strategy_card", "character_strategy"):
+        try:
+            required_reference_projection(metadata, key, project=project)
+        except AdoptedReferenceUnavailable as exc:
+            unavailable_adoption = str(exc)
+            unavailable_adoption_code = exc.code.upper()
+    distilled_strategy_expected = bool(distilled_strategy_card)
     distilled_strategy: dict[str, object] = {"present": False}
-    if distilled_strategy_expected:
+    if unavailable_adoption:
+        distilled_strategy.update(
+            required=True,
+            issue_codes=[unavailable_adoption_code],
+            source_error=unavailable_adoption,
+        )
+    elif distilled_strategy_expected:
         strategy_card_payload = (
             _as_mapping(distilled_strategy_card)
             if isinstance(distilled_strategy_card, Mapping)
@@ -883,7 +940,9 @@ def build_project_planning_kernel(
         )
         distilled_strategy_report = evaluate_distilled_strategy_consumption(
             strategy_card_payload,
-            story_design_kernel=story_design_kernel or metadata.get("story_design_kernel"),
+            story_design_kernel=(story_design_kernel or metadata.get("story_design_kernel"))
+            if selections["story_design_kernel"]["selected"]
+            else None,
             volume_plan=volumes,
             chapter_outlines=(
                 metadata.get("chapter_outline_batch")
@@ -892,10 +951,11 @@ def build_project_planning_kernel(
             ),
         )
         distilled_strategy = distilled_strategy_gate_snapshot(distilled_strategy_report)
+        distilled_strategy["required"] = reference_projection_required(
+            project, "distilled_strategy_card"
+        )
         if strategy_card_payload:
-            required_states = _string_list(
-                strategy_card_payload.get("required_state_variables")
-            )
+            required_states = _string_list(strategy_card_payload.get("required_state_variables"))
             distilled_strategy["required_state_variables"] = required_states
             distilled_strategy["required_state_variable_count"] = len(required_states)
 
@@ -928,12 +988,16 @@ def build_project_planning_kernel(
             ),
         )
         if viability_input
-        else ({
-            "passed": False,
-            "report": {"reason": "viability_input_missing"},
-            "blocking_codes": ["MISSING_STORY_VIABILITY_INPUT"],
-            "estimated_chapter_ceiling": 0,
-        } if strict_viability and not legacy_viability else {})
+        else (
+            {
+                "passed": False,
+                "report": {"reason": "viability_input_missing"},
+                "blocking_codes": ["MISSING_STORY_VIABILITY_INPUT"],
+                "estimated_chapter_ceiling": 0,
+            }
+            if strict_viability and not legacy_viability
+            else {}
+        )
     )
 
     return {
@@ -943,8 +1007,7 @@ def build_project_planning_kernel(
         "genre": _text(_project_attr(project, "genre", metadata.get("genre"))),
         "sub_genre": _text(_project_attr(project, "sub_genre", metadata.get("sub_genre"))),
         "target_chapters": int(
-            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0)
-            or 0
+            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0) or 0
         ),
         "category": {"category_key": _text(metadata.get("category_key"))},
         "benchmark": {
@@ -962,8 +1025,7 @@ def build_project_planning_kernel(
             ),
             "story_facets_present": bool(story_facets),
             "target_audiences": _string_list(
-                metadata.get("target_audiences")
-                or commercial_brief.get("target_audiences")
+                metadata.get("target_audiences") or commercial_brief.get("target_audiences")
             ),
         },
         "series_engine": series_engine,
@@ -971,9 +1033,9 @@ def build_project_planning_kernel(
             "has_book_spec": bool(book),
             "has_world_spec": bool(world),
             "has_cast_spec": bool(cast),
-            "protagonist": _as_mapping(
-                cast.get("protagonist") or book.get("protagonist")
-            ).get("name"),
+            "protagonist": _as_mapping(cast.get("protagonist") or book.get("protagonist")).get(
+                "name"
+            ),
             "world_rule_count": len(_as_sequence(world.get("rules"))),
             "faction_count": len(_as_sequence(world.get("factions"))),
             "supporting_cast_count": len(_as_sequence(cast.get("supporting_cast"))),
@@ -992,6 +1054,8 @@ def build_project_planning_kernel(
             "escalation_anchors": payoff_anchors[:20],
         },
         "story_design": story_design,
+        "planning_capabilities": selections,
+        "entry_system": entry_system,
         "emotion_driven": emotion_driven,
         "public_emotion": public_emotion,
         "compliance_boundary": compliance_boundary,
@@ -1024,9 +1088,7 @@ def _finding(
 def _has_series_engine(kernel: Mapping[str, object]) -> bool:
     engine = _as_mapping(kernel.get("series_engine"))
     benchmark = _as_mapping(kernel.get("benchmark"))
-    if benchmark.get("ranking_profile_present") and _text(
-        benchmark.get("ranking_profile_excerpt")
-    ):
+    if benchmark.get("ranking_profile_present") and _text(benchmark.get("ranking_profile_excerpt")):
         return True
     return bool(
         _text(engine.get("reader_promise"))
@@ -1068,24 +1130,44 @@ def evaluate_prewrite_readiness(
     genre: str | None = None,
     sub_genre: str | None = None,
     target_chapters: int | None = None,
+    project_metadata: Mapping[str, object] | None = None,
 ) -> PrewriteReadinessReport:
-    """Score whether a project has enough early planning to enter drafting."""
+    """Score readiness using current author metadata for optional selection.
+
+    A cached selection receipt never grants authority. Selected projections
+    must match the freshly resolved source receipt; missing metadata is N/A.
+    """
 
     findings: list[PrewriteReadinessFinding] = []
     benchmark = _as_mapping(kernel.get("benchmark"))
     positioning = _as_mapping(kernel.get("creative_positioning"))
     volume_strategy = _as_mapping(kernel.get("volume_strategy"))
     foundation = _as_mapping(kernel.get("foundation"))
-    story_design = _as_mapping(kernel.get("story_design"))
-    emotion_driven = _as_mapping(kernel.get("emotion_driven"))
-    public_emotion = _as_mapping(kernel.get("public_emotion"))
+    selections = {key: resolve_planning_capability(project_metadata, key) for key in CAPABILITIES}
+    cached_selections = (
+        _as_mapping(kernel.get("planning_capabilities"))
+        if any(receipt["selected"] for receipt in selections.values())
+        else {}
+    )
+
+    def selected_projection(capability: str, key: str) -> dict[str, object]:
+        receipt = selections[capability]
+        if not receipt["selected"]:
+            return _inactive_planning_capability(receipt)
+        if cached_selections.get(capability) != receipt:
+            return {"present": False, "valid": False, "status": "selection_source_unverified"}
+        return _as_mapping(kernel.get(key))
+
+    story_design = selected_projection("story_design_kernel", "story_design")
+    emotion_driven = selected_projection("emotion_driven_kernel", "emotion_driven")
+    public_emotion = selected_projection("public_emotion_kernel", "public_emotion")
+    entry_system = selected_projection("entry_system_kernel", "entry_system")
     compliance_boundary = _as_mapping(kernel.get("compliance_boundary"))
     distilled_strategy = _as_mapping(kernel.get("distilled_strategy"))
     concept_contract = _as_mapping(kernel.get("concept_contract"))
     story_viability = _as_mapping(kernel.get("story_viability"))
     strict_viability = bool(
-        kernel.get("strict_story_viability")
-        or kernel.get("story_viability_required")
+        kernel.get("strict_story_viability") or kernel.get("story_viability_required")
     )
     legacy_viability = bool(kernel.get("legacy_story_viability"))
 
@@ -1109,12 +1191,8 @@ def evaluate_prewrite_readiness(
                 "The setting lacks a renewable causal engine for the requested length.",
                 "story_viability",
                 evidence={
-                    "blocking_codes": _string_list(
-                        story_viability.get("blocking_codes")
-                    ),
-                    "estimated_chapter_ceiling": story_viability.get(
-                        "estimated_chapter_ceiling"
-                    ),
+                    "blocking_codes": _string_list(story_viability.get("blocking_codes")),
+                    "estimated_chapter_ceiling": story_viability.get("estimated_chapter_ceiling"),
                     "requested_chapters": target,
                 },
             )
@@ -1224,8 +1302,7 @@ def evaluate_prewrite_readiness(
             )
         )
     elif volume_count >= 3 and any(
-        forces[index] and forces[index] == forces[index - 1]
-        for index in range(1, len(forces))
+        forces[index] and forces[index] == forces[index - 1] for index in range(1, len(forces))
     ):
         findings.append(
             _finding(
@@ -1281,84 +1358,84 @@ def evaluate_prewrite_readiness(
             )
         )
 
-    if not story_design.get("present"):
-        findings.append(
-            _finding(
-                "story_design_kernel_missing",
-                "warning",
-                "Missing StoryDesignKernel; planning can proceed, but plot design is not state-driven.",
-                "story_design",
+    if selections["story_design_kernel"]["selected"]:
+        if not story_design.get("present"):
+            findings.append(
+                _finding(
+                    "story_design_kernel_missing",
+                    "high",
+                    "Selected StoryDesignKernel is missing; restore it before planning.",
+                    "story_design",
+                )
             )
-        )
-    elif not story_design.get("valid"):
-        findings.append(
-            _finding(
-                "story_design_contract_invalid",
-                "high",
-                "StoryDesignKernel is present but fails validation.",
-                "story_design",
-                evidence={"validation_error": _text(story_design.get("validation_error"))},
+        elif not story_design.get("valid"):
+            findings.append(
+                _finding(
+                    "story_design_contract_invalid",
+                    "high",
+                    "StoryDesignKernel is present but fails validation.",
+                    "story_design",
+                    evidence={"validation_error": _text(story_design.get("validation_error"))},
+                )
             )
-        )
-    elif (
-        int(story_design.get("plot_line_count") or 0) < 1
-        or int(story_design.get("beat_count") or 0) < 1
-        or len(_string_list(story_design.get("change_vectors"))) < 3
-    ):
-        findings.append(
-            _finding(
-                "story_design_contract_thin",
-                "warning",
-                "StoryDesignKernel lacks enough plot lines, beats, or change vectors.",
-                "story_design",
-                evidence={
-                    "plot_line_count": story_design.get("plot_line_count"),
-                    "beat_count": story_design.get("beat_count"),
-                    "change_vector_count": len(
-                        _string_list(story_design.get("change_vectors"))
-                    ),
-                },
+        elif (
+            int(story_design.get("plot_line_count") or 0) < 1
+            or int(story_design.get("beat_count") or 0) < 1
+            or len(_string_list(story_design.get("change_vectors"))) < 3
+        ):
+            findings.append(
+                _finding(
+                    "story_design_contract_thin",
+                    "warning",
+                    "StoryDesignKernel lacks enough plot lines, beats, or change vectors.",
+                    "story_design",
+                    evidence={
+                        "plot_line_count": story_design.get("plot_line_count"),
+                        "beat_count": story_design.get("beat_count"),
+                        "change_vector_count": len(
+                            _string_list(story_design.get("change_vectors"))
+                        ),
+                    },
+                )
             )
-        )
 
-    public_emotion_codes = set(_string_list(public_emotion.get("issue_codes")))
-    if not public_emotion.get("present"):
-        findings.append(
-            _finding(
-                "public_emotion_kernel_missing",
-                "warning",
-                "Missing PublicEmotionKernel; planning can proceed, but public emotion is not project-scoped.",
-                "public_emotion",
+    if selections["public_emotion_kernel"]["selected"]:
+        public_emotion_codes = set(_string_list(public_emotion.get("issue_codes")))
+        if not public_emotion.get("present"):
+            findings.append(
+                _finding(
+                    "public_emotion_kernel_missing",
+                    "high",
+                    "Selected PublicEmotionKernel is missing; restore it before planning.",
+                    "public_emotion",
+                )
             )
-        )
-    elif "PUBLIC_EMOTION_KERNEL_INVALID" in public_emotion_codes:
-        findings.append(
-            _finding(
-                "public_emotion_kernel_missing",
-                "high",
-                "PublicEmotionKernel is present but fails validation.",
-                "public_emotion",
-                evidence={"issue_codes": sorted(public_emotion_codes)},
+        elif "PUBLIC_EMOTION_KERNEL_INVALID" in public_emotion_codes:
+            findings.append(
+                _finding(
+                    "public_emotion_kernel_missing",
+                    "high",
+                    "PublicEmotionKernel is present but fails validation.",
+                    "public_emotion",
+                    evidence={"issue_codes": sorted(public_emotion_codes)},
+                )
             )
-        )
-    elif {
-        "PUBLIC_EMOTION_BRIDGE_MISSING",
-        "PUBLIC_EMOTION_TARGET_MISSING",
-    } & public_emotion_codes:
-        severity = (
-            "high"
-            if "PUBLIC_EMOTION_BRIDGE_MISSING" in public_emotion_codes
-            else "warning"
-        )
-        findings.append(
-            _finding(
-                "public_emotion_bridge_missing",
-                severity,
-                "PublicEmotionKernel lacks a complete target segment or emotion bridge.",
-                "public_emotion.emotion_bridges",
-                evidence={"issue_codes": sorted(public_emotion_codes)},
+        elif {
+            "PUBLIC_EMOTION_BRIDGE_MISSING",
+            "PUBLIC_EMOTION_TARGET_MISSING",
+        } & public_emotion_codes:
+            severity = (
+                "high" if "PUBLIC_EMOTION_BRIDGE_MISSING" in public_emotion_codes else "warning"
             )
-        )
+            findings.append(
+                _finding(
+                    "public_emotion_bridge_missing",
+                    severity,
+                    "PublicEmotionKernel lacks a complete target segment or emotion bridge.",
+                    "public_emotion.emotion_bridges",
+                    evidence={"issue_codes": sorted(public_emotion_codes)},
+                )
+            )
 
     compliance_codes = set(_string_list(compliance_boundary.get("issue_codes")))
     if not compliance_boundary.get("present"):
@@ -1371,8 +1448,7 @@ def evaluate_prewrite_readiness(
             )
         )
     high_risk_compliance = any(
-        code
-        in compliance_codes
+        code in compliance_codes
         for code in (
             "COMPLIANCE_BOUNDARY_KERNEL_INVALID",
             "COMPLIANCE_BOUNDARY_HIGH_RISK",
@@ -1387,8 +1463,7 @@ def evaluate_prewrite_readiness(
         severity = (
             "critical"
             if any(
-                code
-                in compliance_codes
+                code in compliance_codes
                 for code in (
                     "COMPLIANCE_HATRED_OR_DISCRIMINATION",
                     "COMPLIANCE_PROCEDURAL_HARM",
@@ -1408,6 +1483,22 @@ def evaluate_prewrite_readiness(
         )
 
     distilled_issue_codes = set(_string_list(distilled_strategy.get("issue_codes")))
+    if distilled_issue_codes.intersection(
+        {"ADOPTED_REFERENCE_UNAVAILABLE", "REFERENCE_CONTEXT_REQUIRED"}
+    ):
+        code = (
+            "reference_context_required"
+            if "REFERENCE_CONTEXT_REQUIRED" in distilled_issue_codes
+            else "adopted_reference_unavailable"
+        )
+        findings.append(
+            _finding(
+                code,
+                "high",
+                _text(distilled_strategy.get("source_error")),
+                "distilled_strategy.source",
+            )
+        )
     if distilled_strategy.get("present") is False and distilled_issue_codes:
         findings.append(
             _finding(
@@ -1514,84 +1605,102 @@ def evaluate_prewrite_readiness(
             )
         )
 
-    emotion_issue_codes = set(_string_list(emotion_driven.get("issue_codes")))
-    if not emotion_driven.get("present"):
-        findings.append(
-            _finding(
-                "emotion_driven_kernel_missing",
-                "warning",
-                "Missing EmotionDrivenKernel; planning can proceed, but reader emotion chains are not state-driven.",
-                "emotion_driven",
-            )
-        )
-    elif not emotion_driven.get("valid"):
-        if "EMOTION_KERNEL_INVALID" in emotion_issue_codes:
+    if not distilled_strategy.get("required"):
+        # A valid compiler receipt makes reference data usable, not mandatory
+        # plot. Diagnostics remain in the kernel's reference report; even a
+        # warning here would penalize readiness and become a rewrite directive.
+        findings = [finding for finding in findings if not finding.code.startswith("distilled_")]
+
+    if selections["emotion_driven_kernel"]["selected"]:
+        emotion_issue_codes = set(_string_list(emotion_driven.get("issue_codes")))
+        if not emotion_driven.get("present"):
             findings.append(
                 _finding(
                     "emotion_driven_kernel_missing",
                     "high",
-                    "EmotionDrivenKernel is present but fails validation.",
+                    "Selected EmotionDrivenKernel is missing; restore it before planning.",
                     "emotion_driven",
-                    evidence={"validation_error": _text(emotion_driven.get("validation_error"))},
                 )
             )
-        if {
-            "EMPATHY_CONTRACT_MISSING",
-            "EMPATHY_CHAIN_MISSING",
-        } & emotion_issue_codes:
-            findings.append(
-                _finding(
-                    "empathy_contract_missing",
-                    "high",
-                    "EmotionDrivenKernel lacks a complete empathy chain.",
-                    "emotion_driven.empathy_contracts",
-                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+        elif not emotion_driven.get("valid"):
+            if "EMOTION_KERNEL_INVALID" in emotion_issue_codes:
+                findings.append(
+                    _finding(
+                        "emotion_driven_kernel_missing",
+                        "high",
+                        "EmotionDrivenKernel is present but fails validation.",
+                        "emotion_driven",
+                        evidence={
+                            "validation_error": _text(emotion_driven.get("validation_error"))
+                        },
+                    )
                 )
-            )
-        if {
-            "BOMB_TRIGGER_MISSING",
-            "BOMB_CONTRACT_INCOMPLETE",
-        } & emotion_issue_codes:
-            findings.append(
-                _finding(
-                    "bomb_contract_not_consumed",
-                    "high",
-                    "EmotionDrivenKernel lacks an executable bomb contract.",
-                    "emotion_driven.bomb_contracts",
-                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+            if {
+                "EMPATHY_CONTRACT_MISSING",
+                "EMPATHY_CHAIN_MISSING",
+            } & emotion_issue_codes:
+                findings.append(
+                    _finding(
+                        "empathy_contract_missing",
+                        "high",
+                        "EmotionDrivenKernel lacks a complete empathy chain.",
+                        "emotion_driven.empathy_contracts",
+                        evidence={"issue_codes": sorted(emotion_issue_codes)},
+                    )
                 )
-            )
-        if "ANTAGONIST_MASK_FLAT" in emotion_issue_codes:
-            findings.append(
-                _finding(
-                    "antagonist_moral_contract_thin",
-                    "warning",
-                    "Antagonist moral contract is too thin to produce betrayal/memory value.",
-                    "emotion_driven.antagonist_moral_contracts",
-                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+            if {
+                "BOMB_TRIGGER_MISSING",
+                "BOMB_CONTRACT_INCOMPLETE",
+            } & emotion_issue_codes:
+                findings.append(
+                    _finding(
+                        "bomb_contract_not_consumed",
+                        "high",
+                        "EmotionDrivenKernel lacks an executable bomb contract.",
+                        "emotion_driven.bomb_contracts",
+                        evidence={"issue_codes": sorted(emotion_issue_codes)},
+                    )
                 )
-            )
-        if {
-            "ENDING_TEXTURE_MISSING",
-            "ENDING_COST_ERASED",
-            "HE_TEXTURE_INCOMPLETE",
-            "TRAGEDY_CAUSALITY_WEAK",
-            "TRAGEDY_CHOICE_MISSING",
-            "ENDING_CALLBACK_MISSING",
-        } & emotion_issue_codes:
-            findings.append(
-                _finding(
-                    "ending_texture_missing",
-                    "high",
-                    "EmotionDrivenKernel lacks a complete HE/BE ending texture.",
-                    "emotion_driven.ending_texture_contract",
-                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+            if "ANTAGONIST_MASK_FLAT" in emotion_issue_codes:
+                findings.append(
+                    _finding(
+                        "antagonist_moral_contract_thin",
+                        "warning",
+                        "Antagonist moral contract is too thin to produce betrayal/memory value.",
+                        "emotion_driven.antagonist_moral_contracts",
+                        evidence={"issue_codes": sorted(emotion_issue_codes)},
+                    )
                 )
-            )
+            if {
+                "ENDING_TEXTURE_MISSING",
+                "ENDING_COST_ERASED",
+                "HE_TEXTURE_INCOMPLETE",
+                "TRAGEDY_CAUSALITY_WEAK",
+                "TRAGEDY_CHOICE_MISSING",
+                "ENDING_CALLBACK_MISSING",
+            } & emotion_issue_codes:
+                findings.append(
+                    _finding(
+                        "ending_texture_missing",
+                        "high",
+                        "EmotionDrivenKernel lacks a complete HE/BE ending texture.",
+                        "emotion_driven.ending_texture_contract",
+                        evidence={"issue_codes": sorted(emotion_issue_codes)},
+                    )
+                )
 
-    blocking = tuple(
-        finding for finding in findings if finding.severity in _BLOCKING_SEVERITIES
-    )
+    if selections["entry_system_kernel"]["selected"] and not entry_system.get("valid"):
+        findings.append(
+            _finding(
+                "entry_system_kernel_invalid",
+                "high",
+                "Selected entry-system kernel is missing or invalid.",
+                "entry_system",
+                evidence={"validation_error": _text(entry_system.get("validation_error"))},
+            )
+        )
+
+    blocking = tuple(finding for finding in findings if finding.severity in _BLOCKING_SEVERITIES)
     warnings = tuple(
         finding for finding in findings if finding.severity not in _BLOCKING_SEVERITIES
     )
@@ -1601,6 +1710,8 @@ def evaluate_prewrite_readiness(
     )
     score = max(0, 100 - penalty)
     capability_snapshot = {
+        "planning_capabilities": selections,
+        "entry_system_kernel": bool(entry_system.get("valid")),
         "benchmark_alignment": not any(
             finding.code == "benchmark_alignment_missing" for finding in findings
         ),
@@ -1616,12 +1727,9 @@ def evaluate_prewrite_readiness(
                 and _as_mapping(concept_contract.get("volume_mapping_report")).get("passed")
             )
         ),
-        "story_viability": bool(
-            not story_viability or story_viability.get("passed") is True
-        ),
+        "story_viability": bool(not story_viability or story_viability.get("passed") is True),
         "volume_differentiation": not any(
-            finding.code
-            in {"volume_differentiation_missing", "volume_primary_force_repeats"}
+            finding.code in {"volume_differentiation_missing", "volume_primary_force_repeats"}
             for finding in findings
         ),
         "has_book_spec": bool(foundation.get("has_book_spec")),
@@ -1637,24 +1745,15 @@ def evaluate_prewrite_readiness(
         "worldview_enhanced_contracts": {
             "state_variables": int(story_design.get("worldview_state_variable_count") or 0),
             "assets": int(story_design.get("worldview_asset_count") or 0),
-            "authority_claims": int(
-                story_design.get("worldview_authority_claim_count") or 0
-            ),
-            "distilled_bindings": int(
-                story_design.get("worldview_distilled_binding_count") or 0
-            ),
+            "authority_claims": int(story_design.get("worldview_authority_claim_count") or 0),
+            "distilled_bindings": int(story_design.get("worldview_distilled_binding_count") or 0),
         },
-        "reverse_outline_ready": _text(story_design.get("reverse_outline_status"))
-        == "verified",
+        "reverse_outline_ready": _text(story_design.get("reverse_outline_status")) == "verified",
         "distilled_strategy_ready": bool(
             distilled_strategy.get("present") and distilled_strategy.get("passed")
         ),
-        "emotion_driven_core": bool(
-            emotion_driven.get("present") and emotion_driven.get("valid")
-        ),
-        "public_emotion_core": bool(
-            public_emotion.get("present") and public_emotion.get("passed")
-        ),
+        "emotion_driven_core": bool(emotion_driven.get("present") and emotion_driven.get("valid")),
+        "public_emotion_core": bool(public_emotion.get("present") and public_emotion.get("passed")),
         "public_emotion_contracts": {
             "target_segments": int(public_emotion.get("target_segment_count") or 0),
             "emotion_bridges": int(public_emotion.get("emotion_bridge_count") or 0),
@@ -1669,12 +1768,23 @@ def evaluate_prewrite_readiness(
         "emotion_driven_contracts": {
             "empathy": int(emotion_driven.get("empathy_contract_count") or 0),
             "bomb": int(emotion_driven.get("bomb_contract_count") or 0),
-            "antagonist_moral": int(
-                emotion_driven.get("antagonist_moral_contract_count") or 0
-            ),
+            "antagonist_moral": int(emotion_driven.get("antagonist_moral_contract_count") or 0),
             "ending_texture": bool(emotion_driven.get("ending_texture_present")),
         },
     }
+    for capability, keys in {
+        "story_design_kernel": (
+            "story_design_kernel",
+            "story_state_driven_planning",
+            "reverse_outline_ready",
+        ),
+        "emotion_driven_kernel": ("emotion_driven_core",),
+        "public_emotion_kernel": ("public_emotion_core",),
+        "entry_system_kernel": ("entry_system_kernel",),
+    }.items():
+        if not selections[capability]["selected"]:
+            for key in keys:
+                capability_snapshot[key] = None
     actions: list[str] = []
     for finding in findings:
         if (
@@ -1720,7 +1830,8 @@ def persist_project_planning_kernel(
         **_project_metadata(project),
         **_as_mapping(project_metadata),
     }
-    if public_emotion_kernel:
+    selections = {key: resolve_planning_capability(metadata, key) for key in CAPABILITIES}
+    if selections["public_emotion_kernel"]["selected"] and public_emotion_kernel:
         metadata["public_emotion_kernel"] = dict(public_emotion_kernel)
     if compliance_boundary_kernel:
         metadata["compliance_boundary_kernel"] = dict(compliance_boundary_kernel)
@@ -1739,11 +1850,11 @@ def persist_project_planning_kernel(
     )
     report = evaluate_prewrite_readiness(
         kernel,
+        project_metadata=metadata,
         genre=_text(_project_attr(project, "genre", metadata.get("genre"))) or None,
         sub_genre=_text(_project_attr(project, "sub_genre", metadata.get("sub_genre"))) or None,
         target_chapters=int(
-            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0)
-            or 0
+            _project_attr(project, "target_chapters", metadata.get("target_chapters") or 0) or 0
         ),
     )
     directives = build_prewrite_repair_directives(

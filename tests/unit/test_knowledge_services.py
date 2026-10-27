@@ -67,6 +67,18 @@ def build_settings():
     return load_settings(env={})
 
 
+@pytest.fixture
+def knowledge_completion(monkeypatch):
+    """Unit tests stub the paid boundary, including its separate budget ledger."""
+    from bestseller.services.llm import LLMCompletionResult
+
+    async def complete(session, settings, request):
+        return LLMCompletionResult(content=request.fallback_response, provider="test",
+                                   model_name="test", llm_run_id=uuid4())
+
+    monkeypatch.setattr(knowledge_services, "complete_text", complete)
+
+
 def build_project() -> ProjectModel:
     project = ProjectModel(
         slug="my-story",
@@ -186,16 +198,16 @@ def test_scene_summary_prompts_switch_to_english_for_english_projects() -> None:
         draft,
         style,
     )
-    fallback = knowledge_services.render_scene_summary_fallback(project, chapter, scene)
+    fallback = knowledge_services.render_scene_summary_fallback(project, chapter, scene, draft)
 
     combined = system_prompt + "\n" + user_prompt + "\n" + fallback
     # Summarizer prompt rewording: confirm the English ROLE block is used for an
     # English project (was "Write a concise 2-3 sentence English summary").
     assert "story-knowledge summarizer" in system_prompt
     assert "2-3 sentence summary" in system_prompt
-    assert "Project: Storm Ledger" in user_prompt
-    assert "Scene 1: The Order Arrives" in user_prompt
-    assert "In Storm Ledger, Chapter 1, Scene 1" in fallback
+    assert "Source draft:" in user_prompt
+    assert "Chapter 1, Scene 1" in user_prompt
+    assert fallback == draft.content_md
     assert "请用中文输出" not in combined
     assert "《Storm Ledger》" not in combined
 
@@ -203,6 +215,7 @@ def test_scene_summary_prompts_switch_to_english_for_english_projects() -> None:
 @pytest.mark.asyncio
 async def test_refresh_scene_knowledge_creates_canon_and_timeline(
     monkeypatch: pytest.MonkeyPatch,
+    knowledge_completion,
 ) -> None:
     project = build_project()
     chapter = build_chapter(project.id)
@@ -240,10 +253,10 @@ async def test_refresh_scene_knowledge_creates_canon_and_timeline(
     canon_facts = [obj for obj in session.added if isinstance(obj, CanonFactModel)]
     timeline_events = [obj for obj in session.added if isinstance(obj, TimelineEventModel)]
 
-    assert result.canon_facts_created == 6
+    assert result.canon_facts_created == 2
     assert result.timeline_events_created == 1
     assert result.summary_text
-    assert len(canon_facts) == 6
+    assert len(canon_facts) == 2
     assert len(timeline_events) == 1
 
 
@@ -277,8 +290,9 @@ async def test_knowledge_refresh_rejects_unpromoted_or_missing_scene_draft(
 
 
 @pytest.mark.asyncio
-async def test_knowledge_refresh_can_explicitly_backfill_from_current_candidate(
+async def test_knowledge_refresh_cannot_backfill_from_unadopted_current_candidate(
     monkeypatch: pytest.MonkeyPatch,
+    knowledge_completion,
 ) -> None:
     project = build_project()
     chapter = build_chapter(project.id)
@@ -307,20 +321,21 @@ async def test_knowledge_refresh_can_explicitly_backfill_from_current_candidate(
         get_map={(StyleGuideModel, project.id): style},
     )
 
-    result = await knowledge_services.refresh_scene_knowledge(
-        session,
-        build_settings(),
-        "my-story",
-        1,
-        1,
-        draft_version_id=draft.id,
-        allow_current_candidate=True,
-    )
+    with pytest.raises(ValueError, match="scene_knowledge_promoted_source_required"):
+        await knowledge_services.refresh_scene_knowledge(
+            session,
+            build_settings(),
+            "my-story",
+            1,
+            1,
+            draft_version_id=draft.id,
+            allow_current_candidate=True,
+        )
 
-    assert result.scene_id == scene.id
     draft_where = str(session.scalar_statements[2]).split("WHERE", maxsplit=1)[1]
     assert "is_current" in draft_where
-    assert "promotion_state" not in draft_where
+    assert "promotion_state" in draft_where
+    assert not session.added
 
 
 @pytest.mark.asyncio

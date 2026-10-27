@@ -10,6 +10,27 @@
 
 enabled: true
 
+# 最终上架包装的“榜单候选”晋级门。它不宣称预测真实榜单名次，只负责阻止
+# 低吸引力标题/简介、目标读者不点、以及用户显式选择的喜剧效果未在包装中兑现
+# 的书进入正式建项。画像判官不可用时结论为 INCONCLUSIVE，不能伪装成通过。
+ranking_candidate_packaging:
+  enabled: true
+  title_min: 80
+  blurb_min: 72
+  title_floors:
+    hook_power: 3.5
+    graspable_subject: 3.0
+  blurb_floors:
+    hook_strength: 3.5
+    emotion_charge: 3.0
+    concreteness: 3.0
+    comprehensibility: 2.5
+    open_loop_end: 3.5
+    genre_signal: 3.0
+  persona_min_samples: 3
+  persona_min_clicks: 2
+  persona_min_avg_score: 6.0
+
 # 低于 blurb_min 即触发 finalize 重生；有界、保优、fail-open。
 # 产品决策(2026-06-21)：达标线提到 80 —— 70 分的稿（如《废代码库》）算"差"，不放行。
 regeneration:

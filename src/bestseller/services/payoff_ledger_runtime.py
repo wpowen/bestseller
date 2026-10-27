@@ -55,9 +55,7 @@ async def compute_payoff_ledger_audit_for_review(
     if not is_methodology_v2_enabled():
         return None
     payoffs = list(
-        await session.scalars(
-            select(PayoffModel).where(PayoffModel.project_id == project.id)
-        )
+        await session.scalars(select(PayoffModel).where(PayoffModel.project_id == project.id))
     )
     payoffs.extend(
         _contract_payoffs(
@@ -66,11 +64,7 @@ async def compute_payoff_ledger_audit_for_review(
             existing_codes={payoff.payoff_code for payoff in payoffs},
         )
     )
-    clues = list(
-        await session.scalars(
-            select(ClueModel).where(ClueModel.project_id == project.id)
-        )
-    )
+    clues = list(await session.scalars(select(ClueModel).where(ClueModel.project_id == project.id)))
     return run_payoff_ledger_audit(
         payoffs,
         current_chapter=chapter.chapter_number,
@@ -119,9 +113,7 @@ def merge_payoff_ledger_audit_into_chapter_review(
     )
     evidence_summary = {
         **review_result.evidence_summary,
-        "payoff_ledger_audit": payoff_ledger_audit_to_dict(
-            audit, evidence_paths=evidence_paths
-        ),
+        "payoff_ledger_audit": payoff_ledger_audit_to_dict(audit, evidence_paths=evidence_paths),
     }
     rewrite_prefix = (
         _payoff_ledger_rewrite_instructions(
@@ -166,6 +158,10 @@ def payoff_ledger_audit_to_dict(
                 "source_planted_chapter": entry.source_planted_chapter,
                 "status": entry.payoff_status.value,
                 "setup_distance_chapters": entry.setup_distance_chapters,
+                "is_reference": entry.is_reference,
+                "is_superseded": entry.is_superseded,
+                "is_obligation": entry.is_obligation,
+                "min_setup_distance": entry.min_setup_distance,
             }
             for entry in audit.view
         ],
@@ -247,11 +243,30 @@ def _payoff_ledger_rewrite_instructions(
     language: str | None,
     evidence_paths: "list[dict[str, str]] | None" = None,
 ) -> str:
-    codes = [
-        finding.code
-        for finding in audit.all_findings
-        if _finding_requires_rewrite(finding)
+    codes = [finding.code for finding in audit.all_findings if _finding_requires_rewrite(finding)]
+    inactive_codes = {entry.payoff_code for entry in audit.view if not entry.is_obligation}
+    evidence_paths = [
+        entry for entry in evidence_paths or [] if entry.get("payoff_code") not in inactive_codes
     ]
+    distance_requirements = {
+        code: distance
+        for finding in audit.setup_distance_findings
+        for code, distance in finding.evidence.get("required_setup_distances", {}).items()
+    }
+    setup_instruction = ""
+    if distance_requirements:
+        limits = ", ".join(
+            f"{code}: {distance}" for code, distance in distance_requirements.items()
+        )
+        setup_instruction = (
+            f"- Honor the explicit setup-distance requirements (chapters): {limits}; "
+            "verify the source and existing setup instead of inventing earlier events.\n"
+            if is_english_language(language)
+            else (
+                f"- 按显式合同核查铺垫距离(章): {limits}; "
+                "核对来源及已有铺垫，不得编造早前事件。\n"  # noqa: RUF001
+            )
+        )
     evidence_block = ""
     if evidence_paths:
         if is_english_language(language):
@@ -282,9 +297,8 @@ def _payoff_ledger_rewrite_instructions(
             "- Preserve the planned chapter outcome.\n"
             "- If a payoff is due or overdue, visibly cash it, transform it, or "
             "explicitly retire it.\n"
-            "- If a payoff lands without enough setup, add a concrete callback to "
-            "its earlier setup.\n"
-            "- Do not mention payoff-ledger terminology in prose."
+            + setup_instruction
+            + "- Do not mention payoff-ledger terminology in prose."
             + evidence_block
         )
     return (
@@ -292,8 +306,8 @@ def _payoff_ledger_rewrite_instructions(
         f"修复第 {chapter_number} 章的兑现清单缺口：{', '.join(codes)}。\n"
         "- 保留既有章节结果，不要重开新支线。\n"
         "- 如果 payoff 到期或超期，正文必须可见地兑现、转化或明确退场。\n"
-        "- 如果兑现缺少铺垫距离，补出对早前铺垫的具体回扣，而不是空降结果。\n"
-        "- 正文禁止出现 payoff ledger、方法论、兑现清单等创作术语。"
+        + setup_instruction
+        + "- 正文禁止出现 payoff ledger、方法论、兑现清单等创作术语。"
         + evidence_block
     )
 
@@ -324,12 +338,11 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
         return (
             "[Methodology v2 payoff ledger contract]\n"
             "- Treat `methodology_contract.payoffs_due` as a must-cash list for "
-            "this chapter, not decorative notes. Each entry should be a payoff "
-            "code that earlier chapters setup and this chapter must cash.\n"
-            "- Each chapter should cash at least one due payoff when possible; "
-            "if no payoff is due, plant setup that funds a future payoff.\n"
-            "- Each payoff must have a setup distance of at least 2 chapters: "
-            "do not land a payoff that has not been earned by earlier setup.\n"
+            "explicit source-bound commitments due in this chapter, not references "
+            "or superseded plans. Do not invent a due obligation when none exists.\n"
+            "- Setup distance has no universal minimum; same-chapter setup and "
+            "payment, including chapter 1, are valid. Enforce `min_setup_distance` "
+            "only when an explicit source-bound obligation contract requires it.\n"
             "- Use `methodology_contract.payoff_evidence_paths` (a JSON list of "
             "objects with `payoff_code` / `scene_ref` / `note` keys) to record "
             "the concrete scene-level reference that satisfies each payoff. "
@@ -342,15 +355,15 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
             "- Do not silently introduce new payoffs; every new payoff must be "
             "planted with a code that can be tracked in the rolling ledger.\n"
             "- The payoff ledger and hook ledger are siblings: a payoff cashes "
-            "what an earlier hook promised; do not cash what was never planted."
+            "an established promise, which may be established in the same chapter."
         )
     return (
         "【方法论 v2 兑现清单合同】\n"
         "- 把 `methodology_contract.payoffs_due` 当成本章必兑现清单，不是装饰性说明。"
-        "每项应当是早前章节铺垫、本章必须兑现的 payoff code。\n"
-        "- 条件允许时每章至少兑现 1 个到期 payoff；若本章无到期 payoff，"
-        "则种下能支撑未来 payoff 的铺垫。\n"
-        "- 每个 payoff 必须有至少 2 章的 setup distance，未铺垫充分不可兑现。\n"
+        "仅列出有明确来源合同且本章到期的承诺；引用与已被取代的计划不构成到期义务，"
+        "没有到期义务时不要制造义务。\n"
+        "- setup distance 没有统一最小章距；同章铺垫并兑现（包括首章）合法。"
+        "只有显式且绑定来源的义务合同要求 `min_setup_distance` 时才约束间隔。\n"
         "- 用 `methodology_contract.payoff_evidence_paths`（JSON 列表，"
         "每项含 `payoff_code` / `scene_ref` / `note` 字段）记录本章中"
         "具体兑现该 payoff 的场景引用。这些对象会被 editor 重写 prompt "
@@ -360,8 +373,7 @@ def render_payoff_ledger_planner_contract(*, language: str | None = None) -> str
         "- 如果 payoff 超期，转化或明确退场，不要让它悬空。\n"
         "- 不要悄悄引入新 payoff；每个新 payoff 必须有可追踪的 code "
         "加入滚动清单。\n"
-        "- 兑现清单与钩子清单是兄弟：payoff 兑现早前 hook 承诺的事，"
-        "不要兑现从未铺垫的内容。"
+        "- 兑现清单与钩子清单是兄弟：payoff 兑现已建立的承诺，承诺可以在同章建立。"
     )
 
 

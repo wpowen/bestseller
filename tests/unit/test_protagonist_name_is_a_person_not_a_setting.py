@@ -135,7 +135,7 @@ class TestTheGuardDoesNotOverReach:
     def test_an_occupation_word_inside_a_verb_does_not_invent_a_name(self):
         """真机 premise 含「偷师」——职业后缀类不得据此造出人名。"""
         premise = '姜燎十九岁，被青雀酒楼以"偷师厨心方"逐出灶口，在街角支起一口黑锅。'
-        assert _protagonist_name_from_text(premise) == ""
+        assert _protagonist_name_from_text(premise) == "姜燎"
 
     def test_a_real_book_premise_with_a_worker_title(self):
         """★真机 custom-xuanhuan-1787662679：「炒菜工陈韭」。"""
@@ -151,8 +151,8 @@ class TestOneGuardNotThree:
         from bestseller.services import book_design
 
         src = inspect.getsource(book_design._protagonist_name_from_text)
-        assert src.count("_acceptable_protagonist_name(") == 3, (
-            "职业锚定 / 句首 / 称谓 三条分支都必须过同一道守卫"
+        assert src.count("_acceptable_protagonist_name(") == 4, (
+            "年龄边界 / 职业锚定 / 句首 / 称谓 四条分支都必须过同一道守卫"
         )
 
     def test_vacuity_the_old_prefix_only_guard_would_have_passed_the_era_phrase(self):

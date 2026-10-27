@@ -39,13 +39,8 @@ def _golden_solo_chapter(n=1):
     }
 
 
-def test_golden_three_solo_scene_is_rescued() -> None:
-    """A golden chapter with all-solo scenes must get a named second participant
-    injected so it is no longer a solo-chain (else the hard gate kills the volume)."""
-    from bestseller.services.commercial_planning_readiness import (
-        _chapter_is_solo_chain,
-        chapter_plan_probe_from_mapping,
-    )
+def test_golden_three_solo_scene_preserves_authored_participation() -> None:
+    """Neither roster membership nor chapter position establishes presence."""
 
     chapter = _golden_solo_chapter(1)
     content = {"chapters": [chapter]}
@@ -56,9 +51,9 @@ def test_golden_three_solo_scene_is_rescued() -> None:
         s for s in out["scenes"]
         if len({p.strip() for p in (s.get("participants") or []) if p and p.strip()}) >= 2
     ]
-    assert duo, "golden solo chapter must end with at least one ≥2-participant scene"
-    probe = chapter_plan_probe_from_mapping(out)
-    assert not _chapter_is_solo_chain(probe), "golden chapter still flagged solo-chain after rescue"
+    assert not duo
+    assert out["scenes"][0]["participants"] == ["谢迟"]
+    assert out["scenes"][1]["participants"] == []
 
 
 def test_non_golden_solo_chapter_not_force_rescued() -> None:
@@ -106,10 +101,9 @@ def test_fills_all_three_field_families():
     ch = content["chapters"][0]
     assert ch["opening_situation"] and "开章即事中" in ch["opening_situation"]
     assert ch["causal_contract"] and len(ch["causal_contract"]) >= 8
-    # 场景1文本含老金、场景2文本含赵小磊 → 参与者补到≥2人且含主角
-    for scene in ch["scenes"]:
-        assert scene["participants"][0] == "陈屿"
-        assert len(scene["participants"]) >= 2
+    assert ch["scenes"][0]["participants"] == ["陈屿"]
+    assert ch["scenes"][1]["participants"] == []
+    assert stats["participants"] == 0
     assert stats["total"] > 0
 
 
@@ -134,7 +128,7 @@ def test_enriched_fields_tagged_for_backfilled_families():
     tags = set(content["chapters"][0]["enriched_fields"])
     assert "opening_situation" in tags
     assert "causal_contract" in tags
-    assert "participants" in tags
+    assert "participants" not in tags
     # story 字段("巷口对峙，老金递来情报")可用,不该走 goal 兜底路径。
     assert "opening_situation_copied_from_goal_no_alt_material" not in tags
 
@@ -206,38 +200,34 @@ def test_contract_skipped_when_too_thin():
     assert stats["causal_contract"] == 0
 
 
-def test_golden_hype_only_for_first_three():
+def test_missing_hype_is_not_invented_at_any_chapter_position():
     chapters = [_diseased_chapter(n) for n in (1, 2, 3, 4)]
     content, stats = enrich_outline_batch_fields({"chapters": chapters}, NAMES)
     for ch in content["chapters"]:
-        if ch["chapter_number"] <= 3:
-            assert ch["hype_type"] and ch["hype_intensity"] is not None
-        else:
-            assert "hype_type" not in ch or not ch.get("hype_type")
-    assert stats["golden_hype"] == 3
+        assert "hype_type" not in ch
+        assert "hype_intensity" not in ch
+    assert stats["golden_hype"] == 0
 
 
 # ── 网文方法卡：target_emotion 兜底 + hook_type 归一化 ──────────────────────
 
 
-def test_target_emotion_golden_defaults_to_shuang():
-    """黄金三章缺 target_emotion 时按位置兜底为爽（盲评 4:0 输局的病因回归）。"""
+def test_missing_target_emotion_stays_missing_at_any_position():
     chapters = [_diseased_chapter(n) for n in (1, 4)]
     content, stats = enrich_outline_batch_fields({"chapters": chapters}, NAMES)
-    assert content["chapters"][0]["target_emotion"] == "爽"
-    assert content["chapters"][1]["target_emotion"] == "紧张"
-    assert stats["target_emotion"] == 2
+    assert all("target_emotion" not in chapter for chapter in content["chapters"])
+    assert stats["target_emotion"] == 0
 
 
-def test_target_emotion_keeps_planner_value_and_uses_hype_hint():
+def test_target_emotion_keeps_planner_value_without_inference_from_hype():
     ch1 = _diseased_chapter(1)
     ch1["target_emotion"] = "暖"  # planner 明确给的值不被位置默认覆盖
     ch7 = _diseased_chapter(7)
     ch7["hype_type"] = "热血对决"
     content, stats = enrich_outline_batch_fields({"chapters": [ch1, ch7]}, NAMES)
     assert content["chapters"][0]["target_emotion"] == "暖"
-    assert content["chapters"][1]["target_emotion"] == "燃"
-    assert stats["target_emotion"] == 1
+    assert "target_emotion" not in content["chapters"][1]
+    assert stats["target_emotion"] == 0
 
 
 def test_hook_type_normalized_to_canonical_key():

@@ -13,12 +13,33 @@ from bestseller.infra.db.models import (
     PublishingPlatformModel,
     PublishingScheduleModel,
 )
+from bestseller.domain.ranking_evidence import CanonicalBookReadinessDecision
 from bestseller.scheduler import jobs as scheduler_jobs
 from bestseller.scheduler import main as scheduler_main
 from bestseller.services.publishing.base import PublishResult
 from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _authorize_commercial_release_for_legacy_scheduler_specs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep unrelated scheduler specs focused while production stays fail-closed."""
+
+    async def authorize(*args: object, **kwargs: object) -> CanonicalBookReadinessDecision:
+        return CanonicalBookReadinessDecision(
+            candidate_revision_hash="unit-test-candidate",
+            evaluation_status="AUTHORIZED_BY_TEST_FIXTURE",
+            claims_allowed=("COMMERCIAL_RELEASE",),
+        )
+
+    monkeypatch.setattr(
+        scheduler_jobs,
+        "require_commercial_release_authority",
+        authorize,
+    )
 
 
 class _ScalarResult:
@@ -159,9 +180,12 @@ async def test_publish_next_chapter_blocks_pending_chapter_before_adapter(
 def test_consecutive_failure_metadata_accepts_mapping_values() -> None:
     assert hasattr(scheduler_jobs, "_consecutive_failures_from_metadata")
 
-    assert scheduler_jobs._consecutive_failures_from_metadata(  # type: ignore[attr-defined]
-        {"consecutive_failures": "4"}
-    ) == 4
+    assert (
+        scheduler_jobs._consecutive_failures_from_metadata(  # type: ignore[attr-defined]
+            {"consecutive_failures": "4"}
+        )
+        == 4
+    )
 
 
 @pytest.mark.asyncio
@@ -313,6 +337,41 @@ def _publish_fixture(
         chapters.append(chapter)
         drafts.append(draft)
     return schedule, platform, project, chapters, drafts
+
+
+@pytest.mark.asyncio
+async def test_publish_is_denied_before_adapter_when_canonical_claim_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule, platform, project, _, _ = _publish_fixture(chapters_per_release=1)
+    decision = CanonicalBookReadinessDecision(
+        candidate_revision_hash="candidate-without-platform-evidence",
+        evaluation_status="BLOCKED_HIGHER_MATURITY",
+        blocking_codes=("PLATFORM_COHORT_MISSING",),
+    )
+
+    async def deny(*args: object, **kwargs: object) -> object:
+        raise scheduler_jobs.CommercialReleaseNotAuthorizedError(decision)
+
+    monkeypatch.setattr(scheduler_jobs, "require_commercial_release_authority", deny)
+
+    def adapter_must_not_be_created(**kwargs: object) -> object:
+        raise AssertionError("platform adapter must not be created before authority")
+
+    monkeypatch.setattr(scheduler_jobs, "get_adapter", adapter_must_not_be_created)
+    session = _FakeSession(schedule, platform, project)
+
+    published = await scheduler_jobs.publish_next_chapter(
+        session,
+        load_settings(env={}),
+        schedule.id,
+    )
+
+    assert published is False
+    assert schedule.status == "paused"
+    assert schedule.metadata_json["pause_reason"] == "commercial_release_not_authorized"
+    assert schedule.metadata_json["canonical_evaluation_status"] == "BLOCKED_HIGHER_MATURITY"
+    assert len(session.statements) == 3
 
 
 def _patch_publication_gate(
@@ -471,8 +530,7 @@ def test_review_poll_query_rotates_least_recently_checked_records() -> None:
 
 def test_review_poll_query_excludes_more_than_one_batch_of_terminal_rows_before_limit() -> None:
     terminal_rows = [
-        {"review_status": ("published", "rejected", "failed")[index % 3]}
-        for index in range(21)
+        {"review_status": ("published", "rejected", "failed")[index % 3]} for index in range(21)
     ]
     assert len(terminal_rows) > 20
 

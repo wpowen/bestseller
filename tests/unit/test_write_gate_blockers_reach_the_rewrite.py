@@ -29,6 +29,8 @@ from bestseller.services import reviews as review_services
 
 pytestmark = pytest.mark.unit
 
+_CURRENT_BODY = "王甲检查过门锁，确认门还完好。"
+
 
 def _review(instructions: str = "") -> ChapterReviewResult:
     return ChapterReviewResult(
@@ -45,7 +47,12 @@ def _review(instructions: str = "") -> ChapterReviewResult:
 
 class _Row:
     def __init__(self, payload: Any, created_at: Any) -> None:
-        self.report_json = payload
+        from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+        # Existing teaching fixtures describe the current body unless a test
+        # explicitly supplies a stale, malformed or missing fingerprint.
+        self.report_json = ({"graded": graded_text_fingerprint(_CURRENT_BODY), **payload}
+                            if isinstance(payload, dict) else payload)
         self.created_at = created_at
 
 
@@ -88,6 +95,7 @@ _POV_REPORT = {
 async def test_a_blocking_code_the_bundle_never_saw_now_teaches_the_rewrite() -> None:
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         _Session(_POV_REPORT), _review("原有要求"), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
 
     text = out.rewrite_instructions or ""
@@ -103,6 +111,7 @@ async def test_warn_level_violations_are_not_promoted_into_the_rewrite() -> None
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         _Session({"violations": [{"code": "SOME_WARN_ONLY", "severity": "warn"}]}),
         _review("原有要求"), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
     assert out.rewrite_instructions == "原有要求"
 
@@ -112,6 +121,7 @@ async def test_a_code_already_in_the_instructions_is_not_repeated() -> None:
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         _Session(_POV_REPORT), _review("已有：POV_DRIFT 请改人称"),
         chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
     assert out.rewrite_instructions == "已有：POV_DRIFT 请改人称"
 
@@ -120,6 +130,7 @@ async def test_a_code_already_in_the_instructions_is_not_repeated() -> None:
 async def test_no_report_leaves_the_review_untouched() -> None:
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         _Session(None), _review("原有要求"), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
     assert out.rewrite_instructions == "原有要求"
 
@@ -141,6 +152,7 @@ async def test_same_second_reports_do_not_turn_teaching_into_a_lottery() -> None
     session = _Session(warn_only, extra=[(blocking, 100)])
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         session, _review("原有要求"), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
 
     assert "POV_DRIFT" in (out.rewrite_instructions or ""), out.rewrite_instructions
@@ -156,6 +168,108 @@ async def test_older_reports_are_not_mixed_in() -> None:
     session = _Session(fresh, extra=[(stale, 1)])
     out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
         session, _review(""), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
     )
 
     assert "OBSOLETE_CODE" not in (out.rewrite_instructions or "")
+
+
+@pytest.mark.asyncio
+async def test_a_report_on_another_body_cannot_teach_this_rewrite() -> None:
+    from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+    stale = {**_POV_REPORT, "graded": graded_text_fingerprint("旧稿：我推开了门。")}
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        _Session(stale), _review("只修当前问题"), chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
+    )
+    assert out.rewrite_instructions == "只修当前问题"
+
+
+@pytest.mark.asyncio
+async def test_unclaimed_legacy_report_does_not_supply_rewrite_instructions() -> None:
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        _Session({**_POV_REPORT, "graded": None}), _review("只修当前问题"),
+        chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
+    )
+    assert out.rewrite_instructions == "只修当前问题"
+
+
+@pytest.mark.asyncio
+async def test_current_body_report_can_be_older_than_an_unrelated_report() -> None:
+    from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+    stale = {**_POV_REPORT, "graded": graded_text_fingerprint("旧稿正文")}
+    fresh = {"violations": [{"code": "POV_DRIFT", "severity": "block"}]}
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        _Session(stale, extra=[(fresh, 99)]), _review("原有要求"),
+        chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
+    )
+    assert "POV_DRIFT" in out.rewrite_instructions
+    assert out.verdict == "rewrite"
+    assert out.severity_max == "high"
+    receipt = out.evidence_summary["write_gate_teaching_source"]
+    assert receipt["status"] == "matched"
+    assert receipt["unclaimed_report_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_malformed_fingerprint_cannot_authorize_teaching() -> None:
+    out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+        _Session({**_POV_REPORT, "graded": "invalid"}), _review("原有要求"),
+        chapter=_chapter(), language="zh",
+        content_md=_CURRENT_BODY,
+    )
+    assert out.rewrite_instructions == "原有要求"
+    assert (
+        out.evidence_summary["write_gate_teaching_source"]["status"]
+        == "unverified_for_current_body"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sql_finds_current_body_beyond_eight_newer_unrelated_reports() -> None:
+    """Exercise the production SQL predicate and LIMIT against a real database."""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+
+    from bestseller.infra.db.models import ChapterQualityReportModel
+    from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE chapter_quality_reports (
+                id CHAR(32) PRIMARY KEY, chapter_id CHAR(32) NOT NULL,
+                report_json JSON NOT NULL, regen_attempts INTEGER NOT NULL DEFAULT 0,
+                blocks_write BOOLEAN NOT NULL, created_at DATETIME NOT NULL
+            )
+        """))
+    chapter = _chapter()
+    with Session(engine) as session:
+        for index in range(10):
+            body = _CURRENT_BODY if index == 0 else f"另一份候选正文{index}"
+            session.add(ChapterQualityReportModel(
+                chapter_id=chapter.id,
+                report_json={**_POV_REPORT, "graded": graded_text_fingerprint(body)},
+                blocks_write=True,
+                created_at=datetime(2026, 9, 11) + timedelta(seconds=index),
+            ))
+        session.flush()
+
+        class AsyncFacade:
+            async def scalars(self, statement: Any) -> Any:
+                return session.scalars(statement)
+
+        out = await review_services._teach_write_gate_blockers_the_bundle_cannot_see(
+            AsyncFacade(), _review("原有要求"), chapter=chapter,
+            language="zh", content_md=_CURRENT_BODY,
+        )
+        assert "POV_DRIFT" in out.rewrite_instructions
+        assert out.evidence_summary["write_gate_teaching_source"]["matched_report_count"] == 1
+        assert out.verdict == "rewrite"
+    engine.dispose()

@@ -147,7 +147,7 @@ def audit_source_artifacts(
         findings.extend(
             _forbidden_term_findings(
                 artifact,
-                text,
+                _strip_source_metadata_lines(text),
                 forbidden_terms=forbidden_terms,
             )
         )
@@ -222,6 +222,24 @@ def _forbidden_term_findings(
             evidence={"term_counts": hits},
         )
     ]
+
+
+_SOURCE_METADATA_LINE_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*修复源资料\s*[:：]|[-*]\s*(?:书名|标题|作品名|项目名)\s*[:：])"
+)
+
+
+def _strip_source_metadata_lines(text: str) -> str:
+    """Exclude known source-envelope labels from narrative term scanning.
+
+    These labels describe the artifact itself and are not story material.  The
+    filter is deliberately line-shaped and allowlisted; ordinary prose or a
+    later narrative line beginning with ``标签：`` remains auditable.
+    """
+
+    return "\n".join(
+        line for line in text.splitlines() if not _SOURCE_METADATA_LINE_RE.match(line)
+    )
 
 
 _DUNGEON_COPY_CONTEXT_RE = re.compile(

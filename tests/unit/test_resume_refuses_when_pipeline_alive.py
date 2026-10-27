@@ -34,7 +34,8 @@ def test_resume_checks_the_database_not_only_the_card() -> None:
     """恢复路径必须查 workflow_runs，而不是只信内存卡片的状态。"""
 
     source = inspect.getsource(server)
-    anchor = source.index("task_manager.resume_autowrite_task(")
+    handler = source.index('if path.startswith("/api/tasks/") and path.endswith("/resume"):')
+    anchor = source.index("task_manager.resume_autowrite_task(", handler)
     window = source[max(0, anchor - 3000) : anchor]
     assert "_has_live_pipeline_run" in window, (
         "resume 前必须按事实源对账：DB 里还有活跃流水线时不能再起一个执行器"

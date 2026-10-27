@@ -40,8 +40,8 @@ def test_two_drafts_of_same_暗格_scene_are_detected() -> None:
 地砖撬开，暗格里躺着一枚刻满符文的玉简。道种蠢蠢欲动，力量暴涨。
 苏瑶没料到这个废物会出现："杂役峰的废物，竟敢闯——"话未说完，廊道骤然被金光吞没。
 """
-    findings = detect_intra_chapter_stitched_drafts(chapter)
-    assert findings, "应当检测到双稿拼接"
+    findings = detect_intra_chapter_stitched_drafts(chapter, include_context_candidates=True)
+    assert findings, "应保留待语义确认的双稿候选"
     f = findings[0]
     # Both blocks share 宁尘, 苏瑶, 陆沉
     shared = f.block_a.participants & f.block_b.participants
@@ -147,9 +147,10 @@ def test_repair_prompt_lists_block_pairs() -> None:
 一道金光掀飞两个杂役，震得苏瑶踉跄后退几步。陆沉在身后倒抽冷气，
 伸手扶住摇晃的书架，呼吸都顿住了。
 """
-    findings = detect_intra_chapter_stitched_drafts(chapter)
+    findings = detect_intra_chapter_stitched_drafts(chapter, include_context_candidates=True)
     assert findings
     prompt = build_stitched_draft_repair_prompt(findings)
-    assert "拼接稿修复任务" in prompt
-    assert "二选一" in prompt
-    assert "禁止合并" in prompt
+    assert "source-bound review" in prompt
+    assert "不能直接判重复" in prompt
+    assert "二选一" not in prompt
+    assert all(f.requires_semantic_confirmation and not f.hard_gate for f in findings)

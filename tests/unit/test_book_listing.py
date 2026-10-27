@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from bestseller.services.book_listing import build_book_listing_profile
+from bestseller.services.book_packaging_contract import canonical_hash
 from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.platform_title_workflow import (
     DEFAULT_TITLE_CANDIDATE_COUNT,
@@ -84,15 +85,229 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
     assert profile["legacy_title_candidates"][0]["title"] == "标题1"
     assert profile["title_candidates"][0]["title"] != "标题1"
     assert all(item.get("display_label") for item in profile["title_candidates"])
-    assert all(group["candidate_count"] == 5 for group in profile["title_workflow"]["platform_groups"])
+    assert all(
+        group["candidate_count"] == 5 for group in profile["title_workflow"]["platform_groups"]
+    )
     assert profile["main_characters"][0]["name"] == "林渊"
     script_durations = [
-        item["duration_seconds"]
-        for item in profile["marketing_assets"]["short_video_scripts"]
+        item["duration_seconds"] for item in profile["marketing_assets"]["short_video_scripts"]
     ]
     assert script_durations == [15, 45, 90]
     assert profile["ip_readiness"]["status"] in {"ready", "needs_attention"}
     assert profile["compliance"]["status"] == "ready"
+
+
+def test_active_packaging_contract_overrides_editable_listing_caches(tmp_path) -> None:
+    active_payload = {
+        "contract_hash": "hash-1",
+        "title": "荒城通关簿",
+        "logline": "每个过路者都必须先付账。",
+        "target_platform": "fanqie",
+        "active_intro_text": "一座荒城，一块会报价的界碑，万族从此先学会排队交费。",
+        "active_intro_variant_id": "long-v1",
+        "active_intro_variant_hash": "intro-hash-1",
+    }
+    active_payload["active_payload_hash"] = canonical_hash(active_payload)
+    project = SimpleNamespace(
+        slug="book-contract",
+        title="旧数据库标题",
+        genre="异世界",
+        sub_genre="领主经营",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={
+            "premise": "商洛接手一座废城。",
+            "listing_profile": {
+                "primary_title": "旧缓存标题",
+                "short_intro": "旧缓存简介",
+            },
+            "active_packaging_contract_id": "contract-1",
+            "active_packaging_contract_hash": "hash-1",
+            "active_packaging_target_platform": "fanqie",
+            "active_packaging_listing_payloads": {
+                "fanqie:long-form": active_payload,
+            },
+        },
+    )
+
+    profile = build_book_listing_profile(
+        project=project,
+        writing_profile={},
+        story_bible=None,
+        output_base_dir=tmp_path,
+    )
+
+    assert profile["primary_title"] == "荒城通关簿"
+    assert profile["short_intro"].startswith("一座荒城")
+    assert profile["long_intro"].startswith("一座荒城")
+    assert profile["logline"] == "每个过路者都必须先付账。"
+    assert profile["target_platform"] == "fanqie"
+    assert profile["active_packaging_contract_hash"] == "hash-1"
+    assert profile["active_intro_variant_id"] == "long-v1"
+
+
+def test_active_packaging_contract_rejects_a_stale_listing_cache() -> None:
+    project = SimpleNamespace(
+        slug="book-stale-contract",
+        title="旧标题",
+        genre="异世界",
+        language="zh-CN",
+        metadata_json={
+            "active_packaging_contract_id": "contract-1",
+            "active_packaging_contract_hash": "new-hash",
+            "active_packaging_listing_payloads": {
+                "fanqie:long-form": {
+                    "contract_hash": "old-hash",
+                    "title": "旧标题",
+                    "active_intro_text": "旧简介",
+                }
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="STALE_PACKAGING_CONSUMER"):
+        build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+
+
+def test_active_packaging_contract_rejects_mutated_payload_with_matching_contract_hash() -> None:
+    payload = {
+        "contract_hash": "hash-1",
+        "title": "已批准标题",
+        "active_intro_text": "已批准简介",
+    }
+    payload["active_payload_hash"] = canonical_hash(payload)
+    payload["title"] = "被缓存篡改的标题"
+    project = SimpleNamespace(
+        slug="book-mutated-contract",
+        title="已批准标题",
+        genre="异世界",
+        language="zh-CN",
+        metadata_json={
+            "active_packaging_contract_id": "contract-1",
+            "active_packaging_contract_hash": "hash-1",
+            "active_packaging_listing_payloads": {"fanqie:long-form": payload},
+        },
+    )
+    with pytest.raises(ValueError, match="STALE_PACKAGING_CONSUMER"):
+        build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+
+
+def test_v2_promoted_packaging_without_active_contract_is_not_formally_publishable() -> None:
+    project = SimpleNamespace(
+        slug="unbound-v2-package",
+        title="荒城通关簿",
+        genre="异世界经营",
+        sub_genre="领主经营",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={
+            "concept_contract_version": "2",
+            "conception_artifacts": {
+                "story_appeal": {"final_packaging_promotion": {"passed": True}}
+            },
+            "logline": "数据库旧的一句话，不应冒充正式包。",
+            "premise": "商洛接手一座废城。",
+        },
+    )
+
+    profile = build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+
+    assert profile["status"] == "packaging_blocked"
+    assert profile["blocking_code"] == "ACTIVE_PACKAGING_CONTRACT_MISSING"
+    assert profile["formal_listing_ready"] is False
+
+
+def test_v2_draft_eligible_packaging_failure_stays_readable_but_needs_review() -> None:
+    project = SimpleNamespace(
+        slug="draft-packaging-review",
+        title="收尸人纪白",
+        genre="东方玄幻",
+        sub_genre="仙门悬疑",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={
+            "concept_contract_version": "2",
+            "premise": "纪白让尸体完成生前被打断的最后一个动作。",
+            "conception_artifacts": {
+                "story_appeal": {
+                    "final_packaging_promotion": {
+                        "passed": False,
+                        "draft_eligible": True,
+                        "quality_issues": [
+                            {"axis": "blurb", "reason": "简介仍需商业化复核"},
+                        ],
+                    }
+                }
+            },
+        },
+    )
+
+    profile = build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+
+    assert profile["status"] == "packaging_needs_review"
+    assert profile["formal_listing_ready"] is False
+    assert profile["quality_issues"] == [
+        {"axis": "blurb", "reason": "简介仍需商业化复核"}
+    ]
+    assert profile["primary_title"] == "收尸人纪白"
+    assert profile["shelf_intro"]
+
+
+def test_v2_hard_packaging_failure_or_missing_receipt_is_explicitly_blocked() -> None:
+    base = {
+        "concept_contract_version": "2",
+        "premise": "项目仍可阅读，但尚未证明正式包装通过。",
+    }
+    for suffix, artifacts, code in (
+        (
+            "hard-failure",
+            {
+                "story_appeal": {
+                    "final_packaging_promotion": {
+                        "passed": False,
+                        "draft_eligible": False,
+                    }
+                }
+            },
+            "FINAL_PACKAGING_NOT_APPROVED",
+        ),
+        ("missing-receipt", {}, "FINAL_PACKAGING_PROMOTION_MISSING"),
+    ):
+        project = SimpleNamespace(
+            slug=f"{suffix}-listing",
+            title="待复核作品",
+            genre="玄幻",
+            sub_genre="东方玄幻",
+            audience="男频",
+            status="planning",
+            language="zh-CN",
+            metadata_json={**base, "conception_artifacts": artifacts},
+        )
+        profile = build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+        assert profile["status"] == "packaging_blocked"
+        assert profile["formal_listing_ready"] is False
+        assert profile["blocking_code"] == code
+
+
+def test_legacy_listing_without_packaging_contract_remains_compatible() -> None:
+    project = SimpleNamespace(
+        slug="legacy-package",
+        title="旧书",
+        genre="玄幻",
+        sub_genre="升级流",
+        audience="男频",
+        status="planning",
+        language="zh-CN",
+        metadata_json={"premise": "少年从矿洞里捡到一枚戒指。"},
+    )
+
+    profile = build_book_listing_profile(project=project, writing_profile={}, story_bible=None)
+
+    assert "status" not in profile
+    assert "blocking_code" not in profile
 
 
 def test_build_book_listing_profile_generates_required_fallbacks() -> None:
@@ -258,9 +473,7 @@ def test_listing_uses_concept_contract_hook_card_as_single_source() -> None:
         metadata_json={
             "premise": "很长的构思说明，不应直接冒充钩子。",
             "concept_contract": {
-                "hook_card": {
-                    "one_liner": "他每救一名将死之人，自己的道途就少一盏灯。"
-                }
+                "hook_card": {"one_liner": "他每救一名将死之人，自己的道途就少一盏灯。"}
             },
         },
     )
@@ -332,13 +545,8 @@ def test_fanqie_short_title_workflow_uses_high_conflict_story_titles() -> None:
             "primary_category": "都市异能",
             "secondary_category": "番茄短故事",
             "tags": ["职场背锅", "全员群", "贪污犯", "情绪爆改器", "记忆代价"],
-            "logline": (
-                "全员群把陆渊挂成贪污犯后，他点开情绪爆改器，"
-                "让老板在发布会当众自爆。"
-            ),
-            "main_characters": [
-                {"name": "陆渊", "identity": "被公司公开栽赃的前员工"}
-            ],
+            "logline": ("全员群把陆渊挂成贪污犯后，他点开情绪爆改器，让老板在发布会当众自爆。"),
+            "main_characters": [{"name": "陆渊", "identity": "被公司公开栽赃的前员工"}],
             "reader_promise": [
                 "开篇50字金手指生效，前200字完成第一次公开打脸。",
                 "每次打脸都要付出记忆代价。",
@@ -348,9 +556,7 @@ def test_fanqie_short_title_workflow_uses_high_conflict_story_titles() -> None:
     )
 
     fanqie_group = next(
-        group
-        for group in workflow["platform_groups"]
-        if group["platform_key"] == "fanqie"
+        group for group in workflow["platform_groups"] if group["platform_key"] == "fanqie"
     )
     fanqie_titles = [item["title"] for item in fanqie_group["candidates"]]
 
@@ -472,8 +678,7 @@ def test_platform_title_workflow_exposes_title_evaluation_standards() -> None:
             "target_platform": "起点中文网",
             "tags": ["黑科技商战", "迪化误解", "产业博弈", "技术碾压"],
             "logline": (
-                "主角只想卖黑科技做生意，外界却把每次解释都当成深层布局，"
-                "误解本身推动商业局势升级。"
+                "主角只想卖黑科技做生意，外界却把每次解释都当成深层布局，误解本身推动商业局势升级。"
             ),
             "reader_promise": "主角想拿到能力回报，却必须先处理势力经营带来的误判。",
         },
@@ -597,9 +802,7 @@ def test_platform_title_workflow_uses_project_public_emotion_bridge() -> None:
     assert first_group[0]["title"] == "旧榜错判我，我用新规则翻案"
     assert first_group[0]["emotion_bridge_id"] == "bridge-a"
     assert first_group[0]["risk_flags"] == []
-    assert "旧榜错判我，我用新规则翻案" in [
-        item["title"] for item in workflow["candidates"]
-    ]
+    assert "旧榜错判我，我用新规则翻案" in [item["title"] for item in workflow["candidates"]]
 
 
 def test_platform_title_workflow_filters_high_risk_public_emotion_title() -> None:
@@ -701,8 +904,12 @@ def test_premise_passthrough_metadata_logline_yields_to_gated_hook_card():
     premise = "沈砚是个被判定终生不能引气的运河纤夫，被漕帮盐枭扣做人质逼他一夜摸完三百箱私盐。"
 
     class _P:
-        slug = "t"; title = "书"; genre = "玄幻"; sub_genre = "玄幻脑洞"
-        audience = "male"; language = "zh-CN"
+        slug = "t"
+        title = "书"
+        genre = "玄幻"
+        sub_genre = "玄幻脑洞"
+        audience = "male"
+        language = "zh-CN"
 
     class _Proj(_P):
         metadata_json = {

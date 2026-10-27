@@ -8,7 +8,8 @@ then folds hook-ledger findings into planner/review flows behind the
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,40 +22,68 @@ from bestseller.domain.review import (
     ChapterReviewResult,
 )
 from bestseller.infra.db.models import ChapterModel, ClueModel, ProjectModel
+from bestseller.services.creation_contract_authority import select_creation_contracts
 from bestseller.services.hook_ledger import (
     AuditFinding,
     HookLedgerAudit,
-    HookType,
     is_methodology_v2_enabled,
     run_hook_ledger_audit,
 )
+from bestseller.services.methodology_overlay import resolve_methodology_contract_mode
+from bestseller.services.narrative_obligation_migration import has_explicit_due
 from bestseller.services.writing_profile import is_english_language
 
 _REWRITE_CODES = {
     "HOOK_ACTIVE_COUNT_TOO_HIGH",
     "HOOK_PER_CHAPTER_NO_PLANT",
     "HOOK_PER_CHAPTER_NO_RESOLVE",
-    "HOOK_OVERDUE",
+    "HOOK_DUE_UNRESOLVED",
+    "HOOK_REQUIRED_PLANT_MISSING",
+    "HOOK_REQUIRED_RESOLVE_MISSING",
     "HOOK_NEXT_COMPRESSION_SEED_MISSING",
 }
 
 
 @dataclass(frozen=True)
-class _ContractHookClue:
-    clue_code: str
-    clue_type: str = "foreshadow"
-    label: str = ""
-    planted_in_chapter_number: int | None = None
-    expected_payoff_by_chapter_number: int | None = None
-    actual_paid_off_chapter_number: int | None = None
-    status: str = "planted"
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+class _RuntimeHookLedgerAudit(HookLedgerAudit):
+    # Only compute has access to source rows; a plain audit cannot grant due authority.
+    explicit_due: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
-def render_hook_ledger_planner_contract(*, language: str | None = None) -> str:
+def explicit_hook_contract_for_chapter(
+    project: ProjectModel | None,
+    *,
+    chapter_number: int,
+    stage: str = "review",
+) -> dict[str, Any]:
+    """Select literal chapter requirements without inheriting a book palette."""
+    metadata = getattr(project, "metadata_json", None)
+    approved = select_creation_contracts(
+        metadata if isinstance(metadata, Mapping) else {}, source_bound=False
+    )
+    hook = approved.get("creation_intent_contract", {}).get("hook_spec", {})
+    for key in ("stage_contracts", "stages"):
+        stages = hook.get(key)
+        contract = stages.get(stage) if isinstance(stages, Mapping) else None
+        if not isinstance(contract, Mapping):
+            continue
+        chapters = contract.get("chapters")
+        if isinstance(chapters, Mapping):
+            selected = chapters.get(str(chapter_number))
+            return dict(selected) if isinstance(selected, Mapping) else {}
+        number = contract.get("chapter_number")
+        if type(number) is int and number == chapter_number:
+            return dict(contract)
+        return {}
+    return {}
+
+
+def render_hook_ledger_planner_contract(
+    *, language: str | None = None, project: ProjectModel | None = None
+) -> str:
     """Return the methodology-v2 planner contract block when enabled."""
 
-    if not is_methodology_v2_enabled():
+    if not is_methodology_v2_enabled() or resolve_methodology_contract_mode(project) != "strict":
         return ""
     if is_english_language(language):
         return (
@@ -104,13 +133,31 @@ async def compute_hook_ledger_audit_for_review(
 
     if not is_methodology_v2_enabled():
         return None
-    clues = list(
-        await session.scalars(
-            select(ClueModel).where(ClueModel.project_id == project.id)
-        )
+    clues = list(await session.scalars(select(ClueModel).where(ClueModel.project_id == project.id)))
+    # Planned contract deltas are requirements, never evidence of planted/paid truth.
+    audit = run_hook_ledger_audit(clues, current_chapter=chapter.chapter_number)
+    explicit_due = {}
+    for clue in clues:
+        row = {
+            "label": clue.label,
+            "metadata_json": clue.metadata_json,
+        }
+        due = clue.expected_payoff_by_chapter_number
+        if has_explicit_due(row, due) and str(
+            clue.metadata_json["narrative_obligation"]["source"]["project_id"]
+        ) == str(project.id):
+            explicit_due[clue.clue_code] = {
+                "due_chapter": due,
+                "narrative_obligation": deepcopy(clue.metadata_json["narrative_obligation"]),
+            }
+    return _RuntimeHookLedgerAudit(
+        view=audit.view,
+        active_count=audit.active_count,
+        per_chapter_balance=audit.per_chapter_balance,
+        max_age=audit.max_age,
+        next_compression_seed=audit.next_compression_seed,
+        explicit_due=explicit_due,
     )
-    clues.extend(_contract_clues(chapter_contract, chapter_number=chapter.chapter_number))
-    return run_hook_ledger_audit(clues, current_chapter=chapter.chapter_number)
 
 
 def merge_hook_ledger_audit_into_chapter_review(
@@ -119,23 +166,29 @@ def merge_hook_ledger_audit_into_chapter_review(
     *,
     chapter_number: int,
     language: str | None = None,
+    project: ProjectModel | None = None,
 ) -> ChapterReviewResult:
     """Add hook-ledger evidence and targeted repair instructions to review."""
 
-    if audit is None or not audit.all_findings:
+    if audit is None:
         return review_result
+    mode = resolve_methodology_contract_mode(project)
+    literal = explicit_hook_contract_for_chapter(project, chapter_number=chapter_number)
+    applicable = _applicable_findings(
+        audit, chapter_number=chapter_number, mode=mode, literal=literal
+    )
 
     findings = [
         ChapterReviewFinding(
             category="hook_ledger",
-            severity=_review_severity(finding, chapter_number=chapter_number),
+            severity=_review_severity(finding, chapter_number=chapter_number, mode=mode),
             message=f"{finding.code}: {finding.detail}",
         )
-        for finding in audit.all_findings
+        for finding in applicable
     ]
     should_rewrite = any(
-        _finding_requires_rewrite(finding, chapter_number=chapter_number)
-        for finding in audit.all_findings
+        _finding_requires_rewrite(finding, chapter_number=chapter_number, mode=mode)
+        for finding in applicable
     )
     severity_max = _max_severity(
         review_result.severity_max,
@@ -143,10 +196,15 @@ def merge_hook_ledger_audit_into_chapter_review(
     )
     evidence_summary = {
         **review_result.evidence_summary,
-        "hook_ledger_audit": hook_ledger_audit_to_dict(audit),
+        "hook_ledger_audit": {
+            **hook_ledger_audit_to_dict(audit),
+            "mode": mode,
+            "explicit_due": getattr(audit, "explicit_due", {}),
+            "effective_findings": [_finding_to_dict(finding) for finding in applicable],
+        },
     }
     rewrite_prefix = (
-        _hook_ledger_rewrite_instructions(audit, chapter_number, language=language)
+        _hook_ledger_rewrite_instructions(applicable, chapter_number, language=language, mode=mode)
         if should_rewrite
         else None
     )
@@ -174,79 +232,17 @@ def hook_ledger_audit_to_dict(audit: HookLedgerAudit) -> dict[str, Any]:
         "resolve_count": audit.per_chapter_balance.resolve_count,
         "max_age_chapters": audit.max_age.max_age_chapters,
         "overdue_codes": [entry.clue_code for entry in audit.max_age.overdue_entries],
-        "previous_chapter_had_payoff": (
-            audit.next_compression_seed.previous_chapter_had_payoff
-        ),
-        "current_chapter_planted_new": (
-            audit.next_compression_seed.current_chapter_planted_new
-        ),
+        "previous_chapter_had_payoff": (audit.next_compression_seed.previous_chapter_had_payoff),
+        "current_chapter_planted_new": (audit.next_compression_seed.current_chapter_planted_new),
         "by_type": {hook_type.value: count for hook_type, count in audit.by_type().items()},
         "findings": [_finding_to_dict(finding) for finding in audit.all_findings],
     }
 
 
-def _contract_clues(
-    chapter_contract: ChapterContractRead | None,
-    *,
-    chapter_number: int,
-) -> list[_ContractHookClue]:
-    if chapter_contract is None:
-        return []
-    clues: list[_ContractHookClue] = []
-    for index, text in enumerate(_clean_strings(chapter_contract.hooks_to_plant), start=1):
-        clues.append(
-            _ContractHookClue(
-                clue_code=f"contract:ch{chapter_number}:plant:{index}",
-                clue_type=_infer_hook_type(text).value,
-                label=text,
-                planted_in_chapter_number=chapter_number,
-                expected_payoff_by_chapter_number=chapter_number + 3,
-                metadata_json={
-                    "source": "chapter_methodology_contract",
-                    "hook_type": _infer_hook_type(text).value,
-                },
-            )
-        )
-    for index, text in enumerate(_clean_strings(chapter_contract.hooks_to_resolve), start=1):
-        clues.append(
-            _ContractHookClue(
-                clue_code=f"contract:ch{chapter_number}:resolve:{index}",
-                clue_type=_infer_hook_type(text).value,
-                label=text,
-                planted_in_chapter_number=max(1, chapter_number - 1),
-                expected_payoff_by_chapter_number=chapter_number,
-                actual_paid_off_chapter_number=chapter_number,
-                status="resolved",
-                metadata_json={
-                    "source": "chapter_methodology_contract",
-                    "hook_type": _infer_hook_type(text).value,
-                },
-            )
-        )
-    return clues
-
-
-def _infer_hook_type(text: str) -> HookType:
-    lowered = text.lower()
-    if any(token in text for token in ("倒计时", "期限", "时限", "截止", "限时")) or any(
-        token in lowered for token in ("deadline", "countdown")
-    ):
-        return HookType.DEADLINE
-    if any(token in text for token in ("威胁", "危险", "杀", "追杀", "毁掉", "暴露")) or any(
-        token in lowered for token in ("threat", "danger")
-    ):
-        return HookType.THREAT
-    if any(token in text for token in ("想要", "欲望", "渴望", "必须得到")) or "desire" in lowered:
-        return HookType.DESIRE
-    if any(token in text for token in ("谜", "悬案", "真相", "谁", "为什么")) or any(
-        token in lowered for token in ("mystery", "puzzle")
-    ):
-        return HookType.MYSTERY
-    return HookType.INFORMATION_GAP
-
-
 def _clean_strings(values: Iterable[Any]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+    return tuple(
+        dict.fromkeys(value.strip() for value in values if isinstance(value, str) and value.strip())
+    )
 
 
 def _finding_to_dict(finding: AuditFinding) -> dict[str, Any]:
@@ -258,20 +254,102 @@ def _finding_to_dict(finding: AuditFinding) -> dict[str, Any]:
     }
 
 
+def _applicable_findings(
+    audit: HookLedgerAudit,
+    *,
+    chapter_number: int,
+    mode: str,
+    literal: Mapping[str, Any],
+) -> list[AuditFinding]:
+    # Generic count/balance/seed heuristics require the full suite opt-in.
+    overridden = set()
+    if "hooks_to_plant" in literal:
+        overridden.update({"HOOK_PER_CHAPTER_NO_PLANT", "HOOK_NEXT_COMPRESSION_SEED_MISSING"})
+    if "hooks_to_resolve" in literal:
+        overridden.add("HOOK_PER_CHAPTER_NO_RESOLVE")
+    if literal.get("hooks_to_plant") == [] and literal.get("hooks_to_resolve") == []:
+        overridden.update({"HOOK_ACTIVE_COUNT_TOO_LOW", "HOOK_ACTIVE_COUNT_TOO_HIGH"})
+    findings = [
+        f
+        for f in audit.all_findings
+        if mode != "off" and f.code != "HOOK_OVERDUE" and f.code not in overridden
+    ]
+    explicit_due = getattr(audit, "explicit_due", {})
+    due = [
+        e.clue_code
+        for e in audit.view
+        if e.clue_code in explicit_due
+        and explicit_due[e.clue_code]["due_chapter"] == e.expected_payoff_chapter
+        and e.planted_chapter is not None
+        and e.planted_chapter <= chapter_number
+        and e.expected_payoff_chapter is not None
+        and e.expected_payoff_chapter <= chapter_number
+        and not e.is_cancelled
+        and not e.is_resolved
+    ]
+    if due:
+        findings.append(
+            AuditFinding(
+                code="HOOK_DUE_UNRESOLVED",
+                severity="warn",
+                detail=f"Due planted hooks remain unresolved: {', '.join(due)}",
+                evidence={"due_codes": due, "chapter": chapter_number},
+            )
+        )
+    for key, code, observed in (
+        (
+            "hooks_to_plant",
+            "HOOK_REQUIRED_PLANT_MISSING",
+            {
+                value
+                for e in audit.view
+                if e.planted_chapter == chapter_number and not e.is_cancelled
+                for value in (e.clue_code, e.label)
+            },
+        ),
+        (
+            "hooks_to_resolve",
+            "HOOK_REQUIRED_RESOLVE_MISSING",
+            {
+                value
+                for e in audit.view
+                if e.actual_paid_chapter == chapter_number and not e.is_cancelled
+                for value in (e.clue_code, e.label)
+            },
+        ),
+    ):
+        values = literal.get(key)
+        required = _clean_strings(values) if isinstance(values, (list, tuple)) else ()
+        missing = [value for value in required if value not in observed]
+        if missing:
+            findings.append(
+                AuditFinding(
+                    code=code,
+                    severity="warn",
+                    detail=f"Missing explicit hooks: {', '.join(missing)}",
+                    evidence={"required_hooks": missing, "chapter": chapter_number},
+                )
+            )
+    return findings
+
+
 def _finding_requires_rewrite(
     finding: AuditFinding,
     *,
     chapter_number: int,
+    mode: str,
 ) -> bool:
+    if mode == "warn":
+        return False
     if finding.code == "HOOK_PER_CHAPTER_NO_RESOLVE" and chapter_number <= 1:
         return False
     return finding.code in _REWRITE_CODES
 
 
-def _review_severity(finding: AuditFinding, *, chapter_number: int) -> str:
-    if _finding_requires_rewrite(finding, chapter_number=chapter_number):
+def _review_severity(finding: AuditFinding, *, chapter_number: int, mode: str) -> str:
+    if _finding_requires_rewrite(finding, chapter_number=chapter_number, mode=mode):
         return "major"
-    return "warning"
+    return "info" if mode == "warn" else "warning"
 
 
 def _max_severity(current: str, incoming: Iterable[str]) -> str:
@@ -284,40 +362,43 @@ def _max_severity(current: str, incoming: Iterable[str]) -> str:
 
 
 def _hook_ledger_rewrite_instructions(
-    audit: HookLedgerAudit,
+    findings: Iterable[AuditFinding],
     chapter_number: int,
     *,
     language: str | None,
+    mode: str,
 ) -> str:
-    codes = [
-        finding.code
-        for finding in audit.all_findings
-        if _finding_requires_rewrite(finding, chapter_number=chapter_number)
+    required = [
+        finding
+        for finding in findings
+        if _finding_requires_rewrite(finding, chapter_number=chapter_number, mode=mode)
     ]
+    codes = [finding.code for finding in required]
+    details = "\n".join(f"- {finding.code}: {finding.detail}" for finding in required)
     if is_english_language(language):
         return (
             "[hook ledger repair]\n"
             f"Fix hook-ledger deficits in chapter {chapter_number}: {', '.join(codes)}.\n"
+            f"{details}\n"
             "- Preserve the existing plot outcome.\n"
-            "- Add or clarify at least one concrete planted hook and, when this "
-            "is not chapter 1, one concrete resolved hook.\n"
+            "- Address only the listed findings and named obligations; do not invent hook quotas.\n"
             "- If an old hook is overdue, visibly resolve, transform, or explicitly retire it.\n"
-            "- After any payoff, seed the next pressure/question before the chapter closes.\n"
             "- Do not mention hook-ledger terminology in prose."
         )
     return (
         "【钩子清单修复】\n"
         f"修复第 {chapter_number} 章的钩子清单缺口：{', '.join(codes)}。\n"
+        f"{details}\n"
         "- 保留既有剧情结果，不要重开新章。\n"
-        "- 至少补出一个读者可见的新植入钩子；除第 1 章外，还要补出一个旧钩子的可见消解。\n"
+        "- 仅修复所列问题和具名义务，不得额外编造植入或消解配额。\n"
         "- 如果存在超期钩子，必须在正文中解决、转化或明确退场。\n"
-        "- 如果本章有 payoff / 情绪释放，章末前必须种下下一轮压力或未答问题。\n"
         "- 正文禁止出现 hook ledger、方法论、钩子清单等创作术语。"
     )
 
 
 __all__ = [
     "compute_hook_ledger_audit_for_review",
+    "explicit_hook_contract_for_chapter",
     "hook_ledger_audit_to_dict",
     "merge_hook_ledger_audit_into_chapter_review",
     "render_hook_ledger_planner_contract",

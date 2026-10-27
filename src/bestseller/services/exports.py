@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 import hashlib
 from html import escape, unescape
 import io
@@ -10,7 +11,7 @@ import math
 from pathlib import Path
 import re
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import markdown as markdown_lib
@@ -31,7 +32,6 @@ from bestseller.services.book_listing import (
 from bestseller.services.drafts import (
     count_words,
     format_chapter_heading,
-    resync_draft_word_count,
     sanitize_novel_markdown_content,
 )
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
@@ -40,6 +40,24 @@ from bestseller.services.writing_profile import normalize_language
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _current_common_sense_dismissed_codes(
+    chapter: ChapterModel, draft: ChapterDraftVersionModel
+) -> set[str]:
+    from bestseller.services.reviews import chapter_review_body_fingerprint
+
+    receipt = (chapter.metadata_json or {}).get("common_sense_adjudication")
+    if not isinstance(receipt, dict) or receipt.get("schema") != "common_sense_adjudication_v1":
+        return set()
+    if receipt.get("draft_id") != str(draft.id) or receipt.get(
+        "reviewed_body_fingerprint"
+    ) != chapter_review_body_fingerprint(draft.content_md or ""):
+        return set()
+    codes = receipt.get("dismissed_codes")
+    return {str(code) for code in codes} if isinstance(codes, list) else set()
+
+
 
 
 class ProjectExportIncompleteError(ValueError):
@@ -51,9 +69,29 @@ class ProjectExportIncompleteError(ValueError):
         joined = ", ".join(str(number) for number in missing_chapters)
         super().__init__(
             f"Project '{project_slug}' cannot be exported: chapters without a "
-            f"promoted draft: {joined}. Use the explicit closure-draft export "
+            f"adopted draft (promoted or verified numeric debt): {joined}. "
+            "Use the explicit closure-draft export "
             "path for non-publication diagnostics."
         )
+
+
+class ExportRevisionRequired(ValueError):
+    code = "export_requires_revision"
+
+    def __init__(self, chapter, draft, candidate_text):
+        from bestseller.services.reviews import chapter_review_body_fingerprint
+        self.draft_id = getattr(draft, "id", None)
+        self.parent_fingerprint = chapter_review_body_fingerprint(draft.content_md or "")
+        self.candidate_text = candidate_text
+        super().__init__(f"Export requires a versioned, reviewed revision for chapter {chapter.chapter_number}; adopted text was preserved.")
+
+
+def _check_export_patch_identity(chapter, draft, result):
+    proposed = getattr(result, "patched_text", None)
+    if proposed is not None and proposed != (draft.content_md or ""):
+        # Export cannot silently invalidate an adopted draft's review, facts or
+        # snapshot. The ordinary revision/adoption boundary owns text changes.
+        raise ExportRevisionRequired(chapter, draft, proposed)
 
 
 def _bundle_hook_domain_tokens(project) -> tuple[str, ...]:
@@ -969,6 +1007,67 @@ def build_pdf_bytes(title: str, content_md: str, *, language: str = "zh-CN") -> 
     return buffer.getvalue()
 
 
+async def _validated_export_adoptions(
+    session: AsyncSession,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+) -> dict[str, dict]:
+    """Revalidate adopted sources before recording export provenance."""
+    from bestseller.services.feedback import validate_adopted_knowledge_source
+
+    adoptions = {}
+    for chapter, draft in chapter_payloads:
+        if (
+            (chapter.metadata_json or {}).get("numeric_promotion_debt") is None
+            and draft.promotion_state != DraftPromotionState.PROMOTED.value
+        ):
+            continue
+        lineage, rejection = await validate_adopted_knowledge_source(
+            session,
+            project_id=chapter.project_id,
+            chapter_id=chapter.id,
+            source_chapter_draft_version_id=draft.id,
+            chapter_md=draft.content_md,
+        )
+        if rejection is not None:
+            raise ValueError(f"Chapter {chapter.chapter_number} export source rejected: {rejection}")
+        adoptions[str(draft.id)] = lineage
+    return adoptions
+
+
+async def _load_adopted_export_draft(
+    session: AsyncSession,
+    chapter: ChapterModel,
+) -> ChapterDraftVersionModel | None:
+    """Prefer the exact numeric adoption; an invalid receipt cannot revive old prose."""
+    metadata = chapter.metadata_json or {}
+    query = select(ChapterDraftVersionModel).where(
+        ChapterDraftVersionModel.project_id == chapter.project_id,
+        ChapterDraftVersionModel.chapter_id == chapter.id,
+    )
+    if metadata.get("numeric_promotion_debt") is None:
+        return await session.scalar(
+            query.where(
+                ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
+            ).execution_options(populate_existing=True)
+        )
+
+    receipt = metadata["numeric_promotion_debt"]
+    try:
+        draft_id = UUID(str(receipt["draft_id"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Chapter {chapter.chapter_number} has an invalid numeric adoption receipt"
+        ) from exc
+    draft = await session.scalar(
+        query.where(ChapterDraftVersionModel.id == draft_id)
+        .execution_options(populate_existing=True)
+    )
+    if draft is None or not draft.is_current:
+        raise ValueError(f"Chapter {chapter.chapter_number} numeric adoption source is missing or stale")
+    await _validated_export_adoptions(session, [(chapter, draft)])
+    return draft
+
+
 async def _load_chapter_export_payload(
     session: AsyncSession,
     project_slug: str,
@@ -982,17 +1081,12 @@ async def _load_chapter_export_payload(
         select(ChapterModel).where(
             ChapterModel.project_id == project.id,
             ChapterModel.chapter_number == chapter_number,
-        )
+        ).execution_options(populate_existing=True)
     )
     if chapter is None:
         raise ValueError(f"Chapter {chapter_number} was not found for '{project_slug}'.")
 
-    draft = await session.scalar(
-        select(ChapterDraftVersionModel).where(
-            ChapterDraftVersionModel.chapter_id == chapter.id,
-            ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
-        )
-    )
+    draft = await _load_adopted_export_draft(session, chapter)
     if draft is None:
         raise ValueError(
             f"Chapter {chapter_number} does not have a current assembled draft to export."
@@ -1004,9 +1098,9 @@ async def _load_project_export_payload(
     session: AsyncSession,
     project_slug: str,
 ) -> tuple[ProjectModel, list[tuple[ChapterModel, ChapterDraftVersionModel]], list[int]]:
-    """Load project + promoted chapter drafts.
+    """Load project + exact adopted chapter drafts.
 
-    Publication exports are all-or-nothing. A chapter without a promoted draft
+    Publication exports are all-or-nothing. A chapter without an adopted draft
     raises :class:`ProjectExportIncompleteError`; partial diagnostic material is
     available only through the explicit closure-draft loader below.
     """
@@ -1019,6 +1113,7 @@ async def _load_project_export_payload(
             select(ChapterModel)
             .where(ChapterModel.project_id == project.id)
             .order_by(ChapterModel.chapter_number.asc())
+            .execution_options(populate_existing=True)
         )
     )
     if not chapters:
@@ -1027,12 +1122,7 @@ async def _load_project_export_payload(
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
     skipped: list[int] = []
     for chapter in chapters:
-        draft = await session.scalar(
-            select(ChapterDraftVersionModel).where(
-                ChapterDraftVersionModel.chapter_id == chapter.id,
-                ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
-            )
-        )
+        draft = await _load_adopted_export_draft(session, chapter)
         if draft is None:
             skipped.append(chapter.chapter_number)
             continue
@@ -1065,6 +1155,15 @@ async def _load_project_closure_draft_payload(
     )
     if not chapters:
         raise ValueError(f"Project '{project_slug}' does not have any chapters to export.")
+    target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+    chapter_numbers = [int(chapter.chapter_number) for chapter in chapters]
+    if target_chapters > 0:
+        expected_numbers = list(range(1, target_chapters + 1))
+        if chapter_numbers != expected_numbers:
+            raise ValueError(
+                f"Project '{project_slug}' is not draft-complete; expected contiguous "
+                f"chapters 1-{target_chapters}, found {chapter_numbers}."
+            )
 
     payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
     missing: list[int] = []
@@ -1097,6 +1196,8 @@ def _closure_draft_blockers(
     blockers: list[str] = []
     for chapter, draft in chapter_payloads:
         number = int(chapter.chapter_number)
+        if not str(getattr(draft, "content_md", "") or "").strip():
+            blockers.append(f"第{number}章当前稿正文为空")
         if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
             blockers.append(f"第{number}章当前稿缺少场景来源记录")
         for issue in collect_unfinished_artifact_issues(
@@ -1165,7 +1266,65 @@ def create_export_artifact(
     version_label: str,
     created_by_run_id: UUID | None,
     metadata_json: dict | None = None,
+    source_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] | None = None,
+    source_adoptions: dict[str, dict] | None = None,
 ) -> ExportArtifactModel:
+    metadata_json = dict(metadata_json or {})
+    if source_payloads is not None:
+        from bestseller.services.reviews import chapter_review_body_fingerprint
+        sources = []
+        for chapter, draft in source_payloads:
+            if not chapter.id or not draft.id:
+                raise ValueError("Export requires persisted source identities")
+            source = {
+                "chapter_id": str(chapter.id), "chapter_number": chapter.chapter_number,
+                "draft_id": str(draft.id), "version_no": draft.version_no,
+                "promotion_state": draft.promotion_state,
+                "body_fingerprint": chapter_review_body_fingerprint(draft.content_md or ""),
+                "body_sha256": hashlib.sha256(
+                    (draft.content_md or "").encode("utf-8")
+                ).hexdigest(),
+                "adoption_state": (
+                    "promoted" if draft.promotion_state == "promoted" else "not_adopted"
+                ),
+            }
+            lineage = (source_adoptions or {}).get(str(draft.id))
+            if lineage is not None:
+                bindings = (
+                    ("project_id", str(project_id)), ("chapter_id", str(chapter.id)),
+                    ("source_chapter_draft_version_id", str(draft.id)),
+                    ("source_version_no", draft.version_no),
+                    ("source_promotion_state", draft.promotion_state),
+                    ("source_body_sha256", source["body_sha256"]),
+                )
+                if any(lineage.get(key) != expected for key, expected in bindings):
+                    raise ValueError("Export adoption provenance does not match its exact source")
+                source["adoption_state"] = lineage["adoption_state"]
+                if lineage["adoption_state"] == "accepted_with_debt":
+                    source["adoption_receipt"] = deepcopy(lineage["adoption_receipt"])
+            sources.append(source)
+        current_path = Path(storage_uri)
+        data = current_path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != checksum:
+            raise ValueError("Export bytes changed before artifact registration")
+        frozen_dir = current_path.parent / ".export-artifacts" / checksum
+        frozen_dir.mkdir(parents=True, exist_ok=True)
+        frozen = frozen_dir / current_path.name
+        temporary = frozen_dir / (uuid4().hex + ".tmp")
+        try:
+            temporary.write_bytes(data)
+            try:
+                frozen.hardlink_to(temporary)  # atomic publish of an independent copy
+            except FileExistsError:
+                pass
+        finally:
+            temporary.unlink(missing_ok=True)
+        if hashlib.sha256(frozen.read_bytes()).hexdigest() != checksum:
+            raise ValueError("Immutable export artifact checksum mismatch")
+        metadata_json.update(source_drafts=sources, mirror_storage_uri=storage_uri,
+                             rendering_policy="sanitized-markdown-and-heading.v1",
+                             immutable_bytes=True)
+        storage_uri = str(frozen.resolve())
     return ExportArtifactModel(
         project_id=project_id,
         export_type=export_type,
@@ -1175,7 +1334,7 @@ def create_export_artifact(
         checksum=checksum,
         version_label=version_label,
         created_by_run_id=created_by_run_id,
-        metadata_json=metadata_json or {},
+        metadata_json=metadata_json,
     )
 
 
@@ -1185,23 +1344,21 @@ async def load_publication_comparison_payloads(
     *,
     through_chapter_number: int | None = None,
 ) -> list[tuple[ChapterModel, ChapterDraftVersionModel]]:
-    """Load promoted chapter drafts used by publication/export safety gates."""
+    """Use the same adopted sources for safety comparisons as for exported bytes."""
     stmt = (
-        select(ChapterModel, ChapterDraftVersionModel)
-        .join(
-            ChapterDraftVersionModel,
-            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
-        )
-        .where(
-            ChapterModel.project_id == project_id,
-            ChapterDraftVersionModel.promotion_state == DraftPromotionState.PROMOTED.value,
-        )
+        select(ChapterModel)
+        .where(ChapterModel.project_id == project_id)
         .order_by(ChapterModel.chapter_number.asc())
+        .execution_options(populate_existing=True)
     )
     if through_chapter_number is not None:
         stmt = stmt.where(ChapterModel.chapter_number <= through_chapter_number)
-    result = await session.execute(stmt)
-    return list(result.all())
+    payloads = []
+    for chapter in await session.scalars(stmt):
+        draft = await _load_adopted_export_draft(session, chapter)
+        if draft is not None:
+            payloads.append((chapter, draft))
+    return payloads
 
 
 # 修复循环停下来时留下的状态。它们的共同点是**循环已经做完裁决**：ok 是通过，
@@ -1494,14 +1651,9 @@ def collect_publication_blockers(
             # review time (context made the flagged phenomenon legitimate). The
             # export gate re-runs the same blind regex, so honor that ruling
             # instead of re-litigating prose causality without context.
-            _adjudicated_clear = set(
-                (getattr(chapter, "metadata_json", None) or {}).get(
-                    "common_sense_dismissed_codes"
-                )
-                or []
-            )
-            for finding in common_sense.findings[:5]:
-                if finding.severity not in {"high", "medium"}:
+            _adjudicated_clear = _current_common_sense_dismissed_codes(chapter, draft)
+            for finding in common_sense.findings:
+                if not getattr(finding, "blocking", True) or finding.severity not in {"high", "medium"}:
                     continue
                 if finding.code in _adjudicated_clear:
                     continue
@@ -1631,9 +1783,7 @@ def _run_terminal_export_gate(
             if isinstance(getattr(chapter, "metadata_json", None), dict)
             else None,
         )
-        if result.patched_text is not None:
-            draft.content_md = result.patched_text
-            resync_draft_word_count(draft, language=project.language or "zh-CN")
+        _check_export_patch_identity(chapter, draft, result)
         if not result.passed:
             details = "; ".join([*result.errors, *result.issues])
             raise ValueError(
@@ -1788,6 +1938,7 @@ async def export_chapter_markdown(
         sanitize_novel_markdown_content(draft.content_md),
         language=project.language,
     )
+    source_adoptions = await _validated_export_adoptions(session, [(chapter, draft)])
     storage_uri, checksum = write_markdown_output(output_path, content_md)
     artifact = create_export_artifact(
         project_id=project.id,
@@ -1798,6 +1949,8 @@ async def export_chapter_markdown(
         checksum=checksum,
         version_label=f"chapter-{chapter.chapter_number:03d}-v{draft.version_no}",
         created_by_run_id=created_by_run_id,
+        source_payloads=[(chapter, draft)],
+        source_adoptions=source_adoptions,
     )
     session.add(artifact)
     await session.flush()
@@ -1826,11 +1979,7 @@ async def export_project_markdown(
                 project=project,
                 settings=settings,
             )
-            if getattr(result, "patched_text", None) is not None:
-                # The callback may perform a localized patch. Persisting that
-                # exact text here keeps the export bytes and gate bytes equal.
-                draft.content_md = result.patched_text
-                resync_draft_word_count(draft, language=project.language or "zh-CN")
+            _check_export_patch_identity(chapter, draft, result)
             if not bool(getattr(result, "passed", False)):
                 details = [
                     *list(getattr(result, "errors", ()) or ()),
@@ -1851,6 +2000,7 @@ async def export_project_markdown(
     content_md = build_project_markdown(project, chapter_payloads)
     package_root = Path(settings.output.base_dir) / project.slug
     output_path = package_root / "project.md"
+    source_adoptions = await _validated_export_adoptions(session, chapter_payloads)
     storage_uri, checksum = write_markdown_output(output_path, content_md)
     _sync_project_chapter_markdown_files(project, chapter_payloads, package_root)
     _write_commercial_package_sidecars(project, chapter_payloads, package_root)
@@ -1863,6 +2013,8 @@ async def export_project_markdown(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+        source_payloads=chapter_payloads,
+        source_adoptions=source_adoptions,
     )
     _attach_project_export_warnings(
         artifact,
@@ -1882,17 +2034,20 @@ async def export_project_closure_draft_markdown(
     project_slug: str,
     *,
     created_by_run_id: UUID | None = None,
+    source_manifest: dict | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     """Export a complete readable manuscript without claiming publication readiness.
 
-    Strict ``export_project_markdown`` remains promoted-only. This separate
+    Strict ``export_project_markdown`` requires verified adoption. This separate
     artifact is the honest closure path for a full manuscript whose bounded
     rewrites ended with accepted quality debt.
     """
 
-    project, chapter_payloads = await _load_project_closure_draft_payload(
-        session, project_slug
-    )
+    if source_manifest is None:
+        project, chapter_payloads = await _load_project_closure_draft_payload(session, project_slug)
+    else:
+        from bestseller.services.book_run_export import load_selected_sources
+        project, chapter_payloads = await load_selected_sources(session, settings, project_slug, source_manifest)
     blockers = _closure_draft_blockers(chapter_payloads, language=project.language)
     if blockers:
         raise ValueError("; ".join(blockers))
@@ -1933,7 +2088,15 @@ async def export_project_closure_draft_markdown(
                 f"含质量债章节：{quality_debt_chapters}",
             ],
         },
+        source_payloads=chapter_payloads,
     )
+    if source_manifest is not None:
+        if created_by_run_id is None:
+            raise ValueError("book_export_run_id_required")
+        from bestseller.services.prompt_source_policy import content_hash
+        artifact.metadata_json = {**artifact.metadata_json,
+            "book_run_id": str(created_by_run_id), "selected_manifest": source_manifest,
+            "book_run_manifest_sha256": content_hash(source_manifest)}
     session.add(artifact)
     await session.flush()
     return artifact, output_path
@@ -1972,6 +2135,7 @@ async def export_chapter_docx(
         checksum=checksum,
         version_label=f"chapter-{chapter.chapter_number:03d}-v{draft.version_no}",
         created_by_run_id=created_by_run_id,
+        source_payloads=[(chapter, draft)],
     )
     session.add(artifact)
     await session.flush()
@@ -2003,6 +2167,7 @@ async def export_project_docx(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+        source_payloads=chapter_payloads,
     )
     _attach_project_export_warnings(
         artifact,
@@ -2052,6 +2217,7 @@ async def export_chapter_epub(
         checksum=checksum,
         version_label=f"chapter-{chapter.chapter_number:03d}-v{draft.version_no}",
         created_by_run_id=created_by_run_id,
+        source_payloads=[(chapter, draft)],
     )
     session.add(artifact)
     await session.flush()
@@ -2086,6 +2252,7 @@ async def export_project_epub(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+        source_payloads=chapter_payloads,
     )
     _attach_project_export_warnings(
         artifact,
@@ -2132,6 +2299,7 @@ async def export_chapter_pdf(
         checksum=checksum,
         version_label=f"chapter-{chapter.chapter_number:03d}-v{draft.version_no}",
         created_by_run_id=created_by_run_id,
+        source_payloads=[(chapter, draft)],
     )
     session.add(artifact)
     await session.flush()
@@ -2163,6 +2331,7 @@ async def export_project_pdf(
         checksum=checksum,
         version_label="project-current",
         created_by_run_id=created_by_run_id,
+        source_payloads=chapter_payloads,
     )
     _attach_project_export_warnings(
         artifact,
@@ -2174,3 +2343,56 @@ async def export_project_pdf(
     session.add(artifact)
     await session.flush()
     return artifact, output_path
+
+
+async def export_execution_window_markdown(
+    session: AsyncSession, settings: AppSettings, project_slug: str, *,
+    created_by_run_id: UUID | None = None,
+) -> tuple[ExportArtifactModel, Path]:
+    """An explicit adopted window artifact, never masquerading as a whole book."""
+    from bestseller.services.creation_configuration import read_configuration, read_window
+    from bestseller.services.execution_windows import window_progress, assert_window_runnable
+    project = await get_project_by_slug(session, project_slug)
+    if project is None:
+        raise ValueError("window_export_project_missing")
+    cfg, window = read_configuration(project), read_window(project)
+    if cfg is None or window is None:
+        raise ValueError("window_export_requires_configuration")
+    await assert_window_runnable(session, project)
+    state = await window_progress(session, project)
+    if state is None or not state["window_complete"]:
+        raise ValueError("window_export_requires_adopted_knowledge_closed_range")
+    if state["review_debt"] or state["project_review_debt"]:
+        raise ValueError("window_export_requires_review_debt_resolution")
+    chapters = list(await session.scalars(select(ChapterModel).where(ChapterModel.project_id == project.id,
+        ChapterModel.chapter_number.between(window.start, window.end)).order_by(ChapterModel.chapter_number)))
+    payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
+    for chapter in chapters:
+        draft = await _load_adopted_export_draft(session, chapter)
+        if draft is None:
+            raise ValueError("window_export_adopted_source_changed")
+        payloads.append((chapter, draft))
+    warnings: list[str] = []
+    _raise_if_export_blocked(project, payloads, debt_warnings=warnings)
+    _run_terminal_export_gate(project, payloads, settings=settings)
+    full = (window.purpose == "complete_story" and window.start == 1
+            and window.end == project.target_chapters)
+    kind = "complete_manuscript" if full else "execution_window_excerpt"
+    label = "完整书稿（结局与内容验收状态另列）" if full else "窗口片段 · 非全书完结"
+    content = (f"# {project.title}\n\n> {label}；本次第{window.start}—{window.end}章 / 全书目标{project.target_chapters}章。\n\n"
+               + build_project_markdown(project, payloads))
+    path = Path(settings.output.base_dir) / project.slug / f"window-{window.start}-{window.end}.md"
+    uri, checksum = write_markdown_output(path, content)
+    adoptions = await _validated_export_adoptions(session, payloads)
+    artifact = create_export_artifact(project_id=project.id, export_type="markdown",
+        source_scope="execution_window", source_id=project.id, storage_uri=uri, checksum=checksum,
+        version_label=f"window-{window.start}-{window.end}", created_by_run_id=created_by_run_id,
+        source_payloads=payloads, source_adoptions=adoptions,
+        metadata_json={"artifact_kind": kind, "window": window.model_dump(mode="json"),
+            "whole_book_chapters": project.target_chapters, "whole_book_complete": False,
+            "manuscript_coverage_complete": full, "narrative_closure_verified": False,
+            "publication_authorized": False, "quality_debt": warnings,
+            "configuration_hash": cfg.digest(), "knowledge_sources": state["sources"]})
+    session.add(artifact)
+    await session.flush()
+    return artifact, path

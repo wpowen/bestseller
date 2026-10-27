@@ -541,6 +541,54 @@ _GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
 ]
 
 
+_REALISTIC_LIFE_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "现实-选择落地",
+        "hype_type": "reversal",
+        "trigger_keywords": ["选择", "边界", "表态", "代价"],
+        "narrative_beats": [
+            "两种重要利益无法同时保全", "人物明确选择并承担损失",
+            "关系或生活安排出现可见变化",
+        ],
+        "intensity_floor": 6.5,
+        "cadence_hint": "选择必须由具体行动落地，不用旁白替人物宣布成长",
+    },
+    {
+        "key": "现实-关系位移",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["沉默", "拒绝", "证据", "道歉", "疏远"],
+        "narrative_beats": [
+            "旧关系中的不平衡被说破", "人物用行动守住边界或提出要求",
+            "对方回应造成关系位移",
+        ],
+        "intensity_floor": 6.0,
+        "cadence_hint": "回报是关系状态改变，不强行写成地位碾压",
+    },
+    {
+        "key": "现实-工作后果",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["交接", "合同", "排班", "客户", "账单"],
+        "narrative_beats": [
+            "工作压力逼近", "人物用准备、协商或承担风险争取空间",
+            "现实结果落地，同时留下新的成本",
+        ],
+        "intensity_floor": 6.5,
+        "cadence_hint": "胜利可以只是保住选择权，必须写清损耗",
+    },
+    {
+        "key": "现实-认知揭示",
+        "hype_type": "caress_by_fate",
+        "trigger_keywords": ["旧照片", "账本", "录音", "误解", "真相"],
+        "narrative_beats": [
+            "一个具体细节推翻原先判断", "人物重新理解一段关系或责任",
+            "新认知迫使下一步选择",
+        ],
+        "intensity_floor": 5.5,
+        "cadence_hint": "信息必须改变行动，不把揭示写成解释性总结",
+    },
+]
+
+
 _APOCALYPSE_SUPPLY_HYPE_DECK: list[dict[str, Any]] = [
     {
         "key": "末日-倒计时打脸",
@@ -933,6 +981,7 @@ def _hype_block(
     comedic_beat_density_target: float = 0.08,
     min_hype_per_chapter: int = 1,
     payoff_window_chapters: int = 5,
+    golden_three_peak_count: int = 2,
 ) -> dict[str, Any]:
     """Build a ``writing_profile_overrides.hype`` block.
 
@@ -945,6 +994,7 @@ def _hype_block(
         "comedic_beat_density_target": comedic_beat_density_target,
         "min_hype_per_chapter": min_hype_per_chapter,
         "payoff_window_chapters": payoff_window_chapters,
+        "golden_three_peak_count": golden_three_peak_count,
         "recipe_deck": list(deck),
     }
 
@@ -2252,6 +2302,46 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "dialogue_ratio": 0.50,
             },
             "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "realistic-life",
+        "name": "现实生活选择流",
+        "genre": "现实",
+        "sub_genre": "现实百态",
+        "description": "以人物选择、关系变化、工作与生活代价为核心的现实题材，不预设能力外挂或统一逆袭模板。",
+        "aliases": ["现实", "现实题材", "现实百态", "行业职场", "家庭伦理", "创业商战"],
+        "recommended_platforms": ["番茄小说", "晋江文学城"],
+        "recommended_audiences": ["现实向读者", "都市生活读者", "人物关系读者"],
+        "target_word_options": [24000, 80000, 160000, 280000],
+        "target_chapter_options": [4, 14, 30, 50],
+        "prompt_pack_key": "realistic-life",
+        # No fabricated heat score: this is a framework route, not a market claim.
+        "reader_rewards": ["关系回报", "认知回报", "选择回报"],
+        "narrative_drives": ["现实选择", "情绪关系", "生活后果"],
+        "content_modes": ["中文网文长篇连载"],
+        "commercial_signals": ["强代入", "评论讨论", "短剧适配"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "让读者看见具体生活压力、关系牵引和选择代价，并在每章获得真实的情绪或认知回报。",
+                "selling_points": ["现实代入", "关系张力", "选择代价", "工作与生活压力"],
+                "trope_keywords": ["现实", "关系", "职场", "家庭", "选择"],
+                "hook_keywords": ["无法两全的选择", "关系裂缝", "工作后果", "被迫表态"],
+                "pacing_profile": "medium-fast",
+            },
+            "character": {
+                "protagonist_archetype": "在现实压力中争取主动权的普通人",
+                "protagonist_core_drive": "守住重要关系或生活边界，同时承担自己的选择",
+            },
+            "world": {
+                "worldbuilding_density": "light",
+                "setting_tags": ["家庭", "工作", "社区", "现实制度"],
+            },
+            "style": {
+                "tone_keywords": ["现实", "克制", "锋利", "有体感"],
+                "dialogue_ratio": 0.48,
+            },
+            "hype": _hype_block(_REALISTIC_LIFE_HYPE_DECK, golden_three_peak_count=1),
         },
     },
     {
@@ -4087,34 +4177,12 @@ def get_platform_preset(key_or_name: str | None) -> PlatformPreset | None:
 
 
 def _synthesized_hype_block(resolved: Any) -> dict[str, Any]:
-    """给 taxonomy 合成预设选一副爽点配方（永不返回空 deck）。
+    """Taxonomy selection alone is not consent to a payoff recipe deck.
 
-    按方法论 v1：**爽 = 题材 × 爽度档位**，爽感是正交轴而不是某些题材的
-    专属属性。所以这里的职责不是「判断这本书爽不爽」，而是保证**任何**
-    taxonomy 路径建出来的书都拿得到一副配方——空 deck 会让整套引擎短路
-    （`hype_scheme.is_empty` → `EMPTY_HYPE_BLOCKS`），那才是真正的失败模式。
-
-    路由用 taxonomy 已解析出的 ``category``（叙事类别），它比子题材字符串
-    稳定，也避免在这里再造一套题材词表（本仓库反复出现「同一事实住两地」）。
-    匹配不上时退到通用牌——**退到通用牌是正确行为，退到空牌不是**。
+    Curated preset decks remain available through explicit preset selection.
+    A synthesized genre is descriptive; empty effects are a valid no-op.
     """
-
-    category = str(getattr(resolved, "novel_category", "") or "").strip().lower()
-    pack = str(getattr(resolved, "pack", "") or "").strip().lower()
-    haystack = f"{category} {pack}"
-
-    if "xianxia" in haystack or "cultivation" in haystack or "仙侠" in haystack:
-        deck = _XIANXIA_UPGRADE_HYPE_DECK
-    elif "palace" in haystack or "宅斗" in haystack or "宫斗" in haystack:
-        deck = _PALACE_REVENGE_HYPE_DECK
-    elif "apocalypse" in haystack or "末日" in haystack:
-        deck = _APOCALYPSE_SUPPLY_HYPE_DECK
-    elif "power" in haystack or "progression" in haystack or "urban" in haystack:
-        deck = _MALE_POWER_HYPE_DECK
-    else:
-        deck = _GENERIC_FALLBACK_HYPE_DECK
-
-    return _hype_block(deck)
+    return {}
 
 
 def synthesize_genre_preset(
@@ -4168,15 +4236,7 @@ def synthesize_genre_preset(
         prompt_pack_key=resolved.pack,
         target_chapter_options=[120, 300, 600],
         suitable_for_short_story=False,
-        # 2026-08-16 真机定罪：taxonomy 建的书拿不到爽点配方。
-        # 这个合成函数原本不产 hype 命名空间 → writing_profile_overrides 无 hype
-        # → hype_scheme.is_empty=True → build_chapter_hype_blocks 立即返回
-        # EMPTY_HYPE_BLOCKS → 爽点约束整块不进 prompt。实测后果：三本真书
-        # 109 章的 hype_type/hype_intensity/hype_recipe_key **100% NULL**，
-        # 正文零爽点结算（《破澡堂真话局》不对称碾压覆盖率 0.00，50 章零次，
-        # 而人类语料中位是 0.37）。
-        # 爽点配方此前只挂在旧的 curated preset 上，taxonomy 路径整套引擎拿不到
-        # ——「目录↔taxonomy 两套词汇表」老病的新形态。
+        # Effect adoption is independent of taxonomy selection.
         writing_profile_overrides={"hype": _synthesized_hype_block(resolved)},
     )
 

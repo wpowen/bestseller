@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 import pytest
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import MissingGreenlet
+from sqlalchemy.sql import visitors
 
 from bestseller.domain.chapter_generation_input import ChapterGenerationInputBundle
 from bestseller.domain.context import SceneWriterContextPacket
@@ -20,6 +26,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     ExportArtifactModel,
     LlmRunModel,
+    PlanningArtifactVersionModel,
     ProjectModel,
     QualityScoreModel,
     RewriteTaskModel,
@@ -39,7 +46,6 @@ from bestseller.services.concept_lab import build_concept_lab_catalog
 from bestseller.services.truth_version import TruthVersionStaleError
 from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSafetyFinding
 from bestseller.settings import load_settings
-
 
 # Export fixtures need a chapter of realistic length, not realistic quality —
 # but they still pass through the terminal export gate. The old filler was
@@ -105,6 +111,36 @@ def build_filler_prose(sentences: int = 75) -> str:
 
 
 pytestmark = pytest.mark.unit
+
+# Rows created by common builders are the persisted side of these local fakes.
+# Retained-source readers select columns independently of the legacy ORM queues.
+_FIXTURE_ROWS: WeakValueDictionary[int, object] = WeakValueDictionary()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_fixture_rows():
+    _FIXTURE_ROWS.clear()
+    yield
+    _FIXTURE_ROWS.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_literary_advisory_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plumbing fixtures must not call a real literary critic provider."""
+    monkeypatch.setenv("LITSTYLE_LONGFORM_ADVISORY", "0")
+
+
+def test_service_conception_carries_packaging_promotion_to_project_creation() -> None:
+    """CLI/service creation must not discard the final packaging receipt."""
+
+    import inspect
+
+    source = inspect.getsource(pipeline_services.run_autowrite_pipeline)
+    conception_idx = source.index("if use_conception:")
+    create_idx = source.index("project = await create_project", conception_idx)
+    region = source[conception_idx:create_idx]
+
+    assert '"story_appeal": dict(conception_result.story_appeal)' in region
 
 
 def test_non_progressive_outline_replan_does_not_reuse_rejected_plan_artifact() -> None:
@@ -1068,7 +1104,22 @@ def test_latest_quality_report_is_not_clean_when_violation_severity_blocks() -> 
     assert pipeline_services._latest_quality_report_is_clean(report) is False
 
 
-def test_current_auto_repair_codes_include_fresh_metadata_audit_findings() -> None:
+def _configure_ending_hook_action(monkeypatch: pytest.MonkeyPatch, action: str) -> None:
+    from bestseller.services.write_gate import GateConfig
+
+    config = pipeline_services.get_quality_gates_config()
+    selected = replace(config, l6_gate=GateConfig(
+        mode_by_violation={**config.l6_gate.mode_by_violation, "ENDING_HOOK_MISSING": action},
+        default=config.l6_gate.default,
+    ))
+    monkeypatch.setattr(pipeline_services, "get_quality_gates_config", lambda: selected)
+
+
+@pytest.mark.parametrize("action", ["block", "audit_only"])
+def test_current_auto_repair_codes_include_fresh_metadata_audit_findings(
+    monkeypatch: pytest.MonkeyPatch, action: str,
+) -> None:
+    _configure_ending_hook_action(monkeypatch, action)
     chapter = SimpleNamespace(
         metadata_json={
             "auto_repair_last_block_codes": ["PAYOFF_LEDGER_LOW"],
@@ -1084,16 +1135,25 @@ def test_current_auto_repair_codes_include_fresh_metadata_audit_findings() -> No
         }
     )
 
+    original_report = deepcopy(chapter.metadata_json["deterministic_audit_latest"])
     codes = pipeline_services._current_auto_repair_block_codes(chapter)
 
-    assert codes == (
-        "PAYOFF_LEDGER_LOW",
-        "ENDING_HOOK_MISSING",
-    )
+    if action == "block":
+        assert codes == (
+            "PAYOFF_LEDGER_LOW",
+            "ENDING_HOOK_MISSING",
+        )
+    else:
+        assert codes == ("PAYOFF_LEDGER_LOW",)
+    assert chapter.metadata_json["deterministic_audit_latest"] == original_report
 
 
 @pytest.mark.asyncio
-async def test_stop_auto_repair_preserves_deterministic_audit_blocks() -> None:
+@pytest.mark.parametrize("action", ["block", "audit_only"])
+async def test_stop_auto_repair_preserves_deterministic_audit_blocks(
+    monkeypatch: pytest.MonkeyPatch, action: str,
+) -> None:
+    _configure_ending_hook_action(monkeypatch, action)
     chapter = SimpleNamespace(
         id=uuid4(),
         production_state="pending",
@@ -1117,13 +1177,19 @@ async def test_stop_auto_repair_preserves_deterministic_audit_blocks() -> None:
     )
     session = FakeSession(scalar_results=[report])
 
+    original_report = deepcopy(chapter.metadata_json["deterministic_audit_latest"])
     stopped = await pipeline_services._stop_auto_repair_if_latest_quality_clean(
         session,
         chapter,
     )
 
-    assert stopped is False
-    assert chapter.metadata_json["auto_repair_in_progress"] is True
+    if action == "block":
+        assert stopped is False
+        assert chapter.metadata_json["auto_repair_in_progress"] is True
+    else:
+        assert stopped is True
+        assert "auto_repair_in_progress" not in chapter.metadata_json
+    assert chapter.metadata_json["deterministic_audit_latest"] == original_report
 
 
 @pytest.mark.asyncio
@@ -1136,6 +1202,34 @@ async def test_stop_auto_repair_preserves_other_hard_gate_blocks() -> None:
         metadata_json={
             "auto_repair_in_progress": True,
             "blocked_by_write_safety_gate": True,
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=False,
+        report_json={"violations": [], "blocking_codes": []},
+    )
+    session = FakeSession(scalar_results=[report])
+
+    stopped = await pipeline_services._stop_auto_repair_if_latest_quality_clean(
+        session,
+        chapter,
+    )
+
+    assert stopped is False
+    assert chapter.production_state == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_stop_auto_repair_preserves_unrealized_story_effect_block() -> None:
+    chapter = SimpleNamespace(
+        id=uuid4(),
+        production_state="blocked",
+        metadata_json={
+            "auto_repair_in_progress": True,
+            "effect_realization_blocked": True,
+            "story_effect_realization_block_codes": [
+                "STORY_EFFECT_REALIZATION_UNREALIZED"
+            ],
         },
     )
     report = SimpleNamespace(
@@ -1184,6 +1278,10 @@ class FakeSession:
         self.executed: list[object] = []
         self.is_active = True
         self.rollback_calls = 0
+        self.no_autoflush = nullcontext()
+        self.dirty: set[object] = set()
+        self.new: set[object] = set()
+        self.deleted: set[object] = set()
 
     def begin_nested(self):
         class _NoopNestedTransaction:
@@ -1206,25 +1304,91 @@ class FakeSession:
             if getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid4())
 
+    async def refresh(self, obj: object, attribute_names=None, **kwargs) -> None:
+        return None
+
+    def _persisted_rows(self, stmt):
+        descriptions = getattr(stmt, "column_descriptions", [])
+        model = descriptions[0].get("entity") if descriptions else None
+        if model is None or not hasattr(model, "__mapper__"):
+            return []
+        from sqlalchemy.orm.evaluator import _EvaluatorCompiler
+
+        mapper = sa_inspect(model)
+
+        def mapped_column(node):
+            if getattr(node, "table", None) is model.__table__:
+                return node._annotate({"parentmapper": mapper})
+            return None
+        criteria = [
+            visitors.replacement_traverse(c, {}, mapped_column)
+            for c in stmt._where_criteria
+        ]
+        matches = _EvaluatorCompiler().process(*criteria)
+        return list({
+            id(row): row for row in [*_FIXTURE_ROWS.values(), *self.get_map.values(), *self.added]
+            if isinstance(row, model) and matches(row)
+        }.values())
+
     async def scalar(self, stmt: object) -> object | None:
+        if stmt.get_execution_options().get("populate_existing") and (
+            stmt.column_descriptions[0].get("entity") in {ProjectModel, ChapterModel}
+        ):
+            rows = self._persisted_rows(stmt)
+            return rows[0] if rows else None
+        descriptions = getattr(stmt, "column_descriptions", [])
+        entity = descriptions[0].get("entity") if descriptions else None
+        if entity is PlanningArtifactVersionModel and (
+            not self.scalar_results
+            or not isinstance(
+                self.scalar_results[0], (PlanningArtifactVersionModel, type(None))
+            )
+        ):
+            # An independent planning read cannot consume a draft/count response.
+            rows = self._persisted_rows(stmt)
+            return rows[0] if rows else None
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
 
     async def scalars(self, stmt: object) -> list[object]:
+        if stmt.get_execution_options().get("populate_existing") and (
+            stmt.column_descriptions[0].get("entity") in {SceneCardModel, PlanningArtifactVersionModel}
+        ):
+            return self._persisted_rows(stmt)
         if not self.scalars_results:
             return []
         return self.scalars_results.pop(0)
 
     async def get(self, model: object, key: object) -> object | None:
-        return self.get_map.get((model, key))
+        if (model, key) in self.get_map:
+            return self.get_map[model, key]
+        return next((row for row in [*_FIXTURE_ROWS.values(), *self.added]
+                     if isinstance(row, model) and row.id == key), None)
 
-    async def execute(self, *args: object, **kwargs: object) -> None:
+    async def execute(self, *args: object, **kwargs: object):
         if args:
-            self.executed.append(args[0])
+            stmt = args[0]
+            self.executed.append(stmt)
+            descriptions = getattr(stmt, "column_descriptions", [])
+            model = descriptions[0].get("entity") if descriptions else None
+            if model is not None and hasattr(model, "__mapper__"):
+                keys = [attribute.key for attribute in sa_inspect(model).column_attrs]
+                if [item["name"] for item in descriptions] == keys:
+                    rows = self._persisted_rows(stmt)
+                    return FakeExecuteRows([
+                        {key: getattr(row, key) for key in keys}
+                        for row in rows
+                    ])
+            if (model is ChapterDraftVersionModel
+                    and [item["name"] for item in descriptions] == ["chapter_id", "content_md"]):
+                return FakeExecuteRows([
+                    (row.chapter_id, row.content_md)
+                    for row in self._persisted_rows(stmt)
+                ])
         if self.execute_results:
             return self.execute_results.pop(0)
-        return None
+        return FakeExecuteRows([])
 
     async def rollback(self) -> None:
         self.rollback_calls += 1
@@ -1301,7 +1465,17 @@ class FakeExecuteRows:
     def __init__(self, rows: list[tuple[object, ...]]) -> None:
         self._rows = list(rows)
 
+    def __iter__(self):
+        return iter(self._rows)
+
     def all(self) -> list[tuple[object, ...]]:
+        return list(self._rows)
+
+    def one_or_none(self):
+        assert len(self._rows) <= 1
+        return self._rows[0] if self._rows else None
+
+    def mappings(self):
         return list(self._rows)
 
 
@@ -1313,19 +1487,50 @@ class FakeScalarOneOrNone:
         return self.value
 
 
+def build_hook_creation_intent(
+    project: ProjectModel, hook_spec: dict, *, explicit: bool = True,
+) -> dict:
+    from bestseller.services.book_design import ensure_project_book_design_snapshot
+    from bestseller.services.creation_intent_contract import build_creation_intent_contract
+
+    # Preserve the project's existing inferred genre; only the hook's selection
+    # is explicit. Use the production factory so required fields stay complete.
+    genre = ensure_project_book_design_snapshot(project).creation_intent.genre_intent
+    return build_creation_intent_contract(
+        genre,
+        chapter_count=project.target_chapters,
+        language=project.language,
+        hook_spec=hook_spec,
+        field_sources={"hook_spec": "explicit" if explicit else "legacy"},
+    ).model_dump(mode="json")
+
+
+def build_chapter_review_result(verdict: str, severity_max: str) -> ChapterReviewResult:
+    return ChapterReviewResult(
+        verdict=verdict,
+        severity_max=severity_max,
+        scores=ChapterReviewScores(**dict.fromkeys(ChapterReviewScores.model_fields, 0.0)),
+    )
+
+
 def build_settings():
     settings = load_settings(env={})
+    settings.llm.mock = True
     # Most tests in this module exercise downstream chapter-pipeline behavior
     # with deliberately skeletal outline fixtures. Keep the new whole-book
     # promotion gate out of those unrelated fixtures; dedicated semantic-gate
     # tests below cover the hard-block contract explicitly.
     settings.pipeline.enable_outline_semantic_gate = False
     settings.pipeline.enable_rolling_outline = False
+    # These fixtures do not model the fanqie repository/model dependencies.
+    # Gate integration tests opt in below with an explicit stub (including
+    # the required-review failure path); production settings stay unchanged.
+    settings.pipeline.enable_fanqie_long_ranking_gate = False
     return settings
 
 
 def test_progressive_volume_block_continue_defaults_to_sequential() -> None:
-    settings = build_settings()
+    settings = _disable_optional_chapter_review_llm(build_settings())
 
     assert settings.pipeline.progressive_continue_after_volume_block is False
 
@@ -1343,15 +1548,17 @@ async def test_load_prior_incomplete_chapter_numbers_flags_status_and_draft_gaps
         execute_results=[
             FakeExecuteRows(
                 [
-                    (1, "ok", {}, 1),
+                    (1, "complete", "ok", {}, 1),
                     (
                         2,
+                        "revision",
                         "blocked",
                         {"blocked_by_material_referential_integrity_gate": True},
                         1,
                     ),
-                    (3, "ok", {}, 0),
-                    (4, "pending", {}, 0),
+                    (3, "complete", "ok", {}, 0),
+                    (4, "drafting", "pending", {}, 0),
+                    (5, "complete", "blocked", {}, 1),
                 ]
             )
         ]
@@ -1363,11 +1570,19 @@ async def test_load_prior_incomplete_chapter_numbers_flags_status_and_draft_gaps
         before_chapter_number=5,
     )
 
-    assert result == [2, 3, 4]
+    assert result == [2, 3, 4, 5]
+    assert len(session.executed) == 1
+    assert [column.key for column in session.executed[0].selected_columns] == [
+        "chapter_number",
+        "status",
+        "production_state",
+        "metadata",
+        "current_draft_count",
+    ]
 
 
 @pytest.mark.asyncio
-async def test_load_prior_incomplete_chapter_numbers_ignores_local_blocks_with_drafts() -> None:
+async def test_load_prior_incomplete_chapter_numbers_allows_only_local_blocks_with_current_bodies() -> None:
     project_id = uuid4()
     session = FakeSession(
         execute_results=[
@@ -1375,6 +1590,7 @@ async def test_load_prior_incomplete_chapter_numbers_ignores_local_blocks_with_d
                 [
                     (
                         86,
+                        "revision",
                         "blocked",
                         {
                             "blocked_by_write_safety_gate": True,
@@ -1384,11 +1600,12 @@ async def test_load_prior_incomplete_chapter_numbers_ignores_local_blocks_with_d
                     ),
                     (
                         87,
+                        "revision",
                         "blocked",
                         {"blocked_by_material_referential_integrity_gate": True},
                         1,
                     ),
-                    (88, "ok", {}, 1),
+                    (88, "complete", "ok", {}, 1),
                 ]
             )
         ]
@@ -1455,6 +1672,16 @@ def _disable_chapter_length_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         pipeline_module, "get_quality_gates_config", _patched, raising=False
     )
+
+
+def _disable_optional_chapter_review_llm(settings: Any) -> Any:
+    """Keep chapter pipeline fixtures local when testing promotion plumbing."""
+
+    settings.pipeline.enable_chapter_llm_commercial_judge = False
+    settings.pipeline.enable_chapter_litstyle_judge = False
+    settings.pipeline.enable_chapter_window_llm_judge = False
+    settings.pipeline.enable_volume_llm_checkpoint_judge = False
+    return settings
 
 
 def test_project_story_bible_root_prefers_mode_b_layout(tmp_path: Path) -> None:
@@ -1525,14 +1752,14 @@ async def test_resume_outline_chapters_for_volume_requires_expected_count(
         },
     )()
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type):
         assert artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH
         return artifact
 
     monkeypatch.setattr(
         pipeline_services,
-        "get_latest_planning_artifact",
-        fake_get_latest_planning_artifact,
+        "get_latest_approved_planning_artifact",
+        fake_get_latest_approved_planning_artifact,
     )
 
     enough = await pipeline_services._resume_outline_chapters_for_volume(
@@ -1585,6 +1812,17 @@ def build_project() -> ProjectModel:
         },
     )
     project.id = uuid4()
+    project.language = "zh-CN"
+    from bestseller.services.invariants import invariants_to_dict, seed_invariants
+
+    # A persisted project already owns its technical contract. This does not
+    # assert any outline/body/review readiness or authorize content adoption.
+    project.invariants_json = invariants_to_dict(seed_invariants(
+        project_id=project.id,
+        language=project.language,
+        words_per_chapter=load_settings(env={}).generation.words_per_chapter,
+    ))
+    _FIXTURE_ROWS[id(project)] = project
     return project
 
 
@@ -1611,6 +1849,7 @@ def build_chapter(project_id) -> ChapterModel:
         target_word_count=3000,
     )
     chapter.id = uuid4()
+    _FIXTURE_ROWS[id(chapter)] = chapter
     return chapter
 
 
@@ -1713,7 +1952,7 @@ async def test_deterministic_length_trim_before_export_clears_sole_overlength_bl
 
 
 @pytest.mark.asyncio
-async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
+async def test_deterministic_detector_does_not_rewrite_body_or_clear_hook_block(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from bestseller.services import chapter_quality_bundle
@@ -1786,20 +2025,12 @@ async def test_deterministic_hook_echo_bridge_before_review_clears_hook_block(
         chapter_number=5,
     )
 
-    assert applied is True
-    assert "名单、回执、陆临聘和加密频没有消失" in draft.content_md
-    assert chapter.production_state == "ok"
-    assert chapter.metadata_json["quality_bundle"] == {
-        "passed": True,
-        "blocking_codes": [],
-    }
-    assert "quality_bundle_blocking_codes" not in chapter.metadata_json
-    assert "chapter_review_attempts_active" not in chapter.metadata_json
-    assert draft.word_count == pipeline_services.authoritative_word_count_for_language(
-        draft.content_md,
-        language=project.language,
-    )
-    assert draft.word_count < draft_services.count_words(draft.content_md)
+    assert applied is False
+    assert draft.content_md == "# 第5章 加密频\n\n陆沉推开门。" + (" latin" * 5000)
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["quality_bundle_blocking_codes"] == ["HOOK_ECHO_MISSING"]
+    assert chapter.metadata_json["chapter_review_attempts_active"] == 2
+    assert calls["count"] == 0
 
 
 def build_scene(project_id, chapter_id) -> SceneCardModel:
@@ -1821,6 +2052,7 @@ def build_scene(project_id, chapter_id) -> SceneCardModel:
         target_word_count=1000,
     )
     scene.id = uuid4()
+    _FIXTURE_ROWS[id(scene)] = scene
     return scene
 
 
@@ -2059,7 +2291,7 @@ def test_chapter_first_prompt_prioritizes_previous_chapter_ending() -> None:
 
     assert "【上一章硬承接（最高优先级）】" in user_prompt
     assert "优先于本章旧细纲" in user_prompt
-    assert "已被镜面带走后生死未明" in user_prompt
+    assert "被镜面带走后生死未明" in user_prompt
     assert "人影一闪，消失在镜子碎裂的那片白光里" in user_prompt
     assert user_prompt.index("【上一章硬承接（最高优先级）】") < user_prompt.index("【章节目标】")
 
@@ -2222,7 +2454,7 @@ def test_chapter_first_prompt_includes_character_knowledge_boundary() -> None:
     assert "【角色认知边界】" in user_prompt
     assert "张建军" in user_prompt
     assert "角色的对话和行为不得超越其认知边界" in user_prompt
-    assert "非专业角色只能描述自己亲眼看见的异常" in user_prompt
+    assert "非专业角色只能描述自己亲眼看见的异常" not in user_prompt
 
 
 def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms() -> None:
@@ -2284,14 +2516,13 @@ def test_chapter_first_prompt_enforces_scene_opening_and_front10_forbidden_terms
 
     assert "【开场场景指导】" in user_prompt
     assert "第一段建议从这里开写" in user_prompt
-    assert "前200字应当出现第一场的地点/人物/异常" in user_prompt
+    assert "开篇定位服从当前场景与已选择的叙述风格" in user_prompt
     assert "【前十章禁写与物件信号硬约束】" in user_prompt
     assert "系统门禁已登记" in user_prompt
     assert "不要复述禁写清单" in user_prompt
     # 去同质化 P0-1: genre-neutral phrasing (was "家族本名" — one book's lineage motif)
-    assert "人物本名" in user_prompt
-    assert "允许电话/短信作为同一 POV 内的现实沟通工具" in user_prompt
-    assert "不得引入额外活人 NPC（快递员/配送员等）" in user_prompt
+    assert "任何卷级真相、人物本名" not in user_prompt
+    assert "不得引入额外活人 NPC" not in user_prompt
     assert "铜钱发烫" not in user_prompt
 
 
@@ -2352,7 +2583,7 @@ def test_chapter_first_prompt_treats_scene_cards_as_hidden_nodes() -> None:
     assert "全文建议22-32段" not in user_prompt
     assert "每场5-8段" not in user_prompt
     # hard_max for the zh band is 3500 (target 2600 → band 1800-2600-3500).
-    assert "超过3500字" in user_prompt
+    assert "1800-3500" in user_prompt
     assert "地图给出的既成入场、必须变化和禁用项是边界" in user_prompt
     # 去同质化 P0-1: the escalation guard is genre-neutral now (no one book's
     # horror beats baked into the universal writer prompt).
@@ -2416,7 +2647,7 @@ def test_generated_chapter_cleanup_preserves_duplicates_when_dedup_would_underfl
     assert draft_services.count_words(cleaned) == before
 
 
-def test_chapter_review_flags_phone_prelude_when_first_scene_is_in_person() -> None:
+def test_chapter_review_does_not_infer_phone_prohibition_from_scene_plan() -> None:
     chapter = build_chapter(uuid4())
     chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
     scene = build_scene(uuid4(), uuid4())
@@ -2432,8 +2663,7 @@ def test_chapter_review_flags_phone_prelude_when_first_scene_is_in_person() -> N
         "电话响第三遍的时候，林渊正在翻青囊。来电显示王建业。",
     )
 
-    assert any(finding.category == "opening_contract" for finding in findings)
-    assert any("OPENING_SCENE_DRIFT" in finding.message for finding in findings)
+    assert findings == []
 
 
 def test_front10_contract_gate_blocks_phone_drift_and_forbidden_signal() -> None:
@@ -2571,9 +2801,17 @@ def test_generated_chapter_cleanup_collapses_llm_text_loops() -> None:
     assert "镜面裂开一道缝" in cleaned
 
 
-def test_chapter_rewrite_prompt_preserves_front10_opening_contract() -> None:
+@pytest.mark.parametrize("explicit_hook", [True, False])
+def test_chapter_rewrite_prompt_preserves_front10_opening_contract(explicit_hook: bool) -> None:
     project = build_project()
     project.language = "zh-CN"
+    project.metadata_json = {
+        **project.metadata_json,
+        "creation_intent_contract": build_hook_creation_intent(project, {
+            "require_methodology_overlay": True,
+            "methodology_contract_mode": "strict",
+        }, explicit=explicit_hook),
+    }
     chapter = build_chapter(project.id)
     chapter.target_word_count = 2600
     chapter.opening_situation = "23:43，林渊赶到十七栋楼下，王建业站在雨棚下等他。"
@@ -2633,11 +2871,16 @@ def test_chapter_rewrite_prompt_preserves_front10_opening_contract() -> None:
         chapter_context,
     )
 
-    assert "【前十章重写硬合同】" in user_prompt
-    assert "第一段必须重新落到这个开场场面" in user_prompt
-    assert "前500字不得突然新增电话" in user_prompt
-    assert "来源、转交人、可信原因和到场动机" in user_prompt
-    assert "铜钱发烫" in user_prompt
+    if explicit_hook:
+        assert "【前十章重写硬合同】" in user_prompt
+        assert "第一段必须重新落到这个开场场面" in user_prompt
+        assert "铜钱发烫" in user_prompt
+    else:
+        assert "【前十章重写硬合同】" not in user_prompt
+        assert "第一段必须重新落到这个开场场面" not in user_prompt
+        assert "铜钱发烫" not in user_prompt
+    assert "前500字不得突然新增电话" not in user_prompt
+    assert "血点、影子错位或指针偏移" not in user_prompt
 
 
 def test_chapter_auto_repair_length_contract_allows_dynamic_publish_range() -> None:
@@ -3499,9 +3742,11 @@ async def test_review_scene_draft_creates_rewrite_task_for_low_score(
         get_map={(StyleGuideModel, project.id): style},
     )
 
+    settings = build_settings()
+    settings.quality.enable_llm_scene_commentary = False
     result, report, quality, rewrite_task = await review_services.review_scene_draft(
         session,
-        build_settings(),
+        settings,
         "my-story",
         1,
         1,
@@ -3542,7 +3787,7 @@ async def test_rewrite_scene_from_task_creates_new_version(
         status="pending",
         instructions="补强冲突和对话",
         context_required=[],
-        metadata_json={},
+        metadata_json=review_services.rewrite_source_binding(scene_draft),
     )
     rewrite_task.id = uuid4()
     rewrite_task.attempts = 0
@@ -3554,6 +3799,7 @@ async def test_rewrite_scene_from_task_creates_new_version(
     session = FakeSession(
         scalar_results=[chapter, scene, scene_draft, rewrite_task, 1],
         get_map={(StyleGuideModel, project.id): style},
+        execute_results=[FakeExecuteRows([]), FakeExecuteRows([(scene_draft.id, scene_draft.content_md)])],
     )
 
     new_draft, completed_task = await review_services.rewrite_scene_from_task(
@@ -3688,6 +3934,9 @@ async def test_export_project_closure_draft_uses_current_quality_debt_without_we
 ) -> None:
     project = build_project()
     project.language = "zh-CN"
+    # This fixture exercises a complete one-chapter debt draft, not a partial
+    # book (the shared project factory otherwise requests thirty chapters).
+    project.target_chapters = 1
     chapter = build_chapter(project.id)
     chapter.status = "revision"
     chapter.production_state = "quality_debt"
@@ -4155,6 +4404,24 @@ async def test_generate_scene_draft_with_settings_records_llm_run(
 
     settings = build_settings()
     settings.llm.mock = True
+
+    # This FakeSession covers LLM run recording; native source/cache lifecycle
+    # uses real SQLite in test_story_bible_read_views instead.
+    from bestseller.services import narrative_tree, retrieval
+
+    async def fake_ensure_index(actual_session, actual_settings, project_id):
+        assert actual_session is session and actual_settings is settings
+        assert project_id == project.id
+        return 0
+
+    monkeypatch.setattr(retrieval, "ensure_project_retrieval_index", fake_ensure_index)
+
+    async def fake_ensure_tree(actual_session, actual_project, *, settings=None):
+        assert actual_session is session and actual_project is project
+        assert settings is not None
+        return 0
+
+    monkeypatch.setattr(narrative_tree, "ensure_project_narrative_tree", fake_ensure_tree)
 
     async def fake_load_identity_registry(*args, **kwargs):
         return [
@@ -4791,6 +5058,12 @@ async def test_run_chapter_pipeline_assembles_and_exports(
     tmp_path: Path,
 ) -> None:
     _disable_chapter_length_gate(monkeypatch)
+    # Positive orchestration fixtures must include actual adoption, not only a critic pass.
+    async def adopt_reviewed_version(*args, **kwargs):
+        kwargs["draft"].promotion_state = "promoted"
+        return True, None
+
+    monkeypatch.setattr(pipeline_services, "_promote_reviewed_chapter_draft", adopt_reviewed_version)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -4814,7 +5087,20 @@ async def test_run_chapter_pipeline_assembles_and_exports(
         version_label="chapter-001-v1",
     )
     export_artifact.id = uuid4()
-    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    report = type(
+        "ChapterReportStub",
+        (),
+        {
+            "id": uuid4(),
+            "llm_run_id": uuid4(),
+            "structured_output": {
+                "draft_id": str(chapter_draft.id),
+                "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(
+                    chapter_draft.content_md
+                ),
+            },
+        },
+    )()
     quality = type("ChapterQualityStub", (), {"id": uuid4()})()
 
     async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
@@ -4869,11 +5155,7 @@ async def test_run_chapter_pipeline_assembles_and_exports(
         **kwargs,
     ):
         return (
-            type(
-                "ChapterReviewResultStub",
-                (),
-                {"verdict": "pass", "severity_max": "low"},
-            )(),
+            build_chapter_review_result('pass', 'low'),
             report,
             quality,
             None,
@@ -4881,6 +5163,9 @@ async def test_run_chapter_pipeline_assembles_and_exports(
 
     async def fake_retention_noop(*args, **kwargs) -> None:
         pass
+
+    async def fake_state_snapshot(*args, **kwargs):
+        return None
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
@@ -4897,6 +5182,7 @@ async def test_run_chapter_pipeline_assembles_and_exports(
         "run_final_quality_gates",
         lambda **_: pipeline_services.FinalQualityGateResult(passed=True),
     )
+    monkeypatch.setattr(pipeline_services, "extract_chapter_state_snapshot", fake_state_snapshot)
 
     session = FakeSession(
         scalar_results=[chapter],
@@ -4904,7 +5190,7 @@ async def test_run_chapter_pipeline_assembles_and_exports(
     )
     result = await pipeline_services.run_chapter_pipeline(
         session,
-        build_settings(),
+        _disable_optional_chapter_review_llm(build_settings()),
         "my-story",
         1,
         requested_by="tester",
@@ -5006,6 +5292,131 @@ async def test_run_chapter_pipeline_blocks_chapter_first_on_predraft_gate(
     assert chapter.production_state == "blocked"
     assert chapter.metadata_json["blocked_by_chapter_predraft_quality_gate"] is True
     assert workflow_runs[0].status == "machine_blocked"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resume_enabled", "has_current", "supersede_pending_rewrites", "expect_generate"),
+    [
+        (True, True, False, False),
+        (True, False, False, True),
+        (False, True, False, True),
+        (True, True, True, True),
+    ],
+)
+async def test_chapter_first_resume_reviews_current_draft_without_regenerating(
+    monkeypatch: pytest.MonkeyPatch,
+    resume_enabled: bool,
+    has_current: bool,
+    supersede_pending_rewrites: bool,
+    expect_generate: bool,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=5,
+        content_md="第二章已有候选正文，应该沿用并进入评审。",
+        word_count=3479,
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    calls = {"generate": 0, "review": 0}
+    generated_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=6,
+        content_md="重新生成的章节正文。",
+        word_count=3000,
+        is_current=True,
+    )
+    generated_draft.id = uuid4()
+    active_draft = current_draft if has_current and not supersede_pending_rewrites else generated_draft
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_generate(*args, **kwargs):
+        calls["generate"] += 1
+        return generated_draft
+
+    async def fake_review(*args, **kwargs):
+        calls["review"] += 1
+        report = type(
+            "ChapterReportStub",
+            (),
+            {
+                "id": uuid4(),
+                "llm_run_id": uuid4(),
+                "structured_output": {
+                    "draft_id": str(active_draft.id),
+                    "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(
+                        active_draft.content_md
+                    ),
+                },
+            },
+        )()
+        quality = type("ChapterQualityStub", (), {"id": uuid4()})()
+        return build_chapter_review_result('pass', 'low'), report, quality, None
+
+    async def fake_retention(*args, **kwargs) -> None:
+        return None
+
+    async def fake_snapshot(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    # This resume fixture has no prefix artifact; keep its draft-only scalar
+    # fake from returning a chapter draft for the independent planning query.
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_approved_planning_artifact", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(pipeline_services, "generate_chapter_draft_once", fake_generate)
+    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review)
+    monkeypatch.setattr(pipeline_services, "_evaluate_retention_safety_after_assembly", fake_retention)
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_final_quality_gates",
+        lambda **_: pipeline_services.FinalQualityGateResult(passed=True),
+    )
+    monkeypatch.setattr(pipeline_services, "extract_chapter_state_snapshot", fake_snapshot)
+
+    settings = _disable_optional_chapter_review_llm(build_settings())
+    settings.pipeline.enable_chapter_outline_readiness_gate = False
+    settings.pipeline.enable_chapter_predraft_quality_gate = False
+    settings.pipeline.resume_enabled = resume_enabled
+
+    class ResumeSession(FakeSession):
+        async def scalar(self, stmt):
+            entity = stmt.column_descriptions[0]["entity"]
+            if entity is ChapterDraftVersionModel and stmt.column_descriptions[0]["name"] == "id":
+                return None  # The current candidate has no formal promotion.
+            if entity is not ChapterDraftVersionModel:
+                if entity is ChapterModel and not stmt.get_execution_options().get("populate_existing"):
+                    return chapter
+                return await super().scalar(stmt)
+            # The chapter lookup is the only pre-draft scalar in this setup;
+            # subsequent current-draft lookup must return the candidate.
+            return current_draft if has_current else None
+
+    session = ResumeSession(scalars_results=[[scene]])
+
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        chapter_first=True,
+        supersede_pending_rewrites=supersede_pending_rewrites,
+    )
+
+    if not expect_generate:
+        assert result.chapter_draft_id == active_draft.id
+    assert calls == {"generate": int(expect_generate), "review": 1}
 
 
 @pytest.mark.asyncio
@@ -5147,11 +5558,19 @@ async def test_run_chapter_pipeline_short_circuits_after_retention_budget_exhaus
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("gate_raises", [False, True])
 async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    gate_raises: bool,
 ) -> None:
     _disable_chapter_length_gate(monkeypatch)
+    # Positive orchestration fixtures must include actual adoption, not only a critic pass.
+    async def adopt_reviewed_version(*args, **kwargs):
+        kwargs["draft"].promotion_state = "promoted"
+        return True, None
+
+    monkeypatch.setattr(pipeline_services, "_promote_reviewed_chapter_draft", adopt_reviewed_version)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -5229,14 +5648,29 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
         **kwargs,
     ):
         return (
-            type("ChapterReviewResultStub", (), {"verdict": "pass", "severity_max": "low"})(),
-            type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})(),
+            build_chapter_review_result('pass', 'low'),
+            type(
+                "ChapterReportStub",
+                (),
+                {
+                    "id": uuid4(),
+                    "llm_run_id": uuid4(),
+                    "structured_output": {
+                        "draft_id": str(chapter_draft.id),
+                        "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(
+                            chapter_draft.content_md
+                        ),
+                    },
+                },
+            )(),
             type("ChapterQualityStub", (), {"id": uuid4()})(),
             None,
         )
 
     async def fake_fanqie_gate(session, **kwargs):
         gate_calls.append(kwargs["chapter_number"])
+        if gate_raises:
+            raise RuntimeError("simulated required review outage")
         return {
             "artifact_id": "fanqie-gate-1",
             "passed": True,
@@ -5249,6 +5683,9 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     async def fake_retention_noop(*args, **kwargs) -> None:
         pass
 
+    async def fake_state_snapshot(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
@@ -5260,9 +5697,11 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
         "_evaluate_retention_safety_after_assembly",
         fake_retention_noop,
     )
+    monkeypatch.setattr(pipeline_services, "extract_chapter_state_snapshot", fake_state_snapshot)
 
-    settings = build_settings()
+    settings = _disable_optional_chapter_review_llm(build_settings())
     settings.pipeline.enable_fanqie_long_ranking_gate = True
+    settings.pipeline.fanqie_long_ranking_block_on_failure = True
     session = FakeSession(
         scalar_results=[chapter],
         scalars_results=[[scene]],
@@ -5279,10 +5718,20 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
     steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
     fanqie_steps = [step for step in steps if step.step_name == "fanqie_long_ranking_gate"]
 
-    assert result.requires_human_review is False
     assert gate_calls == [1]
-    assert fanqie_steps
-    assert fanqie_steps[0].output_ref["passed"] is True
+    if gate_raises:
+        assert result.requires_human_review is True
+        assert chapter.status != "complete"
+        workflow = next(obj for obj in session.added if isinstance(obj, WorkflowRunModel))
+        assert workflow.metadata_json["blocked_by_fanqie_long_ranking_gate"] is True
+        assert workflow.metadata_json["fanqie_long_ranking_gate"]["error"] == "review_unavailable"
+        assert workflow.metadata_json["fanqie_long_ranking_gate"]["chapter_draft_id"] == str(
+            chapter_draft.id
+        )
+    else:
+        assert result.requires_human_review is False
+        assert fanqie_steps
+        assert fanqie_steps[0].output_ref["passed"] is True
 
 
 @pytest.mark.asyncio
@@ -5631,7 +6080,7 @@ async def test_run_chapter_pipeline_repairs_scene_block_before_assembly(
             llm_run_ids=[],
         )
 
-    async def fake_prepare_auto_repair(session, *, project, chapter, repairable_codes, attempt_number=1):
+    async def fake_prepare_auto_repair(session, *, settings, project, chapter, repairable_codes, attempt_number=1):
         chapter.production_state = "pending"
         scene.status = "needs_rewrite"
         return True, ("character_resurrection",)
@@ -5660,7 +6109,7 @@ async def test_run_chapter_pipeline_repairs_scene_block_before_assembly(
         **kwargs,
     ):
         return (
-            type("ChapterReviewResultStub", (), {"verdict": "pass", "severity_max": "low"})(),
+            build_chapter_review_result("pass", "low"),
             report,
             quality,
             None,
@@ -5694,11 +6143,23 @@ async def test_run_chapter_pipeline_repairs_scene_block_before_assembly(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rewrite_outcome", ["completed", "failed", "cached_failed"])
 async def test_run_chapter_pipeline_rewrites_until_review_passes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    rewrite_outcome: str,
 ) -> None:
+    from contextlib import nullcontext
+
+    from bestseller.services.rewrite_patch import text_hash
+
     _disable_chapter_length_gate(monkeypatch)
+    # Positive orchestration fixtures must include actual adoption, not only a critic pass.
+    async def adopt_reviewed_version(*args, **kwargs):
+        kwargs["draft"].promotion_state = "promoted"
+        return True, None
+
+    monkeypatch.setattr(pipeline_services, "_promote_reviewed_chapter_draft", adopt_reviewed_version)
     project = build_project()
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -5722,11 +6183,55 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
         is_current=True,
     )
     rewritten_draft.id = uuid4()
-    first_report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
-    second_report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    first_report = type(
+        "ChapterReportStub",
+        (),
+        {
+            "id": uuid4(),
+            "llm_run_id": uuid4(),
+            "structured_output": {
+                "draft_id": str(initial_draft.id),
+                "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(
+                    initial_draft.content_md
+                ),
+            },
+        },
+    )()
+    second_report = type(
+        "ChapterReportStub",
+        (),
+        {
+            "id": uuid4(),
+            "llm_run_id": uuid4(),
+            "structured_output": {
+                "draft_id": str(rewritten_draft.id),
+                "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(
+                    rewritten_draft.content_md
+                ),
+            },
+        },
+    )()
     quality_a = type("ChapterQualityStub", (), {"id": uuid4()})()
     quality_b = type("ChapterQualityStub", (), {"id": uuid4()})()
-    rewrite_task = type("ChapterRewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
+    rewrite_task = SimpleNamespace(id=uuid4(), status="pending", project_id=project.id,
+        trigger_source_id=chapter.id, parent_task_id=None, attempts=0, metadata_json={}, error_log=None)
+    rejected = rewrite_outcome != "completed"
+    if rejected:
+        rewritten_draft.is_current = False
+        rewritten_draft.promotion_metadata = {"parent_draft_id": str(initial_draft.id),
+            "parent_draft_hash": text_hash(initial_draft.content_md)}
+        rewrite_task.metadata_json = {
+            "parent_draft_id": str(initial_draft.id), "parent_draft_hash": text_hash(initial_draft.content_md),
+            "preserved_current_chapter_draft_id": str(initial_draft.id),
+            "candidate_chapter_draft_id": str(rewritten_draft.id),
+            "candidate_chapter_draft_version_no": rewritten_draft.version_no,
+            "quality_gate_rejected_current_promotion": True,
+        }
+        if rewrite_outcome == "cached_failed":
+            rewrite_task.status = "failed"
+            rewrite_task.attempts = 1
+    rewrite_calls = []
+    checkpoints = []
     export_artifact = ExportArtifactModel(
         project_id=project.id,
         export_type="markdown",
@@ -5809,8 +6314,10 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
         chapter_number,
         **kwargs,
     ):
-        rewrite_task.status = "completed"
-        return rewritten_draft, rewrite_task
+        rewrite_calls.append(kwargs["rewrite_task_id"])
+        rewrite_task.status = "failed" if rejected else "completed"
+        rewrite_task.attempts += 1
+        return (initial_draft if rejected else rewritten_draft), rewrite_task
 
     async def fake_export_chapter_markdown(
         session,
@@ -5827,10 +6334,13 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
     async def fake_retention_noop(*args, **kwargs) -> None:
         pass
 
+    async def fake_state_snapshot(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
     monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
-    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "_review_chapter_with_evidence_retry", fake_review_chapter_draft)
     monkeypatch.setattr(
         pipeline_services,
         "rewrite_chapter_from_task",
@@ -5842,14 +6352,24 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
         "_evaluate_retention_safety_after_assembly",
         fake_retention_noop,
     )
+    monkeypatch.setattr(pipeline_services, "extract_chapter_state_snapshot", fake_state_snapshot)
 
     session = FakeSession(
         scalar_results=[chapter],
         scalars_results=[[scene]],
     )
+    session.no_autoflush = nullcontext()
+    session.get_map[(ChapterDraftVersionModel, rewritten_draft.id)] = rewritten_draft
+
+    async def observe_commit():
+        workflow = next((obj for obj in session.added if isinstance(obj, WorkflowRunModel)), None)
+        checkpoints.append((rewrite_task.status, bool(workflow and
+            (workflow.metadata_json or {}).get("chapter_rewrite_outcomes"))))
+
+    session.commit = observe_commit
     result = await pipeline_services.run_chapter_pipeline(
         session,
-        build_settings(),
+        _disable_optional_chapter_review_llm(build_settings()),
         "my-story",
         1,
         requested_by="tester",
@@ -5859,6 +6379,18 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
     workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
 
+    if rejected:
+        assert result.requires_human_review is True
+        assert result.chapter_draft_id == initial_draft.id
+        assert result.chapter_review_iterations == 1
+        assert len(rewrite_calls) == (0 if rewrite_outcome == "cached_failed" else 1)
+        assert rewrite_task.status == "failed" and rewrite_task.attempts == 1
+        assert initial_draft.is_current and not rewritten_draft.is_current
+        assert any(status == "failed" and saved for status, saved in checkpoints)
+        assert workflow_runs[0].status == "machine_blocked"
+        assert not getattr(project, "metadata_json", {}).get("execution_terminal")
+        return
+    assert ("completed", False) in checkpoints
     assert result.final_verdict == "pass"
     assert result.chapter_draft_id == rewritten_draft.id
     assert result.chapter_rewrite_iterations == 1
@@ -5872,7 +6404,11 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
     # 8 = the historical 7 chapter-loop steps + the warn-only
     # opening_golden_chapter_gate step (the synthetic ch1 draft has no
     # tension signal, so the advisory gate records its findings).
-    assert len(workflow_steps) == 8
+    style_steps = [step for step in workflow_steps if step.step_name == "ai_flavor_gate"]
+    assert len(style_steps) == 1
+    assert style_steps[0].output_ref["style_phase_receipt"]["state"] == "completed"
+    assert style_steps[0].output_ref["style_phase_receipt"]["phase"]["attempted_rounds"] == 0
+    assert len([step for step in workflow_steps if step.step_name != "ai_flavor_gate"]) == 8
     step_names = {step.step_name for step in workflow_steps}
     assert "opening_golden_chapter_gate" in step_names
 
@@ -5895,7 +6431,13 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
         is_current=True,
     )
     chapter_draft.id = uuid4()
-    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    report = type("ChapterReportStub", (), {
+        "id": uuid4(), "llm_run_id": uuid4(),
+        "structured_output": {
+            "draft_id": str(chapter_draft.id),
+            "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(chapter_draft.content_md),
+        },
+    })()
     quality = type("ChapterQualityStub", (), {"id": uuid4()})()
     rewrite_task = type("ChapterRewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
 
@@ -5939,7 +6481,7 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
         **kwargs,
     ):
         return (
-            type("ChapterReviewResultStub", (), {"verdict": "rewrite", "severity_max": "high"})(),
+            build_chapter_review_result('rewrite', 'high'),
             report,
             quality,
             rewrite_task,
@@ -6003,7 +6545,13 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
         is_current=True,
     )
     chapter_draft.id = uuid4()
-    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    report = type("ChapterReportStub", (), {
+        "id": uuid4(), "llm_run_id": uuid4(),
+        "structured_output": {
+            "draft_id": str(chapter_draft.id),
+            "reviewed_body_fingerprint": review_services.chapter_review_body_fingerprint(chapter_draft.content_md),
+        },
+    })()
     quality = QualityScoreModel(
         project_id=project.id,
         target_type="chapter",
@@ -6056,7 +6604,7 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
         **kwargs,
     ):
         return (
-            type("ChapterReviewResultStub", (), {"verdict": "rewrite", "severity_max": "high"})(),
+            build_chapter_review_result('rewrite', 'high'),
             report,
             quality,
             rewrite_task,
@@ -6099,8 +6647,10 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
     assert result.requires_human_review is True
     assert result.chapter_draft_id == chapter_draft.id
     assert chapter.status == "revision"
-    assert chapter.production_state == "quality_debt"
-    assert workflow_runs[0].status == "completed"
+    assert chapter.production_state == "blocked"
+    assert workflow_runs[0].status == "machine_blocked"
+    assert workflow_runs[0].current_step == "chapter_adoption_required"
+    assert workflow_runs[0].metadata_json["actual_adoption_receipt"]["adopted"] is False
     assert workflow_runs[0].metadata_json["requires_human_review"] is True
     assert workflow_runs[0].metadata_json["chapter_quality_debt"] is True
     assert workflow_runs[0].metadata_json["chapter_quality_debt_reason"] == (
@@ -6109,7 +6659,7 @@ async def test_run_chapter_pipeline_records_quality_debt_after_review_stall(
 
 
 @pytest.mark.asyncio
-async def test_best_chapter_draft_tie_prefers_target_and_syncs_chapter_word_count() -> None:
+async def test_unbound_legacy_score_tie_keeps_current_chapter_draft() -> None:
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.target_word_count = 2_600
@@ -6161,10 +6711,13 @@ async def test_best_chapter_draft_tie_prefers_target_and_syncs_chapter_word_coun
         project=None,
     )
 
-    assert selected.id == near_target.id
-    assert near_target.is_current is True
-    assert latest.is_current is False
-    assert chapter.current_word_count == 2_598
+    assert selected.id == latest.id
+    assert near_target.is_current is False
+    assert latest.is_current is True
+    assert chapter.current_word_count == 2_477
+    audit = chapter.metadata_json["deterministic_audit_best_draft_selection"][-1]
+    assert audit["context_error"] == "actual_review_settings_missing"
+    assert audit["chosen_draft_id"] == str(latest.id)
 
 
 @pytest.mark.asyncio
@@ -6213,6 +6766,8 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_machine_repa
         **kwargs,
     ):
         child_progress_callbacks.append(kwargs.get("progress"))
+        chapter.status = "revision"
+        chapter.production_state = "blocked"
         return chapter_result
 
     async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
@@ -6340,6 +6895,8 @@ async def test_run_project_pipeline_does_not_forge_unscoped_materials_before_can
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
@@ -6415,17 +6972,15 @@ async def test_run_project_pipeline_does_not_forge_unscoped_materials_before_can
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pause_mode, expected_calls", [(False, [1, 2]), (True, [1])])
+@pytest.mark.parametrize("pause_mode, expected_calls", [(False, [1]), (True, [1])])
 async def test_run_project_pipeline_review_flagged_chapter_pause_vs_continue(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     pause_mode: bool,
     expected_calls: list[int],
 ) -> None:
-    # Default (pause_mode=False): a chapter whose scenes only "require human
-    # review" no longer halts the whole book — the loop continues writing the
-    # remaining chapters and flags them. Legacy hard-pause is opt-in via
-    # ``whole_book_pause_on_scene_review=True`` (pause_mode=True → stops at [1]).
+    # A chapter requiring human review always halts a production book before
+    # the next chapter; draft mode is the explicit continuation path.
     project = build_project()
     chapter1 = build_chapter(project.id)
     chapter2 = build_chapter(project.id)
@@ -6457,6 +7012,8 @@ async def test_run_project_pipeline_review_flagged_chapter_pause_vs_continue(
         **kwargs,
     ):
         calls.append(chapter_number)
+        chapter1.status = "revision"
+        chapter1.production_state = "blocked"
         return pipeline_services.ChapterPipelineResult(
             workflow_run_id=uuid4(),
             project_id=project.id,
@@ -6593,6 +7150,8 @@ async def test_run_project_pipeline_materializes_and_exports(
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
@@ -6613,7 +7172,7 @@ async def test_run_project_pipeline_materializes_and_exports(
             type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
         )
 
-    async def fake_get_latest_planning_artifact(session, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, project_id, artifact_type):
         return object()
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
@@ -6654,8 +7213,8 @@ async def test_run_project_pipeline_materializes_and_exports(
     )
     monkeypatch.setattr(
         pipeline_services,
-        "get_latest_planning_artifact",
-        fake_get_latest_planning_artifact,
+        "get_latest_approved_planning_artifact",
+        fake_get_latest_approved_planning_artifact,
     )
 
     session = FakeSession()
@@ -6832,6 +7391,8 @@ async def test_run_project_pipeline_blocks_project_consistency_failure_despite_a
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
@@ -6947,6 +7508,8 @@ async def test_run_project_pipeline_warns_when_the_book_is_not_finished_yet(
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_review_project_consistency(
@@ -7035,6 +7598,8 @@ async def test_run_project_pipeline_warns_on_partial_project_consistency_failure
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_review_project_consistency(
@@ -7221,6 +7786,8 @@ async def test_run_project_pipeline_backfills_qimao_planning_contract_from_outli
     async def fake_run_chapter_pipeline(*args, **kwargs):
         nonlocal child_called
         child_called = True
+        chapter.status = "revision"
+        chapter.production_state = "blocked"
         return pipeline_services.ChapterPipelineResult(
             workflow_run_id=uuid4(),
             project_id=project.id,
@@ -7927,6 +8494,8 @@ async def test_run_project_pipeline_skips_opening_quality_gate_for_leftover_cont
         return [chapter]
 
     async def fake_run_chapter_pipeline(*args, **kwargs):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     async def fake_review_project_consistency(*args, **kwargs):
@@ -8022,6 +8591,8 @@ async def test_run_project_pipeline_pauses_after_qimao_opening_attempts_exhauste
         return [chapter]
 
     async def fake_run_chapter_pipeline(*args, **kwargs):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         return chapter_result
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
@@ -8061,6 +8632,12 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
     project = build_project()
     project.metadata_json = {
         **(project.metadata_json or {}),
+        "creation_intent_contract": build_hook_creation_intent(project, {
+            "planning_capabilities": {
+                "schema": "planning-capabilities.v1",
+                "selected": {"emotion_driven_kernel": True},
+            },
+        }),
         "volume_plan": [
             {"volume_number": 1, "arc_ranges": [[1, 4]], "chapter_count_target": 4}
         ],
@@ -8166,6 +8743,9 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
         chapter_number,
         **kwargs,
     ):
+        for chapter in chapters:
+            chapter.status = "complete"
+            chapter.production_state = "ok"
         return result_by_number[chapter_number]
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
@@ -8504,6 +9084,8 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
         chapter_number,
         **kwargs,
     ):
+        chapter.status = "complete"
+        chapter.production_state = "ok"
         chapter.current_word_count = 4986
         chapter.title = "暗潮入局"
         return chapter_result
@@ -8536,7 +9118,7 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
             type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
         )
 
-    async def fake_get_latest_planning_artifact(session, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, project_id, artifact_type):
         return object()
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
@@ -8577,8 +9159,8 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
     )
     monkeypatch.setattr(
         pipeline_services,
-        "get_latest_planning_artifact",
-        fake_get_latest_planning_artifact,
+        "get_latest_approved_planning_artifact",
+        fake_get_latest_approved_planning_artifact,
     )
 
     progress_events: list[tuple[str, dict[str, object] | None]] = []
@@ -8691,6 +9273,13 @@ async def test_run_project_pipeline_filters_requested_chapter_numbers_and_checkp
     async def fake_sync_world_expansion_progress(session, *, project):
         return None
 
+    async def incomplete_delivery(*args, **kwargs):
+        # This test asserts dispatch/commit ordering. Delivery evidence is
+        # exercised with real persisted sources in test_book_delivery_closure.
+        from bestseller.services.book_closure import evaluate_book_closure
+        return evaluate_book_closure([], expected_chapters=3)
+
+    monkeypatch.setattr(pipeline_services, "settle_project_status_on_closure", incomplete_delivery)
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
     monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
@@ -8727,21 +9316,26 @@ async def test_run_project_pipeline_filters_requested_chapter_numbers_and_checkp
 
     assert processed == [2]
     assert sequence[0] == "commit"
-    assert sequence[1] == "chapter:2"
+    first_child = sequence.index("chapter:2")
+    assert first_child > 0
+    assert all(step == "commit" for step in sequence[:first_child])
     assert [item.chapter_number for item in result.chapter_results] == [2]
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("repair_is_noop", [False, True], ids=["repair_export", "repair_no_actionable"])
 async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    repair_is_noop: bool,
 ) -> None:
     project = build_project()
     settings = build_settings()
     settings.output.base_dir = str(tmp_path / "output")
     exported_project = tmp_path / "output" / project.slug / "project.md"
-    exported_project.parent.mkdir(parents=True, exist_ok=True)
-    exported_project.write_text("# My Story", encoding="utf-8")
+    if not repair_is_noop:
+        exported_project.parent.mkdir(parents=True, exist_ok=True)
+        exported_project.write_text("# My Story", encoding="utf-8")
 
     async def fake_get_project_by_slug(session, slug: str):
         return None
@@ -8777,7 +9371,7 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
             chapter_results=[],
             review_report_id=uuid4(),
             quality_score_id=uuid4(),
-            final_verdict="attention",
+            final_verdict="chapter_sequence_gap" if repair_is_noop else "attention",
             export_artifact_id=None,
             output_path=None,
             requires_human_review=True,
@@ -8793,9 +9387,9 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
             processed_chapters=[],
             review_report_id=uuid4(),
             quality_score_id=uuid4(),
-            final_verdict="pass",
-            export_artifact_id=uuid4(),
-            output_path=str(exported_project),
+            final_verdict="no_actionable_repair" if repair_is_noop else "pass",
+            export_artifact_id=None if repair_is_noop else uuid4(),
+            output_path=None if repair_is_noop else str(exported_project),
             remaining_pending_rewrite_count=0,
             requires_human_review=False,
         )
@@ -8863,9 +9457,16 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
 
     assert result.repair_attempted is True
     assert result.repair_workflow_run_id is not None
-    assert result.export_status == "exported"
-    assert result.output_path == str(exported_project)
-    assert result.output_files == [str(exported_project.resolve())]
+    if repair_is_noop:
+        assert result.requires_human_review is True
+        assert result.final_verdict == "chapter_sequence_gap"
+        assert result.export_status != "exported"
+        assert result.output_path is None
+        assert result.output_files == []
+    else:
+        assert result.export_status == "exported"
+        assert result.output_path == str(exported_project)
+        assert result.output_files == [str(exported_project.resolve())]
     assert "auto_repair_started" in progress_events
     assert "auto_repair_completed" in progress_events
     assert progress_events[-1] == "autowrite_completed"
@@ -9104,7 +9705,9 @@ async def test_run_autowrite_pipeline_reroutes_partial_foundation_resume_to_prog
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         assert project_id == project.id
         if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
             return None
@@ -9125,7 +9728,7 @@ async def test_run_autowrite_pipeline_reroutes_partial_foundation_resume_to_prog
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9181,7 +9784,9 @@ async def test_run_autowrite_pipeline_reuses_materializations_on_resume(
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         assert project_id == project.id
         if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
             return outline_artifact
@@ -9212,7 +9817,7 @@ async def test_run_autowrite_pipeline_reuses_materializations_on_resume(
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9290,7 +9895,9 @@ async def test_run_autowrite_pipeline_skips_project_repair_for_scene_machine_blo
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
             return outline_artifact
         return None
@@ -9325,7 +9932,7 @@ async def test_run_autowrite_pipeline_skips_project_repair_for_scene_machine_blo
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9399,7 +10006,9 @@ async def test_run_autowrite_pipeline_runs_project_repair_in_soft_continue_mode(
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH:
             return outline_artifact
         return None
@@ -9448,7 +10057,7 @@ async def test_run_autowrite_pipeline_runs_project_repair_in_soft_continue_mode(
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9494,8 +10103,10 @@ async def test_run_autowrite_pipeline_runs_project_repair_in_soft_continue_mode(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("world_case", ["current", "stale", "missing", "unapproved", "failed_foundation", "pending_contract_materialization"])
 async def test_progressive_autowrite_skips_bible_materialization_on_resume(
     monkeypatch: pytest.MonkeyPatch,
+    world_case: str,
 ) -> None:
     """When a project already has a completed `materialize_story_bible` workflow
     run AND resume is enabled, the resume path must NOT re-run materialization.
@@ -9509,6 +10120,23 @@ async def test_progressive_autowrite_skips_bible_materialization_on_resume(
     project = build_project()
     settings = build_settings()
     settings.pipeline.resume_enabled = True
+
+    if world_case == "failed_foundation":
+        project.metadata_json = {
+            **project.metadata_json,
+            "prewrite_readiness_report": {"passed": False},
+        }
+    if world_case == "pending_contract_materialization":
+        project.metadata_json = {
+            **project.metadata_json,
+            "foundation_truth_status": "superseded_pending_materialization",
+            "prewrite_readiness_report": {"passed": True},
+        }
+
+    async def foundation_must_run(*args, **kwargs):
+        raise RuntimeError("foundation_reentered_for_failed_readiness")
+
+    monkeypatch.setattr(pipeline_services, "generate_foundation_plan", foundation_must_run)
 
     completed_bible_run = WorkflowRunModel(
         project_id=project.id,
@@ -9526,9 +10154,19 @@ async def test_progressive_autowrite_skips_bible_materialization_on_resume(
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
             return existing_volume_plan
+        if artifact_type == pipeline_services.ArtifactType.WORLD_SPEC and world_case != "missing":
+            return type("WorldArtifactStub", (), {
+                "status": "draft" if world_case == "unapproved" else "approved",
+                "content": {"_meta": {"source_snapshot_hash": (
+                    "superseded" if world_case == "stale"
+                    else project.metadata_json["book_design_snapshot_hash"]
+                )}},
+            })()
         return None
 
     async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
@@ -9547,7 +10185,7 @@ async def test_progressive_autowrite_skips_bible_materialization_on_resume(
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9574,10 +10212,28 @@ async def test_progressive_autowrite_skips_bible_materialization_on_resume(
     # Empty volume plan exits the per-volume loop after the bible-resume decision,
     # so the pipeline returns cleanly. Any call to the bible materializer would
     # have raised AssertionError above.
-    await pipeline_services.run_progressive_autowrite_pipeline(
-        FakeSession(), settings,
-        project_payload=payload, premise="...", progress=fake_progress,
-    )
+    async def resume():
+        return await pipeline_services.run_progressive_autowrite_pipeline(
+            FakeSession(), settings,
+            project_payload=payload, premise="...", progress=fake_progress,
+        )
+
+    if world_case in {"failed_foundation", "pending_contract_materialization"}:
+        with pytest.raises(RuntimeError, match="foundation_reentered_for_failed_readiness"):
+            await resume()
+        assert "foundation_planning_started" in progress_events
+        assert "foundation_planning_skipped_resume" not in progress_events
+        return
+    if world_case == "current":
+        await resume()
+    else:
+        expected = {
+            "stale": "WORLD_SPEC_SNAPSHOT_MISMATCH",
+            "missing": "WORLD_SPEC_ARTIFACT_MISSING",
+            "unapproved": "WORLD_SPEC_ARTIFACT_NOT_APPROVED",
+        }[world_case]
+        with pytest.raises(ValueError, match=expected):
+            await resume()
 
     assert "foundation_planning_skipped_resume" in progress_events
     assert "story_bible_materialization_skipped_resume" in progress_events
@@ -9621,7 +10277,9 @@ async def test_progressive_autowrite_refreshes_truth_when_resuming_cached_outlin
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
             return volume_plan_artifact
         return type("ArtifactStub", (), {"content": {}})()
@@ -9688,7 +10346,7 @@ async def test_progressive_autowrite_refreshes_truth_when_resuming_cached_outlin
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9790,7 +10448,9 @@ async def test_progressive_autowrite_stops_later_volume_planning_when_volume_blo
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
             return volume_plan_artifact
         return type("ArtifactStub", (), {"content": {}})()
@@ -9842,7 +10502,7 @@ async def test_progressive_autowrite_stops_later_volume_planning_when_volume_blo
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -9926,7 +10586,9 @@ async def test_progressive_autowrite_stops_when_current_volume_remains_incomplet
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
             return volume_plan_artifact
         return type("ArtifactStub", (), {"content": {}})()
@@ -9961,8 +10623,8 @@ async def test_progressive_autowrite_stops_when_current_volume_remains_incomplet
                     requires_human_review=False,
                 )
             ],
-            final_verdict="pass",
-            requires_human_review=False,
+            final_verdict="chapter_sequence_gap",
+            requires_human_review=True,
         )
 
     async def fake_run_project_repair(*args, **kwargs):
@@ -9976,11 +10638,11 @@ async def test_progressive_autowrite_stops_when_current_volume_remains_incomplet
             processed_chapters=[],
             review_report_id=None,
             quality_score_id=None,
-            final_verdict="attention",
+            final_verdict="no_actionable_repair",
             export_artifact_id=None,
             output_path=None,
             remaining_pending_rewrite_count=0,
-            requires_human_review=True,
+            requires_human_review=False,
         )
 
     async def fake_collect_volume_writing_feedback(*args, **kwargs):
@@ -9996,7 +10658,7 @@ async def test_progressive_autowrite_stops_when_current_volume_remains_incomplet
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -10045,7 +10707,7 @@ async def test_progressive_autowrite_stops_when_current_volume_remains_incomplet
     )
 
     assert result.requires_human_review is True
-    assert result.final_verdict == "attention"
+    assert result.final_verdict == "chapter_sequence_gap"
     assert run_volumes == [1]
     assert repair_kwargs["target_chapter_numbers"] == {1, 2}
     assert "volume_writing_incomplete_current_volume" in progress_events
@@ -10087,7 +10749,9 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
         if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
             return volume_plan_artifact
         return type("ArtifactStub", (), {"content": {}})()
@@ -10166,7 +10830,7 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
-        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
     )
     monkeypatch.setattr(
         pipeline_services,
@@ -10241,6 +10905,206 @@ async def test_progressive_autowrite_can_continue_after_volume_blocks(
     assert feedback_volumes == [2]
     assert "volume_writing_machine_repair_required" in progress_events
     assert "volume_writing_repair_parallelized" in progress_events
+@pytest.mark.asyncio
+async def test_progressive_autowrite_quality_debt_handoff_runs_next_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+    settings.pipeline.require_foundation_identity_lock = False
+    settings.pipeline.progressive_continue_after_volume_block = False
+
+    completed_bible_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    completed_bible_run.id = uuid4()
+
+    volume_plan_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {
+            "source_run_id": uuid4(),
+            "content": [
+                {"volume_number": 1, "title": "Volume 1", "chapter_count_target": 2},
+                {"volume_number": 2, "title": "Volume 2", "chapter_count_target": 2},
+            ],
+        },
+    )()
+    run_volumes: list[int] = []
+    feedback_volumes: list[int] = []
+    progress_events: list[str] = []
+    volume_written_checks: dict[int, int] = {}
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_approved_planning_artifact(session, *, project_id, artifact_type,
+        settings=None,
+    ):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return volume_plan_artifact
+        return type("ArtifactStub", (), {"content": {}})()
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type == pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE:
+            return completed_bible_run
+        return None
+
+    async def fake_volume_fully_written(session, project_id, volume_number):
+        volume_written_checks[volume_number] = volume_written_checks.get(volume_number, 0) + 1
+        if volume_number == 1:
+            if volume_written_checks[volume_number] == 1:
+                return False, 1, 2
+            return True, 2, 2
+        if volume_number == 2:
+            if volume_written_checks[volume_number] == 1:
+                return False, 0, 2
+            return True, 2, 2
+        return False, 0, 0
+
+    async def fake_chapter_numbers_in_volume(session, project_id, volume_number):
+        return {1, 2} if volume_number == 1 else set()
+
+    async def fake_resume_outline_chapters_for_volume(
+        session,
+        *,
+        project_id,
+        volume_number,
+        expected_count,
+    ):
+        if volume_number == 2:
+            return [{"chapter_number": 3}, {"chapter_number": 4}]
+        return []
+
+    async def fake_refresh_truth(*args, **kwargs):
+        return False
+
+    async def fake_quality_debt_handoff(*args, **kwargs):
+        return kwargs["volume_number"] == 1
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        volume_number = kwargs["current_volume_number"]
+        run_volumes.append(volume_number)
+        blocked = volume_number == 1
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[
+                pipeline_services.ProjectPipelineChapterSummary(
+                    chapter_number=volume_number,
+                    workflow_run_id=uuid4(),
+                    chapter_draft_version_no=1,
+                    requires_human_review=blocked,
+                )
+            ],
+            final_verdict="attention" if blocked else "pass",
+            requires_human_review=blocked,
+        )
+
+    async def fake_collect_volume_writing_feedback(session, project_id, volume_number):
+        feedback_volumes.append(volume_number)
+        return {"character_states": [], "arc_summary": {"unresolved_threads": []}}
+
+    def fake_summarize_volume_feedback(feedback, *, language: str):
+        return ""
+
+    async def fake_materialize(*args, **kwargs):
+        return type("Materialized", (), {"workflow_run_id": uuid4()})()
+
+    async def fake_checkpoint_commit(session) -> None:
+        return None
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    import bestseller.services.planning_context as planning_context
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_approved_planning_artifact", fake_get_latest_approved_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "_volume_fully_written", fake_volume_fully_written)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_progressive_volume_has_only_conceded_quality_debt",
+        fake_quality_debt_handoff,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_chapter_numbers_in_volume",
+        fake_chapter_numbers_in_volume,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_resume_outline_chapters_for_volume",
+        fake_resume_outline_chapters_for_volume,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_refresh_stale_truth_materializations_for_resume",
+        fake_refresh_truth,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_chapter_outline_batch",
+        fake_materialize,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        fake_materialize,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        fake_materialize,
+    )
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+    monkeypatch.setattr(
+        planning_context,
+        "collect_volume_writing_feedback",
+        fake_collect_volume_writing_feedback,
+    )
+    monkeypatch.setattr(
+        planning_context,
+        "summarize_volume_feedback",
+        fake_summarize_volume_feedback,
+    )
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="...",
+        export_markdown=False,
+        auto_repair_on_attention=False,
+        progress=fake_progress,
+    )
+
+    assert result.requires_human_review is False
+    assert result.final_verdict == "pass"
+    assert run_volumes == [1, 2]
+    assert feedback_volumes == [1, 2]
+    assert "volume_writing_quality_debt_advisory_continuing" in progress_events
+    assert "volume_writing_machine_repair_required" not in progress_events
 
 
 # ---------------------------------------------------------------------------
@@ -10362,7 +11226,236 @@ def test_approved_outline_replan_releases_gate_for_adjudicated_combined_batch() 
     assert "outline_replan_in_progress" not in project.metadata_json
 
 
-def test_length_block_repair_switches_to_deficit_contract() -> None:
+def test_progressive_replan_checks_release_only_while_gate_is_pending() -> None:
+    """A later rolling window must not fail after the first one released the gate."""
+
+    import inspect
+
+    source = inspect.getsource(pipeline_services.run_progressive_autowrite_pipeline)
+    release_call = source.index("_release_approved_outline_replan_gate(")
+    preceding = source[max(0, release_call - 300) : release_call]
+
+    assert "allow_outline_replan" in preceding
+    assert "outline_replan_in_progress" in preceding
+
+    project = SimpleNamespace(
+        status="planning",
+        metadata_json={
+            "outline_replan_in_progress": True,
+            "outline_replan_prior_outline_version": 4,
+            "outline_semantic_gate_report": {"promotion_allowed": True},
+        },
+    )
+    assert pipeline_services._release_approved_outline_replan_gate(
+        project,
+        SimpleNamespace(version_no=5),
+    )
+    # This is the state seen by the next rolling window.  It must skip the
+    # release assertion; the helper itself remains fail-closed when called
+    # directly without an active gate.
+    assert not project.metadata_json.get("outline_replan_in_progress")
+    assert not pipeline_services._release_approved_outline_replan_gate(
+        project,
+        SimpleNamespace(version_no=5),
+    )
+
+
+@pytest.mark.asyncio
+async def test_progressive_replan_runs_all_volumes_after_first_gate_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful replan must reach the second volume after releasing once."""
+
+    from bestseller.domain.planning import NovelPlanningResult, VolumePlanningResult
+
+    project = build_project()
+    project.metadata_json = {
+        **project.metadata_json,
+        "outline_replan_in_progress": True,
+        "outline_replan_prior_outline_version": 0,
+        "outline_semantic_gate_report": {"promotion_allowed": True},
+    }
+    settings = build_settings()
+    settings.pipeline.resume_enabled = False
+    settings.pipeline.require_foundation_identity_lock = False
+
+    volume_plan_artifact = SimpleNamespace(
+        source_run_id=uuid4(),
+        content=[
+            {"volume_number": 1, "title": "Volume 1", "chapter_count_target": 2},
+            {"volume_number": 2, "title": "Volume 2", "chapter_count_target": 2},
+        ],
+    )
+    outline_artifacts = [
+        SimpleNamespace(
+            version_no=1,
+            content={
+                "chapters": [
+                    {"chapter_number": 1, "volume_number": 1},
+                    {"chapter_number": 2, "volume_number": 1},
+                ]
+            },
+        ),
+        SimpleNamespace(
+            version_no=2,
+            content={
+                "chapters": [
+                    {"chapter_number": 3, "volume_number": 2},
+                    {"chapter_number": 4, "volume_number": 2},
+                ]
+            },
+        ),
+    ]
+    planning_volumes: list[int] = []
+    run_volumes: list[int] = []
+    outline_loads = 0
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_approved_planning_artifact(
+        session, *, project_id, artifact_type,
+        settings=None,
+    ):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return volume_plan_artifact
+        return SimpleNamespace(content={})
+
+    async def fake_get_latest_completed_workflow_run(*args, **kwargs):
+        return None
+
+    async def fake_generate_foundation_plan(*args, **kwargs):
+        return NovelPlanningResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            premise="premise",
+            volume_count=2,
+            chapter_count=4,
+        )
+
+    async def fake_generate_volume_plan(*args, **kwargs):
+        volume = int(args[3])
+        planning_volumes.append(volume)
+        return VolumePlanningResult(
+            workflow_run_id=uuid4(),
+            volume_number=volume,
+            chapter_count=2,
+        )
+
+    async def fake_materialize_story_bible(*args, **kwargs):
+        return SimpleNamespace(workflow_run_id=uuid4())
+
+    async def fake_world_spec(*args, **kwargs):
+        return SimpleNamespace(content={})
+
+    async def fake_load_outlines(*args, **kwargs):
+        nonlocal outline_loads
+        artifact = outline_artifacts[outline_loads]
+        outline_loads += 1
+        return [artifact]
+
+    async def fake_import_artifact(*args, **kwargs):
+        return SimpleNamespace(version_no=1)
+
+    async def fake_materialize(*args, **kwargs):
+        return SimpleNamespace(workflow_run_id=uuid4())
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        volume = int(kwargs["current_volume_number"])
+        run_volumes.append(volume)
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[],
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_collect_feedback(*args, **kwargs):
+        return {"character_states": [], "arc_summary": {"unresolved_threads": []}}
+
+    def fake_summarize_feedback(feedback, *, language: str):
+        return ""
+
+    async def fake_checkpoint(session):
+        return None
+
+    async def fake_load_control(*args, **kwargs):
+        return None
+
+    def fake_require_architecture(*args, **kwargs):
+        return None
+
+    import bestseller.services.concept_contract as concept_contract
+    import bestseller.services.planning_context as planning_context
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_approved_planning_artifact",
+        fake_get_latest_approved_planning_artifact,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "generate_foundation_plan", fake_generate_foundation_plan)
+    monkeypatch.setattr(pipeline_services, "generate_volume_plan", fake_generate_volume_plan)
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_story_bible", fake_materialize_story_bible
+    )
+    monkeypatch.setattr(pipeline_services, "_get_current_world_spec_artifact", fake_world_spec)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_load_approved_volume_chapter_outline_artifacts",
+        fake_load_outlines,
+    )
+    monkeypatch.setattr(pipeline_services, "import_planning_artifact", fake_import_artifact)
+    monkeypatch.setattr(
+        pipeline_services, "materialize_latest_chapter_outline_batch", fake_materialize
+    )
+    monkeypatch.setattr(pipeline_services, "materialize_latest_narrative_graph", fake_materialize)
+    monkeypatch.setattr(pipeline_services, "materialize_latest_narrative_tree", fake_materialize)
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint)
+    monkeypatch.setattr(pipeline_services, "load_control_state", fake_load_control)
+    monkeypatch.setattr(concept_contract, "require_story_architecture_for_operation", fake_require_architecture)
+    monkeypatch.setattr(
+        planning_context, "collect_volume_writing_feedback", fake_collect_feedback
+    )
+    monkeypatch.setattr(
+        planning_context, "summarize_volume_feedback", fake_summarize_feedback
+    )
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+        export_markdown=False,
+        auto_repair_on_attention=False,
+        allow_outline_replan=True,
+    )
+
+    assert result.final_verdict == "pass"
+    assert planning_volumes == [1, 2]
+    assert run_volumes == [1, 2]
+    assert outline_loads == 2
+    assert "outline_replan_in_progress" not in project.metadata_json
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_length_block_repair_switches_to_deficit_contract(mixed: bool) -> None:
     """2026-08-13 真机定罪：LENGTH_UNDER 修复轮被无条件「保持篇幅稳定」
     稳定器顶掉，只补了 ~60 字白烧一轮。命中字数下限必须切换成补缺口合同。"""
 
@@ -10372,7 +11465,7 @@ def test_length_block_repair_switches_to_deficit_contract() -> None:
 
     instructions = pipeline_services._render_chapter_first_local_repair_instructions(
         chapter=chapter,
-        block_codes=("LENGTH_UNDER", "NAMING_OUT_OF_POOL"),
+        block_codes=("LENGTH_UNDER", "NAMING_OUT_OF_POOL") if mixed else ("LENGTH_UNDER",),
         scene_hints=["场景1：正文过短。"],
     )
 
@@ -10381,8 +11474,15 @@ def test_length_block_repair_switches_to_deficit_contract() -> None:
     assert "再加约 200 字缓冲" in instructions
     # 2026-08-14 真机 ch7：补字数的轮次把 1594 字重写成 1020 字，9 轮全挂
     # 同一个码。短章修复必须是保底追加，不是整章重写。
-    assert "一字不改地全部保留" in instructions
-    assert "只许加，不许删改已有段落" in instructions
+    if mixed:
+        assert "按批准来源逐段修正" in instructions
+        assert "不得为了保留原句而照抄触发阻断的错误" in instructions
+        assert "不能把修稿写得更短" in instructions
+        assert "一字不改地全部保留" not in instructions
+        assert "只许加，不许删改已有段落" not in instructions
+    else:
+        assert "一字不改地全部保留" in instructions
+        assert "只许加，不许删改已有段落" in instructions
     # 稳定器指令不得出现在字数修复合同里（它就是白烧一轮的元凶）
     assert "保持当前篇幅基本稳定" not in instructions
     assert "删掉等量" not in instructions
@@ -10442,7 +11542,9 @@ def test_clean_chapter_is_never_left_in_blocked_state() -> None:
 
     src = inspect.getsource(pipeline_services)
     idx = src.index("not auto-repairable — leaving ")
-    window = src[max(0, idx - 1200) : idx]
+    # Static source inspection only; this is not runtime clean-report proof.
+    start = src.rindex("if not block_codes:", 0, idx)
+    window = src[start:idx]
     assert "if not block_codes:" in window
     assert 'chapter.production_state = "quality_debt"' in window
 

@@ -23,6 +23,7 @@ from bestseller.services.emotion_driven_kernel import (
     emotion_driven_kernel_to_dict,
 )
 from bestseller.services.planner import build_emotion_driven_kernel_backfill_payload
+from bestseller.services.planning_capability_selection import planning_capability_selected
 from bestseller.services.projects import import_planning_artifact
 from bestseller.services.workflows import get_latest_planning_artifact
 
@@ -92,11 +93,20 @@ async def ensure_project_emotion_driven_kernel(
 ) -> EmotionKernelBackfillResult:
     """Ensure a project has a valid ``emotion_driven_kernel`` in metadata.
 
-    Existing valid kernels are preserved. Missing or invalid legacy metadata is
+    Author selection is required even for force and existing caches.
+    Existing valid selected kernels are preserved. Missing or invalid legacy metadata is
     repaired from available planning artifacts and local planner fallbacks.
     ``persist_artifact`` is opt-in because automatic writing entry points only
     need metadata injection and should avoid creating extra artifact versions.
     """
+
+    if not planning_capability_selected(project, "emotion_driven_kernel"):
+        return EmotionKernelBackfillResult(
+            status="not_applicable",
+            kernel=None,
+            source="author_selection",
+            skipped_reason="planning_capability_not_selected",
+        )
 
     metadata = dict(project.metadata_json or {})
     existing = _existing_kernel(metadata.get("emotion_driven_kernel"))
@@ -134,13 +144,16 @@ async def ensure_project_emotion_driven_kernel(
         project_id=project_id,
         artifact_type=ArtifactType.CAST_SPEC,
     )
-    story_design_kernel = _mapping(
-        metadata.get("story_design_kernel")
-    ) or await _latest_artifact_content(
-        session,
-        project_id=project_id,
-        artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
-    )
+    story_design_selected = planning_capability_selected(project, "story_design_kernel")
+    story_design_kernel: dict[str, Any] = {}
+    if story_design_selected:
+        story_design_kernel = _mapping(
+            metadata.get("story_design_kernel")
+        ) or await _latest_artifact_content(
+            session,
+            project_id=project_id,
+            artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
+        )
     premise_artifact = await _latest_artifact_content(
         session,
         project_id=project_id,
@@ -171,7 +184,8 @@ async def ensure_project_emotion_driven_kernel(
             "book_spec": bool(_mapping(metadata.get("book_spec"))),
             "world_spec": bool(_mapping(metadata.get("world_spec"))),
             "cast_spec": bool(_mapping(metadata.get("cast_spec"))),
-            "story_design_kernel": bool(_mapping(metadata.get("story_design_kernel"))),
+            "story_design_kernel": story_design_selected
+            and bool(_mapping(metadata.get("story_design_kernel"))),
         },
         "used_artifact_fallback": {
             "book_spec": bool(book_spec) and not _mapping(metadata.get("book_spec")),

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="quickstart-client-schema" content="quickstart-client.v2">
 <title>BestSeller 一键创作 · Imprint Workbench</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232e4035'/%3E%3Cpath d='M8 7h16v18H8zM11 11h10M11 15h10M11 19h7' fill='none' stroke='%23f5eedc' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;0,8..60,800;1,8..60,400;1,8..60,500;1,8..60,600&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -3736,6 +3737,20 @@
       padding: 13px 16px 0;
     }
 
+    .header-row {
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0 0 10px;
+    }
+
+    .header-brand { flex-wrap: wrap; gap: 8px; }
+    .header-meta, .header-divider, .header-editor { display: none; }
+    .header-tools { width: 100%; gap: 8px; }
+    .header-search { flex: 1; min-width: 0; }
+    .header-search .placeholder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .header-cta { flex: 0 0 auto; white-space: nowrap; }
+    .hotkey-footer { display: none; }
+
     .header h1 {
       flex-wrap: wrap;
       gap: 8px;
@@ -3748,12 +3763,19 @@
       overflow-x: auto;
       margin: 0 -16px;
       padding: 0 16px 2px;
+      flex-wrap: wrap;
+      overflow-x: visible;
+      box-sizing: content-box;
     }
 
     .header-nav a,
     .header-nav button {
       flex: 0 0 auto;
+      margin-top: 0;
+      min-height: 36px;
     }
+
+    .header-status { flex: 1 0 100%; min-width: 0; flex-wrap: wrap; margin-left: 0; padding: 6px 0; }
 
     .container {
       width: min(100% - 20px, 1120px);
@@ -3951,6 +3973,7 @@
     background: #f7fafb;
   }
   body.arch-tab-open .hotkey-footer { display: none; }
+#configurationRestoreProposal[hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -3982,6 +4005,7 @@
   </div>
   <div class="header-nav">
     <button id="navNew" onclick="startNewCreationFlow()">新建创作</button>
+    <button id="navConfiguration" onclick="openCreationConfiguration()">创作配置</button>
     <button id="navDash" class="active" onclick="switchView('dashboard')">任务指挥台 <span class="nav-count" id="navTaskCount">--</span></button>
     <a href="/library">书稿库 <span class="nav-count" id="navLibraryCount">00</span></a>
     <button id="navArchitecture" type="button" onclick="switchView('architecture')">架构设计</button>
@@ -3998,7 +4022,7 @@
         <span class="state" id="llmProfileState">读取中</span>
       </div>
       <span class="sep"></span>
-      <span id="hdrQueue">队列 0 in / 0 wait</span>
+      <span id="hdrQueue">任务 0 进行中 / 0 空闲名额</span>
     </div>
   </div>
 </div>
@@ -4044,8 +4068,8 @@
       </div>
       <div class="dash-metric tone-attention">
         <div>
-          <div class="dash-metric-kicker">BOOKS</div>
-          <div class="dash-metric-label">书稿总数</div>
+          <div class="dash-metric-kicker">ATTENTION</div>
+          <div class="dash-metric-label">需处理任务</div>
         </div>
         <div class="dash-metric-value" id="dashMetricAttention">--</div>
       </div>
@@ -4090,6 +4114,7 @@
       <div>
         <h3>作品队列</h3>
         <p id="dashResultSummary">正在加载任务。</p>
+        <p id="dashLoadStatus" role="status" aria-live="polite"></p>
       </div>
       <div class="dash-search">
         <input type="search" id="dashSearch" placeholder="搜索书名 / SLUG / 章节…">
@@ -4196,6 +4221,14 @@
         </div>
         <div class="creative-evidence" style="margin-left:10px;">调性只能在所选题材边界内生效</div>
       </div>
+      <div class="genre-dimension-row" style="margin-top:8px;">
+        <label class="genre-dimension-label" for="productionProfile">创作流程</label>
+        <select id="productionProfile" aria-label="创作流程">
+          <option value="complete">完整成书 · 收敛构思后进入正文</option>
+          <option value="research">创意深研 · 多候选比较</option>
+        </select>
+        <div class="creative-evidence">两种流程均保留故事结构、来源、意图与正文质量检查。</div>
+      </div>
       <div class="creative-lab active" id="storyEnhancerLab" aria-label="故事增强">
         <div class="creative-lab-head">
           <div>
@@ -4258,21 +4291,22 @@
       <div id="longSerialLengthBlock">
         <div class="length-presets">
           <button type="button" class="length-btn" data-chapters="20">
-            <div class="label">微短篇</div><div class="chapters">BOOK I · 20 章</div>
+            <div class="label">20章验证</div><div class="chapters">BOOK I · 20 章</div>
           </button>
           <button type="button" class="length-btn" data-chapters="50">
-            <div class="label">短篇</div><div class="chapters">BOOK J · 50 章</div>
+            <div class="label">50章</div><div class="chapters">BOOK J · 50 章</div>
           </button>
           <button type="button" class="length-btn" data-chapters="200">
-            <div class="label">中篇</div>
+            <div class="label">200章</div>
             <div class="chapters">BOOK K · 200 章</div>
           </button>
           <button type="button" class="length-btn selected" data-chapters="500">
-            <div class="label">长篇</div><div class="chapters">BOOK L · 500 章</div>
+            <div class="label">500章</div><div class="chapters">BOOK L · 500 章</div>
           </button>
           <button type="button" class="length-btn" data-chapters="1000">
-            <div class="label">超长篇</div><div class="chapters">BOOK M · 1000 章</div>
+            <div class="label">1000章</div><div class="chapters">BOOK M · 1000 章</div>
           </button>
+          <button type="button" class="length-btn" data-chapters="2000"><div class="label">2000章</div><div class="chapters">约400万字 · 章均2000</div></button>
         </div>
         <div class="custom-row">
           <label>自定义：</label>
@@ -4280,6 +4314,40 @@
           <span style="font-size:14px;color:var(--text-dim);">章</span>
         </div>
       </div>
+
+
+      <section id="creationConfigurationPanel" style="margin:18px 0;padding:18px;border:1px solid var(--border);border-radius:12px;">
+        <h3>创作目标与本次范围</h3>
+        <label><input id="configurationEnabled" type="checkbox" checked> 使用新版配置（仅对本次选择生效）</label>
+        <p>全书目标与本次生成窗口分开。保存配置不会开始写作，也不会改写已采用正文。</p>
+        <div class="custom-row"><label for="configurationProject">已有作品</label>
+          <select id="configurationProject"><option value="">新创作／本机草案</option></select>
+          <button type="button" id="configurationLoad" class="btn btn-secondary btn-sm">读取已保存配置</button></div>
+        <div class="custom-row"><label for="configurationPrimaryPlatform">主平台</label>
+          <select id="configurationPrimaryPlatform"><option value="">不指定平台</option></select></div>
+        <div id="configurationCompatiblePlatforms" aria-label="兼容目标平台" style="display:flex;gap:12px;flex-wrap:wrap;"></div>
+        <p>主平台主导内容规范；兼容目标仅作建议。选择兼容目标前须选择主平台；也可两者都不选。选择平台不代表授权投稿。</p>
+        <div class="custom-row"><label for="configurationPrimaryReader">主要读者</label>
+          <input id="configurationPrimaryReader" maxlength="240" placeholder="例如：偏好成长与爽点的读者"></div>
+        <div class="custom-row"><label for="configurationSecondaryReaders">次要读者</label>
+          <input id="configurationSecondaryReaders" maxlength="1000" placeholder="用分号分隔，可不填"></div>
+        <div class="custom-row"><label for="configurationBookTotal">全书目标章数</label>
+          <input id="configurationBookTotal" type="number" min="1" max="2000" step="1" value="500">
+          <label for="configurationChapterTarget">章均目标</label>
+          <input id="configurationChapterTarget" type="number" min="1800" max="3500" step="1" value="2000"><span>正文汉字</span></div>
+        <p>计数不含标点、数字、拉丁字母、生产注释及元数据；2000为平均目标，单章仍执行安全门禁。</p>
+        <div class="custom-row"><label for="configurationPurpose">本次用途</label>
+          <select id="configurationPurpose"><option value="opening_window">长篇开头窗口（非全书完结）</option><option value="complete_story">完整故事／分批验证至结局</option><option value="continuation">接续指定窗口</option></select></div>
+        <div class="custom-row"><label for="configurationWindowStart">本次起始章</label><input id="configurationWindowStart" type="number" min="1" max="2000" step="1" value="1">
+          <label for="configurationWindowEnd">结束章</label><input id="configurationWindowEnd" type="number" min="1" max="2000" step="1" value="20"></div>
+        <p>独立20章故事需要主线、伏笔与结局验收；长篇前20章只验起步与阶段节奏，窗口结束后停止派发。</p>
+        <p>图片参考：本切片预留独立来源入口；当前无图，不会生成或采用识图设定。</p>
+        <button type="button" id="configurationPreview" class="btn btn-secondary">检查范围与差异</button>
+        <button type="button" id="configurationSave" class="btn btn-primary">仅保存配置</button>
+        <button type="button" id="configurationRestoreProposal" class="btn btn-secondary" hidden>恢复待审提案</button>
+        <div id="configurationValidation" role="alert" hidden style="margin-top:12px;color:var(--accent);white-space:pre-wrap;"></div>
+        <div id="configurationResult" role="status" aria-live="polite" style="margin-top:12px;white-space:pre-wrap;"></div>
+      </section>
 
       <div id="fanqieLengthBlock" hidden>
         <div class="length-presets fanqie-length-presets">
@@ -4321,7 +4389,7 @@
         <div class="summary-row"><span class="lbl">脑洞组合</span><span class="val" id="sumConcept">-</span></div>
         <div class="summary-row"><span class="lbl">规模 / 调性</span><span class="val" id="sumScale">常规连载 · 智能判定</span></div>
         <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
-        <div class="summary-row"><span class="lbl">写作模型</span><span class="val"><select id="createModelSelect" class="tc-model-select" title="这本书构思完成后从这个模型开始写作"><option value="">全局默认</option></select></span></div>
+        <div class="summary-row"><span class="lbl">构思 / 写作模型</span><span class="val"><select id="createModelSelect" class="tc-model-select" title="这本书的构思与写作模型；评审使用独立配置"><option value="">全局默认</option></select></span></div>
         <div class="summary-row summary-option">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input type="checkbox" id="draftModeToggle" style="width:18px;height:18px;">
@@ -4342,8 +4410,8 @@
              共同根因之一。 -->
         <div class="summary-row summary-option" style="flex-direction:column;align-items:stretch;gap:6px;">
           <label for="conceptSeedInput" style="cursor:pointer;">
-            <span>故事创意（可选；填写后为最高优先级）</span>
-            <span class="hint" style="font-size:12px;">一句话：主角是谁 + 撞上什么反常事件 + 第一个不可逆选择。填写后会原样进入建书契约；不填则由上方题材、调性和故事技能共同生成。</span>
+            <span>构思或想法（可选）</span>
+            <span class="hint" style="font-size:12px;">可以写想看的氛围、人物或故事片段，不必准备完整故事。明确设定和不想出现的内容会被保留，其余由系统构思；不填也会根据题材和选项生成完整故事方案。</span>
           </label>
           <textarea id="conceptSeedInput" rows="3" maxlength="500"
             placeholder="例：外门杂役每次修复废弃阵眼，都能短暂看见灵脉下一次断裂的位置；今天断点落在宗门大殿，而执事命他当众证明阵法无恙。"
@@ -4391,7 +4459,7 @@
     <div class="pv-header">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div>
-          <h2 id="pvTitle">正在创作中...</h2>
+          <h2 id="pvTitle">正在读取任务状态…</h2>
           <div class="sub" id="pvSub"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -4420,6 +4488,12 @@
       </div>
     </div>
 
+    <div id="pvReviewedContinuation" hidden>
+      <p id="pvContinuationExplanation">继续沿用已审核的构思。原调用的未知结果和费用预留会保留；本次继续将开启新的两小时执行窗口。</p>
+      <button type="button" id="pvContinueReviewed">继续已审核构思</button>
+      <span id="pvContinuationMessage" role="status"></span>
+    </div>
+
     <div class="pv-bar-wrap">
       <div class="pv-bar-top">
         <span class="stage" id="pvStage">初始化</span>
@@ -4434,6 +4508,7 @@
       <div class="pv-stat"><div class="v" id="pvAvg">-</div><div class="l" id="pvAvgLabel">平均每章</div></div>
       <div class="pv-stat"><div class="v" id="pvStatus">准备中</div><div class="l">状态</div></div>
     </div>
+    <div class="dg-progress-note" id="pvKnowledge">知识入库待验证</div>
 
     <div class="pv-chapters" id="pvChSec" style="display:none;">
       <h4>
@@ -4474,6 +4549,7 @@
     <!-- ═══════════ LISTING PROFILE PANEL ═══════════ -->
     <div class="listing-panel" id="pvListing">
       <h3>上架资料</h3>
+      <p id="lsLoadError" role="alert" hidden></p>
 
       <div class="listing-section">
         <div class="listing-header-row">
@@ -4625,6 +4701,26 @@
   let genreTaxonomy = null;
   let customSelection = null;
   let txSel = { channel: '', genreKey: '', subKey: '', tags: [] };
+  // Keep taxonomy defaults distinct from deliberate user choices. `tags`
+  // remains the effective selection for backwards-compatible routing, while
+  // the two provenance arrays let the server avoid calling defaults user asks.
+  let txDefaultTags = [];
+  let txUserTags = [];
+  let txExcludedDefaultTags = [];
+
+  function txEffectiveTags() {
+    return [...new Set([
+      ...txDefaultTags.filter(tag => !txExcludedDefaultTags.includes(tag)),
+      ...txUserTags,
+    ])];
+  }
+
+  function txResetTags() {
+    txSel.tags = [];
+    txDefaultTags = [];
+    txUserTags = [];
+    txExcludedDefaultTags = [];
+  }
   let selectedAudience = '';  // '' = 智能判定(交给热度Agent); 'male' = 男频; 'female' = 女频
   let selectedNarrativeScale = 'serial';
   let selectedTonePreference = '';
@@ -4701,6 +4797,39 @@
   let projectTitleBySlug = new Map();
   let focusTaskId = null;  // currently viewing in progress view
   let pollTimer = null;
+
+  // Each resource has one in-flight read; failed reads back off independently.
+  const pollingResources = new Map();
+  async function pollResource(key, interval, load, force = false) {
+    if (!force && document.visibilityState === 'hidden') return;
+    let state = pollingResources.get(key);
+    if (!state) {
+      state = { promise: null, nextAt: 0, failures: 0 };
+      pollingResources.set(key, state);
+    }
+    if (state.promise) return state.promise;
+    if (!force && Date.now() < state.nextAt) return;
+    const startedAt = Date.now();
+    state.promise = Promise.resolve().then(load).then(result => {
+      state.failures = result === false ? state.failures + 1 : 0;
+      return result;
+    }).catch(() => {
+      state.failures += 1;
+      return false;
+    }).finally(() => {
+      state.nextAt = state.failures
+        ? Date.now() + Math.min(Math.max(60000, interval * 4), interval * 2 ** Math.min(state.failures, 5))
+        : startedAt + interval;
+      state.promise = null;
+      // Old task/listing generations are disposable once their read settles.
+      for (const [idleKey, idleState] of pollingResources) {
+        if (pollingResources.size <= 64) break;
+        if (!idleState.promise) pollingResources.delete(idleKey);
+      }
+    });
+    return state.promise;
+  }
+
   let renderedChapterListSignature = null;
   let renderedChapterListTaskId = null;
 
@@ -4793,6 +4922,10 @@
 	    delegated_to_worker_self_heal: '🩹 由后台自愈恢复中',
 	    auto_resume_not_claimed: '⏸️ 重启续写未接管',
 	    project_registered: '项目已建档',
+        project_closed: '正式交付已核验',
+        delivery_pending: '正文齐备，待交付',
+        delivery_unverified: '交付待核验',
+        project_candidate_review: '已有候选正文，等待审校与正式采用',
 	    project_planning: '规划中，暂无任务记录',
 	    project_paused: '等待续跑，暂无任务记录',
 	    project_revising: '修订中，暂无任务记录',
@@ -4802,10 +4935,13 @@
 	    repairable_auto_continue_pending: '自动续跑待排队',
 	    machine_blocked: '修复待续跑',
 	    machine_repair_required: '待机器修复',
+    chapter_rewrite_started: '章节修订中',
+    chapter_rewrite_completed: '章节修订完成',
+    chapter_rewrite_rejected: '修订未通过，保留原稿',
     // AI Conception stages
     heat_search_started: '🔥 热度搜索中', heat_search_completed: '🔥 热度搜索完成',
     methodology_selection_started: '🧠 方法论匹配中', methodology_selected: '🧠 方法论已选定',
-    hook_candidates_started: '🪝 钩子候选生成中', hook_candidates_generated: '🪝 钩子候选就绪',
+    hook_candidates_started: '🧩 机制灵感内部采样中', hook_candidates_generated: '🧩 机制灵感已记录（未绑定作品）',
     concept_commercial_positioning: '💼 商业定位',
     concept_creative_exploration: '🎨 创意探索', conception_creative_exploration: '🎨 创意探索',
     concept_artifacts_persisted: '🗂️ 构思物料已归档',
@@ -4817,11 +4953,14 @@
     // 2026-08-17 补：下面这些是构思里最耗时的阶段，此前不在表里，
     // 用户看到的是 concept_tournament_progress 这类裸码——
     // 「构思 40 分钟看不懂在干嘛、是不是卡死了」的直接原因。
-    concept_tournament_started: '🏆 概念淘汰赛开赛（生成点子池，单轮可达数分钟）',
-    concept_tournament_progress: '🏆 概念淘汰赛评选中（多轮评审，约 10-20 分钟）',
+    concept_tournament_started: '🏆 概念淘汰赛开赛',
+    concept_tournament_progress: '🏆 概念淘汰赛进行中',
     conception_commercial_positioning: '💼 商业定位',
-    conception_mechanism_echo_retry: '🔁 与旧书撞机制，换方向重试中',
+    conception_mechanism_echo_retry: '🔁 正在修正构思中发现的冲突',
+    conception_motif_amplification_audit: '📝 已记录用词集中度提醒',
     conception_seed_fidelity_repair: '🎯 校对成稿是否忠于你的创意',
+    conception_review_revalidation_required: '建书前校验：内容已更新，重新评审',
+    execution_success_reused: '复用输入一致的已保存成果',
     conception_blurb_regen_progress: '📝 简介重写中',
     conception_blurb_polish: '📝 简介润色', conception_title_polish: '📖 书名润色',
     conception_logline_regen: '🪝 一句话卖点重写',
@@ -4999,13 +5138,17 @@
     if (document.body.classList.contains('arch-tab-open')) syncArchitectureHeaderOffset();
   });
 
-  function resetWizardState() {
+  function resetWizardState({clearConfigurationDraft = true} = {}) {
+    resetCreationConfiguration(clearConfigurationDraft);
     selectedGenreKey = null;
     customSelection = null;
     txSel = { channel: '', genreKey: '', subKey: '', tags: [] };
+    txResetTags();
     selectedAudience = '';
     selectedNarrativeScale = 'serial';
     selectedTonePreference = '';
+    const productionProfile = $('#productionProfile');
+    if (productionProfile) productionProfile.value = 'complete';
     const audRow = document.getElementById('audienceOrientationRow');
     if (audRow) {
       audRow.style.display = 'none';
@@ -5019,6 +5162,7 @@
     selectedLang = DEFAULT_LANG;
     seDirection = null;
     seCostStyle = 'standard';
+    seCostStyleExplicit = false;
     fanqiePov = 'first_person';
     chapterCount = DEFAULT_CHAPTER_COUNT;
     const conceptSeedInput = $('#conceptSeedInput');
@@ -5068,55 +5212,105 @@
   /* ═══════════════════════════════════════
      DASHBOARD
      ═══════════════════════════════════════ */
-	  let dashboardRefreshInFlight = null;
-	  async function refreshDashboard() {
-	    if (dashboardRefreshInFlight) return dashboardRefreshInFlight;
-	    dashboardRefreshInFlight = (async () => {
-	    try {
-	      const [taskRes, projectRes] = await Promise.all([
-	        // include_inactive=1 是必需的：后端默认只返回 queued/running
-	        // (_DASHBOARD_VISIBLE_TASK_STATUSES)，所以任何被门禁拦截或崩溃的书
-	        // 会直接从接口消失——用户看到空面板、看不到任何原因，失败理由只躺在
-	        // .web_tasks.json 里(2026-07-24/25 连续四次拦截全部无声消失)。
-	        // 本页早已内建失败卡片的渲染(需要处理页签/错误徽章/重试)，只是从未索要数据。
-	        fetch('/api/tasks?summary=1&include_inactive=1', { cache: 'no-store' }),
-	        fetch('/api/projects?light=1', { cache: 'no-store' }),
-	      ]);
-	      const rawTasks = taskRes.ok ? await taskRes.json() : [];
-	      const rawProjects = projectRes.ok ? await projectRes.json() : [];
-	      rawTaskCount = Array.isArray(rawTasks) ? rawTasks.length : 0;
-	      rawProjectCount = Array.isArray(rawProjects) ? rawProjects.length : 0;
-	      const projectRows = Array.isArray(rawProjects) ? rawProjects : [];
-	      rawClosedBookCount = projectRows.filter(project => isProjectClosedBook(project) && !isProjectArchivedBook(project)).length;
-	      rawDashboardProjectCount = projectRows.filter(shouldProjectAppearOnDashboard).length;
-	      updateProjectMaps(rawProjects);
-	      const enrichedTasks = enrichDashboardTaskTitles(rawTasks);
-	      allTasks = normalizeDashboardTasks(mergeDashboardProjects(enrichedTasks, rawProjects));
-	    } catch { /* ignore */ }
-	    renderDashboard();
-	    })();
-	    try {
-	      await dashboardRefreshInFlight;
-	    } finally {
-	      dashboardRefreshInFlight = null;
-	    }
-	  }
+  async function refreshDashboard(force = true) {
+    if (force && pollingResources.get('dashboard')?.promise) {
+      await pollingResources.get('dashboard').promise;
+    }
+    return pollResource('dashboard', 15000, loadDashboard, force);
+  }
+
+  let dashboardRefreshInFlight = null;
+  const dashboardReadState = {
+    tasks: { rows: [], receivedAt: null, error: null },
+    projects: { rows: [], receivedAt: null, error: null },
+  };
+
+  async function boundedDashboardJson(url, timeoutMs = 20000) {
+    const controller = new AbortController();
+    let timer;
+    try {
+      return await Promise.race([
+        fetch(url, { cache: 'no-store', signal: controller.signal }).then(async response => {
+          if (!response.ok) throw new Error(`读取失败（HTTP ${response.status}）`);
+          return response.json();
+        }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('读取超时，请刷新重试'));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function applyDashboardReadState() {
+    const rawTasks = dashboardReadState.tasks.rows;
+    const rawProjects = dashboardReadState.projects.rows;
+    rawTaskCount = rawTasks.length;
+    rawProjectCount = rawProjects.filter(project => !isProjectArchivedBook(project)).length;
+    rawClosedBookCount = rawProjects.filter(project => isProjectClosedBook(project) && !isProjectArchivedBook(project)).length;
+    rawDashboardProjectCount = rawProjects.filter(shouldProjectAppearOnDashboard).length;
+    updateProjectMaps(rawProjects);
+    allTasks = normalizeDashboardTasks(mergeDashboardProjects(enrichDashboardTaskTitles(rawTasks), rawProjects));
+    renderDashboard();
+    const status = document.getElementById('dashLoadStatus');
+    if (status) status.textContent = Object.entries(dashboardReadState).map(([key, state]) => {
+      const label = key === 'tasks' ? '任务' : '作品';
+      if (state.error) return `${label}刷新失败：${state.error}；${state.receivedAt === null ? '尚无成功数据' : '显示上次成功数据（已过期）'}`;
+      return state.receivedAt === null ? `${label}加载中` : `${label}已更新`;
+    }).join(' · ');
+    if (status && [...rawTasks, ...rawProjects].some(row => row?.delivery_closure?.status === 'not_checked')) {
+      status.textContent += ' · 进度已更新；正式交付状态请进入作品详情核验';
+    }
+  }
+
+  async function loadDashboard() {
+    if (dashboardRefreshInFlight) return dashboardRefreshInFlight;
+    const read = async (key, url) => {
+      const state = dashboardReadState[key];
+      try {
+        const rows = await boundedDashboardJson(url);
+        if (!Array.isArray(rows)) throw new Error('列表格式不可用');
+        state.rows = rows;
+        state.receivedAt = Date.now();
+        state.error = null;
+        return true;
+      } catch (error) {
+        state.error = error.name === 'AbortError' ? '读取超时，请刷新重试' : (error.message || '连接失败');
+        return false;
+      } finally {
+        applyDashboardReadState();
+      }
+    };
+    dashboardRefreshInFlight = Promise.all([
+      // Keep failed/blocked creations, including the unresumed 500-chapter task.
+      read('tasks', '/api/tasks?summary=1&include_inactive=1&progress_readback=1'),
+      read('projects', '/api/projects?light=1&progress_readback=1'),
+    ]).then(results => results.every(Boolean));
+    try {
+      return await dashboardRefreshInFlight;
+    } finally {
+      dashboardRefreshInFlight = null;
+    }
+  }
 
   // Module-level selection state — persists across re-renders.
   const selectedSlugs = new Set();
 
-	  function isActiveTask(task) {
-	    return task?.status === 'running' || task?.status === 'queued';
-	  }
+  function isActiveTask(task) {
+    if (['stale', 'unknown', 'inactive'].includes(task?.activity_status)) return false;
+    if (task?.synthetic_project === true) {
+      return task.has_active_workflow === true || task.execution_active === true;
+    }
+    return task?.status === 'running' || task?.status === 'queued';
+  }
 
 	  function isProjectClosedBook(project) {
-	    const state = String(project?.book_state || '').toLowerCase();
-	    const status = String(project?.status || '').toLowerCase();
-	    return state === 'closed_complete'
-	      || state === 'closed'
-	      || status === 'completed'
-	      || status === 'complete'
-	      || status === 'published';
+	    return project?.delivery_closure?.status === 'verified'
+          && project?.delivery_closure?.is_complete === true;
 	  }
 
 	  function isProjectArchivedBook(project) {
@@ -5164,6 +5358,8 @@
 	      const merged = project ? {
 	        ...task,
 	        project_status: project.status || task.project_status || '',
+            delivery_closure: project.delivery_closure || null,
+            book_state: project.book_state || '',
         project_type: project.project_type || task.project_type || '',
         content_mode: project.content_mode || task.content_mode || '',
 	        repair_status: project.repair_status || task.repair_status || null,
@@ -5180,34 +5376,59 @@
 	  function dashboardProjectStatus(project) {
 	    const state = String(project?.book_state || '').toLowerCase();
 	    const status = String(project?.status || '').toLowerCase();
+	    const executionActive = project?.has_active_workflow === true || project?.execution_active === true;
 	    const repairPhase = String(project?.repair_status?.phase || '').toLowerCase();
-	    if (state === 'closed_complete' || state === 'closed') return 'completed';
 	    if (state === 'archived') return 'archived';
+	    if (project?.delivery_closure?.status === 'verified' && project?.delivery_closure?.is_complete === true) return 'completed';
+        if (executionActive && !['stale', 'unknown', 'inactive'].includes(project?.activity_status)) {
+          return project?.current_workflow?.status === 'queued' || status === 'queued' ? 'queued' : 'running';
+        }
+        if (project?.delivery_closure?.status === 'not_checked' && !executionActive
+            && !['failed', 'error', 'paused', 'cancelled', 'incomplete'].includes(status)
+            && (['completed', 'complete', 'published', 'closed', 'closed_complete'].includes(status)
+              || (project?.adoption_evidence === 'verified' && Number(project?.target_chapters) > 0
+                && Number(project?.adopted_chapters || 0) >= Number(project.target_chapters)))) return 'project';
 	    if (state === 'needs_attention') return 'incomplete';
 	    if (repairPhase && repairPhase !== 'normal') return 'incomplete';
 	    if (project?.repair_status?.is_repairing && status === 'paused') return 'incomplete';
-	    if (state === 'in_progress') return 'running';
-	    if (status === 'completed' || status === 'complete' || status === 'published') return 'completed';
 	    if (status === 'failed' || status === 'error') return 'failed';
 	    if (status === 'paused' || status === 'cancelled' || status === 'incomplete') return 'incomplete';
-	    if (status === 'queued') return 'queued';
-	    if (status === 'running' || status === 'in_progress' || status === 'planning' || status === 'revising') return 'running';
+	    if (project?.activity_status === 'stale') return 'incomplete';
+        if (!executionActive && project?.adoption_evidence === 'verified'
+          && Number(project?.candidate_chapters || 0) > 0) return 'incomplete';
+	    if (['unknown', 'inactive'].includes(project?.activity_status)) return 'project';
+	    if (executionActive) return status === 'queued' ? 'queued' : 'running';
 	    return 'project';
 	  }
 
 	  function dashboardProjectStage(project) {
 	    const state = String(project?.book_state || '').toLowerCase();
+	    const executionActive = project?.has_active_workflow === true || project?.execution_active === true;
 	    const repairPhase = String(project?.repair_status?.phase || '').toLowerCase();
-	    if (state === 'closed_complete' || state === 'closed') return 'project_closed';
 	    if (state === 'archived') return 'project_archived';
+	    if (project?.delivery_closure?.status === 'verified' && project?.delivery_closure?.is_complete === true) return 'project_closed';
+        if (project?.delivery_closure?.status === 'not_checked'
+            && dashboardProjectStatus(project) === 'project'
+            && (['completed', 'complete', 'published', 'closed', 'closed_complete'].includes(String(project?.status || '').toLowerCase())
+              || (project?.adoption_evidence === 'verified' && Number(project?.target_chapters) > 0
+                && Number(project?.adopted_chapters || 0) >= Number(project.target_chapters)))) return 'delivery_unverified';
+        if (state === 'delivery_pending') return 'delivery_pending';
+        if (executionActive && !['stale', 'unknown', 'inactive'].includes(project?.activity_status)) {
+          const workflow = project?.current_workflow || project?.workflow_activity?.current_workflow;
+          if (workflow) return workflow.current_step || workflow.workflow_type || 'project_pipeline_started';
+        }
+	    if (project?.activity_status === 'stale') return 'workflow_activity_stale';
+	    if (project?.activity_status === 'unknown') return 'workflow_activity_unknown';
+        if (!executionActive && project?.adoption_evidence === 'verified'
+          && Number(project?.candidate_chapters || 0) > 0) return 'project_candidate_review';
 	    if (repairPhase === 'repair_gate') return 'repair_gate';
 	    if (repairPhase === 'planning_gate') return 'blocked_generation_gate';
 	    if (repairPhase === 'needs_attention') return 'repair_needs_attention';
 	    const status = String(project?.status || '').toLowerCase();
-	    if (status === 'planning') return 'project_planning';
+	    if (status === 'planning') return executionActive ? 'planning_started' : 'project_planning';
 	    if (status === 'paused') return 'project_paused';
-	    if (status === 'revising') return 'project_revising';
-	    if (status === 'in_progress' || status === 'running') return 'project_pipeline_started';
+	    if (status === 'revising') return executionActive ? 'chapter_rewrite_started' : 'project_revising';
+	    if (executionActive) return status === 'queued' ? 'queued' : 'project_pipeline_started';
 	    return 'project_registered';
 	  }
 
@@ -5218,22 +5439,33 @@
 	    const targetWords = Number(project?.target_word_count || 0);
 	    const unitKind = String(project?.unit_kind || '');
 	    const unitLabel = String(project?.unit_label || (unitKind === 'single_story' ? '全文' : '章节'));
-	    const completedUnits = Number(project?.completed_chapters || project?.completed_segments || 0);
-	    const wordTotal = Number(project?.words_on_disk || 0);
+	    const completedUnits = project?.adopted_chapters ?? project?.completed_chapters ?? project?.completed_segments;
+	    const wordTotal = project?.word_count_total;
 	    return {
 	      task_id: `project:${slug}`,
 	      task_type: 'project',
 	      status: dashboardProjectStatus(project),
+          projection_authority: 'postgresql',
+          current_workflow: project?.current_workflow || project?.workflow_activity?.current_workflow || null,
+          workflow_run_id: (project?.current_workflow || project?.workflow_activity?.current_workflow)?.workflow_run_id,
 	      project_status: project?.status || '',
+          delivery_closure: project?.delivery_closure || null,
+          book_state: project?.book_state || '',
+          activity_status: project?.activity_status,
+          workflow_activity: project?.workflow_activity,
+          has_active_workflow: project?.has_active_workflow === true,
+          execution_active: project?.execution_active === true,
 	      created_at: project?.created_at || project?.updated_at || '',
-	      updated_at: project?.updated_at || project?.created_at || '',
+	      updated_at: (project?.current_workflow || project?.workflow_activity?.current_workflow)?.last_evidence_at
+            || (project?.current_workflow || project?.workflow_activity?.current_workflow)?.updated_at
+            || project?.updated_at || project?.created_at || '',
 	      project_slug: slug,
 	      title,
 	      project_title: title,
       project_type: project?.project_type || '',
       content_mode: project?.content_mode || '',
 		      current_stage: dashboardProjectStage(project),
-		      repair_status: project?.repair_status || null,
+		      repair_status: project?.has_active_workflow === true ? null : (project?.repair_status || null),
 		      progress_events: [],
 	      result: {
 	        project_slug: slug,
@@ -5252,12 +5484,21 @@
 	        unit_label: unitLabel,
 	        target_chapters: targetChapters,
 	        target_segments: unitKind === 'single_story' ? targetChapters : 0,
+	        adoption_evidence: project?.adoption_evidence,
+            adopted_chapters: project?.adopted_chapters,
+            adopted_chapter_numbers: project?.adopted_chapter_numbers,
+            promoted_chapters: project?.promoted_chapters,
+            accepted_with_debt_chapters: project?.accepted_with_debt_chapters,
+            candidate_chapters: project?.candidate_chapters,
+            candidate_word_count_total: project?.candidate_word_count_total,
+            knowledge: project?.knowledge,
 	        completed_chapters: completedUnits,
 	        completed_segments: unitKind === 'single_story' ? completedUnits : 0,
 	        target_word_count: targetWords,
 	        word_count_total: wordTotal,
 	        current_export_filename: project?.current_export_filename || '',
 	        current_export_modified_at: project?.current_export_modified_at || '',
+            ...project?.chapter_word_stats,
 	      },
 	      payload: {
 	        slug,
@@ -5283,16 +5524,43 @@
 	        .map(project => String(project?.slug || '').trim())
 	        .filter(Boolean)
 	    );
-	    const rows = (Array.isArray(tasks) ? tasks : []).filter(task => {
+	    let rows = (Array.isArray(tasks) ? tasks : []).filter(task => {
 	      const slug = String(task?.project_slug || '').trim();
 	      return !slug || !archivedSlugs.has(slug) || isActiveTask(task);
 	    });
-	    const taskSlugs = new Set(rows.map(task => String(task?.project_slug || '').trim()).filter(Boolean));
 	    for (const project of projectRows) {
 	      const slug = String(project?.slug || '').trim();
-	      if (!slug || taskSlugs.has(slug)) continue;
+	      if (!slug) continue;
 	      if (!shouldProjectAppearOnDashboard(project)) continue;
-	      rows.push(projectToDashboardTask(project));
+          const previous = rows.filter(task => String(task?.project_slug || '').trim() === slug);
+          const authoritative = project?.current_workflow || project?.workflow_activity?.current_workflow
+            || project?.has_active_workflow === true
+            || (project?.adoption_evidence === 'verified' && Number(project?.candidate_chapters || 0) > 0);
+          if (previous.length && !authoritative) continue;
+          // The backend has compared this failure with the committed project
+          // workflow. A registration card must not hide its later real stop.
+          const actualFailure = previous.find(task => task.projection_authority === 'task_execution'
+            && (['failed','cancelled'].includes(task.status) || task.execution_owner_verified === true));
+          if (actualFailure && project.has_active_workflow !== true && !isProjectClosedBook(project)
+              && (actualFailure.execution_owner_verified === true || Date.parse(actualFailure.updated_at || '') >= Date.parse(project.current_workflow?.updated_at || project.updated_at || ''))) continue;
+          const card = projectToDashboardTask(project);
+          // Parallel API reads can straddle a transition. Prefer the fresher PG
+          // snapshot, never a newer timestamp on an unverified legacy cache.
+          const newer = previous.find(task => task?.projection_authority === 'postgresql'
+            && Date.parse(task.updated_at || '') > Date.parse(card.updated_at || ''));
+          if (newer) {
+            rows = rows.filter(task => String(task?.project_slug || '').trim() !== slug || task === newer);
+            continue;
+          }
+          const history = previous.flatMap(task => task?.synthetic_project
+            ? (task.task_history || []) : [...(task.task_history || []), Object.fromEntries(
+              ['task_id','task_type','status','current_stage','created_at','updated_at','progress_events','error']
+                .map(key => [key, task[key]]))]);
+          card.task_history = [...new Map(history.map(item => [JSON.stringify(item), item])).values()];
+          card.projection_migration = {schema:'pg-task-projection.v1', cache_preserved:true,
+            superseded_task_ids:card.task_history.map(item => item.task_id)};
+          rows = rows.filter(task => String(task?.project_slug || '').trim() !== slug);
+          rows.push(card);
 	    }
 	    return rows;
 	  }
@@ -5336,39 +5604,84 @@
 
   function isShortCompletedTask(task) {
     if (task?.status !== 'completed') return false;
+    if (isConceptionOnlyTask(task)) return false;
     const stats = getTaskChapterWordStats(task);
     const isFanqie = isFanqieShortTask(task);
-    const writtenCount = stats.hasStats
-      ? (isFanqie ? stats.completedSegments : stats.completedChapters)
-      : ((task.result && task.result.chapters_written) || 0);
+    const writtenCount = isFanqie ? stats.completedSegments : stats.completedChapters;
     const targetCount = (isFanqie ? stats.targetSegments : stats.targetChapters)
       || (task.result && task.result.target_chapters) || 0;
     return targetCount > 0 && writtenCount < targetCount;
   }
 
+  function taskExecutionTerminalCode(task) {
+    const terminal = task?.result?.execution_terminal;
+    const candidate = (typeof terminal === 'string' ? terminal : terminal?.code)
+      || task?.result?.code || task?.error || '';
+    const code = String(candidate).trim();
+    return /^execution_[a-z_]+$/.test(code) ? code : null;
+  }
+
   function isRetryableAttentionTask(task) {
+    if (taskExecutionTerminalCode(task)) return false;
     const status = task?.status;
     return status === 'failed' || status === 'cancelled' || status === 'incomplete' || isShortCompletedTask(task);
   }
 
+  function taskExecutionStopPresentation(task) {
+    const code = taskExecutionTerminalCode(task);
+    const known = {
+      execution_deadline_exhausted: {label:'执行时间已到期', mode:'等待续开原任务时间',
+        detail:'本次执行时间窗口已结束，原调用次数、用量和内容记录保留。',
+        next:'续开原任务的执行时间后继续；无需重建作品。'},
+      execution_budget_exhausted: {label:'本次执行限额已到', mode:'等待调整原任务限额',
+        detail:'后续请求已停止，已用次数和用量保留。', next:'核对原任务限额后再恢复。'},
+      execution_downstream_budget_reserved: {label:'后续成书额度已保留', mode:'构思额度不足', detail:'构思支出触及后续额度预留线，当前结果和原预算保留。', next:'核对原预算和有效构思结果后再继续。'},
+      execution_result_unknown: {label:'调用结果待核对', mode:'原调用回执待核对',
+        detail:'尚无法确认原调用的最终结果，原记录与费用预留保留。', next:'核对原调用回执并完成恢复处理后，再恢复此任务。'},
+      execution_cancelled: {label:'执行已取消', mode:'保留原任务记录',
+        detail:'本次执行已取消，历史调用和内容保留。', next:'核对取消原因后，使用原任务的恢复流程。'},
+      execution_ledger_unavailable: {label:'执行记录暂不可用', mode:'等待恢复账本连接',
+        detail:'暂时无法核对执行记录，后续请求已停止。', next:'恢复账本连接并核对原任务状态后继续。'}
+    };
+    return code ? (known[code] || {label:'执行已停止', mode:'等待核对执行权限',
+      detail:'后续请求已停止，原记录保留。', next:'查看诊断并核对原任务的执行权限后继续。'}) : null;
+  }
+
+  function taskErrorSummary(error) {
+    const line = String(error ?? '').split(/\r?\n/).map(value => value.trim()).filter(Boolean).pop() || '';
+    const code = line.match(/^(?:[\w.]*(?:Error|Exception):\s*)?(fanqie_segment_not_adopted|(?:fanqie_segment_)?knowledge_not_closed):([1-9]\d*)$/);
+    let summary = line;
+    if (code) summary = code[1] === 'fanqie_segment_not_adopted'
+      ? `第${code[2]}章尚未采用，请查看审校与证据状态；已有稿件保留`
+      : `第${code[2]}章知识入库尚未闭合；已有正文保留`;
+    const chars = Array.from(summary);
+    return chars.length > 180 ? chars.slice(0, 179).join('') + '…' : summary;
+  }
+
   function attentionReasonForTask(task) {
+    const executionStop = taskExecutionStopPresentation(task);
+    if (executionStop) return `${executionStop.label} · ${executionStop.mode}`;
     const status = task?.status;
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
+    if (String(task?.project_status || '').toLowerCase() === 'paused' && !isActiveTask(task)) {
+      return '项目已暂停 · 等待恢复';
+    }
     if (repairPhase === 'repair_gate') return '修复续跑中';
     if (repairPhase === 'needs_attention') return isFanqieShortTask(task) ? '全文门禁修复中' : '章节门禁修复中';
     if (hasStagePrefix(stage, ['machine_repair_required', 'machine_repair'])) return '机器修复排队中';
     if (hasStagePrefix(stage, ['blocked_generation_gate'])) return '规划门禁将携带诊断续跑';
     if (hasStagePrefix(stage, ['repair_needs_attention', 'machine_blocked'])) return '修复续跑中';
     if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复续跑中';
-    if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
+    if (status === 'failed') return taskErrorSummary(task.error) || '任务失败，请查看诊断';
     if (status === 'cancelled') return '已停止 · 可恢复';
     if (status === 'incomplete') return '未完成 · 可恢复';
-    if (isShortCompletedTask(task)) return isFanqieShortTask(task) ? '已完成但全文未同步' : '已完成但章节未补齐';
+    if (isUnverifiedCompletedTask(task)) return '任务记录已结束 · 交付待核验';
     return '需要查看';
   }
 
   function isAttentionTask(task) {
+    if (isCompletedBookTask(task)) return false;
     const status = task?.status;
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
@@ -5381,7 +5694,7 @@
   function matchesDashboardFilter(task) {
     if (dashboardFilter === 'active') return isActiveTask(task) && !isFinalizingTask(task);
     if (dashboardFilter === 'finalizing') return isFinalizingTask(task);
-    if (dashboardFilter === 'completed') return task.status === 'completed' && !isAttentionTask(task);
+    if (dashboardFilter === 'completed') return isCompletedBookTask(task) && !isAttentionTask(task);
     if (dashboardFilter === 'attention') return isAttentionTask(task);
     return true;
   }
@@ -5401,7 +5714,7 @@
 
   function isFinalizingTask(task) {
     if (!task) return false;
-    if (task.status !== 'running') return false;
+    if (!isActiveTask(task) || task.status !== 'running') return false;
     const stage = task.current_stage || '';
     if (stage.includes('export') || stage.includes('consistency_review') || stage.includes('rolling_summary')) return true;
     // Heuristic: > 85% chapters done counts as finalizing
@@ -5412,13 +5725,22 @@
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
+  function mergeTaskProgressSnapshot(task) {
+    // Detail polling is also the freshest source for the global header. Keep
+    // the same task row, including archived prior receipts in its payload.
+    const index = allTasks.findIndex(item => item.task_id === task.task_id);
+    if (index >= 0) allTasks[index] = {...allTasks[index], ...task};
+    else allTasks.push(task);
+    updateDashboardMetrics();
+  }
+
   function updateDashboardMetrics() {
     const running = allTasks.filter(t => isActiveTask(t) && !isFinalizingTask(t)).length;
     const finalizing = allTasks.filter(isFinalizingTask).length;
     const active = allTasks.filter(isActiveTask).length;
 	    const total = allTasks.length;
 	    hiddenRecordCount = Math.max(0, rawTaskCount - total);
-	    const completed = allTasks.filter(task => task.status === 'completed' && !isAttentionTask(task)).length;
+	    const completed = allTasks.filter(task => isCompletedBookTask(task) && !isAttentionTask(task)).length;
 	    const attention = allTasks.filter(isAttentionTask).length;
     const free = Math.max(0, maxConcurrentTasks - active);
 
@@ -5431,6 +5753,7 @@
     setText('#dashMetricCompleted', pad2(completed));
     setText('#dashMetricAttention', pad2(attention));
     setText('#navTaskCount', pad2(total));
+    setText('#navLibraryCount', pad2(rawProjectCount));
     setText('#dashHeroTotal', total);
 
     const closedBooks = rawClosedBookCount;
@@ -5454,7 +5777,7 @@
 
     // Header status: queue / capacity readout (replaces old hero metric note).
     const queueEl = document.getElementById('hdrQueue');
-    if (queueEl) queueEl.textContent = `队列 ${active} in / ${free} wait`;
+    if (queueEl) queueEl.textContent = `任务 ${active} 进行中 / ${free} 空闲名额`;
 
     // Attention banner.
     const banner = document.getElementById('dashAttention');
@@ -5468,7 +5791,7 @@
         const titleEl = document.getElementById('dashAttentionTitle');
         const detailEl = document.getElementById('dashAttentionDetail');
         const retryBtn = document.getElementById('dashAttentionRetry');
-        if (titleEl) titleEl.textContent = `${items.length} 本书存在门控或需处理`;
+        if (titleEl) titleEl.textContent = `${items.length} 项任务存在门控或需处理`;
         if (retryBtn) {
           retryBtn.style.display = retryableItems.length ? '' : 'none';
           retryBtn.textContent = `↻ 重试可恢复项 ${retryableItems.length ? pad2(retryableItems.length) : ''}`;
@@ -5545,7 +5868,7 @@
   function updateStatusBanner() {
     const banner = $('#dashStatusBanner');
     if (!banner) return;
-    const active = allTasks.filter(t => t.status === 'running' || t.status === 'queued').length;
+    const active = allTasks.filter(isActiveTask).length;
     if (active === 0) {
       banner.style.display = 'none';
       banner.textContent = '';
@@ -5624,7 +5947,14 @@
 
   function getTaskChapterWordStats(task) {
     const stats = task?.chapter_word_stats || {};
-    const chapters = (Array.isArray(stats.chapters) ? stats.chapters : [])
+    const adoptedCount = stats.adopted_chapters ?? stats.completed_chapters;
+    const hasStats = stats.adoption_evidence === 'verified'
+      && typeof adoptedCount === 'number' && Number.isInteger(adoptedCount) && adoptedCount >= 0;
+    const adoptedNumbers = Array.isArray(stats.adopted_chapter_numbers)
+      ? stats.adopted_chapter_numbers : [];
+    // Only DB adoption evidence establishes completed正文; candidate rows and events do not.
+    const chapters = (hasStats && Array.isArray(stats.chapters) ? stats.chapters : [])
+      .filter(ch => adoptedNumbers.includes(Number(ch.number)))
       .map((ch) => ({
         ...ch,
         number: Number(ch.number),
@@ -5633,22 +5963,56 @@
       }))
       .filter((ch) => Number.isFinite(ch.number) && ch.number > 0)
       .sort((a, b) => a.number - b.number);
-    const wordTotalFromChapters = chapters.reduce((sum, ch) => sum + Math.max(0, Number(ch.word_count || 0)), 0);
-    const wordTotal = Number(stats.word_count_total || 0) || wordTotalFromChapters;
-    const completedChapters = Number(stats.completed_chapters || 0) || chapters.length;
+    const completedChapters = hasStats ? adoptedCount : 0;
+    const wordTotal = hasStats && completedChapters > 0 && typeof stats.word_count_total === 'number'
+      && Number.isFinite(stats.word_count_total) ? Math.max(0, stats.word_count_total) : 0;
     return {
-      hasStats: chapters.length > 0 || wordTotal > 0 || completedChapters > 0,
+      hasStats,
       chapters,
       byNumber: new Map(chapters.map(ch => [ch.number, ch])),
+      adoptedChapterNumbers: adoptedNumbers,
       completedChapters,
       wordTotal,
-      targetChapters: Number(stats.target_chapters || 0),
-      targetSegments: Number(stats.target_segments || stats.target_chapters || 0),
-      completedSegments: Number(stats.completed_segments || stats.completed_chapters || 0),
+      candidateWordTotal: Number(stats.candidate_word_count_total ?? 0),
+      targetChapters: Number(stats.target_chapters ?? 0),
+      targetSegments: Number(stats.target_segments ?? stats.target_chapters ?? 0),
+      completedSegments: completedChapters,
       unitKind: String(stats.unit_kind || ''),
       unitLabel: String(stats.unit_label || ''),
       targetWordCount: Number(stats.target_word_count || 0),
     };
+  }
+
+  function taskProgressSyncState(task) {
+    const stats = getTaskChapterWordStats(task);
+    const numbers = task?.chapter_word_stats?.adopted_chapter_numbers;
+    if (!stats.hasStats || !Array.isArray(numbers)
+      || numbers.some(n => !Number.isInteger(n) || n <= 0)
+      || new Set(numbers).size !== numbers.length
+      || numbers.length !== stats.completedChapters) return 'unknown';
+    const events = Array.isArray(task?.progress_events) ? task.progress_events : [];
+    const completed = events.filter(e => e.stage === 'chapter_pipeline_completed');
+    // Short-story segment events use the same adopted chapter numbering.
+    const comparable = completed.length ? completed
+      : events.filter(e => e.stage === 'fanqie_segment_writing_completed');
+    const eventNumbers = comparable.map(e => completed.length
+      ? e.payload?.chapter_number : e.payload?.segment_number);
+    if (!eventNumbers.length || eventNumbers.some(n => !Number.isInteger(n) || n <= 0)) return 'unknown';
+    const eventSet = new Set(eventNumbers);
+    return eventSet.size === numbers.length && numbers.every(n => eventSet.has(n))
+      ? 'verified' : 'mismatch';
+  }
+
+  function taskKnowledgeProgressText(task) {
+    const stats = getTaskChapterWordStats(task);
+    const knowledge = task?.chapter_word_stats?.knowledge;
+    const total = knowledge?.adopted_chapters;
+    const closed = knowledge?.closed_chapters;
+    if (!stats.hasStats || !Number.isInteger(total) || !Number.isInteger(closed)
+      || total !== stats.completedChapters || closed < 0 || closed > total) return '知识入库待验证';
+    const label = total === 0 ? '未开始'
+      : closed === total && knowledge.status === 'closed' ? '已闭合' : '待闭合';
+    return `知识入库${closed}/${total}（${label}）`;
   }
 
   function formatEventClock(value) {
@@ -5688,6 +6052,29 @@
   function isConceptionOnlyTask(task) {
     const result = task?.result || {};
     return result.mode === 'conception_only' || result.planning_started === false;
+  }
+
+  function isExecutionWindowTask(task) {
+    return !!(task?.result?.execution_window || task?.payload?.metadata?.execution_window || task?.payload?.configuration_submission?.execution_window);
+  }
+  function isCompletedBookTask(task) {
+    if (task?.status !== 'completed' || isConceptionOnlyTask(task) || isExecutionWindowTask(task)) return false;
+    if (task?.delivery_closure?.status !== 'verified' || task?.delivery_closure?.is_complete !== true) return false;
+    const stats = getTaskChapterWordStats(task);
+    const target = stats.targetChapters || Number(task?.payload?.target_chapters || task?.result?.target_chapters || 0);
+    return stats.hasStats && target > 0 && stats.completedChapters >= target;
+  }
+
+  function isBodyCompletePendingDelivery(task) {
+    if (task?.delivery_closure?.status === 'not_checked') return false;
+    if (isCompletedBookTask(task) || isConceptionOnlyTask(task) || isExecutionWindowTask(task)) return false;
+    const stats = getTaskChapterWordStats(task);
+    return task?.book_state === 'delivery_pending' || (stats.hasStats && stats.targetChapters > 0
+      && stats.completedChapters >= stats.targetChapters);
+  }
+
+  function isUnverifiedCompletedTask(task) {
+    return task?.status === 'completed' && !isConceptionOnlyTask(task) && !isExecutionWindowTask(task) && !isCompletedBookTask(task);
   }
 
   function isFanqieShortTask(task) {
@@ -5756,9 +6143,10 @@
     const isFanqie = !!context.isFanqieShort;
     const unit = context.unitLabel || (isFanqie ? '篇' : '章');
 	    const flags = [];
-	    if (repairPhase === 'needs_attention') flags.push({ text: `${unit}门禁修复中`, tone: 'warn' });
-	    if (repairPhase === 'repair_gate') flags.push({ text: '修复续跑中', tone: 'warn' });
-	    if (projectStatus === 'paused') flags.push({ text: '等待续跑', tone: 'warn' });
+	    const isPausedProject = projectStatus === 'paused' && !isActive;
+	    if (!isPausedProject && repairPhase === 'needs_attention') flags.push({ text: `${unit}门禁修复中`, tone: 'warn' });
+	    if (!isPausedProject && repairPhase === 'repair_gate') flags.push({ text: '修复续跑中', tone: 'warn' });
+	    if (isPausedProject) flags.push({ text: '已暂停 · 等待恢复', tone: 'warn' });
 
 	    const base = {
 	      phase: 'idle',
@@ -5770,15 +6158,65 @@
 	      flags,
 	    };
 
+    if (taskExecutionTerminalCode(task)) {
+      return {...base, ...taskExecutionStopPresentation(task), phase:'blocked', badgeCls:'failed'};
+    }
+
+    if (isCompletedBookTask(task)) {
+      return {...base, phase:'complete', label:'已完成', mode:'正式交付已核验',
+        detail:`已完成 ${context.bookCompletedChapters || 0}/${context.total || 0} ${unit}。`,
+        next:'可进入阅读器或整理上架资料。', badgeCls:'completed'};
+    }
+    const readbackStats = task?.delivery_closure?.status === 'not_checked' ? getTaskChapterWordStats(task) : null;
+    const storedClosed = ['completed', 'complete', 'published', 'closed', 'closed_complete'].includes(projectStatus);
+    const adoptedWholeBook = readbackStats?.hasStats && readbackStats.targetChapters > 0
+      && readbackStats.completedChapters >= readbackStats.targetChapters;
+    if (readbackStats && !isActive && !task.execution_owner_verified && !task.has_active_workflow && !task.execution_active
+        && !['failed', 'cancelled', 'running', 'queued', 'archived'].includes(status)
+        && (status !== 'incomplete' || task.synthetic_project === true)
+        && (storedClosed || adoptedWholeBook)
+        && !isConceptionOnlyTask(task) && !isExecutionWindowTask(task)) {
+      return {...base, phase:'unknown', deferredDeliveryReadback:true,
+        label:status === 'completed' || storedClosed ? '历史记录完成' : '交付待核验',
+        mode:'交付待核验', detail:'当前仅更新采用与知识进度，未执行正式交付核验；这不表示质量失败。',
+        next:'进入作品详情核验正式交付状态，无需据此重新生成正文或交付。', badgeCls:'queued'};
+    }
+    if (isBodyCompletePendingDelivery(task)) {
+      return {...base, phase:'attention', label:'正文齐备，待交付', mode:'正式交付待核验',
+        detail:'已采纳正文齐备；整书审校与正式交付尚未通过当前核验。',
+        next:'可阅读已保存稿，查看交付诊断。', badgeCls:'incomplete'};
+    }
+
+    if (task?.activity_status === 'stale') {
+      return {...base, phase:'attention', label:'待恢复', mode:'历史运行记录过期',
+        detail:'缺少近期步骤、心跳或执行者证据；历史 workflow 状态保留。',
+        next:'核对执行者后恢复任务。', badgeCls:'incomplete'};
+    }
+    if (task?.activity_status === 'unknown' && ['running', 'queued', 'project'].includes(status)) {
+      return {...base, label:'活动待核验', mode:'缺少执行证据',
+        detail:'当前无法确认执行者或近期心跳；历史记录不能证明正在运行。'};
+    }
+
 	    if (status === 'failed') {
 	      return {
 	        ...base,
 	        phase: 'blocked',
 	        label: '已失败',
 	        mode: '任务失败',
-	        detail: task?.error ? String(task.error).split('\n').slice(-1)[0] : '任务执行失败。',
-	        next: '查看诊断后重试，或完全删除这本书。',
+	        detail: taskErrorSummary(task?.error) || '任务执行失败。',
+	        next: '查看诊断与审校证据，修复后从当前进度继续；已有稿件保留。',
 	        badgeCls: 'failed',
+	      };
+	    }
+	    if (isPausedProject) {
+	      return {
+	        ...base,
+	        phase: 'paused',
+	        label: '已暂停',
+	        mode: '等待恢复',
+        detail: repairDetail || '项目已暂停，等待恢复；当前没有运行中的任务。',
+	        next: '点击恢复继续，或查看诊断后再启动修复。',
+	        badgeCls: 'cancelled',
 	      };
 	    }
 	    if (status === 'cancelled') {
@@ -5792,6 +6230,13 @@
 	        badgeCls: 'cancelled',
 	      };
 	    }
+        const candidateCount = Number(task?.chapter_word_stats?.candidate_chapters || 0);
+        if (task?.synthetic_project && !isActive
+          && task?.chapter_word_stats?.adoption_evidence === 'verified' && candidateCount > 0) {
+          return {...base, phase:'attention', label:'草稿待审', mode:'已有候选正文 / 尚未采用',
+            detail:`有 ${candidateCount} ${unit}候选正文，尚未正式采用。已有规划和历史版本保留。`,
+            next:'查看审校诊断，从现有草稿继续处理；已有规划与历史版本均已保留。', badgeCls:'incomplete'};
+        }
 	    if (status === 'incomplete') {
 	      return {
 	        ...base,
@@ -5803,15 +6248,31 @@
 	        badgeCls: 'incomplete',
 	      };
 	    }
-	    if (status === 'completed') {
+    if (status === 'completed' && isExecutionWindowTask(task)) {
+      const complete=task?.result?.final_verdict==='execution_window_completed';
+      return {...base,phase:complete?'complete':'paused',label:complete?'本次范围已完成':'本次范围待处理',
+        mode:'全书状态另列',detail:'窗口结果不代表全书完结；正文采用、知识和结局验收分别记录。',next:'检查本次窗口或选择后续范围。',badgeCls:complete?'completed':'incomplete'};
+    }
+	    if (status === 'completed' && isConceptionOnlyTask(task)) {
 	      return {
 	        ...base,
-	        phase: 'complete',
-	        label: '已完成',
-	        mode: '可阅读/整理',
-	        detail: `已完成 ${context.bookCompletedChapters || 0}/${context.total || 0} ${unit}。`,
-	        next: '可进入阅读器或整理上架资料。',
-	        badgeCls: 'completed',
+	        phase: 'planning',
+	        label: '概念已就绪',
+	        mode: '等待审批后进入正文',
+	        detail: '概念构思已完成，但尚未生成章节正文。',
+	        next: '审阅概念并批准后，才会进入正文写作。',
+	        badgeCls: 'queued',
+	      };
+	    }
+	    if (isUnverifiedCompletedTask(task)) {
+	      return {
+	        ...base,
+	        phase: 'unknown',
+	        label: '历史记录完成',
+	        mode: '交付待核验',
+	        detail: '记录标记为 completed；缺少足够的当前交付证据，历史正文产出未知。',
+	        next: '核对来源、备份及正文采用记录。',
+	        badgeCls: 'queued',
 	      };
 	    }
 	    if (isRepairTask) {
@@ -5825,15 +6286,15 @@
 	        badgeCls: 'incomplete',
 	      };
 	    }
-	    if (task?.synthetic_project) {
+	    if (task?.synthetic_project && !isActive) {
 	      if (projectStatus === 'planning') {
 	        return {
 	          ...base,
 	          phase: 'idle',
 	          label: '未在写作',
 	          mode: '已建档 / 无任务',
-	          detail: isFanqie ? '这个短故事有项目记录，但没有运行中的任务，也没有正文产出。' : '这本书有项目记录，但没有运行中的任务，也没有章节产出。',
-	          next: '点击“续写 / 恢复任务”从规划阶段重新启动。',
+	          detail: '项目当前没有运行中的任务；正文采用进度以下方数据库证据为准。',
+	          next: '点击“续写 / 恢复任务”继续处理尚未完成的阶段。',
 	          badgeCls: 'queued',
 	        };
 	      }
@@ -5867,7 +6328,7 @@
 	        phase: 'attention',
 	        label: '规划续跑中',
 	        mode: '规划/世界观门禁',
-	        detail: task?.error || '故事圣经或卷大纲未通过门禁，系统会携带诊断继续修复。',
+	        detail: taskErrorSummary(task?.error) || '故事圣经或卷大纲未通过门禁，系统会携带诊断继续修复。',
 	        next: '恢复会携带诊断重新进入自动修复链路。',
 	        badgeCls: 'incomplete',
 	      };
@@ -5878,7 +6339,7 @@
 	        phase: 'attention',
 	        label: '修复续跑中',
 	        mode: '章节门禁',
-	        detail: task?.error || repairDetail || `仍有${unit}没有通过生产门禁，等待自动修复续跑。`,
+	        detail: taskErrorSummary(task?.error) || repairDetail || `仍有${unit}没有通过生产门禁，等待自动修复续跑。`,
 	        next: '继续修复，直到门禁通过。',
 	        badgeCls: 'incomplete',
 	      };
@@ -5905,6 +6366,11 @@
 	        badgeCls: 'incomplete',
 	      };
 	    }
+        if (isActive && stage.startsWith('review_chapter')) {
+          return {...base, phase:'review', label:'审校中', mode:'现有草稿审校',
+            detail:'正在审校已有正文；正式采用与知识入库进度以下方数据库证据为准。',
+            next:'等待本轮审校结果。', badgeCls:'running'};
+        }
 	    if (isActive && hasStagePrefix(stage, ['volume_planning', 'planning_', 'foundation_planning', 'story_bible', 'outline_materialization', 'narrative_graph', 'narrative_tree'])) {
 	      return {
 	        ...base,
@@ -5982,7 +6448,51 @@
 	      </div>`;
 	  }
 
-	  function describeStageEvent(stage, payload = {}, context = {}) {
+  // Concept-tournament events are deliberately more granular than the generic
+  // stage label.  Older events only carried stage/index/total; keep those
+  // readable while using completed/status/elapsed_seconds when available.
+  function formatConceptTournamentProgress(payload = {}) {
+    const stageNames = {
+      raw_idea_pool: '生成创意池',
+      raw_idea_pool_topup: '补充创意池',
+      raw_idea_rank: '筛选创意池',
+      raw_idea_rank_causal_review: '补验评审依据',
+      engine_kernel: '构建故事引擎',
+      premise_card: '整理故事方案',
+      judge: '评审故事方案',
+    };
+    const stage = String(payload.stage || '概念淘汰赛');
+    const name = stageNames[stage] || stage;
+    const status = String(payload.status || 'started');
+    const hasNumeric = value => value !== null && value !== undefined && Number.isFinite(Number(value));
+    const total = Number(payload.total);
+    const completed = Number(payload.completed);
+    const index = Number(payload.index);
+    const hasTotal = hasNumeric(payload.total) && total > 0;
+    const hasCompleted = hasNumeric(payload.completed) && completed >= 0;
+    const parts = [`概念淘汰赛：${name}`];
+
+    if (hasTotal && hasCompleted) {
+      const done = Math.min(Math.max(Math.floor(completed), 0), Math.floor(total));
+      const unit = stage.startsWith('raw_idea_') ? ' 批' : '';
+      parts.push(`已完成 ${done}/${Math.floor(total)}${unit}`);
+    } else if (hasTotal && hasNumeric(payload.index) && index >= 0) {
+      // engine_kernel/judge legacy events report the item being started, not
+      // an item completion.  Do not turn index into a false completed count.
+      parts.push(`正在处理第 ${Math.floor(index) + 1}/${Math.floor(total)} 个`);
+    } else if (status === 'completed') {
+      parts.push('本阶段已完成');
+    }
+    if (status === 'failed') parts.push('本批失败');
+
+    const elapsed = Number(payload.elapsed_seconds);
+    if (hasNumeric(payload.elapsed_seconds) && elapsed >= 0) {
+      parts.push(`已耗时 ${fmtShort(Math.floor(elapsed))}`);
+    }
+    return parts.join(' · ');
+  }
+
+  function describeStageEvent(stage, payload = {}, context = {}) {
     const label = STAGE[stage] || stage || '等待任务进展';
     const n = payload.chapter_number ?? payload.chapter ?? null;
     const progress = payload.progress || payload.global_progress || '';
@@ -5993,6 +6503,14 @@
     const projectSlug = payload.project_slug || '';
     const unit = context.unitLabel || (context.isFanqieShort ? '篇' : '章');
     switch (stage) {
+      case 'llm_stream_activity':
+        return /^(conception_|hook_|logline_gate)/.test(String(payload.template || ''))
+          ? '建书准备：模型正在处理当前评审，正文尚未开始'
+          : '模型正在生成当前步骤的结果';
+      case 'concept_tournament_started':
+        return '概念淘汰赛已开赛，正在准备候选创意池';
+      case 'concept_tournament_progress':
+        return formatConceptTournamentProgress(payload);
       case 'fanqie_short_pipeline_started':
         return '番茄短故事任务已启动，按单篇短故事流程推进';
       case 'fanqie_foundation_plan_started':
@@ -6103,7 +6621,9 @@
   }
 
   function buildTaskProgressInsight(task, context = {}) {
+    const projectStatus = String(task?.project_status || '').toLowerCase();
     const events = task.progress_events || [];
+    const conceptionOnly = task.status === 'completed' && isConceptionOnlyTask(task);
     const stageEvent = latestStageEvent(events, task.current_stage);
     const latestEvent = events[events.length - 1] || stageEvent;
     const unit = context.unitLabel || (context.isFanqieShort ? '段' : '章');
@@ -6113,15 +6633,28 @@
       stageEvent?.payload || {},
       context
     );
-    if (task.status === 'completed') primary = context.isFanqieShort ? '短故事单篇已完成，可阅读或整理上架资料' : '作品已完成，可阅读、预览章节或整理上架资料';
-    if (task.status === 'failed') primary = `任务失败：${task.error || '请查看执行日志'}`;
+    if (conceptionOnly) primary = '概念已就绪，等待审阅审批后进入正文';
+    else if (isExecutionWindowTask(task)) primary = task?.result?.final_verdict==='execution_window_completed' ? '本次窗口已完成；全书完结和结局验收另列' : '本次窗口仍有待处理步骤，未开始全书自动修复';
+    else if (isUnverifiedCompletedTask(task)) primary = '历史记录完成；交付待核验，历史正文产出未知';
+    else if (isCompletedBookTask(task)) primary = context.isFanqieShort ? '短故事单篇已完成，可阅读或整理上架资料' : '作品已完成，可阅读、预览章节或整理上架资料';
+    if (task.status === 'failed') primary = `任务失败：${taskErrorSummary(task.error) || '请查看执行日志'}`;
     if (task.status === 'cancelled') primary = context.isFanqieShort ? '任务已停止，已完成内容会保留' : '任务已停止，已完成章节会保留';
-    if (task.current_stage === 'blocked_structural_repair') primary = task.error || '项目正在结构修复续跑';
-    if (task.current_stage === 'blocked_generation_gate') primary = task.error || '项目处于规划门禁，将携带诊断自动续跑';
+    if (task.current_stage === 'blocked_structural_repair') primary = taskErrorSummary(task.error) || '项目正在结构修复续跑';
+    if (task.current_stage === 'blocked_generation_gate') primary = taskErrorSummary(task.error) || '项目处于规划门禁，将携带诊断自动续跑';
     if (task.cancel_requested && task.status === 'running') primary = '正在停止任务，等待当前步骤安全退出';
+    if (task.activity_status === 'stale') primary = '历史运行记录已过期，等待核验或恢复；当前执行未获证实';
+    if (task.activity_status === 'unknown') primary = '活动待核验，缺少当前执行证据';
+    if (isCompletedBookTask(task)) primary = '正式交付已核验，可阅读或整理上架资料';
+    else if (isBodyCompletePendingDelivery(task)) primary = '正文齐备，待交付；可阅读已保存稿';
+    else if (classifyBookState(task, context).deferredDeliveryReadback) {
+      primary = task.status === 'completed' || ['completed', 'complete', 'published', 'closed', 'closed_complete'].includes(projectStatus)
+        ? '历史记录完成；正式交付待核验' : '交付待核验；请进入作品详情';
+    }
+    const executionStop = taskExecutionStopPresentation(task);
+    if (executionStop) primary = `${executionStop.label}。${executionStop.detail}`;
 
     const secondary = [];
-    if (context.total > 0) secondary.push(`${whole} ${context.bookCompletedChapters || 0}/${context.total} ${unit}`);
+	    if (context.total > 0 && !conceptionOnly) secondary.push(`${whole} ${context.bookCompletedChapters || 0}/${context.total} ${unit}`);
     if (!context.isFanqieShort && context.totalVolumes > 1 && context.currentVolume) secondary.push(`第 ${context.currentVolume}/${context.totalVolumes} 卷`);
     if (!context.isFanqieShort && context.currentVolumeChapterCount > 0) secondary.push(`本卷 ${context.volumeCompletedChapters || 0}/${context.currentVolumeChapterCount} 章`);
     if (context.completedWordCount > 0) secondary.push(`累计 ${fmtWords(context.completedWordCount)}`);
@@ -6132,10 +6665,23 @@
     }
 
     const chips = [];
-    chips.push({ text: STAGE[task.status] || task.status || '未知状态', tone: task.status === 'running' ? 'active' : '' });
-    if (task.current_stage) chips.push({ text: STAGE[task.current_stage] || task.current_stage, tone: 'active' });
+    chips.push({ text: isUnverifiedCompletedTask(task) ? '历史记录完成' : (STAGE[task.status] || task.status || '未知状态'), tone: task.status === 'running' ? 'active' : '' });
+    if (task.current_stage) {
+      const conceptEvent = [...events].reverse().find(event =>
+        event.stage === 'concept_tournament_progress' || event.stage === 'concept_tournament_started'
+      );
+      const conceptText = executionStop ? executionStop.label : task.current_stage === 'concept_tournament_progress' && conceptEvent
+        ? formatConceptTournamentProgress(conceptEvent.payload || {})
+        : isUnverifiedCompletedTask(task) && task.current_stage === 'completed' ? '历史 completed 标记'
+        : task.current_stage === 'llm_stream_activity'
+        ? describeStageEvent(task.current_stage, stageEvent?.payload || {}, context)
+        : (STAGE[task.current_stage] || task.current_stage);
+      chips.push({ text: conceptText, tone: 'active' });
+    }
     if (context.hasChapterStats) chips.push({ text: context.isFanqieShort ? '全文统计' : 'DB 统计', tone: '' });
-    if (context.progressEventsSynced === false) chips.push({ text: '事件同步滞后', tone: 'warn' });
+    const syncState = taskProgressSyncState(task);
+    if (syncState === 'mismatch') chips.push({ text: '事件与采用记录不一致', tone: 'warn' });
+    else if (syncState === 'unknown') chips.push({ text: '同步待验证', tone: 'warn' });
     return { primary, secondary: secondary.join(' · '), chips };
   }
 
@@ -6159,8 +6705,12 @@
 	  function renderTaskCard(task) {
 	    const events = task.progress_events || [];
 	    const status = task.status || 'queued';
+	    const conceptionOnly = status === 'completed' && isConceptionOnlyTask(task);
+	    const unverifiedCompleted = isUnverifiedCompletedTask(task);
+	    const projectStatus = String(task?.project_status || '').toLowerCase();
 	    const slug = task.project_slug || '';
 	    const isSyntheticProject = !!task.synthetic_project;
+    const isPausedProject = projectStatus === 'paused' && !isActiveTask(task);
     const isFanqie = isFanqieShortTask(task);
     const unitLabels = taskUnitLabels(task);
     const unitLabel = unitLabels.unit;
@@ -6181,15 +6731,8 @@
     }
     const completedChapterEvents = Array.from(_completedByCh.values())
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
-    const completedChs = completedChapterEvents.map(e => e.payload.chapter_number);
     const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
     const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
-    const completedLocal = latestProgressFraction(events, 'chapter_pipeline_completed', 'progress');
-    const fanqieCompletedSegments = new Set(
-      events
-        .filter(e => e.stage === 'fanqie_segment_writing_completed' && Number.isFinite(e.payload?.segment_number))
-        .map(e => Number(e.payload.segment_number))
-    ).size;
 
     // ── Book-wide totals (same priority chain as the detail view) ──
     const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
@@ -6216,14 +6759,9 @@
           chapterWordStats.targetChapters ||
           0
         );
-    const eventCompletedChapters = isFanqie && fanqieCompletedSegments > 0
-      ? fanqieCompletedSegments
-      : (completedGlobal?.done ?? completedChs.length);
-    const bookCompletedChapters = chapterWordStats.hasStats
-      ? (isFanqie ? chapterWordStats.completedSegments : chapterWordStats.completedChapters)
-      : eventCompletedChapters;
-    const progressEventsSynced = !chapterWordStats.hasStats
-      || (eventCompletedChapters > 0 && Math.abs(eventCompletedChapters - bookCompletedChapters) <= 1);
+    const bookCompletedChapters = chapterWordStats.completedChapters;
+    const progressSyncState = taskProgressSyncState(task);
+    const progressEventsSynced = progressSyncState === 'verified';
 
     // ── Volume context (only populated for multi-volume projects) ──
     const totalVolumes =
@@ -6246,8 +6784,10 @@
       latestPipelineEvt?.payload?.chapter_count ||
       0;
     const volumeOffset = latestPipelineEvt?.payload?.global_chapter_offset ?? 0;
-    const volumeDoneChs = completedChs.filter(n => n > volumeOffset);
-    const volumeCompletedChapters = completedLocal?.done ?? volumeDoneChs.length;
+    const volumeCompletedChapters = chapterWordStats.hasStats
+      ? chapterWordStats.adoptedChapterNumbers.filter(n => n > volumeOffset
+          && (!currentVolumeChapterCount || n <= volumeOffset + currentVolumeChapterCount)).length
+      : 0;
 
     // ── Chapter cursor (currently writing) ──
     const lastStarted = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
@@ -6259,27 +6799,26 @@
     ) : false;
     const writingCh = (status === 'running' && lastStarted && !completedAfterLastStart)
       ? Number(lastStarted.payload?.chapter_number || 0) : null;
-    const displayWritingCh = writingCh && (!chapterWordStats.hasStats || writingCh > bookCompletedChapters)
+    const displayWritingCh = writingCh && !chapterWordStats.adoptedChapterNumbers.includes(writingCh)
       ? writingCh
       : null;
 
     // ── Progress metrics ──
-    const pct = total > 0 ? Math.min(99, 5 + Math.round((bookCompletedChapters / total) * 95)) : (status === 'completed' ? 100 : 0);
-    let displayPct = status === 'completed' ? 100 : pct;
+    const pct = total > 0 ? Math.min(isCompletedBookTask(task) ? 100 : 99, Math.round((bookCompletedChapters / total) * 100)) : 0;
+	    let displayPct = conceptionOnly ? 0 : pct;
     const volumePct = currentVolumeChapterCount > 0
       ? Math.min(100, Math.round((volumeCompletedChapters / currentVolumeChapterCount) * 100))
       : 0;
-    const completedWordCount = chapterWordStats.wordTotal > 0
-      ? chapterWordStats.wordTotal
-      : completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
+    const completedWordCount = chapterWordStats.wordTotal;
     const projectedTotalWords = chapterWordStats.targetWordCount > 0
       ? chapterWordStats.targetWordCount
       : targetWordsPerChapter > 0 && total > 0
       ? targetWordsPerChapter * total
       : targetWords;
     if (isFanqie && projectedTotalWords > 0 && completedWordCount > 0) {
-      displayPct = Math.min(status === 'completed' ? 100 : 99, Math.round((completedWordCount / projectedTotalWords) * 100));
+      displayPct = conceptionOnly ? 0 : Math.min(isCompletedBookTask(task) ? 100 : 99, Math.round((completedWordCount / projectedTotalWords) * 100));
     }
+    if (isCompletedBookTask(task)) displayPct = 100;
 
     // ── ETA (based on completed chapter timestamps) ──
     const chTimes = completedChapterEvents.map(e => new Date(e.timestamp));
@@ -6291,7 +6830,7 @@
         etaText = `预计还需 ${fmtShort(Math.round(avgMs * rem / 1000))}`;
       }
     } else if (status === 'running' && progressEventsSynced && chTimes.length < 2) {
-      etaText = '预计计算中…';
+      etaText = '计算中…';
     }
 
     // ── Time info ──
@@ -6302,7 +6841,8 @@
     const volPrefix = (currentVolume && totalVolumes > 1)
       ? `第 ${currentVolume}/${totalVolumes} 卷 · `
       : '';
-    let stageLabel = STAGE[task.current_stage] || task.current_stage || '-';
+    let stageLabel = unverifiedCompleted && task.current_stage === 'completed'
+      ? '历史 completed 标记' : STAGE[task.current_stage] || task.current_stage || '-';
     if (task.current_stage === 'chapter_pipeline_started' && lastStarted?.payload && displayWritingCh) {
       const chNum = lastStarted.payload.chapter_number ?? '-';
       const prog = lastStarted.payload.progress ?? '';
@@ -6350,15 +6890,24 @@
 
     // Detect "completed but actually unfinished" — recovered tasks may have
     // status=completed while chapters on disk < target.
-    const writtenCount = chapterWordStats.hasStats
-      ? bookCompletedChapters
-      : ((task.result && task.result.chapters_written) || bookCompletedChapters);
+    const writtenCount = bookCompletedChapters;
     const targetCount = (isFanqie ? chapterWordStats.targetSegments : chapterWordStats.targetChapters)
       || (task.result && task.result.target_chapters) || total || 0;
-    const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
+    const isTrulyComplete = isCompletedBookTask(task);
+    // A failed conception task may carry a slug/title for diagnostics while
+    // having no project or正文 at all. Keep reader/listing actions bound to
+    // material that actually exists instead of advertising a phantom book.
+    const projectCreated = task.result?.project_created !== false;
+    const planningStarted = task.result?.planning_started !== false;
+    const hasGeneratedWork = bookCompletedChapters > 0;
+    const canShowReader = !!slug && projectCreated && planningStarted
+      && (hasGeneratedWork || isTrulyComplete);
+    const canShowListing = !conceptionOnly && (canShowReader || hasPersistedListingProject(task));
 
     // ── Tone (color family) used by progress text/bar ──
-    const tone = status === 'completed'
+    const tone = conceptionOnly || unverifiedCompleted
+      ? 'queued'
+      : status === 'completed'
       ? 'done'
       : status === 'failed'
       ? 'failed'
@@ -6418,13 +6967,24 @@
 
 	    // ── Actions (right-edge of row 1) ──
 	    let actions = '';
-	    if (isSyntheticProject) {
+        if (isBodyCompletePendingDelivery(task) && slug) {
+          actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读已保存稿</a>`;
+          actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">交付诊断</button>`;
+        }
+	    if (bookState.deferredDeliveryReadback && slug) {
+          if (canShowReader) actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读已保存稿</a>`;
+          actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">查看详情 / 交付核验</button>`;
+          if (status === 'completed' && canShowReader) actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
+	    } else if (isSyntheticProject) {
 	      if ((status === 'running' || status === 'queued') && slug) {
 	        actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">→ 查看详情</button>`;
 	        const stopLabel = task.cancel_requested ? '强制停止' : '停止';
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="cancelTask('${esc(task.task_id)}')">◾ ${stopLabel}</button>`;
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="markProjectCompleteFromDashboard('${esc(slug)}')">标记完成</button>`;
-	      } else if (status === 'completed' && slug) {
+	      } else if (conceptionOnly && slug) {
+	        actions += `<a class="btn btn-primary btn-sm" href="/design/${esc(slug)}" target="_blank">🧠 审阅构思</a>`;
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">📚 详情 / 审批</button>`;
+	      } else if (status === 'completed' && slug && canShowReader) {
 	        actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读</a>`;
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">📚 详情 / 资料</button>`;
 	        actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
@@ -6444,11 +7004,11 @@
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    } else if (status === 'failed') {
-	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">↻ 重试</button>`;
+	      if (!taskExecutionTerminalCode(task)) actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">↻ 重试</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">诊断</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    } else if (status === 'cancelled' || status === 'incomplete') {
-	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">▶ 恢复</button>`;
+	      if (!taskExecutionTerminalCode(task)) actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">▶ 恢复</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">删除任务记录</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    }
@@ -6468,7 +7028,7 @@
       || (highlightTaskId === null && (window.__firstFocusedTaskId === task.task_id));
 
     // Decide tone class for progress
-    const toneSuffix = status === 'completed' ? 'done'
+    const toneSuffix = conceptionOnly || unverifiedCompleted ? 'queued' : status === 'completed' ? 'done'
       : status === 'failed' ? 'failed'
       : status === 'cancelled' || status === 'incomplete' ? 'cancelled'
 	      : status === 'queued' || status === 'project' ? 'queued'
@@ -6515,11 +7075,15 @@
       return s.includes('warning') || s === 'rolling_summary_failed' || s === 'voice_drift_check_failed';
     });
     const errEvents = events.filter(e => (e.stage || '').endsWith('_failed') || e.stage === 'failed');
-    const repairBlocked = task.current_stage === 'blocked_structural_repair'
+    // Some terminal failures have no separate `failed` event (the task row is
+    // the durable failure record). Count that record so the diagnostic signal
+    // cannot report "0 errors" beside an explicit failed status.
+    const effectiveErrorCount = errEvents.length + (status === 'failed' && errEvents.length === 0 ? 1 : 0);
+    const repairBlocked = !isPausedProject && (task.current_stage === 'blocked_structural_repair'
       || task.current_stage === 'blocked_generation_gate'
       || task.current_stage === 'repair_needs_attention'
       || task.repair_status?.is_repairing
-      || task.repair_status?.phase === 'repair_gate';
+      || task.repair_status?.phase === 'repair_gate');
 
     const completedTimes = completedChapterEvents.map(e => new Date(e.timestamp).getTime()).filter(Number.isFinite);
     let avgChapterMs = 0;
@@ -6555,11 +7119,14 @@
     const stale = status === 'running' && lastEventTs && (Date.now() - lastEventTs) > 5 * 60 * 1000;
 
     // Health summary
-    let healthCls = 'ok';
-    let healthText = '良好';
+    let healthCls = 'warn';
+    let healthText = '待验证';
     const healthReasons = [];
-    if (isConceptionOnlyTask(task)) { healthCls = 'warn'; healthText = '概念就绪'; healthReasons.push('等待审批后进入正文'); }
-    else if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
+    if (task.activity_status === 'stale') { healthCls = 'warn'; healthText = '待恢复'; healthReasons.push('缺少近期执行证据，历史运行记录已过期'); }
+    else if (task.activity_status === 'unknown') { healthCls = 'warn'; healthText = '待核验'; healthReasons.push('缺少当前执行证据'); }
+    else if (isConceptionOnlyTask(task)) { healthCls = 'warn'; healthText = '概念就绪'; healthReasons.push('等待审批后进入正文'); }
+    else if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(taskErrorSummary(task.error) || '任务失败'); }
+    else if (projectStatus === 'paused') { healthCls = 'warn'; healthText = '已暂停'; healthReasons.push('项目已暂停，尚未恢复写作'); }
     else if (repairBlocked) { healthCls = 'warn'; healthText = '续跑'; healthReasons.push(task.current_stage === 'blocked_generation_gate' ? '规划门禁携带诊断续跑' : (task.current_stage === 'repair_needs_attention' || task.repair_status?.phase === 'needs_attention' ? '章节门禁修复中' : '结构修复续跑中')); }
     else if (errEvents.length > 0) { healthCls = 'bad'; healthText = '有错误'; healthReasons.push(`${errEvents.length} 项错误事件`); }
     else if (status === 'cancelled' || status === 'incomplete') { healthCls = 'warn'; healthText = '中止'; }
@@ -6567,8 +7134,8 @@
     else if (stale) { healthCls = 'warn'; healthText = '更新滞后'; healthReasons.push(`>5min 无事件`); }
     else if (warnEvents.length > 0) { healthCls = 'warn'; healthText = '有警告'; healthReasons.push(`${warnEvents.length} 项警告`); }
     else if (status === 'queued') { healthCls = 'warn'; healthText = '排队'; }
-    else if (status === 'completed' && !isTrulyComplete) { healthCls = 'warn'; healthText = isFanqie ? '全文缺失' : '章节缺失'; healthReasons.push(`${writtenCount}/${targetCount}`); }
-    const healthHtml = `<span class="tc-health ${healthCls}" title="${esc(healthReasons.join(' · ') || '运行正常')}">${esc(healthText)}</span>`;
+    else if (unverifiedCompleted) { healthCls = 'warn'; healthText = '待核验'; healthReasons.push('当前交付证据不足；历史正文产出未知'); }
+    const healthHtml = `<span class="tc-health ${healthCls}" title="${esc(healthReasons.join(' · ') || '缺少已验证的运行健康证据')}">${esc(healthText)}</span>`;
 
     // ── 4-column dense info (now with 3-event log) ──
     const denseHtml = `
@@ -6588,7 +7155,8 @@
             <div class="fill tone-${toneSuffix}" style="width:${displayPct}%"></div>
             ${[0.2,0.4,0.6,0.8].map(p => `<div class="tick" style="left:${p*100}%"></div>`).join('')}
           </div>
-          <div class="dg-progress-note">已写 ${esc(fmtWords(completedWordCount))}${projectedTotalWords > 0 ? ` / 约 ${esc(fmtWords(projectedTotalWords))}` : ''}${!isFanqie && totalVolumes > 1 ? ` · 卷 ${currentVolume || '-'}/${totalVolumes}` : ''}</div>
+          <div class="dg-progress-note">${chapterWordStats.hasStats ? `已采用 ${esc(fmtWords(completedWordCount))}` : '已采用字数待验证'}${projectedTotalWords > 0 ? ` / 约 ${esc(fmtWords(projectedTotalWords))}` : ''}${!isFanqie && totalVolumes > 1 ? ` · 卷 ${currentVolume || '-'}/${totalVolumes}` : ''}</div>
+          <div class="dg-progress-note">${esc(taskKnowledgeProgressText(task))}</div>
         </div>
         <div class="dg-cell">
           <div class="dg-eyebrow">最近事件${status === 'running' ? ' <span class="live">· LIVE</span>' : ''} <span style="color:var(--text-faint);font-weight:400;">· ${events.length} 条</span></div>
@@ -6612,7 +7180,7 @@
         <div class="tc-signal">
           <div class="sig-label">健康</div>
           <div class="sig-value">${healthHtml}</div>
-          <div class="sig-sub">${esc(healthReasons.length ? healthReasons[0] : '所有信号正常')}</div>
+          <div class="sig-sub">${esc(healthReasons.length ? healthReasons[0] : '缺少运行健康证据')}</div>
         </div>
         <div class="tc-signal">
           <div class="sig-label">速率</div>
@@ -6627,12 +7195,12 @@
         <div class="tc-signal">
           <div class="sig-label">事件计数</div>
           <div class="sig-value">${events.length} <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">条</span></div>
-          <div class="sig-sub">${warnEvents.length > 0 ? `<span style="color:var(--warning);font-weight:600;">⚠ ${warnEvents.length} 警告</span>` : '0 警告'} · ${errEvents.length > 0 ? `<span style="color:var(--danger);font-weight:600;">✗ ${errEvents.length} 错误</span>` : '0 错误'}</div>
+          <div class="sig-sub">${warnEvents.length > 0 ? `<span style="color:var(--warning);font-weight:600;">⚠ ${warnEvents.length} 警告</span>` : '0 警告'} · ${effectiveErrorCount > 0 ? `<span style="color:var(--danger);font-weight:600;">✗ ${effectiveErrorCount} 错误</span>` : '0 错误'}</div>
         </div>
         <div class="tc-signal">
           <div class="sig-label">同步</div>
-          <div class="sig-value">${chapterWordStats.hasStats ? `DB ${isFanqie ? chapterWordStats.completedSegments : chapterWordStats.completedChapters}` : '事件流'}${displayWritingCh ? ` · 写中 ${displayWritingCh}` : ''}</div>
-          <div class="sig-sub">${progressEventsSynced ? '事件 ↔ 数据库一致' : '<span style="color:var(--warning);font-weight:600;">事件流滞后于 DB</span>'}</div>
+          <div class="sig-value">${chapterWordStats.hasStats ? `DB ${chapterWordStats.completedChapters}` : 'DB 采用数未知'}${displayWritingCh ? ` · 写中 ${displayWritingCh}` : ''}</div>
+          <div class="sig-sub">${progressSyncState === 'verified' ? '事件 ↔ 数据库采用记录一致' : progressSyncState === 'mismatch' ? '<span style="color:var(--warning);font-weight:600;">事件与采用记录不一致</span>' : '待验证 · 缺少可比证据'}</div>
         </div>
       </div>`;
 
@@ -6646,14 +7214,14 @@
 	    const opsHtml = isSyntheticProject ? `
 	      <div class="tc-ops">
 	        <span class="tc-ops-label">操作</span>
-	        ${status === 'completed' && slug
+	        ${(bookState.deferredDeliveryReadback || status === 'completed') && slug && (bookState.deferredDeliveryReadback || canShowListing)
             ? `<button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="查看详情、上架资料、候选书名">📚 详情 / 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>`
             : `<button class="tc-op-btn" onclick="resumeProjectBySlug('${esc(slug)}')" title="为这个项目重新创建写作任务">▶ 续写 / 恢复任务 <span class="op-count">R</span></button>`}
-	        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="如果已有正文，则在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+        ${canShowReader ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
 	        ${(status === 'running' || status === 'queued') && slug
             ? `<button class="tc-op-btn danger" onclick="cancelTask('${esc(task.task_id)}')" title="停止当前项目任务">◾ 停止 <span class="op-count">.</span></button>`
             : ''}
-	        ${status !== 'completed' && slug
+	        ${status !== 'completed' && !bookState.deferredDeliveryReadback && slug
             ? `<button class="tc-op-btn" onclick="markProjectCompleteFromDashboard('${esc(slug)}')" title="把这本书标记为已完成，并取消未完成后台任务">标记完成 <span class="op-count">✓</span></button>`
             : ''}
 	        ${status === 'completed' && slug ? `<button class="tc-op-btn" onclick="archiveProjectFromDashboard('${esc(slug)}')" title="从任务台移入书稿库归档区">归档 <span class="op-count">A</span></button>` : ''}
@@ -6666,15 +7234,19 @@
         >📑 ${esc(opProgressLabel)} <span class="op-count">${opChaptersCount}</span></button>
         <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="实时日志"
         >📡 实时日志 <span class="op-count">${opLogsCount}</span></button>
-        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="上架资料"
-        >📚 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>
-        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+        ${conceptionOnly && slug
+          ? `<a class="tc-op-btn" href="/design/${esc(slug)}" target="_blank" title="审阅概念快照并批准后进入正文">🧠 审阅构思 <span class="op-count">→</span></a>`
+          : canShowListing
+          ? `<button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}', 'listing')" title="上架资料"
+        >📚 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>`
+          : `<span class="tc-op-btn" aria-disabled="true" title="${unverifiedCompleted ? '历史项目及正文来源待核验' : '项目尚未创建，构思完成后可查看上架资料'}">📚 上架资料 <span class="op-count">${unverifiedCompleted ? '待核验' : status === 'failed' ? '不可用' : '待构思'}</span></span>`}
+        ${canShowReader ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
         <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="查看角色、候选书名、读者承诺"
         >👤 角色 / 资料</button>
         ${status === 'running' || status === 'queued'
           ? `<button class="tc-op-btn danger" onclick="cancelTask('${esc(task.task_id)}')" title="停止当前任务">◾ 停止 <span class="op-count">.</span></button>`
           : ''}
-        ${status === 'failed' || status === 'cancelled' || status === 'incomplete' || (status === 'completed' && !isTrulyComplete)
+        ${!bookState.deferredDeliveryReadback && !taskExecutionTerminalCode(task) && (status === 'failed' || status === 'cancelled' || status === 'incomplete' || (status === 'completed' && !isTrulyComplete))
           ? `<button class="tc-op-btn" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug || '')}')" title="重试或继续任务">↻ 重试 / 续写 <span class="op-count">R</span></button>`
           : ''}
         ${status === 'completed' && isTrulyComplete && slug
@@ -6694,7 +7266,7 @@
     // ── Chapter-repair panel (only for repair tasks or when repair events
     //    have actually fired). Mines progress_events for which chapters have
     //    started / completed repair so the user sees: "正在修复第 N 章".
-    const repairHtml = renderRepairPanel(task, events);
+    const repairHtml = isPausedProject ? '' : renderRepairPanel(task, events);
 
     return `
     <div class="task-card status-${esc(status)}${focusedClass}" style="${highlightStyle}">
@@ -6855,8 +7427,12 @@
     return fmtDur(sec);
   }
 
+  window.refreshDashboard = refreshDashboard;
+
   /* Open single-task progress view */
-  window.openProgress = function(taskId) {
+  let listingFocusRequested = false;
+  window.openProgress = function(taskId, section) {
+    listingFocusRequested = section === 'listing';
     focusTaskId = taskId;
     listingLoadedForSlug = null;
     listingLoadedForStatus = null;
@@ -7143,6 +7719,7 @@
 	        concept_lab_summary: quickMeta.concept_lab_summary,
 	        genre_intent_contract: quickMeta.genre_intent_contract,
 	        creation_intent_contract: quickMeta.creation_intent_contract,
+            configuration_submission: quickMeta.configuration_submission || project.payload?.configuration_submission,
 	        length_key: quickMeta.length_key,
 	        pov: quickMeta.pov,
 	        user_hints: quickMeta.user_hints,
@@ -7177,6 +7754,11 @@
 
 	  /* Resume by task id — uses persisted payload or DB fallback on the server */
 	  window.resumeTaskById = async function(taskId, slug) {
+    if (taskExecutionTerminalCode(allTasks.find(t => t.task_id === taskId))) {
+      const stop = taskExecutionStopPresentation(allTasks.find(t => t.task_id === taskId));
+      alert(`${stop.label}。${stop.next}`);
+      return;
+    }
     try {
       const res = await fetch(`/api/tasks/${taskId}/resume`, { method: 'POST' });
       if (res.ok) {
@@ -7206,6 +7788,11 @@
     // Find the genre key from the old task's slug
     const task = allTasks.find(t => t.task_id === oldTaskId);
     if (!task) return;
+    if (taskExecutionTerminalCode(task)) {
+      const stop = taskExecutionStopPresentation(task);
+      alert(`${stop.label}。${stop.next}`);
+      return;
+    }
     // Re-submit with same project_slug to trigger resume
     const genreKey = slug.replace(/-\d+$/, '');
     // Recover original chapter count and creative fields from stored snapshot,
@@ -7235,6 +7822,7 @@
       concept_lab_summary: meta.concept_lab_summary,
       genre_intent_contract: meta.genre_intent_contract,
       creation_intent_contract: meta.creation_intent_contract,
+      configuration_submission: meta.configuration_submission || task.payload?.configuration_submission,
       length_key: meta.length_key,
       pov: meta.pov,
       user_hints: meta.user_hints,
@@ -7267,11 +7855,12 @@
   /* ═══════════════════════════════════════
      PROGRESS VIEW (single task detail)
      ═══════════════════════════════════════ */
+  const reviewedContinuationBusy = new Set();
   function startProgressPoll(taskId) {
     stopProgressPoll();
     window.__activePreviewTaskId = taskId;  // 防异步竞态串台:记录当前聚焦任务
     updateProgressView(taskId);
-    pollTimer = setInterval(() => updateProgressView(taskId), 3000);
+    pollTimer = setInterval(() => updateProgressView(taskId, false), 3000);
     elapsedTimer = setInterval(updateElapsed, 1000);
   }
 
@@ -7362,17 +7951,23 @@
     loadPromptManifest(slug, pick);
   }
 
-  async function updateProgressView(taskId) {
+  async function updateProgressView(taskId, force = true) {
+    return pollResource(`progress:${taskId}`, 3000, () => loadProgressView(taskId, force), force);
+  }
+
+  async function loadProgressView(taskId, force = false) {
     let data;
     try {
       const res = await fetch(`/api/tasks/${taskId}`);
-      if (!res.ok) return;
+      if (!res.ok) return false;
       data = await res.json();
-    } catch { return; }
+    } catch { return false; }
+    if (!force && document.visibilityState === 'hidden') return;
 
     // 若 fetch 期间用户已切换聚焦任务,丢弃这次旧任务的渲染(防串台)。
     if (window.__activePreviewTaskId && window.__activePreviewTaskId !== taskId) return;
 
+    mergeTaskProgressSnapshot(data);
     const events = data.progress_events || [];
     const status = data.status;
     const slug = data.project_slug || '';
@@ -7381,15 +7976,19 @@
     const unitLabels = taskUnitLabels(data);
     const unitLabel = unitLabels.unit;
     const chapterWordStats = getTaskChapterWordStats(data);
+    $('#pvKnowledge').textContent = taskKnowledgeProgressText(data);
     const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
     const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
 
     taskStartTime = data.created_at;
+    $('#pvElapsed').textContent = elapsedSinceCreated(data);
 
     // Title
     const conceptionOnly = status === 'completed' && isConceptionOnlyTask(data);
-    $('#pvTitle').textContent = conceptionOnly ? '概念已就绪' : status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待续跑' : '正在创作中...';
-    $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : status === 'incomplete' ? 'var(--warning)' : 'var(--text-bright)';
+    const unverifiedCompleted = isUnverifiedCompletedTask(data);
+    const executionStop = taskExecutionStopPresentation(data);
+    $('#pvTitle').textContent = executionStop ? executionStop.label : isBodyCompletePendingDelivery(data) ? '正文齐备，待交付' : unverifiedCompleted ? '历史记录完成 · 交付待核验' : conceptionOnly ? '概念已就绪' : status === 'project' ? '项目已建档 · 未在编写' : status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待续跑' : '正在创作中...';
+    $('#pvTitle').style.color = isBodyCompletePendingDelivery(data) || unverifiedCompleted || conceptionOnly ? 'var(--warning)' : status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : status === 'incomplete' ? 'var(--warning)' : 'var(--text-bright)';
     $('#pvSub').textContent = data.title || slug || '';
     const flowLink = $('#pvFlowLink');
     if (flowLink && slug) {
@@ -7399,6 +7998,7 @@
     const designLink = $('#pvDesignLink');
     if (designLink && slug) {
       designLink.href = `/design/${encodeURIComponent(slug)}`;
+      designLink.textContent = conceptionOnly ? '🧠 审阅构思' : '书籍文档';
       designLink.style.display = '';
     } else if (designLink) { designLink.style.display = 'none'; }
 
@@ -7454,24 +8054,11 @@
     for (const e of _rawCompleted) _doneByCh.set(e.payload.chapter_number, e);
     const _dedupedDone = Array.from(_doneByCh.values())
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
-    const doneChs = _dedupedDone.map(e => e.payload.chapter_number);
     const chTimes = _dedupedDone.map(e => new Date(e.timestamp));
-    const fanqieCompletedSegments = new Set(
-      events
-        .filter(e => e.stage === 'fanqie_segment_writing_completed' && Number.isFinite(e.payload?.segment_number))
-        .map(e => Number(e.payload.segment_number))
-    ).size;
-    const eventDoneCount = isFanqieShort && fanqieCompletedSegments > 0
-      ? fanqieCompletedSegments
-      : (completedGlobal?.done ?? doneChs.length);
-    const bookDoneCount = chapterWordStats.hasStats
-      ? (isFanqieShort ? chapterWordStats.completedSegments : chapterWordStats.completedChapters)
-      : eventDoneCount;
-    const progressEventsSynced = !chapterWordStats.hasStats
-      || (eventDoneCount > 0 && Math.abs(eventDoneCount - bookDoneCount) <= 1);
+    const bookDoneCount = chapterWordStats.completedChapters;
+    const progressEventsSynced = taskProgressSyncState(data) === 'verified';
     const latestStartedEvt = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
     const latestVolPlanCompletedEvt = [...events].reverse().find(e => e.stage === 'volume_planning_completed');
-    const completedLocal = latestProgressFraction(events, 'chapter_pipeline_completed', 'progress');
     const currentVolumeChapterCount =
       (latestVolPlanCompletedEvt?.payload?.volume_number === currentVolume
         ? latestVolPlanCompletedEvt.payload.chapter_count
@@ -7479,15 +8066,16 @@
       latestPipeEvt?.payload?.chapter_count ||
       0;
     const volumeOffset = latestPipeEvt?.payload?.global_chapter_offset ?? 0;
-    const volumeDoneChs = doneChs.filter(n => n > volumeOffset);
-    const volumeCompletedChapters = completedLocal?.done ?? volumeDoneChs.length;
+    const volumeCompletedChapters = chapterWordStats.hasStats
+      ? chapterWordStats.adoptedChapterNumbers.filter(n => n > volumeOffset
+          && (!currentVolumeChapterCount || n <= volumeOffset + currentVolumeChapterCount)).length
+      : 0;
     const latestStartedChapter = Number(latestStartedEvt?.payload?.chapter_number || 0);
-    const displayWritingCh = latestStartedChapter && (!chapterWordStats.hasStats || latestStartedChapter > bookDoneCount)
+    const displayWritingCh = isActiveTask(data) && latestStartedChapter
+      && !chapterWordStats.adoptedChapterNumbers.includes(latestStartedChapter)
       ? latestStartedChapter
       : null;
-    const completedWordCount = chapterWordStats.wordTotal > 0
-      ? chapterWordStats.wordTotal
-      : _dedupedDone.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
+    const completedWordCount = chapterWordStats.wordTotal;
     const fanqieTargetWords = Number(qsMeta.target_words || data.payload?.target_words || data.result?.target_words || chapterWordStats.targetWordCount || 0);
     const progressInsight = buildTaskProgressInsight(data, {
       total,
@@ -7506,26 +8094,36 @@
 
     // Pct
     let pct = 0;
-    if (status === 'completed') pct = 100;
-    else if (isFanqieShort && fanqieTargetWords > 0 && completedWordCount > 0) pct = Math.min(99, Math.round((completedWordCount / fanqieTargetWords) * 100));
-    else if (total > 0 && bookDoneCount > 0) pct = Math.min(99, 5 + Math.round((bookDoneCount / total) * 95));
-    else if (data.current_stage?.includes('materialization') || data.current_stage?.includes('pipeline_started')) pct = 5;
-    else if (data.current_stage?.includes('planning')) pct = 2;
-    else if (data.current_stage?.startsWith('conception')) pct = 3;
-    else if (data.current_stage?.includes('creation')) pct = 1;
+    if (!conceptionOnly) {
+      const limit = isCompletedBookTask(data) ? 100 : 99;
+      if (isFanqieShort && fanqieTargetWords > 0) pct = Math.min(limit, Math.round((completedWordCount / fanqieTargetWords) * 100));
+      else if (total > 0) pct = Math.min(limit, Math.round((bookDoneCount / total) * 100));
+    }
 
     // Bar
+    if (isCompletedBookTask(data)) pct = 100;
     const fill = $('#pvBarFill');
     fill.style.width = pct + '%';
-    fill.className = 'pv-bar-fill ' + (status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'incomplete' ? 'failed' : 'running');
+    fill.className = 'pv-bar-fill ' + (isCompletedBookTask(data) ? 'completed' : status === 'failed' ? 'failed' : status === 'incomplete' ? 'failed' : 'running');
     $('#pvPct').textContent = pct + '%';
 
     // Stage
-    let stageTxt = STAGE[data.current_stage] || data.current_stage || '-';
+    let stageTxt = executionStop ? executionStop.label : unverifiedCompleted && data.current_stage === 'completed'
+      ? '历史 completed 标记' : data.current_stage === 'llm_stream_activity'
+      ? describeStageEvent(data.current_stage, latestStageEvent(events, data.current_stage)?.payload || {})
+      : STAGE[data.current_stage] || data.current_stage || '-';
+    const latestConceptEvent = [...events].reverse().find(event =>
+      event.stage === 'concept_tournament_progress' || event.stage === 'concept_tournament_started'
+    );
+    if (data.current_stage === 'concept_tournament_progress' && latestConceptEvent) {
+      stageTxt = latestConceptEvent.stage === 'concept_tournament_progress'
+        ? formatConceptTournamentProgress(latestConceptEvent.payload || {})
+        : describeStageEvent(latestConceptEvent.stage, latestConceptEvent.payload || {});
+    }
     if (
       data.current_stage === 'chapter_pipeline_started' &&
       latestStartedEvt?.payload &&
-      (!chapterWordStats.hasStats || Number(latestStartedEvt.payload.chapter_number || 0) > bookDoneCount)
+      displayWritingCh
     ) {
       const chNum = latestStartedEvt.payload.chapter_number ?? '-';
       const prog = latestStartedEvt.payload.progress ?? '';
@@ -7547,6 +8145,43 @@
       `<span class="tc-live-chip ${esc(chip.tone || '')}">${esc(chip.text || '')}</span>`
     ).join('');
 
+    const continuationBox = $('#pvReviewedContinuation');
+    if (continuationBox) {
+      continuationBox.hidden = true;
+      if (status === 'failed' && (data.payload?._run_conception || data.error === 'execution_continuation_binding_invalid')) {
+        try {
+          const projectHandoff = data.error === 'execution_continuation_binding_invalid';
+          if (!force && document.visibilityState === 'hidden') return;
+          const authRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/${projectHandoff ? 'phase-handoff-authorization' : 'continuation-authorization'}`);
+          const auth = authRes.ok ? await authRes.json() : {};
+          if (window.__activePreviewTaskId !== taskId || (!force && document.visibilityState === 'hidden')) return;
+          continuationBox.hidden = !auth.available;
+          $('#pvContinuationExplanation').textContent =
+            '继续沿用已审核的构思和已保存的成果，按当前已确认的授权继续。原未知请求保持隔离，费用预留保留。';
+          const button = $('#pvContinueReviewed');
+          button.textContent = projectHandoff ? '继续已批准项目' : '继续已审核构思';
+          button.disabled = reviewedContinuationBusy.has(taskId);
+          if (!button.disabled) $('#pvContinuationMessage').textContent = '';
+          button.onclick = async () => {
+            if (reviewedContinuationBusy.has(taskId)) return;
+            reviewedContinuationBusy.add(taskId);
+            button.disabled = true;
+            $('#pvContinuationMessage').textContent = '正在恢复…';
+            try {
+              const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/${projectHandoff ? 'continue-approved-project' : 'continue-reviewed-conception'}`, {method:'POST'});
+              if (!response.ok) throw new Error('继续请求未确认');
+              await response.json();
+              reviewedContinuationBusy.delete(taskId);
+              continuationBox.hidden = true;
+              startProgressPoll(taskId);
+            } catch (error) {
+              $('#pvContinuationMessage').textContent = '提交结果待核实，请查看任务状态后再处理。';
+            }
+          };
+        } catch (error) { continuationBox.hidden = true; }
+      }
+    }
+
     // Stats — chapter count is book-wide; append volume progress when the
     // project has more than one volume so users see 12/1200 章 · 1/24 卷.
     const pvDoneLabel = $('#pvDoneLabel');
@@ -7559,7 +8194,7 @@
       $('#pvDone').textContent = completedWordCount > 0 ? fmtWords(completedWordCount) : '0';
       $('#pvTotal').textContent = fanqieTargetWords > 0 ? fmtWords(fanqieTargetWords) : '-';
       const segTotal = Number(qsMeta.chapter_count || data.payload?.target_chapters || chapterWordStats.targetSegments || total || 0);
-      const segDone = fanqieCompletedSegments || bookDoneCount;
+      const segDone = bookDoneCount;
       const wordPct = fanqieTargetWords > 0 && completedWordCount > 0
         ? Math.min(100, Math.round((completedWordCount / fanqieTargetWords) * 100))
         : null;
@@ -7597,7 +8232,10 @@
 
     // Status label
     const pvs = $('#pvStatus');
-    if (status === 'completed') { pvs.textContent = '已完成'; pvs.style.color = 'var(--success)'; }
+    if (executionStop) { pvs.textContent = executionStop.label; pvs.style.color = 'var(--danger)'; }
+    else if (unverifiedCompleted) { pvs.textContent = '交付待核验'; pvs.style.color = 'var(--warning)'; }
+    else if (conceptionOnly) { pvs.textContent = '概念待审核'; pvs.style.color = 'var(--warning)'; }
+    else if (status === 'completed') { pvs.textContent = '已完成'; pvs.style.color = 'var(--success)'; }
     else if (status === 'failed') { pvs.textContent = '失败'; pvs.style.color = 'var(--danger)'; }
     else if (status === 'incomplete') { pvs.textContent = '待续跑'; pvs.style.color = 'var(--warning)'; }
     else if (bookDoneCount > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
@@ -7619,8 +8257,8 @@
 
     // B3: Prompt Compiler 生效片段（按已完成章号）
     try {
-      const manifestChs = doneChs.length
-        ? doneChs
+      const manifestChs = chapterWordStats.hasStats && chapterWordStats.adoptedChapterNumbers.length
+        ? chapterWordStats.adoptedChapterNumbers
         : (displayWritingCh ? [displayWritingCh] : []);
       refreshPromptManifestSelector(slug, manifestChs);
     } catch (_) { /* non-fatal */ }
@@ -7713,8 +8351,14 @@
     const milestones = (data.milestone_events || []).slice(-50).reverse();
     $('#pvMilestones').innerHTML = milestones.map((e, i) => tlItemHtml(e, i, true)).join('');
 
+    const projectCreated = data.result?.project_created !== false;
+    const planningStarted = data.result?.planning_started !== false;
+    const hasGeneratedWork = bookDoneCount > 0;
+    const canShowReader = !!slug && projectCreated && planningStarted && hasGeneratedWork;
+    const canShowListing = !conceptionOnly && (canShowReader || hasPersistedListingProject(data));
+
     // Chapters / single-piece reader entry.
-    if (isFanqieShort && slug) {
+    if (isFanqieShort && canShowReader) {
       const wordText = completedWordCount > 0
         ? `${fmtWords(completedWordCount)} · 单篇完结`
         : '单篇导出';
@@ -7732,15 +8376,17 @@
         `/read/${encodeURIComponent(slug)}`,
         html
       );
-    } else if (bookDoneCount > 0 && slug) {
+    } else if (canShowReader && bookDoneCount > 0) {
       try {
+        if (!force && document.visibilityState === 'hidden') return;
         const tocRes = await fetch(`/api/reader/${encodeURIComponent(slug)}/toc`);
         // 异步返回后,若用户已切到别的任务/书,丢弃本次结果,杜绝串台。
         if (window.__activePreviewTaskId !== taskId) return;
         if (tocRes.ok) {
           const tocData = await tocRes.json();
           if (window.__activePreviewTaskId !== taskId) return;
-          const chs = tocData.chapters || [];
+          const chs = (tocData.chapters || [])
+            .filter(ch => chapterWordStats.adoptedChapterNumbers.includes(Number(ch.number)));
           const html = chs.map(ch =>
             `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span><span class="m">${esc(Number(ch.word_count || 0) > 0 ? `${fmtWords(ch.word_count)} · 约 ${Number(ch.estimated_read_minutes || 0)} 分钟` : '文件生成中')}</span></a>`
           ).join('') || '<span style="color:var(--text-dim);font-size:13px;">文件生成中...</span>';
@@ -7777,25 +8423,38 @@
       $('#pvError').style.display = 'none';
     }
 
-    // Listing profile — load for any task that has a project slug
-    if (slug) {
-      loadAndRenderListing(slug, status);
+    // Listing profile only exists for a completed project or a task with
+    // actual generated work. A failed conception task can have a diagnostic
+    // slug but must not show an empty/phantom listing panel.
+    if (slug && canShowListing) {
+      loadAndRenderListing(slug, status, force);
+    } else {
+      $('#pvListing').classList.remove('visible');
     }
 
     // Completed
     if (status === 'completed') {
       stopProgressPoll();
       $('#pvDoneBanner').style.display = '';
+      $('#pvReaderLink').style.display = '';
       if (isConceptionOnlyTask(data)) {
         $('#pvDoneBanner h2').textContent = '概念已就绪';
         $('#pvDoneSummary').textContent = '概念构思已完成，等待审阅审批后进入正文。';
         const readerLink = $('#pvReaderLink');
         readerLink.textContent = '审阅概念 · 进入写作';
         readerLink.href = `/design/${encodeURIComponent(slug)}`;
+      } else if (isBodyCompletePendingDelivery(data)) {
+        $('#pvDoneBanner h2').textContent = '正文齐备，待交付';
+        $('#pvDoneSummary').textContent = '可阅读已保存稿；正式交付尚未通过当前核验。';
+        $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
+      } else if (unverifiedCompleted) {
+        $('#pvDoneBanner h2').textContent = '历史记录完成 · 交付待核验';
+        $('#pvDoneSummary').textContent = 'completed 是历史记录状态；当前证据不足以确认全流程交付，历史正文产出未知。';
+        $('#pvReaderLink').style.display = 'none';
       } else {
         $('#pvDoneBanner h2').textContent = '创作完成!';
         $('#pvDoneSummary').textContent = isFanqieShort
-          ? `番茄短故事单篇已完成 · 全文约 ${fmtWords(completedWordCount || qsMeta.target_words || data.payload?.target_words || 0)}（见 exports/fanqie-short.md）`
+          ? `番茄短故事单篇已完成 · 已采用正文 ${fmtWords(completedWordCount)}`
           : `共 ${bookDoneCount} 章已完成`;
         $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
       }
@@ -7952,6 +8611,7 @@
       b.textContent = c.label;
       b.onclick = () => {
         txSel = { channel: on ? '' : c.key, genreKey: '', subKey: '', tags: [] };
+        txResetTags();
         customSelection = null;
         selectedAudience = txAudienceFromChannel(txSel.channel);
         renderTaxonomyPicker();
@@ -7969,7 +8629,7 @@
       s2.opts.appendChild(txMkBtn('tx-genre', esc(g.label) + heat, on, () => {
         txSel.genreKey = on ? '' : g.key;
         txSel.subKey = '';
-        txSel.tags = [];
+        txResetTags();
         customSelection = null;
         renderTaxonomyPicker();
       }));
@@ -7984,13 +8644,16 @@
       s3.row.classList.add('tx-reveal');
       s3.opts.appendChild(txMkBtn('tx-chip', '不限', !!customSelection && !txSel.subKey, () => {
         txSel.subKey = '';
-        txSel.tags = [];
+        txResetTags();
         txCommit();
       }));
       (cg.sub_genres || []).forEach(s => {
         s3.opts.appendChild(txMkBtn('tx-chip', esc(s.label), txSel.subKey === s.key, () => {
           txSel.subKey = s.key;
-          txSel.tags = (s.default_tags || []).slice();
+          txDefaultTags = (s.default_tags || []).slice();
+          txUserTags = [];
+          txExcludedDefaultTags = [];
+          txSel.tags = txEffectiveTags();
           txCommit();
         }));
       });
@@ -8008,9 +8671,20 @@
       pool.forEach(t => {
         s4.opts.appendChild(txMkBtn('tx-chip tag', esc(t), txSel.tags.includes(t), () => {
           const i = txSel.tags.indexOf(t);
-          if (i >= 0) txSel.tags.splice(i, 1);
-          else if (txSel.tags.length < 8) txSel.tags.push(t);
-          if (customSelection) customSelection.tags = txSel.tags.slice();
+          if (txDefaultTags.includes(t)) {
+            if (i >= 0) txExcludedDefaultTags.push(t);
+            else txExcludedDefaultTags = txExcludedDefaultTags.filter(tag => tag !== t);
+          } else if (i >= 0) {
+            txUserTags = txUserTags.filter(tag => tag !== t);
+          } else if (txUserTags.length < 8) {
+            txUserTags.push(t);
+          }
+          txSel.tags = txEffectiveTags();
+          if (customSelection) {
+            customSelection.tags = txSel.tags.slice();
+            customSelection.user_tags = txUserTags.slice();
+            customSelection.default_tags = txDefaultTags.slice();
+          }
           renderTaxonomyPicker();
           updateSummary();
         }));
@@ -8024,8 +8698,13 @@
         e.preventDefault();
         const v = inp.value.trim();
         if (v && !txSel.tags.includes(v) && txSel.tags.length < 8) {
-          txSel.tags.push(v);
-          if (customSelection) customSelection.tags = txSel.tags.slice();
+          txUserTags.push(v);
+          txSel.tags = txEffectiveTags();
+          if (customSelection) {
+            customSelection.tags = txSel.tags.slice();
+            customSelection.user_tags = txUserTags.slice();
+            customSelection.default_tags = txDefaultTags.slice();
+          }
           renderTaxonomyPicker();
           updateSummary();
           const nextInput = $('.tx-tagadd');
@@ -8060,7 +8739,9 @@
       channel: txSel.channel || (g.channel && g.channel[0]) || '',
       genre: g.key,
       sub_genre: sub ? sub.key : undefined,
-      tags: txSel.tags.slice(),
+      tags: txEffectiveTags(),
+      default_tags: txDefaultTags.slice(),
+      user_tags: txUserTags.slice(),
     };
     selectedGenreKey = '';
     selectedAudience = txAudienceFromChannel(customSelection.channel);
@@ -8323,6 +9004,7 @@
         // Picking a 热门开局模板 switches off the custom taxonomy selection.
         customSelection = null;
         txSel = { channel: txSel.channel, genreKey: '', subKey: '', tags: [] };
+        txResetTags();
         renderTaxonomyPicker();
         selectedGenreKey = g.key;
         selectedConceptBundleId = null;
@@ -8401,6 +9083,7 @@
     selectedGenreKey = null;
     customSelection = null;
     txSel = { channel: '', genreKey: '', subKey: '', tags: [] };
+    txResetTags();
     selectedAudience = '';
     selectedConceptBundleId = null;
     conceptLabCatalog = null;
@@ -8529,20 +9212,30 @@
   // Length selection
   function selectLen(n) {
     chapterCount = n;
+    if ($('#configurationBookTotal')) $('#configurationBookTotal').value = n;
     $$('.length-btn[data-chapters]').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === n));
     $('#customChapters').value = n;
     fetchEstimate(n);
   }
   $$('.length-btn[data-chapters]').forEach(b => b.addEventListener('click', () => selectLen(+b.dataset.chapters)));
-  $('#customChapters').addEventListener('input', () => { const v = +$('#customChapters').value; if (v > 0) { chapterCount = v; $$('.length-btn[data-chapters]').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === v)); fetchEstimate(v); } });
+  $('#customChapters').addEventListener('input', () => { const v = +$('#customChapters').value; if (v > 0) { chapterCount = v; if ($('#configurationBookTotal')) $('#configurationBookTotal').value = v; $$('.length-btn[data-chapters]').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === v)); fetchEstimate(v); } });
 
   let estTimer = null;
+  let estimateRequestId = 0;
   function fetchEstimate(n) {
     clearTimeout(estTimer);
+    const requestId = ++estimateRequestId;
     estTimer = setTimeout(async () => {
       $('#estimateCost').textContent = '计算中...';
-      try { const r = await fetch(`/api/budget/estimate?chapters=${n}`); const d = await r.json(); $('#estimateCost').textContent = d.estimate || d.cost || `约 ${n} 章`; }
-      catch { $('#estimateCost').textContent = `约 ${n} 章`; }
+      try {
+        const r = await fetch(`/api/budget/estimate?chapters=${n}`);
+        const d = await r.json();
+        if (requestId !== estimateRequestId) return;
+        $('#estimateCost').textContent = d.estimated_total_tokens ? `粗估 ${Number(d.estimated_total_tokens).toLocaleString()} tokens（非账单）` : (d.estimate || d.cost || `约 ${n} 章`);
+      } catch {
+        if (requestId !== estimateRequestId) return;
+        $('#estimateCost').textContent = `约 ${n} 章`;
+      }
     }, 300);
   }
 
@@ -8619,10 +9312,11 @@
   const SE_DEFAULT = new Set([]);
   let seDirection = null;
   let seCostStyle = 'standard';
+  let seCostStyleExplicit = false;
   function seUpdateCount() {
     const cnt = (($('#seBrainhole')||{}).checked?1:0) + (($('#seWildConcept')||{}).checked?1:0)
       + (($('#seConceptLab')||{}).checked?1:0)
-      + (seDirection?1:0) + (seCostStyle !== 'standard' ? 1 : 0)
+      + (seDirection?1:0) + (seCostStyleExplicit ? 1 : 0)
       + document.querySelectorAll('#seSkillGrid .se-skill.on').length;
     const el = $('#seCount'); if (el) el.textContent = cnt;
   }
@@ -8651,6 +9345,7 @@
         document.querySelectorAll('#seCostRow .se-dir').forEach(c => c.classList.remove('on'));
         chip.classList.add('on');
         seCostStyle = chip.dataset.v || 'standard';
+        seCostStyleExplicit = true;
         seUpdateCount();
       };
     });
@@ -8662,7 +9357,7 @@
     return {
       brainhole: !!($('#seBrainhole')||{}).checked,
       wild_concept: !!($('#seWildConcept')||{}).checked,
-      cost_style: seCostStyle,
+      cost_style: seCostStyleExplicit ? seCostStyle : undefined,
       concept_lab: !!($('#seConceptLab')||{}).checked,
       creativity_direction: seDirection,
       effect_skills: skills,
@@ -8735,11 +9430,12 @@
       || storyEnhancers.concept_lab
       || !!storyEnhancers.creativity_direction
       || storyEnhancers.effect_skills.length > 0
-      || storyEnhancers.cost_style !== 'standard'
+      || seCostStyleExplicit
     );
     return {
       client_schema_version: QUICKSTART_CLIENT_SCHEMA_VERSION,
       creation_mode: creationMode,
+      production_profile: $('#productionProfile')?.value || 'complete',
       genre_key: selectedGenreKey,
       selection: customSelection || undefined,
       audience_orientation: selectedAudience || undefined,
@@ -8749,6 +9445,8 @@
       concept_lab_bundle_id: selectedConcept?.bundle_id || undefined,
       concept_lab_bundle: selectedConcept || undefined,
       chapter_count: chapterCount,
+      configuration_submission: ($('#configurationEnabled')?.checked && creationMode === 'long_serial' && selectedLang === 'zh')
+        ? validateCreationConfiguration(collectCreationConfiguration()) : undefined,
       length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
       pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
       draft_mode: $('#draftModeToggle').checked ? true : undefined,
@@ -9125,12 +9823,23 @@
     }).join('\n\n');
   }
 
-  async function loadAndRenderListing(slug, taskStatus) {
-    // For completed/failed tasks, only load once per slug.
-    // For running tasks, refresh every poll cycle.
+  function hasPersistedListingProject(task) {
+    // project_title is enriched from persisted project data, unlike the
+    // provisional slug/title allocated before conception succeeds.
+    return !!String(task?.project_title || '').trim()
+      || task?.result?.project_created === true;
+  }
+
+  async function loadAndRenderListing(slug, taskStatus, force = false) {
+    return pollResource(`listing:${listingRequestGeneration}:${slug}:${taskStatus}`, 60000,
+      () => fetchAndRenderListing(slug, taskStatus, force), force);
+  }
+
+  async function fetchAndRenderListing(slug, taskStatus, force = false) {
+    // Terminal profiles stay cached; manual/visibility refresh can revalidate them.
     const isTerminal = taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'cancelled';
     if (!slug) return;
-    if (isTerminal && listingLoadedForSlug === slug && listingLoadedForStatus === taskStatus) return;
+    if (!force && isTerminal && listingLoadedForSlug === slug && listingLoadedForStatus === taskStatus) return;
     if (listingLoadInFlight && listingLoadInFlight.slug === slug && listingLoadInFlight.status === taskStatus) {
       return listingLoadInFlight.promise;
     }
@@ -9140,7 +9849,12 @@
       try {
         const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/listing`);
         if (generation !== listingRequestGeneration) return;
-        if (!res.ok) { panel.classList.remove('visible'); return; }
+        if (!res.ok) {
+          const failure = await res.json().catch(() => ({}));
+          if (generation !== listingRequestGeneration) return;
+          renderListingLoadError(failure?.detail?.message || '上架资料暂时无法加载，请稍后重试。');
+          return false;
+        }
         const summary = await res.json();
         if (generation !== listingRequestGeneration) return;
         const listing = summary?.listing_profile;
@@ -9153,19 +9867,41 @@
         listingLoadedForSlug = slug;
         listingLoadedForStatus = taskStatus;
         panel.classList.add('visible');
+        if (listingFocusRequested) {
+          listingFocusRequested = false;
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       } catch {
-        panel.classList.remove('visible');
+        if (generation === listingRequestGeneration) renderListingLoadError('上架资料加载失败，请检查连接后重试。');
+        return false;
       }
     })();
     listingLoadInFlight = { slug, status: taskStatus, promise };
     try {
-      await promise;
+      return await promise;
     } finally {
       if (listingLoadInFlight?.promise === promise) listingLoadInFlight = null;
     }
   }
 
+  function renderListingLoadError(message) {
+    const panel = $('#pvListing');
+    const error = $('#lsLoadError');
+    error.textContent = message;
+    error.hidden = false;
+    panel.querySelectorAll('.listing-section').forEach(section => { section.hidden = true; });
+    listingCopyStore.clear();
+    listingRenderedSignature = null;
+    panel.classList.add('visible');
+    if (listingFocusRequested) {
+      listingFocusRequested = false;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
   function renderListingProfile(listing, project) {
+    $('#lsLoadError').hidden = true;
+    $('#pvListing').querySelectorAll('.listing-section').forEach(section => { section.hidden = false; });
     listingCopyStore.clear();
     listingCopyCounter = 0;
     const compliance = listing.compliance || {};
@@ -9412,16 +10148,18 @@
     formatTodayMasthead();
     const bootParams = new URLSearchParams(window.location.search);
     const bootHighlightTaskId = bootParams.get('highlight_task');
+    const bootOpenTaskId = bootParams.get('open_task');
     if (bootHighlightTaskId) {
       highlightTaskId = bootHighlightTaskId;
       window.history.replaceState({}, '', '/quickstart');
     }
-    // Load model info + concurrency limit
+    const initialDashboard = refreshDashboard();
+    // Status is optional; it must not hold the first task view hostage.
+    void (async () => {
     let pingStart = performance.now();
     try {
-      const r = await fetch('/api/status');
+      const d = await boundedDashboardJson('/api/status?light=1');
       const ping = Math.round(performance.now() - pingStart);
-      const d = await r.json();
       llmModel = (d.writer_model || d.planner_model || '').replace('openai/', '');
       updateLlmProfileUi(d.llm_profile);
       if (typeof d.max_concurrent_tasks === 'number' && d.max_concurrent_tasks > 0) {
@@ -9429,17 +10167,25 @@
       }
       const pingEl = document.getElementById('hdrApiPing');
       if (pingEl) pingEl.textContent = `API ${ping}ms`;
+      updateDashboardMetrics();
     } catch {}
+    })();
 
     // Load genres + per-book model catalog in background
     loadGenres();
     loadModelCatalog();
-    resetWizardState();
+    resetWizardState({clearConfigurationDraft:false});
+    void initializeCreationConfiguration().catch(e=>{ $('#configurationResult').textContent=e.message; });
 
 	    // Load tasks & always stay on the dashboard.
 	    // Previously this auto-hijacked the user into the progress view of any
 	    // running task, which made it look like the system refused new creations.
-	    await refreshDashboard();
+	    await initialDashboard;
+    if (bootOpenTaskId) {
+      const task = allTasks.find((item) => item.task_id === bootOpenTaskId);
+      if (task) openProgress(bootOpenTaskId);
+      else alert(`任务 ${bootOpenTaskId} 未在当前任务列表中找到，请刷新后重试。`);
+    }
 
     // 深链：/quickstart#architecture 直接打开架构设计 Tab
     if ((location.hash || '').replace(/^#/, '') === 'architecture') {
@@ -9450,12 +10196,177 @@
     }
 	  }
 
+
+  // Versioned local draft; restoring it never submits a writing task.
+  const configurationDraftKey = 'bestseller.creation-configuration.v1';
+  let configurationExpectedHash = null, configurationExpectedWindowHash = null, configurationLoadedProject = null, configurationLoadSequence = 0, configurationPendingProposals = [];
+  let configurationSources = {platforms:'default', readers:'default', book:'default'};
+  function collectCreationConfiguration() {
+    const primary = $('#configurationPrimaryPlatform').value || null;
+    const compatible = Array.from(document.querySelectorAll('[data-compatible-platform]:checked'))
+      .map(el => el.value).filter(value => value !== primary);
+    return {configuration: {schema_version:'creation-configuration.v1', platforms:{primary,compatible},
+      readers:{primary:$('#configurationPrimaryReader').value.trim() || null,
+        secondary:$('#configurationSecondaryReaders').value.split(/[;；]/).map(v=>v.trim()).filter(Boolean)},
+      book:{total_chapters:Number($('#configurationBookTotal').value),chapter_target:Number($('#configurationChapterTarget').value),unit:'zh_body_chars'},
+      creative_asset_refs:[], field_sources:configurationSources},
+      execution_window:{schema_version:'execution-window.v1',purpose:$('#configurationPurpose').value,
+        start:Number($('#configurationWindowStart').value),end:Number($('#configurationWindowEnd').value)}};
+  }
+  function renderConfigurationDependencyError(submission) {
+    const {platforms, readers} = submission.configuration;
+    const platformError = !platforms.primary && platforms.compatible.length > 0;
+    const readerError = !readers.primary && readers.secondary.length > 0;
+    const message = platformError
+      ? '已选择兼容平台，请先选择主平台；如不指定平台，请取消所有兼容平台。'
+      : readerError ? '已填写次要读者，请先填写主要读者；如不指定读者，请清空次要读者。' : '';
+    const status = $('#configurationValidation');
+    if (status) { status.textContent = message; status.hidden = !message; }
+    $('#configurationPrimaryPlatform')?.setAttribute?.('aria-invalid', String(platformError));
+    $('#configurationPrimaryReader')?.setAttribute?.('aria-invalid', String(readerError));
+    return message;
+  }
+  function validateCreationConfiguration(submission) {
+    const message = renderConfigurationDependencyError(submission);
+    if (message) throw new Error(message);
+    return submission;
+  }
+  function restoreCreationConfiguration(value) {
+    const c=value.configuration,w=value.execution_window;
+    $('#configurationPrimaryPlatform').value=c.platforms.primary || '';
+    document.querySelectorAll('[data-compatible-platform]').forEach(el=>{el.checked=c.platforms.compatible.includes(el.value);});
+    $('#configurationPrimaryReader').value=c.readers.primary || '';
+    $('#configurationSecondaryReaders').value=c.readers.secondary.join('；');
+    $('#configurationBookTotal').value=c.book.total_chapters; chapterCount=c.book.total_chapters;
+    $('#customChapters').value=chapterCount;
+    $('#configurationChapterTarget').value=c.book.chapter_target;
+    $('#configurationPurpose').value=w.purpose;$('#configurationWindowStart').value=w.start;$('#configurationWindowEnd').value=w.end;
+    configurationSources=c.field_sources || {platforms:'default',readers:'default',book:'default'};
+    renderConfigurationDependencyError(collectCreationConfiguration());
+  }
+  async function configurationJson(url,options) {
+    if (!options?.method || options.method.toUpperCase() === 'GET') {
+      const value = await boundedDashboardJson(url);
+      if (value.error) throw new Error(value.error);
+      return value;
+    }
+    const response=await fetch(url,options);const value=await response.json();
+    if(!response.ok || value.error) throw new Error(value.error || '配置请求失败');
+    return value;
+  }
+  function configurationDraftSave() {
+    try { const project=$('#configurationProject').value;
+      localStorage.setItem(configurationDraftKey+':'+(project||'new'),JSON.stringify({submission:collectCreationConfiguration(),
+        project,expected_hash:configurationExpectedHash,expected_window_hash:configurationExpectedWindowHash}));
+      localStorage.setItem(configurationDraftKey+':active',project); } catch(e) {}
+  }
+  async function configurationPreview() {
+    const value=await configurationJson('/api/creation-configuration/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(validateCreationConfiguration(collectCreationConfiguration()))});
+    $('#configurationResult').textContent=`全书 ${value.whole_book_chapters} 章，约 ${value.whole_book_target_chars.toLocaleString()} 正文汉字；本次第 ${value.window_range.join('—')} 章，共 ${value.window_chapters} 章。\n兼容目标仅作建议；保存不会开始写作。`;
+    configurationDraftSave(); return value;
+  }
+  $('#configurationPreview').addEventListener('click',()=>configurationPreview().catch(e=>{$('#configurationResult').textContent=e.message;}));
+  $('#configurationSave').addEventListener('click',async()=>{try {
+    if(!$('#configurationEnabled').checked) throw new Error('请先启用新版配置；历史配置不会自动迁移。');
+    await configurationPreview(); const slug=$('#configurationProject').value;
+    if(slug && configurationLoadedProject!==slug) throw new Error('请先读取这部作品的服务器配置，再检查并保存。');
+    if(!slug){$('#configurationResult').textContent+='\n新创作草案已在本机保存；创建时才提交，不启动任务。';return;}
+    const value=await configurationJson(`/api/projects/${encodeURIComponent(slug)}/creation-configuration`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({submission:validateCreationConfiguration(collectCreationConfiguration()),expected_hash:configurationExpectedHash,expected_window_hash:configurationExpectedWindowHash})});
+    configurationExpectedHash=value.effective.configuration_hash;configurationExpectedWindowHash=value.effective.execution_window_hash;
+    const fields=Object.keys(value.diff.changes).join('、') || '无';
+    $('#configurationResult').textContent=(value.status==='saved'?'配置已保存，未开始写作。':'已保存变更提案；需要结构重审，现有合同及正文未改。')+`\n变更字段：${fields}；受影响已有章节：${value.diff.affected_chapters.length}。`;
+    configurationDraftSave();
+  } catch(e){$('#configurationResult').textContent=e.message;}});
+  $('#configurationLoad').addEventListener('click',async()=>{try {
+    const slug=$('#configurationProject').value;if(!slug) return;
+    const requestSequence=++configurationLoadSequence;
+    const value=await configurationJson(`/api/projects/${encodeURIComponent(slug)}/creation-configuration`);
+    if(requestSequence!==configurationLoadSequence || $('#configurationProject').value!==slug) return;
+    configurationExpectedHash=value.configuration_hash;configurationExpectedWindowHash=value.execution_window_hash;configurationLoadedProject=slug;
+    if(value.configuration){restoreCreationConfiguration({configuration:value.configuration,execution_window:value.execution_window});$('#configurationEnabled').checked=true;}
+    else {resetCreationConfiguration(false);$('#configurationProject').value=slug;$('#configurationEnabled').checked=false;$('#configurationBookTotal').value=value.whole_book_chapters;chapterCount=value.whole_book_chapters;
+      $('#configurationChapterTarget').value=Math.round(value.whole_book_target_chars/value.whole_book_chapters);}
+    configurationExpectedHash=value.configuration_hash;configurationExpectedWindowHash=value.execution_window_hash;configurationLoadedProject=slug;
+    configurationPendingProposals=value.pending_changes || [];
+    $('#configurationRestoreProposal').hidden=!configurationPendingProposals.length;
+    $('#configurationResult').textContent=value.legacy?'历史配置未回填新默认。需要修改时先勾选新版配置；有批准设定或章节将只保存提案。':'已读取服务器保存版本；未启动或恢复写作。';
+    configurationDraftSave();
+  } catch(e){$('#configurationResult').textContent=e.message;}});
+  $('#configurationProject').addEventListener('change',()=>{const project=$('#configurationProject').value;
+    ++configurationLoadSequence;resetCreationConfiguration(false);$('#configurationProject').value=project;
+    configurationExpectedHash=null;configurationExpectedWindowHash=null;configurationLoadedProject=null;
+    $('#configurationResult').textContent='请先读取这部作品的已保存配置。';});
+  function configurationSourceField(element) {
+    if(element.id==='configurationPrimaryPlatform' || (element.dataset && 'compatiblePlatform' in element.dataset)) return 'platforms';
+    if(['configurationPrimaryReader','configurationSecondaryReaders'].includes(element.id)) return 'readers';
+    if(['configurationBookTotal','configurationChapterTarget'].includes(element.id)) return 'book';
+    return null;
+  }
+  $('#creationConfigurationPanel').addEventListener('input',e=>{
+    const id=e.target.id || ''; const key=configurationSourceField(e.target);
+    if(key) configurationSources={...configurationSources,[key]:'explicit'};
+    if(id==='configurationBookTotal'){chapterCount=Number(e.target.value);$('#customChapters').value=chapterCount;}
+    renderConfigurationDependencyError(collectCreationConfiguration());
+    configurationDraftSave();
+  });
+  function resetCreationConfiguration(clearDraft = true) {
+    configurationPendingProposals=[];
+    $('#configurationRestoreProposal').hidden=true;
+    if(clearDraft) { try { localStorage.removeItem(configurationDraftKey+':new');localStorage.removeItem(configurationDraftKey);localStorage.setItem(configurationDraftKey+':active',''); } catch(e) {} }
+    configurationExpectedHash=null;configurationExpectedWindowHash=null;configurationLoadedProject=null;
+    configurationSources={platforms:'default',readers:'default',book:'default'};
+    $('#configurationEnabled').checked=true;$('#configurationProject').value='';
+    restoreCreationConfiguration({configuration:{platforms:{primary:null,compatible:[]},readers:{primary:null,secondary:[]},
+      book:{total_chapters:DEFAULT_CHAPTER_COUNT,chapter_target:2000},field_sources:configurationSources},
+      execution_window:{purpose:'opening_window',start:1,end:Math.min(20,DEFAULT_CHAPTER_COUNT)}});
+    $('#configurationResult').textContent='新配置默认章均2000；既有作品不会自动迁移。';
+  }
+  async function initializeCreationConfiguration() {
+    const catalog=await configurationJson('/api/creation-configuration');
+    catalog.platforms.forEach(p=>{
+      const option=document.createElement('option');option.value=p.key;option.textContent=p.name;$('#configurationPrimaryPlatform').appendChild(option);
+      const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.value=p.key;input.dataset.compatiblePlatform='1';
+      label.append(input,document.createTextNode(p.name));$('#configurationCompatiblePlatforms').appendChild(label);
+    });
+    try {
+      const old=JSON.parse(localStorage.getItem(configurationDraftKey)||'null');
+      const active=localStorage.getItem(configurationDraftKey+':active') ?? old?.project ?? '';
+      const draft=JSON.parse(localStorage.getItem(configurationDraftKey+':'+(active||'new'))||'null') || old;
+      if(draft?.submission && (draft.project||'')===active){
+        if(active) await configurationProjectChoices(active);
+        if(active && $('#configurationProject').value!==active) throw new Error('草案所属作品当前不可用，未将其作为新书恢复。');
+        restoreCreationConfiguration(draft.submission);
+        configurationExpectedHash=draft.expected_hash;configurationExpectedWindowHash=draft.expected_window_hash;configurationLoadedProject=null;
+        $('#configurationResult').textContent='已恢复所属作品的本机草案；保存已有作品前请回读服务器版本。';
+      }
+    } catch(e) {$('#configurationResult').textContent=e.message;}
+  }
+  async function configurationProjectChoices(selected) {
+    const rows=await configurationJson('/api/creation-configuration/projects');
+    const select=$('#configurationProject');select.replaceChildren(new Option('新创作／本机草案',''));
+    rows.forEach(p=>select.add(new Option(p.title,p.slug)));select.value=selected || '';
+  }
+  window.openCreationConfiguration=async function(){switchView('wizard');wizGo(2);
+    try {await configurationProjectChoices($('#configurationProject').value);}
+    catch(e){$('#configurationResult').textContent=e.message;}
+  };
+  $('#configurationRestoreProposal').addEventListener('click',()=>{
+    const proposal=configurationPendingProposals[0];if(!proposal) return;
+    restoreCreationConfiguration(proposal.requested);configurationDraftSave();
+    $('#configurationResult').textContent='已恢复待审提案供检查；当前生效配置和正文未改。';
+  });
+
   init();
 
   // Refresh dashboard periodically when visible
   setInterval(() => {
-    if ($('#viewDashboard').classList.contains('active')) refreshDashboard();
+    if ($('#viewDashboard').classList.contains('active')) refreshDashboard(false);
   }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') return;
+    if ($('#viewDashboard').classList.contains('active')) refreshDashboard();
+    else if ($('#viewProgress').classList.contains('active') && focusTaskId) updateProgressView(focusTaskId);
+  });
 
   // ── Keyboard shortcuts (avoid hijacking when typing) ──
   document.addEventListener('keydown', (e) => {

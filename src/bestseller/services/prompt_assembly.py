@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+import re
 from typing import Any
 
 from bestseller.services.prompt_compiler import (
@@ -260,7 +261,7 @@ def render_instruction_priority_block(*, is_en: bool) -> str:
         return (
             "# CONSTRAINTS · Instruction priority (when rules conflict)\n"
             "Apply in this order; lower items yield to higher ones:\n"
-            "1. Word-count hard band (min/target/max) and output format\n"
+            "1. Word-count hard band (min/target/max) only when explicitly supplied in the current delivery contract, and output format\n"
             "2. Cold-reader opening: who / where / what in the first ~200 chars\n"
             "3. Peak moments: show-don't-tell (action/body/subtext, not emotion labels)\n"
             "4. Anti-AI-slop / anti-meta (no template phrases, no planning tags)\n"
@@ -270,7 +271,7 @@ def render_instruction_priority_block(*, is_en: bool) -> str:
         )
     return (
         "# CONSTRAINTS · 指令优先级（冲突时按序服从，低位让高位）\n"
-        "1. **字数硬带**（下限/目标/上限）与输出格式\n"
+        "1. 当前明确交付合同中的**字数硬带**（有下限/目标/上限时）与输出格式\n"
         "2. **开场冷读**：前约 200 字内可答 who / where / what\n"
         "3. **高光展示不讲述**：冲突/转折用动作·身体·潜台词，禁止情绪标签\n"
         "4. **反 AI 腔 / 反元信息**：禁套话、禁策划标签\n"
@@ -305,10 +306,15 @@ def genre_wants_reaction_amplification(
     sub_genre: str | None = None,
     prompt_pack_key: str | None = None,
 ) -> bool:
-    blob = " ".join(str(part or "").lower() for part in (genre, sub_genre, prompt_pack_key))
-    if not blob.strip():
-        return True  # unknown → keep legacy default (commercial webnovel bias)
-    return any(hint in blob for hint in _SHUANGWEN_REACTION_GENRE_HINTS)
+    # Match selected genre labels, not an incidental word inside an unknown
+    # custom genre (e.g. a memoir about power systems).
+    labels = {
+        re.sub(r"[\s_]+", "-", label.strip().lower())
+        for part in (genre, sub_genre, prompt_pack_key)
+        for label in re.split(r"[,，、/|;；·]", str(part or ""))
+        if label.strip()
+    }
+    return bool(labels.intersection(_SHUANGWEN_REACTION_GENRE_HINTS))
 
 
 # Private book terms that must never re-enter generic production paths. Keep

@@ -54,6 +54,17 @@ class FakeSession:
         self.executed.append(stmt)
 
 
+@pytest.fixture(autouse=True)
+def project_review_transport(monkeypatch):
+    # Exercise report persistence without a provider or execution ledger.
+    from bestseller.services.llm import LLMCompletionResult
+    async def complete(session, settings, request):
+        assert request.project_id is not None
+        return LLMCompletionResult(content=request.fallback_response, provider="test",
+            model_name="test", llm_run_id=uuid4())
+    monkeypatch.setattr(consistency_services, "complete_text", complete)
+
+
 def build_settings():
     return load_settings(env={})
 

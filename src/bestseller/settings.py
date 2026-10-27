@@ -57,9 +57,10 @@ class RetrySettings(BaseModel):
 
 class LLMSettings(BaseModel):
     mock: bool = False
-    writer_total_input_budget_tokens: int = Field(default=8000, ge=256)
+    writer_total_input_budget_tokens: int = Field(default=14800, ge=256)
     writer_prompt_safety_margin: float = Field(default=0.10, ge=0, lt=1)
     planner_prompt_budget_tokens: int = Field(default=16000, ge=2048)
+    planner_source_complete_input_budget_tokens: int | None = Field(default=None, ge=2048, le=32768)
     planner_prompt_safety_margin: float = Field(default=0.10, ge=0, lt=1)
     independent_judge_mode: Literal["off", "shadow", "advisory"] = "shadow"
     independent_judge_primary_model_key: str | None = "deepseek-v4-flash"
@@ -279,6 +280,8 @@ class RedisSettings(BaseModel):
 
 
 class PipelineSettings(BaseModel):
+    # Independent tournament batches own separate DB sessions; 1 is rollback.
+    concept_tournament_batch_concurrency: int = Field(default=2, ge=1, le=4)
     # closure keeps autonomous runs moving while preserving structured
     # degradation evidence; strict blocks when a required conception lane
     # errors or falls back.
@@ -293,11 +296,15 @@ class PipelineSettings(BaseModel):
     # New callers must use quality_mode and promotion evidence instead.
     accept_on_stall: bool = True
     whole_book_pause_on_scene_review: bool = False  # If True, a chapter whose scenes require human review PAUSES the whole book. Closure mode may continue with explicit quality debt and a human-review flag; it never promotes the stalled candidate. Whole-book consistency failures still pause regardless (see project_consistency_block_on_failure).
-    project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
+    project_consistency_block_on_failure: bool = (
+        True  # Whole-book consistency failures must pause, not accept_on_stall
+    )
     chapter_review_block_on_failure: bool = False  # Deprecated compatibility switch. True maps to strict; false does not permit exporting or promoting a failed chapter review.
     retention_safety_gate_block_on_failure: bool = False  # Soft by default: when the reader-retention / persona auto-repair budget is exhausted (e.g. PERSONA_WEIGHTED_SCORE_LOW that the writer model structurally cannot clear — the gate's 0.62 bar sits above the model's ~0.51 ceiling per reader_persona_calibration), accept the best draft on-stall, flag it (retention_accepted_on_stall / low_retention_quality) and ADVANCE instead of pausing the whole book to machine-repair. True left every persona-failing chapter looping rewrites then hard-blocking, so the book never reached autonomous closure. Mirrors chapter_review_block_on_failure; opt on for strict retention enforcement. Per-project override via metadata `retention_safety_gate_warn_only: true`.
     gate_llm_adjudication_enabled: bool = True  # Context-dependent gate findings (common-sense) get an LLM CONFIRM/DISMISS pass before they may block
-    chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
+    chapter_outline_repair_attempts: int = (
+        3  # Regenerate invalid chapter outlines before surfacing failure
+    )
     planning_artifact_reuse_enabled: bool = True
     planning_artifact_reuse_allow_legacy: bool = True
     chapter_outline_batch_size: int = 10
@@ -308,7 +315,9 @@ class PipelineSettings(BaseModel):
     # stays comfortably under the limit; cross-batch continuity is preserved via
     # consumed_event_ledger + previous_exit_state, so smaller batches are safe.
     commercial_strict_prewrite_chapter_outline_batch_size: int = 3
-    commercial_strict_prewrite_outline_batch_shrink_size: int = 3
+    # A strict 3-chapter batch that truncates or returns the wrong count must
+    # actually get smaller.  A value of 3 made the shrink branch a no-op.
+    commercial_strict_prewrite_outline_batch_shrink_size: int = 2
     rolling_outline_window_size: int = 8
     rolling_outline_batch_size: int = 4
     enable_rolling_outline: bool = True
@@ -327,12 +336,24 @@ class PipelineSettings(BaseModel):
     contradiction_block_on_violation: bool = True
     identity_block_on_violation: bool = True
     identity_block_severities: list[str] = Field(default_factory=lambda: ["critical", "major"])
-    require_foundation_identity_lock: bool = True  # CastSpec must lock gender/pronouns before persistence
-    require_chapter_plan_contract: bool = True  # Outline materialization must validate scene time/purpose/participants
-    enable_chapter_causality_gate: bool = True  # Outline materialization validates reader-visible causal axes
-    chapter_causality_gate_block_on_failure: bool = False  # Block flat chapter plans before prose drafting
-    methodology_contract_mode: str = "warn"  # off/warn/strict for methodology overlay scope and execution gates
-    require_pre_draft_scene_contract: bool = True  # Scene pipeline validates persisted scene cards before drafting
+    require_foundation_identity_lock: bool = (
+        True  # CastSpec must lock gender/pronouns before persistence
+    )
+    require_chapter_plan_contract: bool = (
+        True  # Outline materialization must validate scene time/purpose/participants
+    )
+    enable_chapter_causality_gate: bool = (
+        True  # Outline materialization validates reader-visible causal axes
+    )
+    chapter_causality_gate_block_on_failure: bool = (
+        False  # Block flat chapter plans before prose drafting
+    )
+    methodology_contract_mode: str = (
+        "warn"  # off/warn/strict for methodology overlay scope and execution gates
+    )
+    require_pre_draft_scene_contract: bool = (
+        True  # Scene pipeline validates persisted scene cards before drafting
+    )
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
     scene_richness_block_on_critical: bool = False  # Soft by default: inject prompt-block + warnings and continue (self-harm fix). Opt back on to hard-block (recoverably, via WriteSafetyBlockError).
     # Chapter-level outline readiness gate. This runs before any scene prose is
@@ -415,7 +436,9 @@ class PipelineSettings(BaseModel):
     arc_summary_enabled: bool = True  # Generate arc summaries at arc boundaries
     world_snapshot_enabled: bool = True  # Generate world snapshots at arc boundaries
     act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
-    progressive_planning: bool = False  # Enable progressive volume planning with write-feedback loop
+    progressive_planning: bool = (
+        False  # Enable progressive volume planning with write-feedback loop
+    )
     # Default to strict sequential volume writing. A blocked or incomplete
     # volume must be repaired before later volumes are planned/written, or
     # long-form resumes can skip visible chapter gaps.
@@ -520,9 +543,7 @@ class PipelineSettings(BaseModel):
     # Warnings (soft-margin bands) do NOT block by default — only the
     # hard BLOCK_LOW / BLOCK_HIGH bands surface.  Flip to
     # ``["major", "minor"]`` to surface WARN_* as well (chatty).
-    length_stability_block_severities: list[str] = Field(
-        default_factory=lambda: ["major"]
-    )
+    length_stability_block_severities: list[str] = Field(default_factory=lambda: ["major"])
     # Extra tolerance beyond [min, max] before a drift is escalated from
     # WARN_* to BLOCK_*.  0.10 == 10% extra slack (so with min=5000 the
     # hard block trips at wc < 4500).  Tunable per project via
@@ -637,6 +658,7 @@ class PipelineSettings(BaseModel):
             "OPENING_PRESSURE_THIN",
             "ENDING_HOOK_MISSING",
             "PARAGRAPH_DUPLICATE_PARAPHRASE",
+            "STORY_EFFECT_REALIZATION_UNREALIZED",
             "CALLBACK_OBLIGATION_MISSING",
             "LENGTH_OUT_OF_BAND",
             "GOLDEN_THREE_WEAK",
@@ -713,6 +735,13 @@ class PipelineSettings(BaseModel):
     # Canonical cutover additionally requires live reader evidence by default.
     story_engine_require_reader_validation_for_cutover: bool = True
     story_engine_rolling_window_size: int = 10
+    # Ranking-evidence authority rollout.  This flag controls whether evidence
+    # is only recorded or also blocks project promotion; it never weakens the
+    # fail-closed commercial publication boundary.
+    ranking_evidence_mode: Literal["off", "shadow", "advisory", "canary", "required"] = "shadow"
+    ranking_evidence_canary_project_ids: list[str] = Field(default_factory=list)
+    ranking_evidence_canary_genres: list[str] = Field(default_factory=list)
+    ranking_evidence_required_for_commercial_release: bool = True
     story_design_kernel_candidate_count: int = 3
     enable_emotion_driven_kernel: bool = True
     enable_emotion_kernel_backfill: bool = True
@@ -743,6 +772,12 @@ class PipelineSettings(BaseModel):
 
 class BudgetSettings(BaseModel):
     max_tokens_per_project: int = 0  # 0 = unlimited
+    # Technical safety ceilings, NOT an authorization to incur these costs.
+    # Persisted on first scope use; retries/resume/new workflows cannot raise
+    # them. Project fallback is a lifetime scope until explicitly reconciled.
+    execution_max_calls: int = Field(default=64, ge=1, le=10000)
+    execution_max_tokens: int = Field(default=1_000_000, ge=1)
+    execution_deadline_seconds: int = Field(default=3600, ge=1, le=86400)
     warning_thresholds: list[float] = Field(default_factory=lambda: [0.5, 0.8, 1.0])
     cost_per_1k_input_tokens: float = 0.003
     cost_per_1k_output_tokens: float = 0.015
@@ -761,7 +796,9 @@ class HookEngineSettings(BaseModel):
 class ApiSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
-    cors_origins: list[str] = Field(default_factory=list)  # Empty by default; set explicitly for production
+    cors_origins: list[str] = Field(
+        default_factory=list
+    )  # Empty by default; set explicitly for production
     api_key_header: str = "Authorization"
     task_event_ttl_seconds: int = 86400  # 24h progress retention in Redis
 
@@ -791,12 +828,16 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "minimax": {
         "key": "minimax",
         "label": "MiniMax",
-        "description": "MiniMax-M3 for planning, writing, review, and repair.",
+        "description": "MiniMax-M3.1-Flash for planning, writing, review, and repair.",
         "roles": {
             "planner": {
-                "model": "openai/MiniMax-M3",
+                "model": "openai/MiniMax-M3.1-Flash",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
+                "rate_limit_fallback_model": None,
+                "rate_limit_fallback_api_base": None,
+                "rate_limit_fallback_api_key_env": None,
+                "rate_limit_fallback_stream": False,
                 "timeout_seconds": 900,
                 "max_tokens": 32768,
                 "stream": False,
@@ -805,10 +846,14 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "writer": {
-                "model": "openai/MiniMax-M3",
-                "model_override": "openai/MiniMax-M3",
+                "model": "openai/MiniMax-M3.1-Flash",
+                "model_override": "openai/MiniMax-M3.1-Flash",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
+                "rate_limit_fallback_model": None,
+                "rate_limit_fallback_api_base": None,
+                "rate_limit_fallback_api_key_env": None,
+                "rate_limit_fallback_stream": False,
                 "timeout_seconds": 360,
                 "max_tokens": 32768,
                 "stream": False,
@@ -816,9 +861,13 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "critic": {
-                "model": "openai/MiniMax-M3",
+                "model": "openai/MiniMax-M3.1-Flash",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
+                "rate_limit_fallback_model": None,
+                "rate_limit_fallback_api_base": None,
+                "rate_limit_fallback_api_key_env": None,
+                "rate_limit_fallback_stream": False,
                 "timeout_seconds": 180,
                 "max_tokens": 32768,
                 "stream": False,
@@ -827,9 +876,13 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "summarizer": {
-                "model": "openai/MiniMax-M3",
+                "model": "openai/MiniMax-M3.1-Flash",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
+                "rate_limit_fallback_model": None,
+                "rate_limit_fallback_api_base": None,
+                "rate_limit_fallback_api_key_env": None,
+                "rate_limit_fallback_stream": False,
                 "timeout_seconds": 120,
                 "stream": False,
                 "model_override": None,
@@ -837,9 +890,13 @@ LLM_RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
                 "reasoning_effort": None,
             },
             "editor": {
-                "model": "openai/MiniMax-M3",
+                "model": "openai/MiniMax-M3.1-Flash",
                 "api_base": "https://api.minimaxi.com/v1",
                 "api_key_env": "MINIMAX_API_KEY",
+                "rate_limit_fallback_model": None,
+                "rate_limit_fallback_api_base": None,
+                "rate_limit_fallback_api_key_env": None,
+                "rate_limit_fallback_stream": False,
                 "timeout_seconds": 360,
                 "max_tokens": 32768,
                 "stream": False,
@@ -1128,6 +1185,11 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 def _coerce_env_value(value: str) -> Any:
     if value == "":
         return value
+    # YAML 1.1 turns these valid enum/string values into bools before Pydantic
+    # can apply the field type (e.g. independent_judge_mode="off"). Preserve
+    # the token; typed boolean fields still accept on/off/yes/no themselves.
+    if value.strip().lower() in {"on", "off", "yes", "no"}:
+        return value.strip()
     parsed = yaml.safe_load(value)
     return parsed
 
@@ -1191,11 +1253,7 @@ def llm_runtime_profile_path(settings: AppSettings) -> Path:
     override = os.environ.get(LLM_RUNTIME_PROFILE_ENV)
     if override:
         return Path(override)
-    return (
-        Path(settings.artifact_store.local_dir)
-        / "runtime"
-        / LLM_RUNTIME_PROFILE_FILENAME
-    )
+    return Path(settings.artifact_store.local_dir) / "runtime" / LLM_RUNTIME_PROFILE_FILENAME
 
 
 def _read_runtime_llm_profile_key(settings: AppSettings) -> str | None:
@@ -1270,11 +1328,7 @@ def runtime_llm_profile_payload(settings: AppSettings) -> dict[str, Any]:
     for key, profile in LLM_RUNTIME_PROFILES.items():
         roles = profile["roles"]
         key_envs = sorted(
-            {
-                str(role.get("api_key_env"))
-                for role in roles.values()
-                if role.get("api_key_env")
-            }
+            {str(role.get("api_key_env")) for role in roles.values() if role.get("api_key_env")}
         )
         profile_payloads.append(
             {

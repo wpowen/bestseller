@@ -137,21 +137,26 @@ def test_unnamed_or_malformed_entries_are_skipped_not_invented() -> None:
     assert [f["name"] for f in out] == ["杂役班借力成风同辈"]
 
 
-def test_compiled_world_spec_carries_the_real_factions() -> None:
+def test_compiled_world_preserves_canonical_factions_not_unverified_metadata() -> None:
     from bestseller.services.planner import _compile_source_bound_world_spec
+    from bestseller.services.conception_snapshots import snapshot_hash
 
     project = SimpleNamespace(
-        metadata_json={
-            "writing_profile": {"character": {"conflict_forces": _FORCES}},
-            "book_design_snapshot": {"protagonist": {"name": "祝余"}},
-        },
-        language="zh-CN",
-        slug="s",
-        title="t",
+        metadata_json={"writing_profile": {"character": {"conflict_forces": _FORCES}},
+                       "book_design_snapshot": {"protagonist": {"name": "祝余"}}},
+        language="zh-CN", slug="s", title="t",
     )
+    unresolved = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
+    assert unresolved["factions"] == []
+    assert unresolved["_meta"]["source_gaps"] == ["full_canonical_source_unavailable"]
+    content = {"writing_profile": {"character": {"conflict_forces": _FORCES}}}
+    project._source_bound_planning_canonical = {
+        "id": "canonical-forces", "content_hash": snapshot_hash(content), "content": content,
+    }
     spec = _compile_source_bound_world_spec(project, "青云宗杂役祝余……", {})
-    names = [f["name"] for f in spec["factions"]]
-    assert "杂役班借力成风同辈" in names, names
+    assert spec["factions"] == _FORCES
+    assert all(not faction.get("goal") for faction in spec["factions"])
+    assert spec["_meta"]["field_sources"]["factions"].startswith("canonical.writing_profile")
 
 
 # ── 2026-08-24 验证书 custom-xuanhuan-1787543232 抓到的真机缺口 ──

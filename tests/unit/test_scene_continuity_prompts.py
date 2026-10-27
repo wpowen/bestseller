@@ -94,7 +94,8 @@ def test_opening_contract_authorizes_cold_reader_orientation() -> None:
     assert "冷读者定位" in text
     assert "视角人物是谁" in text
     assert "连接组织授权" in text
-    assert "专有名词预算" in text
+    assert "不强加术语数量或解释方式" in text
+    assert "专有名词预算" not in text
     assert "故事问题落地" in text  # ch1 读者必须知道主角要什么/输了失去什么
 
 
@@ -140,9 +141,15 @@ def _review_result() -> SceneReviewResult:
     )
 
 
-def test_scene_review_prompt_has_continuity_axis_and_prev_tail() -> None:
+def test_scene_review_prompt_preserves_source_guards_and_prev_tail_without_recipe() -> None:
+    import json
+
     project, chapter, scene, draft = _review_fixtures()
+    scene.participants = ["已登记见证人"]
     scene_context = SimpleNamespace(
+        identity_constraint_block="保留已登记见证人的身份与声明化名",
+        canon_guardrails_block="已确认封印在上一场解除，不得当作尚未解除",
+        participant_canon_facts=[{"subject": "已登记见证人", "fact": "尚不知寄信人身份"}],
         previous_scene_summaries=[
             {
                 "chapter_number": 1,
@@ -155,22 +162,44 @@ def test_scene_review_prompt_has_continuity_axis_and_prev_tail() -> None:
     system_prompt, user_prompt = review_services.build_scene_review_prompts(
         project, chapter, scene, draft, _review_result(), scene_context=scene_context
     )
-    assert "接续性（硬轴）" in system_prompt
-    assert "逻辑自洽（硬轴）" in system_prompt
-    assert "第 6 项 FAIL" in system_prompt
-    assert "第 7 项 FAIL" in system_prompt
-    assert "上一场结尾原文" in user_prompt
-    assert "墨迹最末那个字" in user_prompt
-    assert "第1章特查" in user_prompt  # chapter_number=1 的故事问题特查
+    assert "Canon/Timeline" in system_prompt
+    assert "保留既定人物身份、已声明化名、能力边界与既成事件" in system_prompt
+    assert "接续性与逻辑自洽" in system_prompt
+    assert "上一场结尾原文" in system_prompt
+    assert "持续条款或性格引用本身不等于事件重播" in system_prompt
+    context = json.loads(user_prompt.split(
+        "CONTEXT (verify provenance; distinguish occurred facts from plans):\n", 1
+    )[1].split("\nVERIFIED_ADOPTED_REFERENCE", 1)[0])
+    assert context["previous_scene_summaries"] == scene_context.previous_scene_summaries
+    assert context["identity_constraint_block"] == scene_context.identity_constraint_block
+    assert context["canon_guardrails_block"] == scene_context.canon_guardrails_block
+    assert context["participant_canon_facts"] == scene_context.participant_canon_facts
+    assert '"participants": ["已登记见证人"]' in user_prompt
+    assert scene.purpose["story"] in user_prompt
+    assert "CURRENT_DRAFT:\n" + draft.content_md + "\nEND_CURRENT_DRAFT" in user_prompt
+    assert "不按多轴失败数量返工" in system_prompt
+    for recipe in ("第 6 项 FAIL", "第 7 项 FAIL", "前200字", "第1章特查", "Prompt Pack："):
+        assert recipe not in system_prompt + user_prompt
 
 
-def test_scene_review_prompt_without_context_still_has_axis() -> None:
+def test_scene_review_prompt_without_context_keeps_guards_without_inventing_history() -> None:
+    import json
+
     project, chapter, scene, draft = _review_fixtures()
     system_prompt, user_prompt = review_services.build_scene_review_prompts(
         project, chapter, scene, draft, _review_result()
     )
-    assert "接续性（硬轴）" in system_prompt
-    assert "上一场结尾原文" not in user_prompt
+    assert "Canon/Timeline" in system_prompt
+    assert "发现身份或事实冲突须指出具体来源与正文矛盾" in system_prompt
+    assert "缺少证据记未知" in system_prompt
+    context = json.loads(user_prompt.split(
+        "CONTEXT (verify provenance; distinguish occurred facts from plans):\n", 1
+    )[1].split("\nVERIFIED_ADOPTED_REFERENCE", 1)[0])
+    assert context == {}
+    assert scene.title in user_prompt and scene.purpose["story"] in user_prompt
+    assert "CURRENT_DRAFT:\n" + draft.content_md + "\nEND_CURRENT_DRAFT" in user_prompt
+    for recipe in ("接续性（硬轴）", "第 6 项 FAIL", "第1章特查", "前200字", "Prompt Pack："):
+        assert recipe not in system_prompt + user_prompt
 
 
 # ── 确定性人称漂移硬检查（真机：第三人称书场景2整段第一人称）──────────────

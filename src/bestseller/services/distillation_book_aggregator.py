@@ -382,23 +382,50 @@ def _coerce_book_design_card(obj: Any, *, source_id: str, source_ref: str) -> di
     ):
         value = row.get(key)
         if isinstance(value, list):
-            row[key] = [str(x) for x in value if str(x).strip()]
+            row[key] = _coerce_semantic_string_list(value)
         elif value in (None, ""):
             row[key] = list(default[key])
         else:
-            row[key] = [str(value)]
+            row[key] = _coerce_semantic_string_list([value])
         if not row[key] and default.get(key):
             row[key] = list(default[key])
     return row
 
 
+def _coerce_semantic_string_list(value: Any) -> list[str]:
+    """Convert model list values without leaking Python reprs into artifacts.
+
+    Book-design schemas intentionally use short semantic strings. Providers
+    occasionally return a mapping for ``state_variables``; ``str(mapping)``
+    produces an opaque Python repr that cannot be safely consumed downstream.
+    Expand mappings into ``key: value`` entries and use JSON only for nested
+    values so the representation stays deterministic and reviewable.
+    """
+
+    values = value if isinstance(value, list) else [value]
+    out: list[str] = []
+    for item in values:
+        if isinstance(item, dict):
+            for key, nested in item.items():
+                if nested in (None, "", [], {}):
+                    continue
+                if isinstance(nested, (dict, list)):
+                    rendered = json.dumps(nested, ensure_ascii=False, sort_keys=True)
+                else:
+                    rendered = str(nested).strip()
+                if rendered:
+                    out.append(f"{str(key).strip()}: {rendered}")
+            continue
+        if item in (None, "", [], {}):
+            continue
+        rendered = str(item).strip()
+        if rendered:
+            out.append(rendered)
+    return out
+
+
 def _coerce_string_list(value: Any, fallback: Sequence[str]) -> list[str]:
-    if isinstance(value, list):
-        out = [str(x).strip() for x in value if str(x).strip()]
-    elif value in (None, "", {}, []):
-        out = []
-    else:
-        out = [str(value).strip()]
+    out = _coerce_semantic_string_list(value)
     return out or list(fallback)
 
 
@@ -486,6 +513,27 @@ def _coerce_tail_bundle(obj: Any, *, source_id: str) -> tuple[list[Any], dict[st
     mats = payload.get("material_entries_review")
     if not isinstance(mats, list):
         mats = []
+    # Keep the review artifact schema stable before the active gate sees it.
+    # ``summary`` was used by an earlier prompt variant; accepting it here is
+    # a compatibility repair, not a reuse approval.  Every row remains
+    # explicitly review-only and unreviewed for the downstream loader.
+    normalized_mats: list[Any] = []
+    for item in mats:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        if not str(row.get("narrative_summary") or "").strip() and str(
+            row.get("summary") or ""
+        ).strip():
+            row["narrative_summary"] = str(row["summary"]).strip()
+        row["status"] = "review"
+        # These are producer-controlled authorization fields.  Never preserve
+        # a model-emitted ``abstract``/``approved_reusable`` marker here.
+        row["reuse_scope"] = "review_only"
+        row["abstraction_status"] = "unreviewed"
+        row["prompt_reuse"] = False
+        normalized_mats.append(row)
+    mats = normalized_mats
 
     return mechs, ledger, mats
 
@@ -611,6 +659,8 @@ def grammar_patch_fallback(
     tags = book_design.get("genre_tags") or []
     cat_tags = [str(t) for t in tags if isinstance(t, str)][:10]
     return {
+        "distillation_fallback": True,
+        "fallback_source": "grammar_patch_fallback",
         "key": aggregate_key,
         "name": aggregate_key.replace("-", " "),
         "source_ids": [source_id],
@@ -691,7 +741,19 @@ async def complete_distillation_json(
                     max_tokens_override=max_tokens,
                 ),
             )
-            return _extract_json_payload(result.content)
+            payload = _extract_json_payload(result.content)
+            if bool(getattr(result, "fallback_used", False)):
+                marker = {
+                    "distillation_fallback": True,
+                    "fallback_source": str(
+                        getattr(result, "fallback_source", None) or "provider_fallback"
+                    ),
+                }
+                if isinstance(payload, dict):
+                    payload = {**payload, **marker}
+                else:
+                    payload = marker
+            return payload
         except Exception as exc:  # noqa: BLE001
             from bestseller.services.llm_closed_loop import (
                 build_repair_user_prompt,
@@ -734,6 +796,7 @@ class BookAggregationResult:
     material_review_rows: int
     material_active_rows: int
     errors: tuple[str, ...]
+    fallback_stages: tuple[str, ...] = ()
 
 
 async def aggregate_source_package_async(
@@ -802,6 +865,8 @@ async def aggregate_source_package_async(
         "# CONTEXT\n"
         "Your output enters a cross-project library. Future books in the same genre will\n"
         "retrieve your volume_card to learn 'how volume-level arcs typically build and pay off'.\n"
+        "This package may be a bounded sample. Do not infer events, returns, or later-volume\n"
+        "payoffs beyond the chapter range supplied in the task.\n"
         "Identity must be SCRUBBED; only transferable mechanics survive.\n"
         "\n"
         "# TASK\n"
@@ -825,6 +890,7 @@ async def aggregate_source_package_async(
     )
 
     volume_rows: list[dict[str, Any]] = []
+    fallback_stages: list[str] = []
     for vol_idx, batch in enumerate(batches, start=1):
         mini = [compress_chapter_card_for_prompt(r) for r in batch]
         lo = int(batch[0].get("abs_chapter_no") or 0)
@@ -856,6 +922,8 @@ async def aggregate_source_package_async(
             max_tokens=4096,
             metadata={"distillation_source_id": source_id, "volume_no": vol_idx},
         )
+        if isinstance(raw, dict) and raw.get("distillation_fallback") is True:
+            fallback_stages.append("volume_card")
         raw = _coerce_volume_card(
             raw,
             source_id=source_id,
@@ -889,6 +957,9 @@ async def aggregate_source_package_async(
         "# CONTEXT\n"
         "Downstream consumer: cross-project methodology library. Future authors retrieve your\n"
         "card to learn 'how books in this genre typically architect across the whole arc'.\n"
+        "The supplied cards may cover only an observed chapter range. Treat that range as the\n"
+        "evidence boundary: describe only observed structure, label unobserved macro-arc fields\n"
+        "as unknown or pending, and never invent later-volume setup, payoff, or return structure.\n"
         "\n"
         "# TASK\n"
         "Produce exactly ONE book_design_card JSON object capturing the book's transferable architecture.\n"
@@ -915,6 +986,9 @@ async def aggregate_source_package_async(
             json.dumps(volume_rows, ensure_ascii=False),
             "SAMPLE_COMPRESSED_CHAPTER_CARDS_JSON:",
             json.dumps(sample_chapters, ensure_ascii=False),
+            f"OBSERVATION_SCOPE: chapters-{ordered[0].get('abs_chapter_no')}-"
+            f"{ordered[-1].get('abs_chapter_no')} of "
+            f"{(manifest.get('parse_profile') or {}).get('chapter_count') or len(ordered)}",
             "",
             "Return JSON with required fields per book_design_card schema:",
             "book_id, source_ref, source_type, status, parsed_profile, genre_tags,",
@@ -936,6 +1010,8 @@ async def aggregate_source_package_async(
         max_tokens=8192,
         metadata={"distillation_source_id": source_id},
     )
+    if isinstance(book_raw, dict) and book_raw.get("distillation_fallback") is True:
+        fallback_stages.append("book_design_card")
     source_ref = f"distillation:{str(manifest.get('source_hash_sha256') or '')[:24]}"
     book_raw = _coerce_book_design_card(
         book_raw,
@@ -955,6 +1031,15 @@ async def aggregate_source_package_async(
             "volume_count": len(volume_rows),
             "encoding": str(manifest.get("encoding") or ""),
         }
+    book_raw["observation_scope"] = {
+        "chapter_start": int(ordered[0].get("abs_chapter_no") or 0) if ordered else None,
+        "chapter_end": int(ordered[-1].get("abs_chapter_no") or 0) if ordered else None,
+        "chapter_count_observed": len(ordered),
+        "chapter_count_declared": int(
+            (manifest.get("parse_profile") or {}).get("chapter_count") or len(ordered)
+        ),
+        "macro_arc_inference_allowed": bool(manifest.get("full_work_verified") is True),
+    }
     validate_book_design_card(book_raw)
     write_json(package_dir / "book_design_card.json", book_raw)
 
@@ -968,6 +1053,9 @@ async def aggregate_source_package_async(
         "Downstream consumer: future authors writing in the same genre. They retrieve your card\n"
         "to ask 'what craft dials are common for this kind of story', NOT 'how do I sound exactly\n"
         "like author X'.\n"
+        "Use only anonymous craft_profile observations. Ignore plot, characters, relationships,\n"
+        "stakes, props, worldbuilding, and reader-promise content. If a craft observation names\n"
+        "a source-specific role, event, object, or relationship, generalize it one level or omit it.\n"
         "\n"
         "# TASK\n"
         "Produce ONE author_craft_card JSON with abstract craft controls.\n"
@@ -994,12 +1082,17 @@ async def aggregate_source_package_async(
         [
             "=== DISTILLATION_TASK: author_craft_card ===",
             f"SOURCE_ID: {source_id}",
-            "BOOK_DESIGN_CARD_JSON:",
-            json.dumps(book_raw, ensure_ascii=False),
-            "VOLUME_CARDS_JSON:",
-            json.dumps(volume_rows, ensure_ascii=False),
-            "SAMPLE_COMPRESSED_CHAPTER_CARDS_JSON:",
-            json.dumps(sample_chapters, ensure_ascii=False),
+            "CRAFT_PROFILE_OBSERVATIONS_JSON:",
+            json.dumps(
+                [
+                    row.get("craft_observations")
+                    for row in ordered
+                    if isinstance(row.get("craft_observations"), dict)
+                    and row.get("craft_observations")
+                ],
+                ensure_ascii=False,
+            ),
+            "CRAFT_EVIDENCE_SCOPE: abstract craft_profile fields only; no plot or character evidence.",
             "",
             "Return JSON with fields:",
             "source_id, source_type, status, style_safety_policy, pov_and_distance,",
@@ -1020,7 +1113,10 @@ async def aggregate_source_package_async(
         max_tokens=4096,
         metadata={"distillation_source_id": source_id},
     )
+    if isinstance(craft_raw, dict) and craft_raw.get("distillation_fallback") is True:
+        fallback_stages.append("author_craft_card")
     craft_raw = _coerce_author_craft_card(craft_raw, source_id=source_id)
+    craft_raw["craft_observation_scope"] = "abstract craft_profile fields only"
     validate_author_craft_card(craft_raw)
     write_json(package_dir / "author_craft_card.json", craft_raw)
 
@@ -1044,10 +1140,20 @@ async def aggregate_source_package_async(
         "  evidence_scope, promotion_target, status, confidence}\n"
         "- anti_copy_ledger: {source_id, blocked_categories, blocked_combinations, replacement_policy}\n"
         "- material_entries_review: array of {dimension, slug, name, narrative_summary, content_json,\n"
-        "  genre, sub_genre, tags, source_type, confidence, status}\n"
+        "  genre, sub_genre, tags, source_type, confidence, status, reuse_scope, abstraction_status}\n"
         "\n"
         "# CONSTRAINTS\n"
         "- All material_entries_review[*].status = 'review' (never 'active').\n"
+        "- Emit at most 5 material rows; prefer fewer high-confidence rows over a long list.\n"
+        "- Keep each material row concise: at most 3 items in each structural list and keep each\n"
+        "  string value under 160 characters so the JSON completes within the response budget.\n"
+        "- Every material row MUST use the exact non-empty field narrative_summary (never summary).\n"
+        "- Every material row MUST set reuse_scope='review_only' and abstraction_status='unreviewed'.\n"
+        "- content_json MUST be an object containing distillation_source_ids=[SOURCE_ID] and at least\n"
+        "  one executable structural key: beat_order, scene_inputs, scene_outputs, stages, arc_ladder,\n"
+        "  required_change, replacement_rule, gate, or decision_policy. control/applications alone\n"
+        "  are descriptive notes and do not satisfy the executable-content contract.\n"
+        "- These fields make a review artifact structurally complete; they do NOT authorize prompt reuse.\n"
         "- Abstract reusable mechanisms + anonymous writing-craft controls ONLY.\n"
         "- FORBIDDEN: names, places, titles, file paths, author imitation directives.\n"
         "- anti_copy_ledger.blocked_categories must list specific source-fingerprint categories\n"
@@ -1084,11 +1190,18 @@ async def aggregate_source_package_async(
         max_tokens=8192,
         metadata={"distillation_source_id": source_id},
     )
+    tail_fallback = isinstance(tail, dict) and tail.get("distillation_fallback") is True
+    if tail_fallback:
+        fallback_stages.append("book_tail_bundle")
     mechs, ledger, mats = _coerce_tail_bundle(
         tail,
         source_id=source_id,
     )
     ledger["source_id"] = source_id
+    if tail_fallback:
+        ledger["distillation_fallback"] = True
+        mechs = [{**row, "distillation_fallback": True} for row in mechs if isinstance(row, dict)]
+        mats = [{**row, "distillation_fallback": True} for row in mats if isinstance(row, dict)]
     validate_anti_copy_ledger(ledger)
 
     write_jsonl(package_dir / "mechanism_candidates.jsonl", mechs)
@@ -1164,6 +1277,7 @@ async def aggregate_source_package_async(
             source_id=source_id,
             book_design=book_raw,
         )
+        fallback_stages.append("grammar_patch")
 
     gpath = package_dir / "grammar_patch.yaml"
     _atomic_write_text(gpath, yaml.safe_dump(gram_raw, allow_unicode=True, sort_keys=False))
@@ -1186,12 +1300,51 @@ async def aggregate_source_package_async(
         mechanism_rows=len(mechs),
         material_review_rows=len(mats),
         material_active_rows=len(active_rows) if write_active_artifacts else 0,
-        errors=tuple(),
+        errors=(),
+        fallback_stages=tuple(fallback_stages),
     )
 
 
 def package_book_phase_complete(package_dir: Path) -> bool:
-    """Return True if all six book-phase artifacts exist."""
+    """Return True only for a complete book phase with no fallback artifact."""
+
+    if not package_book_phase_structurally_complete(package_dir):
+        return False
+    try:
+        book_design = read_json(package_dir / "book_design_card.json")
+        craft = read_json(package_dir / "author_craft_card.json")
+        if _is_legacy_fallback_book_design(book_design):
+            return False
+        grammar = yaml.safe_load((package_dir / "grammar_patch.yaml").read_text(encoding="utf-8"))
+        volumes = read_jsonl(package_dir / "volume_cards.jsonl")
+        mechanisms = read_jsonl(package_dir / "mechanism_candidates.jsonl")
+        ledger = read_json(package_dir / "anti_copy_ledger.json")
+        material_path = _first_existing(package_dir, MATERIAL_REVIEW_FILENAMES)
+        materials = read_jsonl(material_path) if material_path is not None else []
+        if any(
+            isinstance(row, dict) and row.get("distillation_fallback") is True
+            for row in (book_design, craft, grammar, ledger, *volumes, *mechanisms, *materials)
+        ):
+            return False
+    except (OSError, TypeError, ValueError):
+        return False
+    return True
+
+
+def _is_legacy_fallback_book_design(row: dict[str, Any]) -> bool:
+    """Recognize the pre-marker fallback card emitted by the old aggregator."""
+
+    if str(row.get("reader_promise") or "").strip() == "LLM structured distillation fallback.":
+        return True
+    return (
+        str(row.get("core_engine") or "").strip().lower() == "unknown"
+        and "fallback_progress" in (row.get("state_variables") or [])
+        and "fallback mechanism abstraction" in (row.get("reusable_mechanisms") or [])
+    )
+
+
+def package_book_phase_structurally_complete(package_dir: Path) -> bool:
+    """Return True when all phase files parse, regardless of trust status."""
 
     names = (
         "volume_cards.jsonl",
@@ -1205,6 +1358,18 @@ def package_book_phase_complete(package_dir: Path) -> bool:
         if not (package_dir / n).is_file():
             return False
     if _first_existing(package_dir, MATERIAL_REVIEW_FILENAMES) is None:
+        return False
+    try:
+        read_json(package_dir / "book_design_card.json")
+        read_json(package_dir / "author_craft_card.json")
+        yaml.safe_load((package_dir / "grammar_patch.yaml").read_text(encoding="utf-8"))
+        read_jsonl(package_dir / "volume_cards.jsonl")
+        read_jsonl(package_dir / "mechanism_candidates.jsonl")
+        read_json(package_dir / "anti_copy_ledger.json")
+        material_path = _first_existing(package_dir, MATERIAL_REVIEW_FILENAMES)
+        if material_path is not None:
+            read_jsonl(material_path)
+    except (OSError, TypeError, ValueError, yaml.YAMLError):
         return False
     return True
 

@@ -29,6 +29,15 @@ from bestseller.services.distilled_strategy_compiler import (
 )
 from bestseller.services.planner import build_emotion_driven_kernel_backfill_payload
 from bestseller.services.planning_kernel import persist_project_planning_kernel
+from bestseller.services.character_intelligence.strategy import (
+    ReferenceProjectionContext, reference_projection_adopted, reference_projection_value,
+    required_reference_projection,
+)
+from bestseller.services.prompt_source_policy import (
+    REFERENCE_KEYS,
+    archive_metadata,
+    stamp_reference_cache,
+)
 from bestseller.services.reverse_outline_gate import (
     evaluate_reverse_outline_gate,
     reverse_outline_report_to_dict,
@@ -225,9 +234,15 @@ def _distilled_strategy_payload(
     category_key: str | None,
     protagonist_name: str,
 ) -> dict[str, Any] | None:
-    existing = _as_mapping(metadata.get("distilled_strategy_card"))
+    required_reference_projection(metadata, "distilled_strategy_card", project=project)
+    existing = _as_mapping(
+        reference_projection_value(metadata, "distilled_strategy_card", project=project)
+    )
     if existing:
         return existing
+    from bestseller.settings import get_settings
+    if not get_settings().pipeline.enable_distilled_design_reference:
+        return None
     if not category_key:
         return None
     card = compile_distilled_strategy_card(
@@ -1257,17 +1272,36 @@ async def repair_book_lifecycle_evidence(
         cast_spec=cast_spec,
         volume_plan=volume_plan,
     )
+    # The repair changes unique_hook below. Validate/compile against that actual
+    # input rather than rebadging a card compiled for the pre-repair context.
+    reference_metadata = {**metadata, "unique_hook": book_spec.get("unique_hook")}
+    existing_card = reference_projection_value(
+        reference_metadata, "distilled_strategy_card", project=project,
+    )
+    required_reference_projection(reference_metadata, "character_strategy", project=project)
     distilled_strategy_card = _distilled_strategy_payload(
         project,
-        metadata,
+        reference_metadata,
         category_key=category_key,
         protagonist_name=protagonist_name,
+    )
+    required_card = required_reference_projection(
+        reference_metadata, "distilled_strategy_card", project=project,
     )
     story_design, volume_plan, distilled_strategy_bound = _bind_distilled_strategy_to_planning(
         story_design=story_design,
         volume_plan=volume_plan,
-        strategy_card=distilled_strategy_card,
+        strategy_card=required_card,
     )
+    if existing_card is None:
+        # Preserve the actual old values before adding any freshly compiled
+        # projections. New receipts must never accidentally re-authorize them.
+        context = ReferenceProjectionContext(project, reference_metadata)
+        preserve_character_choice = reference_projection_adopted(context, "character_strategy")
+        retired_keys = tuple(key for key in REFERENCE_KEYS
+                             if key != "character_strategy" or not preserve_character_choice)
+        reference_metadata = archive_metadata(reference_metadata, retired_keys,
+                                             reason="lifecycle_reference_recompiled")
     reverse_outline = build_reverse_outline_payload(
         chapters=chapters,
         story_design_kernel=story_design,
@@ -1285,36 +1319,43 @@ async def repair_book_lifecycle_evidence(
         story_design_kernel=story_design,
         category_key=category_key,
     )
-    planning_payload = persist_project_planning_kernel(
-        project,
-        project_metadata={
-            **metadata,
-            "canonical_category": category_key,
-            "category_key": category_key,
-            "benchmark_works": _dedupe(
-                [
-                    *_string_list(metadata.get("benchmark_works")),
-                    f"anonymous-category-benchmark:{category_key or 'unknown'}",
-                ],
-                limit=8,
-            ),
-            "unique_hook": book_spec.get("unique_hook"),
-            "book_spec": book_spec,
-            "world_spec": world_spec,
-            "cast_spec": cast_spec,
-            "premium_cast_spec": cast_spec,
-            "volume_plan": volume_plan,
-            "premium_volume_plan": volume_plan,
-            "story_design_kernel": story_design,
-            "distilled_strategy_card": distilled_strategy_card,
-            "distilled_strategy_expected": bool(distilled_strategy_card),
-            "emotion_driven_kernel": emotion_kernel,
-            "emotion_driven_kernel_backfill": {
-                "status": "created",
-                "source": "lifecycle_evidence_repair",
-                "mode": "deterministic_fallback",
-            },
+    planning_metadata = {
+        **reference_metadata,
+        "canonical_category": category_key,
+        "category_key": category_key,
+        "benchmark_works": _dedupe(
+            [
+                *_string_list(metadata.get("benchmark_works")),
+                f"anonymous-category-benchmark:{category_key or 'unknown'}",
+            ],
+            limit=8,
+        ),
+        "unique_hook": book_spec.get("unique_hook"),
+        "book_spec": book_spec,
+        "world_spec": world_spec,
+        "cast_spec": cast_spec,
+        "premium_cast_spec": cast_spec,
+        "volume_plan": volume_plan,
+        "premium_volume_plan": volume_plan,
+        "story_design_kernel": story_design,
+        "distilled_strategy_card": distilled_strategy_card,
+        "distilled_strategy_expected": bool(distilled_strategy_card),
+        "emotion_driven_kernel": emotion_kernel,
+        "emotion_driven_kernel_backfill": {
+            "status": "created",
+            "source": "lifecycle_evidence_repair",
+            "mode": "deterministic_fallback",
         },
+    }
+    planning_project = ReferenceProjectionContext(project, planning_metadata)
+    if distilled_strategy_card:
+        keys = (
+            ("distilled_strategy_card", "distilled_strategy_expected")
+            if existing_card is None else ("distilled_strategy_expected",)
+        )
+        stamp_reference_cache(planning_project, keys, producer="strategy_compiler")
+    planning_payload = persist_project_planning_kernel(
+        planning_project,
         book_spec=book_spec,
         world_spec=world_spec,
         cast_spec=cast_spec,
@@ -1327,7 +1368,7 @@ async def repair_book_lifecycle_evidence(
         characters,
         dry_run=dry_run,
     )
-    next_metadata = _project_metadata(project)
+    next_metadata = _project_metadata(planning_project)
     next_metadata.update(
         {
             "canonical_category": category_key,

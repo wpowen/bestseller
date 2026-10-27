@@ -17,6 +17,7 @@ original), so wiring it into the hot path cannot break generation.
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 
@@ -39,6 +40,8 @@ async def revise_opening_qimao(
     content: str,
     instructions: str,
     project_id=None,
+    workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
     logical_role: str = "writer",
 ) -> str:
     """Run one bounded opening rewrite; return revised content or the original.
@@ -64,6 +67,8 @@ async def revise_opening_qimao(
         prompt_template="scene_writer",
         prompt_version="qimao_opening_revise",
         project_id=project_id,
+        workflow_run_id=workflow_run_id,
+        step_run_id=step_run_id,
         max_tokens_override=max(2048, int(len(content) * 2.4)),
     )
     try:

@@ -39,6 +39,75 @@ _FIELD_LABELS_ZH: dict[str, str] = {
     "question": "读者追问",
 }
 
+_ZH_INTERROGATIVE_MARKERS: tuple[str, ...] = (
+    "能否",
+    "是否",
+    "能不能",
+    "可不可以",
+    "为什么",
+    "为何",
+    "怎么",
+    "怎样",
+    "如何",
+    "何时",
+    "何处",
+    "哪里",
+    "哪一个",
+    "多少",
+)
+_EN_INTERROGATIVE_PREFIXES: tuple[str, ...] = (
+    "who ",
+    "what ",
+    "when ",
+    "where ",
+    "why ",
+    "how ",
+    "can ",
+    "could ",
+    "will ",
+    "would ",
+    "is ",
+    "are ",
+    "does ",
+    "do ",
+    "did ",
+    "should ",
+)
+
+
+def normalize_story_spine(spine: Any, *, language: str = "zh-CN") -> dict[str, Any]:
+    """Repair punctuation-only question defects without weakening the semantic gate.
+
+    LLMs frequently emit a semantically complete reader question without the final
+    question mark.  That is a deterministic presentation defect, not a reason to
+    discard an otherwise usable story design.  Declarative text remains unchanged
+    so :func:`validate_story_spine` can still reject it.
+    """
+
+    if not isinstance(spine, dict):
+        return {}
+    normalized = dict(spine)
+    question = str(normalized.get("question") or "").strip()
+    if not question or question.endswith(("？", "?")):
+        return normalized
+
+    folded = question.casefold()
+    is_zh = str(language or "").casefold().startswith("zh")
+    semantic_surface = question.rstrip("。.!！；; ")
+    interrogative = (
+        semantic_surface.endswith(("吗", "么", "呢"))
+        or semantic_surface.startswith(("谁", "哪个", "哪位"))
+        or semantic_surface.endswith(("是谁", "谁"))
+        or any(marker in semantic_surface for marker in _ZH_INTERROGATIVE_MARKERS)
+        if is_zh
+        else folded.startswith(_EN_INTERROGATIVE_PREFIXES)
+    )
+    if not interrogative:
+        return normalized
+
+    normalized["question"] = f"{semantic_surface}{'？' if is_zh else '?'}"
+    return normalized
+
 
 def validate_story_spine(spine: Any) -> list[str]:
     """确定性验收，返回违规清单（空=合格）。零 LLM 成本。"""
@@ -116,4 +185,9 @@ def render_story_spine_block(spine: Any, *, is_en: bool = False) -> str:
     )
 
 
-__all__ = ["SPINE_FIELDS", "validate_story_spine", "render_story_spine_block"]
+__all__ = [
+    "SPINE_FIELDS",
+    "normalize_story_spine",
+    "validate_story_spine",
+    "render_story_spine_block",
+]

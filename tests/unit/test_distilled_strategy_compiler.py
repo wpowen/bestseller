@@ -57,6 +57,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "state_variables": ["cross_system_understanding", "identity_debt"],
                 "chapter_change_vectors": ["exploit_rule_gap", "pay_identity_debt"],
                 "reader_rewards": ["knowledge_arbitrage", "power_misread_payoff"],
+                "prompt_safe_fields": ["chapter_change_vectors"],
                 "forbidden_defaults": ["copy_exact_opening"],
             },
             allow_unicode=True,
@@ -79,6 +80,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "candidate_type": "plot_pattern",
                 "summary": "Use one rule system to exploit another.",
                 "promotion_target": "material_library.plot_patterns",
+                "reuse_scope": "abstract_only",
                 "max_confidence": 0.86,
             },
             {
@@ -86,6 +88,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "candidate_type": "power_system",
                 "summary": "Two rule systems become a measured escalation ladder.",
                 "promotion_target": "material_library.power_systems",
+                "reuse_scope": "abstract_only",
                 "max_confidence": 0.83,
             },
             {
@@ -93,6 +96,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "candidate_type": "scene_template",
                 "summary": "Decode a location into a long-term mystery.",
                 "promotion_target": "material_library.scene_templates",
+                "reuse_scope": "abstract_only",
                 "max_confidence": 0.76,
             },
             {
@@ -100,6 +104,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "candidate_type": "anti_cliche",
                 "summary": "Opening must be transformed.",
                 "promotion_target": "material_library.anti_cliche_patterns",
+                "reuse_scope": "abstract_only",
                 "max_confidence": 0.9,
             },
         ],
@@ -115,6 +120,7 @@ def _aggregate(tmp_path: Path) -> Path:
                     "Use professional knowledge to turn place detail into mystery."
                 ),
                 "content_json": {"state_variables": ["higher_authority_attention"]},
+                "reuse_scope": "abstract_only",
             },
             {
                 "dimension": "power_systems",
@@ -122,6 +128,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "name": "双体系融合阶梯",
                 "narrative_summary": "Parallel systems create new ability thresholds.",
                 "content_json": {"state_variables": ["old_system_adaptation"]},
+                "reuse_scope": "abstract_only",
             },
         ],
     )
@@ -132,6 +139,7 @@ def _aggregate(tmp_path: Path) -> Path:
                 "dialogue_system": ["conflict-loaded dialogue"],
                 "description_strategy": ["stakes-relevant detail"],
                 "hooking_and_transitions": ["changed-state endings"],
+                "craft_observation_scope": "abstract craft_profile fields only",
             }
         ],
     )
@@ -151,6 +159,18 @@ def _aggregate(tmp_path: Path) -> Path:
             },
         ],
     )
+    package = tmp_path / "data" / "distillation" / "source-0001"
+    _write_json(package / "source_manifest.json", {
+        "source_id": "source-0001", "source_hash_sha256": "a" * 64,
+        "rights_status": "user_supplied_for_analysis",
+    })
+    for filename in ("book_design_card.json", "author_craft_card.json", "anti_copy_ledger.json"):
+        _write_json(package / filename, {"source_id": "source-0001"})
+    for filename in (
+        "volume_cards.jsonl", "mechanism_candidates.jsonl", "material_entries.review.jsonl"
+    ):
+        _write_jsonl(package / filename, [{"source_id": "source-0001"}])
+    (package / "grammar_patch.yaml").write_text("key: otherworld-cross-system\n")
     return root
 
 
@@ -173,13 +193,13 @@ def test_compile_distilled_strategy_card_selects_project_bound_mechanisms(
     assert card.maturity_status == "review"
     roles = {item.design_role for item in card.selected_mechanisms}
     assert {"series_engine", "world_pressure", "chapter_rhythm", "anti_cliche"} <= roles
-    assert "cross_system_understanding" in card.required_state_variables
-    assert "higher_authority_attention" in card.required_state_variables
+    assert card.required_state_variables == []
+    assert card.worldview_bindings["state_variables"] == []
     assert "exploit_rule_gap" in card.required_change_vectors
     assert any("主角用失效航图" in item for item in card.transformation_requirements)
-    assert any("exact-opening-chain" in item for item in card.anti_copy_boundaries)
+    assert "exact-opening-chain" not in card.anti_copy_boundaries
     assert "Fallback aggregation" not in "\n".join(card.volume_design_paths)
-    assert any("political attention" in item for item in card.volume_design_paths)
+    assert card.volume_design_paths == []
 
 
 def test_compile_distilled_strategy_card_includes_world_mechanism_bindings(
@@ -203,10 +223,9 @@ def test_compile_distilled_strategy_card_includes_world_mechanism_bindings(
     world_block = render_distilled_strategy_card_block(card, phase="world")
 
     assert "dual-system-fusion-ladder" in binding_ids
-    assert "cross_system_understanding" in state_keys
-    assert "old_system_adaptation" in state_keys
+    assert state_keys == set()
     assert "dual-system-fusion-ladder" in world_block
-    assert "cross_system_understanding" in world_block
+    assert "cross_system_understanding" not in world_block
 
 
 def test_distilled_strategy_card_serializes_and_renders_phase_blocks(tmp_path: Path) -> None:
@@ -225,7 +244,7 @@ def test_distilled_strategy_card_serializes_and_renders_phase_blocks(tmp_path: P
 
     assert "蒸馏策略卡" in block
     assert "反抄袭边界" in block
-    assert "Rules shift" in block
+    assert "Rules shift" not in block
     assert "chapter_outline" in blocks
     assert "专业符号破译" in blocks["chapter_outline"]
 
@@ -239,16 +258,22 @@ def test_compile_distilled_strategy_card_returns_none_without_aggregate(tmp_path
     assert card is None
 
 
-def test_compile_distilled_strategy_card_uses_suspense_specific_aggregate() -> None:
+def test_compile_rejects_untraceable_source_claims(tmp_path: Path) -> None:
+    root = _aggregate(tmp_path)
+    manifest_path = root / "aggregate_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["source_ids"] = ["anonymous-suspense-0001"]
+    _write_json(manifest_path, manifest)
     card = compile_distilled_strategy_card(
-        category_key="suspense-mystery",
-        genre="惊悚灵异",
-        sub_genre="驱魔探案综合",
-        project_context={"unique_hook": "民俗风水探案用现实证据链拆镜债伪证"},
+        category_key="otherworld-cross-system", repo_root=tmp_path,
     )
+    assert card is None
 
-    assert card is not None
-    assert card.aggregate_key == "suspense-mystery"
-    assert "现实证据链完整度" in card.required_state_variables
-    assert any("证据" in item for item in card.reader_reward_mix + card.chapter_execution_patterns)
-    assert not any("siege_under_pressure" in item for item in card.required_state_variables)
+
+def test_compile_rejects_fallback_source_even_with_valid_manifest(tmp_path: Path) -> None:
+    _aggregate(tmp_path)
+    package = tmp_path / "data" / "distillation" / "source-0001"
+    _write_json(package / "book_design_card.json", {"distillation_fallback": True})
+    assert compile_distilled_strategy_card(
+        category_key="otherworld-cross-system", repo_root=tmp_path,
+    ) is None

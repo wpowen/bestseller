@@ -63,6 +63,25 @@ def test_no_concept_text_falls_back_to_advisory():
     assert _identity_mismatch_is_advisory(meta) is True
 
 
+def test_unnamed_concept_prose_does_not_become_a_false_identity_split():
+    """规划器补出的名字缺席，不等于构思正文里存在另一个主角。
+
+    真机 custom-xuanhuan-1788329469：构思正文始终只写“现代应急物流
+    负责人/他/城主”，规划期随后把这个人命名为“沈确”。三份正文没有出现
+    任何竞争姓名，却因规范名缺席 3/3 被判成身份分裂并停在 needs_replan。
+    """
+
+    meta = {
+        "logline": "现代应急物流负责人坠入异世界死城，要在三十天内救活商路。",
+        "premise": "现代应急物流与城市运营负责人穿越到边境废城，他只能改写流通规则。",
+        "synopsis": "城里只剩老弱与空仓，这位新城主必须在效率、民生与盟约之间选择。",
+        "creation_protagonist_name": "沈确",
+        "creation_protagonist_source": "llm_premise_identity_resolution",
+    }
+
+    assert _identity_mismatch_is_advisory(meta) is True
+
+
 def test_validation_report_uses_the_new_judgement():
     import inspect
 

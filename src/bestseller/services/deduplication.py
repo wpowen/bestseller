@@ -1906,10 +1906,9 @@ def build_location_ledger_block(
 #
 # ``detect_chapter_text_loop`` catches verbatim paragraph repeats (a writer
 # bug). ``detect_intra_chapter_stitched_drafts`` catches a much subtler issue:
-# the same plot event re-told twice in the same chapter with DIFFERENT prose
-# (a *merge* bug, typical when two LLM candidates were both concatenated into
-# the final draft). Detection is event-signature based, not text-similarity
-# based.
+# possible re-tellings with DIFFERENT prose. Event signatures generate review
+# candidates, not proof of a merge bug; continuing scenes share signatures too.
+# Only long identical blocks are returned to legacy hard-gate consumers.
 # ---------------------------------------------------------------------------
 
 # Action verbs that strongly mark "plot events" (Chinese-first)
@@ -1924,8 +1923,7 @@ _EVENT_ACTION_VERBS = (
     "看见", "看清", "认出", "察觉",
 )
 
-# Strong "physical object" props characteristic to the genre; reusing one in
-# two distinct prose blocks within a single chapter is a stitched-draft tell.
+# Props for candidate retrieval only; recurrence never proves an event reset.
 _EVENT_PROP_WORDS = (
     "暗格", "玉简", "册子", "残篇", "令牌", "符纸", "符文", "丹炉", "锦盒",
     "灵镜", "镜面", "剑", "斧", "刀", "鞭", "锤", "弓", "盾",
@@ -1960,10 +1958,8 @@ _BROAD_EVENT_PROP_WORDS = frozenset(
 class EventSignature:
     """A coarse fingerprint of an in-chapter prose block.
 
-    Two blocks with overlapping signatures (same participants + same prop
-    word + same action verb cluster) are very likely two drafts of the same
-    plot beat. We do *not* fingerprint by text similarity, since the
-    distinguishing failure mode here is paraphrased re-runs.
+    Shared participants and props identify context worth comparing. They do
+    not distinguish a paraphrased re-run from ordinary scene progression.
     """
 
     block_index: int
@@ -1976,12 +1972,21 @@ class EventSignature:
 
 @dataclass(frozen=True)
 class StitchedDraftFinding:
-    """A pair of blocks that look like alternative drafts of the same beat."""
+    """A textual duplicate or an unconfirmed event-signature candidate."""
 
     block_a: EventSignature
     block_b: EventSignature
     similarity: float
-    conflicts: tuple[str, ...]  # short prose descriptions of contradictions
+    conflicts: tuple[str, ...]  # compatibility name: differences, not proved contradictions
+    evidence_kind: str = "context_candidate"
+
+    @property
+    def hard_gate(self) -> bool:
+        return self.evidence_kind == "verbatim_repeated_block"
+
+    @property
+    def requires_semantic_confirmation(self) -> bool:
+        return not self.hard_gate
 
 
 def _split_into_event_blocks(chapter_text: str) -> list[tuple[int, str]]:
@@ -2253,7 +2258,7 @@ def _event_similarity(a: EventSignature, b: EventSignature) -> float:
 
 
 def _list_conflicts(a: EventSignature, b: EventSignature) -> tuple[str, ...]:
-    """Surface human-readable conflicts to aid editor's deletion decision."""
+    """List signature differences; these do not establish contradictions."""
     conflicts: list[str] = []
     only_a_props = a.props - b.props
     only_b_props = b.props - a.props
@@ -2278,13 +2283,20 @@ def detect_intra_chapter_stitched_drafts(
     min_props_overlap: int = 1,
     name_pool: frozenset[str] | None = None,
     length_ratio_range: tuple[float, float] = (0.6, 1.7),
+    include_context_candidates: bool = False,
 ) -> list[StitchedDraftFinding]:
-    """Detect "two drafts stitched together" inside one chapter.
+    """Return long verbatim duplicates; optionally include context candidates.
+
+    Actor/prop overlap cannot distinguish consecutive events, anticipation,
+    memories or alternative drafts. Only a source-bound semantic review can
+    confirm that candidate events repeat or contradict. Legacy hard-gate
+    consumers therefore receive only identical complete blocks (>=200 chars).
+    Reviews can opt into candidates for evidence, without changing verdicts.
 
     Args:
         chapter_text: full chapter markdown.
         similarity_threshold: weighted-jaccard cutoff above which two blocks
-            are considered the same event re-told.
+            are retrieved as context candidates, never confirmed re-tellings.
         min_participants_overlap: minimum shared named characters required
             for a candidate pair (filters out coincidence).
         min_props_overlap: minimum shared characteristic prop required
@@ -2297,7 +2309,7 @@ def detect_intra_chapter_stitched_drafts(
             pool is polluted by prose tokens which inflates the union set in
             Jaccard scoring and depresses similarities below the threshold.
 
-    Returns a list of ``StitchedDraftFinding``; empty if the chapter is clean.
+    An empty result means no qualifying evidence, not proof of semantic safety.
     Cost: O(N^2) over event blocks but N is typically <= 20 per chapter.
     """
     blocks = _split_into_event_blocks(chapter_text)
@@ -2310,6 +2322,14 @@ def detect_intra_chapter_stitched_drafts(
     for i in range(len(sigs)):
         for j in range(i + 1, len(sigs)):
             a, b = sigs[i], sigs[j]
+            if blocks[i][1] == blocks[j][1] and block_lengths[i] >= 200:
+                findings.append(StitchedDraftFinding(
+                    block_a=a, block_b=b, similarity=1.0, conflicts=(),
+                    evidence_kind="verbatim_repeated_block",
+                ))
+                continue
+            if not include_context_candidates:
+                continue
             # Cheap prefilter
             if len(a.participants & b.participants) < min_participants_overlap:
                 continue
@@ -2344,12 +2364,7 @@ def detect_intra_chapter_stitched_drafts(
 def build_stitched_draft_repair_prompt(
     findings: list[StitchedDraftFinding],
 ) -> str:
-    """Render an editor-facing instruction listing the colliding blocks.
-
-    Editor's job is to **pick one version and delete the other** -- never to
-    merge or rewrite both. Merging tends to keep contradictory props from
-    both drafts (e.g. "册子 AND 玉简") which is the bug we are trying to fix.
-    """
+    """Render evidence with its authority, without guessing which event to cut."""
     if not findings:
         return ""
 
@@ -2357,17 +2372,20 @@ def build_stitched_draft_repair_prompt(
     for f in findings:
         bullets.append(
             f"- 段落 #{f.block_a.block_index} 与 #{f.block_b.block_index} "
-            f"事件签名相似度 {f.similarity}，疑似同一事件的两版草稿被同时保留。\n"
+            f"签名相似度 {f.similarity}；证据类型 {f.evidence_kind}。\n"
             f"  · 段 A 起头：{f.block_a.excerpt}\n"
             f"  · 段 B 起头：{f.block_b.excerpt}\n"
             f"  · 共同参与者：{sorted(f.block_a.participants & f.block_b.participants)}\n"
-            f"  · 冲突项：{'; '.join(f.conflicts) if f.conflicts else '无显式冲突，但事件结构高度重叠'}"
+            f"  · 待核实差异：{'; '.join(f.conflicts) if f.conflicts else '未证实语义矛盾'}"
         )
 
     return (
-        "【拼接稿修复任务】\n"
-        "检测到本章存在 ≥1 对疑似「换皮重写」的段落（同事件、不同措辞）。\n"
-        "请二选一保留，删除另一段；禁止合并两段（合并会留下道具/动作矛盾）。\n"
-        "选择标准：留下与章节 outline 的 scene cards 一致、与前后章 canon 不冲突的版本。\n\n"
+        "【章内重复证据 / source-bound review】\n"
+        "context_candidate 仅为上下文候选，不能直接判重复、矛盾或要求删段。"
+        "同人物、同道具、不同动作可能是连续推进、设想或回忆。"
+        "须结合批准的场景合同、canon、完整正文确认同一事件是否被重置重演，"
+        "并引用具体文本与来源；无语义证据则保留连续剧情。\n"
+        "verbatim_repeated_block 是完整长文本块逐字重复，可移除重复拷贝，"
+        "但须保留一份及既有行动、结果与场景衔接；不得删除两处内容。\n\n"
         + "\n".join(bullets)
     )

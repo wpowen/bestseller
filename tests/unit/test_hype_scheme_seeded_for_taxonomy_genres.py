@@ -1,38 +1,35 @@
-"""爽点配方对 taxonomy 题材也必须落库——三本书 109 章 hype 全 NULL 的源头。
+"""Persist explicit payoff choices without turning taxonomy into consent.
 
-`seed_invariants` 的 hype_scheme 取自 `preset_overrides`，而调用点只用
-`infer_genre_preset`（**只查 curated 预设表**）。真机对照（2026-08-16）：
-
-    infer_genre_preset('东方玄幻') → GenrePreset，12 条配方   ← 表里有
-    infer_genre_preset('搞笑沙雕') → None                     ← 表里没有
-
-返回 None 时 `preset_overrides` 保持 `{}` → `hype_scheme` 落成空壳 →
-`build_chapter_hype_blocks` 立即返回空块 → 爽点约束块 0 字 → 写手根本没收到
-「每章要有结算」这条指令 → 盖戳全 NULL → 覆盖率 0.00。
-
-`synthesize_genre_preset` 本就是为这种情况准备的兜底合成，但调用点从未调用它。
-这是「目录↔taxonomy 两套词汇表」老病的又一处形态：能力存在，长在书不走的路上。
-
-⚠️ 兜底**不得覆盖** curated：玄幻的 12 条手工配方比通用 5 条精确得多。
+An unselected effect scheme may be empty. Explicit curated decks still retain
+their recipes through the invariant seeding and storage round-trip.
 """
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from bestseller.services.hype_engine import hype_scheme_from_preset_overrides
+from bestseller.services.invariants import invariants_from_dict, invariants_to_dict, seed_invariants
 from bestseller.services.writing_presets import (
+    get_genre_preset,
     infer_genre_preset,
     synthesize_genre_preset,
 )
 
 
-def _resolve_preset_overrides(genre: str, sub_genre: str, pack_key: str | None = None):
-    """与 pipelines.py 调用点同源：curated 优先，查不到才兜底合成。"""
+def _resolve_preset_overrides(
+    genre: str, sub_genre: str, pack_key: str | None = None,
+    *, selected_preset_key: str | None = None,
+):
+    """Build test inputs with author adoption distinct from genre labels."""
 
-    preset = infer_genre_preset(genre or None, sub_genre or None)
-    source = "curated"
-    if preset is None:
+    if selected_preset_key:
+        preset = get_genre_preset(selected_preset_key)
+        assert preset is not None
+        source = "explicit"
+    else:
         preset = synthesize_genre_preset(
             str(pack_key or sub_genre or genre or "").strip() or "light-novel",
             genre=genre or None,
@@ -49,8 +46,12 @@ def _deck(overrides) -> list:
 def test_curated_genre_still_uses_its_own_deck():
     """玄幻在 curated 表里，兜底绝不能顶掉它手工调过的配方。"""
 
-    overrides, source = _resolve_preset_overrides("东方玄幻", "东方玄幻")
-    assert source == "curated"
+    inferred = infer_genre_preset("东方玄幻", "东方玄幻")
+    assert inferred is not None
+    overrides, source = _resolve_preset_overrides(
+        "东方玄幻", "东方玄幻", selected_preset_key=inferred.key
+    )
+    assert source == "explicit"
     assert len(_deck(overrides)) >= 10, "curated 配方被兜底覆盖了"
 
 
@@ -59,33 +60,50 @@ def test_curated_genre_still_uses_its_own_deck():
     [
         ("搞笑沙雕", "搞笑沙雕", "light-novel"),
         ("搞笑沙雕", "搞笑沙雕", None),
-        ("", "", None),  # 题材缺失也不能退化成空壳
+        ("", "", None),  # Missing genre is also neutral.
     ],
 )
-def test_taxonomy_genre_falls_back_to_a_real_deck(genre, sub_genre, pack_key):
-    """curated 查不到时必须兜底出配方，而不是空手而归。"""
+def test_taxonomy_genre_leaves_unselected_deck_empty(genre, sub_genre, pack_key):
+    """Neither a genre nor a technique pack opts an author into a deck."""
 
     overrides, source = _resolve_preset_overrides(genre, sub_genre, pack_key)
     assert source == "synthesized"
-    assert _deck(overrides), f"{genre or '(空题材)'} 拿到空 recipe_deck"
+    assert _deck(overrides) == []
+    assert hype_scheme_from_preset_overrides(overrides).is_empty
 
 
 @pytest.mark.parametrize(
-    "genre, sub_genre",
-    [("东方玄幻", "东方玄幻"), ("搞笑沙雕", "搞笑沙雕"), ("", "")],
+    "genre, sub_genre, selected_preset_key",
+    [
+        ("东方玄幻", "东方玄幻", "xianxia-upgrade"),
+        ("搞笑沙雕", "搞笑沙雕", None),
+        ("", "", None),
+    ],
 )
-def test_hype_scheme_is_never_empty(genre, sub_genre):
-    """真正要守的不变量：任何题材建的书，hype_scheme 都不是空壳。
+def test_hype_scheme_roundtrip_preserves_adopted_or_empty_deck(
+    genre, sub_genre, selected_preset_key,
+):
+    """Storage must neither discard selected recipes nor invent missing ones."""
 
-    空壳会让 build_chapter_hype_blocks 直接返回空块，整条爽点链从第一环就断。
-    """
-
-    overrides, _ = _resolve_preset_overrides(genre, sub_genre)
+    overrides, _ = _resolve_preset_overrides(
+        genre, sub_genre, selected_preset_key=selected_preset_key
+    )
     scheme = hype_scheme_from_preset_overrides(overrides)
-    assert not scheme.is_empty, f"{genre or '(空题材)'} 的 hype_scheme 仍是空壳"
+    inv = seed_invariants(
+        project_id=uuid4(), language="zh-CN", words_per_chapter=None,
+        overrides={"preset_overrides": overrides},
+    )
+    restored = invariants_from_dict(invariants_to_dict(inv))
+    assert restored.hype_scheme == scheme
+    if selected_preset_key:
+        assert not scheme.is_empty
+        assert len(scheme.recipe_deck) >= 10
+    else:
+        assert scheme.is_empty
+        assert scheme.recipe_deck == ()
 
 
 def test_infer_returns_none_for_taxonomy_genre():
-    """把病因本身钉住：这条一旦变绿，说明 curated 表补了词条，兜底仍应保留。"""
+    """Keep the uncovered taxonomy route represented without auto-adoption."""
 
     assert infer_genre_preset("搞笑沙雕", "搞笑沙雕") is None

@@ -68,14 +68,16 @@ def test_server_marks_only_non_default_story_controls_explicit() -> None:
         Path(__file__).parents[2] / "src/bestseller/web/server.py"
     ).read_text(encoding="utf-8")
     assert '"narrative_scale": "explicit" if _narrative_scale == "epic"' in server
-    assert '"story_enhancers": "explicit" if not selected_enhancers.is_default()' in server
+    assert '"story_enhancers": "explicit" if (' in server
+    assert "not selected_enhancers.is_default()" in server
+    assert 'enhancer_input_sources["cost_style"] == "explicit"' in server
     assert '"draft_mode": "explicit" if bool(payload.get("draft_mode"))' in server
     assert 'if bool(payload.get("stop_after_conception"))' in server
 
 
 def test_new_book_reset_clears_taxonomy_and_creation_choices() -> None:
     source = HTML.read_text(encoding="utf-8")
-    reset = source.split("function resetWizardState()", 1)[1].split(
+    reset = source.split("function resetWizardState(", 1)[1].split(
         "window.startNewCreationFlow", 1
     )[0]
     for marker in (

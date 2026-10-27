@@ -9,11 +9,11 @@ adds that structured layer without touching the existing prose profiles.
 The loader reads ``config/genre_profile_thresholds/<genre_id>.yaml`` and
 caches the parsed dataclasses. Callers should access via
 ``resolve_thresholds(genre_id)`` which first normalizes common raw genre
-labels to canonical IDs, then falls back to ``action-progression`` for
-unknown IDs.
+labels to canonical IDs, then falls back to the neutral ``unspecified``
+profile for unknown IDs. Unknown labels do not select a content genre.
 
 Existing genre IDs (derived from genre_review_profiles.py):
-    default
+    unspecified (also used for default / unknown / blank lookups)
     action-progression
     relationship-driven
     suspense-mystery
@@ -50,7 +50,7 @@ _THRESHOLDS_DIR = (
 )
 
 
-# Canonical genre IDs. Missing lookups fall back to the first value.
+# Canonical genre IDs. Existing genre routing stays independent of the fallback.
 KNOWN_GENRE_IDS: tuple[str, ...] = (
     "action-progression",
     "relationship-driven",
@@ -60,10 +60,11 @@ KNOWN_GENRE_IDS: tuple[str, ...] = (
     "female-growth-ncp",
     "base-building",
     "eastern-aesthetic",
+    "unspecified",
 )
 
 
-DEFAULT_FALLBACK_GENRE = "action-progression"
+DEFAULT_FALLBACK_GENRE = "unspecified"
 
 _RAW_GENRE_KEYWORDS: tuple[tuple[str, str], ...] = (
     ("悬疑", "suspense-mystery"),
@@ -111,12 +112,13 @@ class HookConfig:
 
     ``preferred_types`` draw from the 5-type taxonomy (webnovel-writer):
         危机 / 悬念 / 情绪 / 选择 / 渴望
-    ``strength_baseline`` is the minimum quality bar for a chapter-end hook.
+    ``strength_baseline`` is the minimum quality bar for a chapter-end hook;
+    ``None`` leaves that target unspecified.
     ``transition_allowance`` caps how many chapters may run at weaker hooks
     (e.g. transitional / world-building segments)."""
 
     preferred_types: tuple[str, ...] = ()
-    strength_baseline: Literal["strong", "medium", "weak"] = "medium"
+    strength_baseline: Literal["strong", "medium", "weak"] | None = "medium"
     chapter_end_required: bool = True
     transition_allowance: int = 2
 
@@ -129,10 +131,11 @@ class CoolpointConfig:
     are carried by ``hype_engine.HYPE_DENSITY_CURVE`` which remains the
     authoritative count source. ``combo_interval`` is the max chapters
     between combo moments; ``milestone_interval`` the max between
-    big set-piece moments."""
+    big set-piece moments. ``None`` density and zero intervals leave these
+    targets unspecified rather than prescribing a payoff cadence."""
 
     preferred_patterns: tuple[str, ...] = ()
-    density_per_chapter: Literal["high", "medium", "low"] = "medium"
+    density_per_chapter: Literal["high", "medium", "low"] | None = "medium"
     combo_interval: int = 5
     milestone_interval: int = 20
 
@@ -320,14 +323,18 @@ def _parse_override(data: Mapping[str, Any]) -> OverrideConfig:
     )
 
 
-def _coerce_strength(value: object) -> Literal["strong", "medium", "weak"]:
+def _coerce_strength(value: object) -> Literal["strong", "medium", "weak"] | None:
+    if value is None:
+        return None
     s = str(value).lower()
     if s in ("strong", "medium", "weak"):
         return s  # type: ignore[return-value]
     return "medium"
 
 
-def _coerce_density(value: object) -> Literal["high", "medium", "low"]:
+def _coerce_density(value: object) -> Literal["high", "medium", "low"] | None:
+    if value is None:
+        return None
     s = str(value).lower()
     if s in ("high", "medium", "low"):
         return s  # type: ignore[return-value]
@@ -337,6 +344,24 @@ def _coerce_density(value: object) -> Literal["high", "medium", "low"]:
 # ---------------------------------------------------------------------------
 # Cached loader
 # ---------------------------------------------------------------------------
+
+
+def _neutral_thresholds() -> GenreProfileThresholds:
+    """Safe fallback even if the neutral YAML is absent.
+
+    Keep operational gap/debt bounds from their generic dataclasses, but
+    do not inherit their legacy hook/payoff targets for an unknown genre.
+    Explicit profiles and partial-profile parser defaults remain unchanged.
+    """
+    return GenreProfileThresholds(
+        id=DEFAULT_FALLBACK_GENRE,
+        name="未指定题材 (中性阈值)",
+        hook_config=HookConfig(strength_baseline=None, chapter_end_required=False),
+        coolpoint_config=CoolpointConfig(
+            density_per_chapter=None, combo_interval=0, milestone_interval=0,
+        ),
+        micropayoff_config=MicropayoffConfig(min_per_chapter=0, transition_min=0),
+    )
 
 
 @lru_cache(maxsize=32)
@@ -355,13 +380,13 @@ def load_thresholds(genre_id: str) -> GenreProfileThresholds:
                 DEFAULT_FALLBACK_GENRE,
             )
             return load_thresholds(DEFAULT_FALLBACK_GENRE)
-        # Fallback file itself is missing — return bare defaults so the
-        # pipeline still has something workable.
+        # Bare dataclass defaults still require hooks and payoff counts.
+        # A missing neutral file must not silently restore those targets.
         logger.warning(
-            "Fallback genre thresholds file missing at %s; using dataclass defaults",
+            "Fallback genre thresholds file missing at %s; using neutral defaults",
             path,
         )
-        return GenreProfileThresholds(id=genre_id, name=genre_id)
+        return _neutral_thresholds()
 
     with path.open("r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}

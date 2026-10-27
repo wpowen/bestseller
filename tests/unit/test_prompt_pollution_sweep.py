@@ -410,44 +410,49 @@ def test_a_promoted_draft_is_not_re_judged_at_export() -> None:
     assert source.index("no scene provenance") < source.index("_is_promoted")
 
 
-def test_the_export_gate_cannot_overturn_a_settled_chapter() -> None:
-    """终局导出门不得推翻生产管线已经做完的裁决。
+@pytest.mark.parametrize("chapter_number", [28, 1], ids=["clean", "debt"])
+@pytest.mark.parametrize("outcome", ["passed", "hard_failure", "unknown", "exception"])
+def test_the_export_gate_preserves_normal_terminal_decisions(
+    monkeypatch, chapter_number, outcome
+) -> None:
+    """F02 / 8R：结算标签和已采用债务均不能豁免正常终局门禁。"""
+    from types import SimpleNamespace
 
-    2026-08-04：50 章的书走到 completed、50 稿全部提升，却**没有整书导出**——
-    第 28 章（自己的管线判 ok，不在 debt 名单里）在导出前被终检判
-    ANTI_META_ENDING_OUT_OF_SCENE，于是整本书不许发布，读者拿到 50 个散文件。
-    上一次修复只豁免了 quality_debt 章，把干净章这条路留着，同一个坑换个入口。
-
-    闭环的前提是每一章都已终局，所以这里没有"还该保留牙齿"的章。
-    """
-    conceded: list[str] = []
+    from bestseller.services import pipelines
     from bestseller.services.book_closure import _closure_quality_gate
 
+    conceded: list[str] = []
     gate = _closure_quality_gate((1, 2), conceded)
+    result = SimpleNamespace(
+        passed=outcome == "passed",
+        patched_text="正文",
+        errors=("evaluator_error:offline",) if outcome == "unknown" else (),
+        issues=("ANTI_META_ENDING_OUT_OF_SCENE",) if outcome == "hard_failure" else (),
+    )
+    calls = []
 
-    class _Failed:
-        passed = False
-        patched_text = "正文"
-        errors = ("第28章：统一质量快照未通过（ANTI_META_ENDING_OUT_OF_SCENE）",)
-        issues: tuple[str, ...] = ()
+    def evaluate(**kwargs):
+        calls.append(kwargs)
+        if outcome == "exception":
+            raise RuntimeError("terminal evaluator unavailable")
+        return result
 
-    import bestseller.services.pipelines as pipelines_module
-
-    original = pipelines_module.run_final_quality_gates
-    pipelines_module.run_final_quality_gates = lambda **kw: _Failed()
-    try:
-        # 干净章（不在 debt 名单）也必须被放行并记账
-        clean = gate(chapter_number=28)
-        assert clean.passed is True
-        # debt 章照旧放行
-        debt = gate(chapter_number=1)
-        assert debt.passed is True
-    finally:
-        pipelines_module.run_final_quality_gates = original
-
-    assert len(conceded) == 2
-    assert any("第28章" in item and "复审不过" in item for item in conceded)
-    assert any("第1章" in item and "预算耗尽" in item for item in conceded)
+    monkeypatch.setattr(pipelines, "run_final_quality_gates", evaluate)
+    metadata = {"source_receipt": "unchanged"}
+    kwargs = {
+        "chapter_number": chapter_number,
+        "content_md": "正文",
+        "chapter_metadata": metadata,
+    }
+    if outcome == "exception":
+        with pytest.raises(RuntimeError, match="terminal evaluator unavailable"):
+            gate(**kwargs)
+    else:
+        assert gate(**kwargs) is result
+        assert result.passed is (outcome == "passed")
+    assert calls == [kwargs]
+    assert calls[0]["chapter_metadata"] is metadata
+    assert conceded == []
 
 
 def test_the_repeated_phrase_ban_list_respects_the_prose_profile() -> None:
@@ -607,30 +612,37 @@ def test_a_degenerate_regeneration_cannot_evict_a_healthy_chapter() -> None:
     assert "if not _keeps_prior_draft:" in tail
 
 
-def test_a_settled_chapter_is_not_a_sequence_gap() -> None:
-    """已定稿的章不是「还没写完」，不得拦住下一章。
-
-    顺序守卫用 `production_state != "ok"` 筛，然后把 quality_debt 章送进
-    `chapter_block_is_structural`——那个分类器的 docstring 明写「用于 blocked
-    的章」，而已定稿章不带任何可识别的门禁键，于是落到「无法识别→保守判为
-    结构性」的兜底。2026-08-03《废意回收》第 1、2、5、8 章（全部已定稿、全部
-    有当前稿）因此把第 9 章永久拦在门外。
-    """
-    import inspect
+@pytest.mark.asyncio
+async def test_a_settled_chapter_is_not_a_sequence_gap() -> None:
+    """Completed chapters with bodies can advance; unknown/incomplete rows remain gaps."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
 
     from bestseller.services import pipelines
     from bestseller.services.book_closure import SETTLED_PRODUCTION_STATES
 
-    source = inspect.getsource(pipelines._load_prior_incomplete_chapter_numbers)
-    assert (
-        'if production_state != "ok" and chapter_block_is_structural' not in source
-    )
-    assert "SETTLED_PRODUCTION_STATES" in source
-    # 已定稿仍必须在真正被拦之前短路掉分类器
-    settled_idx = source.index("SETTLED_PRODUCTION_STATES")
-    classifier_idx = source.index("chapter_block_is_structural")
-    assert settled_idx < classifier_idx
-    assert "quality_debt" in SETTLED_PRODUCTION_STATES
+    settled = sorted(SETTLED_PRODUCTION_STATES)
+    rows = [(number, "complete", state, {}, 1) for number, state in enumerate(settled, 1)]
+    gaps = list(range(len(rows) + 1, len(rows) + 5))
+    rows.extend([
+        (gaps[0], "complete", "unknown_production_state", {}, 1),
+        (gaps[1], "complete", "blocked", {}, 1),
+        (gaps[2], "complete", "quality_debt", {}, 0),
+        (gaps[3], "drafting", "ok", {}, 1),
+    ])
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: rows)))
+
+    assert await pipelines._load_prior_incomplete_chapter_numbers(
+        session, project_id=uuid4(), before_chapter_number=gaps[-1] + 1,
+    ) == gaps
+    session.execute.assert_awaited_once()
+    assert "quality_debt" in settled
+    session.execute.reset_mock()
+    assert await pipelines._load_prior_incomplete_chapter_numbers(
+        session, project_id=uuid4(), before_chapter_number=1,
+    ) == []
+    session.execute.assert_not_awaited()
 
 
 def test_book_in_progress_is_not_judged_by_whole_book_consistency() -> None:

@@ -135,7 +135,14 @@ class TestConceptionIntentBlock:
         from bestseller.services.conception import _creation_intent_prompt_block
 
         block = _creation_intent_prompt_block(
-            {"genre_intent_contract": _MINIMAL_CONTRACT, "language": "zh-CN"}
+            {
+                "genre_intent_contract": _MINIMAL_CONTRACT,
+                "creation_intent_contract": {
+                    "field_sources": {"story_enhancers": "explicit"},
+                    "story_enhancers": _MINIMAL_CONTRACT["explicit_enhancers"],
+                },
+                "language": "zh-CN",
+            }
         )
 
         assert '"cost_style": "minimal"' in block or '"minimal"' in block
@@ -191,6 +198,25 @@ class TestTournamentBuilders:
         )
 
         assert "极简" in system + user
+        assert "成功后由局势和对手自然产生的外部后果" in user
+        assert "不得写能力使用造成的主角自身折损" in user
+
+    def test_kernel_prompt_carries_tournament_retry_into_engine_design(self) -> None:
+        from bestseller.services.concept_tournament import (
+            _build_engine_kernel_messages,
+        )
+
+        system, user = _build_engine_kernel_messages(
+            genre="异世大陆",
+            sub_genre="异世大陆",
+            lane="经营难题",
+            chapter_count=60,
+            seed_concept="用户已给定的故事",
+            retry_feedback="长篇承载失败：动作家族同质",
+        )
+
+        assert "长篇承载失败：动作家族同质" in system + user
+        assert "不能只增加单元数量" in user
 
     def test_repair_prompt_keeps_the_directive(self) -> None:
         """Same regression shape as the audience anchor: repair must not
@@ -242,9 +268,7 @@ class TestTournamentBuilders:
         idx = source.index("build_candidate_messages(")
         region = source[idx : idx + 900]
 
-        assert "cost_style" in region, (
-            "candidate generation must see the cost-style directive too"
-        )
+        assert "cost_style" in region, "candidate generation must see the cost-style directive too"
 
 
 class TestConceptionForwardsToTournament:
@@ -278,7 +302,12 @@ class TestPlannerAndKernelStayInStep:
         from bestseller.services.planner import _source_bound_cost_rules
 
         class _FakeProject:
-            metadata_json = {"story_enhancers": {"cost_style": cost_style}}
+            metadata_json = {
+                "creation_intent_contract": {
+                    "field_sources": {"story_enhancers": "explicit"},
+                    "story_enhancers": {"cost_style": cost_style},
+                }
+            }
 
         return _source_bound_cost_rules(_FakeProject(), is_en=is_en)
 
@@ -361,22 +390,18 @@ class TestGateDoesNotPunishTheChosenStyle:
     def test_opted_out_books_are_not_flagged(self, cost_style: str) -> None:
         assert "emotion_cost_free_win" not in self._finding_codes(cost_style)
 
-    def test_default_argument_keeps_existing_callers_identical(self) -> None:
+    def test_omitted_cost_argument_does_not_invent_a_requirement(self) -> None:
         from bestseller.services.whole_book_quality_gate import (
             _emotion_quality_metrics_and_findings,
         )
 
-        _, findings = _emotion_quality_metrics_and_findings(
-            self._kernel_with_cost_free_win(), ()
-        )
-        assert "emotion_cost_free_win" in [f.code for f in findings]
+        _, findings = _emotion_quality_metrics_and_findings(self._kernel_with_cost_free_win(), ())
+        assert "emotion_cost_free_win" not in [f.code for f in findings]
 
     def test_pipeline_actually_forwards_the_book_cost_style(self) -> None:
         """A parameter that is never passed is a fix that does not exist."""
 
         from bestseller.services import pipelines
 
-        source = inspect.getsource(
-            pipelines._enforce_whole_book_quality_gate_after_chapter
-        )
+        source = inspect.getsource(pipelines._enforce_whole_book_quality_gate_after_chapter)
         assert "cost_style=resolve_cost_style(" in source

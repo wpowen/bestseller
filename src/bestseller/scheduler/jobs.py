@@ -22,6 +22,10 @@ from bestseller.services.exports import (
     collect_publication_blockers,
     load_publication_comparison_payloads,
 )
+from bestseller.services.canonical_book_readiness import (
+    CommercialReleaseNotAuthorizedError,
+    require_commercial_release_authority,
+)
 from bestseller.services.publishing.base import ChapterPublishMeta
 from bestseller.services.publishing.registry import get_adapter
 from bestseller.settings import AppSettings
@@ -79,6 +83,32 @@ async def publish_next_chapter(
         logger.error("Project %s not found for schedule %s", schedule.project_id, schedule_id)
         return False
 
+    # Commercial publication is an external side effect.  Editorial scores,
+    # legacy ``passed`` values, container health, and generated chapter counts
+    # are never release authority.  Resolve the canonical evidence decision
+    # before credentials are decrypted or a platform adapter is contacted.
+    try:
+        await require_commercial_release_authority(session, project)
+    except CommercialReleaseNotAuthorizedError as exc:
+        schedule.status = "paused"
+        metadata = dict(schedule.metadata_json or {})
+        metadata.update(
+            {
+                "pause_reason": "commercial_release_not_authorized",
+                "last_error": str(exc),
+                "canonical_evaluation_status": exc.decision.evaluation_status,
+                "canonical_maturity": str(exc.decision.highest_contiguous_maturity),
+            }
+        )
+        schedule.metadata_json = metadata
+        await session.flush()
+        logger.warning(
+            "Publishing schedule %s paused by canonical release authority: %s",
+            schedule_id,
+            exc.decision.evaluation_status,
+        )
+        return False
+
     # Get adapter
     adapter = get_adapter(
         platform_type=platform.platform_type,
@@ -92,7 +122,9 @@ async def publish_next_chapter(
     except Exception as auth_exc:
         logger.error(
             "Auth check raised for platform %s (schedule %s): %s — retrying on next tick",
-            platform.name, schedule_id, auth_exc,
+            platform.name,
+            schedule_id,
+            auth_exc,
         )
         metadata = dict(schedule.metadata_json or {})
         metadata["last_error"] = f"Authentication check failed: {auth_exc}"
@@ -103,7 +135,8 @@ async def publish_next_chapter(
     if not auth_ok:
         logger.error(
             "Publishing paused: credentials invalid for platform %s (schedule %s)",
-            platform.name, schedule_id,
+            platform.name,
+            schedule_id,
         )
         schedule.status = "paused"
         # Store the reason in metadata_json (no new DB column needed)
@@ -131,7 +164,11 @@ async def publish_next_chapter(
         )
         chapter = chapter_result.scalar_one_or_none()
         if chapter is None:
-            logger.info("No chapter %d yet for schedule %s — stopping batch", next_chapter_number, schedule_id)
+            logger.info(
+                "No chapter %d yet for schedule %s — stopping batch",
+                next_chapter_number,
+                schedule_id,
+            )
             break
 
         # Load approved draft
@@ -143,7 +180,9 @@ async def publish_next_chapter(
         )
         draft = draft_result.scalar_one_or_none()
         if draft is None or not draft.content_md:
-            logger.info("Chapter %d has no approved draft yet — stopping batch", next_chapter_number)
+            logger.info(
+                "Chapter %d has no approved draft yet — stopping batch", next_chapter_number
+            )
             break
 
         # Build meta and claim/reuse the deterministic local idempotency record.
@@ -268,7 +307,10 @@ async def publish_next_chapter(
                 except Exception as publish_exc:
                     logger.warning(
                         "Unexpected publish error on attempt %d/%d for chapter %d: %s",
-                        attempt + 1, _MAX_INLINE_RETRIES, next_chapter_number, publish_exc,
+                        attempt + 1,
+                        _MAX_INLINE_RETRIES,
+                        next_chapter_number,
+                        publish_exc,
                     )
                     result = None
                     break
@@ -284,7 +326,9 @@ async def publish_next_chapter(
             if result is None or not result.success:
                 # Publish failed after retries
                 history.status = "failed"
-                history.error_message = result.error_message if result else "All retry attempts failed"
+                history.error_message = (
+                    result.error_message if result else "All retry attempts failed"
+                )
                 history.retry_count = (history.retry_count or 0) + 1
 
                 error_kind = result.error_kind if result else "delivery_unknown"
@@ -320,11 +364,15 @@ async def publish_next_chapter(
                     schedule.status = "paused"
                     _meta = dict(schedule.metadata_json or {}) if schedule.metadata_json else {}
                     _meta["consecutive_failures"] = consecutive_failures
-                    _meta["last_error"] = f"Circuit breaker triggered at {datetime.now(timezone.utc).isoformat()}"
+                    _meta["last_error"] = (
+                        f"Circuit breaker triggered at {datetime.now(timezone.utc).isoformat()}"
+                    )
                     schedule.metadata_json = _meta
                     logger.error(
                         "Publishing circuit breaker triggered for platform %s (schedule %s) after %d consecutive failures",
-                        platform.name, schedule_id, consecutive_failures,
+                        platform.name,
+                        schedule_id,
+                        consecutive_failures,
                     )
                 else:
                     _meta = dict(schedule.metadata_json or {}) if schedule.metadata_json else {}
@@ -333,7 +381,9 @@ async def publish_next_chapter(
 
                 logger.warning(
                     "Failed to publish chapter %d after %d attempts: %s — stopping batch",
-                    next_chapter_number, _MAX_INLINE_RETRIES, history.error_message,
+                    next_chapter_number,
+                    _MAX_INLINE_RETRIES,
+                    history.error_message,
                 )
                 break  # Stop batch on first failure
 
@@ -368,7 +418,9 @@ async def publish_next_chapter(
             metadata["last_error"] = history.error_message
             metadata["pause_reason"] = "reconcile_required"
             schedule.metadata_json = metadata
-            logger.exception("Unexpected error publishing chapter %d — stopping batch", next_chapter_number)
+            logger.exception(
+                "Unexpected error publishing chapter %d — stopping batch", next_chapter_number
+            )
             break
 
     return any_success
@@ -408,7 +460,8 @@ async def check_publish_review_status(
     except Exception as exc:
         logger.warning(
             "Review status check failed for history %s (non-fatal): %s",
-            history_id, exc,
+            history_id,
+            exc,
         )
         return
 
@@ -424,12 +477,15 @@ async def check_publish_review_status(
         history.error_message = status_result.message or "Chapter rejected by platform review"
         logger.warning(
             "Chapter %d rejected by platform %s: %s",
-            history.chapter_number, platform.name, history.error_message,
+            history.chapter_number,
+            platform.name,
+            history.error_message,
         )
     elif status_result.status == "published":
         # Already approved — status stays "success", just log
         logger.info(
             "Chapter %d approved by platform %s",
-            history.chapter_number, platform.name,
+            history.chapter_number,
+            platform.name,
         )
     # "under_review" or "unknown" → leave as "success" and let next poll check again

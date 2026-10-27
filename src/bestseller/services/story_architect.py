@@ -11,15 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.facets import StoryFacets
-from bestseller.services.anti_default_motif import (
-    mentions_death_theme,
-    mentions_debt_theme,
-)
+from bestseller.services.budget import ExecutionBudgetError
 from bestseller.services.concept_lab import render_concept_lab_prompt_block
 from bestseller.services.facet_registry import (
     expand_legacy_preset_with_variation,
@@ -52,6 +50,46 @@ _FACET_TONE_BY_CREATION_TONE: dict[str, str] = {
     "epic": "epic",
     "dark": "dark",
     "hot": "tense",
+}
+
+_RECURRING_PUNISHMENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"越.{0,8}(?:赚|收益|获利).{0,8}越.{0,8}(?:亏|损|重|痛|惨)"),
+    re.compile(r"(?:诅咒|反噬|惩罚|扣除|亏损).{0,6}(?:收益|获利)"),
+    re.compile(r"(?:收益|获利).{0,6}(?:诅咒|反噬|惩罚|扣除|亏损)"),
+    re.compile(r"每(?:次|章).{0,20}(?:代价|反噬|惩罚|亏损|失去|扣除)"),
+    re.compile(r"代价.{0,8}(?:立刻|滚回|加重|递增|翻倍)"),
+)
+
+_LITERAL_DEBT_RE = re.compile(
+    r"负债|欠债|债务|债主|借贷|贷款|欠款|债契|还债|赊账"
+)
+
+# These are genre labels, not story events. Detection is intentionally limited
+# to ``sub_genres`` and ``trope_tags`` so a fantasy mystery inside one scene is
+# not banned. A matching label is permitted when the selected taxonomy or the
+# user's own seed names it, or when cross-genre mode was explicitly selected.
+_EXTERNAL_GENRE_LABELS: tuple[str, ...] = (
+    "悬疑",
+    "推理",
+    "惊悚",
+    "言情",
+    "都市",
+    "科幻",
+    "末日",
+    "末世",
+    "历史",
+    "现实",
+    "校园",
+    "职场",
+    "犯罪",
+)
+
+# The taxonomy routes 现实百态, 都市生活 and 行业职场 through this same
+# category. Its grounded city/workplace labels describe native settings, not
+# a request to fuse genres. Do not infer compatibility from modernity alone:
+# modern settings also occur in suspense, romance and speculative genres.
+_CATEGORY_NATIVE_GENRE_LABELS: dict[str, frozenset[str]] = {
+    "urban-contemporary": frozenset({"都市", "职场", "现实"}),
 }
 
 
@@ -193,6 +231,8 @@ async def architect_story_facets(
 
             return facets
 
+        except ExecutionBudgetError:
+            raise
         except Exception as exc:
             repair_findings = findings_from_exception(exc, default_path="story_facets")
             logger.warning(
@@ -321,17 +361,128 @@ def _story_facets_default_motif_findings(
     genre_intent: GenreIntentContract | None,
     user_hints: dict[str, Any] | None,
 ) -> list[LLMGateFinding]:
-    """Retired 2026-08-02 — always returns no findings.
+    """Enforce only explicit creation controls at the StoryFacets boundary.
 
-    This rejected generated facets whose setting or tropes touched death or debt
-    unless the user had named that theme first. It meant a 仙侠 book could not
-    open on a funeral, and it re-rolled the architect until the story was
-    bloodless. Genre fidelity is enforced by the ontology guard (does the world
-    match the selected taxonomy); premise content is the book's own.
+    The old blanket death/debt motif veto remains retired: ordinary funerals,
+    debts, danger, and loss are valid story material. These checks are narrow
+    and user-owned: ``minimal`` forbids an invented *recurring universal
+    punishment*, while non-cross directions forbid invented *genre labels*.
+    Repair feedback never echoes rejected vocabulary back into the model.
     """
 
-    del facets, genre_intent, user_hints
-    return []
+    if genre_intent is None:
+        return []
+    enhancers = genre_intent.explicit_enhancers
+    hints = user_hints if isinstance(user_hints, dict) else {}
+    user_authority = json.dumps(
+        {
+            "genre": genre_intent.genre_label,
+            "sub_genre": genre_intent.sub_genre_label,
+            "tags": list(genre_intent.tags),
+            "concept_seed": hints.get("concept_seed"),
+            "hook_spec": hints.get("hook_spec"),
+            "concept_lab": hints.get("concept_lab"),
+            "concept_lab_bundle": hints.get("concept_lab_bundle"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    findings: list[LLMGateFinding] = []
+    generated_mechanics = json.dumps(
+        {
+            "setting": facets.setting,
+            "power_system": facets.power_system,
+            "narrative_drive": facets.narrative_drive,
+            "trope_tags": list(facets.trope_tags),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    if enhancers.cost_style == "minimal":
+        generated_has_punishment = any(
+            pattern.search(generated_mechanics) for pattern in _RECURRING_PUNISHMENT_PATTERNS
+        )
+        user_requested_punishment = any(
+            pattern.search(user_authority) for pattern in _RECURRING_PUNISHMENT_PATTERNS
+        )
+        if generated_has_punishment and not user_requested_punishment:
+            findings.append(
+                LLMGateFinding(
+                    code="STORY_FACETS_MINIMAL_COST_VIOLATION",
+                    severity="major",
+                    path="story_facets.narrative_drive",
+                    message="Generated facets invented a recurring universal punishment.",
+                    expected=(
+                        "Honor cost_style=minimal: use opponent response, resource movement, "
+                        "exposure, or choices instead of a mandatory self-punishment loop."
+                    ),
+                    actual="1 incompatible recurring-punishment pattern",
+                    repair_action=(
+                        "Rebuild the drive and trope tags without a universal punishment "
+                        "attached to every gain. Preserve the user's seed facts."
+                    ),
+                )
+            )
+
+    explicit_seed = str(hints.get("concept_seed") or "").strip()
+    if (
+        explicit_seed
+        and _LITERAL_DEBT_RE.search(generated_mechanics)
+        and not _LITERAL_DEBT_RE.search(user_authority)
+    ):
+        findings.append(
+            LLMGateFinding(
+                code="STORY_FACETS_INVENTED_LITERAL_DEBT",
+                severity="major",
+                path="story_facets.trope_tags",
+                message="Generated facets added a literal debt mechanic absent from the seed.",
+                expected=(
+                    "Treat the explicit concept seed as authoritative. Bookkeeping, pricing, "
+                    "trade, and ledgers do not imply a borrowing or repayment premise."
+                ),
+                actual="1 invented literal-debt mechanic",
+                repair_action=(
+                    "Remove the invented borrowing or repayment mechanic. Preserve the seed's "
+                    "actual transaction, management, and progression rules."
+                ),
+            )
+        )
+
+    if enhancers.creativity_direction != "cross-genre-friction":
+        generated_labels = " ".join([*facets.sub_genres, *facets.trope_tags])
+        native_labels = (
+            _CATEGORY_NATIVE_GENRE_LABELS.get(genre_intent.category_key or "", frozenset())
+            if genre_intent.allowed_modernity == "modern"
+            else frozenset()
+        )
+        unexpected = [
+            label
+            for label in _EXTERNAL_GENRE_LABELS
+            if label in generated_labels
+            and label not in user_authority
+            and label not in native_labels
+        ]
+        if unexpected:
+            findings.append(
+                LLMGateFinding(
+                    code="STORY_FACETS_UNREQUESTED_GENRE_FUSION",
+                    severity="major",
+                    path="story_facets.trope_tags",
+                    message="Generated facets added an external genre label without authority.",
+                    expected=(
+                        "Keep sub_genres and trope_tags inside the selected taxonomy unless "
+                        "cross-genre-friction or the user's seed explicitly requests fusion."
+                    ),
+                    actual=f"{len(unexpected)} unrequested external-genre label(s)",
+                    repair_action=(
+                        "Remove the external genre classification and rebuild the tag from "
+                        "the selected genre's own world rules and reader payoff."
+                    ),
+                )
+            )
+
+    return findings
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -387,6 +538,36 @@ async def _call_architect_llm(
         },
     )
 
+    # This specialist owns one result per exact input. Address the original
+    # implicit slot zero explicitly, without introducing a new paid namespace.
+    from hashlib import sha256
+    from bestseller.services.llm import (
+        _apply_model_override,
+        _effective_input_hash,
+        _get_role_settings,
+        get_conception_model_catalog_key,
+    )
+    from bestseller.services.model_catalog import get_model_catalog_entry
+    from bestseller.settings import apply_runtime_llm_profile, load_settings
+
+    effective_settings = apply_runtime_llm_profile(settings if settings is not None else load_settings())
+    role = _get_role_settings(effective_settings, request.logical_role)
+    catalog_key = request.model_catalog_key or get_conception_model_catalog_key()
+    if catalog_key:
+        entry = get_model_catalog_entry(catalog_key)
+        if entry is not None and entry.available:
+            role = _apply_model_override(role, entry)
+    input_hash = _effective_input_hash(request, role)
+    semantic_key = sha256(json.dumps({
+        "input_hash": input_hash, "role": request.logical_role,
+        "template": request.prompt_template, "version": request.prompt_version,
+    }, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+    request = request.model_copy(update={
+        "operation_id": f"{semantic_key}:slot:0",
+        "metadata": {**request.metadata, "prepared_effective_input": {
+            "schema": "effective-input.v1", "hash": input_hash,
+        }},
+    })
     result: LLMCompletionResult = await complete_text(session, settings, request)
     return _parse_architect_output(result.content, primary_genre, language)
 
@@ -409,8 +590,8 @@ def _build_system_prompt(language: str) -> str:
             "# CONSTRAINTS · 核心原则\n"
             "1. **反套路（仅限表皮）**——在**表皮维度**（设定外壳/支线机制/反派）上做非主流选择；"
             "用户选定的题材及其核心满足感不动\n"
-            "2. **跨类型融合（当调味，非换骨）**——trope_tags 可含 ≥ 1 个其他类型标签作点缀，"
-            "但不得让外类型盖过本题材的核心爽点\n"
+            "2. **跨类型融合必须显式授权**——只有用户明确选择 cross-genre-friction 时，"
+            "trope_tags 才可加入其他类型标签；否则所有标签都必须来自已选题材内部\n"
             "3. **差异化（差表皮，锁骨架）**——与已有项目在表皮上区分开，但保留用户选定题材的承重配方\n"
             "4. **具象化**——setting 必须具体可视化，不要抽象泛泛\n"
             "\n"
@@ -438,8 +619,8 @@ def _build_system_prompt(language: str) -> str:
         "1. **Against Convention (SURFACE only)** — Make an unconventional choice on a *surface* "
         "dimension (setting shell / side mechanics / villains); the user-selected genre and its "
         "core payoff stay untouched\n"
-        "2. **Cross-Genre Fusion (as seasoning, not a skeleton swap)** — trope_tags may include ≥1 "
-        "tag from another genre as a topping, but it must not eclipse this genre's core payoff\n"
+        "2. **Cross-Genre Fusion requires explicit authorization** — trope_tags may include another "
+        "genre only when the user selected cross-genre-friction; otherwise every tag stays native\n"
         "3. **Differentiation (differ on surface, keep the frame)** — Differ from existing projects "
         "on the surface, but keep the load-bearing formula of the user-selected genre\n"
         "4. **Specificity** — Setting must be vivid and visual, never vague\n"
@@ -472,6 +653,7 @@ def _build_user_prompt(
         enhancers = genre_intent.explicit_enhancers
         effect_skills = ", ".join(enhancers.effect_skills) or "none"
         tone_preference = str(genre_intent.tone_preference or "unspecified")
+        creativity_direction = str(enhancers.creativity_direction or "unspecified")
         parts.append(
             "\n## Genre Intent Contract (AUTHORITATIVE — do not infer or replace)\n"
             f"- genre_key: {genre_intent.genre_key}\n"
@@ -482,6 +664,7 @@ def _build_user_prompt(
             f"- allowed_modernity: {genre_intent.allowed_modernity}\n"
             f"- tone_preference: {tone_preference}\n"
             f"- cost_style: {enhancers.cost_style}\n"
+            f"- creativity_direction: {creativity_direction}\n"
             f"- effect_skills: {effect_skills}\n"
             "Hard rule: you may only propose surface setting/trope variations. "
             "Never change genre, selected sub-genre, prompt pack, or ontology. "
@@ -490,6 +673,10 @@ def _build_user_prompt(
             "shape repeatable story situations rather than appear as decorative labels. "
             "For cost_style=minimal, build pressure through opponent response, resource "
             "movement, exposure, and choices; do not invent a recurring universal price. "
+            "Unless creativity_direction=cross-genre-friction: Do not add external-genre labels "
+            "to sub_genres or trope_tags. Treat concept_seed and hook_spec as authoritative story "
+            "facts: organize and sharpen them, but do not replace them or attach an invented "
+            "recurring punishment mechanism. "
             "Any sub_genres you output are advisory suggestions, not a replacement "
             "for the selected taxonomy."
         )

@@ -61,8 +61,7 @@ TITLE_PATTERN_FAMILIES: tuple[tuple[str, str, str], ...] = (
     (
         "relation_declaration",
         "关系宣告",
-        "一句能被读者复述的判断句，讲清主角和金手指之间的关系或落差。"
-        "例：《我的X比我还Y》。",
+        "一句能被读者复述的判断句，讲清主角和金手指之间的关系或落差。例：《我的X比我还Y》。",
     ),
     (
         "situation_declaration",
@@ -75,9 +74,10 @@ TITLE_PATTERN_FAMILIES: tuple[tuple[str, str, str], ...] = (
         "把读者读完能拿走的结果写进标题：他从什么位置走到了什么位置。",
     ),
     (
-        "suspense_question",
-        "悬念问句",
-        "一个必须点进去才能回答的问题；问题里要有具体物件或具体人，不能空泛。",
+        "forward_question",
+        "前进问题",
+        "一个必须点进去才知道主角下一步如何完成目标、翻盘或扩大成果的问题；"
+        "必须使用故事已有的具体人或物，不能为标题新增秘密历史。",
     ),
     (
         "reversal",
@@ -85,6 +85,7 @@ TITLE_PATTERN_FAMILIES: tuple[tuple[str, str, str], ...] = (
         "把最弱的身份和最强的结果并置，落差本身就是钩子。",
     ),
 )
+
 
 @dataclass(frozen=True)
 class TitleEntities:
@@ -150,6 +151,7 @@ def build_title_candidate_messages(
     platform_label: str = "番茄小说",
     per_family: int = 2,
     length_band: tuple[int, int] = (6, 14),
+    authoritative_seed: str = "",
 ) -> tuple[str, str]:
     """按句式家族要候选。家族之间句式互斥，避免一个点子的 N 种写法。
 
@@ -163,23 +165,35 @@ def build_title_candidate_messages(
         for index, (_key, label, guide) in enumerate(TITLE_PATTERN_FAMILIES, start=1)
     )
     ent = entities.to_dict()
-    entity_lines = "\n".join(
-        f"- {name}：{value}"
-        for name, value in (
-            ("主角", ent["protagonist"]),
-            ("核心器物", ent["object_name"]),
-            ("主场地点", ent["place"]),
+    entity_lines = (
+        "\n".join(
+            f"- {name}：{value}"
+            for name, value in (
+                ("主角", ent["protagonist"]),
+                ("核心器物", ent["object_name"]),
+                ("主场地点", ent["place"]),
+            )
+            if value
         )
-        if value
-    ) or "- （构思里没有可用的具名实体，只能用 logline 里的具体名词）"
+        or "- （构思里没有可用的具名实体，只能用 logline 里的具体名词）"
+    )
 
     system = (
         "你是网文平台的资深书名编辑。你的任务是给一本书起名，"
         "让读者在榜单上扫过时愿意点进去。只输出JSON。"
     )
+    seed_contract = ""
+    if _text(authoritative_seed):
+        seed_contract = (
+            "\n【用户原始创意（上位约束）】\n"
+            f"{_text(authoritative_seed)}\n"
+            "用户明确禁止、排除或要求不要沿用的内容，不得换同义词后写进书名，"
+            "更不得把用户明确禁止的替代方案提升为本书核心卖点。\n"
+        )
     user = (
         f"【题材】{genre_label}\n【平台】{platform_label}\n"
         f"【一句话故事】{logline}\n\n"
+        f"{seed_contract}"
         f"【只能使用这些故事实体】\n{entity_lines}\n\n"
         f"【句式家族】每个家族给 {per_family} 个候选，家族之间句式必须不同，"
         "不要把同一个点子换措辞交上来：\n"
@@ -203,6 +217,7 @@ def build_title_arena_messages(
     logline: str,
     genre_label: str,
     platform_label: str = "番茄小说",
+    authoritative_seed: str = "",
 ) -> tuple[str, str]:
     """榜单并排的**相对**盲评：不给绝对分，只让它选和说明理由。
 
@@ -212,12 +227,19 @@ def build_title_arena_messages(
 
     listed = "\n".join(f"{index}. {title}" for index, title in enumerate(titles, start=1))
     system = (
-        "你是网文读者，正在刷榜单。你只看得见书名，看不见简介。"
-        "凭第一眼决定点哪本。只输出JSON。"
+        "你是网文读者，正在刷榜单。你只看得见书名，看不见简介。凭第一眼决定点哪本。只输出JSON。"
     )
+    seed_contract = ""
+    if _text(authoritative_seed):
+        seed_contract = (
+            "\n用户原始创意是上位约束；任何标题若把用户明确禁止/排除的方案"
+            "改写成核心卖点，必须列为最不想点，并在理由中指出。\n"
+            f"用户原始创意：{_text(authoritative_seed)}\n"
+        )
     user = (
         f"下面是{platform_label}{genre_label}榜单上并排的几个书名：\n{listed}\n\n"
         "（这本书讲的是：" + _text(logline)[:120] + "）\n\n"
+        f"{seed_contract}"
         "1. 你最想点开的是哪一个？给编号。\n"
         "2. 你最不想点的是哪一个？给编号。\n"
         "3. 对最想点的那个，用一句话说出是哪个词让你想点。\n"
@@ -319,6 +341,7 @@ def apply_arena_verdict(
 
     if not isinstance(verdict, Mapping):
         return
+
     def _index(value: Any) -> int | None:
         try:
             idx = int(value)
@@ -339,7 +362,7 @@ def demote_default_family_titles(
     *,
     user_named_family: bool,
 ) -> tuple[list["TitleCandidate"], list["TitleCandidate"]]:
-    """书名里带默认族（账/债/丧葬/阳寿）的，把冠军位让给不带的。降权非杀权。
+    """返回完整候选池及默认族词面命中，供兼容调用方审计。
 
     用户 2026-08-24 报「债务这块的问题反反复复一直出现」。跨书量书名：
 
@@ -350,24 +373,19 @@ def demote_default_family_titles(
     同日 F4 只降权了简介候选；书名淘汰赛没有这道门，而**书名是读者最先看到
     的东西**。
 
-    判据与简介层不同：书名太短，`is_debt_dominated` 够不上阈值
-    （《别人借力我替他们还债》只有 1 子族 1 次命中）。6-12 个字的书名里出现
-    族内词，母题就在书的名字上，所以**任何命中即算**。
-
-    其余约束与 F4 一致：比较式、全池同族不清空、用户点名则跳过、
-    不向任何 prompt 写族内词。
+    旧实现把一次词命中当成已确认的核心母题，并在混合池中移出候选。词面
+    信号不能证明叙事机制，也不能改变成员资格、排序或冠军；第二个列表因此
+    只表示 observed/advisory，不再表示 demoted。用户点名时仍如实扫描，由回执
+    的 ``user_requested`` 说明这是用户选择；检测本身不产生告警或选择动作。
     """
 
     from bestseller.services.anti_default_motif import default_debt_family_hits
 
     items = list(candidates)
-    if not items or user_named_family:
+    if not items:
         return items, []
-    clean = [c for c in items if not default_debt_family_hits(str(c.title or ""))]
-    if not clean or len(clean) == len(items):
-        return items, []
-    dominated = [c for c in items if c not in clean]
-    return clean, dominated
+    observed = [c for c in items if default_debt_family_hits(str(c.title or ""))]
+    return items, observed
 
 
 def select_title_winner(
@@ -427,16 +445,17 @@ def adjudicate_late_title(
     """让**淘汰赛之后**才产生的书名与冠军做一次确定性对决。
 
     2026-08-25 真机 custom-xuanhuan-1787625194：书名有两个互不知情的选择
-    子系统——本模块的淘汰赛（13 候选 + arena + 默认族降权），以及 appeal
+    子系统——本模块的淘汰赛（13 候选 + arena + 默认族审计），以及 appeal
     重生循环（把 premise/简介/标签/书名当一个包重生成）。后者在末尾
     ``report, premise, synopsis, tags, title = best`` 整包覆盖前者，出厂书名
     《逐出师门我颠大》在淘汰赛回执里一次都没出现，冠军《擀面胖婶的三息辨火》
     被无声丢弃。**同一事实住两地，后写的赢**——本仓库的招牌病。
 
     这里不重跑淘汰赛、不加 LLM 调用：只让挑战者过一遍**同样的确定性门**
-    （长度带 / 接地 / 查重）与**同样的默认族降权**，再与冠军按既有排序规则
-    比一次。挑战者干净就让它赢（appeal 重生本就是为提升点击率而跑的），
-    带缺陷才退回冠军。全程 fail-open：任何一步异常都保留调用方的原书名。
+    （长度带 / 接地 / 查重）与**同样的默认族审计**，再与冠军按既有排序规则
+    比一次。挑战者合格就让它赢（appeal 重生本就是为提升点击率而跑的），
+    带确定性缺陷才退回冠军。词面审计不参与选择。全程 fail-open：任何一步
+    异常都保留调用方的原书名。
 
     Returns ``(adopted_title, receipt)``；receipt 恒非空，"没换" 也留痕，
     这样「书名为什么是这个」永远查得到。
@@ -477,16 +496,16 @@ def adjudicate_late_title(
         )
 
     rows = [_row(incumbent), _row(challenger)]
-    # demote_default_family_titles 返回 (保留, 被降权)；同族全覆盖时原样返回，
-    # 绝不清空候选池（比较式降权，非清单式）。
-    kept, dominated = demote_default_family_titles(
+    # 兼容 helper 的第二个列表只保留词面审计；不得改变成员资格或选择。
+    kept, lexical_hits = demote_default_family_titles(
         rows, user_named_family=user_named_default_family
     )
     kept_titles = {row.title for row in kept}
 
     # 规则：挑战者**过了同样的门**就让它赢——appeal 重生本就是为提升点击率
     # 而跑的判过分的产物，压住它等于把原 bug 镜像过来。只有它带确定性缺陷
-    # 或被默认族降权时才退回冠军；冠军自己也不干净时不硬换（fail-open）。
+    # 时才退回冠军；冠军自己也不干净时不硬换（fail-open）。默认族词面命中
+    # 只留审计，不能推翻这个对决。
     challenger_row, incumbent_row = rows[1], rows[0]
     challenger_ok = challenger_row.survives and challenger_row.title in kept_titles
     incumbent_ok = incumbent_row.survives and incumbent_row.title in kept_titles
@@ -508,10 +527,21 @@ def adjudicate_late_title(
                 "title": row.title,
                 "rejected_by": list(row.rejected_by),
                 "arena_score": row.arena_score,
-                "default_family_demoted": row in dominated,
+                "default_family_observed": row in lexical_hits,
+                "default_family_policy": "advisory_only",
+                "default_family_blocking": False,
+                "default_family_selection_changed": False,
             }
             for row in rows
         ],
+        "default_family": {
+            "scanned": True,
+            "observed": [row.title for row in lexical_hits],
+            "user_requested": bool(user_named_default_family),
+            "policy": "advisory_only",
+            "blocking": False,
+            "selection_changed": False,
+        },
     }
 
 

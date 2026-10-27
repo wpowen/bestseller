@@ -81,6 +81,8 @@ class PipelineFlowChapterRuntime(BaseModel):
     production_state: str | None = None
     scene_count: int = 0
     word_count: int = 0
+    adoption_state: Literal["unknown", "unadopted", "promoted", "accepted_with_debt"] = "unknown"
+    source_chapter_draft_version_id: str | None = None
     gates: list[str] = Field(default_factory=list)
     node_statuses: dict[str, NodeStatus] = Field(default_factory=dict)
 
@@ -94,11 +96,24 @@ class PipelineFlowIssue(BaseModel):
     suggested_action: str = ""
 
 
+class PipelineFlowAdoptionStats(BaseModel):
+    """Database adoption evidence, independent of chapter labels and export files."""
+
+    source: Literal["db"] = "db"
+    adoption_evidence: Literal["verified"] = "verified"
+    adopted_chapters: int = Field(ge=0)
+    promoted_chapters: int = Field(ge=0)
+    accepted_with_debt_chapters: int = Field(ge=0)
+    word_count_total: int = Field(ge=0)
+    adopted_chapter_numbers: list[int]
+
+
 class PipelineFlowOverview(BaseModel):
     generated_at: str
     schema_version: str = PIPELINE_FLOW_SCHEMA_VERSION
     active_path: PipelinePathId
     project: dict[str, Any]
+    adoption: PipelineFlowAdoptionStats | None = None
     node_defs: list[PipelineFlowNodeDef]
     edges: list[PipelineFlowEdgeDef]
     nodes: list[PipelineFlowNodeRuntime]

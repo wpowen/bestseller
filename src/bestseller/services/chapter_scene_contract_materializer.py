@@ -2,9 +2,11 @@ from __future__ import annotations
 
 # ruff: noqa: ANN401
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from types import SimpleNamespace
 
 _FRONT_REQUIRED_ALIASES: dict[str, tuple[str, ...]] = {
     "stakes": ("stakes", "conflict_stakes"),
@@ -14,6 +16,155 @@ _FRONT_REQUIRED_ALIASES: dict[str, tuple[str, ...]] = {
     "signature_image": ("signature_image",),
     "breakpoint": ("breakpoint", "cut_point"),
 }
+
+_CHAPTER_SOURCES = {
+    "contract_summary": "chapter_goal",
+    "opening_state.opening_situation": "opening_situation",
+    "core_conflict": "main_conflict",
+    "emotional_shift": "chapter_emotion_arc",
+    "information_release": "information_revealed",
+    "closing_hook": "hook_description",
+}
+
+_SCENE_SOURCE_KEYS = {
+    "stakes": ("conflict_stakes", "failure_cost", "story"),
+    "pressure_stack": ("conflict_buffs", "pressure_buffs", "pressure", "reader_hook"),
+    "focus_character": ("spotlight_character", "pov_character", "emotion_target"),
+    "reveal_mode": ("information_control_mode", "reader_knowledge_mode", "reader_hook"),
+    "signature_image": ("signature_image", "memorable_image", "reader_hook"),
+    "breakpoint": ("cut_point", "scene_break", "ending_cut", "reader_hook"),
+    "gate_function": ("hook_type",),
+    "visible_progress": ("visible_progress", "visible_action_or_reaction", "story"),
+    "reader_payoff": ("reader_payoff", "signature_image", "reader_hook", "emotion"),
+    "ending_hook_payload": ("ending_hook_payload", "cut_point", "breakpoint", "reader_hook"),
+}
+
+
+async def chapter_contract_has_adopted_source(session: Any, *, chapter: Any) -> bool:
+    """Resolve adoption independently of the working candidate and status labels.
+
+    The caller owns transaction/concurrency protection and passes this result to
+    both synchronous materializers as ``verified_adoption``.
+    """
+    from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+
+    adopted, receipt = await select_adopted_chapter_source(session, chapter=chapter, lock=False)
+    if adopted is not None:
+        return True
+    # No selected source can mean ambiguous legacy adoption, not just absence.
+    # Even an invalid/empty stored debt marker needs resolution before edits.
+    if receipt is not None or _mapping(
+        getattr(chapter, "metadata_json", None)
+    ).get("numeric_promotion_debt") is not None:
+        raise ValueError("materializer_adoption_ambiguous")
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ChapterDraftVersionModel
+
+    promoted = list(await session.scalars(
+        select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.project_id == chapter.project_id,
+            ChapterDraftVersionModel.chapter_id == chapter.id,
+            ChapterDraftVersionModel.promotion_state == "promoted",
+        ).execution_options(populate_existing=True, autoflush=False)
+    ))
+    if not promoted:
+        return False
+    from bestseller.services.adopted_chapter_source import explicit_continuity_source_rejection
+
+    for draft in promoted:
+        if explicit_continuity_source_rejection(chapter=chapter, draft=draft) is None:
+            raise ValueError("materializer_adoption_ambiguous")
+    return False
+
+
+def _chapter_is_adopted(chapter: Any, *, verified_adoption: bool | None) -> bool:
+    if verified_adoption is not None and type(verified_adoption) is not bool:
+        raise TypeError("verified_adoption must be bool or None")
+    if verified_adoption is None:
+        # Synchronous inputs cannot establish the absence of an adopted source.
+        # Require the selector's verified result before any mutation.
+        raise ValueError("materializer_adoption_verification_required")
+    return verified_adoption
+
+
+def _source_plan_locked(chapter: Any, explicit: bool | None) -> bool:
+    if explicit is not None and type(explicit) is not bool:
+        raise TypeError("source_plan_locked must be bool or None")
+    metadata = _mapping(getattr(chapter, "metadata_json", None))
+    return bool(explicit) or any(
+        key in metadata for key in ("outline_prefix_readiness", "outline_source_admission", "fanqie_outline_source_selection")
+    )
+
+
+
+def _refresh_derived_fields(
+    *,
+    metadata: dict[str, Any],
+    prefix: str,
+    current: Mapping[str, Any],
+    desired: Mapping[str, Any],
+    dependencies: Mapping[str, Any],
+    legacy_fields: Sequence[str] = (),
+    source: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Replace only owned cache values; retain manual overrides and audit history.
+
+    Old field-level materialization receipts establish legacy ownership, but
+    cannot reconstruct missing original dependencies. Archive that uncertainty
+    explicitly. A timestamp/producer alone never grants field ownership.
+    """
+    bindings = deepcopy(dict(_mapping(metadata.get(f"{prefix}_bindings"))))
+    history = list(metadata.get(f"{prefix}_history") or [])
+    updates: dict[str, Any] = {}
+    changed: list[str] = []
+    for field, value in desired.items():
+        present = field in current
+        old_value = current.get(field)
+        binding = _mapping(bindings.get(field))
+        if binding.get("detached"):
+            continue
+        if binding and (not present or old_value != binding.get("value")):
+            # An edit (including an explicit deletion/empty value) relinquishes
+            # ownership permanently; the next run must not refill the override.
+            bindings[field] = {**binding, "detached": True}
+            changed.append(field)
+            continue
+        legacy = not binding and field in legacy_fields and present
+        owned = bool(binding) or legacy
+        if not owned and _truthy(old_value):
+            continue
+        if not owned and not _truthy(value):
+            continue
+        replacement = {
+            "value": deepcopy(value),
+            "dependencies": deepcopy(dependencies[field]),
+            "source": source,
+        }
+        if binding and binding == replacement:
+            continue
+        if owned:
+            history.append(
+                {
+                    "field": field,
+                    "previous": deepcopy(dict(binding))
+                    if binding
+                    else {
+                        "value": deepcopy(old_value),
+                        "dependencies": None,
+                        "legacy_unbound": True,
+                    },
+                    "replacement": deepcopy(replacement),
+                    "superseded_at": datetime.now(UTC).isoformat(),
+                }
+            )
+        bindings[field] = replacement
+        updates[field] = deepcopy(value)
+        changed.append(field)
+    if changed:
+        metadata[f"{prefix}_bindings"] = bindings
+        metadata[f"{prefix}_history"] = history
+    return updates, changed
 
 
 @dataclass(frozen=True)
@@ -33,10 +184,12 @@ class SceneContractMaterializationChange:
     scene_number: int
     filled_fields: tuple[str, ...]
     unresolved_fields: tuple[str, ...]
+    retired_fields: tuple[str, ...] = ()
+    runtime_cache_changed: bool = False
 
     @property
     def changed(self) -> bool:
-        return bool(self.filled_fields)
+        return bool(self.filled_fields or self.retired_fields or self.runtime_cache_changed)
 
     @property
     def complete(self) -> bool:
@@ -47,6 +200,8 @@ class SceneContractMaterializationChange:
             "scene_number": self.scene_number,
             "filled_fields": list(self.filled_fields),
             "unresolved_fields": list(self.unresolved_fields),
+            "retired_fields": list(self.retired_fields),
+            "runtime_cache_changed": self.runtime_cache_changed,
             "changed": self.changed,
             "complete": self.complete,
         }
@@ -75,16 +230,26 @@ def materialize_chapter_scene_contracts(
     scenes: Sequence[Any],
     front_chapter_limit: int = 10,
     source: str = "chapter_scene_contract_materializer",
+    verified_adoption: bool | None = None,
+    source_plan_locked: bool | None = None,
+    methodology_selected: bool = False,
 ) -> ChapterSceneContractMaterializationReport:
-    """Persist writer-facing scene contract aliases before chapter drafting.
+    """Build a separate runtime view only for explicitly selected methodology.
 
-    The planner stores canonical methodology overlay keys such as
-    ``conflict_buffs`` and ``spotlight_character``.  Chapter-first drafting and
-    predraft gates need a compact acceptance-facing view too, otherwise the
-    framework can reject usable scene cards or fail to show the writer the
-    exact pressure, focus, payoff, and exit hook it must land.
+    Approved prefix plans and adopted chapters are immutable. Source contracts
+    remain raw; owned derivations live in scene_contract_materialized_*.
     """
 
+    if (_chapter_is_adopted(chapter, verified_adoption=verified_adoption)
+            or _source_plan_locked(chapter, source_plan_locked)):
+        return ChapterSceneContractMaterializationReport(
+            changed=False,
+            complete=False,
+            scene_changes=(),
+        )
+
+    if type(methodology_selected) is not bool:
+        raise TypeError("methodology_selected must be bool")
     chapter_number = int(getattr(chapter, "chapter_number", 0) or 0)
     scene_changes: list[SceneContractMaterializationChange] = []
     for scene in scenes:
@@ -97,10 +262,28 @@ def materialize_chapter_scene_contracts(
                 )
             )
             continue
-        scene_changes.append(_materialize_scene(scene, source=source))
+        receipt = _mapping(
+            _mapping(getattr(chapter, "metadata_json", None)).get(
+                "chapter_scene_contract_materialization"
+            )
+        )
+        legacy_fields = []
+        for change in receipt.get("scene_changes", []):
+            if isinstance(change, Mapping) and change.get("scene_number") == getattr(
+                scene, "scene_number", None
+            ):
+                legacy_fields.extend(change.get("filled_fields") or [])
+        scene_changes.append(
+            _materialize_scene(
+                scene,
+                source=source,
+                legacy_fields=legacy_fields,
+                methodology_selected=methodology_selected,
+            )
+        )
 
     changed = any(change.changed for change in scene_changes)
-    complete = all(change.complete for change in scene_changes)
+    complete = methodology_selected and all(change.complete for change in scene_changes)
     if changed:
         _mark_chapter_materialized(chapter, scene_changes, complete=complete, source=source)
     return ChapterSceneContractMaterializationReport(
@@ -115,98 +298,278 @@ def materialize_chapter_contract_from_chapter(
     chapter: Any,
     chapter_contract: Any | None,
     source: str = "chapter_scene_contract_materializer",
+    verified_adoption: bool | None = None,
+    source_plan_locked: bool | None = None,
 ) -> ChapterContractMaterializationReport:
-    """Keep writer-facing chapter contracts aligned with the current chapter plan."""
+    """Align unadopted plans only after explicit adoption verification."""
 
-    if chapter_contract is None:
+    if (
+        _chapter_is_adopted(chapter, verified_adoption=verified_adoption)
+        or _source_plan_locked(chapter, source_plan_locked)
+        or chapter_contract is None
+    ):
         return ChapterContractMaterializationReport(changed=False, filled_fields=())
 
-    filled: list[str] = []
-    desired_summary = _text(getattr(chapter, "chapter_goal", None))
-    if desired_summary and _text(getattr(chapter_contract, "contract_summary", None)) != desired_summary:
-        chapter_contract.contract_summary = desired_summary
-        filled.append("contract_summary")
-
-    desired_opening = _text(getattr(chapter, "opening_situation", None))
-    if desired_opening:
-        opening_state = dict(getattr(chapter_contract, "opening_state", None) or {})
-        if _text(opening_state.get("opening_situation")) != desired_opening:
-            opening_state["opening_situation"] = desired_opening
+    metadata = deepcopy(dict(getattr(chapter_contract, "metadata_json", None) or {}))
+    opening_state = dict(getattr(chapter_contract, "opening_state", None) or {})
+    current = {
+        key: getattr(chapter_contract, key, None) for key in _CHAPTER_SOURCES if "." not in key
+    }
+    if "opening_situation" in opening_state:
+        current["opening_state.opening_situation"] = opening_state["opening_situation"]
+    desired = {key: _text(getattr(chapter, attr, None)) for key, attr in _CHAPTER_SOURCES.items()}
+    desired["information_release"] = _chapter_information_release(chapter)
+    dependencies = {
+        key: {
+            "chapter_id": _text(getattr(chapter, "id", None)),
+            f"chapter.{attr}": deepcopy(getattr(chapter, attr, None)),
+        }
+        for key, attr in _CHAPTER_SOURCES.items()
+    }
+    # Information release excludes the closing hook, so both inputs matter.
+    dependencies["information_release"]["chapter.hook_description"] = getattr(
+        chapter, "hook_description", None
+    )
+    updates, filled = _refresh_derived_fields(
+        metadata=metadata,
+        prefix="chapter_contract_materialized",
+        current=current,
+        desired=desired,
+        dependencies=dependencies,
+        legacy_fields=metadata.get("chapter_contract_materialized_fields") or [],
+        source=source,
+    )
+    for key, value in updates.items():
+        if key == "opening_state.opening_situation":
+            opening_state["opening_situation"] = value
             chapter_contract.opening_state = opening_state
-            filled.append("opening_state.opening_situation")
-
-    desired_conflict = _text(getattr(chapter, "main_conflict", None))
-    if desired_conflict and _text(getattr(chapter_contract, "core_conflict", None)) != desired_conflict:
-        chapter_contract.core_conflict = desired_conflict
-        filled.append("core_conflict")
-
-    desired_emotion = _text(getattr(chapter, "chapter_emotion_arc", None))
-    if desired_emotion and _text(getattr(chapter_contract, "emotional_shift", None)) != desired_emotion:
-        chapter_contract.emotional_shift = desired_emotion
-        filled.append("emotional_shift")
-
-    desired_information = _chapter_information_release(chapter)
-    if desired_information and _text(getattr(chapter_contract, "information_release", None)) != desired_information:
-        chapter_contract.information_release = desired_information
-        filled.append("information_release")
-
-    desired_hook = _text(getattr(chapter, "hook_description", None))
-    if desired_hook and _text(getattr(chapter_contract, "closing_hook", None)) != desired_hook:
-        chapter_contract.closing_hook = desired_hook
-        filled.append("closing_hook")
-
+        else:
+            setattr(chapter_contract, key, value)
     if filled:
-        metadata = dict(getattr(chapter_contract, "metadata_json", None) or {})
+        metadata["chapter_contract_materialized_projection"] = {
+            "schema": "chapter-contract-runtime.v1",
+            "values": {key: deepcopy(opening_state.get("opening_situation")) if "." in key
+                       else deepcopy(getattr(chapter_contract, key, None)) for key in _CHAPTER_SOURCES},
+        }
         metadata["chapter_contract_materialized_at"] = datetime.now(UTC).isoformat()
         metadata["chapter_contract_materialized_by"] = source
-        metadata["chapter_contract_materialized_fields"] = list(dict.fromkeys(filled))
+        metadata["chapter_contract_materialized_fields"] = list(
+            dict.fromkeys(
+                [
+                    *(metadata.get("chapter_contract_materialized_fields") or []),
+                    *filled,
+                ]
+            )
+        )
         chapter_contract.metadata_json = metadata
 
-    return ChapterContractMaterializationReport(
-        changed=bool(filled),
-        filled_fields=tuple(dict.fromkeys(filled)),
-    )
+    return ChapterContractMaterializationReport(changed=bool(filled), filled_fields=tuple(filled))
 
 
-def _materialize_scene(
+def _scene_source_views(
+    metadata: Mapping[str, Any],
+    legacy_fields: Sequence[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Remove only owned projections from derivation inputs, preventing self-feeding."""
+    inputs = dict(metadata)
+    contract = dict(_mapping(metadata.get("methodology_contract")))
+    bindings = _mapping(metadata.get("chapter_scene_contract_materialized_bindings"))
+    for key in _SCENE_SOURCE_KEYS:
+        container = contract if key in _FRONT_REQUIRED_ALIASES else inputs
+        binding = _mapping(bindings.get(key))
+        if (
+            binding
+            and not binding.get("detached")
+            and key in container
+            and container[key] == binding.get("value")
+        ) or (not binding and key in legacy_fields):
+            container.pop(key, None)
+    return inputs, contract
+
+
+def _scene_dependencies(
+    key: str,
+    scene: Any,
+    metadata: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    purpose: Mapping[str, Any],
+) -> dict[str, Any]:
+    dependencies: dict[str, Any] = {
+        "scene_id": _text(getattr(scene, "id", None)),
+        "chapter_id": _text(getattr(scene, "chapter_id", None)),
+    }
+    views = (("contract", contract), ("metadata", metadata), ("purpose", purpose))
+    if key not in _FRONT_REQUIRED_ALIASES:
+        views = (("metadata", metadata), ("contract", contract), ("purpose", purpose))
+    if key == "gate_function":
+        views = (("contract", contract),)
+    selected = False
+    for name in _SCENE_SOURCE_KEYS[key]:
+        for label, values in views:
+            if _truthy(values.get(name)):
+                dependencies[f"{label}.{name}"] = deepcopy(values[name])
+                selected = True
+                break
+        if selected:
+            break
+    attrs = {
+        "focus_character": ("participants",),
+        "breakpoint": ("hook_requirement",),
+        "ending_hook_payload": ("hook_requirement",),
+        "gate_function": ("scene_number", "scene_type"),
+    }
+    if not selected or key == "gate_function":
+        for attr in attrs.get(key, ()):
+            dependencies[f"scene.{attr}"] = deepcopy(getattr(scene, attr, None))
+    return dependencies
+
+
+def _retire_legacy_scene_fields(metadata: dict[str, Any], *, source: str) -> list[str]:
+    """Only a matching field/value ownership receipt permits retiring a raw cache.
+
+    Missing receipts and manual overrides stay untouched for explicit reconciliation.
+    Prefix-bound plans never reach this helper; only the approved-source reconciler
+    can restore their historical raw projection.
+    """
+    bindings = _mapping(metadata.get("chapter_scene_contract_materialized_bindings"))
+    contract = dict(_mapping(metadata.get("methodology_contract")))
+    retired = []
+    contract_changed = False
+    history = list(metadata.get("scene_contract_materialized_history") or [])
+    for field, binding in bindings.items():
+        binding = _mapping(binding)
+        container = contract if field in _FRONT_REQUIRED_ALIASES else metadata
+        if (field not in _SCENE_SOURCE_KEYS or binding.get("detached") or field not in container
+                or container[field] != binding.get("value")):
+            continue
+        history.append({"field": field, "previous": deepcopy(dict(binding)),
+            "status": "retired_legacy_raw_cache", "source": source})
+        container.pop(field)
+        contract_changed = contract_changed or field in _FRONT_REQUIRED_ALIASES
+        retired.append(field)
+    if retired:
+        if contract_changed:
+            metadata["methodology_contract"] = contract
+        metadata["scene_contract_materialized_history"] = history
+    return retired
+
+
+def _materialize_scene(scene: Any, *, source: str, legacy_fields: Sequence[str] = (),
+                       methodology_selected: bool = False) -> SceneContractMaterializationChange:
+    metadata = deepcopy(dict(getattr(scene, "metadata_json", None) or {}))
+    original = deepcopy(metadata)
+    retired = _retire_legacy_scene_fields(metadata, source=source)
+    cache = _mapping(metadata.get("scene_contract_materialized_projection"))
+    number = int(getattr(scene, "scene_number", 0) or 0)
+    if not methodology_selected:
+        if cache:
+            metadata.setdefault("scene_contract_materialized_history", []).append({
+                "status": "retired_unselected_projection", "previous": deepcopy(dict(cache)),
+                "bindings": deepcopy(metadata.get("scene_contract_materialized_bindings")), "source": source})
+            metadata.pop("scene_contract_materialized_projection", None)
+            metadata.pop("scene_contract_materialized_bindings", None)
+            retired.append("scene_contract_materialized_projection")
+        if metadata != original:
+            scene.metadata_json = metadata
+        return SceneContractMaterializationChange(number, (), (), tuple(retired))
+
+    bindings = _mapping(metadata.get("scene_contract_materialized_bindings"))
+    old_contract = _mapping(cache.get("methodology_contract"))
+    old_gates = _mapping(cache.get("gate_fields"))
+    # Cache values are used only to refresh owned projections. Original raw keys,
+    # including explicit empty overrides, take precedence and never get rewritten.
+    shadow_metadata = {key: deepcopy(value) for key, value in old_gates.items() if key in bindings}
+    shadow_metadata.update(deepcopy(metadata))
+    shadow_metadata["methodology_contract"] = {
+        **{key: deepcopy(old_contract[key]) for key in bindings
+           if key in _FRONT_REQUIRED_ALIASES and key in old_contract},
+        **deepcopy(dict(_mapping(metadata.get("methodology_contract")))),
+    }
+    shadow_metadata["chapter_scene_contract_materialized_bindings"] = deepcopy(dict(bindings))
+    shadow_metadata["chapter_scene_contract_materialized_history"] = deepcopy(
+        metadata.get("scene_contract_materialized_history") or [])
+    attrs = {key: deepcopy(getattr(scene, key, None)) for key in (
+        "scene_number", "scene_type", "participants", "purpose", "hook_requirement", "id", "chapter_id")}
+    shadow = SimpleNamespace(**attrs, metadata_json=shadow_metadata)
+    built = _build_scene_projection(shadow, source=source)
+    from bestseller.services.prompt_source_policy import content_hash
+    source_metadata = {key: value for key, value in metadata.items() if not key.startswith(
+        ("scene_contract_materialized_", "chapter_scene_contract_materialized_"))}
+    projection = {"schema": "scene-contract-runtime.v1",
+        "source_hash": content_hash({"scene": {key: str(value) if key in {"id", "chapter_id"}
+                                               else value for key, value in attrs.items()},
+                                     "metadata": source_metadata}),
+        "methodology_contract": deepcopy(shadow.metadata_json["methodology_contract"]),
+        "gate_fields": {key: deepcopy(shadow.metadata_json[key]) for key in (
+            "gate_function", "visible_progress", "reader_payoff", "ending_hook_payload")
+            if key in shadow.metadata_json}}
+    metadata["scene_contract_materialized_projection"] = projection
+    metadata["scene_contract_materialized_bindings"] = deepcopy(
+        shadow.metadata_json.get("chapter_scene_contract_materialized_bindings") or {})
+    metadata["scene_contract_materialized_history"] = deepcopy(
+        shadow.metadata_json.get("chapter_scene_contract_materialized_history") or [])
+    changed = metadata != original
+    if changed:
+        scene.metadata_json = metadata
+    return SceneContractMaterializationChange(number, built.filled_fields, built.unresolved_fields,
+        tuple(retired), runtime_cache_changed=changed)
+
+
+def _build_scene_projection(
     scene: Any,
     *,
     source: str,
+    legacy_fields: Sequence[str] = (),
 ) -> SceneContractMaterializationChange:
     scene_number = int(getattr(scene, "scene_number", 0) or 0)
-    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    metadata = deepcopy(dict(getattr(scene, "metadata_json", None) or {}))
     contract = dict(_mapping(metadata.get("methodology_contract")))
     purpose = _mapping(getattr(scene, "purpose", None))
+    inputs, source_contract = _scene_source_views(metadata, legacy_fields)
 
-    filled: list[str] = []
-    unresolved: list[str] = []
-    for target_field in _FRONT_REQUIRED_ALIASES:
-        if _truthy(contract.get(target_field)) or _truthy(metadata.get(target_field)):
-            continue
-        value = _derive_scene_contract_value(target_field, scene, metadata, contract, purpose)
-        if value:
-            contract[target_field] = value
-            filled.append(target_field)
-        else:
-            unresolved.append(target_field)
+    desired = {
+        key: (
+            ""
+            if key in inputs and _truthy(inputs[key])
+            else _derive_scene_contract_value(key, scene, inputs, source_contract, purpose)
+        )
+        for key in _FRONT_REQUIRED_ALIASES
+    }
+    dependencies = {
+        key: _scene_dependencies(key, scene, inputs, source_contract, purpose) for key in desired
+    }
+    for key in desired:
+        if key in inputs:
+            dependencies[key][f"metadata.{key}"] = deepcopy(inputs[key])
+    updates, filled = _refresh_derived_fields(
+        metadata=metadata,
+        prefix="chapter_scene_contract_materialized",
+        current=contract,
+        desired=desired,
+        dependencies=dependencies,
+        legacy_fields=legacy_fields,
+        source=source,
+    )
+    contract.update(updates)
 
+    # Derive gate fields after refreshing aliases; never read their own old cache.
     gate_defaults = {
         "gate_function": _derive_gate_function(scene, contract),
         "visible_progress": _first_text(
-            (metadata, contract, purpose),
+            (inputs, contract, purpose),
             "visible_progress",
             "visible_action_or_reaction",
             "story",
         ),
         "reader_payoff": _first_text(
-            (metadata, contract, purpose),
+            (inputs, contract, purpose),
             "reader_payoff",
             "signature_image",
             "reader_hook",
             "emotion",
         ),
         "ending_hook_payload": _first_text(
-            (metadata, contract, purpose),
+            (inputs, contract, purpose),
             "ending_hook_payload",
             "cut_point",
             "breakpoint",
@@ -214,11 +577,36 @@ def _materialize_scene(
         )
         or _text(getattr(scene, "hook_requirement", None)),
     }
-    for key, value in gate_defaults.items():
-        if key not in metadata and value:
-            metadata[key] = value
-            filled.append(key)
-
+    gate_dependencies = {
+        key: _scene_dependencies(key, scene, inputs, contract, purpose) for key in gate_defaults
+    }
+    bindings = _mapping(metadata.get("chapter_scene_contract_materialized_bindings"))
+    for key, deps in gate_dependencies.items():
+        for alias in _SCENE_SOURCE_KEYS[key]:
+            binding = _mapping(bindings.get(alias))
+            if (
+                f"contract.{alias}" in deps
+                and alias in _FRONT_REQUIRED_ALIASES
+                and binding
+                and not binding.get("detached")
+            ):
+                deps[f"derived.{alias}"] = deepcopy(binding.get("dependencies"))
+    gate_updates, gate_filled = _refresh_derived_fields(
+        metadata=metadata,
+        prefix="chapter_scene_contract_materialized",
+        current=metadata,
+        desired=gate_defaults,
+        dependencies=gate_dependencies,
+        legacy_fields=legacy_fields,
+        source=source,
+    )
+    metadata.update(gate_updates)
+    filled.extend(gate_filled)
+    unresolved = [
+        key
+        for key in _FRONT_REQUIRED_ALIASES
+        if not _truthy(contract.get(key)) and not _truthy(metadata.get(key))
+    ]
     if filled:
         metadata["methodology_contract"] = contract
         metadata["chapter_scene_contract_materialized_at"] = datetime.now(UTC).isoformat()
@@ -306,7 +694,12 @@ def _mark_chapter_materialized(
     source: str,
 ) -> None:
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
-    metadata["chapter_scene_contract_materialization"] = {
+    previous = metadata.get("chapter_contract_materialized_scene_projection")
+    if previous:
+        history = list(metadata.get("chapter_contract_materialized_scene_projection_history") or [])
+        history.append(deepcopy(previous))
+        metadata["chapter_contract_materialized_scene_projection_history"] = history
+    metadata["chapter_contract_materialized_scene_projection"] = {
         "source": source,
         "complete": complete,
         "materialized_at": datetime.now(UTC).isoformat(),

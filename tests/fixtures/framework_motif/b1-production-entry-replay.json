@@ -1,0 +1,88 @@
+{
+  "fixture_contract": {
+    "raw_pitches": "synthetic production-entry stimuli; they are not a receipt replay",
+    "card_projections": "exact material fields selected from the cited P1 engine-card receipts",
+    "structural_completion": "test-only neutral values satisfy card completeness and do not decide motif classification",
+    "scores_and_hooks": "synthetic all-axis passes so this regression isolates lexical-card policy"
+  },
+  "card_projections": [
+    {
+      "attempt": "000020",
+      "sha256": "09aa3829a12f90208d4f936f1b5eddc9a8c1f31127bf580c0098b14f028007a4",
+      "protagonist_identity": "旧朝覆灭后被留在陵前守灶的御厨遗脉温挽，她守着旧国君临终前亲手砌的灶台过活，灶眼正对陵门，每次开火陵中必有回应",
+      "core_abnormality": "她会做且只她会做旧宫封陵汤——汤里须记亡者生前的口味与遗憾，每一次下料都是承诺",
+      "reader_promise": "看一个掌勺女子用一道汤在两个新主子之间来回称量，旧统怎么收场、新朝怎么认账",
+      "difference_point": "不是她替谁打仗，而是每一勺都背着一条人命和一座陵",
+      "deformable_loop": "她每做一锅汤都要在旧主口味与时局新主口味之间选料，下一轮的两国请帖与旧民诉求会被上一锅汤的口碑改写，对手也按上一锅她动了哪一味来调下一轮的价码",
+      "opening_crisis": "两封烫金请帖同时压在灶沿，灶眼里旧陵刚刚应了一声，村口旧民已等她表态",
+      "emotional_promise": "一口锅里的旧与新，每一勺都烫手"
+    },
+    {
+      "attempt": "000025",
+      "sha256": "3bfe93a63c8e66fcdb76c7e835e1a3df5b88508ffce7f54d412cd6f633e235ff",
+      "protagonist_identity": "落魄书生，靠替亡者润色讣告换阴德的江湖笔吏，半生替死人遮掩，活人那面早已单薄",
+      "core_abnormality": "冥市已将他列为待亡，阴德清零，讼笔人身份保住了一条新规矩——可查本人阳寿余账",
+      "reader_promise": "看他用最熟悉的笔头在冥律条款里翻出活路，每次落笔都让旧事重见天日",
+      "difference_point": "主角手里的武器是别人替他编的生平，他必须在解套时承认那些生平也是自己编的",
+      "deformable_loop": "每落一笔呈文都让一段旧事浮出，旧事引出新证人或旧债，新证人旧债再决定下一笔呈文能写到什么程度",
+      "opening_crisis": "灰鸦衔来请帖，帖上写明冥市生讣坊要他三日内写自传体讣告，落款是他自己的名字和生辰",
+      "emotional_promise": "每揭一层旧事都带出新的代价与新的人，笔越写越准，账越算越薄"
+    },
+    {
+      "attempt": "000030",
+      "sha256": "c412727f197f66b18d4e5e126984a8b417a86a51e51a3f5a918f3c0748b6a367",
+      "protagonist_identity": "藏剑阁杂役孟秋，七年来只被门派当作会移动的扫帚，连正式姓名都不被师兄们记住",
+      "core_abnormality": "他扫了七年的扫帚底下压着一种极古老的剑步节奏，他在谁练剑的地方扫、扫的节奏对，那人当日的剑就会顺一分",
+      "reader_promise": "看一个扫地杂役如何用一把扫帚把整个藏剑阁的人心、关系和资源一点点扫到自己脚下",
+      "difference_point": "升级的资源不是天材地宝而是几个师兄今天的剑感，筹码是别人看不见的节奏",
+      "deformable_loop": "孟秋每替一位师兄扫一次地，那位师兄当日的剑就顺一分，但可追溯痕迹也多一道",
+      "opening_crisis": "清晨，藏剑阁外，三师兄走来练剑；孟秋必须在起剑前扫完那块地且不能露馅",
+      "emotional_promise": "看他用一把扫帚把藏剑阁的人心扫得服服帖帖，每次都离暴露更近一步"
+    },
+    {
+      "attempt": "000035",
+      "sha256": "3a6a11795b6b26e86fc3928e7c469be8ed44798dfccbdf13b7be958c6e0e9223",
+      "protagonist_identity": "城西破庙前摆摊算命的散修，五十多岁，瘸一条腿，眼睛半瞎，靠给人报凶卦混饭吃",
+      "core_abnormality": "他算卦只能算出最坏那条路，而且第二天必然灵验——大吉的卦从来没准过",
+      "reader_promise": "一个嘴比刀毒的瘸腿算命先生，每章骂出一个别人身上即将发生的祸，再用徒弟去堵",
+      "difference_point": "别人写算命是金手指，他这算命是诅咒——只能看见坏处，看不见好处，越灵越招人怕",
+      "deformable_loop": "每接一单新生意，他就把对方身上最坏的路当面说出来，当事人的反应决定下一单",
+      "opening_crisis": "卦摊前跪下一个穿孝衣的少年，求沈半瞎骂他一句，否则少年会死在他摊前",
+      "emotional_promise": "看他把别人最怕听的话痛痛快快骂出来，每骂一句都把自己往更孤绝的路上推一步"
+    }
+  ],
+  "raw_pitches": [
+    {
+      "lane": "职业处境",
+      "seed": "守陵御厨温挽每开一锅封陵汤，旧陵都会回应一次，她必须在两朝之间决定灶火归属。",
+      "graft": "他靠跑单路线和人情判断替老怪送出不能代劳的旧信，每一单都换来修为与新的因果。",
+      "opening": "暴雨夜，林桥送完最后一单，老怪坐上他的电动车，要他天亮前送出一封会惹祸的信。",
+      "why_it_keeps_moving": "八封旧信的收件人和风险各不相同，林桥必须自己排路线、换人情并承受老怪旧债的后果。",
+      "future_situations": ["第四封信逼他在递信和烧信间选择", "第七封要他闯进禁入坊市", "最后一封逼他替收件人争活路"]
+    },
+    {
+      "lane": "人际困局",
+      "seed": "替亡者润色讣告的笔吏被冥市列为待亡，必须用自己写过的旧稿证明自己还活着。",
+      "graft": "两人借婚约各自躲避家族和宗门追查，再用炼丹与辨药互相交换筹码。",
+      "opening": "拜堂后女修要苏晏一起演恩爱夫妻，洞房外的闹客却先被她的法术逼退。",
+      "why_it_keeps_moving": "苏晏每替她挡一次追查，就多拿到一条炼丹线索；嫡母与旧宗门都在逼他们露出破绽。",
+      "future_situations": ["旧师兄混进家族", "嫡母逼苏晏交人顶罪", "解禁丹要两人一起承担代价"]
+    },
+    {
+      "lane": "世界规则",
+      "seed": "藏剑阁杂役孟秋扫出的剑步能让师兄剑感变顺，他得用扫地换取进身之阶又躲过追查。",
+      "graft": "他得用必会发生的坏事换取行动入口，并找出是谁在借他的凶卦改写别人的命数。",
+      "opening": "他替一名剑修算出大凶，对方不信；第二天剑修果然在同一处受伏。",
+      "why_it_keeps_moving": "每次凶卦都会制造一个必须介入的现场，而有人开始逼他只替指定的人开卦。",
+      "future_situations": ["他要用凶卦救回不信他的剑修", "对手伪造大凶逼他背锅", "他发现自己的命数被写在最后一卦上"]
+    },
+    {
+      "lane": "门派日常",
+      "seed": "瘸腿散修只能算出别人第二天必应的最坏一条路，他得当面骂出来逼人避祸。",
+      "graft": "孟秋发现扫地节奏暗合古老剑步，开始用扫地换识字、口诀和门派情报。",
+      "opening": "清晨他扫完藏剑阁外的地，三师兄练剑出奇顺，夜里孟秋用破笤帚比出陌生剑招。",
+      "why_it_keeps_moving": "师兄们争着让他扫，执律堂与管事也开始追查异常；孟秋必须把扫地从杂役义务变成能换筹码的行动。",
+      "future_situations": ["他决定帮中毒师兄找回剑感", "他要掩住脚印躲过巡阁", "门派大比前他必须决定是否扫禁地"]
+    }
+  ]
+}

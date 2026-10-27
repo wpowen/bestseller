@@ -480,7 +480,7 @@
   <div class="stats-grid" id="statsGrid">
     <div class="stat-card">
       <div class="stat-value" id="statChapters">-</div>
-      <div class="stat-label">已完成章节</div>
+      <div class="stat-label">已采用章节</div>
     </div>
     <div class="stat-card">
       <div class="stat-value" id="statCharacters">-</div>
@@ -488,7 +488,7 @@
     </div>
     <div class="stat-card">
       <div class="stat-value" id="statWordCount">-</div>
-      <div class="stat-label">总字数</div>
+      <div class="stat-label">已采用正文总字数</div>
     </div>
     <div class="stat-card">
       <div class="stat-value" id="statArcs">-</div>
@@ -502,7 +502,7 @@
 
   <div class="grid">
     <div class="card">
-      <h2><span class="icon">📖</span> 项目概览</h2>
+      <h2><span class="icon">📖</span> 项目概览（数据库）</h2>
       <div class="project-info" id="projectInfo">
         <div class="info-item">
           <div class="info-label">类型</div>
@@ -517,7 +517,7 @@
           <div class="info-value" id="infoTarget">-</div>
         </div>
         <div class="info-item">
-          <div class="info-label">当前章节</div>
+          <div class="info-label">最新采用章号</div>
           <div class="info-value" id="infoCurrent">-</div>
         </div>
       </div>
@@ -535,7 +535,7 @@
     </div>
   </div>
 
-  <div class="section-title">故事设计</div>
+  <div class="section-title" id="designScope">故事设计（规划记录，不代表正文进度）</div>
   <div class="grid-3">
     <div class="card">
       <h2><span class="icon">🎭</span> 故事线</h2>
@@ -595,7 +595,7 @@
 
   <div class="section-title">章节进度</div>
   <div class="card full-width" style="margin-bottom: 24px;">
-    <h2><span class="icon">📊</span> 章节完成状态</h2>
+    <h2><span class="icon">📊</span> 章节采用状态</h2>
     <div id="chapterGrid">
       <div class="loading"><span class="loading-spinner"></span>加载中...</div>
     </div>
@@ -605,8 +605,36 @@
 <script>
 const slug = location.pathname.split('/').filter(Boolean).pop() || '';
 
+// Each resource has one in-flight read; failed reads back off independently.
+const pollingResources = new Map();
+async function pollResource(key, interval, load, force = false) {
+  if (!force && document.visibilityState === 'hidden') return;
+  let state = pollingResources.get(key);
+  if (!state) {
+    state = { promise: null, nextAt: 0, failures: 0 };
+    pollingResources.set(key, state);
+  }
+  if (state.promise) return state.promise;
+  if (!force && Date.now() < state.nextAt) return;
+  const startedAt = Date.now();
+  state.promise = Promise.resolve().then(load).then(result => {
+    state.failures = result === false ? state.failures + 1 : 0;
+    return result;
+  }).catch(() => {
+    state.failures += 1;
+    return false;
+  }).finally(() => {
+    state.nextAt = state.failures
+      ? Date.now() + Math.min(Math.max(60000, interval * 4), interval * 2 ** Math.min(state.failures, 5))
+      : startedAt + interval;
+    state.promise = null;
+  });
+  return state.promise;
+}
+
+
 async function fetchData(endpoint) {
-  const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/${endpoint}`);
+  const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/${endpoint}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`${endpoint}: ${res.statusText}`);
   return res.json();
 }
@@ -622,13 +650,14 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderProjectInfo(project) {
+function renderProjectInfo(project, adoption) {
   document.getElementById('title').textContent = project.title || '未命名';
   document.getElementById('projectMeta').textContent = `${project.genre || ''} · ${project.sub_genre || ''} · ${project.status || ''}`;
   document.getElementById('infoGenre').textContent = `${project.genre || '-'} / ${project.sub_genre || '-'}`;
   document.getElementById('infoStatus').textContent = project.status || '-';
-  document.getElementById('infoTarget').textContent = project.target_chapters || '-';
-  document.getElementById('infoCurrent').textContent = project.current_chapter_number || '-';
+  document.getElementById('infoTarget').textContent = project.target_chapters ?? '-';
+  document.getElementById('infoCurrent').textContent = adoption
+    ? Math.max(0, ...(adoption.adopted_chapter_numbers ?? [])) : '-';
   document.getElementById('premiseBox').textContent = project.premise || '-';
 }
 
@@ -698,17 +727,11 @@ function renderVolumePlan(volumes) {
     return;
   }
 
-  const currentChapter = parseInt(document.getElementById('infoCurrent').textContent) || 0;
-
   const html = volumes.map(v => {
     const start = v.start_chapter_number || v.chapter_range?.[0] || 0;
     const end = v.end_chapter_number || v.chapter_range?.[1] || 0;
-    const isActive = currentChapter >= start && currentChapter <= end;
-    const isCompleted = currentChapter > end;
-    const cls = isCompleted ? 'completed' : (isActive ? 'active' : '');
-
     return `
-      <div class="milestone-item ${cls}">
+      <div class="milestone-item">
         <div class="milestone-range">第 ${start}-${end} 章</div>
         <div style="font-weight: 600; margin-bottom: 4px;">${escapeHtml(v.title) || `第 ${v.volume_number} 卷`}</div>
         <div style="font-size: 12px; color: var(--text-muted);">${escapeHtml(v.frontier_summary || '').substring(0, 100)}${(v.frontier_summary || '').length > 100 ? '...' : ''}</div>
@@ -820,13 +843,15 @@ function renderChapters(chapters) {
   }
 
   const html = chapters.map(ch => {
-    let cls = 'planned';
-    if (ch.word_count > 5000) cls = 'completed';
-    else if (ch.word_count > 0) cls = 'in-progress';
+    const adopted = ch.adoption_state === 'promoted' || ch.adoption_state === 'accepted_with_debt';
+    let cls = ch.adoption_state === 'promoted' ? 'completed'
+      : ch.adoption_state === 'accepted_with_debt' ? 'in-progress' : 'planned';
+    const label = ch.adoption_state === 'accepted_with_debt' ? '已采用（有债务）'
+      : adopted ? '已采用' : '未采用';
     if (ch.production_state === 'blocked') cls = 'blocked';
 
     return `
-      <div class="chapter-cell ${cls}" title="第${ch.chapter_number}章: ${ch.title || '未命名'} (${ch.word_count}字)">
+      <div class="chapter-cell ${cls}" title="第${ch.chapter_number}章: ${escapeHtml(ch.title || '未命名')} · ${label} (${ch.word_count ?? 0}字)">
         ${ch.chapter_number}
       </div>
     `;
@@ -835,62 +860,82 @@ function renderChapters(chapters) {
   document.getElementById('chapterGrid').innerHTML = `
     <div class="chapter-grid">${html}</div>
     <div style="margin-top: 12px; display: flex; gap: 16px; font-size: 12px; flex-wrap: wrap;">
-      <span><span style="display:inline-block;width:12px;height:12px;background:var(--success);border-radius:3px;margin-right:4px"></span>已完成 (>5000字)</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:var(--accent);border-radius:3px;margin-right:4px"></span>进行中</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--success);border-radius:3px;margin-right:4px"></span>已采用</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--accent);border-radius:3px;margin-right:4px"></span>已采用（有债务）</span>
       <span><span style="display:inline-block;width:12px;height:12px;background:var(--error);border-radius:3px;margin-right:4px"></span>阻塞</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:3px;margin-right:4px"></span>计划中</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:3px;margin-right:4px"></span>未采用</span>
     </div>
   `;
 }
 
-async function loadData() {
+let bibleLoaded = false;
+let narrativeLoaded = false;
+async function loadDesignData() {
+  // Design documents change slowly; adoption remains on the short poll below.
+  const results = await Promise.allSettled([fetchData('story-bible'), fetchData('narrative')]);
+  const [bibleResult, narrativeResult] = results;
+  const storyBible = bibleResult.status === 'fulfilled' ? bibleResult.value : null;
+  const narrative = narrativeResult.status === 'fulfilled' ? narrativeResult.value : null;
+  document.getElementById('designScope').textContent = storyBible || narrative
+    ? `故事设计（规划记录，不代表正文进度）${storyBible?.title ? ' · ' + storyBible.title : ''}`
+    : '故事设计（规划数据暂不可用）';
+  if (bibleResult.status === 'fulfilled') {
+    bibleLoaded = true;
+    renderWorldBackbone(storyBible?.world_backbone);
+    renderVolumePlan(storyBible?.volume_frontiers || []);
+    renderCharacters(storyBible?.characters || []);
+    renderRelationships(storyBible?.relationships || []);
+    renderWorldRules(storyBible?.world_rules || []);
+    renderFactions(storyBible?.factions || []);
+    document.getElementById('statCharacters').textContent = storyBible ? (storyBible.characters || []).length : '-';
+  } else if (!bibleLoaded) {
+    for (const id of ['worldBackbone', 'volumePlan', 'characterList', 'relationshipList', 'worldRulesList', 'factionList']) {
+      document.getElementById(id).innerHTML = '<div class="empty-state">规划资料暂不可用，稍后自动重试</div>';
+    }
+  }
+  if (narrativeResult.status === 'fulfilled') {
+    narrativeLoaded = true;
+    renderArcs(narrative?.plot_arcs || []);
+    renderContracts(narrative?.chapter_contracts || []);
+    document.getElementById('statArcs').textContent = narrative ? (narrative.plot_arcs || []).length : '-';
+    document.getElementById('statContracts').textContent = narrative ? (narrative.chapter_contracts || []).length : '-';
+  } else if (!narrativeLoaded) {
+    for (const id of ['arcList', 'contractList']) {
+      document.getElementById(id).innerHTML = '<div class="empty-state">规划资料暂不可用，稍后自动重试</div>';
+    }
+  }
+  return results.every(result => result.status === 'fulfilled');
+}
+
+async function loadProjectProgress() {
   try {
-    document.getElementById('projectMeta').innerHTML = '<span class="loading-spinner"></span>加载中...';
-
-    const [storyBible, narrative, _pipelineFlow] = await Promise.all([
-      fetchData('story-bible'),
-      fetchData('narrative'),
-      fetch(`/api/projects/${encodeURIComponent(slug)}/pipeline-flow`).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]);
-
-    const project = storyBible.project || {};
-    const chapters = narrative.chapter_contracts || [];
-
-    renderProjectInfo({
-      title: storyBible.title,
-      genre: storyBible.world_backbone?.world_frame?.split('/')[0]?.trim(),
-      sub_genre: storyBible.world_backbone?.world_frame?.split('/')[1]?.trim(),
-      status: 'revising',
-      target_chapters: 500,
-      current_chapter_number: 85,
-      premise: storyBible.world_backbone?.core_promise
-    });
-    renderWorldBackbone(storyBible.world_backbone);
-    renderArcs(narrative.plot_arcs || []);
-    renderContracts(narrative.chapter_contracts || []);
-    renderVolumePlan(storyBible.volume_frontiers || []);
-    renderCharacters(storyBible.characters || []);
-    renderRelationships(storyBible.relationships || []);
-    renderWorldRules(storyBible.world_rules || []);
-    renderFactions(storyBible.factions || []);
-    renderChapters([]);
-
-    const totalWords = 0;
-    const completedChapters = 85;
-    const criticalIssues = 0;
-
-    document.getElementById('statChapters').textContent = completedChapters;
-    document.getElementById('statCharacters').textContent = (storyBible.characters || []).length;
-    document.getElementById('statWordCount').textContent = formatNumber(totalWords);
-    document.getElementById('statArcs').textContent = (narrative.plot_arcs || []).length;
-    document.getElementById('statContracts').textContent = (narrative.chapter_contracts || []).length;
-
-    document.getElementById('projectMeta').textContent = `${storyBible.title || ''} · 惊悚灵异 · revising`;
-
+    const pipelineFlow = await fetchData('pipeline-flow');
+    if (!pipelineFlow.project || pipelineFlow.project.source !== 'db'
+        || pipelineFlow.adoption?.adoption_evidence !== 'verified') {
+      throw new Error('项目采用数据不可用');
+    }
+    renderProjectInfo(pipelineFlow.project, pipelineFlow.adoption);
+    renderChapters(pipelineFlow.chapters);
+    document.getElementById('statChapters').textContent = pipelineFlow.adoption.adopted_chapters;
+    document.getElementById('statWordCount').textContent = formatNumber(pipelineFlow.adoption.word_count_total);
   } catch (err) {
     console.error('Load failed:', err);
+    renderProjectInfo({}, null);
+    document.getElementById('title').textContent = '项目数据不可用';
     document.getElementById('projectMeta').textContent = '加载失败: ' + err.message;
+    for (const id of ['statChapters', 'statWordCount']) {
+      document.getElementById(id).textContent = '-';
+    }
+    document.getElementById('chapterGrid').innerHTML = '<div class="empty-state">章节采用数据不可用</div>';
+    return false;
   }
+}
+
+async function loadData(force = true) {
+  return Promise.all([
+    pollResource('adoption', 5000, loadProjectProgress, force),
+    pollResource('design', 60000, loadDesignData, force),
+  ]);
 }
 
 loadData();
@@ -914,7 +959,11 @@ function fmtTime(s) {
   try { return new Date(s).toLocaleTimeString('zh-CN', { hour12: false }); } catch (e) { return s; }
 }
 
-async function loadExecProgress() {
+async function loadExecProgress(force = true) {
+  return pollResource('execution', 5000, renderExecProgress, force);
+}
+
+async function renderExecProgress() {
   try {
     const d = await fetchData('execution-progress');
     // 健康标
@@ -957,11 +1006,15 @@ async function loadExecProgress() {
       : '<span style="color:#9aa0ab;">暂无步骤</span>';
   } catch (e) {
     document.getElementById('execCurrent').textContent = '执行进度加载失败:' + e.message;
+    return false;
   }
 }
 
 loadExecProgress();
-setInterval(loadExecProgress, 5000);
+setInterval(() => { loadExecProgress(false); loadData(false); }, 5000);
+document.addEventListener?.('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') { loadExecProgress(); loadData(); }
+});
 </script>
 </body>
 </html>

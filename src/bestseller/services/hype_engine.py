@@ -210,6 +210,7 @@ def target_hype_for_chapter(
     chapter_number: int,
     total_chapters: int,
     pacing_profile: str = "medium",
+    hype_scheme: HypeScheme | None = None,
 ) -> HypeDensityBand:
     """Return the density band for this chapter, adjusted by pacing profile.
 
@@ -233,15 +234,29 @@ def target_hype_for_chapter(
         shift = -0.5
     else:
         shift = 0.0
-    if shift == 0.0:
-        return base
-    return HypeDensityBand(
+    adjusted = base if shift == 0.0 else HypeDensityBand(
         percentile_low=base.percentile_low,
         percentile_high=base.percentile_high,
         expected_types=base.expected_types,
         min_count_per_chapter=base.min_count_per_chapter,
         intensity_target=max(0.0, min(10.0, base.intensity_target + shift)),
         notes=base.notes,
+    )
+    # The global density curve is intentionally commercial and contains
+    # action-specific examples. A project-level deck is the authoritative
+    # reader contract: realistic fiction must receive its own available
+    # payoff vocabulary and one meaningful beat, rather than inheriting
+    # face-slap/golden-finger expectations from the shared curve.
+    if hype_scheme is None or hype_scheme.golden_three_peak_count >= 2:
+        return adjusted
+    available = tuple(dict.fromkeys(recipe.hype_type for recipe in hype_scheme.recipe_deck))
+    return HypeDensityBand(
+        percentile_low=adjusted.percentile_low,
+        percentile_high=adjusted.percentile_high,
+        expected_types=available or adjusted.expected_types,
+        min_count_per_chapter=min(adjusted.min_count_per_chapter, max(1, hype_scheme.min_hype_per_chapter)),
+        intensity_target=min(adjusted.intensity_target, 7.0),
+        notes="题材专用回报：以选择、关系、工作或认知后果形成单一可感回报。",
     )
 
 
@@ -650,6 +665,10 @@ class HypeScheme:
     hook_keywords: tuple[str, ...] = ()
     chapter_hook_strategy: str = ""
     min_hype_per_chapter: int = 1  # Can be 0 for slow literary presets.
+    # Commercial action genres may ask for two opening peaks. Realistic fiction
+    # uses one meaningful choice/consequence beat instead of a forced double
+    # peak, while preserving the same shared hype plumbing.
+    golden_three_peak_count: int = 2
 
     @property
     def is_empty(self) -> bool:
@@ -673,6 +692,7 @@ def hype_scheme_to_dict(scheme: HypeScheme) -> dict[str, Any]:
         "hook_keywords": list(scheme.hook_keywords),
         "chapter_hook_strategy": scheme.chapter_hook_strategy,
         "min_hype_per_chapter": scheme.min_hype_per_chapter,
+        "golden_three_peak_count": scheme.golden_three_peak_count,
     }
 
 
@@ -700,6 +720,7 @@ def hype_scheme_from_dict(data: Mapping[str, Any] | None) -> HypeScheme:
         hook_keywords=tuple(data.get("hook_keywords") or ()),
         chapter_hook_strategy=str(data.get("chapter_hook_strategy") or ""),
         min_hype_per_chapter=int(data.get("min_hype_per_chapter", 1)),
+        golden_three_peak_count=max(1, int(data.get("golden_three_peak_count", 2))),
     )
 
 
@@ -832,6 +853,7 @@ def hype_scheme_from_preset_overrides(
             "comedic_beat_density_target",
             "payoff_window_chapters",
             "min_hype_per_chapter",
+            "golden_three_peak_count",
         )
     )
     if not has_hype_config and _looks_like_commercial_market(market):
@@ -848,6 +870,7 @@ def hype_scheme_from_preset_overrides(
         selling_points=tuple(market.get("selling_points") or ()),
         hook_keywords=tuple(market.get("hook_keywords") or ()),
         chapter_hook_strategy=str(market.get("chapter_hook_strategy") or ""),
+        golden_three_peak_count=max(1, int(hype.get("golden_three_peak_count", 2))),
     )
 
 
@@ -1036,6 +1059,170 @@ def classify_hype(
 _ENDING_TERMINATORS_ZH = "。！？…"
 _ENDING_TERMINATORS_EN = ".!?"
 _ENDING_TRAILING_CLOSERS = "”’」』\"'）)]】》"
+
+
+@dataclass(frozen=True)
+class RealizedPayoff:
+    """一段**正文里真实存在**的爽点结算片段，带可追溯的出处。
+
+    2026-09-10 (W3)。此前"爽点保全"只有一条泛化的三拍硬约束，
+    没有任何指向**正文中已经写出来的那一段**的锚点，也没有出处可查：
+    ``classify_hype`` 只返回 ``(type, confidence)``，不返回命中的句子，
+    于是审计与修复都无法引用"上一稿到底写的是哪一句"。
+    """
+
+    sentence: str
+    char_start: int
+    char_end: int
+    hype_type: str
+    matched_keyword: str
+    keyword_hits: int
+    sentence_index: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sentence": self.sentence,
+            "char_start": self.char_start,
+            "char_end": self.char_end,
+            "hype_type": self.hype_type,
+            "matched_keyword": self.matched_keyword,
+            "keyword_hits": self.keyword_hits,
+            "sentence_index": self.sentence_index,
+        }
+
+
+def _split_sentences_with_offsets(
+    text: str, language: str
+) -> list[tuple[str, int, int]]:
+    """切成 (句子, 起始偏移, 结束偏移)，保留句末标点。确定性、无正则回溯。"""
+
+    terminators = (
+        _ENDING_TERMINATORS_ZH
+        if (language or "").lower().startswith("zh")
+        else _ENDING_TERMINATORS_EN
+    )
+    rows: list[tuple[str, int, int]] = []
+    start = 0
+    for index, char in enumerate(text):
+        if char in terminators or char == "\n":
+            chunk = text[start : index + 1]
+            if chunk.strip():
+                rows.append((chunk.strip(), start, index + 1))
+            start = index + 1
+    tail = text[start:]
+    if tail.strip():
+        rows.append((tail.strip(), start, len(text)))
+    return rows
+
+
+def locate_realized_payoff(
+    text: str,
+    language: str = "zh-CN",
+    *,
+    min_hits: int = 1,
+    max_chars: int = 200,
+) -> RealizedPayoff | None:
+    """在**正文**里定位本章实际发生的爽点结算片段，并给出出处。
+
+    纯确定性：按句切分 → 统计每句的爽点关键词命中 → 取命中最多的一句。
+    命中相同时取**更靠后**的一句（结算段通常落在动作之后）。
+    返回句子原文 + 字符区间 + 命中的关键词，供 prompt 锚点与审计引用。
+
+    这是**定位**，不是新的评分器：不改变 ``classify_hype`` 的既有口径，
+    也不参与任何阈值判定。返回 ``None`` 表示这段正文里读不出可引用的结算片段
+    （诚实信号，调用方不得用假片段填充）。
+    """
+
+    if not text or not text.strip():
+        return None
+
+    table = _keywords_for_language(language)
+    is_en = (language or "").lower().startswith("en")
+    best: RealizedPayoff | None = None
+    for index, (sentence, start, end) in enumerate(
+        _split_sentences_with_offsets(text, language)
+    ):
+        haystack = sentence.lower() if is_en else sentence
+        best_hits = 0
+        best_keyword = ""
+        best_type: str | None = None
+        for hype_type, keywords in table.items():
+            hits = 0
+            top_keyword = ""
+            top_count = 0
+            for keyword in keywords:
+                needle = keyword.lower() if is_en else keyword
+                count = haystack.count(needle)
+                if count:
+                    hits += count
+                    if count > top_count:
+                        top_count = count
+                        top_keyword = keyword
+            if hits > best_hits:
+                best_hits = hits
+                best_keyword = top_keyword
+                best_type = str(getattr(hype_type, "value", hype_type))
+        if best_type is None or best_hits < min_hits:
+            continue
+        candidate = RealizedPayoff(
+            sentence=sentence[:max_chars],
+            char_start=start,
+            char_end=end,
+            hype_type=best_type,
+            matched_keyword=best_keyword,
+            keyword_hits=best_hits,
+            sentence_index=index,
+        )
+        # 命中数优先；相同则取更靠后的一句（结算通常在动作之后）。
+        if best is None or (candidate.keyword_hits, candidate.char_start) >= (
+            best.keyword_hits,
+            best.char_start,
+        ):
+            best = candidate
+    return best
+
+
+def describe_payoff_change(
+    before_body: str | None,
+    after_body: str | None,
+    language: str = "zh-CN",
+) -> dict[str, Any]:
+    """把「新稿修好了什么 / 损失了哪些已有成效」里的**兑现成效**单独判出来。
+
+    2026-09-10 (W3)。采用核对必须能引用**具体、可定位**的事实（哪一句、
+    哪个字符区间），而不是只报一个分数——分数升高却事实矛盾、或分数下降
+    但情节成效仍在，都是「分数」这把尺子分不开的情形。
+
+    这里**只描述**，不做任何采纳否决：调用方把它写进采用/审计记录，由人或有界
+    修复消费。四值裁决：
+
+      * ``no_payoff_before``——原稿本来就读不出兑现段，本章不适用；
+      * ``kept``——原稿那一句**逐字**仍在改稿里；
+      * ``lost``——改稿里再也读不出可定位的兑现段（稳定、可定位的损失）；
+      * ``changed``——改稿仍有兑现段，但不是原来那一句（可能是改写/增强）。
+    """
+
+    before = locate_realized_payoff(before_body or "", language)
+    after = locate_realized_payoff(after_body or "", language)
+    kept = False
+    if before is not None and after is not None:
+        kept = before.sentence.strip() in (after_body or "")
+    if before is None:
+        verdict = "no_payoff_before"
+    elif kept:
+        verdict = "kept"
+    elif after is None:
+        verdict = "lost"
+    else:
+        verdict = "changed"
+    return {
+        "verdict": verdict,
+        "had_payoff_before": before is not None,
+        "has_payoff_after": after is not None,
+        "kept_before_sentence": kept,
+        "before": before.to_dict() if before is not None else None,
+        "after": after.to_dict() if after is not None else None,
+    }
 
 
 def extract_ending_sentence(text: str, language: str = "zh-CN") -> str:

@@ -58,6 +58,7 @@ def build_signing_readiness_report(
     unlock_line_ratio: float = DEFAULT_UNLOCK_LINE_RATIO,
     protagonist_name: str | None = None,
     target_word_count: int | None = None,
+    semantic_context: Any = None,
 ) -> dict[str, Any]:
     total_words = count_words(full_text)
     opening = evaluate_fanqie_short_opening_gate(
@@ -81,7 +82,7 @@ def build_signing_readiness_report(
     word_delta_pct = (
         abs(total_words - target) / target * 100.0 if target > 0 else 0.0
     )
-    return {
+    report = {
         "platform": "tomato_short",
         "total_words": total_words,
         "target_word_count": target,
@@ -104,6 +105,25 @@ def build_signing_readiness_report(
             and word_delta_pct <= 15.0
         ),
     }
+    if semantic_context is not None:
+        from bestseller.services.fanqie_short_semantic_readiness import semantic_readiness_view
+        view = semantic_readiness_view(
+            semantic_context, full_text=full_text, title=title,
+            unlock_line_ratio=unlock_line_ratio, protagonist_name=protagonist_name,
+        )
+        gates = {key: view[key] for key in (
+            "opening_gate_passed", "ranking_gate_passed", "short_v2_gate_passed")}
+        derived = view["semantic_derived_review"]
+        # Raw heuristic flags/findings above remain unchanged, even when a
+        # narrowly scoped finding has verified semantic counterevidence.
+        report["semantic_derived_gates"] = gates
+        report["semantic_derived_review"] = derived
+        report["semantic_adjudication_trace"] = derived["adjudication_trace"]
+        report["ready_for_upload"] = (
+            all(gates.values()) and not derived["remaining_blockers"]
+            and not taboo and word_delta_pct <= 15.0
+        )
+    return report
 
 
 def _clean_fanqie_short_body(full_text: str) -> str:
@@ -126,6 +146,7 @@ def export_fanqie_short_markdown(
     unlock_line_ratio: float = DEFAULT_UNLOCK_LINE_RATIO,
     protagonist_name: str | None = None,
     target_word_count: int | None = None,
+    semantic_context: Any = None,
 ) -> dict[str, str]:
     """写入 ``exports/fanqie-short.md`` 与 ``exports/signing-readiness.json``。"""
     exports_dir = output_dir / "exports"
@@ -146,6 +167,7 @@ def export_fanqie_short_markdown(
         unlock_line_ratio=unlock_line_ratio,
         protagonist_name=protagonist_name,
         target_word_count=target_word_count,
+        semantic_context=semantic_context,
     )
     readiness["unlock_line_char_position"] = unlock_pos
     json_path = exports_dir / "signing-readiness.json"
@@ -169,6 +191,7 @@ def export_fanqie_short_rejected_draft(
     unlock_line_ratio: float = DEFAULT_UNLOCK_LINE_RATIO,
     protagonist_name: str | None = None,
     target_word_count: int | None = None,
+    semantic_context: Any = None,
 ) -> dict[str, str]:
     """Write a non-uploadable audit copy when the whole-piece gates fail."""
     rejected_dir = output_dir / "rejected-drafts"
@@ -180,6 +203,7 @@ def export_fanqie_short_rejected_draft(
         unlock_line_ratio=unlock_line_ratio,
         protagonist_name=protagonist_name,
         target_word_count=target_word_count,
+        semantic_context=semantic_context,
     )
     readiness["ready_for_upload"] = False
 

@@ -88,6 +88,10 @@ class PersonaSimulationResult(BaseModel):
 
     aggregated_concerns: list[str] = Field(default_factory=list)
     next_chapter_directives: list[str] = Field(default_factory=list)
+    # 2026-09-10 (W4-3)：由默认常数代替、**未实测**的通道名（如 ["novelty",
+    # "consistency"]）。空列表＝全部实测。让调用方能区分"测出来的低分"与
+    # "默认值带来的分"。默认空，兼容既有落盘 JSON。
+    unmeasured_channels: list[str] = Field(default_factory=list)
 
     def to_feedback_card(self) -> dict[str, Any]:
         return {
@@ -97,5 +101,6 @@ class PersonaSimulationResult(BaseModel):
             "high_risk_personas": list(self.high_risk_personas),
             "aggregated_concerns": list(self.aggregated_concerns),
             "next_chapter_directives": list(self.next_chapter_directives),
+            "unmeasured_channels": list(self.unmeasured_channels),
             "per_persona": [p.model_dump(mode="json") for p in self.per_persona],
         }

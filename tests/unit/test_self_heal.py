@@ -1847,11 +1847,7 @@ async def test_find_stuck_projects_ignores_at_target_project(
 async def test_reap_orphan_workflow_runs_by_startup_cutoff(
     now: _dt.datetime,
 ) -> None:
-    """Worker startup must reap every active row written before boot.
-
-    Without this, workflow rows left over from the previous (dead) container
-    block the new worker from restarting stuck projects.
-    """
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-5")
     old = now - _dt.timedelta(minutes=45)
     fresh = now - _dt.timedelta(seconds=5)
@@ -1876,10 +1872,9 @@ async def test_reap_orphan_workflow_runs_by_startup_cutoff(
     startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
     reaped = await reap_orphan_workflow_runs(session, startup_cutoff=startup_cutoff)
 
-    # Only the pre-boot row is reaped; the freshly-written one is assumed to
-    # belong to the current worker.
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    # Neither row has a verifiable native owner; boot age grants no authority.
+    assert reaped == 0
+    assert runs[0].status == "running"
     assert runs[1].status == "running"
 
 
@@ -1887,7 +1882,7 @@ async def test_reap_orphan_workflow_runs_by_startup_cutoff(
 async def test_reap_orphan_workflow_runs_by_startup_created_at(
     now: _dt.datetime,
 ) -> None:
-    """A pre-boot child row is stale even if it heartbeated right before restart."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-created-before-boot")
     startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
     runs = [
@@ -1907,15 +1902,15 @@ async def test_reap_orphan_workflow_runs_by_startup_created_at(
         startup_cutoff=startup_cutoff,
     )
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_preserves_in_progress_project(
     now: _dt.datetime,
 ) -> None:
-    """Startup self-heal must not reap a project owned by a live ARQ job."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     protected = _FakeProject(id=uuid4(), slug="book-live")
     stale = _FakeProject(id=uuid4(), slug="book-stale")
     startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
@@ -1945,16 +1940,16 @@ async def test_reap_orphan_workflow_runs_preserves_in_progress_project(
         protected_project_ids={protected.id},
     )
 
-    assert reaped == 1
+    assert reaped == 0
     assert runs[0].status == "running"
-    assert runs[1].status == "failed"
+    assert runs[1].status == "running"
 
 
 @pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_by_heartbeat_timeout(
     now: _dt.datetime,
 ) -> None:
-    """When no startup_cutoff is provided, falls back to heartbeat timeout."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-6")
     runs = [
         _FakeWorkflowRun(
@@ -1969,15 +1964,15 @@ async def test_reap_orphan_workflow_runs_by_heartbeat_timeout(
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_reaps_volume_planning_rows(
     now: _dt.datetime,
 ) -> None:
-    """Per-volume planner rows are worker-owned and must not stay running forever."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-volume-plan")
     runs = [
         _FakeWorkflowRun(
@@ -1992,15 +1987,15 @@ async def test_reap_orphan_workflow_runs_reaps_volume_planning_rows(
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_reaps_project_repair_by_heartbeat(
     now: _dt.datetime,
 ) -> None:
-    """Project repair rows have a worker DB heartbeat and should not stall forever."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-repair")
     runs = [
         _FakeWorkflowRun(
@@ -2015,19 +2010,15 @@ async def test_reap_orphan_workflow_runs_reaps_project_repair_by_heartbeat(
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_reaps_project_repair_on_short_window(
     now: _dt.datetime,
 ) -> None:
-    """Project repair heartbeats per chapter (60s), so a 45-min-stale row is a
-    dead worker and must reap on the short (30-min) window — not wait the 3h
-    planning timeout. Leaving it ``running`` keeps the synthetic ``db-repair:``
-    card "running", which deadlocks the dashboard Stop/Delete buttons.
-    """
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-repair-short-window")
     runs = [
         _FakeWorkflowRun(
@@ -2045,8 +2036,8 @@ async def test_reap_orphan_workflow_runs_reaps_project_repair_on_short_window(
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
 
 
 @pytest.mark.asyncio
@@ -2077,7 +2068,7 @@ async def test_reap_orphan_workflow_runs_preserves_live_project_repair_heartbeat
 async def test_reap_orphan_workflow_runs_reaps_project_repair_by_startup_cutoff(
     now: _dt.datetime,
 ) -> None:
-    """A repair row from a previous worker must not block startup self-heal."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-repair-startup")
     startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
     runs = [
@@ -2102,8 +2093,8 @@ async def test_reap_orphan_workflow_runs_reaps_project_repair_by_startup_cutoff(
 
     reaped = await reap_orphan_workflow_runs(session, startup_cutoff=startup_cutoff)
 
-    assert reaped == 1
-    assert runs[0].status == "failed"
+    assert reaped == 0
+    assert runs[0].status == "running"
     assert runs[1].status == "running"
 
 
@@ -2111,7 +2102,7 @@ async def test_reap_orphan_workflow_runs_reaps_project_repair_by_startup_cutoff(
 async def test_reap_orphan_workflow_runs_reaps_child_when_parent_terminal(
     now: _dt.datetime,
 ) -> None:
-    """A child scene workflow cannot remain running after its parent failed."""
+    """Age/parent status without a verifiable native owner must remain UNKNOWN."""
     p = _FakeProject(id=uuid4(), slug="book-child")
     parent_failed_id = uuid4()
     parent_active_id = uuid4()
@@ -2154,8 +2145,8 @@ async def test_reap_orphan_workflow_runs_reaps_child_when_parent_terminal(
         startup_cutoff=now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS),
     )
 
-    assert reaped == 1
-    assert runs[1].status == "failed"
+    assert reaped == 0
+    assert runs[1].status == "running"
     assert runs[3].status == "running"
 
 
@@ -2178,7 +2169,7 @@ async def test_active_arq_project_slugs_reads_in_progress_payload() -> None:
         },
     )
 
-    assert await _active_arq_project_slugs(redis) == {"book-live"}
+    assert await _active_arq_project_slugs(redis) is None  # job-2 has no attributable owner
 
 
 @pytest.mark.asyncio
@@ -2240,9 +2231,9 @@ async def test_resolve_project_ids_for_slugs_requires_fresh_active_workflow() ->
 
     assert protected == {project_id}
     sql = str(session.statement)
-    assert "JOIN projects" in sql
-    assert "workflow_runs.status IN" in sql
-    assert "workflow_runs.updated_at >=" in sql
+    assert "FROM projects" in sql
+    assert "projects.slug IN" in sql
+    assert "workflow_runs.updated_at" not in sql  # a live lease protects even a stale DB row
 
 
 @pytest.mark.asyncio
@@ -2391,7 +2382,9 @@ async def test_heal_stuck_projects_does_not_reacquire_after_marker_timeout(
     )
 
     assert dispatched == []
-    assert acquire_calls == ["worker-waiter"]
+    assert len(acquire_calls) == 1
+    assert acquire_calls[0].startswith("worker-waiter:")
+    assert len(acquire_calls[0].rsplit(":",1)[1]) == 32
 
 
 @pytest.mark.asyncio
@@ -2535,6 +2528,24 @@ class _FakeArqPool:
 
     async def exists(self, *keys: str) -> int:
         return sum(1 for key in keys if key in self.existing_keys)
+
+    async def get(self, key: str) -> bytes | None:
+        return b"fixture" if key in self.existing_keys else None
+
+    async def pttl(self, key: str) -> int:
+        return -1 if key in self.existing_keys else -2
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> Any:
+        # This legacy double only acknowledges the atomic cleanup boundary;
+        # actual Lua predicates/races are covered against disposable Redis.
+        job, active, result, retry, queue = args[:numkeys]
+        job_id = args[numkeys]
+        if active in self.existing_keys or await self.zscore(queue, job_id) is not None:
+            return [] if "ghost-snapshot-v1" in script else 0
+        if "ghost-snapshot-v1" in script:
+            return [await self.get(key) for key in (job, result, retry)] + [
+                await self.pttl(key) for key in (job, result, retry)]
+        return await self.delete(job, result, retry)
 
     async def delete(self, *keys: str) -> int:
         self.deleted.extend(keys)
@@ -2773,8 +2784,8 @@ async def test_requeue_outline_replan_clears_terminal_result_before_retry() -> N
 
 
 @pytest.mark.asyncio
-async def test_requeue_autowrite_clears_stale_in_progress_before_retry() -> None:
-    """A ghost in-progress ARQ key must not permanently block self-heal."""
+async def test_requeue_autowrite_preserves_in_progress_until_lease_expires() -> None:
+    """An old queue score alone cannot prove an executor is dead."""
     from bestseller.worker.self_heal import _requeue_autowrite
 
     job_id = "autowrite:heal:book-ghost"
@@ -2798,17 +2809,15 @@ async def test_requeue_autowrite_clears_stale_in_progress_before_retry() -> None
 
     actual_job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
 
-    assert actual_job_id == job_id
-    assert len(pool.enqueued) == 2
-    assert f"arq:job:{job_id}" in pool.deleted
-    assert f"arq:in-progress:{job_id}" in pool.deleted
-    assert f"arq:retry:{job_id}" in pool.deleted
-    assert ("arq:queue", job_id) in pool.zremoved
+    assert actual_job_id is None
+    assert len(pool.enqueued) == 1
+    assert pool.deleted == []
+    assert pool.zremoved == []
 
 
 @pytest.mark.asyncio
-async def test_requeue_autowrite_clears_stale_repair_owner() -> None:
-    """A stale repair owner must not suppress autowrite recovery forever."""
+async def test_requeue_autowrite_preserves_in_progress_repair_owner() -> None:
+    """An in-progress repair owner must not be deleted by continuation."""
     from bestseller.worker.self_heal import _requeue_autowrite
 
     repair_job_id = "repair:heal:book-cross-stale"
@@ -2831,14 +2840,14 @@ async def test_requeue_autowrite_clears_stale_repair_owner() -> None:
 
     job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
 
-    assert job_id == "autowrite:heal:book-cross-stale"
-    assert f"arq:in-progress:{repair_job_id}" in pool.deleted
-    assert ("arq:queue", repair_job_id) in pool.zremoved
+    assert job_id is None
+    assert pool.deleted == []
+    assert pool.zremoved == []
 
 
 @pytest.mark.asyncio
-async def test_requeue_repair_clears_stale_autowrite_owner() -> None:
-    """A stale autowrite owner must not suppress repair recovery forever."""
+async def test_requeue_repair_preserves_in_progress_autowrite_owner() -> None:
+    """An in-progress continuation owner must not be deleted by repair."""
     from bestseller.worker.self_heal import _requeue_repair
 
     autowrite_job_id = "autowrite:heal:book-cross-stale"
@@ -2862,9 +2871,9 @@ async def test_requeue_repair_clears_stale_autowrite_owner() -> None:
 
     job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
 
-    assert job_id == "repair:heal:book-cross-stale"
-    assert f"arq:in-progress:{autowrite_job_id}" in pool.deleted
-    assert ("arq:queue", autowrite_job_id) in pool.zremoved
+    assert job_id is None
+    assert pool.deleted == []
+    assert pool.zremoved == []
 
 
 # ---------------------------------------------------------------------------
@@ -2901,7 +2910,7 @@ async def test_heal_stuck_projects_skips_delete_tombstoned(
     from bestseller.worker import self_heal as sh
 
     tombstoned = StuckProject(
-        project_id="p-dead",
+        project_id=uuid4(),
         slug="book-deleted",
         reason="under_target",
         stuck_at_chapter=None,
@@ -2909,7 +2918,7 @@ async def test_heal_stuck_projects_skips_delete_tombstoned(
         chapters_with_draft=3,
     )
     alive = StuckProject(
-        project_id="p-alive",
+        project_id=uuid4(),
         slug="book-alive",
         reason="under_target",
         stuck_at_chapter=None,
@@ -2950,16 +2959,14 @@ async def test_heal_stuck_projects_skips_delete_tombstoned(
     monkeypatch.setattr(sh, "_active_arq_project_slugs", _async_empty_set)
     monkeypatch.setattr(sh, "_resolve_project_ids_for_slugs", _async_empty_set)
     monkeypatch.setattr(sh, "_try_acquire_heal_lock", _async_true)
-    monkeypatch.setattr(sh, "_has_active_continuation_pipeline_run", _async_false)
-    monkeypatch.setattr(sh, "_has_active_pipeline_run", _async_false)
-    monkeypatch.setattr(sh, "_clear_auto_resumable_generation_gate_pause", _async_false)
     monkeypatch.setattr(sh, "_requeue_stuck_project", _fake_requeue)
-    monkeypatch.setattr(
-        sh, "_compute_heal_progress_state", lambda meta, total: (meta, False)
-    )
-    monkeypatch.setattr(
-        sh, "get_server_session", lambda: _NullSessionCM(_FakeProject(id="p", slug="x"))
-    )
+    from contextlib import asynccontextmanager
+    database = _FakeSession(projects=[_FakeProject(id=alive.project_id,slug=alive.slug)],
+                            runs=[],chapters=[],drafts=[])
+    @asynccontextmanager
+    async def actual_session():
+        yield database
+    monkeypatch.setattr(sh, "get_server_session", actual_session)
     monkeypatch.setattr(
         sh,
         "is_project_delete_tombstoned",
@@ -3003,10 +3010,10 @@ class _FakeOrphanArqPool(_FakeArqPool):
         self.pttls = pttls or {}
 
     async def get(self, key: str) -> bytes | None:
-        return self.job_payloads.get(key)
+        return self.job_payloads.get(key, await super().get(key))
 
     async def pttl(self, key: str) -> int:
-        return self.pttls.get(key, -2)
+        return self.pttls.get(key, await super().pttl(key))
 
 
 def _job_payload_bytes(age_seconds: float) -> bytes:
@@ -3159,3 +3166,88 @@ async def test_requeue_repair_keeps_young_half_enqueued_job() -> None:
 
     assert actual_job_id is None
     assert f"arq:job:{job_id}" not in pool.deleted
+
+
+@pytest.fixture(autouse=True)
+async def _native_legacy_database(tmp_path, monkeypatch):
+    """Execute legacy detector fixtures against actual isolated SQL and controls.
+
+    The old list-backed session predates control/budget/window guards. Retain
+    the input builders, but do not emulate authorization with mock booleans.
+    """
+    import copy
+    from dataclasses import asdict
+    from sqlalchemy import JSON, MetaData, String
+    from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.schema import CreateTable
+    from bestseller.infra.db.models import (ProjectModel, WorkflowRunModel, ChapterModel,
+        ChapterDraftVersionModel, RewriteTaskModel, BookProductionControlModel, ExecutionBudgetModel)
+    from bestseller.services.retry_ledger import project_execution_scope
+    sessions=[]
+    original=_FakeSession
+
+    class NativeSession(original):
+        def __init__(self,*args,**kwargs):
+            super().__init__(*args,**kwargs);self.sql=None;self.engine=None;self.links=[];sessions.append(self)
+        async def ensure(self):
+            if self.sql is not None:return
+            path=tmp_path/f'legacy_owner_{len(sessions)}_{uuid4().hex}_test.sqlite3'
+            self.engine=create_async_engine('sqlite+aiosqlite:///'+str(path))
+            models=(ProjectModel,WorkflowRunModel,ChapterModel,ChapterDraftVersionModel,RewriteTaskModel,
+                    BookProductionControlModel,ExecutionBudgetModel)
+            def ddl(c):
+                for model in models:
+                    table=model.__table__.to_metadata(MetaData())
+                    for col in table.c:
+                        if isinstance(col.type,JSONB):col.type=JSON()
+                        if isinstance(col.type,PGUUID):col.type=String(32)
+                        if col.server_default and '::jsonb' in str(col.server_default.arg):col.server_default=None
+                    c.execute(CreateTable(table,include_foreign_key_constraints=[]))
+            async with self.engine.begin() as c:
+                actual=(await c.exec_driver_sql('PRAGMA database_list')).all()
+                assert actual[0][2]==str(path) and 'test' in path.name
+                await c.run_sync(ddl)
+            self.sql=async_sessionmaker(self.engine,expire_on_commit=False)()
+            for source in self.projects:
+                values={k:v for k,v in asdict(source).items() if v is not None}
+                values.setdefault('created_at',_dt.datetime.now(_dt.UTC)-_dt.timedelta(days=1))
+                values.setdefault('updated_at',values['created_at'])
+                row=ProjectModel(**values,title='test',genre='test',target_word_count=8000)
+                self.sql.add(row);self.links.append((source,row))
+                self.sql.add(BookProductionControlModel(project_id=row.id,desired_state='run',command_serial=1))
+                self.sql.add(ExecutionBudgetModel(scope_id=project_execution_scope(row),max_calls=300,max_tokens=1000000,
+                    calls_used=0,tokens_charged=0,status='active',deadline_at=_dt.datetime.now(_dt.UTC)+_dt.timedelta(days=1),metadata_json={}))
+            for source in self.runs:
+                row=WorkflowRunModel(**{k:v for k,v in asdict(source).items() if v is not None})
+                self.sql.add(row);self.links.append((source,row))
+            for index,source in enumerate(self.chapters,1):
+                values=asdict(source);values['chapter_number']=values['chapter_number'] or index
+                row=ChapterModel(**values,chapter_goal='test');self.sql.add(row);self.links.append((source,row))
+            chapter_projects={c.id:c.project_id for c in self.chapters}
+            for index,source in enumerate(self.drafts,1):
+                row=ChapterDraftVersionModel(**asdict(source),project_id=chapter_projects[source.chapter_id],version_no=index)
+                self.sql.add(row);self.links.append((source,row))
+            for source in self.rewrite_tasks:
+                row=RewriteTaskModel(**asdict(source),rewrite_strategy='bounded-test',instructions='test')
+                self.sql.add(row);self.links.append((source,row))
+            await self.sql.commit()
+        def sync(self):
+            for original,row in self.links:
+                for key in original.__dataclass_fields__:
+                    if key in row.__dict__:setattr(original,key,copy.deepcopy(row.__dict__[key]))
+        async def scalar(self,*a,**k):await self.ensure();return await self.sql.scalar(*a,**k)
+        async def scalars(self,*a,**k):await self.ensure();return await self.sql.scalars(*a,**k)
+        async def execute(self,*a,**k):await self.ensure();return await self.sql.execute(*a,**k)
+        async def get(self,*a,**k):await self.ensure();return await self.sql.get(*a,**k)
+        async def flush(self):await self.ensure();await self.sql.flush();self.sync()
+        async def commit(self):await self.ensure();await self.sql.commit();self.sync();self.committed=True
+        async def rollback(self):
+            if self.sql is not None:await self.sql.rollback()
+        @property
+        def no_autoflush(self):return self.sql.no_autoflush
+    monkeypatch.setattr(__import__(__name__), '_FakeSession', NativeSession)
+    yield
+    for session in sessions:
+        if session.sql is not None:await session.sql.close()
+        if session.engine is not None:await session.engine.dispose()

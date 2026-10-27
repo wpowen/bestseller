@@ -1,4 +1,4 @@
-"""书名里出现「账/债」，把冠军位让给不带它的候选。
+"""书名默认族词面信号只做审计，不改变候选资格或排序。
 
 用户 2026-08-24 报「债务这块的问题反反复复一直出现」。跨书量书名：
 
@@ -37,13 +37,13 @@ _CLEAN_A = _c("他快死了而我是那道雷")
 _CLEAN_B = _c("二十七米封神")
 
 
-class TestDemotion:
-    def test_debt_title_yields_to_a_clean_one(self) -> None:
-        kept, demoted = demote_default_family_titles(
+class TestAdvisoryObservation:
+    def test_debt_title_stays_eligible_and_is_observed(self) -> None:
+        kept, observed = demote_default_family_titles(
             [_DIRTY_A, _CLEAN_A], user_named_family=False
         )
-        assert [c.title for c in kept] == ["他快死了而我是那道雷"]
-        assert [c.title for c in demoted] == ["别人借力我替他们还债"]
+        assert [c.title for c in kept] == ["别人借力我替他们还债", "他快死了而我是那道雷"]
+        assert [c.title for c in observed] == ["别人借力我替他们还债"]
 
     def test_short_titles_trigger_on_a_single_hit(self) -> None:
         """书名短，`is_debt_dominated` 够不上；单次命中即算。"""
@@ -51,35 +51,42 @@ class TestDemotion:
         from bestseller.services.anti_default_motif import is_debt_dominated
 
         assert not is_debt_dominated(_DIRTY_A.title)  # 记录：支配判据不适用
-        kept, demoted = demote_default_family_titles(
+        kept, observed = demote_default_family_titles(
             [_DIRTY_B, _CLEAN_B], user_named_family=False
         )
-        assert [c.title for c in demoted] == ["灶底师祖逼我翻旧账"]
+        assert [c.title for c in kept] == ["灶底师祖逼我翻旧账", "二十七米封神"]
+        assert [c.title for c in observed] == ["灶底师祖逼我翻旧账"]
 
     def test_order_preserved(self) -> None:
         kept, _ = demote_default_family_titles(
             [_CLEAN_A, _DIRTY_A, _CLEAN_B], user_named_family=False
         )
-        assert [c.title for c in kept] == ["他快死了而我是那道雷", "二十七米封神"]
+        assert [c.title for c in kept] == [
+            "他快死了而我是那道雷",
+            "别人借力我替他们还债",
+            "二十七米封神",
+        ]
 
 
 class TestNeverEmpty:
     def test_all_dirty_ships_unchanged(self) -> None:
-        kept, demoted = demote_default_family_titles(
+        kept, observed = demote_default_family_titles(
             [_DIRTY_A, _DIRTY_B], user_named_family=False
         )
-        assert len(kept) == 2 and not demoted
+        assert len(kept) == 2
+        assert observed == [_DIRTY_A, _DIRTY_B]
 
     def test_empty_input(self) -> None:
         assert demote_default_family_titles([], user_named_family=False) == ([], [])
 
 
 class TestUserIntent:
-    def test_user_named_family_is_untouched(self) -> None:
-        kept, demoted = demote_default_family_titles(
+    def test_user_named_family_is_untouched_and_observed(self) -> None:
+        kept, observed = demote_default_family_titles(
             [_DIRTY_A, _CLEAN_A], user_named_family=True
         )
-        assert len(kept) == 2 and not demoted
+        assert len(kept) == 2
+        assert observed == [_DIRTY_A]
 
 
 class TestNoFalsePositives:
@@ -94,10 +101,11 @@ class TestNoFalsePositives:
 
         for t in ("二十七米封神", "为什么我砸的每片炉灰都还活着", "废丹成神",
                   "他快死了而我是那道雷"):
-            kept, demoted = demote_default_family_titles(
+            kept, observed = demote_default_family_titles(
                 [_c(t), _DIRTY_A], user_named_family=False
             )
-            assert [c.title for c in kept] == [t], t
+            assert [c.title for c in kept] == [t, _DIRTY_A.title], t
+            assert observed == [_DIRTY_A], t
 
 
 def test_the_tournament_uses_it() -> None:

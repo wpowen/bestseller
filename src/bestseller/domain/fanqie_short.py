@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Mapping
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bestseller.domain.enums import ProjectType
 
@@ -47,6 +48,30 @@ class FanqieShortBeat(BaseModel):
     continuity_contract: dict[str, Any] = Field(default_factory=dict)
     # 该段在「信念弧」上的位置：建立→受压→碎裂→重建。由母题内核派生，advisory。
     thesis_vector: str = Field(default="", max_length=500)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_contract_states(cls, data: object) -> object:
+        """Wrap literal state text without mutating caller/provider evidence."""
+        if not isinstance(data, dict):
+            return data
+        data = deepcopy(data)
+        for contract_field in (
+            "opening_contract",
+            "unlock_contract",
+            "ability_cost_contract",
+            "payoff_contract",
+            "closure_contract",
+            "continuity_contract",
+        ):
+            contract = data.get(contract_field)
+            if not isinstance(contract, dict):
+                continue
+            for state_field in ("entry_state", "exit_state"):
+                state = contract.get(state_field)
+                if isinstance(state, str):
+                    contract[state_field] = {"summary": state}
+        return data
 
 
 class FanqieShortBeatSheet(BaseModel):

@@ -10,6 +10,7 @@ from bestseller.api.schemas.projects import (
     ProjectResponse,
 )
 from bestseller.infra.db.models import NovelScorecardModel, ProjectModel, StyleGuideModel
+from bestseller.services.listing_errors import listing_conflict_detail
 
 router = APIRouter(tags=["projects"])
 
@@ -25,10 +26,7 @@ async def list_projects(
     total = total_result.scalar_one()
 
     result = await session.execute(
-        select(ProjectModel)
-        .order_by(ProjectModel.created_at.desc())
-        .offset(offset)
-        .limit(limit)
+        select(ProjectModel).order_by(ProjectModel.created_at.desc()).offset(offset).limit(limit)
     )
     items = [ProjectResponse.model_validate(p) for p in result.scalars()]
     return ProjectListResponse(items=items, total=total)
@@ -44,6 +42,18 @@ async def create_project(
     from bestseller.domain.project import ProjectCreate
     from bestseller.services.genre_taxonomy import resolve_selection
     from bestseller.services.projects import create_project as svc_create
+
+    if body.target_chapters >= 30:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "LONG_FORM_CONCEPTION_REQUIRED",
+                "message": (
+                    "长篇新书必须通过构思、连载性与正式包装门禁创建，"
+                    "请使用任务快速创建流程。"
+                ),
+            },
+        )
 
     resolved = resolve_selection(body.channel, body.genre, body.sub_genre, body.tags)
     metadata = {
@@ -111,12 +121,18 @@ async def get_project_listing(
         style_guide,
     ).model_dump(mode="json")
     story_bible = await build_story_bible_overview(session, slug)
-    return build_book_listing_profile(
-        project=project,
-        writing_profile=writing_profile,
-        story_bible=story_bible,
-        output_base_dir=settings.output.base_dir,
-    )
+    try:
+        return build_book_listing_profile(
+            project=project,
+            writing_profile=writing_profile,
+            story_bible=story_bible,
+            output_base_dir=settings.output.base_dir,
+        )
+    except ValueError as exc:
+        detail = listing_conflict_detail(exc)
+        if detail is None:
+            raise
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
 
 
 @router.get("/projects/{slug}/ranking-readiness")
@@ -143,12 +159,18 @@ async def get_project_ranking_readiness(
     style_guide = await session.get(StyleGuideModel, project.id)
     writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
     story_bible = await build_story_bible_overview(session, slug)
-    listing_profile = build_book_listing_profile(
-        project=project,
-        writing_profile=writing_profile,
-        story_bible=story_bible,
-        output_base_dir=settings.output.base_dir,
-    )
+    try:
+        listing_profile = build_book_listing_profile(
+            project=project,
+            writing_profile=writing_profile,
+            story_bible=story_bible,
+            output_base_dir=settings.output.base_dir,
+        )
+    except ValueError as exc:
+        detail = listing_conflict_detail(exc)
+        if detail is None:
+            raise
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
     scorecard = await session.get(NovelScorecardModel, project.id)
     premium_report = evaluate_premium_project_readiness(project)
     report = evaluate_project_ranking_readiness(
@@ -163,7 +185,37 @@ async def get_project_ranking_readiness(
         ),
         premium_gate_score=premium_report.score,
     )
-    return report.to_dict()
+    from bestseller.services.canonical_book_readiness import (
+        load_canonical_book_readiness,
+    )
+
+    canonical = await load_canonical_book_readiness(session, project)
+    payload = report.to_dict()
+    payload["canonical_release_decision"] = canonical.to_dict()
+    payload["release_authority"] = "canonical_evidence_only"
+    return payload
+
+
+@router.get("/projects/{slug}/ranking-release")
+async def get_project_ranking_release(
+    slug: str,
+    session: SessionDep,
+    _key: ApiKeyDep,
+) -> dict:
+    """Read the sole commercial/ranking claim authority for a project."""
+
+    from bestseller.services.canonical_book_readiness import (
+        load_canonical_book_readiness,
+    )
+
+    result = await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{slug}' not found",
+        )
+    return (await load_canonical_book_readiness(session, project)).to_dict()
 
 
 @router.get("/projects/{slug}/structure")

@@ -68,17 +68,23 @@ class TestFallbackPathAnchorsDownstream:
 
 
 class TestRejectionIsRecorded:
-    def test_both_rejection_paths_append_a_receipt(self):
+    def test_all_rejection_paths_append_a_receipt(self):
         """撤销必须留痕，否则回执把被拒冠军显示成通过的冠军。"""
         src = inspect.getsource(conception)
-        assert src.count('"agent": "concept_tournament_winner_rejected"') == 2, (
-            "本体污染与默认母题污染两条撤销路径都必须补记回执"
+        assert src.count('"agent": "concept_tournament_winner_rejected"') == 3, (
+            "本体污染、默认母题污染、用户种子禁止污染兜底三条撤销路径"
+            "都必须补记回执"
         )
 
     def test_the_receipt_names_the_reason(self):
         src = inspect.getsource(conception)
         assert '"reason": "genre_ontology_violation"' in src
         assert '"reason": "default_motif_pollution"' in src
+        assert (
+            '"reason": "authoritative_seed_forbids_default_family_fallback"'
+            in src
+        )
+        assert "USER_SEED_DEFAULT_FAMILY_FALLBACK_FORBIDDEN" in src
 
     def test_vacuity_the_tournament_receipt_is_still_written_before_the_checks(self):
         """空转检验：主回执确实早于两处检查——所以才需要补记这一条。
@@ -89,3 +95,19 @@ class TestRejectionIsRecorded:
         receipt = src.index('"agent": "concept_tournament",')
         ontology = src.index('"reason": "genre_ontology_violation"')
         assert receipt < ontology
+
+
+class TestExhaustedTournamentFailsClosed:
+    def test_no_qualified_winner_cannot_fall_through_to_downstream_agents(self):
+        src = inspect.getsource(conception)
+        branch_start = 'if _ct_result.winner is None:'
+        exhausted = '"agent": "concept_tournament_exhausted"'
+        downstream = 'if _ct_result.winner is not None:'
+
+        assert exhausted in src
+        start = src.index(branch_start, src.index(exhausted) - 1200)
+        end = src.index(downstream, src.index(exhausted))
+        assert start < end
+        branch = src[start:end]
+        assert "CONCEPT_TOURNAMENT_NO_QUALIFIED_WINNER" in branch
+        assert "raise _exhausted_exc" in branch

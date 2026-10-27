@@ -220,7 +220,8 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
     assert counts["motif_placement_count"] >= 1
     assert counts["subplot_schedule_count"] >= 0
     assert counts["relationship_event_count"] >= 1
-    assert counts["reader_knowledge_count"] >= 1
+    # Volume planning notes are not reader-known events before prose adoption.
+    assert counts["reader_knowledge_count"] == 0
     assert counts["ending_contract_count"] == 1
     assert counts["pacing_curve_point_count"] == 2  # 2 chapters
     # Verify model types are added

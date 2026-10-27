@@ -11,6 +11,13 @@ from bestseller.services.chapter_generation_input_builder import (
 )
 
 
+def _explicit_methodology_metadata() -> dict[str, object]:
+    return {"creation_intent_contract": {
+        "field_sources": {"hook_spec": "explicit"},
+        "hook_spec": {"require_methodology_overlay": True, "methodology_contract_mode": "strict"},
+    }}
+
+
 def test_chapter_generation_input_bundle_preserves_scene_methodology_fields() -> None:
     project = SimpleNamespace(
         id=uuid4(),
@@ -20,6 +27,7 @@ def test_chapter_generation_input_bundle_preserves_scene_methodology_fields() ->
         sub_genre="镜债",
         language="zh-CN",
     )
+    project.metadata_json = _explicit_methodology_metadata()
     chapter = SimpleNamespace(
         id=uuid4(),
         chapter_number=1,
@@ -80,7 +88,7 @@ def test_chapter_generation_input_bundle_preserves_scene_methodology_fields() ->
 
     assert bundle.ready is True
     assert bundle.scenes[0]["signature_image"] == "铜钱血点从通字里冒出。"
-    assert bundle.scenes[0]["gate_function"].startswith("opening_pull")
+    assert bundle.scenes[0]["gate_function"] is None
     assert bundle.scenes[0]["visible_progress"] == "林渊用铜钱压住门缝。"
     assert bundle.scenes[0]["reader_payoff"] == "铜钱血点从通字里冒出。"
     assert bundle.scenes[0]["ending_hook_payload"] == "三短一长敲门声。"
@@ -88,32 +96,21 @@ def test_chapter_generation_input_bundle_preserves_scene_methodology_fields() ->
     assert bundle.scenes[0]["time_label"] == "23:45"
     assert bundle.scenes[0]["transition_contract"]["forbid_blank_cut"] is True
     assert bundle.scenes[0]["transition_contract"]["forbid_horizontal_rule_separator"] is True
-    assert bundle.methodology_blocks["reader_contract_block"] == "黄金三章：开篇强压力。"
-    assert bundle.acceptance_contract["schema_version"] == "chapter-acceptance-contract.v1"
-    assert bundle.acceptance_contract["front_position_rules"][
-        "opening_must_start_with_pressure"
-    ] is True
-    assert bundle.acceptance_contract["front_position_rules"][
-        "ending_must_land_on_completed_scene_frame"
-    ] is True
-    assert bundle.acceptance_contract["ending_frame_contract"]["required_if_dialogue_hook"]
-    assert bundle.acceptance_contract["knowledge_boundary_contract"]["allowed_explainers"] == [
-        "林渊"
-    ]
-    assert "认账" in bundle.acceptance_contract["knowledge_boundary_contract"][
-        "specialist_rule_terms"
-    ]
-    assert bundle.acceptance_contract["object_signal_contract"]["forbidden_shortcut"]
+    assert "reader_contract_block" not in bundle.methodology_blocks
+    channels = bundle.acceptance_contract["source_authority_channels"]
+    assert channels["ai_proposals"]["methodology_blocks"]["reader_contract_block"] == "黄金三章：开篇强压力。"
+    assert bundle.schema_version == "chapter-generation-input.v2"
+    assert bundle.acceptance_contract["schema_version"] == "chapter-acceptance-contract.v2"
+    assert bundle.acceptance_contract["front_position_rules"] == {}
+    assert bundle.acceptance_contract["ending_frame_contract"] == {}
+    assert bundle.acceptance_contract["knowledge_boundary_contract"] == {}
+    assert bundle.acceptance_contract["object_signal_contract"] == {}
     methodology_app = bundle.acceptance_contract["methodology_application_contract"]
-    assert methodology_app["schema_version"] == "methodology-application-contract.v1"
-    assert "platform_character_debt_v1" in methodology_app["profile_ids"]
-    assert any(
-        item["card_id"] == "platform.character_debt_ledger"
-        for item in methodology_app["applications"]
-    )
+    assert methodology_app == {}
+    assert bundle.acceptance_contract["must_deliver"] == []
     assert any(
         item["label"] == "closing_hook"
-        for item in bundle.acceptance_contract["must_deliver"]
+        for item in bundle.acceptance_contract["planning_intent"]
     )
 
 
@@ -126,6 +123,7 @@ def test_chapter_generation_input_bundle_merges_chapter_metadata_methodology_con
         sub_genre="镜债",
         language="zh-CN",
     )
+    project.metadata_json = _explicit_methodology_metadata()
     decision_protocol = {
         "chosen_action": "林渊先验门缝和空电梯，不让王建业顺口认账。",
         "alternatives_rejected": ["立刻报警等封楼", "直接进空电梯"],
@@ -209,11 +207,11 @@ def test_chapter_generation_input_bundle_merges_chapter_metadata_methodology_con
         target_word_count=2200,
     )
 
-    assert bundle.chapter_contract["decision_protocol"] == decision_protocol
-    digest = bundle.acceptance_contract["methodology_application_contract"][
-        "chapter_contract_digest"
-    ]
-    assert digest["decision_protocol"] == decision_protocol
+    assert bundle.chapter_contract["authority"] == "planning_intent_not_hard"
+    assert bundle.chapter_contract["planning_intent"]["decision_protocol"] == decision_protocol
+    proposals = bundle.acceptance_contract["source_authority_channels"]["ai_proposals"]
+    assert proposals["chapter_contract"]["decision_protocol"] == decision_protocol
+    assert bundle.acceptance_contract["methodology_application_contract"] == {}
 
 
 def test_chapter_generation_input_bundle_filters_transient_generation_metadata() -> None:
@@ -282,7 +280,9 @@ def test_chapter_generation_input_bundle_filters_transient_generation_metadata()
         target_word_count=2200,
     )
 
-    assert "methodology_contract" in bundle.chapter["metadata"]
+    assert "methodology_contract" not in bundle.chapter["metadata"]
+    proposals = bundle.acceptance_contract["source_authority_channels"]["ai_proposals"]
+    assert proposals["chapter_metadata"]["methodology_contract"] == chapter.metadata_json["methodology_contract"]
     assert "chapter_first_generation" not in bundle.chapter["metadata"]
     assert "front10_regen_chapter_snapshot" not in bundle.chapter["metadata"]
 
@@ -296,6 +296,7 @@ def test_chapter_generation_input_bundle_ignores_stale_scene_creative_metadata()
         sub_genre="镜债",
         language="zh-CN",
     )
+    project.metadata_json = _explicit_methodology_metadata()
     chapter = SimpleNamespace(
         id=uuid4(),
         chapter_number=1,

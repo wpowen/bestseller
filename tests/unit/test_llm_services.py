@@ -15,6 +15,7 @@ from bestseller.services.llm import (
     _is_rate_limit_error,
     _llm_breaker,
     _rate_limit_fallback_until,
+    bind_conception_model,
     complete_text,
 )
 from bestseller.settings import (
@@ -26,6 +27,16 @@ from bestseller.settings import (
 )
 
 pytestmark = pytest.mark.unit
+
+from gateway_ledger_support import (
+    gateway_ledger as gateway_ledger, LedgerBoundSession, replay_reserved_http_send, reserved_transport_context,
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ledger_contract(gateway_ledger):
+    """Every real-mode fake SDK call still reserves against durable SQLite."""
+    return gateway_ledger
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +67,7 @@ def test_independent_judge_request_uses_critic_catalog_override_contract() -> No
     assert request.model_catalog_key == "deepseek-v4-flash"
 
 
-class FakeSession:
+class FakeSession(LedgerBoundSession):
     def __init__(self) -> None:
         self.added: list[object] = []
         self.commits = 0
@@ -98,6 +109,40 @@ class _FakeCatalogEntry:
         self.available = True
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["deepseek/deepseek-v4-flash", "openai/deepseek-chat"])
+async def test_deepseek_writer_does_not_forward_unsupported_multiple_choices(monkeypatch, model):
+    from types import SimpleNamespace
+
+    captured = {}
+
+    async def completion(**kwargs):
+        await replay_reserved_http_send(kwargs)
+        captured.update(kwargs)
+        if kwargs.get("n", 1) != 1:
+            raise ValueError("Invalid n value (currently only n = 1 is supported)")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="generated chapter"), finish_reason="stop"
+            )],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=20),
+        )
+
+    monkeypatch.setattr(_llm_mod, "_get_litellm", lambda: SimpleNamespace(acompletion=completion))
+    role = LLMRoleSettings(
+        model=model, temperature=0.7, max_tokens=1000, timeout_seconds=30,
+        n_candidates=2, thinking_type="disabled",
+    )
+    request = LLMCompletionRequest(
+        logical_role="writer", system_prompt="Write prose", user_prompt="Chapter one",
+        fallback_response="placeholder",
+    )
+    async with reserved_transport_context(role, request):
+        result = await _llm_mod._call_litellm(request, role)
+    assert result[0] == "generated chapter"
+    assert captured.get("n", 1) == 1
+
+
 def test_bind_conception_model_sets_and_resets() -> None:
     """The conception model + call-timeout contextvars are scoped and restored."""
     assert _llm_mod._conception_model_var.get() is None
@@ -112,6 +157,100 @@ def test_bind_conception_model_sets_and_resets() -> None:
         assert _llm_mod._conception_call_timeout_var.get() == 300.0
     assert _llm_mod._conception_model_var.get() is None
     assert _llm_mod._conception_call_timeout_var.get() is None
+
+
+def test_bind_conception_task_id_nested_scope_restores() -> None:
+    assert _llm_mod.get_conception_task_id() is None
+    with bind_conception_model("model-a", task_id="task-a"):
+        assert _llm_mod.get_conception_task_id() == "task-a"
+        with bind_conception_model("model-b", task_id="task-b"):
+            assert _llm_mod.get_conception_task_id() == "task-b"
+        assert _llm_mod.get_conception_task_id() == "task-a"
+    assert _llm_mod.get_conception_task_id() is None
+
+
+def test_conception_task_id_context_isolated_between_async_tasks() -> None:
+    async def _run() -> None:
+        async def _one(task_id: str) -> str | None:
+            with bind_conception_model(None, task_id=task_id):
+                await asyncio.sleep(0)
+                return _llm_mod.get_conception_task_id()
+
+        assert await asyncio.gather(_one("task-a"), _one("task-b")) == [
+            "task-a",
+            "task-b",
+        ]
+        assert _llm_mod.get_conception_task_id() is None
+
+    asyncio.run(_run())
+
+
+def test_concurrent_complete_text_receipts_keep_task_ids_separate() -> None:
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+
+        async def _one(task_id: str) -> str | None:
+            session = FakeSession()
+            with bind_conception_model(None, task_id=task_id):
+                await asyncio.sleep(0)
+                await complete_text(
+                    session,
+                    settings,
+                    LLMCompletionRequest(
+                        logical_role="critic",
+                        system_prompt="system",
+                        user_prompt="user",
+                        fallback_response="fallback",
+                    ),
+                )
+            run = next(obj for obj in session.added if isinstance(obj, LlmRunModel))
+            return run.metadata_json.get("conception_task_id")
+
+        assert await asyncio.gather(_one("task-a"), _one("task-b")) == [
+            "task-a",
+            "task-b",
+        ]
+
+    asyncio.run(_run())
+
+
+def test_complete_text_uses_ambient_task_id_and_rejects_metadata_spoof() -> None:
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        unbound_session = FakeSession()
+        await complete_text(
+            unbound_session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="critic",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback",
+                model_catalog_key="explicit-critic",
+                metadata={"conception_task_id": "spoofed"},
+            ),
+        )
+        unbound_run = next(obj for obj in unbound_session.added if isinstance(obj, LlmRunModel))
+        assert "conception_task_id" not in unbound_run.metadata_json
+
+        bound_session = FakeSession()
+        with bind_conception_model(None, task_id="task-real"):
+            await complete_text(
+                bound_session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    system_prompt="system",
+                    user_prompt="user",
+                    fallback_response="fallback",
+                    model_catalog_key="explicit-critic",
+                    metadata={"conception_task_id": "spoofed"},
+                ),
+            )
+        bound_run = next(obj for obj in bound_session.added if isinstance(obj, LlmRunModel))
+        assert bound_run.metadata_json["conception_task_id"] == "task-real"
+
+    asyncio.run(_run())
 
 
 def test_conception_call_timeout_caps_wall_clock(
@@ -147,11 +286,10 @@ def test_conception_call_timeout_caps_wall_clock(
             user_prompt="u",
             fallback_response="fb",
         )
-        with _llm_mod.bind_conception_model(None, call_timeout_seconds=300):
-            try:
-                await _llm_mod._call_litellm(request, role_settings)
-            except asyncio.TimeoutError:
-                pass
+        async with reserved_transport_context(role_settings, request):
+            with _llm_mod.bind_conception_model(None, call_timeout_seconds=300):
+                with pytest.raises(asyncio.TimeoutError):
+                    await _llm_mod._call_litellm(request, role_settings)
 
     import asyncio as _asyncio
 
@@ -191,10 +329,9 @@ def test_role_timeout_used_without_conception_binding(
             user_prompt="u",
             fallback_response="fb",
         )
-        try:
-            await _llm_mod._call_litellm(request, role_settings)
-        except asyncio.TimeoutError:
-            pass
+        async with reserved_transport_context(role_settings, request):
+            with pytest.raises(asyncio.TimeoutError):
+                await _llm_mod._call_litellm(request, role_settings)
 
     import asyncio as _asyncio
 
@@ -335,8 +472,152 @@ def test_complete_text_records_mock_run_when_mock_enabled() -> None:
         assert result.provider == "mock"
         assert result.model_name == "mock-writer"
         assert result.llm_run_id is not None
-        assert any(isinstance(obj, LlmRunModel) for obj in session.added)
+        run = next(obj for obj in session.added if isinstance(obj, LlmRunModel))
+        runtime = run.metadata_json["runtime_provenance"]
+        assert runtime["process_fingerprint"]
+        assert runtime["provenance_initialized_at"]
+        assert runtime["source_snapshot_basis"] == "process_import_snapshot"
+        assert "source_snapshot_sha256" in runtime
         assert session.commits == 0
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_conception_checkpoint_commits_final_projectless_receipt() -> None:
+    async def _run() -> None:
+        session = FakeSession()
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        with bind_conception_model("conception-model"):
+            await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="system",
+                    user_prompt="user",
+                    fallback_response="fallback output",
+                    workflow_run_id=uuid4(),
+                ),
+            )
+
+        # The post-flush conception checkpoint is required; mock mode skips
+        # the external-call pre-checkpoint.
+        assert session.commits == 1
+        assert any(isinstance(obj, LlmRunModel) for obj in session.added)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_conception_checkpoint_is_scoped_to_unbound_projectless_calls() -> None:
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+
+        ordinary = FakeSession()
+        with bind_conception_model("conception-model"):
+            await complete_text(
+                ordinary,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="system",
+                    user_prompt="ordinary project",
+                    fallback_response="{}",
+                    project_id=uuid4(),
+                ),
+            )
+        assert ordinary.commits == 0
+
+        unbound = FakeSession()
+        await complete_text(
+            unbound,
+            settings,
+            LLMCompletionRequest(
+                logical_role="planner",
+                system_prompt="system",
+                user_prompt="unbound projectless",
+                fallback_response="{}",
+            ),
+        )
+        assert unbound.commits == 0
+
+        nested = FakeSession()
+        nested.in_nested_transaction = lambda: True
+        with bind_conception_model("conception-model"):
+            await complete_text(
+                nested,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="system",
+                    user_prompt="nested conception",
+                    fallback_response="{}",
+                ),
+            )
+        assert nested.commits == 0
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_conception_checkpoint_does_not_claim_missing_or_failed_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+
+        missing = FakeSession()
+        async def no_receipt(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        monkeypatch.setattr(_llm_mod, "_persist_llm_run_safely", no_receipt)
+        with bind_conception_model("conception-model"):
+            result = await complete_text(
+                missing,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="system",
+                    user_prompt="missing receipt",
+                    fallback_response="{}",
+                ),
+            )
+        assert result.llm_run_id is None
+        assert result.metadata["llm_run_flushed"] is False
+        assert missing.commits == 0
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_conception_checkpoint_commit_failure_clears_receipt_id() -> None:
+    async def _run() -> None:
+        class FailingCommitSession(FakeSession):
+            async def commit(self) -> None:
+                raise RuntimeError("checkpoint commit failed")
+
+        session = FailingCommitSession()
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        with bind_conception_model("conception-model"):
+            result = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="system",
+                    user_prompt="failed checkpoint",
+                    fallback_response="{}",
+                ),
+            )
+
+        assert result.llm_run_id is None
+        assert result.metadata["llm_run_flushed"] is False
+        assert session.rollbacks == 1
 
     import asyncio
 
@@ -437,30 +718,21 @@ def test_complete_text_does_not_fail_when_llm_run_logging_flush_fails() -> None:
     asyncio.run(_run())
 
 
-def test_complete_text_falls_back_when_litellm_is_unavailable(
+def test_complete_text_terminates_without_fabricated_fallback_when_litellm_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _run() -> None:
         session = FakeSession()
         settings = load_settings(env={})
-        result = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="critic",
-                system_prompt="system",
-                user_prompt="user",
-                fallback_response="critic fallback",
-            ),
-        )
-
-        llm_runs = [obj for obj in session.added if isinstance(obj, LlmRunModel)]
-        assert result.provider == "fallback"
-        assert result.model_name == "fallback-critic"
-        assert result.llm_run_id is not None
-        assert len(llm_runs) == 1
-        assert "fallback_reason" in llm_runs[0].metadata_json
-        assert session.commits == 1
+        from bestseller.services.budget import ExecutionBudgetError, current_execution_scope
+        from bestseller.infra.db.models import ExecutionBudgetModel
+        with pytest.raises(ExecutionBudgetError, match="execution_provider_not_sent"):
+            await complete_text(session, settings, LLMCompletionRequest(
+                logical_role="critic", system_prompt="system", user_prompt="user",
+                fallback_response="critic fallback"))
+        assert not [obj for obj in session.added if isinstance(obj, LlmRunModel)]
+        row = await session.get(ExecutionBudgetModel, current_execution_scope())
+        assert row.status == "active" and row.calls_used == 1 and row.tokens_charged == 0
 
     def fake_import_module(name: str):
         raise ModuleNotFoundError(name)
@@ -482,27 +754,18 @@ def test_complete_text_resolves_none_settings_to_real_mode(
     ``settings=None`` into the writer path, which made ``complete_text`` emit
     empty ``mock-writer`` output instead of calling the real model — silently
     invalidating any real-model verification. ``complete_text`` now resolves
-    real settings when given ``None``. We force litellm unavailable so the call
-    lands on the *real* path's fallback (provider ``fallback``), proving it did
-    NOT take the mock branch (which would be provider ``mock``)."""
+    real settings when given ``None``. Missing LiteLLM must terminate the real
+    path; emitting the supplied fallback would disguise a failed model call."""
 
     async def _run() -> None:
         session = FakeSession()
-        result = await complete_text(
-            session,
-            None,  # ← the footgun: omitted settings
-            LLMCompletionRequest(
-                logical_role="writer",
-                system_prompt="system",
-                user_prompt="user",
-                fallback_response="writer fallback",
-            ),
-        )
-        # Real path taken (then fell back because litellm is unavailable) —
-        # crucially NOT the mock provider.
-        assert result.provider == "fallback"
-        assert result.provider != "mock"
-        assert result.model_name != "mock-writer"
+        from bestseller.services.budget import ExecutionBudgetError
+        with pytest.raises(ExecutionBudgetError, match="execution_provider_not_sent"):
+            await complete_text(session, None, LLMCompletionRequest(
+                logical_role="writer", system_prompt="system", user_prompt="user",
+                fallback_response="writer fallback"))
+        assert dependency_attempts == ["litellm"]
+        assert not session.added  # no mock or fabricated successful telemetry
 
     # Resolve to a real-mode settings (mock disabled) when complete_text
     # loads settings for the None caller.
@@ -511,7 +774,9 @@ def test_complete_text_resolves_none_settings_to_real_mode(
         lambda *a, **k: load_settings(env={}),
     )
 
+    dependency_attempts = []
     def fake_import_module(name: str):
+        dependency_attempts.append(name)
         raise ModuleNotFoundError(name)
 
     monkeypatch.setattr("bestseller.services.llm.importlib.import_module", fake_import_module)
@@ -544,6 +809,7 @@ def test_complete_text_uses_api_base_and_api_key_env_for_real_mode(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -616,6 +882,7 @@ def test_complete_text_uses_runtime_llm_profile_override(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -692,6 +959,7 @@ def test_complete_text_forwards_deepseek_v4_thinking_controls(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -756,6 +1024,7 @@ def test_complete_text_disables_deepseek_v4_thinking_by_default(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -824,6 +1093,7 @@ def test_complete_text_disables_minimax_m3_thinking_by_default(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -896,6 +1166,7 @@ def test_complete_text_omits_n_when_thinking_enabled(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -966,6 +1237,7 @@ def test_complete_text_forwards_n_when_thinking_disabled(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -1026,6 +1298,7 @@ def test_complete_text_applies_request_max_tokens_override(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -1099,6 +1372,7 @@ def test_complete_text_collects_streaming_chunks(monkeypatch: pytest.MonkeyPatch
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             return FakeStream()
 
     async def _run() -> None:
@@ -1160,6 +1434,7 @@ def test_complete_text_allows_minimax_output_override_above_role_cap(
     class FakeLiteLLMModule:
         @staticmethod
         async def acompletion(**kwargs):
+            await replay_reserved_http_send(kwargs)
             captured_kwargs.update(kwargs)
             return FakeResponse()
 
@@ -1336,10 +1611,16 @@ def test_empty_length_response_keeps_reasoning_judge_output_cap(
 def test_complete_text_fails_over_to_rate_limit_fallback_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[tuple[str, int]] = []
+    calls: list[str] = []
+    retry_limits = []
+    original_retry = _llm_mod._call_litellm_with_retry
 
-    async def fake_call_with_retry(request, role_settings, retry_settings):  # type: ignore[no-untyped-def]
-        calls.append((role_settings.model, retry_settings.rate_limit_max_attempts))
+    async def observe_retry_policy(request, role_settings, retry_settings):
+        retry_limits.append((role_settings.model, retry_settings.rate_limit_max_attempts))
+        return await original_retry(request, role_settings, retry_settings)
+
+    async def fake_call_litellm(request, role_settings):  # type: ignore[no-untyped-def]
+        calls.append(role_settings.model)
         if role_settings.model == "openai/MiniMax-M2.7-highspeed":
             raise FakeRateLimitError("MiniMax quota exhausted")
         return ("glm output", 11, 22, "stop", None, None)
@@ -1389,11 +1670,18 @@ def test_complete_text_fails_over_to_rate_limit_fallback_model(
         assert "MiniMax quota exhausted" in llm_run.metadata_json[
             "rate_limit_fallback_reason"
         ]
+        attempts = result.metadata["execution_receipt"]["attempts"]
+        assert [attempt["status"] for attempt in attempts] == ["not_sent", "completed"]
+        from bestseller.infra.db.models import ExecutionBudgetModel
+        from bestseller.services.budget import current_execution_scope
+        budget = await session.get(ExecutionBudgetModel, current_execution_scope())
+        assert budget.calls_used == 2 and budget.tokens_charged == 33
 
     monkeypatch.setattr(
-        "bestseller.services.llm._call_litellm_with_retry",
-        fake_call_with_retry,
+        "bestseller.services.llm._call_litellm",
+        fake_call_litellm,
     )
+    monkeypatch.setattr(_llm_mod, "_call_litellm_with_retry", observe_retry_policy)
     monkeypatch.setattr(
         "bestseller.services.llm.get_runtime_env_value",
         lambda name: "key" if name in {"MINIMAX_API_KEY", "NVIDIA_API_KEY"} else None,
@@ -1404,9 +1692,10 @@ def test_complete_text_fails_over_to_rate_limit_fallback_model(
     asyncio.run(_run())
 
     assert calls == [
-        ("openai/MiniMax-M2.7-highspeed", 1),
-        ("openai/z-ai/glm-5.1", 60),
+        "openai/MiniMax-M2.7-highspeed",
+        "openai/z-ai/glm-5.1",
     ]
+    assert retry_limits == [("openai/MiniMax-M2.7-highspeed", 1), ("openai/z-ai/glm-5.1", 60)]
 
 
 def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
@@ -1414,7 +1703,7 @@ def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
 ) -> None:
     calls: list[str] = []
 
-    async def fake_call_with_retry(request, role_settings, retry_settings):  # type: ignore[no-untyped-def]
+    async def fake_call_litellm(request, role_settings):  # type: ignore[no-untyped-def]
         calls.append(role_settings.model)
         return (f"ok:{role_settings.model}", 1, 2, "stop", None, None)
 
@@ -1439,7 +1728,7 @@ def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
             fallback_response="fallback output",
         )
 
-        key = "writer|openai/MiniMax-M2.7-highspeed||"
+        key = _llm_mod._rate_limit_fallback_key("writer", settings.llm.writer)
         _rate_limit_fallback_until[key] = 10**12
         fallback_result = await complete_text(FakeSession(), settings, request)
         assert fallback_result.model_name == "openai/z-ai/glm-5.1"
@@ -1452,8 +1741,8 @@ def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
         assert primary_result.fallback_used is False
 
     monkeypatch.setattr(
-        "bestseller.services.llm._call_litellm_with_retry",
-        fake_call_with_retry,
+        "bestseller.services.llm._call_litellm",
+        fake_call_litellm,
     )
     monkeypatch.setattr(
         "bestseller.services.llm.get_runtime_env_value",
@@ -1546,7 +1835,7 @@ def test_retry_loop_succeeds_after_429_burst(monkeypatch: pytest.MonkeyPatch) ->
         sleeps.append(seconds)
 
     monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call_litellm)
-    monkeypatch.setattr("bestseller.services.llm.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("bestseller.services.llm._execution_backoff", fake_sleep)
 
     _llm_breaker.reset()
     initial_failures = _llm_breaker._consecutive_failures
@@ -1591,7 +1880,7 @@ def test_retry_loop_raises_after_rate_limit_budget_exhausted(
         return None
 
     monkeypatch.setattr("bestseller.services.llm._call_litellm", fake_call_litellm)
-    monkeypatch.setattr("bestseller.services.llm.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("bestseller.services.llm._execution_backoff", fake_sleep)
 
     retry = RetrySettings(
         max_attempts=3,
@@ -1704,10 +1993,10 @@ def test_retry_loop_fails_fast_on_model_gone(monkeypatch: pytest.MonkeyPatch) ->
         mc.clear_runtime_dead_models()
 
 
-def test_complete_text_marks_model_gone_fallback_in_metadata(
+def test_complete_text_records_model_gone_and_terminates_without_fake_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A dead-model fallback must be queryable in llm_runs metadata."""
+    """A dead route is queryable in the registry and ledger, never fake prose."""
     from bestseller.services import model_catalog as mc
 
     class GoneError(Exception):
@@ -1727,25 +2016,22 @@ def test_complete_text_marks_model_gone_fallback_in_metadata(
                 "BESTSELLER__LLM__RETRY__RATE_LIMIT_FALLBACK_ENABLED": "false",
             }
         )
-        await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="writer",
-                system_prompt="s",
-                user_prompt="u",
-                fallback_response="fb",
-            ),
-        )
+        from bestseller.services.budget import ExecutionBudgetError, current_execution_scope
+        from bestseller.infra.db.models import ExecutionBudgetModel
+        with pytest.raises(ExecutionBudgetError, match="execution_provider_rejected") as raised:
+            await complete_text(session, settings, LLMCompletionRequest(
+                logical_role="writer", system_prompt="s", user_prompt="u", fallback_response="fb"))
+        assert isinstance(raised.value.__cause__, GoneError)
+        row = await session.get(ExecutionBudgetModel, current_execution_scope())
+        assert row.calls_used == 1 and row.tokens_charged == 0  # definite 410, call still counted
+        assert mc.runtime_dead_reason(settings.llm.writer.model)
 
     import asyncio
 
     try:
         asyncio.run(_run())
         runs = [obj for obj in session.added if isinstance(obj, LlmRunModel)]
-        assert len(runs) == 1
-        assert runs[0].provider == "fallback"
-        assert runs[0].metadata_json.get("model_gone") is True
+        assert runs == []  # no successful llm_run for fabricated fallback output
     finally:
         mc.clear_runtime_dead_models()
 

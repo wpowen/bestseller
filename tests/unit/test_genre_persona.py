@@ -25,6 +25,22 @@ def test_resolve_persona_routes_male_and_female_channels():
 
 
 @pytest.mark.unit
+def test_explicit_taxonomy_channel_alias_overrides_ambiguous_genre_tags():
+    """The immutable taxonomy channel wins over overlapping tag vocabulary."""
+
+    assert (
+        resolve_persona(
+            "异世大陆",
+            "经营建设",
+            ("穿越", "经营"),
+            channel="male",
+        ).channel
+        == "男频"
+    )
+    assert resolve_persona("异世大陆", tags=("升级",), channel="female").channel == "女频"
+
+
+@pytest.mark.unit
 def test_female_growth_presets_route_to_female_channel():
     """L3 真机验收回归钉子(2026-07-09)：题材 preset "女性成长/情感拉扯" 此前
     一个 token 都命不中女频词表 → 女频书被男频判官评审("打脸吃绝户带劲")，

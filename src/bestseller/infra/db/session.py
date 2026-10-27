@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from typing import AsyncIterator
 
 from contextlib import asynccontextmanager
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -37,6 +39,101 @@ _global_engine: AsyncEngine | None = None
 _global_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
+async def _save_rewrite_rejection_after_rollback(factory, error: BaseException) -> None:
+    """Persist only detached rejection evidence after all caller writes rolled back."""
+    if not hasattr(error, "source_identity") or not hasattr(error, "receipt"):
+        return
+    from bestseller.services.reviews import RewriteSourceRejected, persist_rewrite_rejection
+    if not isinstance(error, RewriteSourceRejected):
+        return
+    try:
+        async with factory() as recovery:
+            saved = await persist_rewrite_rejection(recovery, error)
+            if saved:
+                await recovery.commit()
+            else:
+                await recovery.rollback()
+                logging.getLogger(__name__).error("Rewrite rejection has no recoverable persisted task.")
+    except Exception as recovery_error:
+        logging.getLogger(__name__).error(
+            "Rewrite rejection evidence persistence failed (%s).", type(recovery_error).__name__
+        )
+
+
+async def _save_workflow_failures_after_rollback(factory, error: BaseException) -> None:
+    receipts=getattr(error,"workflow_failures",())
+    if not receipts:
+        return
+    from uuid import UUID
+    from sqlalchemy import select
+    from bestseller.infra.db.models import WorkflowRunModel,ProjectModel
+    from bestseller.services.progress_context import TaskCancelledError
+    try:
+        async with factory() as recovery:
+            for receipt in receipts:
+                cancellation_code = ("operator_halted" if isinstance(error, TaskCancelledError)
+                                     else "workflow_interrupted")
+                if isinstance(error, asyncio.CancelledError) and receipt.get("code") == "execution_cancelled":
+                    # Mixed-version detached receipts must not turn operator
+                    # control flow into a permanent project execution latch.
+                    receipt = {**receipt, "original_code": receipt["code"],
+                               "code": cancellation_code, "recoverable": True}
+                row=await recovery.scalar(select(WorkflowRunModel).where(
+                    WorkflowRunModel.id==UUID(receipt["workflow_id"])).with_for_update())
+                if row is None or str(row.project_id or "")!=receipt["project_id"] or row.workflow_type!=receipt["workflow_type"]:
+                    continue
+                history=list((row.metadata_json or {}).get("execution_failure_receipts") or [])
+                if receipt not in history:
+                    history.append(receipt)
+                row.metadata_json={**(row.metadata_json or {}),"execution_failure_receipts":history}
+                changed_active_status = row.status in {"pending","queued","running"}
+                cancelled = (isinstance(error, asyncio.CancelledError)
+                    and receipt.get("recoverable") is True and receipt["code"] == cancellation_code)
+                recoverable = cancelled or (receipt.get("recoverable") is True
+                    and receipt["code"] == "workflow_failed")
+                if changed_active_status:
+                    row.status="cancelled" if cancelled else "failed"
+                    row.current_step=(receipt.get("step") or row.current_step) if recoverable else receipt["code"]
+                    row.error_message=receipt["code"]
+                if (row.project_id and changed_active_status and not recoverable
+                    and receipt["code"] != "rewrite_source_rejected"):
+                    project=await recovery.get(ProjectModel,row.project_id)
+                    if project is not None:
+                        project.metadata_json={**(project.metadata_json or {}),"execution_terminal":{
+                            "terminal":True,"code":receipt["code"],"workflow_id":receipt["workflow_id"],
+                        }}
+                        project.status="paused"
+            await recovery.commit()
+    except Exception as recovery_error:
+        logging.getLogger(__name__).error("Workflow terminal receipt persistence failed (%s).",type(recovery_error).__name__)
+
+
+async def _rollback_and_save_failures(factory, session, error: BaseException) -> None:
+    """Finish rollback and detached recovery before propagating the original error.
+
+    A second task.cancel() must not interrupt rollback or let a recovery session
+    race the unrolled-back transaction. No caller data is committed here.
+    """
+    async def cleanup():
+        await session.rollback()
+        await _save_rewrite_rejection_after_rollback(factory, error)
+        await _save_workflow_failures_after_rollback(factory, error)
+
+    task = asyncio.create_task(cleanup())
+    try:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+        task.result()
+    except BaseException as cleanup_error:
+        # Recovery failure is diagnostic; it must not replace the task's cause.
+        logging.getLogger(__name__).error(
+            "Session rollback/recovery failed (%s).", type(cleanup_error).__name__
+        )
+
+
 async def init_db(settings: AppSettings) -> None:
     """Initialize a shared engine + session factory for long-lived server processes."""
     global _global_engine, _global_session_factory
@@ -61,14 +158,21 @@ async def get_server_session() -> AsyncIterator[AsyncSession]:
     if _global_session_factory is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     session = _global_session_factory()
+    failure = None
     try:
         yield session
         await session.commit()
-    except Exception:
-        await session.rollback()
+    except BaseException as error:
+        failure = error
+        await _rollback_and_save_failures(_global_session_factory, session, error)
         raise
     finally:
-        await session.close()
+        try:
+            await session.close()
+        except BaseException:
+            if failure is None:
+                raise
+            logging.getLogger(__name__).error("Session close failed during error propagation.")
 
 
 def create_engine(settings: AppSettings | None = None) -> AsyncEngine:
@@ -145,16 +249,28 @@ async def session_scope(settings: AppSettings | None = None) -> AsyncIterator[As
     the lifetime of the process.
     """
     engine = create_engine(settings)
+    failure = None
     try:
         factory = create_session_factory(engine=engine)
         session = factory()
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException as error:
+            failure = error
+            await _rollback_and_save_failures(factory, session, error)
             raise
         finally:
-            await session.close()
+            try:
+                await session.close()
+            except BaseException:
+                if failure is None:
+                    raise
+                logging.getLogger(__name__).error("Session close failed during error propagation.")
     finally:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        except BaseException:
+            if failure is None:
+                raise
+            logging.getLogger(__name__).error("Engine disposal failed during error propagation.")

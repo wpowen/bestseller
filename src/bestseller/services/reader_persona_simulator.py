@@ -59,6 +59,8 @@ class ChapterSignalPack:
     action_ratio: float
     interior_ratio: float
     prose_quality_score: float = 0.7  # external critic, default neutral
+    # 2026-09-10 (W4-3)：哪些通道**没有实测**、由默认常数代替。空元组＝全部实测。
+    defaulted_channels: tuple[str, ...] = ()
 
 
 # ---------- default personas ----------
@@ -251,6 +253,9 @@ def simulate_readers(
         high_risk_personas=high_risk,
         aggregated_concerns=aggregated_concerns,
         next_chapter_directives=directives,
+        # 2026-09-10 (W4-3)：把"哪些通道没实测"带到回执，供诊断与门禁区分
+        # "测出来的低分" 与 "默认常数带来的分"。
+        unmeasured_channels=list(getattr(signals, "defaulted_channels", ()) or ()),
     )
 
 
@@ -260,61 +265,91 @@ def render_persona_feedback_block(
     language: str = "zh-CN",
     max_items: int = 6,
 ) -> str:
-    """Render a prompt-ready feedback block for the *next* chapter."""
+    """Render a prompt-ready **simulation诊断** block for the *next* chapter.
+
+    2026-09-10（W4-1 文案降级）：这里输出的是结构信号启发式推断，不是读者调查，
+    也不是独立文学评价。因此明确标注来源与不确定性，并去掉"必须响应/否则退回
+    重写"的包装——弱模拟分不得单独变成改写命令或质检结论。评分公式与门禁权限
+    未在本步改动。
+    """
 
     payload = _to_payload(result)
     if not payload:
         return ""
 
     if language.lower().startswith("zh"):
-        lines = ["【上章读者画像反馈 — 本章必须响应】"]
+        lines = ["【上章读者画像模拟诊断 — 供参考，非读者实测】"]
         cp = payload.get("chapter_position")
         if cp is not None:
-            lines.append(f"- 反馈来源: 第 {int(cp)} 章")
+            lines.append(
+                f"- 来源: 第 {int(cp)} 章正文的结构信号启发式推断，不是真实读者反馈"
+            )
+
+        # 2026-09-10 (W4-3)：诚实标注哪些通道没有实测（由默认常数代替）。
+        _unmeasured = list(payload.get("unmeasured_channels") or [])
+        if _unmeasured:
+            lines.append(
+                "- 未实测通道（由默认值代替，不代表本章表现）: "
+                + "、".join(_unmeasured)
+            )
 
         weighted = payload.get("weighted_score")
         abandon = payload.get("abandon_rate")
         if weighted is not None:
             lines.append(
-                f"- 加权评分: {float(weighted):.2f}  /  整体弃书率: {float(abandon or 0):.2f}"
+                f"- 模拟加权评分: {float(weighted):.2f}  /  模拟弃书率: {float(abandon or 0):.2f}"
             )
 
         high_risk = list(payload.get("high_risk_personas") or [])[:max_items]
         if high_risk:
-            lines.append("- 高风险读者群: " + "; ".join(high_risk))
+            lines.append("- 模型预计可能流失的画像: " + "; ".join(high_risk))
 
         concerns = list(payload.get("aggregated_concerns") or [])[:max_items]
         if concerns:
-            lines.append("- 主要不满: " + "; ".join(concerns))
+            lines.append("- 模拟观察到的问题: " + "; ".join(concerns))
 
         directives = list(payload.get("next_chapter_directives") or [])[:max_items]
         if directives:
-            lines.append("- 本章必须执行的修正:")
+            lines.append("- 可供参考的调整方向（不是硬性要求，也不是质检结论）:")
             for directive in directives:
                 lines.append(f"  · {directive}")
 
         lines.append(
-            "- 如果直接忽略以上修正，本章质检将判定不合格并退回重写。"
+            "- 以上由结构信号推导，存在不确定性；是否采纳由本章创作目标决定，"
+            "本项不单独构成不合格判定，也不授权退回重写。"
         )
         return "\n".join(lines)
 
-    lines = ["[Prior-chapter Reader Persona Feedback — must address]"]
+    lines = ["[Prior-chapter Reader-persona Simulation — advisory, not measured readers]"]
     cp = payload.get("chapter_position")
     if cp is not None:
-        lines.append(f"- From chapter: {int(cp)}")
+        lines.append(
+            f"- From chapter: {int(cp)} (structural-signal inference, not real readers)"
+        )
+    _unmeasured = list(payload.get("unmeasured_channels") or [])
+    if _unmeasured:
+        lines.append(
+            "- Channels not measured (default values substituted, not this "
+            "chapter's performance): " + ", ".join(_unmeasured)
+        )
     if payload.get("weighted_score") is not None:
         lines.append(
-            f"- Weighted score: {float(payload['weighted_score']):.2f}  "
-            f"abandon-rate: {float(payload.get('abandon_rate') or 0):.2f}"
+            f"- Simulated weighted score: {float(payload['weighted_score']):.2f}  "
+            f"simulated abandon-rate: {float(payload.get('abandon_rate') or 0):.2f}"
         )
     high_risk = list(payload.get("high_risk_personas") or [])[:max_items]
     if high_risk:
-        lines.append("- High-risk personas: " + "; ".join(high_risk))
+        lines.append("- Personas the model expects to lose: " + "; ".join(high_risk))
     directives = list(payload.get("next_chapter_directives") or [])[:max_items]
     if directives:
-        lines.append("- Required next-chapter corrections:")
+        lines.append("- Suggested focus (not a requirement, not a QA verdict):")
         for directive in directives:
             lines.append(f"  · {directive}")
+    lines.append(
+        "- Inferred from structural signals and therefore uncertain. Adopt at the "
+        "writer's discretion; this block does not by itself fail the chapter or "
+        "authorize a rewrite."
+    )
     return "\n".join(lines)
 
 
@@ -322,7 +357,27 @@ def render_persona_feedback_block(
 
 
 def _normalize_channels(s: ChapterSignalPack) -> dict[str, float]:
-    """Translate raw signals into 0..1 channel scores."""
+    """Translate raw signals into 0..1 channel scores.
+
+    2026-09-10 (W4-3) 复核结论：**本函数与 `_score_for_persona` 的数值公式本次
+    不改。** 计划 §3 W4 步骤 3 要求"评分公式变更"必须与文案、门禁**分别**提交，
+    避免一次改动同时改变量尺与被测对象；复核未发现公式本身的可证缺陷——
+    已证的量尺问题是**阈值校准**（0.62 门槛高于写手实测 ~0.51 上限，见
+    `config/quality_gates.yaml` 的自曝），那需要真实分数分布才能定，
+    属独立校准步骤，不能在改权限时顺带猜。
+
+    本步只做**诚实化测量**：把"由默认常数代替的通道"如实带到回执
+    （`ChapterSignalPack.defaulted_channels` → `PersonaSimulationResult.unmeasured_channels`），
+    因为生产调用点只传 `prose_quality_score`，`novelty`/`consistency` 实际是常数。
+
+    量尺成分（便于将来核对）：
+      * **客观文本度量**（直接由正文本体算出，非判官打分）：`hook_count`、
+        `payoff_count`、`emotional_beat_count`、`cliffhanger_strength`、
+        `chapter_text_chars`、`saturated_trope_hits`、`market_hooks_hit/required`、
+        `voice_dna_drift`。
+      * **调用方传入**（可缺省）：`novelty_score`、`consistency_score`、
+        `prose_quality_score`——缺省时用固定常数，故须标注未实测。
+    """
 
     hook_density_score = _sigmoid_around(s.hook_count, midpoint=3, slope=0.7)
     payoff_density_score = _sigmoid_around(s.payoff_count, midpoint=2, slope=0.8)
@@ -460,13 +515,13 @@ def _persona_demand(persona: ReaderPersona, channels: Mapping[str, float]) -> st
         key=lambda k: channels[k] * _persona_weight(persona, k),
     )
     label_map = {
-        "hook_density": "下一章必须把钩子密度提上去",
-        "payoff_density": "下一章必须兑现一个明确的赌注",
-        "pacing": "下一章必须把节奏拉回目标字数区间",
-        "novelty": "下一章必须有一个'非平均'的桥段或概念跨界",
-        "prose_quality": "下一章必须打磨句子质感，回到目标声纹",
-        "emotional_impact": "下一章必须推一次关系/情绪节拍",
-        "consistency": "下一章必须修复已暴露的设定问题",
+        "hook_density": "下一章可考虑把钩子密度提上去",
+        "payoff_density": "下一章可考虑兑现一个明确的赌注",
+        "pacing": "下一章可考虑把节奏拉回目标字数区间",
+        "novelty": "下一章可考虑有一个'非平均'的桥段或概念跨界",
+        "prose_quality": "下一章可考虑打磨句子质感，回到目标声纹",
+        "emotional_impact": "下一章可考虑推一次关系/情绪节拍",
+        "consistency": "下一章可考虑修复已暴露的设定问题",
     }
     return label_map.get(weakest, "下一章保持当前曲线")
 
@@ -503,17 +558,17 @@ def _build_next_chapter_directives(
         miss = signals.market_hooks_required - signals.market_hooks_hit
         if miss > 0:
             base_directives.append(
-                f"本章漏掉了 {miss} 个市场必命中钩子，下一章必须补齐"
+                f"本章漏掉了 {miss} 个市场必命中钩子，下一章可考虑补齐"
             )
 
     if signals.voice_dna_drift > 0.35:
         base_directives.append(
-            f"上一章声纹漂移 {signals.voice_dna_drift:.2f}，下一章必须收回目标声纹"
+            f"上一章声纹漂移 {signals.voice_dna_drift:.2f}，下一章可考虑收回目标声纹"
         )
 
     if signals.saturated_trope_hits >= 2:
         base_directives.append(
-            f"上一章踩到 {signals.saturated_trope_hits} 个已审美疲劳套路，下一章必须换花样"
+            f"上一章踩到 {signals.saturated_trope_hits} 个已审美疲劳套路，下一章可考虑换花样"
         )
 
     return base_directives

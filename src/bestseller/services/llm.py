@@ -1,22 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
+from collections.abc import Iterator
 from contextlib import contextmanager
+import contextvars
+from datetime import datetime, timezone
 import hashlib
 import importlib
+import json
 import logging
+import os
+from pathlib import Path
 import re
+import tempfile
 import time
 from time import perf_counter
 from typing import Any, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel, ProjectModel
 from bestseller.services.cost_attribution import merge_attribution_into
+from bestseller.services.progress_context import check_cancellation
+from bestseller.services.budget import (
+    ExecutionBudgetError, ExecutionLedger, OperationClaim, current_execution_scope,
+    bind_execution_scope, record_execution_stop, raise_if_execution_stopped,
+    next_execution_operation_slot,
+    execution_operation_id,
+)
+from bestseller.services.runtime_provenance import process_runtime_reference
 from bestseller.services.word_targets import (
     model_min_output_tokens,
     model_output_token_ceiling,
@@ -328,6 +342,10 @@ def _ensure_shared_litellm_http_client() -> None:
     loop_id = id(loop)
     with _litellm_client_lock:
         if loop_id in _litellm_client_by_loop:
+            client = _litellm_client_by_loop[loop_id]
+            if client.is_closed or _guard_provider_http_send not in client.event_hooks.get("request", []):
+                raise ExecutionBudgetError("execution_transport_unavailable")
+            _get_litellm().aclient_session = client
             return
 
     try:
@@ -342,6 +360,7 @@ def _ensure_shared_litellm_http_client() -> None:
                 keepalive_expiry=300.0,
             ),
             follow_redirects=True,
+            event_hooks={"request": [_guard_provider_http_send]},
         )
         litellm.aclient_session = client
         with _litellm_client_lock:
@@ -371,11 +390,7 @@ def _ensure_shared_litellm_http_client() -> None:
             loop_id,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Failed to install litellm http client for loop %d: %s",
-            loop_id,
-            exc,
-        )
+        raise ExecutionBudgetError("execution_transport_unavailable") from exc
 
 
 def _cleanup_stale_litellm_clients() -> None:
@@ -453,6 +468,10 @@ class LLMCompletionRequest(BaseModel):
     # the system + initial user messages themselves.  This is intentional:
     # it makes the override explicit rather than silently concatenating.
     messages_override: list[dict[str, Any]] | None = None
+    # Optional stable semantic operation identity; independent of workflow runs.
+    # Different independent samples must use distinct operation IDs/sample slots.
+    operation_id: str | None = Field(default=None, max_length=256)
+    sample_slot: str | int | None = None
 
 
 class LLMCompletionResult(BaseModel):
@@ -480,9 +499,651 @@ class LLMCompletionResult(BaseModel):
     raw_message: dict[str, Any] | None = None
 
 
+_semantic_operation_namespace: contextvars.ContextVar[tuple[str, str | int] | None] = contextvars.ContextVar(
+    "bestseller_semantic_operation_namespace", default=None
+)
+
+
+@contextmanager
+def bind_execution_operation(namespace: str, *, sample_slot: str | int = 0):
+    """Bind a stable phase for nested services that cannot accept request IDs.
+
+    The effective input, role and template distinguish suboperations. A phase
+    performing deliberate identical draws must provide explicit sample slots.
+    No workflow IDs, wall clocks or call ordinals are used for restoration.
+    """
+    if not namespace or len(namespace) > 256:
+        raise ValueError("invalid semantic operation namespace")
+    token = _semantic_operation_namespace.set((namespace, sample_slot))
+    try:
+        yield
+    finally:
+        _semantic_operation_namespace.reset(token)
+
+
 def _hash_prompt(system_prompt: str, user_prompt: str) -> str:
     payload = f"{system_prompt}\n\n{user_prompt}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _effective_input_payload(request: LLMCompletionRequest, role: LLMRoleSettings) -> dict[str, Any]:
+    """Credential-free effective input, including override messages and tools."""
+    from bestseller.services import minimax_m31_protocol as m31
+    is_m31 = m31.applies(role.model)
+    return {
+        **({"provider_protocol": "minimax-m31-openai.v1", "output_parameter": "max_completion_tokens"} if is_m31 else {}),
+        "version": "effective-input.v1", "model": role.model,
+        "endpoint_hash": hashlib.sha256((role.api_base or "").encode()).hexdigest(),
+        "messages": _build_messages(request, _provider_from_model(role.model)),
+        "tools": request.tools, "tool_choice": request.tool_choice if request.tools else None,
+        "temperature": request.temperature_override if request.temperature_override is not None else role.temperature,
+        "max_tokens": _effective_request_max_tokens(role, request),
+        "stream": False if request.tools else role.stream,
+        **({"stream_include_usage": True} if is_m31 and role.stream and not request.tools else {}),
+        "thinking_type": _effective_thinking_type(role), "reasoning_effort": m31.reasoning_effort(role, max_completion_tokens=_effective_request_max_tokens(role, request)) if is_m31 else role.reasoning_effort,
+        "n_candidates": role.n_candidates if (
+            role.n_candidates > 1 and not request.tools
+            and _effective_thinking_type(role) in (None, "disabled", "off", "none")
+            and _model_supports_n_param(role.model)
+        ) else 1,
+    }
+
+
+def _effective_input_hash(request: LLMCompletionRequest, role: LLMRoleSettings) -> str:
+    payload = json.dumps(_effective_input_payload(request, role), ensure_ascii=False,
+                         sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class _ExecutionCall:
+    def __init__(self, ledger: ExecutionLedger, claim: OperationClaim, primary_model: str | None = None,
+                 *, settings: AppSettings | None = None):
+        self.ledger, self.claim = ledger, claim
+        self.settings = settings
+        self.primary_model = primary_model
+        self.attempts: list[dict[str, Any]] = []
+        self.completed = False
+        self.stream_total_timeout_seconds: float | None = None
+        self.native_deadline_policy: dict[str, Any] | None = None
+
+
+class UnusableProviderResponse(ValueError):
+    """A returned SDK body failed normalization; never a usable story/grade."""
+
+    def __init__(self, message: str, response: Any):
+        dump = getattr(response, "model_dump", None)
+        payload = response if isinstance(response, dict) else dump(mode="json", exclude_none=False) if callable(dump) else None
+        if not isinstance(payload, dict):
+            raise ValueError(message)
+        self.provider_response = json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False))
+        super().__init__(message)
+
+
+_execution_call_var: contextvars.ContextVar[_ExecutionCall | None] = contextvars.ContextVar(
+    "bestseller_execution_call", default=None
+)
+_transport_send_count: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "bestseller_transport_send_count", default=None
+)
+
+
+def _transport_context_unavailable(reason: str, scope_id: str = "") -> ExecutionBudgetError:
+    error = ExecutionBudgetError("execution_ledger_unavailable", scope_id)
+    error.guard_reason = reason
+    return error
+
+
+async def _guard_provider_http_send(http_request: Any) -> None:
+    """Reject opaque SDK resends; only our reserved retry loop may resend.
+
+    This guards the shared OpenAI-compatible HTTP path as well as setting SDK
+    retries to zero. The body hash is retained, never credentials/headers/body.
+    """
+    count = _transport_send_count.get()
+    call = _execution_call_var.get()
+    if call is None:
+        raise _transport_context_unavailable("missing_execution_call")
+    if count is None:
+        raise _transport_context_unavailable("missing_send_counter", call.ledger.scope_id)
+    if count[0]:
+        raise ExecutionBudgetError("execution_hidden_transport_retry", call.ledger.scope_id)
+    await _execution_boundary()
+    # Child tasks share this reservation counter. Recheck after the awaited
+    # boundary; the check and slot occupation below have no intervening await.
+    if count[0]:
+        raise ExecutionBudgetError("execution_hidden_transport_retry", call.ledger.scope_id)
+    count[0] += 1
+    call.attempts[-1]["wire_body_hash"] = hashlib.sha256(http_request.content).hexdigest()
+    http_request.extensions["bestseller_reserved_send"] = call
+
+
+_physical_transport_lock = _threading.Lock()
+
+
+def _install_physical_transport_guard() -> None:
+    """Guard SDK-created HTTPX clients too, without changing native payloads.
+
+    HTTPX reaches _send_single_request for each redirect/auth resend, including
+    SDK clients that ignore LiteLLM's shared client. Outside a paid call the
+    wrapper is inert. Within a paid call only one physical send is permitted.
+    """
+    import httpx
+    with _physical_transport_lock:
+        current = httpx.AsyncClient._send_single_request
+        if getattr(current, "_bestseller_execution_guard", False):
+            return
+
+        async def guarded(client, request):
+            call = _execution_call_var.get()
+            if call is not None:
+                count = _transport_send_count.get()
+                if count is None:
+                    raise _transport_context_unavailable("physical_guard_missing_counter", call.ledger.scope_id)
+                if request.extensions.pop("bestseller_reserved_send", None) is not call:
+                    await _guard_provider_http_send(request)
+                    request.extensions.pop("bestseller_reserved_send", None)
+            return await current(client, request)
+
+        guarded._bestseller_execution_guard = True
+        httpx.AsyncClient._send_single_request = guarded
+
+
+_GUARDED_HTTPX_PROVIDERS = frozenset({"openai", "anthropic", "gemini", "deepseek", "minimax"})
+
+
+async def _execution_boundary() -> None:
+    call = _execution_call_var.get()
+    # Task/operator interruption is reversible control flow. Only an explicit
+    # ledger cancellation may set the lifetime financial cancellation latch.
+    await check_cancellation()
+    if call is not None:
+        # Claim/reserve already serialize financial admission. A liveness
+        # check must only read current scope and ownership, never compete for
+        # a writer lock or slide the reserved attempt's transport deadline.
+        await call.ledger.assert_result_adoptable(call.claim, allow_pending=True)
+
+
+async def _execution_backoff(seconds: float) -> None:
+    # A bound checker may read persisted pause/stop state; check it throughout
+    # long 429 sleeps, not only before the next completion call.
+    end = time.monotonic() + max(0, seconds)
+    while True:
+        await _execution_boundary()
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(min(0.25, remaining))
+
+
+async def _paid_transport_attempt(request: LLMCompletionRequest, role: LLMRoleSettings):
+    call = _execution_call_var.get()
+    if call is None:
+        return await _paid_transport_attempt_impl(request, role)
+    # Reject an oversized effective request before even reading its financial
+    # quote. The transport implementation rechecks immediately before reserve.
+    from bestseller.services.llm_capacity import assert_effective_request_capacity
+    assert_effective_request_capacity(_effective_input_payload(request, role))
+    from bestseller.services.independent_acceptance import quote, serialize
+    proof = await quote(call.ledger, _effective_input_payload(request, role), role.api_base)
+    if proof is None:
+        return await _paid_transport_attempt_impl(request, role)
+    # Full-context reservations are deliberately conservative. Serialize this
+    # acceptance's sends so concurrent specialists do not reserve three entire
+    # context windows at once; the SQL transaction remains the hard boundary.
+    async with serialize(call.ledger.scope_id):
+        return await _paid_transport_attempt_impl(request, role, acceptance_proof=proof)
+
+
+async def _paid_transport_attempt_impl(request: LLMCompletionRequest, role: LLMRoleSettings, *, acceptance_proof=None):
+    await _execution_boundary()
+    call = _execution_call_var.get()
+    from bestseller.services import planning_output_budget, planning_surgical_budget
+    if (planning_surgical_budget.applies(request)
+            or planning_output_budget.is_literal_full_source_request(request)
+            or 'source_complete_retention' in request.metadata):
+        from bestseller.services.source_complete_retention import retention_limit
+        if call is None or call.settings is None:
+            raise ValueError('source_complete_retention:physical_settings_unavailable')
+        retention_limit(call.settings, request, audit=_project_prompt_audit.get(), role=role)
+    if call is None:
+        # Private retry helpers are used by unit tests. Production always enters
+        # through complete_text; _call_litellm itself also rejects no-ledger use.
+        return await _call_litellm(request, role)
+    if _provider_from_model(role.model) not in _GUARDED_HTTPX_PROVIDERS:
+        raise ExecutionBudgetError("execution_transport_unsupported", call.ledger.scope_id)
+    _install_physical_transport_guard()
+    payload = _effective_input_payload(request, role)
+    from bestseller.services.llm_capacity import assert_effective_request_capacity
+    assert_effective_request_capacity(payload)
+    input_hash = _effective_input_hash(request, role)
+    # Conservative reservation, not a claim to exact provider tokenization.
+    input_bytes = len(json.dumps({"messages": payload["messages"], "tools": payload["tools"]},
+                                ensure_ascii=False).encode("utf-8"))
+    reserve_tokens = input_bytes + 256 * len(payload["messages"]) + int(payload["max_tokens"]) * int(payload["n_candidates"])
+    if acceptance_proof is not None:
+        reserve_tokens = acceptance_proof["input_tokens_upper"] + acceptance_proof["output_tokens_upper"]
+    from bestseller.services.finite_book_budget import quote as finite_quote
+    financial_quote = await finite_quote(request, role, payload, input_hash)
+    attempt_id = await call.ledger.reserve(call.claim, role.model, input_hash, reserve_tokens,
+        independent_acceptance_proof=acceptance_proof,
+        **({'finite_book_binding':financial_quote} if financial_quote is not None else {}),
+        endpoint=role.api_base, single_dispatch_id=request.metadata.get('single_dispatch_authorization_id'),
+        workflow_id=str(request.workflow_run_id), template=request.prompt_template, version=request.prompt_version,
+        **({"exact_unknown_guard": request.metadata["exact_unknown_business_dispatch"]}
+            if "exact_unknown_business_dispatch" in request.metadata else {}))
+    call.attempts.append({"attempt_id": attempt_id, "model": role.model,
+                          "effective_input_hash": input_hash, "reserved_tokens": reserve_tokens})
+    transport_token = _transport_send_count.set([0])
+    transport_started = time.monotonic()
+    try:
+        await _execution_boundary()
+        remaining = (call.ledger.deadline_at - datetime.now(timezone.utc)).total_seconds()
+        result = await asyncio.wait_for(_call_litellm(request, role), timeout=max(0.001, remaining))
+    except BaseException as exc:
+        partial_stream = None
+        stream_error = exc
+        for _ in range(12):
+            partial_stream = getattr(stream_error, "partial_stream_response", None)
+            if isinstance(partial_stream, dict):
+                break
+            stream_error = getattr(stream_error, "__cause__", None) or getattr(stream_error, "__context__", None)
+            if stream_error is None:
+                break
+        if isinstance(exc, UnusableProviderResponse) or isinstance(partial_stream, dict):
+            # Preserve the actual returned body before classifying the failed
+            # call. This receipt alone grants no adoption, retry or credit.
+            await call.ledger.record_provider_return(
+                call.claim, attempt_id, (exc.provider_response if isinstance(exc, UnusableProviderResponse)
+                                         else partial_stream),
+                wire_body_hash=call.attempts[-1].get("wire_body_hash"),
+            )
+        # Only definite provider rejection can be retried. Network/timeout,
+        # cancelled sends, malformed responses and 5xx have unknown billing.
+        status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+        # Billing settlement is stricter than our legacy text-based routing
+        # heuristic. A timeout mentioning quota is still an unknown result.
+        rejected = (
+            isinstance(status, int) and 400 <= status < 500 and status != 408
+        )
+        # A 400 can be an OUTPUT content rejection after generation. Without
+        # usage evidence, preserve its reservation rather than declaring the
+        # processed request free. Remote rejection is still a known result.
+        sent = (_transport_send_count.get() or [0])[0]
+        settled_status = "not_sent" if sent == 0 else "rejected" if rejected else "unknown"
+        from bestseller.services.execution_error_diagnostics import safe_error_chain
+        await call.ledger.record_transport_failure(attempt_id, {
+            "schema": "transport-failure.v1", "physical_sends": sent,
+            "exception_type": type(exc).__name__,
+            "http_status": status if isinstance(status, int) else None,
+            "prompt_template": request.prompt_template, "logical_role": request.logical_role,
+            "prompt_version": request.prompt_version,
+            "project_id": str(request.project_id) if request.project_id else None,
+            "workflow_run_id": str(request.workflow_run_id) if request.workflow_run_id else None,
+            "operator_interruption": isinstance(exc, asyncio.CancelledError),
+            "elapsed_ms": int((time.monotonic() - transport_started) * 1000),
+            "timeout_seconds": ((call.native_deadline_policy or {}).get("sdk_timeout_seconds", role.timeout_seconds)),
+            **({"native_deadline_policy": call.native_deadline_policy} if call.native_deadline_policy else {}),
+            "stream": bool(role.stream and not request.tools),
+            "partial_stream_observed": isinstance(partial_stream, dict),
+            "error_chain": safe_error_chain(exc),
+        })
+        await call.ledger.settle(attempt_id, settled_status,
+            actual_tokens=0 if sent == 0 or (rejected and status != 400) else None)
+        call.attempts[-1]["status"] = settled_status
+        if not rejected:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            if sent == 0:
+                from bestseller.services.budget import ExecutionProviderNotSentError
+                raise ExecutionProviderNotSentError("execution_provider_not_sent", call.ledger.scope_id) from exc
+            raise ExecutionBudgetError("execution_result_unknown", call.ledger.scope_id) from exc
+        raise
+    finally:
+        _transport_send_count.reset(transport_token)
+    actual = None if result[1] is None or result[2] is None else int(result[1]) + int(result[2])
+    # Rebuild replay fields rather than retaining arbitrary SDK message data.
+    tools = _extract_tool_calls({"tool_calls": result[4]})
+    from bestseller.services import minimax_m31_protocol as m31
+    message = (m31.assistant_message(result[5], content=result[0], tool_calls=tools)
+               if m31.applies(role.model)
+               else _build_raw_assistant_message(result[0], tools) if result[5] is not None or tools else None)
+    result = (*result[:4], tools, message)
+    # Store the complete usable return in the SAME transaction as settlement.
+    # Upper-layer attribution, payload retention and telemetry may still fail
+    # or the process may exit immediately after this commit.
+    paid_result = LLMCompletionResult(
+        content=result[0], provider=_provider_from_model(role.model), model_name=role.model,
+        input_tokens=result[1], output_tokens=result[2], finish_reason=result[3],
+        tool_calls=result[4], raw_message=result[5],
+        effective_primary_model=call.primary_model,
+        fallback_used=bool(call.primary_model and call.primary_model != role.model),
+        metadata={"llm_run_flushed": False,
+            **({"native_deadline_policy": call.native_deadline_policy} if call.native_deadline_policy else {}),
+            "paid_call_origin": _paid_call_origin(request, input_hash),
+            "effective_input_receipt": {
+            "schema": "effective-input.v1", "hash": input_hash, "model": role.model,
+        }, "execution_receipt": {"scope_id": call.ledger.scope_id,
+            "operation_key": call.claim.key, "attempts": [
+                {**item, **({"status": "completed"} if item["attempt_id"] == attempt_id else {})}
+                for item in call.attempts], "policy": "execution-budget.v1"}},
+    ).model_dump(mode="json")
+    blocked = await call.ledger.settle(attempt_id, "completed", actual_tokens=actual,
+                                       claim=call.claim, result=paid_result)
+    call.attempts[-1]["status"] = "completed"
+    if blocked:
+        raise ExecutionBudgetError(blocked, call.ledger.scope_id)
+    await call.ledger.assert_result_adoptable(call.claim)
+    return result
+
+
+_PROMPT_PAYLOAD_MAX_CHARS = 120_000
+
+
+def _write_json_atomically(path: Path, payload: dict[str, Any]) -> None:
+    """Write one diagnostic payload without exposing a partially written file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _bounded_text(value: str, *, limit: int = _PROMPT_PAYLOAD_MAX_CHARS) -> dict[str, Any]:
+    text = value if len(value) <= limit else value[:limit]
+    return {"text": text, "truncated": len(text) != len(value), "original_chars": len(value)}
+
+
+_project_prompt_audit: contextvars.ContextVar[tuple[UUID, str] | None] = contextvars.ContextVar(
+    "bestseller_project_prompt_audit", default=None,
+)
+
+
+@contextmanager
+def bind_project_prompt_audit(project_id: UUID, *, reason: str) -> Iterator[None]:
+    """Retain local request evidence only for an explicitly audited project."""
+    if not isinstance(project_id, UUID) or not reason.strip():
+        raise ValueError("Project prompt audit requires an exact project and reason")
+    token = _project_prompt_audit.set((project_id, reason.strip()))
+    try:
+        yield
+    finally:
+        _project_prompt_audit.reset(token)
+
+
+def _persist_prompt_payloads(
+    *,
+    settings: AppSettings,
+    request: LLMCompletionRequest,
+    llm_run_id: UUID,
+    configured_model: str,
+    effective_model: str,
+    provider: str,
+    effective_temperature: float,
+    effective_max_tokens: int,
+    effective_timeout_seconds: int,
+    effective_stream: bool,
+    effective_thinking_type: str | None,
+    effective_reasoning_effort: str | None,
+    content: str,
+    tool_call_count: int,
+    finish_reason: str | None,
+    fallback_used: bool,
+    fallback_source: str | None,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    raw_message: dict[str, Any] | None = None,
+    effective_role_settings: LLMRoleSettings | None = None,
+    native_deadline_policy: dict[str, Any] | None = None,
+) -> tuple[str | None, str | None, str | None, bool]:
+    """Best-effort, bounded prompt receipt for explicitly retained conception calls.
+
+    Retention defaults to project-less workflow calls. A caller may additionally
+    bind one exact project audit for local evidence; flags or story data alone
+    cannot retain prompts belonging to another project.
+    The returned reason is a safe category, never an exception message or secret.
+    """
+    # This version promises complete physical custody. Its required evidence
+    # cannot silently become best effort after pre-send validation.
+    from bestseller.services import planning_output_budget
+    if planning_output_budget.is_literal_full_source_request(request):
+        from bestseller.services.source_complete_retention import retention_limit
+        if effective_role_settings is None:
+            raise ValueError('source_complete_retention:physical_role_unavailable')
+        retention_limit(settings, request, audit=_project_prompt_audit.get(), role=effective_role_settings)
+    artifact = settings.artifact_store
+    if not artifact.retain_prompt_payloads:
+        return None, None, "disabled", False
+    if artifact.mode != "local":
+        return None, None, "unsupported_store_mode", False
+    audit = _project_prompt_audit.get()
+    project_audited = bool(audit and request.project_id == audit[0])
+    if request.workflow_run_id is None or (request.project_id is not None and not project_audited):
+        return None, None, "outside_conception_scope", False
+
+    payload_limit = _PROMPT_PAYLOAD_MAX_CHARS
+    from bestseller.services import planning_output_budget, planning_surgical_budget
+    expanded = (planning_surgical_budget.applies(request)
+        or planning_output_budget.is_literal_full_source_request(request)
+        or 'source_complete_retention' in request.metadata)
+    if expanded:
+        from bestseller.services.source_complete_retention import retention_limit
+        if effective_role_settings is None:
+            raise ValueError('source_complete_retention:physical_role_unavailable')
+        payload_limit = retention_limit(settings, request, audit=audit, role=effective_role_settings)
+
+    root = Path(artifact.local_dir).expanduser()
+    relative_base = Path("runtime") / "llm_payloads"
+    request_ref = relative_base / f"{llm_run_id}.request.json"
+    response_ref = relative_base / f"{llm_run_id}.response.json"
+    bounded_system = _bounded_text(request.system_prompt, limit=payload_limit)
+    bounded_user = _bounded_text(request.user_prompt, limit=payload_limit)
+
+    def retain_json_fields(
+        values: dict[str, Any],
+        target: dict[str, Any],
+        reasons: list[str],
+    ) -> dict[str, Any]:
+        receipts: dict[str, Any] = {}
+        for field, value in values.items():
+            receipt: dict[str, Any] = {
+                "encoding": "json-utf8",
+                "limit_chars": payload_limit,
+                "truncated": False,
+            }
+            receipts[field] = receipt
+            try:
+                encoded = json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+                decoded = json.loads(encoded)
+                if decoded != value:
+                    raise ValueError("non_json_value")
+                receipt.update(
+                    original_chars=len(encoded),
+                    sha256=hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+                )
+            except (TypeError, ValueError, RecursionError, OverflowError):
+                receipt["status"] = "invalid_json"
+                reasons.append(f"{field}_not_json")
+                continue
+            if len(encoded) > payload_limit:
+                receipt.update(status="truncated", truncated=True)
+                reasons.append(f"{field}_truncated")
+                continue
+            receipt["status"] = "retained"
+            target[field] = decoded
+        return receipts
+
+    unsupported_reasons: list[str] = []
+    if request.messages_override is not None:
+        unsupported_reasons.append("messages_override_not_retained")
+    requested_tools: dict[str, Any] = {}
+    request_structured_receipts: dict[str, Any] = {}
+    if request.tools is not None or request.tool_choice is not None:
+        request_structured_receipts = retain_json_fields(
+            {"tools": request.tools, "tool_choice": request.tool_choice},
+            requested_tools,
+            unsupported_reasons,
+        )
+    if bounded_system["truncated"] or bounded_user["truncated"]:
+        unsupported_reasons.append("prompt_truncated")
+    request_replayable = not unsupported_reasons
+    if request.messages_override is not None:
+        messages_payload: dict[str, Any] = {
+            "source": "messages_override",
+            "replayable": False,
+            "reason": "messages_override_not_retained",
+        }
+    else:
+        messages_payload = {
+            "source": "system_user",
+            "system": bounded_system,
+            "user": bounded_user,
+            "replayable": request_replayable,
+        }
+    request_payload = {
+        "schema_version": "llm-payload.v1",
+        "kind": "request",
+        "replayable": request_replayable,
+        "replayability_reasons": unsupported_reasons,
+        "llm_run_id": str(llm_run_id),
+        "workflow_run_id": str(request.workflow_run_id),
+        "project_id": str(request.project_id) if request.project_id else None,
+        "project_audit_reason": audit[1] if project_audited else None,
+        "logical_role": request.logical_role,
+        "prompt_template": request.prompt_template,
+        "prompt_version": request.prompt_version,
+        "requested": {
+            "model_catalog_key": request.model_catalog_key,
+            "model_tier": request.model_tier,
+            "temperature_override": request.temperature_override,
+            "max_tokens_override": request.max_tokens_override,
+            "cache_system": request.cache_system,
+            **requested_tools,
+        },
+        "effective": {
+            "configured_model": configured_model,
+            "model": effective_model,
+            "provider": provider,
+            "temperature": effective_temperature,
+            "max_tokens": effective_max_tokens,
+            "timeout_seconds": effective_timeout_seconds,
+            "stream": effective_stream,
+            "thinking_type": effective_thinking_type,
+            "reasoning_effort": effective_reasoning_effort,
+        },
+        "messages": messages_payload,
+    }
+    if native_deadline_policy is not None:
+        from bestseller.services.planning_native_deadline import validate_native_deadline_policy
+        deadline_evidence = validate_native_deadline_policy(native_deadline_policy)
+        request_payload["effective"]["native_deadline_policy"] = deadline_evidence
+        request_payload["effective"]["configured_timeout_seconds"] = deadline_evidence["configured_role_timeout_seconds"]
+    if request_structured_receipts:
+        request_payload["structured_payload_receipts"] = request_structured_receipts
+    bounded_content = _bounded_text(content, limit=payload_limit)
+    response_replayability_reasons: list[str] = []
+    if bounded_content["truncated"]:
+        response_replayability_reasons.append("response_truncated")
+    response_fields: dict[str, Any] = {}
+    response_structured_receipts: dict[str, Any] = {}
+    if (
+        request_structured_receipts
+        or tool_call_count
+        or tool_calls is not None
+        or raw_message is not None
+    ):
+        response_structured_receipts = retain_json_fields(
+            {"tool_calls": tool_calls, "raw_message": raw_message},
+            response_fields,
+            response_replayability_reasons,
+        )
+    if tool_call_count and tool_calls is None:
+        response_replayability_reasons.append("tool_calls_not_retained")
+    elif tool_calls is not None and (
+        not isinstance(tool_calls, list) or len(tool_calls) != tool_call_count
+    ):
+        response_replayability_reasons.append("tool_call_count_mismatch")
+    response_replayable = not response_replayability_reasons
+    response_payload = {
+        "schema_version": "llm-payload.v1",
+        "kind": "response",
+        "replayable": response_replayable,
+        "replayability_reasons": response_replayability_reasons,
+        "tool_call_count": tool_call_count,
+        "llm_run_id": str(llm_run_id),
+        "workflow_run_id": str(request.workflow_run_id),
+        "project_id": str(request.project_id) if request.project_id else None,
+        "project_audit_reason": audit[1] if project_audited else None,
+        "logical_role": request.logical_role,
+        "model": effective_model,
+        "provider": provider,
+        "content": bounded_content,
+        "finish_reason": finish_reason,
+        "fallback_used": fallback_used,
+        "fallback_source": fallback_source,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        **response_fields,
+    }
+    if response_structured_receipts:
+        response_payload["structured_payload_receipts"] = response_structured_receipts
+    created = []
+    try:
+        if expanded:
+            # Prospective audited files are create-only. Never replace or
+            # remove a pre-existing original receipt on a later conflict.
+            for ref, value in ((request_ref, request_payload), (response_ref, response_payload)):
+                data = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2,
+                    allow_nan=False).encode('utf-8')
+                path = root / ref
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open('xb') as stream:
+                    created.append(path)
+                    stream.write(data)
+        else:
+            _write_json_atomically(root / request_ref, request_payload)
+            _write_json_atomically(root / response_ref, response_payload)
+    except (OSError, ValueError, TypeError):
+        for ref in (created if expanded else (root / request_ref, root / response_ref)):
+            try:
+                ref.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return None, None, "write_failed", False
+    return str(request_ref), str(response_ref), None, request_replayable and response_replayable
+
+
+def _remove_prompt_payloads(
+    settings: AppSettings,
+    request_ref: str | None,
+    response_ref: str | None,
+) -> None:
+    """Remove files whose database receipt could not be persisted."""
+    if settings.artifact_store.mode != "local":
+        return
+    root = Path(settings.artifact_store.local_dir).expanduser()
+    for ref in (request_ref, response_ref):
+        if ref:
+            try:
+                (root / ref).unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Could not remove orphaned LLM payload artifact", exc_info=True)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -494,6 +1155,39 @@ def _estimate_tokens(text: str) -> int:
 
 def _get_role_settings(settings: AppSettings, logical_role: LLMRole) -> LLMRoleSettings:
     return cast(LLMRoleSettings, getattr(settings.llm, logical_role))
+
+
+def _apply_conception_phase_settings(request: LLMCompletionRequest, role: LLMRoleSettings) -> LLMRoleSettings:
+    """Versioned surgical JSON repair: keep the model/cap, bound thinking.
+
+    M3.1 requires thinking and defaults to max. One retained v1 packaging
+    repair consumed its entire32768 completion budget on thinking alone.
+    The explicit v2 operation uses documented medium; legacy paid inputs and
+    independent judges keep their original settings and hashes.
+    """
+    from bestseller.services.planning_output_budget import apply_output_budget
+    role = apply_output_budget(request, role)
+    from bestseller.services.planning_surgical_budget import apply_role as surgical_role
+    role = surgical_role(request, role)
+    from bestseller.services import minimax_m31_protocol as m31
+    if (m31.applies(role.model) and request.prompt_template in {
+        "conception_final_packaging_seed_fidelity_repair_v2",
+        "conception_final_packaging_seed_fidelity_repair_v2_repair",
+    }):
+        return role.model_copy(update={"reasoning_effort":"medium", "stream":True})
+    if (m31.applies(role.model) and request.prompt_version == "source-bound-cast-parts.v1"
+        and request.prompt_template in {"planner_cast_person_part", "planner_cast_links_part"}):
+        if request.tools:
+            raise ValueError("cast_parts_text_stream_required")
+        # Versioned new part requests only. Old native/unknown request hashes
+        # and independent judge settings remain unchanged.
+        return role.model_copy(update={"reasoning_effort": role.reasoning_effort or "medium", "stream": True})
+    if (m31.applies(role.model) and request.prompt_version == "source-bound-cast-fields.v1"
+        and request.prompt_template == "planner_cast_field_correction"):
+        if request.tools:
+            raise ValueError("cast_fields_text_stream_required")
+        return role.model_copy(update={"reasoning_effort": role.reasoning_effort or "medium", "stream": True})
+    return role
 
 
 def _effective_request_max_tokens(
@@ -621,6 +1315,10 @@ def _effective_thinking_type(role_settings: LLMRoleSettings) -> str | None:
     text, so disable thinking unless the role explicitly opts in.
     """
 
+    from bestseller.services import minimax_m31_protocol as m31
+    if m31.applies(role_settings.model):
+        m31.reasoning_effort(role_settings)
+        return None
     model = (role_settings.model or "").lower()
     api_base = (role_settings.api_base or "").lower()
     if role_settings.thinking_type:
@@ -673,6 +1371,9 @@ def _model_supports_n_param(model: str | None) -> bool:
     if "minimax" in m:
         return False
     if "qwen" in m:
+        return False
+    # DeepSeek accepts only n=1; best-of-N remains an application-level loop.
+    if "deepseek" in m:
         return False
     return True
 
@@ -1441,6 +2142,81 @@ async def _collect_streaming_content(
     return content, input_tokens, output_tokens, finish_reason
 
 
+
+async def _collect_minimax_streaming_content(response: Any, *, template: str | None = None,
+        idle_timeout_seconds: float | None = None, total_timeout_seconds: float | None = None):
+    """Accumulate documented content/reasoning deltas; partials never approve work.
+
+    The original role and lifetime deadlines still apply. On interruption retain
+    the observed chunks as unusable evidence, never resend or synthesize a stop.
+    """
+    parts, reasoning = [], []
+    input_tokens = output_tokens = finish_reason = response_id = None
+    chunks = 0
+    last_activity = 0.0
+
+    def retained():
+        return {"object": "partial.chat.completion", "id": response_id,
+                "stream_complete": False, "chunks_observed": chunks,
+                "choices": [{"index": 0, "finish_reason": finish_reason,
+                    "message": {"role": "assistant", "content": "".join(parts),
+                                "reasoning_content": "".join(reasoning)}}],
+                "usage": {"prompt_tokens": input_tokens, "completion_tokens": output_tokens}}
+    def has_progress(chunk):
+        if _lookup_field(chunk, "usage"):
+            return True
+        for choice in _lookup_field(chunk, "choices") or []:
+            delta = _lookup_field(choice, "delta")
+            if (_lookup_field(delta, "content") or _lookup_field(delta, "reasoning_content")
+                    or _lookup_field(choice, "finish_reason")):
+                return True
+        return False
+
+    try:
+        if idle_timeout_seconds is not None and total_timeout_seconds is not None:
+            from bestseller.services.stream_deadlines import bounded_stream
+            response = bounded_stream(response, idle_seconds=idle_timeout_seconds,
+                total_seconds=total_timeout_seconds, progress=has_progress,
+                on_poll=_execution_boundary)
+        async for chunk in response:
+            chunks += 1
+            response_id = _lookup_field(chunk, "id") or response_id
+            choices = _lookup_field(chunk, "choices") or []
+            if choices:
+                choice = choices[0]
+                delta = _lookup_field(choice, "delta")
+                if _lookup_field(delta, "tool_calls"):
+                    raise ValueError("unexpected tool deltas on prose stream")
+                text = _lookup_field(delta, "content")
+                thought = _lookup_field(delta, "reasoning_content")
+                if text is not None and not isinstance(text, str):
+                    raise ValueError("stream content is not text")
+                if thought is not None and not isinstance(thought, str):
+                    raise ValueError("stream reasoning is not text")
+                if text: parts.append(text)
+                if thought: reasoning.append(thought)
+                finish_reason = _lookup_field(choice, "finish_reason") or finish_reason
+            in_tok, out_tok = _extract_usage_fields(_lookup_field(chunk, "usage"))
+            if in_tok is not None: input_tokens = in_tok
+            if out_tok is not None: output_tokens = out_tok
+            if has_progress(chunk) and time.monotonic() - last_activity >= 5:
+                from bestseller.services.progress_context import emit_activity
+                emit_activity("llm_stream_activity", {"template": template, "chunks": chunks,
+                    "content_chars": sum(map(len, parts)), "reasoning_chars": sum(map(len, reasoning)),
+                    "completion_confirmed": False})
+                last_activity = time.monotonic()
+        content = "".join(parts)
+        if not finish_reason or not content.strip():
+            raise ValueError("stream has no terminal content")
+        message = {"role": "assistant", "content": content, "reasoning_content": "".join(reasoning)}
+        return content, input_tokens, output_tokens, finish_reason, None, message
+    except BaseException as error:
+        # Keep CancelledError/Timeout identity so cancellation and unknown-send
+        # classification remain exact. The outer transport journal persists it.
+        error.partial_stream_response = retained()
+        raise
+
+
 def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
     """Normalise an LLM assistant message's ``tool_calls`` into plain dicts.
 
@@ -1511,16 +2287,25 @@ async def _release_session_before_external_llm_call(session: AsyncSession) -> No
     commit = getattr(session, "commit", None)
     if commit is None:
         return
+    scope = current_execution_scope() or ""
+    # SQLAlchemy's TransactionalContext installs this on the sync Session for
+    # ``async with session.begin()`` as well as nested contexts. Committing it
+    # closes the caller's context until __aexit__; a later paid return could no
+    # longer be attached. Autobegin transactions have no managed context.
+    managed = getattr(getattr(session, "sync_session", None), "_trans_context_manager", None)
+    if managed is not None:
+        raise ExecutionBudgetError("execution_transaction_not_releasable", scope)
     in_nested_transaction = getattr(session, "in_nested_transaction", None)
+    if callable(in_nested_transaction) and in_nested_transaction():
+        raise ExecutionBudgetError("execution_transaction_not_releasable", scope)
     try:
-        if callable(in_nested_transaction) and in_nested_transaction():
-            return
         await commit()
-    except Exception:
-        logger.debug(
-            "LLM pre-call DB checkpoint failed; continuing with existing session",
-            exc_info=True,
-        )
+    except ExecutionBudgetError:
+        raise
+    except Exception as exc:
+        # Checkpoint failure is pre-payment infrastructure failure. Continuing
+        # would pay for a request whose source/audit may never become durable.
+        raise ExecutionBudgetError("execution_transaction_not_releasable", scope) from exc
 
 
 async def _persist_llm_run_safely(
@@ -1530,6 +2315,10 @@ async def _persist_llm_run_safely(
     """Persist LLM telemetry without turning a good completion into a failure."""
 
     try:
+        receipt = (llm_run.metadata_json or {}).get("execution_receipt")
+        if isinstance(receipt, dict) and receipt.get("operation_key"):
+            bound = await _bind_execution_telemetry(session, llm_run, receipt["operation_key"])
+            return bound.id
         session.add(llm_run)
         await session.flush()
         return llm_run.id
@@ -1568,6 +2357,9 @@ async def _call_litellm(
     # Opt-C: install a shared httpx.AsyncClient into litellm on first use, so
     # subsequent calls reuse keep-alive connections to the model provider and
     # avoid per-request TLS handshakes.
+    if _provider_from_model(role_settings.model) not in _GUARDED_HTTPX_PROVIDERS:
+        raise ExecutionBudgetError("execution_transport_unsupported")
+    _install_physical_transport_guard()
     _ensure_shared_litellm_http_client()
     litellm = _get_litellm()
     acompletion = getattr(litellm, "acompletion", None)
@@ -1591,6 +2383,10 @@ async def _call_litellm(
         "max_tokens": max_tokens,
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,
+        # Hidden SDK retries bypass reservations and cancellation boundaries.
+        "num_retries": 0,
+        "max_retries": 0,
+        "drop_params": False,
     }
     thinking_type = _effective_thinking_type(role_settings)
     if thinking_type:
@@ -1635,6 +2431,10 @@ async def _call_litellm(
     if role_settings.api_base:
         completion_kwargs["api_base"] = role_settings.api_base
         completion_kwargs["base_url"] = role_settings.api_base
+    from bestseller.services import minimax_m31_protocol as m31
+    if m31.applies(role_settings.model):
+        completion_kwargs = m31.wire_options(completion_kwargs, role_settings)
+
     if role_settings.api_key_env:
         api_key = get_runtime_env_value(role_settings.api_key_env)
         if api_key:
@@ -1654,23 +2454,53 @@ async def _call_litellm(
     # phase surfaces well before the no-progress watchdog. Outside conception
     # the contextvar is unset and the role's own timeout applies unchanged.
     _conception_timeout = _conception_call_timeout_var.get()
-    _base_timeout = (
-        float(_conception_timeout)
-        if _conception_timeout
-        else float(role_settings.timeout_seconds)
-    )
-    hard_timeout = _base_timeout + 5.0  # small grace
+    execution_call = _execution_call_var.get()
+    if execution_call is None:
+        raise _transport_context_unavailable("sdk_missing_execution_call")
+    from bestseller.services.planning_native_deadline import resolve_native_deadline
+    deadline_policy = resolve_native_deadline(request, role_settings, execution_call.settings,
+        conception_timeout=_conception_timeout)
+    completion_kwargs["timeout"] = deadline_policy["sdk_timeout_seconds"]
+    hard_timeout = deadline_policy["hard_timeout_seconds"]
+    execution_call.native_deadline_policy = deadline_policy if deadline_policy["applies"] else None
+    stream_started = time.monotonic()
     response = await asyncio.wait_for(
         acompletion(**completion_kwargs),
         timeout=hard_timeout,
     )
+    sends = _transport_send_count.get()
+    if sends is None or sends[0] != 1:
+        raise ExecutionBudgetError("execution_transport_unverified")
 
+    if completion_kwargs["stream"] and m31.applies(role_settings.model):
+        from bestseller.services.stream_deadlines import conception_stream_deadlines
+        stream_policy = getattr(_execution_call_var.get(), "stream_total_timeout_seconds", None)
+        stream_deadlines = conception_stream_deadlines(role_settings.timeout_seconds,
+            _conception_timeout, time.monotonic() - stream_started,
+            active_seconds=stream_policy)
+        if stream_deadlines is not None:
+            idle_seconds, total_seconds = stream_deadlines
+            return await _collect_minimax_streaming_content(response, template=request.prompt_template,
+                idle_timeout_seconds=idle_seconds, total_timeout_seconds=total_seconds)
+        return await asyncio.wait_for(
+            _collect_minimax_streaming_content(response, template=request.prompt_template),
+            timeout=hard_timeout,
+        )
     if completion_kwargs["stream"]:
         content, in_tok, out_tok, finish = await asyncio.wait_for(
             _collect_streaming_content(response),
             timeout=hard_timeout,
         )
         return content, in_tok, out_tok, finish, None, None
+
+    try:
+        return _parse_complete_provider_response(response, role_settings)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise UnusableProviderResponse(str(error), response) from error
+
+
+def _parse_complete_provider_response(response, role_settings):
+    from bestseller.services import minimax_m31_protocol as m31
 
     # When multiple candidates are returned, pick the longest (most
     # detailed) response instead of blindly using choices[0].
@@ -1693,11 +2523,37 @@ async def _call_litellm(
     # With tools, an empty content + non-empty tool_calls is the normal
     # "model wants to call a tool" state — do NOT raise on empty content.
     if not content.strip() and not tool_calls:
-        raise ValueError(
-            f"LLM response content is empty (finish_reason={finish_reason!r}, "
-            f"output_tokens={output_tokens!r})."
+        usage = getattr(response, "usage", None)
+        prompt_usage = _lookup_field(usage, "prompt_tokens")
+        completion_usage = _lookup_field(usage, "completion_tokens")
+        reasoning = _lookup_field(message, "reasoning_content")
+        raw_tools = _lookup_field(message, "tool_calls")
+        # M3.1 reasoning shares the completion cap (official OpenAI API docs).
+        # This complete, spent length return remains invalid as a grade; keep
+        # its original assistant message for downstream protocol validation.
+        known_reasoning_length = (
+            m31.applies(role_settings.model)
+            and m31.applies(_lookup_field(response, "model"))
+            and len(choices) == 1
+            and finish_reason == "length"
+            and _lookup_field(message, "role") == "assistant"
+            and _lookup_field(message, "content") in (None, "")
+            and (raw_tools is None or (isinstance(raw_tools, list) and not raw_tools))
+            and isinstance(reasoning, str)
+            and bool(reasoning.strip())
+            and type(prompt_usage) is int
+            and prompt_usage > 0
+            and type(completion_usage) is int
+            and completion_usage > 0
         )
-    raw_message = _build_raw_assistant_message(content.strip(), tool_calls)
+        if not known_reasoning_length:
+            raise ValueError(
+                f"LLM response content is empty (finish_reason={finish_reason!r}, "
+                f"output_tokens={output_tokens!r})."
+            )
+    raw_message = (m31.assistant_message(message, content=content, tool_calls=tool_calls)
+                   if m31.applies(role_settings.model)
+                   else _build_raw_assistant_message(content.strip(), tool_calls))
     return content.strip(), input_tokens, output_tokens, finish_reason, tool_calls, raw_message
 
 
@@ -1728,9 +2584,11 @@ async def _call_litellm_with_retry(
 
     while True:
         try:
-            result = await _call_litellm(active_request, role_settings)
+            result = await _paid_transport_attempt(active_request, role_settings)
             _llm_breaker.record_success()
             return result
+        except ExecutionBudgetError:
+            raise
         except Exception as exc:
             if _is_model_gone_error(exc):
                 # Permanent: the upstream removed this model (410 Gone /
@@ -1750,6 +2608,15 @@ async def _call_litellm_with_retry(
                     exc,
                 )
                 raise
+            # A definite invalid/auth/content rejection needs changed input or
+            # account repair, not another unchanged send or a paid fallback.
+            status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+            if status in {400, 401, 402, 403, 404, 410, 422}:
+                code = {401: "execution_provider_auth_rejected",
+                        402: "execution_provider_billing_rejected"}.get(
+                            status, "execution_provider_request_rejected")
+                raise ExecutionBudgetError(code, current_execution_scope() or "") from exc
+
             if _is_rate_limit_error(exc):
                 rate_limit_attempt += 1
                 if rate_limit_attempt >= rl_max_attempts:
@@ -1777,7 +2644,7 @@ async def _call_litellm_with_retry(
                     backoff,
                     " [Retry-After]" if retry_after is not None else "",
                 )
-                await asyncio.sleep(backoff)
+                await _execution_backoff(backoff)
                 continue
 
             generic_attempt += 1
@@ -1819,7 +2686,7 @@ async def _call_litellm_with_retry(
                 exc,
                 backoff,
             )
-            await asyncio.sleep(backoff)
+            await _execution_backoff(backoff)
 
 
 # Per-project model override cache (project_id -> (expiry_monotonic, entry)).
@@ -1827,6 +2694,11 @@ async def _call_litellm_with_retry(
 # every LLM call. Short TTL so a UI model switch takes effect within seconds.
 _PROJECT_MODEL_OVERRIDE_CACHE: dict[str, tuple[float, Any]] = {}
 _PROJECT_MODEL_OVERRIDE_TTL_SECONDS = 15.0
+
+
+def invalidate_project_model_override_cache(project_id) -> None:
+    """A new stage must observe its explicitly selected project model now."""
+    _PROJECT_MODEL_OVERRIDE_CACHE.pop(str(project_id), None)
 
 # Conception runs *before* a DB project row exists, so its LLM calls carry
 # ``project_id=None`` and cannot resolve the per-book model from project
@@ -1838,6 +2710,15 @@ _PROJECT_MODEL_OVERRIDE_TTL_SECONDS = 15.0
 # it never leaks into the later planning/writing phases.
 _conception_model_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "bestseller_conception_model_catalog_key", default=None
+)
+_conception_task_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "bestseller_conception_task_id", default=None
+)
+_conception_workflow_id_var: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
+    "bestseller_conception_workflow_id", default=None
+)
+_conception_checkpoint_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "bestseller_conception_checkpoint", default=False
 )
 
 # Conception's LLM calls are small structured proposals (facets, market/character
@@ -1858,25 +2739,57 @@ def bind_conception_model(
     model_catalog_key: str | None,
     *,
     call_timeout_seconds: float | None = None,
-):
+    task_id: str | None = None,
+    workflow_run_id: UUID | None = None,
+) -> Iterator[None]:
     """Bind conception-scoped LLM overrides (fallback model + per-call timeout).
 
     ``model_catalog_key`` gives project-less conception calls the chosen model;
     ``call_timeout_seconds`` caps each call's wall-clock so a stalled provider
     surfaces fast instead of hanging into the watchdog. Both are no-ops when
-    falsy. Safe to nest; always resets.
+    falsy. ``workflow_run_id`` links otherwise unbound, project-less calls to
+    the creation attempt; an explicit request workflow takes precedence.
+    Safe to nest; always resets.
     """
     model_token = _conception_model_var.set(
         (model_catalog_key or "").strip() or None
     )
+    task_token = _conception_task_id_var.set((task_id or "").strip() or None)
+    workflow_token = _conception_workflow_id_var.set(workflow_run_id)
     timeout_token = _conception_call_timeout_var.set(
         float(call_timeout_seconds) if call_timeout_seconds else None
     )
+    checkpoint_token = _conception_checkpoint_var.set(True)
     try:
-        yield
+        # The stable web task survives conception workflow replacement.
+        scope = current_execution_scope() or (
+            f"conception:{task_id}" if task_id else (f"workflow:{workflow_run_id}" if workflow_run_id else None)
+        )
+        if scope is not None:
+            with bind_execution_scope(scope):
+                yield
+                raise_if_execution_stopped()
+        else:
+            yield
     finally:
         _conception_model_var.reset(model_token)
+        _conception_task_id_var.reset(task_token)
+        _conception_workflow_id_var.reset(workflow_token)
         _conception_call_timeout_var.reset(timeout_token)
+        _conception_checkpoint_var.reset(checkpoint_token)
+
+
+def get_conception_model_catalog_key() -> str | None:
+    """Return the model explicitly bound for the current conception scope."""
+    return _conception_model_var.get()
+
+
+def get_conception_task_id() -> str | None:
+    """Return the Web task id bound to the current conception scope."""
+    return _conception_task_id_var.get()
+
+
+_PROJECT_PRODUCTION_PROFILE_CACHE: dict[str, tuple[float, str | None]] = {}
 
 
 async def _resolve_project_model_override(
@@ -1902,8 +2815,26 @@ async def _resolve_project_model_override(
         logger.debug("model override lookup failed for %s", project_id, exc_info=True)
         metadata = None
     entry = resolve_project_model_entry(metadata if isinstance(metadata, dict) else None)
+    _PROJECT_PRODUCTION_PROFILE_CACHE[key] = (now + _PROJECT_MODEL_OVERRIDE_TTL_SECONDS,
+        metadata.get("production_profile") if isinstance(metadata, dict) else None)
     _PROJECT_MODEL_OVERRIDE_CACHE[key] = (now + _PROJECT_MODEL_OVERRIDE_TTL_SECONDS, entry)
     return entry
+
+
+async def _preserve_legacy_project_default(session, settings, project_id, role_name, effective_role):
+    """Existing unbound books retain their captured model on default upgrade.
+
+    New books freeze a catalog selection at creation. No existing metadata,
+    request override, unavailable-selection policy, credentials or grade changes.
+    """
+    from sqlalchemy import select
+    if project_id is None:
+        return effective_role
+    metadata = await session.scalar(select(ProjectModel.metadata_json).where(ProjectModel.id == project_id))
+    if not isinstance(metadata, dict) or metadata.get("llm_model_id"):
+        return effective_role
+    from bestseller.services.model_catalog import legacy_project_role
+    return legacy_project_role(settings, project_id, role_name) or effective_role
 
 
 def _apply_model_override(role_settings: LLMRoleSettings, entry: Any) -> LLMRoleSettings:
@@ -1915,6 +2846,9 @@ def _apply_model_override(role_settings: LLMRoleSettings, entry: Any) -> LLMRole
         # the previous role's header would break auth on a different vendor.
         "api_key_header": getattr(entry, "api_key_header", None),
     }
+    from bestseller.services import minimax_m31_protocol as m31
+    if m31.applies(entry.model):
+        update.update(thinking_type=None, reasoning_effort=None)
     if entry.api_key_env:
         update["api_key_env"] = entry.api_key_env
     # Keep model_override consistent so the strong-tier path uses the same model.
@@ -1923,11 +2857,157 @@ def _apply_model_override(role_settings: LLMRoleSettings, entry: Any) -> LLMRole
     return role_settings.model_copy(update=update)
 
 
+def _paid_call_origin(request: LLMCompletionRequest, prompt_hash: str | None) -> dict[str, Any]:
+    """Credential-free attribution committed with the physical paid return."""
+    return {
+        "schema": "paid-call-origin.v1", "status": "recorded",
+        **{key: str(value) if value is not None else None for key, value in (
+            ("project_id", request.project_id), ("workflow_run_id", request.workflow_run_id),
+            ("step_run_id", request.step_run_id),
+        )},
+        "logical_role": request.logical_role, "prompt_template": request.prompt_template,
+        "prompt_version": request.prompt_version, "prompt_hash": prompt_hash,
+    }
+
+
+def _cached_paid_call_origin(metadata: dict[str, Any]) -> dict[str, Any]:
+    origin = metadata.get("paid_call_origin")
+    required = {"project_id", "workflow_run_id", "step_run_id", "logical_role",
+                "prompt_template", "prompt_version", "prompt_hash"}
+    if (isinstance(origin, dict) and origin.get("schema") == "paid-call-origin.v1"
+        and origin.get("status") == "recorded" and required <= origin.keys()
+        and origin["logical_role"] in ("planner", "writer", "critic", "editor", "summarizer")):
+        try:
+            for key in ("project_id", "workflow_run_id", "step_run_id"):
+                if origin[key] is not None:
+                    UUID(origin[key])
+        except (ValueError, TypeError, AttributeError):
+            pass
+        else:
+            return {key: origin[key] for key in (*required, "schema", "status")}
+    # Old ledgers never retained the sending workflow. A replay's workflow is
+    # evidence of recovery only, and must not become invented paid-call history.
+    return {"schema": "paid-call-origin.v1", "status": "unknown", "legacy": True,
+            "reason": "missing_or_invalid_paid_call_origin",
+            "project_id": None, "workflow_run_id": None, "step_run_id": None}
+
+
+async def _bind_execution_telemetry(
+    session: AsyncSession, candidate: LlmRunModel, operation_key: str,
+) -> LlmRunModel:
+    """Original inserts and replays take the SAME lock until caller commit.
+
+    The UPDATE locks PostgreSQL's operation row and serializes SQLite writers.
+    Keep this in the caller transaction so rollback can still remove telemetry;
+    the independently committed paid result remains available for recovery.
+    """
+    from sqlalchemy import select, update
+    from bestseller.infra.db.models import ExecutionOperationModel
+
+    if callable(getattr(session, "execute", None)):
+        await session.execute(update(ExecutionOperationModel).where(
+            ExecutionOperationModel.key == operation_key).values(status=ExecutionOperationModel.status))
+    existing = None
+    if callable(getattr(session, "scalar", None)):
+        existing = await session.scalar(select(LlmRunModel).where(
+            LlmRunModel.metadata_json["execution_receipt"]["operation_key"].as_string() == operation_key
+        ).order_by(LlmRunModel.created_at).limit(1))
+    if existing is not None:
+        # The caller's recovery context already travels on the returned
+        # completion. An existing paid row is immutable historical evidence.
+        return existing
+    session.add(candidate)
+    await session.flush()
+    return candidate
+
+
+async def _restore_execution_telemetry(
+    session: AsyncSession, request: LLMCompletionRequest,
+    cached: LLMCompletionResult, claim: OperationClaim, prompt_hash: str, scope_id: str,
+) -> None:
+    """Bind a replay to one durable paid receipt, including after rollback."""
+    cached.metadata["execution_receipt"] = {
+        **cached.metadata.get("execution_receipt", {}),
+        "scope_id": scope_id, "operation_key": claim.key,
+    }
+
+    origin = _cached_paid_call_origin(cached.metadata)
+    recovery = {**_paid_call_origin(request, prompt_hash), "schema": "execution-recovery.v1"}
+    cached.metadata.update(paid_call_origin=origin, execution_recovery=recovery)
+    receipt_metadata = {key: cached.metadata[key] for key in (
+        "execution_receipt", "effective_input_receipt", "runtime_provenance",
+        "conception_task_id", "paid_call_origin", "execution_recovery",
+        "native_deadline_policy") if key in cached.metadata}
+    receipt_metadata["recovered_from_execution_operation"] = claim.key
+    effective_receipt = cached.metadata.get("effective_input_receipt") or {}
+    source_hash = effective_receipt.get("hash") or origin.get("prompt_hash")
+    row = await _bind_execution_telemetry(session, LlmRunModel(
+        id=uuid4(), **{key: UUID(origin[key]) if origin[key] else None
+                      for key in ("project_id", "workflow_run_id", "step_run_id")},
+        logical_role=origin.get("logical_role", request.logical_role), provider=cached.provider,
+        model_name=cached.model_name, prompt_template=origin.get("prompt_template"),
+        prompt_version=origin.get("prompt_version"), prompt_hash=source_hash,
+        input_tokens=cached.input_tokens, output_tokens=cached.output_tokens,
+        latency_ms=cached.latency_ms, finish_reason=cached.finish_reason,
+        metadata_json=receipt_metadata,
+    ), claim.key)
+    cached.llm_run_id = row.id
+    cached.metadata["reused_source_workflow_run_id"] = (
+        str(row.workflow_run_id) if row.workflow_run_id else None)
+    cached.metadata["llm_run_flushed"] = True
+
+
 async def complete_text(
     session: AsyncSession,
     settings: AppSettings,
     request: LLMCompletionRequest,
 ) -> LLMCompletionResult:
+    raise_if_execution_stopped()
+    token = _execution_call_var.set(None)
+    try:
+        result = await _complete_text_impl(session, settings, request)
+        call = _execution_call_var.get()
+        if call is not None:
+            result.metadata["execution_receipt"] = {
+                "scope_id": call.ledger.scope_id, "operation_key": call.claim.key,
+                "attempts": call.attempts, "policy": "execution-budget.v1",
+            }
+            # Independent commit before returning: an outer workflow rollback
+            # must not turn a successful paid result into a free resubmission.
+            if not call.completed:
+                await call.ledger.finish(call.claim, result.model_dump(mode="json"))
+            # Another dispatcher/operator has a separate ContextVar. Its stop
+            # can arrive during formatting or telemetry after our settlement.
+            await call.ledger.assert_result_adoptable(call.claim)
+        return result
+    except BaseException as exc:
+        if isinstance(exc, ExecutionBudgetError):
+            record_execution_stop(exc)
+        call = _execution_call_var.get()
+        if call is not None:
+            try:
+                await call.ledger.finish(call.claim, None)
+            except ExecutionBudgetError:
+                pass  # unknown/failed ledger stays closed, never erase evidence
+        raise
+    finally:
+        _execution_call_var.reset(token)
+
+
+async def _complete_text_impl(
+    session: AsyncSession,
+    settings: AppSettings,
+    request: LLMCompletionRequest,
+) -> LLMCompletionResult:
+    from bestseller.services.conception_continuation import version_request
+    request = await version_request(session, request)
+    # Project-less specialists (including parallel tournament calls) share the
+    # creation workflow. Explicit requests and later project work retain their
+    # own provenance; never mutate a request reused outside this context.
+    if request.project_id is None and request.workflow_run_id is None:
+        creation_workflow_id = _conception_workflow_id_var.get()
+        if creation_workflow_id is not None:
+            request = request.model_copy(update={"workflow_run_id": creation_workflow_id})
     # Defensive: a caller that omits settings (passes ``None``) must NOT
     # silently degrade to the mock provider — that turned real generation
     # into empty mock output for standalone callers (e.g. ai_flavor_loop_gen).
@@ -1939,6 +3019,10 @@ async def complete_text(
     _project_model_entry = await _resolve_project_model_override(session, request.project_id)
     if _project_model_entry is not None:
         role_settings = _apply_model_override(role_settings, _project_model_entry)
+    else:
+        role_settings = await _preserve_legacy_project_default(
+            session, settings, request.project_id, request.logical_role, role_settings
+        )
     # A per-call model-catalog override (e.g. a capable commercial-judge model) wins
     # over the book's per-project model so judging quality is independent of the
     # writer tier. A missing/unavailable entry falls back to the role default,
@@ -1975,6 +3059,17 @@ async def complete_text(
         role_settings = role_settings.model_copy(
             update={"model": role_settings.model_override}
         )
+    role_settings = _apply_conception_phase_settings(request, role_settings)
+    from bestseller.services.production_strategy import (
+        stream_conception_enabled, apply_production_stream_settings, production_stream_enabled,
+    )
+    cached_profile = _PROJECT_PRODUCTION_PROFILE_CACHE.get(str(request.project_id))
+    complete_project = bool(cached_profile and cached_profile[0] > time.monotonic()
+                            and cached_profile[1] == "complete")
+    complete_stream = production_stream_enabled(request,role_settings,
+        profile='complete' if complete_project else None,ambient_complete=stream_conception_enabled())
+    role_settings = apply_production_stream_settings(request,role_settings,
+        profile='complete' if complete_project else None,ambient_complete=stream_conception_enabled())
     effective_primary_model = role_settings.model
     rate_limit_fallback_settings = (
         _build_rate_limit_fallback_settings(role_settings)
@@ -1985,8 +3080,68 @@ async def complete_text(
         request.logical_role,
         role_settings,
     )
-    prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
+    if request.metadata.get("require_source_complete_capacity") is True:
+        from bestseller.services.source_bound_planning_content import assert_source_bound_planning_request_capacity
+        effective_payload = _effective_input_payload(request, role_settings)
+        messages = effective_payload['messages']
+        system, user = (request.system_prompt, request.user_prompt) if request.messages_override is None else (
+            '', json.dumps(messages, ensure_ascii=False))
+        assert_source_bound_planning_request_capacity(system, user, tools=request.tools,
+            output_tokens=effective_payload['max_tokens'])
+    if not settings.llm.mock:
+        from bestseller.services.llm_capacity import assert_effective_request_capacity
+        assert_effective_request_capacity(_effective_input_payload(request, role_settings))
+    from bestseller.services.conception_continuation import restore_retained_serialization
+    request = await restore_retained_serialization(session, settings, request, role_settings)
+    from bestseller.services.source_complete_retention import retention_limit
+    retention_limit(settings, request, audit=_project_prompt_audit.get(), role=role_settings)
+    source_retention_audit = _project_prompt_audit.get()
+    source_retention_contract = json.dumps(request.metadata.get('source_complete_retention'),
+        ensure_ascii=False, sort_keys=True, allow_nan=False)
+    prompt_hash = _effective_input_hash(request, role_settings)
+    prepared_input = request.metadata.get("prepared_effective_input")
+    if prepared_input is not None and (
+        not isinstance(prepared_input, dict)
+        or set(prepared_input) != {"schema", "hash"}
+        or prepared_input.get("schema") != "effective-input.v1"
+        or prepared_input.get("hash") != prompt_hash
+    ):
+        raise ExecutionBudgetError("execution_prepared_input_changed", current_execution_scope() or "")
+    semantic_namespace = _semantic_operation_namespace.get()
+    if request.operation_id is None and semantic_namespace is not None:
+        namespace, default_slot = semantic_namespace
+        slot = request.sample_slot
+        if slot is None:
+            slot = next((request.metadata[key] for key in ("sample_slot", "sample_index", "candidate_index")
+                         if request.metadata.get(key) is not None), default_slot)
+        request = request.model_copy(update={
+            "operation_id": execution_operation_id(namespace,
+                subject=f"{request.logical_role}:{request.prompt_template}:{request.prompt_version}",
+                revision=prompt_hash),
+            "sample_slot": slot,
+        })
+    from bestseller.services.chapter_primary_timeout_recovery import guard_prepared_request as guard_primary_timeout_request
+    request = await guard_primary_timeout_request(session, settings, request, prompt_hash, semantic_namespace, role_settings=role_settings, effective_payload=_effective_input_payload(request, role_settings))
+    from bestseller.services.retained_request_guard import guard_prepared_request as guard_retained_request
+    await guard_retained_request(session, request, role_settings, prompt_hash)
+    from bestseller.services.conception_continuation import adopt_cached
+    recovered = await adopt_cached(session, request, prompt_hash, _effective_input_payload(request, role_settings))
+    if recovered is not None:
+        return LLMCompletionResult.model_validate(recovered)
+    from bestseller.services.pending_manuscript_continuation import enforce_stage_request
+    request = await enforce_stage_request(session, request, role_settings, prompt_hash)
+    from bestseller.services.finite_book_budget import guard_prepared_request
+    await guard_prepared_request(request,role_settings,_effective_input_payload(request,role_settings),prompt_hash,session=session)
+    if "native_deadline_policy" in request.metadata:
+        raise ValueError("planning_native_deadline:caller_policy_forbidden")
     metadata = dict(request.metadata)
+    # Task attribution is ambient and authoritative. Never accept a caller
+    # supplied value when no task scope is bound, and never let it overwrite
+    # the bound task id (including for explicit critic model routes).
+    metadata.pop("conception_task_id", None)
+    _conception_task_id = _conception_task_id_var.get()
+    if _conception_task_id is not None:
+        metadata["conception_task_id"] = _conception_task_id
     if _override_unavailable_reason is not None:
         metadata["model_catalog_override_key"] = _effective_catalog_key
         metadata["model_catalog_override_unavailable"] = _override_unavailable_reason
@@ -1998,18 +3153,95 @@ async def complete_text(
     provider = "mock"
     model_name = f"mock-{request.logical_role}"
     content = _mock_content_for_request(request)
-    input_tokens = _estimate_tokens(request.system_prompt) + _estimate_tokens(request.user_prompt)
-    output_tokens = _estimate_tokens(content)
-    finish_reason = "mock"
+    input_tokens: int | None = (
+        _estimate_tokens(request.system_prompt) + _estimate_tokens(request.user_prompt)
+    )
+    output_tokens: int | None = _estimate_tokens(content)
+    finish_reason: str | None = "mock"
     fallback_used = False
     fallback_source: str | None = None
 
     tool_calls: list[dict[str, Any]] | None = None
     raw_message: dict[str, Any] | None = None
+    effective_role_settings = role_settings
     started_at = perf_counter()
     if not settings.llm.mock:
+        call_settings = role_settings
+        scope = current_execution_scope()
         try:
+            # Worker-bound production-control checks run immediately before
+            # entering the provider path.  An already-running request is left
+            # alone; a pause/stop cannot launch the next paid call.
+            await check_cancellation()
+            if callable(getattr(session, "in_nested_transaction", None)) and session.in_nested_transaction():
+                raise ExecutionBudgetError("execution_transaction_not_releasable", scope or "")
+            scope = current_execution_scope()
+            if scope is None:
+                task_id = _conception_task_id_var.get()
+                if task_id:
+                    scope = f"conception:{task_id}"
+                elif request.project_id is not None:
+                    scope = f"project:{request.project_id}"
+                    # Direct CLI/service entry points must preserve the same
+                    # creation scope as worker/web after a project gains an id.
+                    from sqlalchemy import select
+                    try:
+                        project_meta = await session.scalar(select(ProjectModel.metadata_json).where(
+                            ProjectModel.id == request.project_id))
+                    except Exception as scope_error:
+                        raise ExecutionBudgetError("execution_ledger_unavailable", scope) from scope_error
+                    if isinstance(project_meta, dict):
+                        saved_scope = project_meta.get("execution_scope_id")
+                        if (isinstance(saved_scope, str) and len(saved_scope) <= 256
+                            and saved_scope.startswith(("project:", "conception:", "workflow:"))):
+                            scope = saved_scope
+                elif request.workflow_run_id is not None:
+                    scope = f"workflow:{request.workflow_run_id}"
+            if scope is None:
+                raise ExecutionBudgetError("execution_scope_missing")
             await _release_session_before_external_llm_call(session)
+            ledger = ExecutionLedger(getattr(session, "bind", None), scope, settings.budget)
+            semantic_key = hashlib.sha256(json.dumps({
+                "input_hash": prompt_hash, "role": request.logical_role,
+                "template": request.prompt_template, "version": request.prompt_version,
+            }, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+            sample_slot = request.sample_slot
+            if sample_slot is None:
+                for sample_key in ("sample_slot", "sample_index", "candidate_index"):
+                    if request.metadata.get(sample_key) is not None:
+                        sample_slot = request.metadata[sample_key]
+                        break
+            if request.operation_id is not None:
+                operation_id = request.operation_id + (f":sample:{sample_slot}" if sample_slot is not None else "")
+            elif sample_slot is not None:
+                operation_id = f"{semantic_key}:sample:{sample_slot}"
+            else:
+                invocation = next_execution_operation_slot(semantic_key)
+                operation_id = f"{semantic_key}:slot:{invocation}" if invocation is not None else uuid4().hex
+            claim = await ledger.claim(operation_id, prompt_hash)
+            if claim.cached_result is not None:
+                if request.operation_id is None and sample_slot is None:
+                    # A checkpoint may skip an identical earlier sample. An
+                    # in-memory ordinal cannot identify its intended result.
+                    raise ExecutionBudgetError("execution_operation_identity_required", scope)
+                await ledger.assert_result_adoptable(claim, cached=True)
+                cached = LLMCompletionResult.model_validate(claim.cached_result)
+                # The result is durable in the operation ledger. The old
+                # llm_runs flush may have belonged to a rolled-back workflow.
+                cached.metadata["reused_operation_key"] = claim.key
+                await _restore_execution_telemetry(session, request, cached, claim, prompt_hash, scope)
+                await ledger.assert_result_adoptable(claim, cached=True)
+                from bestseller.services.retained_request_guard import mark_retained_reused
+                mark_retained_reused(claim.key)
+                return cached
+            execution_call = _ExecutionCall(ledger, claim, role_settings.model, settings=settings)
+            if complete_stream:
+                # The scope's immutable absolute deadline still wraps the wire.
+                # Keep the configured SDK read timeout; only active streams may
+                # use the existing finite planning lifetime, never an extension.
+                execution_call.stream_total_timeout_seconds = max(
+                    float(role_settings.timeout_seconds), float(settings.llm.planner.timeout_seconds))
+            _execution_call_var.set(execution_call)
             call_settings = role_settings
             retry_settings = settings.llm.retry
             if rate_limit_fallback_settings and _is_rate_limit_fallback_active(
@@ -2027,6 +3259,7 @@ async def complete_text(
 
             provider = _provider_from_model(call_settings.model)
             model_name = call_settings.model
+            effective_role_settings = call_settings
             (
                 content,
                 input_tokens,
@@ -2039,6 +3272,8 @@ async def complete_text(
             )
             if call_settings is role_settings:
                 _clear_rate_limit_fallback(rate_limit_fallback_key)
+        except ExecutionBudgetError:
+            raise
         except Exception as exc:
             if (
                 call_settings is role_settings
@@ -2056,6 +3291,7 @@ async def complete_text(
                 try:
                     provider = _provider_from_model(rate_limit_fallback_settings.model)
                     model_name = rate_limit_fallback_settings.model
+                    effective_role_settings = rate_limit_fallback_settings
                     (
                         content,
                         input_tokens,
@@ -2068,57 +3304,128 @@ async def complete_text(
                         rate_limit_fallback_settings,
                         settings.llm.retry,
                     )
+                except ExecutionBudgetError:
+                    raise
                 except Exception as fallback_exc:
-                    provider = "fallback"
-                    model_name = f"fallback-{request.logical_role}"
-                    metadata["configured_model"] = role_settings.model
-                    metadata["fallback_model"] = rate_limit_fallback_settings.model
-                    metadata["fallback_reason"] = (
-                        f"{type(fallback_exc).__name__}: {fallback_exc}"
-                    )
-                    metadata["primary_rate_limit_reason"] = f"{type(exc).__name__}: {exc}"
-                    metadata["retry_exhausted"] = True
-                    finish_reason = "fallback"
-                    logger.error(
-                        "LLM rate-limit fallback FAILED for role=%s primary=%s fallback=%s "
-                        "template=%s — using fallback content. Error: %s: %s",
-                        request.logical_role,
-                        role_settings.model,
-                        rate_limit_fallback_settings.model,
-                        request.prompt_template,
-                        type(fallback_exc).__name__,
-                        fallback_exc,
-                    )
+                    raise ExecutionBudgetError("execution_provider_rejected", scope) from fallback_exc
             else:
-                provider = "fallback"
-                fallback_used = True
-                fallback_source = "static_response"
-                model_name = f"fallback-{request.logical_role}"
-                metadata["configured_model"] = role_settings.model
-                metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
-                metadata["retry_exhausted"] = True
-                if _is_model_gone_error(exc):
-                    # Make dead-model fallbacks queryable in llm_runs instead
-                    # of only visible in worker logs.
-                    metadata["model_gone"] = True
-                finish_reason = "fallback"
-                logger.error(
-                    "LLM call FAILED for role=%s model=%s template=%s — using fallback content. "
-                    "Error: %s: %s",
-                    request.logical_role,
-                    role_settings.model,
-                    request.prompt_template,
-                    type(exc).__name__,
-                    exc,
-                )
+                # Real execution never fabricates successful story/JSON output
+                # from fallback_response after exhausted/definite rejection.
+                raise ExecutionBudgetError("execution_provider_rejected", scope) from exc
     latency_ms = int((perf_counter() - started_at) * 1000)
 
     # Attach ambient attribution (chapter / gate / rework event) so spend can be
     # grouped by the work that caused it while a loop is still running, instead
     # of being reconstructed from the bill afterwards.
     metadata = merge_attribution_into(metadata)
+    prompt_hash = _effective_input_hash(request, effective_role_settings)
+    _execution_call = _execution_call_var.get()
+    if _execution_call is not None and _execution_call.native_deadline_policy is not None:
+        metadata["native_deadline_policy"] = dict(_execution_call.native_deadline_policy)
+    if _execution_call is not None and _execution_call.attempts:
+        # Empty-length recovery may change the effective token cap. The actual
+        # final transport receipt wins over the original request's hash.
+        prompt_hash = _execution_call.attempts[-1]["effective_input_hash"]
+    metadata["effective_input_receipt"] = {
+        "schema": "effective-input.v1", "hash": prompt_hash,
+        "messages_source": "override" if request.messages_override is not None else "system_user",
+        "model": effective_role_settings.model,
+        "tools_included": bool(request.tools),
+        "legacy_prompt_hash": _hash_prompt(request.system_prompt, request.user_prompt),
+    }
+    # Keep each LLM receipt joinable to the process snapshot without copying
+    # the full Web task manifest. This is a process reference only; no claim is
+    # made here that a worker task was linked to the originating Web task.
+    metadata["runtime_provenance"] = process_runtime_reference(settings)
 
+    # Allocate the receipt id before the first flush. This lets us assemble the
+    # JSON receipt and metadata in one INSERT, avoiding in-place JSON mutation
+    # after SQLAlchemy has already flushed the row.
+    metadata["llm_run_flushed"] = True
+    candidate_llm_run_id = uuid4()
+    if ((source_retention_contract != 'null' or 'source_complete_retention' in request.metadata)
+            and (source_retention_audit != _project_prompt_audit.get()
+                 or source_retention_contract != json.dumps(request.metadata.get('source_complete_retention'),
+                     ensure_ascii=False, sort_keys=True, allow_nan=False))):
+        raise ValueError('source_complete_retention:contract_changed_after_dispatch')
+    request_ref, response_ref, payload_reason, payload_replayable = _persist_prompt_payloads(
+        settings=settings,
+        request=request,
+        llm_run_id=candidate_llm_run_id,
+        configured_model=role_settings.model,
+        effective_model=model_name,
+        effective_role_settings=effective_role_settings,
+        provider=provider,
+        effective_temperature=(
+            request.temperature_override
+            if request.temperature_override is not None
+            else effective_role_settings.temperature
+        ),
+        effective_max_tokens=_effective_request_max_tokens(effective_role_settings, request),
+        effective_timeout_seconds=metadata.get("native_deadline_policy", {}).get(
+            "sdk_timeout_seconds", effective_role_settings.timeout_seconds),
+        effective_stream=False if metadata.get("native_deadline_policy") else effective_role_settings.stream,
+        effective_thinking_type=_effective_thinking_type(effective_role_settings),
+        effective_reasoning_effort=_effective_input_payload(request, effective_role_settings)["reasoning_effort"],
+        content=content,
+        tool_call_count=len(tool_calls or []),
+        tool_calls=tool_calls,
+        raw_message=raw_message,
+        finish_reason=finish_reason,
+        fallback_used=fallback_used or provider == "fallback" or finish_reason == "fallback",
+        fallback_source=fallback_source,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        native_deadline_policy=metadata.get("native_deadline_policy"),
+    )
+    if request_ref is not None and response_ref is not None:
+        metadata["prompt_payload_receipt"] = {
+            "enabled": True,
+            "status": "stored",
+            "replayable": payload_replayable,
+            "request_ref": request_ref,
+            "response_ref": response_ref,
+        }
+    elif payload_reason == "write_failed":
+        metadata["prompt_payload_receipt"] = {
+            "enabled": True,
+            "status": "missing",
+            "replayable": False,
+            "reason": payload_reason,
+        }
+    else:
+        metadata["prompt_payload_receipt"] = {
+            "enabled": settings.artifact_store.retain_prompt_payloads,
+            "status": "disabled" if payload_reason == "disabled" else "skipped",
+            "replayable": False,
+            "reason": payload_reason,
+        }
+    if _execution_call is not None:
+        metadata["paid_call_origin"] = _paid_call_origin(request, prompt_hash)
+        metadata["execution_receipt"] = {
+            "scope_id": _execution_call.ledger.scope_id,
+            "operation_key": _execution_call.claim.key,
+            "attempts": _execution_call.attempts, "policy": "execution-budget.v1",
+        }
+        # Commit the reusable result before optional telemetry flush opens an
+        # outer transaction. This also avoids SQLite writer lock inversion.
+        await _execution_call.ledger.finish(_execution_call.claim, LLMCompletionResult(
+            content=content, provider=provider, model_name=model_name,
+            input_tokens=input_tokens, output_tokens=output_tokens, latency_ms=latency_ms,
+            finish_reason=finish_reason, fallback_used=fallback_used or provider == "fallback",
+            fallback_source=fallback_source, effective_primary_model=effective_primary_model,
+            # Do not duplicate arbitrary caller metadata (which may contain
+            # credentials) into the durable response cache.
+            metadata={**{key: metadata[key] for key in (
+                "execution_receipt", "effective_input_receipt", "runtime_provenance",
+                "conception_task_id", "paid_call_origin",
+                "native_deadline_policy",
+            ) if key in metadata}, "llm_run_flushed": False}, tool_calls=tool_calls,
+            raw_message=raw_message,
+        ).model_dump(mode="json"))
+        _execution_call.completed = True
     llm_run = LlmRunModel(
+        id=candidate_llm_run_id,
         project_id=request.project_id,
         workflow_run_id=request.workflow_run_id,
         step_run_id=request.step_run_id,
@@ -2132,9 +3439,57 @@ async def complete_text(
         output_tokens=output_tokens,
         latency_ms=latency_ms,
         finish_reason=finish_reason,
+        request_payload_ref=request_ref,
+        response_payload_ref=response_ref,
         metadata_json=metadata,
     )
     llm_run_id = await _persist_llm_run_safely(session, llm_run)
+    if llm_run_id is not None and llm_run_id != candidate_llm_run_id:
+        # A replay may have bound the paid return while this original caller
+        # was formatting it. Do not leave payload files claiming a second run.
+        _remove_prompt_payloads(settings, request_ref, response_ref)
+        metadata["prompt_payload_receipt"] = {
+            "status": "skipped", "reason": "existing_execution_receipt",
+            "source_llm_run_id": str(llm_run_id), "replayable": False,
+        }
+    if llm_run_id is None:
+        _remove_prompt_payloads(settings, request_ref, response_ref)
+        metadata["llm_run_flushed"] = False
+
+    # A project-less conception run may fail after its last LLM call. Commit
+    # this bounded telemetry checkpoint so the final receipt survives the
+    # outer conception transaction rollback. Normal project generation keeps
+    # its existing transaction semantics.
+    if (
+        llm_run_id is not None
+        and _conception_checkpoint_var.get()
+        and request.project_id is None
+    ):
+        commit = getattr(session, "commit", None)
+        in_nested_transaction = getattr(session, "in_nested_transaction", None)
+        if callable(commit) and not (
+            callable(in_nested_transaction) and in_nested_transaction()
+        ):
+            try:
+                await commit()
+            except Exception:
+                logger.warning(
+                    "Conception telemetry checkpoint commit failed",
+                    exc_info=True,
+                )
+                rollback = getattr(session, "rollback", None)
+                if callable(rollback):
+                    try:
+                        await rollback()
+                    except Exception:
+                        logger.debug(
+                            "Rollback after conception telemetry checkpoint failure failed",
+                            exc_info=True,
+                        )
+                # The transaction may be in an unknown state after commit
+                # failure; never return a UUID as if the receipt were durable.
+                llm_run_id = None
+                metadata["llm_run_flushed"] = False
 
     return LLMCompletionResult(
         content=content,

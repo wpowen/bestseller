@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pytest
+from planning_capability_test_helpers import explicit_planning_metadata
 
 from bestseller.services.quality_levers.integrator import (
     CriticLeverContext,
@@ -208,6 +209,7 @@ def test_build_writer_quality_levers_block_includes_emotion_driven_kernel() -> N
         WriterLeverContext(
             chapter_number=2,
             emotion_driven_kernel=_emotion_kernel(),
+            project_metadata=explicit_planning_metadata("emotion_driven_kernel"),
         )
     )
 
@@ -221,6 +223,7 @@ def test_build_writer_quality_levers_block_includes_public_emotion_kernel() -> N
     block = build_writer_quality_levers_block(
         WriterLeverContext(
             chapter_number=2,
+            project_metadata=explicit_planning_metadata("public_emotion_kernel"),
             public_emotion_kernel={
                 "target_segments": [
                     {

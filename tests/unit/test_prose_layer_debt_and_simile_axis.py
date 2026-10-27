@@ -86,11 +86,15 @@ def _review_fixtures() -> tuple:
     return project, chapter, scene, draft, review_result
 
 
-def test_scene_review_prompt_has_simile_coherence_subcheck() -> None:
+def test_scene_review_prompt_keeps_imagery_advice_without_fixed_simile_recipe() -> None:
     project, chapter, scene, draft, review_result = _review_fixtures()
-    system_prompt, _ = reviews.build_scene_review_prompts(project, chapter, scene, draft, review_result)
-    assert "比喻/意象不通" in system_prompt
-    assert "空了的胃" in system_prompt  # 真机反例原样出现在判断标准里
-    # 轴 7 仍是"逻辑自洽（硬轴）"且第 7 项 FAIL 仍强制 rewrite —— 不破坏既有契约
-    assert "逻辑自洽（硬轴）" in system_prompt
-    assert "第 7 项 FAIL" in system_prompt
+    system_prompt, user_prompt = reviews.build_scene_review_prompts(project, chapter, scene, draft, review_result)
+    assert "可结合上下文讨论可读性、因果、比喻与吸引力" in system_prompt
+    assert "具体、有来源和后果证据的缺陷才判 rewrite" in system_prompt
+    assert "不按多轴失败数量返工" in system_prompt
+    assert "EVIDENCE 只引用 CURRENT_DRAFT 内逐字连续摘录" in system_prompt
+    assert "CURRENT_DRAFT:\n" + draft.content_md + "\nEND_CURRENT_DRAFT" in user_prompt
+    assert scene.purpose["story"] in user_prompt and scene.purpose["emotion"] in user_prompt
+    assert "Canon/Timeline" in system_prompt
+    for recipe in ("空了的胃", "一秒内想清楚", "逻辑自洽（硬轴）", "第 7 项 FAIL", "Prompt Pack："):
+        assert recipe not in system_prompt + user_prompt

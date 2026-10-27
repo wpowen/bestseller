@@ -101,6 +101,8 @@ def test_ranking_readiness_combines_text_and_behavior_60_40() -> None:
     assert report.maturity_score == 88
     assert report.tier == "flagship"
     assert report.scoring_basis == "text_plus_behavior"
+    assert report.diagnostic_only is True
+    assert report.claims_allowed == ()
 
 
 def test_ranking_readiness_caps_flagship_when_external_gate_fails() -> None:
@@ -256,7 +258,9 @@ def test_project_ranking_readiness_derives_project_evidence() -> None:
     )
 
     assert report.passed is True
-    assert report.tier in {"strong_project", "flagship"}
+    assert report.tier == "strong_project"
+    assert report.prelaunch_tier == "strong_project"
+    assert report.claims_allowed == ()
     assert report.marketing_assets["short_video_scripts"][0]["duration_seconds"] == 15
     assert report.ip_readiness["status"] == "ready"
 
@@ -355,3 +359,33 @@ def test_project_ranking_readiness_blocks_low_scorecard_and_incomplete_book() ->
     assert "scorecard_quality_below_recommendation" in codes
     assert "book_completion_below_target" in codes
     assert "cliffhanger_entropy_low" in codes
+
+
+def test_text_only_perfect_score_is_diagnostic_and_never_flagship() -> None:
+    report = evaluate_ranking_readiness(
+        title="满分文本也不是市场证据",
+        dimension_scores=dict.fromkeys(
+            (
+                "character",
+                "opening_hook",
+                "pacing_structure",
+                "conflict_reversal",
+                "world_consistency",
+                "language_voice",
+                "theme_depth",
+                "original_selling_point",
+                "ending_closure",
+                "ip_potential",
+            ),
+            5,
+        ),
+    )
+
+    assert report.maturity_score == 100
+    assert report.scoring_basis == "text_only"
+    assert report.tier == "strong_project"
+    assert report.prelaunch_passed is True
+    assert report.diagnostic_only is True
+    assert report.claims_allowed == ()
+    assert "human_reader" in report.missing_layers
+    assert "platform_cohort" in report.missing_layers

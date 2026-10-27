@@ -23,6 +23,10 @@ from bestseller.services.geography_kernel import render_geography_prompt_block
 from bestseller.services.lineage_kernel import render_lineage_prompt_block
 from bestseller.services.meta_layer_composer import render_meta_layer_prompt_block
 from bestseller.services.mystery_anchor_kernel import render_mystery_anchor_prompt_block
+from bestseller.services.planning_capability_selection import (
+    PlanningCapabilitySelectionError,
+    planning_capability_selected,
+)
 
 
 class NarrativeRichnessKernels(BaseModel, frozen=True):
@@ -157,6 +161,7 @@ def narrative_richness_context_from_metadata(
     metadata: dict | None,
 ) -> NarrativeRichnessKernels | None:
     data = metadata if isinstance(metadata, dict) else {}
+    story_selected = planning_capability_selected(data, "story_design_kernel")
     explicit = data.get("narrative_richness_context") or data.get(
         "narrative_richness_kernels"
     )
@@ -180,7 +185,18 @@ def narrative_richness_context_from_metadata(
 
     worldview = data.get("worldview_kernel")
     story_design = data.get("story_design_kernel")
-    if isinstance(story_design, dict) and not isinstance(worldview, dict):
+    uses_story_design = story_selected and not isinstance(worldview, dict)
+    if uses_story_design:
+        if not isinstance(story_design, dict) or not story_design:
+            raise PlanningCapabilitySelectionError(
+                "selected_story_design_kernel_missing_or_invalid"
+            )
+        from bestseller.services.story_design_kernel import story_design_kernel_from_dict
+
+        try:
+            story_design_kernel_from_dict(story_design)
+        except (ValueError, TypeError) as exc:
+            raise PlanningCapabilitySelectionError("selected_story_design_kernel_invalid") from exc
         worldview = story_design.get("worldview_kernel")
     if isinstance(worldview, dict):
         for key in (
@@ -194,7 +210,14 @@ def narrative_richness_context_from_metadata(
 
     if not payload:
         return None
-    return NarrativeRichnessKernels.model_validate(payload)
+    try:
+        return NarrativeRichnessKernels.model_validate(payload)
+    except (ValueError, TypeError) as exc:
+        if uses_story_design:
+            raise PlanningCapabilitySelectionError(
+                "selected_story_design_richness_invalid"
+            ) from exc
+        raise
 
 
 def render_narrative_richness_prompt_block(

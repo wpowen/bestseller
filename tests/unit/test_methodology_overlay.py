@@ -163,11 +163,16 @@ def test_outline_schema_accepts_scene_methodology_alias() -> None:
     assert overlay["camera"] == "近景"
 
 
-def test_resolve_methodology_contract_mode_prefers_project_metadata() -> None:
+def test_resolve_methodology_contract_mode_prefers_explicit_canonical_choice() -> None:
     project = type(
         "ProjectStub",
         (),
-        {"metadata_json": {"methodology_contract_mode": "strict"}},
+        {"metadata_json": {"creation_intent_contract": {
+            "field_sources": {"hook_spec": "explicit"},
+            "hook_spec": {
+                "require_methodology_overlay": True, "methodology_contract_mode": "strict",
+            },
+        }}},
     )()
     settings = type(
         "SettingsStub",

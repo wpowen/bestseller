@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from functools import partial
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from test_adopted_bible_lineage import db as native_bible_db
+from test_adopted_knowledge_lineage import db as knowledge_db
 
 from bestseller.domain.story_bible import CastSpecInput
 from bestseller.infra.db.models import (
@@ -25,8 +29,20 @@ from bestseller.services import story_bible as story_bible_services
 from bestseller.services.quality_levers.character_engine import (
     synthesize_character_engine_profile,
 )
+from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture
+def adopted_bible_db(native_bible_db, monkeypatch):
+    # The ledger test's legacy blank namespace now needs native RAG settings.
+    # Keep its body intact and execute the real SQLite read-view service.
+    monkeypatch.setattr(
+        f"{__name__}.SimpleNamespace",
+        partial(SimpleNamespace, retrieval=load_settings().retrieval),
+    )
+    return native_bible_db
 
 
 class FakeSession:
@@ -42,6 +58,7 @@ class FakeSession:
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
         self.deleted: list[object] = []
+        self.no_autoflush = nullcontext()
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -176,13 +193,16 @@ async def test_apply_book_spec_persists_theme_signature_fields() -> None:
 @pytest.mark.asyncio
 async def test_update_story_bible_records_premium_state_ledger(
     monkeypatch: pytest.MonkeyPatch,
+    adopted_bible_db,
 ) -> None:
-    project = build_project()
-    chapter = build_chapter(project.id)
-    session = FakeSession()
+    session, project, chapter, draft = adopted_bible_db
+    chapter.chapter_number = 3
+    draft.content_md = "沈砚用筑基丹换取港务官放行, 执法堂随后封港。"
+    await session.flush()
 
     async def fake_complete_text(*args, **kwargs):
         return SimpleNamespace(
+            llm_run_id=uuid4(), model_name="test", provider="test", fallback_used=False,
             content="""
             {
               "character_updates": [],
@@ -243,7 +263,8 @@ async def test_update_story_bible_records_premium_state_ledger(
         SimpleNamespace(),
         project=project,
         chapter=chapter,
-        chapter_text="沈砚用筑基丹换取港务官放行, 执法堂随后封港。",
+        chapter_text=draft.content_md,
+        source_chapter_draft_version_id=draft.id,
     )
 
     ledger = project.metadata_json["premium_state_ledger"]
@@ -479,7 +500,7 @@ async def test_foundation_truth_supersession_uses_latest_cast_as_complete_author
     project = build_project()
     project.metadata_json = {
         "identity_manifest": [
-            {"name": "白榆", "role": "protagonist"},
+            {"name": "白榆", "role": "protagonist", "gender": "male", "pronoun_set_zh": "他"},
             {"name": "顾潮", "role": "protagonist"},
         ],
         "entities": [
@@ -516,7 +537,7 @@ async def test_foundation_truth_supersession_uses_latest_cast_as_complete_author
         session,
         project,
         cast_spec_content={
-            "protagonist": {"name": "白榆"},
+            "protagonist": {"name": "白榆", "gender": "female", "pronoun_set_zh": "她", "pronoun_set_en": "she/her"},
             "supporting_cast": [{"name": "岑野"}],
         },
         source_artifact_id=uuid4(),
@@ -525,9 +546,9 @@ async def test_foundation_truth_supersession_uses_latest_cast_as_complete_author
     assert session.deleted == [stale]
     assert audit["active_character_names"] == ["岑野", "白榆"]
     assert audit["removed_materialized_character_names"] == ["顾潮"]
-    assert project.metadata_json["identity_manifest"] == [
-        {"name": "白榆", "role": "protagonist"}
-    ]
+    assert "identity_manifest" not in project.metadata_json
+    assert "identity_manifest_status" not in project.metadata_json
+    assert audit["previous_identity_manifest"][0]["gender"] == "male"
     assert project.metadata_json["entities"] == [
         {"entity_type": "location", "canonical_name": "北港"}
     ]
@@ -695,6 +716,10 @@ async def test_upsert_cast_spec_persists_ip_anchor_and_personhood_payloads() -> 
             "debt_sources": ["宿主身份债"],
         },
     }
+    from bestseller.services.prompt_source_policy import stamp_reference_cache
+    from bestseller.services.character_intelligence.strategy import adopt_reference_projection
+    stamp_reference_cache(project, ("character_strategy",), producer="strategy_compiler")
+    adopt_reference_projection(project, "character_strategy", adopted_by="fixture-author")
     session = FakeSession(scalar_results=[None, None, None])
 
     cast = build_cast_spec()
@@ -1008,8 +1033,10 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
             ],
             # get_effective_character_state queries CharacterStateSnapshotModel once per
             # participant (沈砚, 顾临) before the relationship query runs.
-            [],  # snapshots for 沈砚
-            [],  # snapshots for 顾临
+            [],  # state snapshots for 沈砚
+            [],  # knowledge snapshots for 沈砚
+            [],  # state snapshots for 顾临
+            [],  # knowledge snapshots for 顾临
             [
                 RelationshipModel(
                     project_id=project.id,
@@ -1040,6 +1067,11 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         story_bible_services, "get_latest_character_state", fake_latest_character_state
     )
 
+    from bestseller.services.character_intelligence.optimizer import record_character_engine_profile
+    project.metadata_json["cast_spec"] = build_cast_spec()
+    record_character_engine_profile(
+        project, shen, shen.metadata_json["character_engine_profile"], strategy={},
+    )
     context = await story_bible_services.load_scene_story_bible_context(
         session,
         project=project,
@@ -1154,7 +1186,7 @@ async def test_upsert_cast_spec_registers_novelty_fingerprints_when_enabled(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True, enable_distilled_design_reference=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
@@ -1201,7 +1233,7 @@ async def test_upsert_cast_spec_skips_novelty_when_flag_off(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=False))
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=False, enable_distilled_design_reference=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
@@ -1234,7 +1266,7 @@ async def test_upsert_cast_spec_novelty_is_noop_when_project_has_no_genre(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True, enable_distilled_design_reference=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
@@ -1264,7 +1296,7 @@ async def test_upsert_cast_spec_novelty_errors_are_swallowed(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True, enable_distilled_design_reference=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)

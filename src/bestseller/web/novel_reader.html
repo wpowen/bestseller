@@ -134,6 +134,8 @@
     .layout {
       display: flex;
       flex: 1;
+      min-width: 0;
+      min-height: 0;
       overflow: hidden;
     }
 
@@ -351,6 +353,7 @@
     /* ── Main content ── */
     main {
       flex: 1;
+      min-width: 0;
       overflow-y: auto;
       padding: 28px 24px 96px;
       display: flex;
@@ -362,6 +365,7 @@
 
     .reading-area {
       width: 100%;
+      min-width: 0;
       max-width: var(--reading-max);
       transition: max-width 0.18s ease;
     }
@@ -448,6 +452,7 @@
     .chapter-header {
       margin-bottom: 28px;
       padding: 0 4px;
+      overflow-wrap: anywhere;
     }
     .chapter-header .chapter-volume-tag {
       display: inline-block;
@@ -498,6 +503,8 @@
     }
 
     .chapter-body {
+      max-width: 100%;
+      overflow-wrap: anywhere;
       background: var(--reading-card-bg);
       border: 1px solid var(--reading-card-border);
       border-radius: var(--reading-card-radius);
@@ -626,10 +633,16 @@
       .chapter-header h1 { font-size: 24px; }
     }
     @media (max-width: 640px) {
-      aside { position: absolute; top: var(--header-h); bottom: 0; z-index: 20; }
+      aside { position: absolute; top: var(--header-h); bottom: 0; max-width: 100%; z-index: 20; }
       :root { --reading-card-pad: 22px 18px; --reading-font: 17px; --reading-line: 1.95; }
+      header { gap: 8px; padding: 0 12px; }
+      header .book-title { min-width: 0; }
+      header .chapter-info { min-width: 0; max-width: 55%; white-space: normal; overflow-wrap: anywhere; }
+      header .studio-link { flex-shrink: 0; white-space: nowrap; }
+      main { padding: 22px 16px 72px; }
       .chapter-header h1 { font-size: 21px; }
       .reader-toolbar { gap: 6px; padding: 8px 10px; }
+      .reader-toolbar-group { min-width: 0; max-width: 100%; flex-wrap: wrap; }
       .reader-toolbar-group .label { display: none; }
     }
   </style>
@@ -669,6 +682,8 @@
   let volumes = [];
   let currentChapter = 1;
   let bookTitle = slug;  // Will be updated with real title from API
+  let readerProjectExists = false;
+  let readerCatalogLoaded = false;
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function escapeHtml(s) {
@@ -689,7 +704,13 @@
   // ── Fetch helpers ───────────────────────────────────────────────────────
   async function get(url) {
     const r = await fetch(url);
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) {
+      const data = await r.json().catch(() => null);
+      const detail = typeof data?.error === "string" ? `: ${data.error}` : "";
+      const error = new Error(`HTTP ${r.status}${detail}`);
+      error.status = r.status;
+      throw error;
+    }
     return r.json();
   }
 
@@ -709,13 +730,18 @@
   // each chapter belongs to.  Chapters with no volume info (legacy single-
   // volume projects) render as a flat list exactly like before.
   const READER_STATE_LABEL = {
-    formal: "正式版",
+    adopted: "已采用",
+    accepted_with_debt: "已采用（含质量债）",
+    formal: "已保存稿",
     active_repair: "正在修复",
     queued_repair: "排队修复",
     blocked: "阻塞待修",
+    quality_debt: "待编辑",
     drafting: "生成中",
     planned: "待生成",
-    repair: "修复中",
+    repair: "待编辑",
+    paused: "待编辑",
+    stopped: "已停止",
   };
 
   function readerStateFor(ch) {
@@ -725,7 +751,10 @@
     const availability = String(ch?.availability || (ch?.exported === false ? "repair_in_progress" : "available")).toLowerCase();
     if (productionState === "ok" || availability === "available") return "formal";
     if (availability === "planned") return "planned";
+    if (ch?.production_intent === "pause") return "paused";
+    if (ch?.production_intent === "stop") return "stopped";
     if (productionState === "blocked") return "blocked";
+    if (productionState === "quality_debt") return "quality_debt";
     const status = String(ch?.status || "").toLowerCase();
     if (status === "drafting" || status === "review" || productionState === "pending") return "drafting";
     return "repair";
@@ -762,9 +791,12 @@
       ['active_repair', READER_STATE_LABEL.active_repair, counts.active_repair],
       ['queued_repair', READER_STATE_LABEL.queued_repair, counts.queued_repair],
       ['blocked', READER_STATE_LABEL.blocked, counts.blocked],
+      ['quality_debt', READER_STATE_LABEL.quality_debt, counts.quality_debt],
       ['drafting', READER_STATE_LABEL.drafting, counts.drafting],
       ['planned', READER_STATE_LABEL.planned, counts.planned],
       ['repair', READER_STATE_LABEL.repair, counts.repair],
+      ['paused', READER_STATE_LABEL.paused, counts.paused],
+      ['stopped', READER_STATE_LABEL.stopped, counts.stopped],
     ].filter(([, , n]) => n > 0);
     if (!items.length) return '';
     return `<div class="toc-legend">${items.map(([k, label, n]) =>
@@ -814,7 +846,7 @@
   function renderTocItem(ch) {
     const avail = ch.availability || (ch.exported === false ? "drafting" : "available");
     const readerState = readerStateFor(ch);
-    const isRepair = ["active_repair", "queued_repair", "blocked", "repair"].includes(readerState);
+    const isRepair = ["active_repair", "queued_repair", "blocked", "quality_debt", "repair"].includes(readerState);
     const isPlanned = avail === "planned";
     const isSinglePiece = Boolean(ch.single_piece || ch.content_mode === "fanqie_short_story");
     const cls = [
@@ -837,10 +869,21 @@
   }
 
   // ── Load a chapter ──────────────────────────────────────────────────────
+  function renderReadingState(message, isError = false) {
+    document.getElementById("chapter-info").textContent = "";
+    document.title = `${bookTitle} — 阅读`;
+    document.getElementById("reading-area").innerHTML =
+      `<div class="state-center" role="status" style="height:200px;${isError ? "color:#c0392b;" : ""}">${escapeHtml(message)}</div>`;
+  }
+
   async function loadChapter(n) {
-    currentChapter = n;
     const area = document.getElementById("reading-area");
     const pendingChapter = toc.find(c => c.number === n);
+    if (!readerCatalogLoaded || !pendingChapter) {
+      renderReadingState("无法加载章节。请刷新目录后重试。", true);
+      return;
+    }
+    currentChapter = n;
     const pendingSinglePiece = Boolean(
       pendingChapter?.single_piece || pendingChapter?.content_mode === "fanqie_short_story"
     );
@@ -852,12 +895,15 @@
     window.scrollTo && document.getElementById("main-area").scrollTo(0, 0);
     try {
       const data = await get(`/api/reader/${slug}/chapter/${n}`);
+      if (!data || typeof data.html !== "string" || !data.html.trim()) {
+        throw new Error("章节响应缺少可阅读正文。");
+      }
       const ch = toc.find(c => c.number === n);
       const isSinglePiece = Boolean(
         data.single_piece || ch?.single_piece || ch?.content_mode === "fanqie_short_story"
       );
       const title = ch ? ch.title : (isSinglePiece ? "全文" : `第 ${n} 章`);
-      const readerState = readerStateFor(ch || { availability: "available" });
+      const readerState = readerStateFor({ ...(ch || {}), ...data });
       const readerStateLabel = READER_STATE_LABEL[readerState];
       const versionNo = data.version_no ?? ch?.version_no ?? null;
       const updatedAt = data.updated_at || ch?.updated_at || null;
@@ -879,12 +925,16 @@
       const prevDisabled = (isSinglePiece || n <= 1) ? "disabled" : "";
       const nextDisabled = (isSinglePiece || n >= toc.length) ? "disabled" : "";
       let banner = "";
-      if (["active_repair", "queued_repair", "blocked", "repair"].includes(readerState)) {
+      if (readerState === "accepted_with_debt") {
+        banner = `<div class="chapter-repair-banner"><strong>本章已采用（含质量债）</strong>。下面显示已采用的正文，质量债仍保留，整书质量仍需复核。</div>`;
+      } else if (["active_repair", "queued_repair", "blocked", "quality_debt", "repair", "paused", "stopped"].includes(readerState)) {
         const revText = ch?.revision_count ? ` · 已修订 ${ch.revision_count} 次` : "";
         const pendingText = ch?.pending_rewrite_task_count ? ` · 待执行任务 ${ch.pending_rewrite_task_count} 个` : "";
+        const controlText = readerState === "paused" ? "自动写作已暂停，仍可手动修改。"
+          : readerState === "stopped" ? "自动写作已停止。" : "";
         banner = `<div class="chapter-repair-banner">
-          <strong>本章${readerStateLabel}</strong>${revText}${pendingText}。下面显示的是当前最新草稿，
-          修复闭环通过后会自动替换为正式版。
+          <strong>本章${readerStateLabel}</strong>${revText}${pendingText}。${controlText}
+          下面显示未采用的候选草稿。修改通过验收后才会更新正文，整书质量仍需复核。
         </div>`;
       }
       const toolbarHtml = `
@@ -962,7 +1012,11 @@
       // Reflect persisted reader prefs on the freshly-rendered toolbar.
       reflectReaderPrefs();
     } catch (err) {
-      area.innerHTML = `<div class="state-center" style="height:200px;color:#c0392b;">${err.message}</div>`;
+      if (readerProjectExists && err.status === 404) {
+        renderReadingState("本章正文暂不可用。请返回工作台查看生成或审校进度。");
+      } else {
+        renderReadingState(`无法加载章节。${err.message}`, true);
+      }
     }
   }
 
@@ -1155,35 +1209,59 @@
       humanize: "去AI味",
       issue: "问题修改",
     };
+    const chapterNumber = currentChapter;
     const original = btn ? btn.innerHTML : "";
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = "提交中";
+      btn.textContent = "提交中";
     }
+    const note = document.createElement("div");
+    note.className = "chapter-repair-banner";
+    const showNote = (message) => {
+      if (currentChapter !== chapterNumber) return;
+      note.textContent = message;
+      const area = document.getElementById("reading-area");
+      const body = area?.querySelector(".chapter-body");
+      if (body) area.insertBefore(note, body);
+    };
     try {
-      const data = await post(`/api/reader/${slug}/chapter/${currentChapter}/revision`, {
+      const data = await post(`/api/reader/${slug}/chapter/${chapterNumber}/revision`, {
         operation,
         instructions,
       });
-      if (btn) btn.innerHTML = "已排队";
-      const taskId = data.task?.task_id || "";
-      const area = document.getElementById("reading-area");
-      const note = document.createElement("div");
-      note.className = "chapter-repair-banner";
-      note.innerHTML = `<strong>${labels[operation] || operation}任务已提交</strong>${taskId ? ` · ${escapeHtml(taskId)}` : ""}。完成后会以新版本显示。`;
-      const body = area.querySelector(".chapter-body");
-      if (body) area.insertBefore(note, body);
-      setTimeout(async () => {
-        try {
-          await loadTOC();
-          await loadChapter(currentChapter);
-        } catch {}
-      }, 1800);
+      const taskId = data.task?.task_id;
+      if (!taskId) throw new Error("未收到修订任务编号，正文保持不变。");
+      if (btn) btn.textContent = "修订中";
+      showNote(`${labels[operation] || operation}已提交，正在等待验收。任务：${taskId}`);
+      for (let attempt = 0; attempt < 150; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const task = await get(`/api/tasks/${encodeURIComponent(taskId)}`);
+        const result = task.result || {};
+        const terminal = ["completed", "failed", "incomplete", "cancelled", "blocked"].includes(task.status);
+        if (!terminal) continue;
+        if (task.status === "completed" && result.ok === true) {
+          if (result.no_change) {
+            showNote("本次修订未改变正文，保留当前版本。");
+          } else if (currentChapter === chapterNumber) {
+            await loadTOC();
+            await loadChapter(chapterNumber);
+            showNote(`本次修订新版本已保存（v${result.result_version_no || "?"}），整书质量仍需复核。`);
+          }
+        } else {
+          const findings = result.findings || result.acceptance_review?.findings || [];
+          const details = Array.isArray(findings)
+            ? findings.map(item => typeof item === "string" ? item : (item.reason || item.message || item.requirement || "")).filter(Boolean).join("；")
+            : "";
+          const reason = result.rejected_reason || task.error || task.status;
+          showNote(`本次修订未通过或已停止，保留原正文。${reason}${details ? "：" + details : ""}`);
+        }
+        return;
+      }
+      showNote(`任务仍在运行，当前正文尚未刷新。可在工作台查看任务：${taskId}`);
     } catch (err) {
-      alert(`${labels[operation] || operation}失败：${err.message}`);
-      if (btn) btn.innerHTML = original;
+      showNote(`无法确认修订结果，当前正文保持不变。${err.message}`);
     } finally {
-      if (btn) setTimeout(() => { btn.disabled = false; btn.innerHTML = original; }, 1600);
+      if (btn) { btn.disabled = false; btn.innerHTML = original; }
     }
   };
 
@@ -1249,7 +1327,18 @@
   });
 
   async function loadTOC() {
+    readerProjectExists = false;
+    readerCatalogLoaded = false;
     const data = await get(`/api/reader/${slug}/toc`);
+    if (!data || !Array.isArray(data.chapters)
+        || data.chapters.some(ch => !ch || !Number.isInteger(ch.number) || ch.number < 1)
+        || (data.volumes != null && !Array.isArray(data.volumes))
+        || (!data.chapters.length && data.project_exists !== true)) {
+      throw new Error("项目目录不可用或响应格式无效。");
+    }
+    // A valid nonempty legacy catalog is readable without proving a DB Project.
+    readerProjectExists = data.project_exists === true;
+    readerCatalogLoaded = true;
     bookTitle = data.title || slug;
     document.getElementById("book-title").textContent = bookTitle;
     toc = data.chapters || [];
@@ -1266,15 +1355,18 @@
     document.getElementById("book-title").textContent = slug;
     try {
       await loadTOC();
+      if (!toc.length) {
+        renderReadingState("当前暂无可阅读的正式正文。请返回工作台查看规划、生成或审校进度。");
+        return;
+      }
       // Load chapter from hash or default to first
       const hashN = parseInt(location.hash.replace("#", ""), 10);
-      const startN = (!isNaN(hashN) && hashN >= 1) ? hashN : (toc[0]?.number ?? 1);
+      const startN = (!isNaN(hashN) && hashN >= 1) ? hashN : toc[0].number;
       await loadChapter(startN);
     } catch (err) {
       document.getElementById("toc-list").innerHTML =
-        `<div style="padding:16px;font-size:13px;color:#c0392b;">${err.message}</div>`;
-      document.getElementById("reading-area").innerHTML =
-        `<div class="state-center" style="height:200px;color:#c0392b;">无法加载项目「${slug}」的章节。<br/>请确认已生成该项目的章节内容。</div>`;
+        `<div style="padding:16px;font-size:13px;color:#c0392b;">${escapeHtml(err.message)}</div>`;
+      renderReadingState(`无法加载项目「${slug}」的章节。${err.message}`, true);
     }
   }
 

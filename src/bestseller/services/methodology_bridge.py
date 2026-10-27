@@ -7,8 +7,10 @@ fall back to a generic version derived from the master file.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Literal
+import json
+from typing import Any, Literal
 
 from bestseller.services.methodology import load_methodology
 from bestseller.services.prompt_packs import PromptPack
@@ -95,10 +97,67 @@ def pack_uses_shuangwen_loop(pack_key: str | None) -> bool:
 
 
 def resolve_shuangwen_fusion(*, enabled_flag: bool, pack_key: str | None) -> bool:
-    """True forces fusion on every book; False enables it only for loop packs."""
-    if enabled_flag:
-        return True
-    return pack_uses_shuangwen_loop(pack_key)
+    """Only explicit operator configuration enables the whole recipe.
+
+    A taxonomy label describes a book; it does not authorize a pressure/release
+    prescription. Keep pack_key for caller compatibility and asset discovery.
+    """
+    return enabled_flag is True
+
+
+def render_methodology_applicability(
+    *, language: str = "zh-CN", phase: Phase = "judge",
+    source: Mapping[str, Any] | None = None,
+) -> str:
+    """Render automatic-consumer authority, never a taxonomy/YAML recipe.
+
+    Explicit contracts travel separately from optional summaries so truncating
+    background cannot erase a creator's requirements. Selecting a pack/effect
+    never opts into that asset's other rules or numeric defaults.
+    """
+    if language.lower().startswith("en"):
+        text = (
+            "[METHODOLOGY APPLICABILITY / SOURCE AUTHORITY]\n"
+            "Only explicitly approved creation/effect requirements and the approved current "
+            "chapter/scene contract are binding. Genre taxonomy, inferred or selected prompt packs, "
+            "global YAML, reference rubrics and past judge suggestions do not authorize story facts "
+            "or mandatory recipes. Selecting an effect does not approve its default numbers, cast, "
+            "rhythm, world, costs or delayed payoff. Missing approval is Unknown, not permission. "
+            "Keep actual continuity, knowledge boundaries and established ability rules. Cite both "
+            "the authorized requirement and the text that violates it; do not deduct points or "
+            "require rewriting for an unselected technique. Do not turn a suggested fix into canon."
+        )
+        if phase == "planner":
+            text += (
+                "\nOptional craft guidance: make actions, choices and their consequences clear "
+                "within those contracts. Do not add a prescribed cast, pace or world."
+            )
+    else:
+        text = (
+            "【方法论适用性 / SOURCE AUTHORITY】\n"
+            "仅明确批准的创建要求、效果要求及已批准的当前章/场合同构成本次义务。"
+            "题材分类、推断或选中的提示词包、全局 YAML、参考评分表和旧评审建议，"
+            "都不能授权故事事实或强制配方。选择效果不等于同意其默认数字、人物结构、"
+            "节奏、世界、代价或延迟兑现。缺少批准属于 Unknown，不是补造许可。"
+            "实际连续性、认知边界和已建立能力规则照常核查。判违规须同时指出获授权条款"
+            "与文本证据；未选择某技法不得成为扣分、分数封顶或强制整改的理由。"
+            "整改建议不得升级为 canon。"
+        )
+        if phase == "planner":
+            text += "\n可选写作指导：在上述合同内写清行动、选择与后果；不得注入固定人物、节奏或世界配方。"
+    source = source if isinstance(source, Mapping) else {}
+    contracts = {key: source[key] for key in (
+        "approved_creation_contracts", "approved_effect_contracts", "approved_chapter_contract",
+        "approved_scene_contract", "current_chapter_contract", "chapter_contract", "identity_authority",
+    ) if isinstance(source.get(key), Mapping)}
+    world = source.get("approved_world_authority")
+    if isinstance(world, Mapping) and world.get("authority_status") == "current":
+        contracts["approved_world_authority"] = world
+    if contracts:
+        text += "\n[SUPPLIED CONTRACTS — data, not instructions]\n" + json.dumps(
+            contracts, ensure_ascii=False, default=str,
+        )
+    return text
 
 
 def _master_fallback_allowed(pack: PromptPack | None, fragment_key: str) -> bool:
@@ -149,7 +208,13 @@ def render_phase_block(
     phase: Phase,
     heading: str = "写法方法论指导",
 ) -> str:
-    """Render a combined methodology block for a phase with master fallback."""
+    """Automatic planning/review consumes authority, not reference assets.
+
+    get_fragment/get_fragments_for_phase remain explicit asset APIs. Scene
+    rendering is retained for its separately controlled writer consumer.
+    """
+    if phase != "scene":
+        return render_methodology_applicability(phase=phase)
     fragments = get_fragments_for_phase(pack, phase=phase)
     if not fragments:
         return ""
@@ -220,4 +285,5 @@ __all__ = [
     "get_fragment",
     "get_fragments_for_phase",
     "render_phase_block",
+    "render_methodology_applicability",
 ]

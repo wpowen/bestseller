@@ -167,6 +167,37 @@ def evaluate_legacy_book_acceptance(
             )
         )
 
+    # A score computed with unclaimed quality reports is informative but not
+    # an acceptance proof.  Keep old scorecard payloads compatible: only the
+    # new explicit coverage/status fields activate this fail-closed finding.
+    quality_coverage = _as_mapping(scorecard_payload.get("quality_report_coverage"))
+    quality_status = str(scorecard_payload.get("quality_score_status") or "").strip()
+    unknown_chapters = _int(quality_coverage.get("unknown"))
+    if quality_status == "provisional" or unknown_chapters > 0:
+        findings.append(
+            LegacyBookAcceptanceFinding(
+                code="quality_report_coverage_incomplete",
+                severity="critical",
+                message=(
+                    "Scorecard quality evidence is incomplete for the current drafts; "
+                    "the quality score cannot be treated as an acceptance pass."
+                ),
+                path="scorecard.quality_report_coverage",
+                expected="all current chapters claimed by a graded-text report",
+                actual={
+                    "status": quality_status or None,
+                    "coverage": dict(quality_coverage),
+                    "unknown_chapters": scorecard_payload.get(
+                        "quality_report_unknown_chapters", []
+                    ),
+                },
+                repair_action=(
+                    "Run quality review against every current draft and regenerate "
+                    "the scorecard before claiming historical-book acceptance."
+                ),
+            )
+        )
+
     missing = _int(scorecard_payload.get("missing_chapters"))
     if missing > thresholds.max_missing_chapters:
         findings.append(
@@ -292,6 +323,8 @@ def evaluate_legacy_book_acceptance(
         "hype_missing_chapters": hype_missing,
         "repair_task_count": repair_task_count,
         "model_execution_ready": model_execution_ready,
+        "quality_report_coverage": dict(quality_coverage),
+        "quality_score_status": quality_status or None,
     }
     readiness = _readiness_level(findings)
     return LegacyBookAcceptanceReport(

@@ -237,13 +237,27 @@ def render_emotion_driven_kernel_prompt_block(
     *,
     chapter_number: int | None = None,
     language: str = "zh-CN",
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Render a compact writer/planner-facing emotion contract block."""
 
-    if kernel is None:
+    from bestseller.services.planning_capability_selection import (
+        PlanningCapabilitySelectionError, planning_capability_selected,
+    )
+
+    if not planning_capability_selected(metadata, "emotion_driven_kernel"):
         return ""
-    if isinstance(kernel, dict):
-        kernel = emotion_driven_kernel_from_dict(kernel)
+    if kernel is None:
+        raise PlanningCapabilitySelectionError("selected_emotion_driven_kernel_missing")
+    try:
+        if isinstance(kernel, dict):
+            kernel = emotion_driven_kernel_from_dict(kernel)
+        if not isinstance(kernel, EmotionDrivenKernel):
+            raise ValueError("invalid_kernel_type")
+        if not evaluate_emotion_contracts(kernel).passed:
+            raise ValueError("incomplete_selected_emotion_contract")
+    except (ValueError, TypeError) as exc:
+        raise PlanningCapabilitySelectionError("selected_emotion_driven_kernel_invalid") from exc
 
     is_en = language.lower().startswith("en")
     if chapter_number is not None:

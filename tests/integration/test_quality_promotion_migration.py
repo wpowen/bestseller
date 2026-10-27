@@ -11,6 +11,8 @@ import pytest_asyncio
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -38,8 +40,7 @@ def test_sqlite_migration_roundtrip_preserves_legacy_current_flags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     migration_path = (
-        Path(__file__).parents[2]
-        / "migrations/versions/0035_quality_promotion_contract.py"
+        Path(__file__).parents[2] / "migrations/versions/0035_quality_promotion_contract.py"
     )
     spec = importlib.util.spec_from_file_location("migration_0035", migration_path)
     assert spec is not None and spec.loader is not None
@@ -122,47 +123,48 @@ def test_sqlite_migration_roundtrip_preserves_legacy_current_flags(
 
         scene_rows = connection.execute(
             sa.text(
-                "SELECT is_current, promotion_state FROM scene_draft_versions "
-                "ORDER BY version_no"
+                "SELECT is_current, promotion_state FROM scene_draft_versions ORDER BY version_no"
             )
         ).all()
         chapter_rows = connection.execute(
             sa.text(
-                "SELECT is_current, promotion_state FROM chapter_draft_versions "
-                "ORDER BY version_no"
+                "SELECT is_current, promotion_state FROM chapter_draft_versions ORDER BY version_no"
             )
         ).all()
         inspector = sa.inspect(connection)
         assert scene_rows == [(0, "legacy_unverified"), (1, "legacy_unverified")]
         assert chapter_rows == [(1, "legacy_unverified")]
-        assert {
-            index["name"] for index in inspector.get_indexes("scene_draft_versions")
-        } >= {"uq_scene_draft_promoted"}
-        assert {
-            index["name"] for index in inspector.get_indexes("chapter_draft_versions")
-        } >= {"uq_chapter_draft_promoted"}
+        assert {index["name"] for index in inspector.get_indexes("scene_draft_versions")} >= {
+            "uq_scene_draft_promoted"
+        }
+        assert {index["name"] for index in inspector.get_indexes("chapter_draft_versions")} >= {
+            "uq_chapter_draft_promoted"
+        }
 
         migration.downgrade()
         assert "promotion_state" not in {
-            column["name"]
-            for column in sa.inspect(connection).get_columns("scene_draft_versions")
+            column["name"] for column in sa.inspect(connection).get_columns("scene_draft_versions")
         }
 
 
 @pytest_asyncio.fixture
-async def promotion_db() -> AsyncIterator[
-    tuple[AsyncEngine, async_sessionmaker, list[UUID]]
-]:
+async def promotion_db() -> AsyncIterator[tuple[AsyncEngine, async_sessionmaker, list[UUID]]]:
     engine = create_engine()
     if engine.dialect.name != "postgresql":
         await engine.dispose()
         pytest.skip("Promotion locking and migration tests require PostgreSQL")
     project_ids: list[UUID] = []
     try:
+        repository_root = Path(__file__).parents[2]
+        alembic_config = Config()
+        alembic_config.set_main_option("script_location", str(repository_root / "migrations"))
+        expected_head = ScriptDirectory.from_config(alembic_config).get_current_head()
         async with engine.connect() as connection:
             version = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-        if version != "0035_quality_promotion_contract":
-            pytest.fail(f"PostgreSQL schema must be at 0035, found {version!r}")
+        if version != expected_head:
+            pytest.fail(
+                f"PostgreSQL schema must be at current head {expected_head!r}, found {version!r}"
+            )
         yield engine, create_session_factory(engine=engine), project_ids
     finally:
         async with create_session_factory(engine=engine)() as session:
@@ -281,9 +283,7 @@ async def test_promotion_uses_exact_scores_preserves_current_and_audits_replacem
     promotion_db: tuple[AsyncEngine, async_sessionmaker, list[UUID]],
 ) -> None:
     _, factory, project_ids = promotion_db
-    project_id, chapter_id, first_id, second_id = await _seed_chapter(
-        factory, project_ids
-    )
+    project_id, chapter_id, first_id, second_id = await _seed_chapter(factory, project_ids)
 
     async with factory() as session:
         first = await promote_chapter_draft(
@@ -439,9 +439,7 @@ async def test_replacement_savepoint_rolls_back_incumbent_supersede(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, project_ids = promotion_db
-    project_id, chapter_id, first_id, second_id = await _seed_chapter(
-        factory, project_ids
-    )
+    project_id, chapter_id, first_id, second_id = await _seed_chapter(factory, project_ids)
     async with factory() as session:
         initial = await promote_chapter_draft(
             session,
@@ -501,9 +499,7 @@ async def test_service_rejects_blank_judge_and_mismatched_exact_score(
     promotion_db: tuple[AsyncEngine, async_sessionmaker, list[UUID]],
 ) -> None:
     _, factory, project_ids = promotion_db
-    project_id, chapter_id, first_id, second_id = await _seed_chapter(
-        factory, project_ids
-    )
+    project_id, chapter_id, first_id, second_id = await _seed_chapter(factory, project_ids)
     async with factory() as session:
         with pytest.raises(ValueError, match="judge_key is required"):
             await promote_chapter_draft(

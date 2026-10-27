@@ -13,8 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ProjectType
 from bestseller.domain.planning import PlanningArtifactCreate
+from bestseller.domain.project import (
+    ChapterCreate,
+    ProjectCreate,
+    SceneCardCreate,
+    VolumeCreate,
+    WritingProfile,
+)
 from bestseller.services.tone_keywords import merge_tone_keywords
-from bestseller.domain.project import ChapterCreate, ProjectCreate, SceneCardCreate, VolumeCreate
 from bestseller.infra.db.models import (
     ChapterModel,
     PlanningArtifactVersionModel,
@@ -453,9 +459,41 @@ async def create_project(
             f"'{payload.title}' for genre '{payload.genre}' already exists as "
             f"'{duplicate.slug}'{archived}."
         )
+    payload_metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    if (
+        str(payload_metadata.get("concept_contract_version") or "") == "2"
+        or payload_metadata.get("concept_contract_required")
+        or isinstance(payload_metadata.get("concept_contract"), dict)
+    ):
+        # Validate before adding any project/style rows. Web conception already
+        # performs this check, but CLI and service callers reach create_project
+        # directly; without this boundary they could materialise a v2 book whose
+        # 30-chapter engine or long-form architecture is known to be invalid.
+        from bestseller.services.concept_contract import (
+            require_conception_contract_for_target,
+        )
+
+        validated_contract = require_conception_contract_for_target(
+            payload_metadata.get("concept_contract"),
+            target_chapters=int(payload.target_chapters),
+        )
+        payload = payload.model_copy(
+            update={
+                "metadata": {
+                    **payload_metadata,
+                    "concept_contract": validated_contract,
+                }
+            }
+        )
     clear_project_delete_tombstone(settings, payload.slug)
 
     writing_profile = resolve_project_create_writing_profile(payload)
+    from bestseller.services.model_catalog import default_new_project_model_id
+    project_metadata = apply_new_project_generation_policy(build_project_metadata(payload, writing_profile))
+    if not project_metadata.get("llm_model_id"):
+        default_model = default_new_project_model_id(settings)
+        if default_model:
+            project_metadata = {**project_metadata, "llm_model_id": default_model}
     project = ProjectModel(
         slug=payload.slug,
         title=payload.title,
@@ -466,9 +504,7 @@ async def create_project(
         target_chapters=payload.target_chapters,
         audience=payload.audience,
         project_type=payload.project_type.value,
-        metadata_json=apply_new_project_generation_policy(
-            build_project_metadata(payload, writing_profile)
-        ),
+        metadata_json=project_metadata,
     )
     session.add(project)
     await session.flush()
@@ -503,6 +539,15 @@ async def create_project(
             project.slug,
             exc_info=True,
         )
+    # Conception-approved v2 projects cross the packaging promotion boundary
+    # here, before any worker can observe the new project.  The helper is a
+    # no-op for legacy/simple API callers; eligible projects fail closed if
+    # their immutable contract cannot be built or activated.
+    from bestseller.services.book_packaging_store import (
+        promote_creation_packaging_contract_if_ready,
+    )
+
+    await promote_creation_packaging_contract_if_ready(session, project=project)
     return project
 
 
@@ -640,6 +685,18 @@ async def create_scene_card(
 
 
 _FORCED_VERSION_NOTE = "input_hash matched but content differs — forced new version"
+_FORCED_SOURCE_BOUND_REVIEW_NOTE = (
+    "input_hash matched but source-bound review metadata changed — forced new version"
+)
+_SOURCE_BOUND_REVIEW_META_KEYS = frozenset(
+    {
+        "source_bound_expansion",
+        "source_bound_expansion_fields",
+        "source_bound_expansion_reason",
+        "source_bound_expansion_review",
+        "source_bound_expansion_review_receipt",
+    }
+)
 
 
 def _strip_meta(value: Any) -> Any:
@@ -650,6 +707,18 @@ def _strip_meta(value: Any) -> Any:
 
 def _canonical_content_json(value: Any) -> str:
     return json.dumps(_strip_meta(value), ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _canonical_source_bound_review_meta(value: Any) -> str:
+    """Canonicalize review-state metadata that changes artifact authority."""
+
+    meta = value.get("_meta") if isinstance(value, dict) else None
+    selected = (
+        {key: meta[key] for key in _SOURCE_BOUND_REVIEW_META_KEYS if key in meta}
+        if isinstance(meta, dict)
+        else {}
+    )
+    return json.dumps(selected, ensure_ascii=False, sort_keys=True, default=str)
 
 
 async def import_planning_artifact(
@@ -711,14 +780,22 @@ async def import_planning_artifact(
             # version. Reuse is only safe when the content (sans _meta) is
             # actually identical; otherwise force a new version and record
             # why in its notes.
-            if _canonical_content_json(content) == _canonical_content_json(
+            content_same = _canonical_content_json(content) == _canonical_content_json(
                 reusable.content
-            ):
+            )
+            review_meta_same = _canonical_source_bound_review_meta(
+                content
+            ) == _canonical_source_bound_review_meta(reusable.content)
+            if content_same and review_meta_same:
                 return reusable
-            forced_new_version_note = _FORCED_VERSION_NOTE
+            forced_new_version_note = (
+                _FORCED_SOURCE_BOUND_REVIEW_NOTE
+                if content_same
+                else _FORCED_VERSION_NOTE
+            )
             logger.warning(
                 "Planning artifact import for '%s' (%s): input_hash %s matched "
-                "version %s but content differs — forcing a new version",
+                "version %s but reusable content/review metadata differs — forcing a new version",
                 project_slug,
                 payload.artifact_type.value,
                 input_hash,

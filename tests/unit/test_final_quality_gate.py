@@ -9,6 +9,7 @@ def _config(*, ai_enabled: bool = False):
         prose_quality=SimpleNamespace(
             anti_meta_enabled=False,
             anti_meta_severity="block",
+            in_scene_ending_enabled=False,
             in_scene_ending_severity="block",
             show_dont_tell_enabled=False,
             show_dont_tell_severity="warn",

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from bestseller.services.invariants import project_invariants_from_row
+
 import logging
 from collections.abc import Mapping
 from typing import Any, Sequence
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import (
@@ -41,7 +43,6 @@ from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     CharacterModel,
-    CharacterStateSnapshotModel,
     ClueModel,
     EmotionTrackModel,
     EndingContractModel,
@@ -61,6 +62,7 @@ from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
 from bestseller.services.continuity import load_previous_chapter_snapshot
+from bestseller.services.draft_continuity import draft_mode_enabled as _pending_continuity_mode
 from bestseller.services.hook_ledger import is_methodology_v2_enabled
 from bestseller.services.methodology_lineage import METHODOLOGY_LINEAGE_METADATA_KEY
 from bestseller.services.methodology_overlay import (
@@ -90,7 +92,8 @@ from bestseller.services.narrative_tree import (
 )
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import search_retrieval_for_project
-from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
+from bestseller.services.story_bible import stable_character_id
+from bestseller.services.world_rule_current import load_scene_story_bible_context
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -934,6 +937,7 @@ async def _load_previous_chapter_draft_summary(
     *,
     project_id: Any,
     current_chapter_number: int,
+    settings: AppSettings | None = None,
 ) -> RecentSceneSummary | None:
     if current_chapter_number <= 1:
         return None
@@ -945,6 +949,32 @@ async def _load_previous_chapter_draft_summary(
     )
     if previous_chapter is None:
         return None
+    from bestseller.services.draft_continuity import draft_mode_enabled,select_reference
+    if await draft_mode_enabled(session,project_id=project_id):
+        from bestseller.settings import apply_runtime_llm_profile,load_settings
+        project=await session.get(ProjectModel,project_id)
+        from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+        adopted,_=await select_adopted_chapter_source(session,chapter=previous_chapter,lock=False)
+        if adopted is not None:
+            from bestseller.services.feedback import validate_adopted_knowledge_source
+            lineage,rejection=await validate_adopted_knowledge_source(session,project_id=project_id,chapter_id=previous_chapter.id,
+                source_chapter_draft_version_id=adopted.id,chapter_md=adopted.content_md,lock=False)
+            if rejection is not None:raise ValueError('draft_continuity_previous_formal_source_invalid')
+            summary=_chapter_draft_summary_from_current_text(previous_chapter,adopted.content_md)
+            if summary is not None:
+                summary.scene_title=f"上一章正式采用稿 v{adopted.version_no}"
+                summary.source_reference={'formal_adoption':True,**lineage}
+            return summary
+        selected=await select_reference(session,settings or apply_runtime_llm_profile(load_settings()),project=project,chapter=previous_chapter)
+        if selected is not None:
+            draft,reference=selected
+            summary=_chapter_draft_summary_from_current_text(previous_chapter,draft.content_md)
+            if summary is not None:
+                summary.summary=draft.content_md
+                summary.scene_title=f"上一章已核硬安全待审稿 v{draft.version_no}（未正式采用）"
+                summary.source_reference=reference
+            return summary
+        raise ValueError('draft_continuity_previous_reference_unqualified')
     previous_draft = await session.scalar(
         select(ChapterDraftVersionModel)
         .where(
@@ -1094,6 +1124,8 @@ async def build_scene_writer_context_from_models(
     *,
     draft_mode: bool = False,
 ) -> SceneWriterContextPacket:
+    from bestseller.services.outline_source_entry import require_current_outline_source_admission
+    await require_current_outline_source_admission(session, settings, project=project, chapter=chapter)
     try:
         await optimize_project_character_profiles(session, project)
     except Exception:
@@ -1263,17 +1295,19 @@ async def build_scene_writer_context_from_models(
     if (
         scene.scene_number == 1
         and chapter.chapter_number > 1
-        and not any(
+        and (await _pending_continuity_mode(session,project_id=project.id,project=project) or not any(
             summary.chapter_number == chapter.chapter_number - 1
             for summary in recent_scene_summaries
-        )
+        ))
     ):
         previous_chapter_summary = await _load_previous_chapter_draft_summary(
             session,
             project_id=project.id,
             current_chapter_number=chapter.chapter_number,
+            settings=settings,
         )
         if previous_chapter_summary is not None:
+            recent_scene_summaries[:] = [summary for summary in recent_scene_summaries if summary.chapter_number != chapter.chapter_number-1]
             recent_scene_summaries.insert(0, previous_chapter_summary)
 
     current_story_order = float(f"{chapter.chapter_number}.{scene.scene_number:02d}")
@@ -1313,6 +1347,7 @@ async def build_scene_writer_context_from_models(
                         TimelineEventModel.story_order < current_story_order,
                     )
                 )
+                if (event.metadata_json or {}).get("knowledge_lineage_status") != "superseded"
             ],
             key=lambda event: float(event.story_order),
             reverse=True,
@@ -1575,6 +1610,7 @@ async def build_scene_writer_context_from_models(
             session,
             project,
             preferred_tree_paths,
+            settings=settings,
             current_chapter_number=chapter.chapter_number,
             current_scene_number=scene.scene_number,
         )
@@ -1582,6 +1618,7 @@ async def build_scene_writer_context_from_models(
             session,
             project,
             query_text,
+            settings=settings,
             preferred_paths=preferred_tree_paths,
             current_chapter_number=chapter.chapter_number,
             current_scene_number=scene.scene_number,
@@ -1591,6 +1628,7 @@ async def build_scene_writer_context_from_models(
             session,
             project,
             [item.node_path for item in tree_search_result.hits],
+            settings=settings,
             current_chapter_number=chapter.chapter_number,
             current_scene_number=scene.scene_number,
         )
@@ -1993,11 +2031,11 @@ async def _safe_load_previous_snapshot(
     project_id: Any,
     current_chapter_number: int,
 ) -> ChapterStateSnapshotContext | None:
-    """Load the previous chapter snapshot, swallowing any errors.
+    """Distinguish an absent snapshot from an unavailable hard-fact source.
 
-    Hard-fact continuity is an additive enhancement: a failure here must never
-    break the scene writer context path.  On any exception the caller falls
-    back to the legacy prompt (no ``CURRENT_STATE`` block).
+    Normal ``None`` (including chapter one) retains the loader's semantics.
+    Read/savepoint failures roll back the nested transaction before propagating
+    as RuntimeError, outside callers' optional-context ValueError fallback.
     """
     try:
         async with session.begin_nested():
@@ -2007,13 +2045,10 @@ async def _safe_load_previous_snapshot(
                 current_chapter_number=current_chapter_number,
             )
     except Exception as exc:  # noqa: BLE001
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "Failed to load previous chapter snapshot for continuity injection: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError(
+            "source_context_unavailable: previous_chapter_snapshot "
+            f"(current_chapter_number={current_chapter_number}, cause={type(exc).__name__})"
+        ) from exc
 
 
 async def _load_participant_knowledge_states(
@@ -2029,81 +2064,35 @@ async def _load_participant_knowledge_states(
     if not names:
         return []
 
-    current_chapter_number = int(project.current_chapter_number or 0)
-    allow_current_state = not current_chapter_number or chapter.chapter_number >= current_chapter_number
+    from bestseller.services.character_snapshot_sources import read_character_snapshot_knowledge
+
     rows: list[dict[str, Any]] = []
     for participant_name in names:
-        char_row = await session.scalar(
-            select(CharacterModel).where(
-                CharacterModel.project_id == project.id,
-                CharacterModel.name == participant_name,
-            )
-        )
+        char_row = await session.scalar(select(CharacterModel).where(
+            CharacterModel.project_id == project.id, CharacterModel.name == participant_name,
+        ).execution_options(populate_existing=True, autoflush=False))
         if char_row is None:
             continue
-
-        snapshot_filters: list[Any] = [
-            CharacterStateSnapshotModel.project_id == project.id,
-            CharacterStateSnapshotModel.character_id == char_row.id,
-        ]
-        if before_scene_number is None:
-            snapshot_filters.append(
-                CharacterStateSnapshotModel.chapter_number < chapter.chapter_number,
-            )
-        else:
-            snapshot_filters.append(
-                or_(
-                    CharacterStateSnapshotModel.chapter_number < chapter.chapter_number,
-                    and_(
-                        CharacterStateSnapshotModel.chapter_number == chapter.chapter_number,
-                        CharacterStateSnapshotModel.scene_number.is_not(None),
-                        CharacterStateSnapshotModel.scene_number < before_scene_number,
-                    ),
-                )
-            )
-        snapshot = await session.scalar(
-            select(CharacterStateSnapshotModel)
-            .where(*snapshot_filters)
-            .order_by(
-                CharacterStateSnapshotModel.chapter_number.desc(),
-                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
-                CharacterStateSnapshotModel.created_at.desc(),
-            )
-            .limit(1)
+        # Chapter-first writing consumes the previous prefix; scene writing
+        # may additionally consume earlier selected scenes of this chapter.
+        cutoff = chapter.chapter_number if before_scene_number is not None else chapter.chapter_number - 1
+        state = await read_character_snapshot_knowledge(
+            session, project_id=project.id, character=char_row,
+            before_chapter_number=cutoff, before_scene_number=before_scene_number,
+            planning_initial_knowledge_unknown=isinstance(
+                (project.metadata_json or {}).get("active_foundation_selection"), dict),
         )
-
-        entry: dict[str, Any] | None = None
-        if snapshot is not None and isinstance(snapshot.beliefs, list):
-            knows = [str(item).strip() for item in snapshot.beliefs if str(item or "").strip()]
-            entry = {
-                "character_name": participant_name,
-                "knows": knows[:8],
-                "falsely_believes": [],
-                "unaware_of": [],
-                "source": "character_state_snapshot",
-                "cutoff": {
-                    "chapter_number": snapshot.chapter_number,
-                    "scene_number": snapshot.scene_number,
-                },
-            }
-        elif allow_current_state and isinstance(char_row.knowledge_state_json, dict):
-            ks = char_row.knowledge_state_json
-            if ks.get("knows") or ks.get("falsely_believes") or ks.get("unaware_of"):
-                entry = {
-                    "character_name": participant_name,
-                    "knows": list(ks.get("knows", []))[:8],
-                    "falsely_believes": list(ks.get("falsely_believes", []))[:5],
-                    "unaware_of": list(ks.get("unaware_of", []))[:5],
-                    "source": "current_character_state",
-                }
-        if entry is None:
+        if not state:
             continue
-
-        char_meta = char_row.metadata_json or {}
-        lie_truth_arc = char_meta.get("lie_truth_arc")
-        if isinstance(lie_truth_arc, dict) and lie_truth_arc.get("core_lie"):
-            entry["lie_truth_arc"] = lie_truth_arc
-        rows.append(entry)
+        rows.append({
+            "character_name": participant_name,
+            "knows": list(state.get("knows", []))[:8],
+            "falsely_believes": list(state.get("falsely_believes", []))[:5],
+            "unaware_of": list(state.get("unaware_of", []))[:5],
+            "beliefs": list(state.get("beliefs", []))[:8],
+            "source": "source_bound_character_evidence",
+            "cutoff": {"chapter_number": cutoff, "before_scene_number": before_scene_number},
+        })
     return rows
 
 
@@ -2136,12 +2125,26 @@ async def build_chapter_writer_context(
     if not scenes:
         raise ValueError(f"Chapter {chapter_number} does not have any scene cards.")
 
+    from bestseller.services.outline_source_entry import require_current_outline_source_admission
+    await require_current_outline_source_admission(
+        session, settings, project=project, chapter=chapter, scenes=scenes,
+    )
+
+    from bestseller.services.chapter_writer_sources import (
+        ChapterParticipantScope, load_current_writer_boundaries,
+    )
     story_bible_context = await load_scene_story_bible_context(
         session,
         project=project,
         chapter=chapter,
-        scene=scenes[0],
+        scene=ChapterParticipantScope(scenes),
     )
+    boundaries = await load_current_writer_boundaries(
+        session, settings, project=project, participant_names=ChapterParticipantScope(scenes).participants,
+        volume_number=(story_bible_context.get("volume") or {}).get("volume_number"),
+    )
+    if boundaries:
+        story_bible_context["current_world_boundaries"] = boundaries
     query_text = _chapter_query_text(project, chapter, scenes)
     retrieval_result = await search_retrieval_for_project(
         session,
@@ -2237,17 +2240,19 @@ async def build_chapter_writer_context(
     ]
     if (
         chapter.chapter_number > 1
-        and not any(
+        and (await _pending_continuity_mode(session,project_id=project.id,project=project) or not any(
             summary.chapter_number == chapter.chapter_number - 1
             for summary in previous_scene_summary_reads
-        )
+        ))
     ):
         previous_chapter_summary = await _load_previous_chapter_draft_summary(
             session,
             project_id=project.id,
             current_chapter_number=chapter.chapter_number,
+            settings=settings,
         )
         if previous_chapter_summary is not None:
+            previous_scene_summary_reads[:] = [summary for summary in previous_scene_summary_reads if summary.chapter_number != chapter.chapter_number-1]
             previous_scene_summary_reads.insert(0, previous_chapter_summary)
 
     # Chapter-level generation must not read stale facts extracted from a
@@ -2279,15 +2284,16 @@ async def build_chapter_writer_context(
             ),
         )
         for item in sorted(
-            list(
-                await session.scalars(
+            [
+                event for event in await session.scalars(
                     select(TimelineEventModel).where(
                         TimelineEventModel.project_id == project.id,
                         TimelineEventModel.story_order >= ch_lookback_from_order,
                         TimelineEventModel.story_order < ch_current_story_order,
                     )
                 )
-            ),
+                if (event.metadata_json or {}).get("knowledge_lineage_status") != "superseded"
+            ],
             key=lambda event: float(event.story_order),
             reverse=True,
         )[: max(4, settings.generation.prompt_context_scenes * 2)]
@@ -2367,7 +2373,7 @@ async def build_chapter_writer_context(
     active_plot_arc_reads = [_plot_arc_read(item) for item in plot_arcs[:4]]
     active_arc_beat_reads = [
         _arc_beat_read(item, arc_code_by_id.get(item.plot_arc_id))
-        for item in active_arc_beats[:8]
+        for item in active_arc_beats
     ]
 
     # ── Phase-2: extract structure beat from arc beat metadata ──
@@ -2442,6 +2448,7 @@ async def build_chapter_writer_context(
         session,
         project,
         preferred_tree_paths,
+        settings=settings,
         current_chapter_number=chapter.chapter_number,
         current_scene_number=99,
     )
@@ -2449,6 +2456,7 @@ async def build_chapter_writer_context(
         session,
         project,
         query_text,
+        settings=settings,
         preferred_paths=preferred_tree_paths,
         current_chapter_number=chapter.chapter_number,
         current_scene_number=99,
@@ -2458,6 +2466,7 @@ async def build_chapter_writer_context(
         session,
         project,
         [item.node_path for item in tree_search_result.hits],
+        settings=settings,
         current_chapter_number=chapter.chapter_number,
         current_scene_number=99,
     )
@@ -2609,9 +2618,6 @@ async def build_chapter_writer_context(
             GoldenFingerLadder,
             extract_ladder_from_growth_curve,
         )
-        from bestseller.services.invariants import (  # noqa: PLC0415
-            invariants_from_dict as _hype_invariants_from_dict,
-        )
         from bestseller.services.prompt_constructor import (  # noqa: PLC0415
             build_chapter_hype_blocks,
         )
@@ -2621,7 +2627,7 @@ async def build_chapter_writer_context(
         from bestseller.settings import load_settings as _hype_load_settings  # noqa: PLC0415
 
         if project.invariants_json:
-            _hype_inv = _hype_invariants_from_dict(project.invariants_json)
+            _hype_inv = project_invariants_from_row(project)
             if not _hype_inv.hype_scheme.is_empty:
                 _hype_bud = await _load_hype_budget(session, project.id)
                 _hype_total = (

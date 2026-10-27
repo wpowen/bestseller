@@ -1,6 +1,8 @@
 # ruff: noqa: RUF001
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -9,15 +11,100 @@ import pytest
 from bestseller.services.category_hard_engines import evaluate_category_hard_engine
 from bestseller.services.legacy_book_state_bootstrap import (
     LegacyChapterSummary,
-    build_legacy_state_bootstrap_payload,
     _legacy_hype_assignment,
     _normalized_legacy_hype_intensity,
+    build_legacy_state_bootstrap_payload,
     parse_markdown_tables,
 )
 from bestseller.services.premium_book_gate import evaluate_premium_project_readiness
 from bestseller.services.premium_state_ledger import validate_premium_state_ledger
 
 pytestmark = pytest.mark.unit
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def _write_verified_distillation_fixture(tmp_path: Path) -> None:
+    root = tmp_path / "data" / "distillation"
+    aggregate = root / "aggregates" / "suspense-mystery"
+    source_id = "source-bootstrap-0001"
+    _write_json(
+        aggregate / "aggregate_manifest.json",
+        {
+            "aggregate_key": "suspense-mystery",
+            "source_count": 1,
+            "source_ids": [source_id],
+            "maturity_score": 0.82,
+            "maturity_status": "production",
+            "provenance_status": "approved",
+            "privacy_status": "approved",
+        },
+    )
+    (aggregate / "grammar_patch.yaml").write_text(
+        "key: suspense-mystery\nstate_variables: [evidence_pressure]\n"
+        "chapter_change_vectors: [new_constraint]\nreader_rewards: [revelation]\n",
+        encoding="utf-8",
+    )
+    _write_jsonl(
+        aggregate / "mechanism_registry.jsonl",
+        [
+            {
+                "mechanism_id": "evidence-escalation",
+                "candidate_type": "plot_pattern",
+                "summary": "每次新证据都会改变行动条件。",
+                "promotion_target": "story_design.plot_patterns",
+                "max_confidence": 0.9,
+            }
+        ],
+    )
+    _write_jsonl(
+        aggregate / "material_entries.active.jsonl",
+        [
+            {
+                "dimension": "scene_templates",
+                "name": "现场验证",
+                "narrative_summary": "用可观察行动验证规则并改变局面。",
+                "confidence": 0.9,
+            }
+        ],
+    )
+    _write_jsonl(
+        aggregate / "volume_design_paths.jsonl",
+        [{"volume_no": 1, "arc_function": "证据升级"}],
+    )
+    _write_jsonl(
+        aggregate / "author_craft_registry.jsonl",
+        [{"dialogue_system": ["对白带有冲突意图"]}],
+    )
+    _write_json(aggregate / "anti_copy_rules.json", {"source_ids": [source_id]})
+
+    source = root / source_id
+    _write_json(
+        source / "source_manifest.json",
+        {
+            "source_id": source_id,
+            "source_hash_sha256": "b" * 64,
+            "rights_status": "user_supplied_for_analysis",
+        },
+    )
+    _write_json(source / "book_design_card.json", {"core_engine": "evidence"})
+    _write_json(source / "author_craft_card.json", {"dialogue_system": []})
+    _write_json(source / "anti_copy_ledger.json", {})
+    _write_jsonl(source / "volume_cards.jsonl", [{"volume_no": 1}])
+    _write_jsonl(source / "mechanism_candidates.jsonl", [{"mechanism_id": "evidence-escalation"}])
+    _write_jsonl(source / "material_entries.review.jsonl", [{"dimension": "scene_templates"}])
+    (source / "grammar_patch.yaml").write_text("key: suspense-mystery\n", encoding="utf-8")
 
 
 def _legacy_project() -> SimpleNamespace:
@@ -190,7 +277,13 @@ def test_bootstrap_payload_does_not_store_chapter_prose() -> None:
     assert raw_prose not in "\n".join(walk(metadata))
 
 
-def test_bootstrap_payload_injects_distilled_strategy_metadata() -> None:
+def test_bootstrap_payload_injects_distilled_strategy_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_verified_distillation_fixture(tmp_path)
+    from bestseller.services import distilled_design_reference
+
+    monkeypatch.setattr(distilled_design_reference, "_repo_root", lambda: tmp_path)
     project = _legacy_project()
     metadata, report = build_legacy_state_bootstrap_payload(
         project,
@@ -210,7 +303,38 @@ def test_bootstrap_payload_injects_distilled_strategy_metadata() -> None:
     )
 
 
-def test_bootstrap_payload_handles_distilled_payload_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bootstrap_rejects_untraceable_distilled_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_verified_distillation_fixture(tmp_path)
+    manifest = (
+        tmp_path
+        / "data"
+        / "distillation"
+        / "aggregates"
+        / "suspense-mystery"
+        / "aggregate_manifest.json"
+    )
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["source_ids"] = ["anonymous-suspense-0001"]
+    manifest.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    from bestseller.services import distilled_design_reference
+
+    monkeypatch.setattr(distilled_design_reference, "_repo_root", lambda: tmp_path)
+
+    metadata, report = build_legacy_state_bootstrap_payload(
+        _legacy_project(),
+        chapter_rows=_chapter_rows(),
+        story_bible_tables=_story_bible_tables(),
+    )
+
+    assert "distilled_strategy_unavailable" in report.notes
+    assert metadata.get("distilled_strategy_card") is None
+
+
+def test_bootstrap_payload_handles_distilled_payload_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from bestseller.services import distilled_strategy_compiler as distilled_compiler
 
     def _null_strategy_card(**_: object) -> None:
@@ -229,7 +353,7 @@ def test_bootstrap_payload_handles_distilled_payload_unavailable(monkeypatch: py
     )
 
     assert "distilled_strategy_unavailable" in report.notes
-    assert metadata.get("distilled_strategy_expected") is None or metadata.get("distilled_strategy_expected") is False
+    assert metadata.get("distilled_strategy_expected") in (None, False)
 
 
 def test_legacy_hype_assignment_uses_category_default_when_classifier_is_empty() -> None:

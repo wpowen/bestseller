@@ -26,6 +26,8 @@ from __future__ import annotations
 # ruff: noqa: RUF001, RUF002, RUF003 — 中文标点是刻意的。
 import json
 
+import pytest
+
 from test_planner_services import build_project, lock_design_snapshot
 
 from bestseller.services import planner as planner_services
@@ -46,29 +48,21 @@ def _project_with_cast(cast: list[dict[str, str]]) -> tuple[object, str, dict, d
         core_story_engine="每轮用导航脉冲确认一段航路并面对升级的阻力。",
     )
     book = planner_services._compile_source_bound_book_spec(project, premise)
-    book = planner_services._ensure_book_spec_bible_fields(project, premise, book)
     book["cast"] = cast
     world = planner_services._compile_source_bound_world_spec(project, premise, book)
     return project, premise, book, world
 
 
 def test_named_cast_from_book_spec_lands_in_the_roster() -> None:
-    project, premise, book, world = _project_with_cast(
-        [
-            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "袖口常沾墨"},
-            {"name": "赵同", "role": "明线反派", "function": "航线赌局牵头", "tag": "逼稿成瘾"},
-            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "墙根听壁角"},
-        ]
-    )
+    project, premise, book, world = _project_with_cast([
+        {"name": "沈砚", "role": "主角", "function": "领航"},
+        {"name": "赵同", "role": "明线反派", "function": "航线赌局牵头"},
+        {"name": "周砚", "role": "同伴", "function": "通风报信"},
+    ])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
-
-    assert cast["antagonist"] is not None, "book_spec 点了名的明线反派必须落到 antagonist"
-    assert cast["antagonist"]["name"] == "赵同"
-    roster = {c["name"] for c in cast["supporting_cast"]}
-    assert "周砚" in roster
-    # 主角不许在配角名册里重复出现——重复会让命名池与身份清单各自认一份。
-    assert "沈砚" not in roster
-    assert "赵同" not in roster
+    assert {member["name"] for member in cast["supporting_cast"]} == {"赵同", "周砚"}
+    assert not cast["antagonist"]  # A role label does not choose the primary antagonist.
+    assert cast["_meta"]["approved_complete"] is False
 
 
 def test_compiler_carries_only_what_the_concept_named_and_invents_nothing() -> None:
@@ -92,26 +86,19 @@ def test_compiler_carries_only_what_the_concept_named_and_invents_nothing() -> N
         assert invented not in json.dumps(ally, ensure_ascii=False)
 
 
-def test_roster_entries_are_flagged_source_bound_so_the_bible_gate_exempts_them() -> None:
-    """新搬的配角必须带 source_bound_minimal 标记。
-
-    没有它，`bible_gate._is_source_bound_minimal_character` 不豁免，
-    这些只有 name/role/function 的条目会因缺 quirk / 缺 history 被判违规
-    ——修一个空名册反而把书卡死，正是本项目反复定罪的门禁自伤。
-    """
-
-    project, premise, book, world = _project_with_cast(
-        [
-            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "袖口常沾墨"},
-            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "墙根听壁角"},
-        ]
-    )
+def test_partial_roster_does_not_claim_a_bible_gate_exemption() -> None:
+    project, premise, book, world = _project_with_cast([
+        {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "墙根听壁角"},
+    ])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
-    for entry in cast["supporting_cast"]:
-        meta = entry.get("metadata") or {}
-        assert meta.get("source_bound_design") is True
-        assert meta.get("source_bound_minimal") is True
-        assert "book_spec.cast" in (meta.get("source_fields") or [])
+    assert cast["_meta"]["planning_status"] == "projection_only"
+    assert cast["_meta"]["approved_complete"] is False
+    for member in cast["supporting_cast"]:
+        assert not member.get("metadata", {}).get("source_bound_minimal")
+        assert not member.get("goal")
+        assert not member.get("secret")
+    with pytest.raises(planner_services.PlannerFallbackError, match="theme statement"):
+        planner_services._ensure_book_spec_bible_fields(project, premise, book)
 
 
 def test_no_cast_in_book_spec_keeps_the_old_shape() -> None:
@@ -119,37 +106,20 @@ def test_no_cast_in_book_spec_keeps_the_old_shape() -> None:
 
     project, premise, book, world = _project_with_cast([])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
-    assert cast["antagonist"] is None
+    assert not cast["antagonist"]
     assert cast["supporting_cast"] == []
 
 
-def test_source_bound_book_spec_has_target_scaled_serial_engine() -> None:
-    """A 50-chapter source-bound book must not compile as a one-character shell.
-
-    The old compiler hard-coded ``expected_character_count=1`` and emitted
-    empty seriality fields.  That allowed a single-volume plan to reach prose
-    with no reusable unit families, accumulation tracks, or phase transitions.
-    """
-    project = build_project()
-    project.target_chapters = 50
-    project.title = "回声航线"
-    premise = "巡航员沈砚发现封锁航线会回应他的导航脉冲。"
-    lock_design_snapshot(
-        project,
-        protagonist_name="沈砚",
-        reader_promise=premise,
-        core_story_engine="每轮用导航脉冲确认一段航路并面对升级的阻力。",
-    )
-
-    book = planner_services._compile_source_bound_book_spec(project, premise)
-
-    assert book["expected_character_count"] >= 4
+def test_source_bound_book_spec_does_not_invent_a_target_scaled_serial_contract() -> None:
+    project, premise, book, world = _project_with_cast([])
     engine = book["series_engine"]
-    assert len(engine["unit_families"]) >= 4
-    assert len(engine["accumulation_tracks"]) >= 2
-    assert len(engine["phase_transitions"]) >= 3
-    assert len(engine["renewal_sources"]) >= 2
-    assert engine["endgame_direction"]
+    assert engine["unit_families"] == []
+    assert engine["accumulation_tracks"] == []
+    assert engine["phase_transitions"] == []
+    assert engine["renewal_sources"] == []
+    assert not engine.get("endgame_direction")
+    assert "expected_character_count" not in book
+    assert book["_meta"]["approved_complete"] is False
 
 
 # ── 每个搬来的角色要带一条与主角的关系 ────────────────────────────────────
@@ -170,50 +140,97 @@ def test_source_bound_book_spec_has_target_scaled_serial_engine() -> None:
 # 已批准构思里的 role 与 function，不新编任何情节。
 
 
-def test_every_named_character_gets_a_relationship_to_the_protagonist() -> None:
-    project, premise, book, world = _project_with_cast(
-        [
-            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "袖口常沾墨"},
-            {
-                "name": "赵同",
-                "role": "主要对手·航线赌局",
-                "function": "升级封锁",
-                "tag": "逼稿成瘾",
-            },
-            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "墙根听壁角"},
-        ]
-    )
+def test_role_and_function_do_not_fabricate_personal_relationships() -> None:
+    project, premise, book, world = _project_with_cast([
+        {"name": "赵同", "role": "主要对手", "function": "升级封锁"},
+        {"name": "周砚", "role": "同伴", "function": "通风报信"},
+    ])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
-
-    everyone = [cast["antagonist"], *cast["supporting_cast"]]
-    for member in everyone:
-        assert member is not None
-        rels = member.get("relationships") or []
-        assert rels, f"{member['name']} 没有任何关系——关系表会因此是空的"
-        assert any(r.get("character") == "沈砚" for r in rels)
+    for member in cast["supporting_cast"]:
+        assert "relationships" not in member
+        assert "goal" not in member
+        assert "strength" not in member
+        assert member["function"] in {"升级封锁", "通风报信"}
 
 
-def test_relationship_type_comes_from_the_approved_role() -> None:
-    """对抗方与同伴要能区分开，且措辞取自构思原文，不新编。"""
-
-    project, premise, book, world = _project_with_cast(
-        [
-            {"name": "沈砚", "role": "主角", "function": "领航", "tag": "x"},
-            {"name": "赵同", "role": "主要对手·航线赌局", "function": "升级封锁", "tag": "y"},
-            {"name": "周砚", "role": "同伴", "function": "通风报信", "tag": "z"},
-        ]
-    )
+def test_literal_relationship_fields_are_preserved_without_role_conversion() -> None:
+    relation = {"character": "沈砚", "type": "航线竞争者", "tension": "争用唯一的修复窗口"}
+    project, premise, book, world = _project_with_cast([
+        {"name": "赵同", "role": "主要对手", "function": "升级封锁", "relationships": [relation]},
+    ])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
-    ant = cast["antagonist"]
-    ally = next(c for c in cast["supporting_cast"] if c["name"] == "周砚")
-
-    assert ant["relationships"][0]["type"] != ally["relationships"][0]["type"]
-    # 张力描述必须来自构思里的 function，不是模板句
-    assert "升级封锁" in json.dumps(ant["relationships"], ensure_ascii=False)
+    assert cast["supporting_cast"][0]["relationships"] == [relation]
 
 
 def test_no_relationships_when_the_concept_named_nobody() -> None:
     project, premise, book, world = _project_with_cast([])
     cast = planner_services._compile_source_bound_cast_spec(project, premise, book, world)
     assert cast["supporting_cast"] == []
-    assert cast["antagonist"] is None
+    assert not cast["antagonist"]
+
+
+def _compile_gender_case(
+    *,
+    channel: str,
+    premise: str,
+    protagonist_name: str,
+    explicit_gender: str | None = None,
+) -> dict:
+    project = build_project()
+    project.metadata_json["creation_intent_contract"] = {
+        "audience_orientation": channel,
+    }
+    lock_design_snapshot(
+        project,
+        protagonist_name=protagonist_name,
+        reader_promise=premise,
+        core_story_engine="推进已批准主线",
+    )
+    protagonist = {"name": protagonist_name}
+    if explicit_gender is not None:
+        protagonist["gender"] = explicit_gender
+    return planner_services._compile_source_bound_cast_spec(
+        project,
+        premise,
+        {"protagonist": protagonist},
+        {},
+    )
+
+
+def test_prose_pronoun_is_not_an_unreviewed_structured_gender_fact() -> None:
+    cast = _compile_gender_case(channel="male", premise="沈见微在档案馆工作，她决定查清火灾。", protagonist_name="沈见微")
+    assert cast["protagonist"]["gender"] == "unknown"
+    assert cast["protagonist"]["pronoun_set_zh"] is None
+    assert "protagonist.gender" in cast["_meta"]["unresolved_fields"]
+
+
+def test_audience_channel_and_name_do_not_supply_gender() -> None:
+    cast = _compile_gender_case(channel="female", premise="顾沉在档案馆工作，他决定查清火灾。", protagonist_name="顾沉")
+    assert cast["protagonist"]["gender"] == "unknown"
+    assert cast["protagonist"]["pronoun_set_en"] is None
+
+
+def test_source_bound_explicit_gender_field_beats_premise_and_channel() -> None:
+    cast = _compile_gender_case(
+        channel="male",
+        premise="顾沉在档案馆工作，他决定查清火灾。",
+        protagonist_name="顾沉",
+        explicit_gender="female",
+    )
+
+    assert cast["protagonist"]["gender"] == "female"
+    assert cast["protagonist"]["pronoun_set_zh"] == "她"
+
+
+def test_source_bound_gender_stays_unknown_without_evidence() -> None:
+    cast = _compile_gender_case(
+        channel="male",
+        premise="主角在档案馆工作，调查一场火灾。",
+        protagonist_name="沈砚",
+    )
+
+    assert cast["protagonist"]["gender"] == "unknown"
+    assert cast["protagonist"]["pronoun_set_zh"] is None
+    assert cast["protagonist"]["pronoun_set_en"] is None
+    assert "protagonist.gender" in cast["_meta"]["unresolved_fields"]
+    assert cast["_meta"]["approved_complete"] is False

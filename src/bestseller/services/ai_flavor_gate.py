@@ -62,6 +62,8 @@ class AiFlavorGateConfig:
     """
 
     enabled: bool = True
+    expression_guidance_enabled: bool = False
+    expression_guidance_max_tokens: int = 900
     block_score_cn: int = 38
     block_score_en: int = 45
     warn_score_cn: int = 25

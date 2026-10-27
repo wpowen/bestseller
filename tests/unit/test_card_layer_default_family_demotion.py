@@ -1,18 +1,4 @@
-"""默认族在**展开那一步**出生——过滤点却在它出生之前。
-
-2026-08-24 真机（书9 custom-xuanhuan-1787493501，零创意种子）逐层量：
-
-    一句话胚子   55字   子族0  命中  0  → 沉底门放行（母题此时还不存在）
-    展开后卡片 1247字   子族3  命中 39  → 已经支配
-    构思终稿   8861字   子族3  命中183  → advisory，只挣一次重生
-
-冠军胚子写的是「借力/还力」——零个债务词。是**展开**把「还力」翻译成了
-账本/债主/还债。胚子层的沉底判据结构上不可能抓到它。
-
-卡片层曾有一道硬门，2026-08-02 因误杀退役，理由正确：「选了仙侠不等于
-禁止出现葬礼」。所以这里恢复的**不是杀权**，是本仓库验证过的安全形状：
-同族卡片把展开位让给干净卡片，**绝不清空池**（全池同族时照常放行）。
-"""
+"""Theme diagnostics preserve card eligibility; reuse needs separate evidence."""
 
 from bestseller.services.concept_tournament import (
     ConceptTournamentResult,
@@ -39,15 +25,14 @@ def _run(approved, kernels, seed=""):
     return kept, result
 
 
-def test_dominated_card_yields_its_slot_to_a_clean_one() -> None:
+def test_theme_diagnostic_preserves_both_slots() -> None:
     approved = [("A", "s1"), ("B", "s2")]
     kernels = {("A", "s1"): _DIRTY, ("B", "s2"): _CLEAN}
     kept, result = _run(approved, kernels)
-    assert kept == [("B", "s2")]
-    assert any(
-        r.get("failed_axes") == ["default_family_after_expansion"]
-        for r in result.engine_rejections
-    )
+    assert kept == approved
+    assert not result.engine_rejections
+    assert any(r.get("finding") == "default_family_lexical_signal"
+               for r in result.quality_findings)
 
 
 def test_pool_is_never_emptied() -> None:
@@ -75,7 +60,7 @@ def test_unknown_kernel_is_treated_as_clean() -> None:
     approved = [("A", "s1"), ("B", "s2")]
     kernels = {("A", "s1"): _DIRTY}
     kept, _ = _run(approved, kernels)
-    assert kept == [("B", "s2")]
+    assert kept == approved
 
 
 def test_all_clean_pool_is_untouched_and_leaves_no_noise() -> None:
@@ -87,7 +72,7 @@ def test_all_clean_pool_is_untouched_and_leaves_no_noise() -> None:
 
 
 def test_real_book9_champion_card_is_caught_here() -> None:
-    """真机对照：书9 的冠军卡在这一层必须被判为同族（胚子层量的是 0）。"""
+    """A real theme-positive remains observable without becoming ineligible."""
 
     from bestseller.services.anti_default_motif import is_debt_dominated
 
@@ -102,4 +87,4 @@ def test_real_book9_champion_card_is_caught_here() -> None:
     assert not is_debt_dominated(book9_card["one_liner"])  # 胚子层：干净
     approved = [("A", "s1"), ("B", "s2")]
     kept, _ = _run(approved, {("A", "s1"): book9_card, ("B", "s2"): _CLEAN})
-    assert kept == [("B", "s2")]
+    assert kept == approved

@@ -342,6 +342,17 @@ async def refresh_project_material_reference_block(
     }
 
 
+def premium_ledger_is_category_template(ledger: object, pack_id: object) -> bool:
+    """Identify only an exact legacy template, preserving changed project history."""
+    if not isinstance(ledger, dict) or not ledger or not isinstance(pack_id, str):
+        return False
+    events = ledger.get("relationship_events") or []
+    protagonist = events[0].get("character_a") if events and isinstance(events[0], dict) else None
+    return ledger == _initial_premium_state_ledger_for_pack(
+        pack_id, protagonist_name=protagonist,
+    )
+
+
 async def hydrate_premium_capability_metadata(
     session: AsyncSession,
     *,
@@ -365,6 +376,49 @@ async def hydrate_premium_capability_metadata(
         }
 
     metadata = dict(project.metadata_json or {})
+    intent = metadata.get("genre_intent_contract") or {}
+    current_state_view = None
+    if 'premium_state_source_projection' in metadata:
+        from bestseller.services.story_bible_projection import validated_premium_projection
+
+        current_state_view = validated_premium_projection(metadata)
+        if current_state_view is None:
+            raise ValueError('premium_state_source_projection_missing')
+    if pack_id.startswith("category_realistic_life_") or (
+        isinstance(intent, dict)
+        and intent.get("genre_key") == "realistic"
+        and intent.get("prompt_pack_key") == "realistic-life"
+    ):
+        # Category scaffolding is not a history of things that happened. Reuse
+        # project events when available; never manufacture cast, gains or debts.
+        ledger = (current_state_view['active_ledger'] if current_state_view is not None
+                  else metadata.get("premium_state_ledger") or {})
+        old_pack = metadata.get("premium_capability_pack")
+        template_only = premium_ledger_is_category_template(ledger, old_pack)
+        status = (
+            "needs_replan" if template_only
+            else "project_events" if ledger else "awaiting_project_events"
+        )
+        metadata["premium_state_ledger_provenance"] = {
+            "schema_version": "realistic-state-source.v1",
+            "status": status,
+            "source_pack": old_pack if template_only else None,
+        }
+        if not template_only:
+            report = validate_premium_state_ledger(ledger)
+            metadata["premium_state_ledger_report"] = report.to_dict()
+            metadata["premium_state_snapshot"] = materialize_premium_state_snapshot(ledger)
+            metadata["premium_capability_pack"] = "category_realistic_life_zh"
+        project.metadata_json = metadata
+        await session.flush()
+        return {
+            "project_id": project_id,
+            "present": bool(ledger) and not template_only,
+            "pack_id": "category_realistic_life_zh",
+            "state_source_status": status,
+            "premium_state_passed": bool(ledger) and not template_only
+            and metadata.get("premium_state_ledger_report", {}).get("passed") is True,
+        }
     protagonist_name = _project_protagonist_override(project, metadata)
     policy = _decision_policy_for_pack(pack_id, protagonist_name=protagonist_name)
     ledger = _initial_premium_state_ledger_for_pack(
@@ -393,8 +447,10 @@ async def hydrate_premium_capability_metadata(
     metadata["premium_volume_plan"] = volume_plan
     changed_fields.append("premium_volume_plan")
 
-    report = validate_premium_state_ledger(metadata.get("premium_state_ledger"))
-    snapshot = materialize_premium_state_snapshot(metadata.get("premium_state_ledger"))
+    current_ledger = (current_state_view['active_ledger'] if current_state_view is not None
+                      else metadata.get("premium_state_ledger"))
+    report = validate_premium_state_ledger(current_ledger)
+    snapshot = materialize_premium_state_snapshot(current_ledger)
     metadata["premium_state_ledger_report"] = report.to_dict()
     metadata["premium_state_snapshot"] = snapshot
     metadata["premium_capability_pack"] = pack_id
@@ -1193,6 +1249,16 @@ def _select_material_pack(
     Only genre-level category blueprints (the world type the user selected by
     picking the genre) remain.
     """
+    category_pack_id = _resolve_category_pack_id(
+        title=title,
+        genre=genre,
+        sub_genre=sub_genre,
+        language=language,
+    )
+    if category_pack_id and category_pack_id.startswith("category_realistic_life_"):
+        # Planning/writing own the book-specific material; no generic characters
+        # or already-completed events are valid substitutions for those facts.
+        return category_pack_id, []
     lower = " ".join(
         str(part or "")
         for part in (title, genre, sub_genre, language, package_text[:12000])
@@ -1202,12 +1268,6 @@ def _select_material_pack(
             project_id,
             _generic_superhero_pack_spec(),
         )
-    category_pack_id = _resolve_category_pack_id(
-        title=title,
-        genre=genre,
-        sub_genre=sub_genre,
-        language=language,
-    )
     if category_pack_id:
         blueprint = _blueprint_for_pack(category_pack_id)
         if blueprint is not None:
@@ -1597,6 +1657,9 @@ def _resolve_category_pack_id(
     sub_genre: str | None,
     language: str | None,
 ) -> str | None:
+    if str(genre or "").strip() in {"realistic", "现实", "现实百态", "现实题材"}:
+        lang = "en" if str(language or "").lower().startswith("en") else "zh"
+        return f"category_realistic_life_{lang}"
     signal = " ".join(str(part or "").strip() for part in (title, genre, sub_genre)).strip()
     if not signal:
         return None

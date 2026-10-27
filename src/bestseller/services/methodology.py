@@ -650,58 +650,19 @@ def render_methodology_scene_rules(
     if _qimao_regeneration_rules:
         rules.append(_qimao_regeneration_rules)
 
-    # Keep the opening-only commercial promise when the baseline craft blocks
-    # are suppressed by the prompt compiler.  This is not a prose-style
-    # duplicate: it assigns a concrete chapter function across the first three
-    # chapters, which the writer needs even on non-Qimao routes.
-    if is_opening and chapter_number <= 3:
-        rules.append(
-            "【黄金三章职责】\n"
-            "- 第1章用现场压力和一次主动选择强切入；第2章兑现主角的差异化优势；"
-            "第3章给出小回报，并把更大的问题留到下一章。"
-        )
-
-    # Climax-specific rules
-    if is_climax:
-        rules.append(
-            "【高潮规则】\n"
-            "- 多线交汇：让3+条线索在同一时刻汇合\n"
-            "- 极限压抑：封死所有正常出口\n"
-            "- BUFF叠加：时间限制+自身限制+社会压力\n"
-            "- 信息差反转：用前文伏笔而非天降神兵\n"
-            "- 视角切换：主角出招后立即写旁观者反应\n"
-            "- 情绪收运：高潮后展示地位变化+温情余韵"
-        )
-
-    # Pacing-specific rules
-    if pacing_mode == "build":
-        rules.append(
-            "【节奏：蓄力期】\n"
-            "- 本场景处于情绪压缩阶段，增加信息密度\n"
-            "- 多植入伏笔、发展关系、铺设世界观\n"
-            "- 制造不公/压迫/对比，为后续释放蓄能"
-        )
-    elif pacing_mode == "accelerate":
-        rules.append(
-            "【节奏：加速期】\n"
-            "- 减少描写，加快对话和动作节奏\n"
-            "- 钩子密度加大，每段结尾留悬念\n"
-            "- 筹码升级，极限施压开始"
-        )
-    elif pacing_mode == "breathe":
-        rules.append(
-            "【节奏：呼吸口】\n"
-            "- 紧张节奏后的喘息口，允许日常/温馨/搞笑\n"
-            "- 但不是废话：利用此机会植入伏笔和感情线\n"
-            "- 保持1个低强度钩子维持续读欲"
-        )
-
-    # Reaction amplification (always relevant)
+    # These are optional craft suggestions. An approved chapter contract
+    # supplies events, emotion, cast, pacing and viewpoint; the library does
+    # not allocate them from a chapter number or a genre label.
     rules.append(
-        "【反应放大法】\n"
-        "- 主角的高光时刻后必须切换视角写旁观者反应\n"
-        "- 反应层次：震惊→不可置信→后悔→崇拜/恐惧\n"
-        "- 至少2个角色提供反应视角"
+        "【写法参考的适用边界】\n"
+        "- 以下写法只作可选参考，以本书已批准的场景、调性和视角合同为准。\n"
+        "- 不得为套用技法新增人物、能力、压迫情节、旁观者或视角切换。"
     )
+    if is_opening:
+        rules.append("【开篇参考】\n- 让当前处境和人物的行动容易理解；回报与悬念按本章合同展开。")
+    if is_climax:
+        rules.append("【高潮参考】\n- 兑现本章已经建立的冲突与伏笔，不另造能力或汇合线索数量。")
+    if pacing_mode:
+        rules.append("【节奏参考】\n- 按已批准的节奏目标安排行动、对话与描写，不增加固定压迫或反应配方。")
 
     return "\n\n".join(rules)

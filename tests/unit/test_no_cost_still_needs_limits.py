@@ -32,6 +32,8 @@ import pytest
 
 from bestseller.services.concept_tournament import (
     ConceptCandidate,
+    _build_engine_kernel_messages,
+    _build_engine_kernel_repair_messages,
     audit_constraint_ladder,
     constraint_ladder_tier_target,
 )
@@ -112,6 +114,47 @@ class TestScopeAndSemantics:
         for style in ("minimal", "external", "standard"):
             r = _audit([], cost_style=style)
             assert set(r) >= {"required", "cost_style", "tiers", "tier_target", "findings", "passed"}
+
+
+class TestCapacityPromptApplicability:
+    def test_realistic_builder_allows_empty_ladder_without_installing_a_system(self):
+        """现实题材仍有长篇容量证据，但不被提示词强装能力升级阶梯。"""
+        _system, prompt = _build_engine_kernel_messages(
+            genre="现实", sub_genre="职场", lane="人物处境", chapter_count=50
+        )
+
+        assert "已有可扩展的超凡能力或特殊规则" in prompt
+        assert "现实题材或没有可扩展能力/规则时保持空数组" in prompt
+        assert '"constraint_ladder":[]' in prompt
+        assert "行动、证据、关系和对手变化证明容量" in prompt
+        assert "不得凭空添加系统或升级" in prompt
+
+    def test_repair_builder_inherits_the_same_applicability_contract(self):
+        """JSON 修复不能重新把现实题材改写成能力升级故事。"""
+        _system, prompt = _build_engine_kernel_repair_messages(
+            genre="现实",
+            sub_genre="刑侦职场",
+            lane="人物处境",
+            chapter_count=50,
+            seed_concept="检验员靠调取旧档案查清一桩事故",
+            card={"core_abnormality": "调取档案的工作权限", "constraint_ladder": []},
+            missing_fields=["scene_seeds"],
+        )
+
+        assert "已有可扩展的超凡能力或特殊规则" in prompt
+        assert "现实题材或没有可扩展能力/规则时保持空数组" in prompt
+        assert '"constraint_ladder":[]' in prompt
+        assert "PREMISE_CARD_REPAIR" in prompt
+
+    def test_minimal_mode_keeps_the_existing_ladder_requirement(self):
+        _system, prompt = _build_engine_kernel_messages(
+            genre="玄幻", sub_genre="东方玄幻", lane="世界扩张", chapter_count=50,
+            cost_style="minimal",
+        )
+
+        assert "本模式仍要求已有可扩展的超凡能力或特殊规则" in prompt
+        assert "改用既有行动、证据、关系与对手变化说明容量" in prompt
+        assert "现实题材或没有可扩展能力/规则时保持空数组" not in prompt
 
 
 class TestItOnlyLeavesATrace:

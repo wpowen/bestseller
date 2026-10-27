@@ -1,0 +1,223 @@
+{
+  "schema_version": "independent-motif-cases.v1",
+  "created_at": "2026-09-10",
+  "purpose": "独立材料验证权限边界和原有文字复用职责；不是模型质量评估或真实读者验收。",
+  "provenance": {
+    "authoring": "本次独立审查新写，未复用P1历史角色或书名。",
+    "semantic_labels": "审查者预先人工标注，不是生产检测器输出或多人共识。",
+    "baseline_boundary": "最后两例的基线是人工回归材料。逐字复用确实发生在所列两段文本之间，但不构成实际旧书书库证据。"
+  },
+  "shared_qualification_expectation": {
+    "motif_signal_may_remove_candidate": false,
+    "motif_signal_may_change_priority_before_slot_limit": false,
+    "motif_signal_may_authorize_finalize_retry": false,
+    "motif_signal_may_change_retry_adoption": false,
+    "qualification_invariant": "仅改变母题诊断、其余材料与正常评审证据不变时，保持原候选资格、顺序、既有分数及版本采用。",
+    "separate_verified_violations": "具体复用、事实矛盾和用户合同等独立已有规则保留原权限。"
+  },
+  "acceptance_rules": [
+    "lexical_signal_expected表示有可留痕的相关字词；不要求旧is_debt_dominated等于人工语义标注。",
+    "不把正则分支数量或密度阈值写成人工语义真值。",
+    "主题正例仍有资格；具体文字复用正例通过独立基线检查。",
+    "未知或未提供基线时报告未执行，不把无证据写成已证无重复。",
+    "发生冲突时保留原始输出并报告，不能改写案例迎合实现。"
+  ],
+  "cases": [
+    {
+      "case_id": "idiom-denial",
+      "coverage": "习语",
+      "user_request": "写一部轻松的奇幻邮递员成长故事。",
+      "kernel": {
+        "core_abnormality": "邮递员摸到信封的折角，就能看见收信人错过的那条岔路。",
+        "deformable_loop": "每送出一封迟到的信，便修正一条岔路，同时让下一封信的目的地发生变化。",
+        "scene_seeds": ["学徒把红墨水洒满桌面，面对袖口的证据仍死不认账；老师笑着让他擦桌子。"]
+      },
+      "story_text": "邮递员借信封折角看见错过的岔路，送信会改变下一封信的目的地。学徒洒了墨水仍死不认账，被老师叫去擦桌子。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["账"],
+        "semantic_annotation": "incidental_idiom",
+        "reason": "否认过错的习语不规定能力、偿还义务或后续循环。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "inventory-records",
+      "coverage": "库存记账",
+      "user_request": "写一部修复古城水渠的建设故事，资源数量要自洽。",
+      "kernel": {
+        "core_abnormality": "石匠敲击渠壁，可以听出水流尚未抵达的裂缝。",
+        "deformable_loop": "每修好一段支渠，便恢复一个街区供水，并暴露更上游的渗漏。",
+        "scene_seeds": ["库房账本记录三车石料，记账员复核出库账、入库账和余料账，账面相符后才签收。"]
+      },
+      "story_text": "石匠循声修补裂缝，恢复下游供水后追查上游渗漏。库房账本记录石料，记账员复核出库账、入库账和余料账，账面相符后签收。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["账"],
+        "semantic_annotation": "ordinary_inventory",
+        "reason": "记录支持物料连续性；能力和循环是听裂缝、修水渠，没有清偿驱动。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "relationship-metaphor",
+      "coverage": "关系比喻",
+      "user_request": "写一部温暖的山村群像，主角通过厨艺与邻居合作。",
+      "kernel": {
+        "core_abnormality": "糕点师能从蒸汽形状看出面团还缺哪种香气。",
+        "deformable_loop": "每完成一户的宴席，就学到新香料的用法，并接触另一户不同的难处。",
+        "scene_seeds": ["邻居替他看孩子，他笑说欠下一笔人情债，带去一篮热糕点；邻居回道不用算账。"]
+      },
+      "story_text": "糕点师凭蒸汽寻找香气，通过宴席学会新香料。邻居替他看孩子，他笑说欠下人情债，带去热糕点，对方说不用算账。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["债", "账"],
+        "semantic_annotation": "reciprocal_relationship_metaphor",
+        "reason": "互助未规定利息、到期或可转移债权；循环仍由宴席和香料驱动。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "background-funeral",
+      "coverage": "背景葬礼",
+      "user_request": "写一部追踪河流迁徙的旅行小说，允许自然生死但不要强制悲剧。",
+      "kernel": {
+        "core_abnormality": "测河员混合河岸泥土，便能感到下一场洪水会向哪里转弯。",
+        "deformable_loop": "每到一座河港，他都要结合泥土与本地观察修正路线，帮助船队避开下一处险滩。",
+        "scene_seeds": ["村里为年迈摆渡人出殡，测河员在灵堂放下一盏小灯，第二天继续随船考察。"]
+      },
+      "story_text": "测河员借泥土预测水路，为船队修正航线。他参加摆渡人的出殡，在灵堂放灯，次日继续考察。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["出殡", "灵堂"],
+        "semantic_annotation": "background_event",
+        "reason": "葬礼真实出现，但不是能力或持续冲突的构成条件。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "lifespan-weather",
+      "coverage": "寿命机制",
+      "user_request": "写一部探索型仙侠，寿命可以成为世界规律，但不要改成借贷故事。",
+      "kernel": {
+        "core_abnormality": "园丁看得到古树剩余寿元，树冠光环随干旱缩短，雨后逐渐恢复。",
+        "deformable_loop": "每救活一片古林，他就从年轮读到下一处生态失衡的线索，继续寻找合适的水土。",
+        "scene_seeds": ["园丁记录两棵古树的寿元变化，发现山泉改道才是衰败原因，组织村民恢复旧溪。"]
+      },
+      "story_text": "园丁通过寿元光环诊断古树，救活古林后从年轮追查生态失衡。两棵树的寿元变化把他引向改道的山泉。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["寿元"],
+        "semantic_annotation": "lifespan_as_ecological_state",
+        "reason": "寿命真实参与核心机制，但没有借入、偿还或债权；寿命命中不等于债务支配。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "real-debt-loop",
+      "coverage": "真正债务循环",
+      "user_request": "写一部小商人经营与谈判小说，允许角色作复杂交易。",
+      "kernel": {
+        "core_abnormality": "商人可以把赊欠货款暂存于带印章的账页，但每张账页到期必须交回等值货物。",
+        "deformable_loop": "每偿清一笔债，他就获得更大采购额度；额度扩大又引来新的债主与更难履行的交货约定。",
+        "scene_seeds": ["洪水毁掉货仓，债主要求按期偿还；商人必须在卖店还债和说服商队展期之间选择。"]
+      },
+      "story_text": "商人把赊欠货款暂存账页，到期交回货物；每偿清一笔债就获得更大额度，也迎来新债主。洪水毁仓，他必须卖店还债或争取展期。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": true,
+        "literal_examples": ["账", "债"],
+        "semantic_annotation": "debt_drives_core_and_repeated_loop",
+        "reason": "确实由债务驱动，但原创债务题材有正常参选资格；主题存在不能证明重复旧书。"
+      },
+      "qualification_expectation": "inherits_shared_invariant",
+      "baseline": null
+    },
+    {
+      "case_id": "shared-genre-labels",
+      "coverage": "共享普通体裁词",
+      "user_request": "写一部玄幻探索成长故事。",
+      "kernel": {
+        "core_abnormality": "行脚画师借野鸟飞行方向补全山区小路。",
+        "deformable_loop": "每走通一条山路，他就在画纸补出一个山口，带村民到达更远的集市。",
+        "scene_seeds": ["题材标签为玄幻、探索、成长；另一部海上铸钟故事也有这些标签。"]
+      },
+      "story_text": "行脚画师借野鸟探路，每走通一条山路就补出一个山口。玄幻、探索、成长也是另一部海上故事的体裁词。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": false,
+        "literal_examples": [],
+        "semantic_annotation": "shared_genre_not_shared_mechanism",
+        "reason": "标签相同不等于作用原理、行动后果或具体故事文字复用。"
+      },
+      "qualification_expectation": "inherits_shared_invariant; shared_labels_alone_do_not_authorize_reuse_rejection",
+      "baseline": {
+        "required": true,
+        "source_kind": "authored_regression_fixture_not_published_book",
+        "genre": "玄幻",
+        "sub_genre": "探索",
+        "entry": {
+          "title": "铜塔听潮",
+          "premise": "铸钟匠从海风中辨认失散船只的航向。",
+          "golden_finger": "钟声越过海面时显出暗礁的影子。",
+          "trope_keywords": ["玄幻", "探索", "成长"]
+        },
+        "candidate_final_result": {
+          "title": "山图拾路",
+          "premise": "行脚画师借野鸟飞行方向补全山区小路。",
+          "writing_profile": {
+            "character": {"golden_finger": "画纸上的山峰会在晴天标出可通行的山口。"},
+            "market": {"trope_keywords": ["玄幻", "探索", "成长"]}
+          }
+        },
+        "expected_echo": "ordinary_genre_labels_alone_do_not_establish_reuse",
+        "production_baseline_claim": false
+      }
+    },
+    {
+      "case_id": "verbatim-mechanism-reuse",
+      "coverage": "逐字机制复用，需要基线",
+      "user_request": "写一部寻找地下城出口的奇幻冒险，不要求沿用既有作品。",
+      "kernel": {
+        "core_abnormality": "每当陶笛吹出一枚蓝色气泡井底就升起一段被遗忘的楼梯。",
+        "deformable_loop": "每走完一层楼梯，巡夜者就要找出吹奏下一种气泡的姿势，才有机会抵达地面。",
+        "scene_seeds": ["这句作用机制与给定基线逐字一致，只更换了行动者和目的地。"]
+      },
+      "story_text": "每当陶笛吹出一枚蓝色气泡井底就升起一段被遗忘的楼梯。巡夜者沿阶寻找地下城出口。",
+      "diagnostic_expectation": {
+        "lexical_signal_expected": false,
+        "literal_examples": [],
+        "semantic_annotation": "specific_literal_reuse_when_baseline_supplied",
+        "reason": "防重复职责来自具体原片段对照，不依赖债务词；没有基线时应报告未执行比较。"
+      },
+      "qualification_expectation": "motif_invariant_still_applies; verified_specific_reuse_retains_existing_independent_authority",
+      "baseline": {
+        "required": true,
+        "source_kind": "authored_regression_fixture_with_literal_copy_not_actual_prior_project",
+        "genre": "奇幻",
+        "sub_genre": "探索",
+        "entry": {
+          "title": "深井寻阶",
+          "premise": "每当陶笛吹出一枚蓝色气泡井底就升起一段被遗忘的楼梯。探井人沿阶寻找失踪的村庄。",
+          "golden_finger": "陶笛的气泡能唤回井中的楼梯。",
+          "trope_keywords": ["探索"]
+        },
+        "candidate_final_result": {
+          "title": "旧城下的回声",
+          "premise": "每当陶笛吹出一枚蓝色气泡井底就升起一段被遗忘的楼梯。巡夜者沿阶寻找地下城出口。",
+          "writing_profile": {
+            "character": {"golden_finger": "以吹奏决定水井里出现的阶梯。"},
+            "market": {"trope_keywords": ["探索"]}
+          }
+        },
+        "literal_shared_span": "每当陶笛吹出一枚蓝色气泡井底就升起一段被遗忘的楼梯",
+        "expected_echo": "specific_verbatim_mechanism_span_detected_with_baseline",
+        "production_baseline_claim": false,
+        "promotion_requirement": "若要声称真实旧书去重已验证，必须另用获授权实际既有书原文、项目来源、有章节证据和只读快照；不得把本人工条目伪称旧书。"
+      }
+    }
+  ]
+}

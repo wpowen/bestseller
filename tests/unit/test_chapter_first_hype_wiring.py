@@ -160,7 +160,10 @@ def test_chapter_rewrite_prompt_consumes_preservation_block():
     from bestseller.services import reviews
 
     src = inspect.getsource(reviews)
-    assert "render_hype_preservation_block(chapter)" in src, "重写通道必须同见爽点合同"
+    assert "render_hype_preservation_block(" in src, "重写通道必须同见爽点合同"
+    # 2026-09-10 (W3)：重写通道必须把**待改写的原稿正文**作为出处传入，
+    # 否则保全块只有泛化三拍要求，写手不知道上一稿具体写的哪一句。
+    assert "source_body=getattr(current_draft" in src, "重写通道须传入原稿出处"
 
 
 def test_all_three_rewrite_channels_see_the_contract():
@@ -169,18 +172,24 @@ def test_all_three_rewrite_channels_see_the_contract():
     首修只给了 chapter_rewrite（真机 23 次），而 deslop_revise（16 次）
     没有——盖戳照掉。chapter_rewrite_repair（19 次）复用同一 system prompt
     因此自动继承。「修在书不走的那条路上」的同形复发。
+
+    2026-09-10 (W3)：三条通道还都必须把**正在被改的正文**作为 `source_body`
+    传入，让保全块带上带出处的兑现锚点（而不是只喊泛化三拍）。
     """
     import inspect
 
     from bestseller.services import deslop_revise, pipelines, reviews
 
-    assert "render_hype_preservation_block(chapter)" in inspect.getsource(reviews)
+    rv = inspect.getsource(reviews)
+    assert "render_hype_preservation_block(" in rv
+    assert "source_body=getattr(current_draft" in rv, "chapter_rewrite 须带出处"
     ds = inspect.getsource(deslop_revise)
     assert "hype_preservation_block" in ds, "deslop system prompt 必须带保全块"
     pl = inspect.getsource(pipelines)
     assert "hype_preservation_block=render_hype_preservation_block(" in pl, (
         "deslop 调用点必须传本章合同"
     )
+    assert "source_body=chapter_draft.content_md" in pl, "deslop 调用点须带出处"
 
 
 @pytest.mark.asyncio
@@ -221,10 +230,27 @@ def test_chapter_first_regen_also_carries_preservation():
     合同(hype_constraints_block)在 prompt 里，模型重写时仍没兑现——
     注意力被「修上一稿的问题」占满，结算段被挤掉。已盖戳=上一稿写出
     过爽点，新稿必须同样写出。首次生成(未盖戳)不注入，避免空喊。
+
+    2026-09-10 (W3)：重生成还须把上一稿正文（`prior_draft_body`）作为
+    出处传入；首次生成时为 None → 只保留原合同、不附锚点。
     """
     import inspect
 
     from bestseller.services import drafts
 
     src = inspect.getsource(drafts.build_chapter_first_draft_prompts)
-    assert "render_hype_preservation_block(chapter)" in src
+    assert "render_hype_preservation_block(" in src
+    assert "source_body=prior_draft_body" in src, "重生成须把上一稿正文作出处"
+    assert "prior_draft_body: str | None = None" in src, "签名须暴露 prior_draft_body"
+
+
+def test_generate_chapter_draft_once_supplies_prior_body():
+    """生成入口必须真的去取在架稿并传入（否则锚点永远是 None）。"""
+
+    import inspect
+
+    from bestseller.services import drafts
+
+    src = inspect.getsource(drafts.generate_chapter_draft_once)
+    assert "_load_current_draft_text(session, chapter)" in src, "须读取在架稿"
+    assert "prior_draft_body=prior_draft_body" in src, "须透传给 prompt 构建"

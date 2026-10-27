@@ -40,6 +40,10 @@ class FakeSession:
     ) -> None:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
+        self.stored_records = [
+            *(scalar_results or []),
+            *(row for rows in (scalars_results or []) for row in rows),
+        ]
         self.added: list[object] = []
         self.deleted: list[object] = []
 
@@ -58,6 +62,13 @@ class FakeSession:
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
+
+    async def get(self, model: type, identity: object) -> object | None:
+        return next(
+            (row for row in [*self.stored_records, *self.added]
+             if isinstance(row, model) and getattr(row, "id", None) == identity),
+            None,
+        )
 
     async def scalars(self, stmt: object) -> list[object]:
         if not self.scalars_results:
@@ -331,9 +342,9 @@ def test_chapter_outline_aliases_and_contract_input_repair() -> None:
     assert repaired >= 1
     assert scene.scene_number == 1
     assert scene.time_label == "青萝镇旧宅暮色"
-    assert scene.participants == ["苏砚"]
+    assert scene.participants == []
     assert "铜镜渗出血珠" in scene.purpose["story"]
-    assert report.passed is True
+    assert "PLAN_SCENE_PARTICIPANTS_MISSING" in {v.code for v in report.violations}
 
 
 def test_outline_chapter_number_normalization_closes_materialization_gaps() -> None:
@@ -481,7 +492,7 @@ def test_chapter_outline_accepts_chapter_level_llm_aliases() -> None:
     assert chapter.hook_type == "信息揭示"
 
 
-def test_chapter_outline_repair_adds_identity_names_from_scene_purpose() -> None:
+def test_chapter_outline_repair_leaves_purpose_participant_mismatch_for_review() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {
             "batch_name": "volume-1-outline",
@@ -533,8 +544,8 @@ def test_chapter_outline_repair_adds_identity_names_from_scene_purpose() -> None
     )
 
     assert repaired >= 1
-    assert batch.chapters[0].scenes[0].participants == ["苏砚", "沈夜寒"]
-    assert report.passed is True
+    assert batch.chapters[0].scenes[0].participants == ["苏砚"]
+    assert "PLAN_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS" in {v.code for v in report.violations}
 
 
 def test_chapter_outline_repair_does_not_synthesize_generic_story_fields() -> None:
@@ -830,16 +841,19 @@ async def test_materialize_latest_chapter_outline_batch_updates_existing_planned
 
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(workflow_services, "create_or_get_volume", fake_create_or_get_volume)
+    from bestseller.services import chapter_scene_contract_materializer
+
+    async def unadopted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(chapter_scene_contract_materializer, "chapter_contract_has_adopted_source", unadopted)
 
     session = FakeSession(
-        scalar_results=[artifact, existing_chapter],
+        scalar_results=[artifact, None, existing_chapter],
         scalars_results=[
             # New plan_fingerprint.scan_batch_for_duplicates pulls existing
             # chapters (outside the new batch) to compare against.  Empty is
             # fine here — the scan only affects logging / metadata.
-            [],
-            # Chapter-plan validation refreshes the identity manifest from
-            # persisted CharacterModel rows before checking participants.
             [],
             [existing_scene],
             [existing_chapter, stale_chapter],
@@ -1108,6 +1122,12 @@ async def test_materialize_chapter_outline_batch_blocks_methodology_in_strict_mo
     project.metadata_json = {
         **(project.metadata_json or {}),
         "methodology_contract_mode": "strict",
+        "creation_intent_contract": {
+            "field_sources": {"hook_spec": "explicit"},
+            "hook_spec": {
+                "require_methodology_overlay": True, "methodology_contract_mode": "strict",
+            },
+        },
     }
 
     async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
@@ -1238,10 +1258,9 @@ async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_ca
     monkeypatch.setattr(workflow_services, "create_chapter", fake_create_chapter)
     monkeypatch.setattr(workflow_services, "create_scene_card", fake_create_scene_card)
     session = FakeSession(
-        scalar_results=[existing_complete, None],
+        scalar_results=[None, existing_complete, None],
         scalars_results=[
             [existing_complete],
-            [],
             [],
             [],
         ],
@@ -1577,7 +1596,7 @@ async def test_ensure_project_identity_manifest_backfills_project_and_characters
 
 
 @pytest.mark.asyncio
-async def test_ensure_project_identity_manifest_extends_locked_manifest_from_characters() -> None:
+async def test_locked_manifest_cannot_extend_from_character_rows_without_approved_cast() -> None:
     project = build_project()
     project.metadata_json = {
         "identity_manifest_status": "locked",
@@ -1614,10 +1633,9 @@ async def test_ensure_project_identity_manifest_extends_locked_manifest_from_cha
 
     names = {entry["name"] for entry in manifest}
     assert "沈砚" in names
-    assert "孙九斤" in names
+    assert "孙九斤" not in names
     assert project.metadata_json["identity_manifest_status"] == "locked"
-    assert any(entry["aliases"] == ["孙老板"] for entry in manifest if entry["name"] == "孙九斤")
-    assert character.metadata_json["cast_entry"]["pronoun_set_zh"] == "他"
+    assert "cast_entry" not in character.metadata_json
 
 
 @pytest.mark.asyncio
@@ -1763,7 +1781,7 @@ async def test_materialize_latest_story_bible_uses_stored_artifacts(
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
         workflow_services,
-        "get_latest_planning_artifact",
+        "get_latest_approved_planning_artifact",
         fake_get_latest_planning_artifact,
     )
     monkeypatch.setattr(workflow_services, "materialize_story_bible", fake_materialize_story_bible)
@@ -1776,6 +1794,76 @@ async def test_materialize_latest_story_bible_uses_stored_artifacts(
 
     assert result.applied_artifacts == ["book_spec", "cast_spec"]
     assert result.source_artifact_ids["book_spec"] == book_artifact.id
+
+
+@pytest.mark.asyncio
+async def test_production_materializer_ignores_newer_needs_review_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    approved = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        scope_ref_id=None,
+        version_no=1,
+        status="approved",
+        schema_version="1.0",
+        content={"title": "approved-v1"},
+        created_by="tester",
+    )
+    approved.id = uuid4()
+    pending = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.BOOK_SPEC.value,
+        scope_ref_id=None,
+        version_no=2,
+        status="needs_review",
+        schema_version="1.0",
+        content={"title": "pending-v2"},
+        created_by="tester",
+    )
+    pending.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def approved_lookup(session: object, *, project_id, artifact_type):
+        return approved if artifact_type is ArtifactType.BOOK_SPEC else None
+
+    async def should_not_use_unfiltered_latest(*args, **kwargs):
+        raise AssertionError("production materializer used unfiltered latest artifact")
+
+    async def fake_materialize_story_bible(session: object, project_slug: str, **kwargs):
+        assert kwargs["book_spec_content"] == approved.content
+        assert kwargs["source_artifact_ids"][ArtifactType.BOOK_SPEC.value] == approved.id
+        return workflow_services.StoryBibleMaterializationResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            applied_artifacts=[ArtifactType.BOOK_SPEC.value],
+            source_artifact_ids={ArtifactType.BOOK_SPEC.value: approved.id},
+        )
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        workflow_services,
+        "get_latest_approved_planning_artifact",
+        approved_lookup,
+    )
+    monkeypatch.setattr(
+        workflow_services,
+        "get_latest_planning_artifact",
+        should_not_use_unfiltered_latest,
+    )
+    monkeypatch.setattr(workflow_services, "materialize_story_bible", fake_materialize_story_bible)
+
+    result = await workflow_services.materialize_latest_story_bible(
+        FakeSession(),
+        "my-story",
+        requested_by="tester",
+    )
+
+    assert result.source_artifact_ids[ArtifactType.BOOK_SPEC.value] == approved.id
+    assert pending.status == "needs_review"
 
 
 @pytest.mark.asyncio
@@ -1864,7 +1952,7 @@ async def test_materialize_latest_narrative_graph_uses_volume_plan_artifact(
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
         workflow_services,
-        "get_latest_planning_artifact",
+        "get_latest_approved_planning_artifact",
         fake_get_latest_planning_artifact,
     )
     monkeypatch.setattr(

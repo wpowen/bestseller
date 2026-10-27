@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from bestseller.services.canon_guardrails import CanonGuardrails
 from bestseller.services.common_sense_gate import evaluate_common_sense_gate
-from bestseller.services.methodology_bridge import get_fragment
+from bestseller.services.methodology_bridge import render_methodology_applicability
 from bestseller.services.prompt_packs import PromptPack
 
 
@@ -591,7 +591,7 @@ def validate_chapter_prose_for_promotion(
         chapter_number=manifest.chapter_number,
     )
     for finding in common_sense.findings:
-        if finding.severity in {"high", "medium"}:
+        if getattr(finding, "blocking", True) and finding.severity in {"high", "medium"}:
             marker = str(finding.evidence.get("marker") or "").strip()
             suffix = f" marker={marker}" if marker else ""
             violations.append(f"{finding.code}: {finding.message}{suffix}")
@@ -680,30 +680,12 @@ def render_prewrite_plan_prompt(
                 "for this scene: do not mention travel/commute/elapsed-time "
                 "wording in time_budget_plan.\n"
             )
-    methodology_lines: list[str] = []
-
-    density_rule = get_fragment(pack, phase="prewrite", fragment_key="information_density")
-    if density_rule and (chapter_number is None or chapter_number <= 10):
-        methodology_lines.append(f"【信息密度规则】\n{density_rule}")
-
-    spring_rule = get_fragment(pack, phase="prewrite", fragment_key="spring_model")
-    if spring_rule:
-        methodology_lines.append(f"【情绪压缩弹簧法】\n{spring_rule}")
-
-    stakes_rule = get_fragment(pack, phase="prewrite", fragment_key="stakes_design")
-    if stakes_rule:
-        methodology_lines.append(f"【冲突筹码设计】\n{stakes_rule}")
-
-    methodology_block = "\n\n".join(methodology_lines)
+    methodology_section = "\n\n" + render_methodology_applicability(
+        language=language, phase="prewrite",
+    )
     if language.lower().startswith("zh"):
-        methodology_section = (
-            "\n\n## 写作方法论参考（用于影响场景计划的字段选择）\n"
-            f"{methodology_block}\n"
-            if methodology_block
-            else ""
-        )
         return (
-            "根据以下写前约束清单和方法论参考，先声明本场景写作计划。只输出 JSON，不要输出正文。\n"
+            "根据以下当前写前约束清单，先声明本场景写作计划。只输出 JSON，不要输出正文。\n"
             "字段必须为：characters_to_use, time_anchors_to_use, locations_to_use, "
             "hooks_to_echo, protagonist_abilities_to_use, vocabulary_to_avoid, target_state_end, "
             "protagonist_entry_motivation, protagonist_function, visible_failure_cost, "
@@ -718,16 +700,9 @@ def render_prewrite_plan_prompt(
             f"{time_budget_rule_zh}"
             f"约束清单：\n```json\n{payload}\n```{methodology_section}"
         )
-    methodology_section = (
-        "\n\n## Writing methodology reference (use it when choosing plan fields)\n"
-        f"{methodology_block}\n"
-        if methodology_block
-        else ""
-    )
     return (
         "Declare the scene writing plan from this constraint manifest. Output "
-        "JSON only, no prose. Use the methodology reference when selecting "
-        "plan fields. Required fields: characters_to_use, "
+        "JSON only, no prose. Follow the supplied current contract. Required fields: characters_to_use, "
         "time_anchors_to_use, locations_to_use, hooks_to_echo, "
         "protagonist_abilities_to_use, vocabulary_to_avoid, target_state_end, "
         "protagonist_entry_motivation, protagonist_function, visible_failure_cost, "

@@ -37,6 +37,16 @@ from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
 
+from gateway_ledger_support import (
+    gateway_ledger as gateway_ledger, LedgerBoundSession, replay_reserved_http_send,
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ledger_contract(gateway_ledger):
+    """Every real-mode fake SDK call still reserves against durable SQLite."""
+    return gateway_ledger
+
 
 @pytest.fixture(autouse=True)
 def _reset_litellm_module_cache() -> None:
@@ -52,7 +62,7 @@ def _reset_circuit_breaker() -> None:
     _llm_breaker.reset()
 
 
-class FakeSession:
+class FakeSession(LedgerBoundSession):
     def __init__(self) -> None:
         self.added: list[Any] = []
 
@@ -123,6 +133,7 @@ class ScriptedLiteLLM:
         self.calls: list[dict[str, Any]] = []
 
     async def acompletion(self, **kwargs: Any) -> Any:
+        await replay_reserved_http_send(kwargs)
         self.calls.append(kwargs)
         if not self._responses:
             raise AssertionError("ScriptedLiteLLM exhausted but acompletion called")

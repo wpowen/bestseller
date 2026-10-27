@@ -32,6 +32,17 @@ GENERIC_TIME_LABELS = {
     "章节结尾",
     "章节补充钩子",
 }
+_FRAMEWORK_SCENE_EMOTION_PLACEHOLDERS = frozenset(
+    {
+        "写出当事人此刻一个具体的怕、要或误判，让读者看见情绪来源。",
+        "压力递进，并把选择、代价或线索推到下一拍。",
+        "Escalate pressure through a visible choice, cost, or leverage shift.",
+    }
+)
+_FRAMEWORK_SCENE_EMOTION_TEMPLATE_RE = re.compile(
+    r"^围绕「[^」]{1,40}」写出当事人一个具体的怕、要或误判，"
+    r"让读者看见情绪来源，并把选择或代价推到下一拍。$"
+)
 GENERIC_CHAPTER_GOAL_MARKERS = (
     "推动本章剧情发展",
     "「生存压力」",
@@ -139,6 +150,39 @@ FUNCTIONAL_TITLE_SUFFIXES_ZH = (
     "碎锁",
     "终幕",
 )
+
+
+def is_framework_scene_emotion_placeholder(value: Any) -> bool:
+    """Recognize only emotion text emitted verbatim by retired repair templates."""
+
+    text = _clean(value)
+    return bool(
+        text in _FRAMEWORK_SCENE_EMOTION_PLACEHOLDERS
+        or _FRAMEWORK_SCENE_EMOTION_TEMPLATE_RE.fullmatch(text)
+    )
+
+
+def strip_framework_effect_landing_labels(
+    story: Any,
+    selected_effect_skills: Any,
+) -> str:
+    """Remove retired internal labels only when their beat has structured provenance."""
+
+    text = _clean(story)
+    selected = selected_effect_skills if isinstance(selected_effect_skills, dict) else {}
+    expected = selected.get("expected_contracts")
+    if not isinstance(expected, dict):
+        return text
+    for contract in expected.values():
+        if not isinstance(contract, dict):
+            continue
+        beat = _clean(contract.get("concrete_beat"))
+        if not beat:
+            continue
+        text = text.replace(f"；效果落点：{beat}", f"；{beat}")
+        if text == f"效果落点：{beat}":
+            text = beat
+    return text
 # Procedural / structural beat labels that web-serial models love to prepend to
 # a concrete event with a middot — "取证·义庄铜镜登记", "反证·林正淳取镜签名".
 # The leading segment is an internal investigation/structure tag, not a story
@@ -165,13 +209,25 @@ FUNCTIONAL_TITLE_DOT_LABELS_ZH: frozenset[str] = frozenset(
 )
 _TITLE_DOT_SEPARATORS: tuple[str, ...] = ("·", "・", "•", "‧", "∙", "·")
 META_PLANNING_PATTERNS = (
-    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(世界观|设定|体系|背景|势力线|角色线|关系线|哲学|主题|叙事|闭环|复杂性)",
-    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(角色|势力|阵营|框架|结构)",
-    r"(揭示|确认).{0,14}(身份|世界观|设定|体系|背景|终极悬念)",
+    # Require a planning noun phrase, never a later clause or an actor's
+    # verb "设定的...". Identity checks, backgrounds and real systems alone
+    # do not establish that an action is author/planner commentary.
+    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成)[^\S\r\n]*(?:了[^\S\r\n]*)?"
+    r"(?:[^，,、。.!！?？；;：:\s并且而又]{1,14}的[^\S\r\n]*)?"
+    r"(世界观|势力线|角色线|(?:人物|角色|男女主)?关系线|叙事(?:功能|框架|结构)|"
+    r"(?:人物|角色|能力|剧情|故事|世界|背景)设定)",
+    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成)[^\S\r\n]*"
+    r"(?:了[^\S\r\n]*)?设定(?![的了着过])",
+    r"(揭示|确认)[^\S\r\n]*(?:了[^\S\r\n]*)?"
+    r"(?:[^，,、。.!！?？；;：:\s并且而又]{1,14}的[^\S\r\n]*)?"
+    r"(世界观|(?:人物|角色|能力|剧情|故事|世界|背景)设定|终极悬念)",
+    r"(?:通过|借助)[^，,、。.!！?？；;：:\n\r]{0,14}(?:讲述|叙述)"
+    r"(?:引入|揭示)[^，,、。.!！?？；;：:\n\r]{0,14}(?:线索|世界观)",
     r"(读者|追读|爽点|尾钩|钩子|章节功能|叙事功能|本章功能|本章唯一推进点)",
     r"第\d+章尾钩：围绕",
     r"第\d+章(开场|中段\d*|尾声|结尾).{0,18}围绕",
     r"(本章目标|chapter goal)[:：]",
+    r"\b(?:chapter|narrative)\s+function\s*[:：]",
     r"(Chapter|chapter) \d+ (opening|middle beat|closing hook)",
     r"章内必须落到这件可见事件",
     r"visible chapter event must be",
@@ -344,7 +400,11 @@ def validate_foundation_identity_contract(
 
     violations: list[NarrativeContractViolation] = []
     warnings: list[NarrativeContractViolation] = []
-    alias_owner: dict[str, str] = {}
+    # Store the owning location as well as the spelling.  Comparing only the
+    # owner name makes an exact duplicate look harmless because both entries
+    # have the same ``name``; protagonist/antagonist then collapse into one
+    # database character during materialization.
+    alias_owner: dict[str, tuple[str, str]] = {}
 
     # Non-emptiness comes first. Everything below only inspects the entries
     # that ARE present, so an empty roster used to pass with zero violations
@@ -445,16 +505,24 @@ def validate_foundation_identity_contract(
             if not normalized:
                 continue
             owner = alias_owner.get(normalized)
-            if owner and owner != name:
+            if owner and owner[0] != location:
                 violations.append(
                     NarrativeContractViolation(
                         code="FOUNDATION_IDENTITY_ALIAS_COLLISION",
                         location=f"{location}.aliases",
-                        message=f"Alias/name '{alias}' is shared by '{owner}' and '{name}'.",
-                        metadata={"alias": alias, "first_owner": owner, "second_owner": name},
+                        message=(
+                            f"Alias/name '{alias}' is shared by '{owner[1]}' and '{name}'."
+                        ),
+                        metadata={
+                            "alias": alias,
+                            "first_owner": owner[1],
+                            "first_location": owner[0],
+                            "second_owner": name,
+                            "second_location": location,
+                        },
                     )
                 )
-            alias_owner[normalized] = name
+            alias_owner[normalized] = (location, name)
 
     return NarrativeContractReport(
         gate_name="foundation_identity_contract",
@@ -629,7 +697,12 @@ def _stamp_identity_policy_version(payload: dict[str, Any]) -> None:
 
 
 def build_identity_manifest(cast_spec_content: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Build a compact manifest that downstream plan gates can consume."""
+    """Build identities from Cast's explicit character and named-reference fields.
+
+    The caller selects the authoritative Cast version. A named reference admits
+    an identity, never scene presence or inferred gender/pronouns. Prose and
+    social-network string coercions do not establish additional identities.
+    """
 
     if cast_spec_content is None:
         return []
@@ -650,6 +723,71 @@ def build_identity_manifest(cast_spec_content: dict[str, Any] | None) -> list[di
                 "aliases": _character_aliases(data),
             }
         )
+    by_token = {
+        _normalize_identity_token(token): identity
+        for identity in manifest
+        for token in (identity["name"], *identity["aliases"])
+        if _normalize_identity_token(token)
+    }
+
+    def _add_named_reference(value: Any, source_path: str) -> None:
+        if not isinstance(value, str) or not value.strip():
+            return
+        name = value.strip()
+        token = _normalize_identity_token(name)
+        existing = by_token.get(token)
+        if existing is not None:
+            if existing.get("identity_origin") == "cast_spec_named_reference":
+                paths = existing["source_paths"]
+                if source_path not in paths:
+                    paths.append(source_path)
+            return
+        identity = {
+            "name": name, "role": "referenced_character", "gender": "unknown",
+            "pronoun_set_zh": "", "pronoun_set_en": "", "aliases": [],
+            "identity_origin": "cast_spec_named_reference", "source_paths": [source_path],
+        }
+        manifest.append(identity)
+        by_token[token] = identity
+
+    source_characters = [
+        (f"cast_spec.{key}", cast_spec_content.get(key))
+        for key in ("protagonist", "antagonist")
+    ]
+    supporting = cast_spec_content.get("supporting_cast")
+    if isinstance(supporting, list):
+        source_characters.extend(
+            (f"cast_spec.supporting_cast[{index}]", character)
+            for index, character in enumerate(supporting)
+        )
+    for location, character in source_characters:
+        if not isinstance(character, dict):
+            continue
+        network = character.get("social_network")
+        if not isinstance(network, dict):
+            continue
+        for relation in ("family", "mentors", "peers", "superiors", "subordinates", "enemies"):
+            ties = network.get(relation)
+            if isinstance(ties, dict):
+                named_ties = [("", ties)]
+            elif isinstance(ties, list):
+                named_ties = [(f"[{index}]", tie) for index, tie in enumerate(ties)]
+            else:
+                continue
+            for suffix, tie in named_ties:
+                if isinstance(tie, dict):
+                    _add_named_reference(
+                        tie.get("name"), f"{location}.social_network.{relation}{suffix}.name"
+                    )
+    conflicts = cast_spec_content.get("conflict_map")
+    if isinstance(conflicts, list):
+        for index, conflict in enumerate(conflicts):
+            if not isinstance(conflict, dict):
+                continue
+            for endpoint in ("character_a", "character_b"):
+                _add_named_reference(
+                    conflict.get(endpoint), f"cast_spec.conflict_map[{index}].{endpoint}"
+                )
     return manifest
 
 
@@ -792,6 +930,10 @@ def repair_legacy_scene_contract_pre_draft(
     purpose = getattr(scene, "purpose", None)
     purpose_map = dict(purpose) if isinstance(purpose, dict) else {}
     story = _clean(purpose_map.get("story"))
+    if is_framework_scene_emotion_placeholder(purpose_map.get("emotion")):
+        purpose_map.pop("emotion", None)
+        setattr(scene, "purpose", purpose_map)
+        repaired += 1
 
     if (
         not _clean(getattr(scene, "time_label", None))
@@ -816,8 +958,6 @@ def repair_legacy_scene_contract_pre_draft(
             scene_number=scene_number,
             story=story,
         )
-        if not _clean(purpose_map.get("emotion")):
-            purpose_map["emotion"] = "Escalate pressure through a visible choice, cost, or leverage shift."
         setattr(scene, "purpose", purpose_map)
         repaired += 1
 
@@ -1318,29 +1458,45 @@ def validate_chapter_plan_contract(
                     metadata={"chapter_number": chapter.chapter_number},
                 )
             )
-        if not _clean(chapter.hook_description) or _contains_marker(
-            chapter.hook_description,
-            GENERIC_HOOK_MARKERS,
-        ):
+        # Read both explicit fields without filling or rewriting either one.
+        hook_field = "hook_description"
+        hook_text = _clean(chapter.hook_description)
+        if not hook_text and _clean(chapter.tail_hook):
+            hook_field, hook_text = "tail_hook", _clean(chapter.tail_hook)
+        hook_body = hook_meta_text = hook_text
+        hook_label = re.match(
+            r"^([^，,、。.!！?？；;：:\n\r]*?(?:尾钩|钩子|hook))\s*[:：]\s*",
+            hook_text,
+            flags=re.IGNORECASE,
+        )
+        if hook_label:
+            hook_body = hook_text[hook_label.end():]
+            label_context = re.sub(
+                r"(?:尾钩|钩子|hook)$", "", hook_label.group(1), flags=re.IGNORECASE
+            )
+            # The field label is structural; retain any other planning words
+            # in that label so a reader recipe cannot hide a concrete suffix.
+            hook_meta_text = label_context + " " + hook_body
+        if not hook_body or _contains_marker(hook_text, GENERIC_HOOK_MARKERS):
             violations.append(
                 NarrativeContractViolation(
                     code="PLAN_CHAPTER_HOOK_GENERIC",
-                    location=f"{chapter_location}.hook_description",
+                    location=f"{chapter_location}.{hook_field}",
                     message=(
-                        f"Chapter {chapter.chapter_number} hook must be a concrete next-pressure event, "
-                        "not a hook recipe or placeholder."
+                        f"Chapter {chapter.chapter_number} hook must give "
+                        "an event or closing state, not a hook recipe or placeholder."
                     ),
                     metadata={"chapter_number": chapter.chapter_number},
                 )
             )
-        elif _has_meta_planning_language(chapter.hook_description):
+        elif _has_meta_planning_language(hook_meta_text):
             violations.append(
                 NarrativeContractViolation(
                     code="PLAN_CHAPTER_HOOK_META",
-                    location=f"{chapter_location}.hook_description",
+                    location=f"{chapter_location}.{hook_field}",
                     message=(
                         f"Chapter {chapter.chapter_number} hook is a recipe, not an event; "
-                        "it must name the concrete next pressure, choice, reveal, or loss."
+                        "it must name a concrete event, choice, reveal, loss, or closing state."
                     ),
                     metadata={"chapter_number": chapter.chapter_number},
                 )

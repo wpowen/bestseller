@@ -14,7 +14,7 @@ from bestseller.services.writing_presets import get_platform_preset
 pytestmark = pytest.mark.unit
 
 
-def test_ensure_complete_profile_uses_english_defaults_for_english_projects() -> None:
+def test_ensure_complete_profile_localizes_absence_without_english_story_defaults() -> None:
     profile = conception_services._ensure_complete_profile(
         {},
         {
@@ -28,9 +28,60 @@ def test_ensure_complete_profile_uses_english_defaults_for_english_projects() ->
         {},
     )
 
-    assert profile["serialization"]["opening_mandate"].startswith("Reveal the protagonist edge")
-    assert profile["serialization"]["chapter_ending_rule"].startswith("Every chapter ends")
+    assert profile["serialization"]["opening_mandate"] == "unspecified"
+    assert profile["serialization"]["chapter_ending_rule"] == "unspecified"
     assert "前3章" not in profile["serialization"]["opening_mandate"]
+
+
+def test_explicit_seed_profile_completion_quarantines_rejected_proposals() -> None:
+    profile = conception_services._ensure_complete_profile(
+        {
+            "market": {"reader_promise": "经营废城并争夺大陆交通主权"},
+            "character": {"golden_finger": "读取并重组流通规则"},
+        },
+        {
+            "genre": "玄幻",
+            "sub_genre": "异世大陆",
+            "language": "zh-CN",
+            "existing_overrides": {},
+        },
+        {"reader_promise": "翻残页获取斗气"},
+        {"golden_finger": "燃烧记忆的残页", "growth_curve": "血脉觉醒"},
+        {"power_system_style": "斗气、武魂与观星者"},
+        proposal_backfill=False,
+    )
+
+    serialized = json.dumps(profile, ensure_ascii=False)
+    assert "读取并重组流通规则" in serialized
+    assert "经营废城并争夺大陆交通主权" in serialized
+    assert "残页" not in serialized
+    assert "血脉觉醒" not in serialized
+    assert "观星者" not in serialized
+    assert profile["serialization"]
+
+
+def test_explicit_seed_quarantine_keeps_only_non_story_commercial_metadata() -> None:
+    clean, removed = conception_services._quarantine_commercial_brief_story_fields(
+        {
+            "platform_target": "番茄小说",
+            "target_audiences": ["男频读者"],
+            "reader_promise": "翻残页获取斗气",
+            "selling_points": ["燃烧记忆换血脉"],
+            "trope_keywords": ["血脉逆袭"],
+            "commercial_rationale": "残页代价流更适合完读率",
+        }
+    )
+
+    assert clean == {
+        "platform_target": "番茄小说",
+        "target_audiences": ["男频读者"],
+    }
+    assert set(removed) == {
+        "reader_promise",
+        "selling_points",
+        "trope_keywords",
+        "commercial_rationale",
+    }
 
 
 def test_build_fallback_final_uses_english_premise_and_profile_defaults() -> None:
@@ -49,9 +100,8 @@ def test_build_fallback_final_uses_english_premise_and_profile_defaults() -> Non
     )
 
     assert payload["premise"].startswith("A Fantasy (Epic Fantasy) novel:")
-    assert payload["writing_profile"]["serialization"]["chapter_ending_rule"].startswith(
-        "Every chapter"
-    )
+    assert payload["writing_profile"]["serialization"]["chapter_ending_rule"] == "unspecified"
+    assert payload["writing_profile"]["serialization"]["opening_mandate"] == "unspecified"
     assert "基于" not in payload["premise"]
 
 
@@ -179,18 +229,27 @@ def test_creation_page_choices_are_scoped_and_only_explicit_enhancers_render() -
             effect_skills=("twist_reversal_engine",),
         ),
     )
+    from bestseller.services.creation_intent_contract import build_creation_intent_contract
+    creation = build_creation_intent_contract(contract,
+        field_sources={"story_enhancers": "explicit"}, story_enhancers=contract.explicit_enhancers)
     ctx = conception_services._build_genre_context(
         "custom-xianxia",
         500,
         genre="仙侠",
         sub_genre="古典仙侠",
         genre_intent_contract=contract,
+        creation_intent_contract=creation.model_dump(mode="json"),
     )
     block = conception_services._commercial_brief_prompt_block(ctx)
     assert "建书页明确选择" in block
     assert '"brainhole": true' in block
     assert "twist_reversal_engine" in block
     assert "不得把可选增强器变成新的题材" in block
+
+    ctx["creation_intent_contract"]["field_sources"]["story_enhancers"] = "default"
+    unchosen = conception_services._commercial_brief_prompt_block(ctx)
+    assert '"brainhole": false' in unchosen
+    assert "twist_reversal_engine" not in unchosen
 
 
 def test_synthesize_genre_preset_and_get_preset_fallback() -> None:
@@ -607,6 +666,28 @@ async def test_persona_click_advisory_pass_returns_report_without_feedback() -> 
     assert fb == ""  # 达 advisory 线 → 不注入重生反馈
 
 
+def test_conception_persona_channel_prefers_taxonomy_contract_over_tags() -> None:
+    from bestseller.services.genre_intent_contract import GenreIntentContract
+
+    contract = GenreIntentContract(
+        channel_key="male",
+        genre_key="xuanhuan",
+        genre_label="玄幻",
+        sub_genre_key="otherworld-continent",
+        sub_genre_label="异世大陆",
+        prompt_pack_key="xuanhuan-power-fantasy",
+    )
+
+    assert conception_services._conception_persona_channel(contract, {}) == "male"
+    assert (
+        conception_services._conception_persona_channel(
+            None,
+            {"genre_intent_contract": {"channel_key": "female"}},
+        )
+        == "female"
+    )
+
+
 async def test_persona_click_advisory_fail_feeds_reasons_into_feedback() -> None:
     async def _judge(system, user):
         return '{"click": false, "score": 2, "reason": "全是看不懂的黑话"}'
@@ -689,7 +770,8 @@ def test_finalize_and_polish_synopsis_truncation_uses_sentence_boundary() -> Non
 
     import inspect
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
     assert "[:497]" not in source
     assert source.count("truncate_at_sentence(") >= 2
 
@@ -699,7 +781,8 @@ def test_one_sentence_outline_gate_blocks_every_non_expand_verdict() -> None:
 
     import inspect
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
     gate_pos = source.index("evaluate_logline_gate(")
     return_pos = source.index("return ConceptionResult(")
 
@@ -717,7 +800,8 @@ def test_long_conception_initializes_optional_bundle_and_fails_closed_on_tournam
 
     import inspect
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
     init_pos = source.index("concept_bundle = None")
     hints_pos = source.index("if user_hints:")
 
@@ -736,7 +820,8 @@ def test_finalize_derives_and_threads_book_jargon_terms_into_both_eval_calls() -
 
     import inspect
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
     # 2处 evaluate_story_appeal(初评+重生终评) + 1处 run_blurb_copywriting(T6)。
     assert source.count("book_jargon_terms=_book_jargon_terms") == 3
     assert "derive_book_jargon_terms(" in source
@@ -837,6 +922,162 @@ def test_best_dry_seed_requires_a_true_near_miss() -> None:
     # 4+ failed axes = not a near-miss; refining it is throwing good money after bad
     weak = _cand("弱", "钩子硬门失败: 新颖度/想点欲/可预测性/人物决策")
     assert _best_dry_tournament_seed([weak]) == ""
+
+
+def test_retry_axes_survive_project_card_dry_run() -> None:
+    from bestseller.services.conception import _concept_tournament_retry_axis_codes
+
+    result = _NS(
+        candidates=[],
+        engine_rejections=[
+            {"failed_axes": ["cost_style_fit"]},
+            {"failed_axes": ["seed_fidelity", "cost_style_fit"]},
+        ],
+    )
+
+    assert _concept_tournament_retry_axis_codes(result) == [
+        "cost_style_fit",
+        "seed_fidelity",
+    ]
+
+
+def test_retry_axes_read_independent_hook_review_and_keep_engine_context() -> None:
+    from bestseller.services.conception import _concept_tournament_retry_axis_codes
+
+    candidate = _cand(
+        "最强候选",
+        "独立钩子终审失败: 可预测性",
+        judge_click=9.0,
+        judge_story_motion=8.0,
+    )
+    candidate.seriality_judge = {}
+    candidate.seriality_report = {}
+    candidate.composite = 0.0
+    result = _NS(
+        candidates=[candidate],
+        engine_rejections=[{"failed_axes": ["cost_style_fit"]}],
+    )
+
+    assert _concept_tournament_retry_axis_codes(result) == [
+        "可预测性",
+        "cost_style_fit",
+    ]
+
+
+def test_retry_axes_derive_ranked_weaknesses_for_below_winner_min_candidates() -> None:
+    from bestseller.services.conception import _concept_tournament_retry_axis_codes
+
+    action = _cand(
+        "行动钩子",
+        None,
+        judge_freshness=6.0,
+        judge_click=5.0,
+        judge_predictable=5.0,
+        judge_character_logic=7.0,
+        judge_mechanism_causality=7.0,
+        judge_genre_fidelity=4.0,
+        judge_plain_language=9.0,
+        judge_story_motion=6.0,
+        judge_protagonist_agency=8.0,
+    )
+    action.composite = 5.30
+    action.seriality_judge = {}
+    action.seriality_report = {}
+    identity = _cand(
+        "身份钩子",
+        None,
+        judge_freshness=6.0,
+        judge_click=5.0,
+        judge_predictable=5.0,
+        judge_character_logic=6.0,
+        judge_mechanism_causality=7.0,
+        judge_genre_fidelity=3.0,
+        judge_plain_language=7.0,
+        judge_story_motion=6.0,
+        judge_protagonist_agency=8.0,
+    )
+    identity.composite = 5.03
+    identity.seriality_judge = {}
+    identity.seriality_report = {}
+    result = _NS(candidates=[identity, action], engine_rejections=[])
+
+    assert _concept_tournament_retry_axis_codes(result) == ["题材保真", "想点欲"]
+
+
+def test_retry_axes_keep_explicit_rejection_ahead_of_inferred_near_miss() -> None:
+    from bestseller.services.conception import _concept_tournament_retry_axis_codes
+
+    rejected = _cand(
+        "终审失败",
+        "独立钩子终审失败: 可预测性",
+        judge_click=9.0,
+        judge_story_motion=8.0,
+    )
+    rejected.composite = 6.0
+    rejected.seriality_judge = {}
+    rejected.seriality_report = {}
+    near_miss = _cand(
+        "近失候选",
+        None,
+        judge_click=4.0,
+        judge_genre_fidelity=3.0,
+    )
+    near_miss.composite = 5.4
+    near_miss.seriality_judge = {}
+    near_miss.seriality_report = {}
+    result = _NS(candidates=[near_miss, rejected], engine_rejections=[])
+
+    axes = _concept_tournament_retry_axis_codes(result)
+    assert axes[0] == "可预测性"
+    assert "题材保真" in axes
+
+
+def test_retry_axis_feedback_explains_minimal_cost_without_banning_opposition() -> None:
+    from bestseller.services.conception import _render_concept_retry_axis_feedback
+
+    feedback = _render_concept_retry_axis_feedback(["cost_style_fit", "可预测性"])
+
+    assert "持续自损" in feedback
+    assert "外部对手学习" in feedback
+    assert "对手策略变形" in feedback
+
+
+def test_retry_axis_feedback_explains_live_project_card_axes() -> None:
+    from bestseller.services.conception import _render_concept_retry_axis_feedback
+
+    feedback = _render_concept_retry_axis_feedback(
+        ["story_architecture", "freshness", "post_reveal_engine"]
+    )
+
+    assert "四个因果相连" in feedback
+    assert "替换陈旧的冲突发动机" in feedback
+    assert "开篇异常已经公开后" in feedback
+
+
+def test_retry_axis_feedback_explains_seriality_collapse_and_intent_pollution() -> None:
+    from bestseller.services.conception import _render_concept_retry_axis_feedback
+
+    feedback = _render_concept_retry_axis_feedback(
+        ["SEVERE_SERIALITY_COLLAPSE", "creation_intent_pollution", "character_choice"]
+    )
+
+    assert "无法支撑目标篇幅" in feedback
+    assert "删除用户未选择的题材" in feedback
+    assert "会损失另一项利益的选择" in feedback
+    assert "不同的主角动作" in feedback
+    assert "只增加单元数量" in feedback
+    assert "报价" not in feedback
+
+
+def test_tournament_retry_event_exposes_stable_failed_axes() -> None:
+    import inspect
+
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
+    event_pos = source.index('"concept_tournament_retry"')
+    event_slice = source[event_pos : event_pos + 350]
+
+    assert '"failed_axes": _failed_axis_codes' in event_slice
 
 
 def test_object_signal_field_does_not_anchor_temperature_modality() -> None:
@@ -970,7 +1211,8 @@ def test_production_conception_fails_closed_on_required_round_one_lanes() -> Non
 
     from bestseller.services import conception as conception_services
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
     call_start = source.index("_run_required_conception_lanes(")
     call_end = source.index("\n    )", call_start)
     call_region = source[call_start:call_end]
@@ -986,7 +1228,8 @@ def test_story_appeal_execution_failure_is_a_blocking_result() -> None:
 
     from bestseller.services import conception as conception_services
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
 
     assert "STORY_APPEAL_EVALUATION_UNAVAILABLE" in source
     assert "if _appeal_block_below:" in source
@@ -998,7 +1241,8 @@ def test_story_spine_failure_after_polish_blocks_before_planning() -> None:
 
     from bestseller.services import conception as conception_services
 
-    source = inspect.getsource(conception_services.run_conception_pipeline)
+    source = (inspect.getsource(conception_services.run_conception_pipeline)
+              + inspect.getsource(conception_services._review_conception_candidate))
 
     assert "STORY_SPINE_GATE_FAILED_AFTER_POLISH" in source
     assert "story spine failed deterministic gate after polish" not in source

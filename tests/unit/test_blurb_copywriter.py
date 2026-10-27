@@ -202,6 +202,9 @@ class TestFallbackToV0:
         )
         assert result.fell_back_to_v0 is True
         assert result.champion == _GOOD_SYNOPSIS
+        assert result.default_family["scanned"] is True
+        assert result.default_family["policy"] == "advisory_only"
+        assert result.default_family["selection_changed"] is False
 
     async def test_generator_raises_for_every_strategy_falls_back(self):
         async def _boom(system_prompt: str, user_prompt: str):
@@ -279,6 +282,75 @@ class TestDisabledIsNoop:
 
 
 class TestChampionPolish:
+    async def test_advisory_feedback_is_appended_to_string_diagnosis(
+        self, monkeypatch
+    ):
+        """The appeal helper returns ``str``; advisory coherence findings must
+        extend it as text rather than calling ``str.append`` and skipping polish.
+        """
+
+        import bestseller.services.blurb_copywriter as mod
+        from bestseller.services import blurb_coherence_judge as bcj
+
+        calls = {"verify": 0}
+        captured: dict[str, str] = {}
+
+        async def _advisory_then_clean(*args, **kwargs):
+            calls["verify"] += 1
+            if calls["verify"] == 1:
+                return bcj.CoherenceReport(
+                    findings=(
+                        bcj.CoherenceFinding(
+                            kind="effect_unexplained",
+                            quote_a="十年夜班让他对异常没了反应",
+                            quote_b="",
+                            explanation="效果缺少可见机制",
+                        ),
+                    ),
+                    llm_used=True,
+                )
+            return bcj.CoherenceReport(findings=(), llm_used=True)
+
+        async def _fake_polish(
+            session, settings, *, synopsis, feedback, genre, sub_genre, language, **kwargs
+        ):
+            captured["feedback"] = feedback
+            return synopsis, "polish-run-id"
+
+        monkeypatch.setattr(bcj, "verify_blurb_coherence", _advisory_then_clean)
+        monkeypatch.setattr(mod, "_polish_champion", _fake_polish)
+        monkeypatch.setattr(
+            "bestseller.services.story_appeal.build_improvement_feedback",
+            lambda *args, **kwargs: "基础诊断",
+        )
+
+        await run_blurb_copywriting(
+            None,
+            None,
+            spine=_SPINE,
+            premise="试睡员闻雀为保饭碗接下最后一单老楼夜班。",
+            golden_finger_line="十年夜班让他对异常麻木。",
+            title="闻雀试睡",
+            tags=["悬疑"],
+            genre="悬疑推理",
+            sub_genre="规则怪谈",
+            platform=None,
+            language="zh-CN",
+            v0_synopsis=_V0_SYNOPSIS,
+            config={
+                "copywriting": {
+                    "n_candidates": 1,
+                    "persona_samples": 1,
+                    "max_polish_rounds": 1,
+                }
+            },
+            generator=_make_generator([_GOOD_SYNOPSIS]),
+            persona_judge=_make_persona_judge({_GOOD_SYNOPSIS[:20]: (True, 9.0)}),
+        )
+
+        assert "基础诊断" in captured["feedback"]
+        assert "效果缺少可见机制" in captured["feedback"]
+
     async def test_acceptable_but_sub_target_candidate_still_gets_polished(self, monkeypatch):
         import bestseller.services.blurb_copywriter as mod
 
@@ -336,6 +408,9 @@ class TestChampionPolish:
         assert polish_called["n"] == 1
         assert result.polish_rounds == 1
         assert result.champion == _GOOD_SYNOPSIS
+        assert result.default_family["scanned"] is True
+        assert result.default_family["policy"] == "advisory_only"
+        assert result.default_family["selection_changed"] is False
 
 
 class TestSetupFailOpen:

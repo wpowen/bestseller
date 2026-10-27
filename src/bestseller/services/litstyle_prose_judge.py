@@ -245,6 +245,7 @@ async def judge_chapter_litstyle(
     genre_context: JudgeGenreContext | None = None,
     language: str = "zh",
     workflow_run_id: Any | None = None,
+    project_id: Any | None = None,
 ) -> LitStyleJudgeResult:
     """Score one chapter's 文采. Advisory — the result never gates anything."""
 
@@ -287,6 +288,7 @@ async def judge_chapter_litstyle(
             prompt_version="v1",
             model_catalog_key=model_catalog_key,
             workflow_run_id=workflow_run_id,
+            project_id=project_id,
             metadata={
                 "judge_scope": "litstyle_prose",
                 "chapter_number": chapter_number,
@@ -322,6 +324,7 @@ async def judge_chapter_litstyle_stable(
     genre_context: JudgeGenreContext | None = None,
     language: str = "zh",
     workflow_run_id: Any | None = None,
+    project_id: Any | None = None,
 ) -> LitStyleJudgeResult:
     """Multi-sample median文采 judge — damps single-call variance.
 
@@ -342,6 +345,7 @@ async def judge_chapter_litstyle_stable(
                 chapter_number=chapter_number, content_md=content_md,
                 genre_context=genre_context, language=language,
                 workflow_run_id=workflow_run_id,
+                project_id=project_id,
             )
         )
     if n == 1:

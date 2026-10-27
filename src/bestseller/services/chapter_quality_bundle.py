@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from bestseller.services.anti_meta_gate import AntiMetaActionConfigError
 
 from bestseller.services.deduplication import (
     check_opening_diversity,
@@ -208,9 +209,12 @@ def run_chapter_quality_bundle(
             )
 
     try:
-        from bestseller.services.anti_meta_gate import check_anti_meta_gate
+        from bestseller.services.anti_meta_gate import check_anti_meta_gate, effective_anti_meta_blockers
+        from bestseller.services.quality_gates_config import get_quality_gates_config
 
         report = check_anti_meta_gate(text, chapter_position=chapter_number)
+        prose_config = get_quality_gates_config().prose_quality
+        effective_codes = {issue.id for issue in effective_anti_meta_blockers(report, prose_config)}
         for raw in report.findings:
             if str(raw.severity).lower() != "block":
                 continue
@@ -226,6 +230,7 @@ def run_chapter_quality_bundle(
                         "location": raw.location,
                     },
                     repair_scope="paragraph",
+                    blocking=raw.code in effective_codes,
                 )
             )
         if not report.ending_passed:
@@ -235,10 +240,17 @@ def run_chapter_quality_bundle(
                     source="chapter_quality_bundle.anti_meta",
                     chapter_number=chapter_number,
                     detail="章末没有落在动作、画面或新事实揭示的一帧。",
-                    evidence={"ending_excerpt": report.ending_excerpt},
+                    severity="high",
+                    evidence={"ending_excerpt": report.ending_excerpt,
+                              "policy_source": "prose_quality.in_scene_ending",
+                              "configured_action": prose_config.in_scene_ending_severity,
+                              "author_rule_inferred": False},
                     repair_scope="ending",
+                    blocking="ANTI_META_ENDING_OUT_OF_SCENE" in effective_codes,
                 )
             )
+    except AntiMetaActionConfigError:
+        raise
     except Exception as exc:
         if context.commercial_strict:
             findings.append(
@@ -313,6 +325,7 @@ def run_chapter_quality_bundle(
                     detail=raw.message,
                     evidence=dict(raw.evidence),
                     repair_scope="chapter",
+                    blocking=bool(getattr(raw, "blocking", True)),
                 )
             )
     except Exception as exc:

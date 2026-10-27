@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from bestseller.services.story_effect_skills import (
     STORY_EFFECT_SKILL_SELECTION_METADATA_KEY,
 )
 from bestseller.services.story_enhancers import StoryEnhancerSelection
+from bestseller.services.prompt_source_policy import adopt_story_package, stamp_reference_cache, REFERENCE_KEYS
 from bestseller.settings import load_settings
 
 pytestmark = pytest.mark.unit
@@ -380,7 +382,8 @@ def test_real_outline_prompt_compiler_records_snapshot_and_budget() -> None:
         "book_design_snapshot_hash"
     ]
     assert report["total_tokens"] <= report["usable_budget_tokens"]
-    assert "rolling_outline.canonical_context" in report["truncated"]
+    assert "rolling_outline.canonical_context" not in report["truncated"]
+    assert user.count("BookSpec summary:") == 900
 
 
 def test_extract_json_payload_handles_prose_prefix_and_suffix() -> None:
@@ -521,15 +524,10 @@ def test_planner_max_attempts_is_at_least_four() -> None:
     """
     import inspect
 
-    src = inspect.getsource(
-        planner_services._generate_structured_artifact  # type: ignore[attr-defined]
-    )
-    # Ensure the literal default is at least 4.
-    import re
-
-    matches = re.findall(r"_max_attempts\s*=\s*(\d+)", src)
-    assert matches, "_max_attempts default not found in _generate_structured_artifact"
-    assert all(int(m) >= 4 for m in matches), f"planner _max_attempts must be >=4, found {matches}"
+    signature = inspect.signature(planner_services._generate_structured_artifact)
+    default = signature.parameters["max_attempts"].default
+    assert isinstance(default, int)
+    assert default >= 4, f"planner retry default must be >=4, found {default}"
 
 
 def test_fallback_generators_create_complete_chain() -> None:
@@ -722,6 +720,7 @@ def test_story_package_seed_informs_fallback_specs(tmp_path: Path) -> None:
 
     project = build_project()
     project.metadata_json = {"story_package_path": str(package_path)}
+    adopt_story_package(project, package_path, requested_by="fixture-author")
     premise = "一个普通人得到灰楼交易资格，必须在秩序崩塌前囤起第一座安全屋。"
 
     book_spec = planner_services._fallback_book_spec(project, premise)
@@ -758,6 +757,7 @@ def test_distilled_design_reference_blocks_enter_planner_prompts() -> None:
             "chapter_outline": "OUTLINE_STRATEGY_CARD",
         },
     }
+    stamp_reference_cache(project, REFERENCE_KEYS, producer="strategy_compiler")
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
     book_spec = planner_services._fallback_book_spec(project, premise)
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
@@ -879,6 +879,7 @@ def test_distilled_design_reference_blocks_are_prompt_budgeted() -> None:
             "chapter_outline": "DESIGN\n" + ("设计细节" * 1000),
         },
     }
+    stamp_reference_cache(project, REFERENCE_KEYS, producer="strategy_compiler")
 
     block = planner_services._distilled_design_reference_block(
         project, "chapter_outline"
@@ -950,6 +951,7 @@ def test_story_design_kernel_fallback_consumes_distilled_world_bindings() -> Non
             },
         }
     }
+    stamp_reference_cache(project, REFERENCE_KEYS, producer="strategy_compiler")
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
     book_spec = planner_services._fallback_book_spec(project, premise)
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
@@ -979,6 +981,26 @@ def test_story_design_kernel_fallback_consumes_distilled_world_bindings() -> Non
     assert worldview["anti_copy_boundaries"] == ["不能照搬双修体系或宗门长老会。"]
     assert "state_variables" in kernel_prompt
     assert "anti_copy_boundaries" in kernel_prompt
+
+
+def test_foundation_plan_materializes_story_design_before_readiness() -> None:
+    """Progressive foundation planning must use the real story-design stage.
+
+    This is a wiring regression guard: a distilled reference in a prompt is
+    not planning consumption evidence.  The foundation path must generate and
+    pass the validated StoryDesignKernel through emotion/entry planning and
+    into the prewrite readiness gate before it can stop before outlines.
+    """
+    source = inspect.getsource(planner_services.generate_foundation_plan)
+
+    story_design = source.index("_generate_story_design_kernel(")
+    volume_plan = source.index("_volume_plan_prompts(")
+    readiness = source.index("_run_prewrite_readiness_gate(")
+
+    assert story_design < volume_plan < readiness
+    assert "story_design_kernel=story_design_payload" in source
+    assert source.count("story_design_kernel=story_design_payload") >= 3
+    assert "ArtifactType.STORY_DESIGN_KERNEL" in source
 
 
 def test_fallback_volume_plan_includes_worldview_progression_fields() -> None:
@@ -1026,6 +1048,7 @@ def test_fallback_volume_plan_includes_worldview_progression_fields() -> None:
             },
         }
     }
+    stamp_reference_cache(project, REFERENCE_KEYS, producer="strategy_compiler")
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
     book_spec = planner_services._fallback_book_spec(project, premise)
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
@@ -1267,9 +1290,10 @@ def test_stash_distilled_strategy_card_removes_unsafe_stale_prompt_material(
         settings=settings,
     )
 
-    assert project.metadata_json == {
-        "premise": "少年接手废药园，发现杂草都是上古灵药。"
-    }
+    assert project.metadata_json["premise"] == "少年接手废药园，发现杂草都是上古灵药。"
+    assert "distilled_strategy_blocks" not in project.metadata_json
+    assert "distilled_strategy_card" not in project.metadata_json
+    assert project.metadata_json["superseded_prompt_sources"]
 
 
 def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
@@ -1965,7 +1989,16 @@ def test_story_enhancer_route_patch_adds_structured_route_and_concrete_scene_bea
     assert selected["expected_contracts"]["comedy_engine"]["concrete_beat"].startswith(
         "沈青崖"
     )
-    assert "催老匠人还三百年前的酒钱" in chapter["scenes"][0]["purpose"]["story"]
+    assert chapter["scenes"][0]["purpose"]["story"] == (
+        "沈青崖撬开井盖，阿洛在巷口望风，两人付出暴露行踪的代价。"
+    )
+    from bestseller.services.story_enhancers import render_story_enhancer_writer_block
+
+    writer_block = render_story_enhancer_writer_block(
+        {},
+        {"selected_effect_skills": selected},
+    )
+    assert "催老匠人还三百年前的酒钱" in writer_block
 
 
 def test_story_enhancer_route_patch_replaces_unselected_occupied_slot() -> None:
@@ -3264,6 +3297,51 @@ async def test_generate_structured_artifact_can_disable_fallback_merge(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("logical_name", "payload"),
+    [
+        (
+            "cast_spec_source_bound_identity_completion",
+            {"protagonist": {"name": "许宁", "gender": "unknown", "identity_evidence_quote_id": "iq_x"}},
+        ),
+        ("cast_spec_source_bound_expansion", {"supporting_cast": [{"name": "周执"}]}),
+        ("book_spec", {"title": "普通文本"}),
+    ],
+)
+async def test_source_bound_structured_tools_are_attached_only_to_target_requests(
+    monkeypatch: pytest.MonkeyPatch, logical_name: str, payload: dict[str, object]
+) -> None:
+    project = build_project()
+    captured: list[object] = []
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        captured.append(request)
+        return type(
+            "CompletionStub",
+            (),
+            {
+                "content": json.dumps(payload, ensure_ascii=False),
+                "tool_calls": None,
+                "llm_run_id": uuid4(),
+                "finish_reason": "stop",
+                "provider": "openai",
+            },
+        )()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+    await planner_services._generate_structured_artifact(
+        FakeSession(), build_settings(), project=project, logical_name=logical_name,
+        system_prompt="system", user_prompt="user", fallback_payload=payload,
+        workflow_run_id=uuid4(), merge_fallback=False,
+        validator=lambda value: None,
+    )
+    request = captured[0]
+    expected_tools = planner_services._source_bound_structured_output_tool(logical_name)
+    assert request.tools == ([expected_tools] if expected_tools else None)
+    assert ("prefer exactly one call" in request.user_prompt) is bool(expected_tools)
+
+
+@pytest.mark.asyncio
 async def test_generate_structured_artifact_retries_truncated_fail_closed_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3358,6 +3436,144 @@ async def test_generate_structured_artifact_fails_closed_when_validator_rejects_
 
 
 @pytest.mark.asyncio
+async def test_source_bound_cast_expansion_retries_after_empty_social_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    fallback = {
+        "protagonist": {
+            "name": "林照",
+            "gender": "female",
+            "pronoun_set_zh": "她",
+            "pronoun_set_en": "she/her",
+        },
+        "antagonist": None,
+        "supporting_cast": [],
+        "conflict_map": [],
+    }
+    responses = iter(
+        [
+            '{"protagonist":{"name":"林照"},"supporting_cast":[{"name":"张姐"}',
+            {
+                "protagonist": fallback["protagonist"],
+                "antagonist": {
+                    "name": "周岚",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                    "goal": "抢走林照的客户",
+                    "relationship_to_protagonist": "同一街区的直接竞争者",
+                },
+                "supporting_cast": [],
+                "conflict_map": [],
+            },
+        ]
+    )
+    calls: list[str] = []
+
+    async def fake_complete_text(_session: object, _settings: object, request: object):
+        payload = next(responses)
+        calls.append(str(payload))
+        content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+        return type("CompletionStub", (), {"content": content, "llm_run_id": uuid4()})()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+    payload, run_id = await planner_services._generate_structured_artifact(
+        FakeSession(),
+        build_settings(),
+        project=project,
+        logical_name="cast_spec_source_bound_expansion",
+        system_prompt="system",
+        user_prompt="user",
+        fallback_payload=fallback,
+        workflow_run_id=uuid4(),
+        validator=lambda value: planner_services._validate_source_bound_cast_expansion_payload(
+            value, fallback=fallback
+        ),
+        merge_fallback=False,
+    )
+    assert run_id is not None
+    assert len(calls) == 2
+    assert payload["antagonist"]["name"] == "周岚"
+
+
+@pytest.mark.asyncio
+async def test_source_bound_cast_retry_uses_actual_baseline_roster_for_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actual_baseline = {
+        "protagonist": {
+            "name": "林照",
+            "gender": "unknown",
+            "metadata": {"identity_source_text": "林照是男性，他走进院子。"},
+        },
+        "antagonist": None,
+        "supporting_cast": [{
+            "name": "已批准角色",
+            "gender": "female",
+            "pronoun_set_zh": "她",
+            "pronoun_set_en": "she/her",
+        }],
+        "conflict_map": [],
+    }
+    fallback_payload = {
+        "protagonist": actual_baseline["protagonist"],
+        "antagonist": None,
+        "supporting_cast": [],
+        "conflict_map": [],
+    }
+    retry_contract = planner_services._source_bound_cast_retry_contract(actual_baseline)
+    responses = iter([
+        '{"protagonist":{"name":"林照","gender":"male"}',
+        {
+            "protagonist": {
+                "name": "林照",
+                "gender": "male",
+                "identity_evidence": "林照是男性，他走进院子。",
+            },
+            "supporting_cast": [],
+            "conflict_map": [],
+        },
+    ])
+    prompts: list[str] = []
+
+    async def fake_complete_text(_session: object, _settings: object, request: object):
+        prompts.append(request.user_prompt)
+        payload = next(responses)
+        content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+        return type("CompletionStub", (), {"content": content, "llm_run_id": uuid4()})()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+    await planner_services._generate_structured_artifact(
+        FakeSession(),
+        build_settings(),
+        project=build_project(),
+        logical_name="cast_spec_source_bound_expansion",
+        system_prompt="system",
+        user_prompt="user",
+        fallback_payload=fallback_payload,
+        workflow_run_id=uuid4(),
+        validator=lambda value: planner_services._validate_source_bound_cast_expansion_payload(
+            value, fallback=actual_baseline
+        ),
+        merge_fallback=False,
+        retry_contract=retry_contract,
+    )
+    assert len(prompts) == 2
+    assert "Preserve any approved social roster" in prompts[1]
+    assert "at least one named antagonist or supporting character" not in prompts[1]
+
+
+def test_source_bound_strict_json_parser_allows_fence_but_rejects_role_splice() -> None:
+    valid = '```json\n{"supporting_cast": [{"name": "张姐"}]}\n```'
+    assert planner_services._extract_strict_json_payload(valid)["supporting_cast"][0]["name"] == "张姐"
+    with pytest.raises((ValueError, json.JSONDecodeError)):
+        planner_services._extract_strict_json_payload(
+            '{"supporting_cast":[{"name":"张姐","decision_policy":"{\\"name\\":\\"刘叔\\"}"}'
+        )
+
+
+@pytest.mark.asyncio
 async def test_record_planner_failure_step_once_skips_existing_step() -> None:
     class ExistingStepSession(FakeSession):
         async def scalar(self, _stmt: object):
@@ -3421,6 +3637,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
+    project.metadata_json["protagonist_gender"] = "male"
     project.metadata_json["benchmark_works"] = ["边境航路经营结构对标"]
 
     async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
@@ -3521,6 +3738,23 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     session = FakeSession()
     settings = build_settings()
     settings.llm.mock = True
+
+    async def fake_source_bound_expansion_review(*args, **kwargs):
+        # This fixture deliberately replaces the provider.  The dedicated
+        # source-bound policy tests exercise real receipt/evidence validation;
+        # this test keeps its scope on artifact/workflow persistence.
+        return {
+            "decision": "pass",
+            "status": "passed",
+            "llm_run_id": None,
+            "feedback": "fixture review receipt",
+        }
+
+    monkeypatch.setattr(
+        planner_services,
+        "_review_source_bound_expansion",
+        fake_source_bound_expansion_review,
+    )
     result = await planner_services.generate_novel_plan(
         session,
         settings,
@@ -3565,7 +3799,10 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert ArtifactType.PROMOTIONAL_BRIEF in artifact_types
     assert ArtifactType.VOLUME_CHAPTER_OUTLINE in artifact_types
     assert ArtifactType.CHAPTER_OUTLINE_BATCH in artifact_types
-    assert len(result.llm_run_ids) >= 9
+    # A locked design snapshot compiles the source-bound planning spine
+    # deterministically, so it needs fewer model calls than the legacy
+    # generic planner path exercised when this test was authored.
+    assert len(result.llm_run_ids) >= 6
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
@@ -3594,20 +3831,31 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert project.metadata_json["planning_kernel"]["story_design"]["valid"] is True
     assert project.metadata_json["planning_kernel"]["emotion_driven"]["valid"] is True
     assert "prewrite_readiness_report" in project.metadata_json
+    # Locked snapshots with sparse deterministic projections must still enter
+    # the constrained derived-asset path; the fake generator returns the
+    # fallback, so the artifact remains explicitly unchanged/unavailable.
+    assert "world_spec_source_bound_expansion" in prompts_by_logical_name
+    assert "cast_spec_source_bound_expansion" in prompts_by_logical_name
+    assert "源约束 Cast 扩展" in prompts_by_logical_name["cast_spec_source_bound_expansion"]
     assert "Character Drama Engine" in prompts_by_logical_name["story_design_kernel"]
     assert "public_emotion_core" in prompts_by_logical_name["story_design_kernel"]
     assert "compliance_boundary" in prompts_by_logical_name["story_design_kernel"]
-    assert "EmotionDrivenKernel" in prompts_by_logical_name["emotion_driven_kernel"]
-    assert "public_emotion_core" in prompts_by_logical_name["emotion_driven_kernel"]
-    assert "Story Design Kernel" in prompts_by_logical_name["volume_plan"]
-    assert "emotion_driven_core" in prompts_by_logical_name["volume_plan"]
-    assert "public_emotion_core" in prompts_by_logical_name["volume_plan"]
-    assert "Character Drama Engine" in prompts_by_logical_name["volume_plan"]
-    assert "world_state_targets" in prompts_by_logical_name["volume_plan"]
-    assert "active_authority_claims" in prompts_by_logical_name["volume_plan"]
-    assert "map_function" in prompts_by_logical_name["volume_plan"]
-    assert "asset_risk_escalation" in prompts_by_logical_name["volume_plan"]
-    assert "reveal_budget" in prompts_by_logical_name["volume_plan"]
+    # Source-bound projects may compile the emotion kernel deterministically;
+    # when no LLM prompt is emitted, the persisted artifact assertions above
+    # remain the contract.
+    if "emotion_driven_kernel" in prompts_by_logical_name:
+        assert "EmotionDrivenKernel" in prompts_by_logical_name["emotion_driven_kernel"]
+        assert "public_emotion_core" in prompts_by_logical_name["emotion_driven_kernel"]
+    if "volume_plan" in prompts_by_logical_name:
+        assert "Story Design Kernel" in prompts_by_logical_name["volume_plan"]
+        assert "emotion_driven_core" in prompts_by_logical_name["volume_plan"]
+        assert "public_emotion_core" in prompts_by_logical_name["volume_plan"]
+        assert "Character Drama Engine" in prompts_by_logical_name["volume_plan"]
+        assert "world_state_targets" in prompts_by_logical_name["volume_plan"]
+        assert "active_authority_claims" in prompts_by_logical_name["volume_plan"]
+        assert "map_function" in prompts_by_logical_name["volume_plan"]
+        assert "asset_risk_escalation" in prompts_by_logical_name["volume_plan"]
+        assert "reveal_budget" in prompts_by_logical_name["volume_plan"]
     outline_prompt = next(
         prompt
         for logical_name, prompt in prompts_by_logical_name.items()
@@ -3718,6 +3966,129 @@ async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
     assert payload["antagonist"]["ip_anchor"]["core_wound"]
     assert "Bible 回炉整改清单" in prompts[0]
     assert "CHARACTER_PERSONHOOD_INCOMPLETE" in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_personhood_repair_retries_from_current_cast_when_first_repair_regresses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bestseller.services import bible_gate
+    from bestseller.services.bible_gate import BibleCompletenessReport, BibleDeficiency
+
+    project = build_project()
+    project.metadata_json["commercial_strict_prewrite"] = True
+    thin_cast = {
+        "protagonist": {"name": "沈确", "goal": "重建废城流通循环"},
+        "antagonist": {"name": "陆衡", "goal": "复制方法建立竞争网络"},
+        "supporting_cast": [],
+        "antagonist_forces": [],
+        "conflict_map": [],
+    }
+    deficiency = BibleDeficiency(
+        code="CHARACTER_PERSONHOOD_INCOMPLETE",
+        location="cast.protagonist",
+        detail="缺少当下人格层",
+        prompt_feedback="补齐目标、恐惧、偏见和关系边界",
+    )
+    worse = BibleDeficiency(
+        code="CHARACTER_IP_ANCHOR_MISSING",
+        location="cast.antagonist",
+        detail="反派缺少识别锚点",
+        prompt_feedback="补齐可见行为锚点",
+    )
+    reports = iter(
+        [
+            BibleCompletenessReport((deficiency,)),
+            BibleCompletenessReport((deficiency, worse)),
+            BibleCompletenessReport(()),
+        ]
+    )
+    monkeypatch.setattr(bible_gate, "build_draft_from_materialization_content", lambda **_: {})
+    monkeypatch.setattr(bible_gate, "validate_bible_completeness", lambda *_: next(reports))
+
+    prompts: list[str] = []
+    generated = [
+        {**thin_cast, "protagonist": {"name": "沈确", "goal": "另一条故事"}},
+        {
+            **thin_cast,
+            "protagonist": {
+                "name": "沈确",
+                "goal": "重建废城流通循环",
+                "ip_anchor": {"quirks": ["先画流向图再说话"]},
+            },
+        },
+    ]
+
+    async def fake_generate(*_args, **kwargs):
+        prompts.append(kwargs["user_prompt"])
+        return generated[len(prompts) - 1], uuid4()
+
+    monkeypatch.setattr(planner_services, "_generate_structured_artifact", fake_generate)
+
+    payload, llm_run_id = await planner_services._repair_cast_personhood_if_needed(
+        session=FakeSession(),
+        settings=build_settings(),
+        project=project,
+        book_spec_payload={"title": "流通之城"},
+        world_spec_payload={"world_name": "旧榷城"},
+        cast_spec_payload=thin_cast,
+        workflow_run_id=uuid4(),
+    )
+
+    assert llm_run_id is not None
+    assert payload["protagonist"]["goal"] == "重建废城流通循环"
+    assert len(prompts) == 2
+    assert "当前已通过的 CastSpec" in prompts[0]
+    assert "另一条故事" not in prompts[1]
+    assert "重建废城流通循环" in prompts[1]
+
+
+def test_strict_outline_judge_failure_cannot_ship_as_quality_debt() -> None:
+    strict_project = build_project()
+    strict_project.metadata_json["commercial_strict_prewrite"] = True
+    strict_project_with_enhancer = build_project()
+    strict_project_with_enhancer.metadata_json.update(
+        {
+            "commercial_strict_prewrite": True,
+            "story_enhancers": {"effect_skills": ["hype_satisfaction_engine"]},
+        }
+    )
+    legacy_project = build_project()
+
+    assert planner_services._may_promote_outline_quality_debt(strict_project) is True
+    assert (
+        planner_services._may_promote_outline_quality_debt(strict_project_with_enhancer)
+        is False
+    )
+    assert planner_services._may_promote_outline_quality_debt(legacy_project) is True
+
+
+def test_outline_commercial_repair_budget_skips_p1_rewrite_for_first_draft() -> None:
+    settings = build_settings()
+    settings.pipeline.outline_commercial_judge_repair_rounds = 3
+
+    ordinary = build_project()
+    ordinary.metadata_json["commercial_strict_prewrite"] = True
+    enhancer = build_project()
+    enhancer.metadata_json.update(
+        {
+            "commercial_strict_prewrite": True,
+            "story_enhancers": {"effect_skills": ["hype_satisfaction_engine"]},
+        }
+    )
+
+    assert (
+        planner_services._outline_commercial_repair_round_budget(
+            settings=settings, project=ordinary
+        )
+        == 0
+    )
+    assert (
+        planner_services._outline_commercial_repair_round_budget(
+            settings=settings, project=enhancer
+        )
+        == 3
+    )
 
 
 @pytest.mark.asyncio

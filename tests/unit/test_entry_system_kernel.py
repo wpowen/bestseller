@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from planning_capability_test_helpers import explicit_planning_metadata
+
 from pydantic import ValidationError
 
 from bestseller.services.entry_blueprint_library import EntryBlueprint
@@ -53,7 +55,7 @@ def test_fallback_kernel_uses_blueprint_state_variables_and_costs() -> None:
     )
 
     assert any(axis.axis == "asset_control" for axis in kernel.capability_axes)
-    assert "visibility_increase" in kernel.cost_model.default_cost_types
+    assert not kernel.cost_model.default_cost_types  # a library blueprint is not author entry
     assert "no source names" in kernel.anti_copy_rules
 
 
@@ -73,10 +75,15 @@ def test_minimal_cost_creation_contract_overrides_genre_and_blueprint_costs() ->
         {
             "genre": "东方玄幻",
             "story_enhancers": {"cost_style": "minimal"},
+            "creation_intent_contract": {
+                "story_enhancers": {"cost_style": "minimal"},
+                "field_sources": {"story_enhancers": "explicit"},
+                "hook_spec": {"_story_enhancer_input_sources": {"cost_style": "explicit"}},
+            },
         },
         blueprints=(blueprint,),
     )
-    rendered = render_entry_system_kernel_prompt_block(kernel)
+    rendered = render_entry_system_kernel_prompt_block(kernel, metadata=explicit_planning_metadata("entry_system_kernel"))
 
     assert kernel.cost_model.default_cost_types == (
         "resource_choice",
@@ -93,7 +100,7 @@ def test_minimal_cost_creation_contract_overrides_genre_and_blueprint_costs() ->
 def test_render_entry_system_kernel_prompt_block_includes_rules() -> None:
     kernel = build_fallback_entry_system_kernel({"genre": "悬疑生存", "sub_genre": "规则怪谈"})
 
-    block = render_entry_system_kernel_prompt_block(kernel)
+    block = render_entry_system_kernel_prompt_block(kernel, metadata=explicit_planning_metadata("entry_system_kernel"))
 
     assert "【词条体系约束】" in block
     assert "硬规则" in block

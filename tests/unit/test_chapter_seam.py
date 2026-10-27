@@ -35,10 +35,8 @@ def test_extract_open_threads_surfaces_location_threat_and_question() -> None:
     assert ThreadKind.LOCATION in kinds         # 丹房 / 门口
     assert ThreadKind.IMMEDIATE_THREAT in kinds  # 围
     assert ThreadKind.UNANSWERED_QUESTION in kinds  # 「...？」
-    # Both 宁尘 and 苏瑶 should surface as participants
-    participant_markers = {t.marker for t in threads if t.kind == ThreadKind.PARTICIPANT}
-    assert "宁尘" in participant_markers
-    assert "苏瑶" in participant_markers
+    # Names alone do not establish end-of-chapter presence.
+    assert not any(t.kind == ThreadKind.PARTICIPANT for t in threads)
 
 
 def test_extract_open_threads_skips_inner_thought_questions() -> None:
@@ -72,7 +70,8 @@ def test_seam_passes_when_opening_continues_directly() -> None:
         "苏瑶冷笑：「跑不掉了。」"
     )
     opening = (
-        "丹房门口的火光让宁尘睁不开眼。苏瑶的剑尖距他咽喉不过三寸。"
+        "丹房门口的火光让宁尘睁不开眼。执法堂弟子仍围在门口。"
+        "苏瑶的剑尖距他咽喉不过三寸。"
         "他强迫自己呼吸。"
     )
     report = validate_chapter_seam(tail, opening)

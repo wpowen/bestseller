@@ -63,6 +63,25 @@ def _xianxia_revenge_profile() -> dict:
     }
 
 
+@pytest.mark.unit
+def test_title_revision_prompt_carries_authoritative_seed_constraints() -> None:
+    profile = _xianxia_revenge_profile()
+    seed = "主角修复废城的流通循环并争夺大陆交通主权。禁止把纯粹收过路费包装成故事核心。"
+    profile["authoritative_concept_seed"] = seed
+    candidate = {
+        "title": "开局玄幻我证道",
+        "pattern": "平台模板",
+        "title_evaluation": {"decision": "reject"},
+    }
+
+    messages = build_title_revision_messages(profile, candidate, target_platform="fanqie")
+
+    assert messages is not None
+    _system, user = messages
+    assert seed in user
+    assert "不得把用户禁止项改写成书名卖点" in user
+
+
 def _all_candidate_titles(profile: dict, platform: str) -> list[str]:
     workflow = build_platform_title_workflow(profile, target_platform=platform)
     return [str(c.get("title")) for c in workflow.get("candidates", [])]
@@ -96,9 +115,9 @@ def test_thin_genre_profile_prefers_model_title() -> None:
 def test_no_candidate_is_genre_dominated(platform: str) -> None:
     profile = _thin_genre_profile()
     for title in _all_candidate_titles(profile, platform):
-        assert not _title_uses_genre_label(
-            title, _signal_tokens(profile)
-        ), f"genre-dominated candidate survived: {title!r}"
+        assert not _title_uses_genre_label(title, _signal_tokens(profile)), (
+            f"genre-dominated candidate survived: {title!r}"
+        )
 
 
 # --- T-0b: bare taxonomy/category names must never become titles ------------
@@ -159,9 +178,10 @@ def test_genre_name_seed_does_not_survive_as_title(title: str, platform: str) ->
         "reader_promise": "越被打压越爽的逆袭复仇",
         "main_characters": [{"name": "陈砚", "role": "主角", "identity": "觉醒者"}],
     }
-    assert evaluate_platform_title_candidate(
-        profile, title, target_platform=platform
-    )["decision"] == "reject"
+    assert (
+        evaluate_platform_title_candidate(profile, title, target_platform=platform)["decision"]
+        == "reject"
+    )
     result = select_primary_platform_title(profile, target_platform=platform)
     final = str(result.get("title") or "")
     assert final, "selection returned an empty title"
@@ -223,9 +243,7 @@ def test_title_uses_genre_label_helper() -> None:
 # --- P2: LLM revision policy (sync, no LLM) ---------------------------------
 
 
-def _weak_candidate(
-    title: str, decision: str, pattern: str = "当前主书名校准"
-) -> dict:
+def _weak_candidate(title: str, decision: str, pattern: str = "当前主书名校准") -> dict:
     """A model-title candidate by default; pass a template pattern for fallbacks."""
     return {
         "title": title,
@@ -513,8 +531,7 @@ def test_story_grounded_platform_matrix_rejects_topic_or_broken_candidates() -> 
         title = str(candidate.get("title") or "")
         assert not title_readability_issue(title), f"broken title survived: {title!r}"
         assert not any(
-            bad in title
-            for bad in ("灵气复苏", "系统", "神探", "案卷", "之书", "会决定")
+            bad in title for bad in ("灵气复苏", "系统", "神探", "案卷", "之书", "会决定")
         ), f"topic-led or mismatched candidate survived: {title!r}"
         assert candidate["title_evaluation"]["decision"] == "pass", (
             f"weak candidate survived: {title!r}"
@@ -582,10 +599,7 @@ def test_bureaucratic_cultivation_title_candidates_keep_story_anchors() -> None:
     )
     assert titles
     assert not any(title in {"证道录", "只准证道，我偏要签证道"} for title in titles)
-    assert all(
-        any(anchor in title for anchor in approved_anchors)
-        for title in titles[:10]
-    )
+    assert all(any(anchor in title for anchor in approved_anchors) for title in titles[:10])
 
 
 def test_detective_title_templates_gated_by_genre() -> None:
@@ -597,9 +611,17 @@ def test_detective_title_templates_gated_by_genre() -> None:
     )
 
     s = {
-        "title": "示例", "threat": "魔头", "setting": "天南", "object": "飞剑",
-        "hook": "灵气复苏", "hook2": "废灵根", "entry": "宗门", "origin": "杂役",
-        "action": "翻盘", "identity": "外门弟子", "protagonist": "主角",
+        "title": "示例",
+        "threat": "魔头",
+        "setting": "天南",
+        "object": "飞剑",
+        "hook": "灵气复苏",
+        "hook2": "废灵根",
+        "entry": "宗门",
+        "origin": "杂役",
+        "action": "翻盘",
+        "identity": "外门弟子",
+        "protagonist": "主角",
     }
     detective_words = ("案卷", "诡案", "神探", "奇案")
 

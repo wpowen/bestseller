@@ -240,7 +240,13 @@ def test_audit_emotion_labels_ignores_dialogue() -> None:
 def test_render_emotion_choreography_block() -> None:
     block = render_emotion_choreography_block()
     assert "emotion_choreography" in block
-    assert "禁用情绪标签词" in block
+    assert "≥ 2 种组成动作—后果链" in block
+    assert "情绪标签不按词面一律禁用" in block
+    assert "过场和必要内心导航允许简洁概括" in block
+    assert "不得用通用身体反应或感官清单补位" in block
+    # Detection lexicons belong after generation; listing them in the prompt
+    # primes the exact diction the instruction is trying to reduce.
+    assert "怒火中烧" not in block
 
 
 # ---------------------------------------------------------------------------

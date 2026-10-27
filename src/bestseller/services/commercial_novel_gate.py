@@ -218,6 +218,9 @@ def evaluate_book_package(
     blocking_issues = [issue for issue in issues if issue.severity in blocking_severities]
     passed = score >= effective_policy.min_professional_score and not blocking_issues
     metrics = {
+        "chapter_seam_participant_coverage": {
+            "status": "unsupported", "reason": "no_source_bound_end_presence",
+        },
         "anchor_groups": [
             {"key": anchor.key, "terms": list(anchor.terms), "max_gap": anchor.max_gap_chapters}
             for anchor in effective_policy.anchors
@@ -1095,20 +1098,21 @@ def _check_package_chapter_seams(
                     f"{report.score:.0%} of chapter {previous.chapter_no} ending threads."
                 ),
                 suggestion=(
-                    "下一章开头必须先承接上一章最后的地点、人物、威胁或未答问题；"
+                    "下一章开头必须先承接上一章最后的地点、身体状态、威胁或未答问题；"
                     "禁止直接跳到新案、新空间或新规则。"
                 ),
                 evidence={
                     "previous_chapter": previous.chapter_no,
                     "current_chapter": current.chapter_no,
                     "score": round(report.score, 3),
+                    "participant_coverage": report.participant_coverage,
                     "silent_drops": [
                         {
                             "kind": drop.thread.kind.value,
                             "marker": drop.thread.marker,
                             "evidence": drop.thread.evidence,
                         }
-                        for drop in report.silent_drops[:8]
+                        for drop in report.eligible_silent_drops[:8]
                     ],
                 },
             )

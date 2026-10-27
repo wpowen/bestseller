@@ -10,6 +10,7 @@ from bestseller.services.genre_intent_contract import (
 )
 from bestseller.services.genre_taxonomy import resolve_selection
 from bestseller.services.story_enhancers import StoryEnhancerSelection
+from bestseller.services.conception import _creation_intent_prompt_block
 
 pytestmark = pytest.mark.unit
 
@@ -24,6 +25,63 @@ def test_plain_xianxia_contract_owns_native_prompt_pack() -> None:
     assert contract.prompt_pack_key == "xianxia-upgrade-core"
     assert contract.allowed_modernity == "genre_native"
     assert contract.explicit_enhancers.is_default()
+
+
+def test_legacy_selection_infers_tag_provenance_without_losing_tags() -> None:
+    """Old clients only sent merged ``tags``; retain them but mark the gap."""
+
+    contract = contract_from_selection(
+        {
+            "channel": "male",
+            "genre": "玄幻",
+            "sub_genre": "东方玄幻",
+            "tags": ["用户自定义钩子"],
+        }
+    )
+
+    assert contract.source == "user"
+    assert contract.tag_source == "legacy_inferred"
+    assert "用户自定义钩子" in contract.tags
+    assert "用户自定义钩子" in contract.user_tags
+    assert contract.default_tags
+
+    block = _creation_intent_prompt_block(
+        {"genre_intent_contract": contract.model_dump(mode="json")}
+    )
+    assert '"tag_source": "legacy_inferred"' in block
+    assert "不能回溯为用户原始要求" in block
+
+
+def test_explicit_tag_provenance_preserves_effective_ui_tags() -> None:
+    """The new web contract must keep deselected defaults out of effective tags."""
+
+    contract = contract_from_selection(
+        {
+            "channel": "male",
+            "genre": "玄幻",
+            "sub_genre": "东方玄幻",
+            "tags": ["升级流"],
+            "default_tags": ["废柴逆袭", "升级流", "血脉觉醒"],
+            "user_tags": ["升级流"],
+        }
+    )
+
+    assert contract.source == "user"
+    assert list(contract.tags) == ["升级流"]
+    assert list(contract.user_tags) == ["升级流"]
+    assert "血脉觉醒" in contract.default_tags
+
+
+def test_pre_split_persisted_contract_defaults_tag_provenance_to_legacy() -> None:
+    current = contract_from_selection(
+        {"channel": "male", "genre": "玄幻", "sub_genre": "东方玄幻", "tags": []}
+    ).model_dump(mode="json")
+    current.pop("tag_source", None)
+
+    reloaded = contract_from_payload({"genre_intent_contract": current})
+
+    assert reloaded is not None
+    assert reloaded.tag_source == "legacy_inferred"
 
 
 def test_urban_cultivation_contract_explicitly_allows_modern_elements() -> None:

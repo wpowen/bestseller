@@ -17,7 +17,7 @@ class FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_reader_experience_judge_includes_methodology(
+async def test_reader_experience_judge_uses_source_boundary_without_default_recipe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str] = {}
@@ -56,8 +56,8 @@ async def test_reader_experience_judge_includes_methodology(
     )
 
     assert result.passed is True
-    assert "评估时参照的方法论" in captured["system"]
-    assert "【opening_rules】" in captured["system"]
+    assert "SOURCE AUTHORITY" in captured["system"]
+    assert "【opening_rules】" not in captured["system"]
     assert "黄金十章大纲" in captured["user"]
 
 

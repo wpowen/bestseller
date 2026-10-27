@@ -5,16 +5,18 @@ import os
 from pathlib import Path
 from typing import Any
 
-from arq import cron
+from arq import cron, func
 from arq.connections import RedisSettings
 
 from bestseller.infra.db.session import init_db, shutdown_db
-from bestseller.infra.redis import get_redis_client, init_redis, shutdown_redis
+from bestseller.infra.redis import init_redis, shutdown_redis
 from bestseller.settings import get_settings
+from bestseller.worker.export_recovery import run_export_only_recovery_task
 from bestseller.worker.tasks import (
     run_benchmark_regression_task,
     run_book_quality_closure_task,
     run_autowrite_task,
+    run_autonomous_continuation_task,
     run_chapter_pipeline_task,
     run_outline_replan_task,
     run_project_repair_task,
@@ -34,7 +36,17 @@ async def startup(ctx: dict[str, Any]) -> None:
     logger.info("Worker startup: initializing DB and Redis…")
     await init_db(settings)
     await init_redis(settings)
-    ctx["redis"] = get_redis_client()
+    # Preserve ARQ's queue-capable client. Replacing it with plain Redis
+    # silently removes enqueue_job and strands all automatic successor work.
+    if not callable(getattr(ctx.get("redis"), "enqueue_job", None)):
+        from arq.connections import create_pool
+        ctx["redis"] = await create_pool(_redis_settings())
+        ctx["owns_autonomous_arq_pool"] = True
+    # Drain only persisted authorized continuation outboxes; no new scheduler.
+    from bestseller.infra.db.session import session_scope
+    from bestseller.services.autonomous_dispatch import recover_pending_checkpoints
+    async with session_scope(settings) as continuation_session:
+        await recover_pending_checkpoints(continuation_session, ctx['redis'])
 
     # ── MCP connection pool (Batch 1, optional) ────────────────────────
     # Only spins up when the material-library flag is on; otherwise the
@@ -77,6 +89,8 @@ async def startup(ctx: dict[str, Any]) -> None:
 
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
         try:
+            from bestseller.worker.export_recovery import enqueue_export_only_recoveries
+            await enqueue_export_only_recoveries(settings, ctx["redis"])
             from bestseller.worker.self_heal import (  # noqa: PLC0415
                 STARTUP_GRACE_SECONDS,
                 heal_stuck_projects,
@@ -107,6 +121,8 @@ async def shutdown(ctx: dict[str, Any]) -> None:
             await pool.stop()
         except Exception:  # noqa: BLE001
             logger.exception("Worker shutdown: MCP pool stop failed")
+    if ctx.pop("owns_autonomous_arq_pool", False):
+        await ctx["redis"].aclose()
     await shutdown_redis()
     await shutdown_db()
 
@@ -152,7 +168,9 @@ def _self_heal_cron_jobs() -> list[Any]:
 class WorkerSettings:
     functions = [
         run_self_heal_task,
+        func(run_export_only_recovery_task, keep_result=0),
         run_autowrite_task,
+        run_autonomous_continuation_task,
         run_outline_replan_task,
         run_book_quality_closure_task,
         run_project_pipeline_task,

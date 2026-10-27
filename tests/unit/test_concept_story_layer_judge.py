@@ -12,6 +12,8 @@ import json
 from bestseller.services.concept_tournament import (
     _STORY_LAYER_AXES,
     _build_story_layer_judge_messages,
+    _build_narrow_card_revision_context,
+    _constrain_story_layer_repair,
     _parse_story_layer_verdict,
 )
 
@@ -51,6 +53,95 @@ def test_prompt_does_not_seed_disease_tokens():
     )
     for token in ("打脸", "逆袭", "碾压", "扮猪吃虎", "跪", "求饶", "废柴流"):
         assert token not in user, f"判据 prompt 种词：{token}"
+
+
+def test_prompt_accepts_protection_and_investigation_as_agency_in_both_languages():
+    _, user = _build_story_layer_judge_messages(
+        {"protagonist_private_desire": "保住清白", "current_goal": "查明伪造者"},
+        genre="现实悬疑",
+        sub_genre="现实悬疑",
+    )
+    assert "保护、查明、洗清、修复" in user
+    assert "Protection, investigation, exoneration, repair" in user
+    assert "不等于扩张、复仇" in user
+
+
+def test_story_layer_uses_target_length_and_does_not_universalize_other_axes():
+    _, user = _build_story_layer_judge_messages(
+        {"current_goal": "查明真相", "deformable_loop": "逐案核验"},
+        genre="现实悬疑",
+        sub_genre="刑侦",
+        target_chapters=20,
+    )
+    assert "目标篇幅：20章" in user
+    assert "悲剧或高代价弧线也可以通过" in user
+    assert "普通侦探、群像或无超能故事不要求能力独占" in user
+    assert "终局谜底、有限次数或有限目标本身不是失败" in user
+    assert "赢了也是灾难" not in user
+
+
+def test_story_layer_repair_freezes_private_desire_and_world_fields():
+    original = {
+        "protagonist_identity": "档案员",
+        "protagonist_private_desire": "保住二十三年的清白履历",
+        "current_goal": "查清照片来源",
+        "core_abnormality": "只能核验归档链",
+        "opposing_ecology": ["队内调查者"],
+        "success_cost": "必须公开核验方法",
+    }
+    model_repair = {
+        **original,
+        "protagonist_private_desire": "让伪造者职业生涯清零",
+        "current_goal": "抓住伪造者并让其付出代价",
+        "core_abnormality": "获得读心能力",
+        "opposing_ecology": ["新的邪恶组织"],
+        "success_cost": "失去工作",
+    }
+    repaired = _constrain_story_layer_repair(
+        original, model_repair, ["s1_wants_aggression"]
+    )
+    assert repaired["protagonist_private_desire"] == original["protagonist_private_desire"]
+    assert repaired["core_abnormality"] == original["core_abnormality"]
+    assert repaired["opposing_ecology"] == original["opposing_ecology"]
+    assert repaired["current_goal"] == model_repair["current_goal"]
+
+
+def test_story_layer_revision_context_matches_allowed_field_boundary():
+    story_context = _build_narrow_card_revision_context(
+        card={"core_abnormality": "shared rule", "reader_promise": "solve cases"},
+        failed_axes=["s3_exclusivity", "s5_three_second_pitch"],
+        directions="repair",
+        story_layer=True,
+    )
+    assert "【本次允许修改字段】" in story_context
+    assert "core_abnormality" in story_context
+    assert "reader_promise" in story_context
+    assert "私人欲望" in story_context
+    commercial_context = _build_narrow_card_revision_context(
+        card={"reader_promise": "solve cases"},
+        failed_axes=["reader_promise"],
+        directions="repair",
+    )
+    assert "Agency repair" not in commercial_context
+    assert "【本次允许修改字段】" not in commercial_context
+
+
+def test_story_layer_repair_preserves_explicit_revenge_when_user_chose_it():
+    original = {
+        "protagonist_private_desire": "让杀害父亲的人付出代价",
+        "current_goal": "找到凶手",
+        "success_cost": "公开自己的身份",
+    }
+    model_repair = {
+        **original,
+        "protagonist_private_desire": "过安稳日子",
+        "current_goal": "找到凶手并揭露证据",
+    }
+    repaired = _constrain_story_layer_repair(
+        original, model_repair, ["s1_wants_aggression"]
+    )
+    assert repaired["protagonist_private_desire"] == original["protagonist_private_desire"]
+    assert repaired["current_goal"] == model_repair["current_goal"]
 
 
 def test_parser_extracts_fails_and_direction():

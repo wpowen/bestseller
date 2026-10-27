@@ -55,13 +55,120 @@ def test_static_market_signals_resolve_for_known_genre() -> None:
     assert any("规则" in s or "长生" in s or "修行" in s for s in signals)
 
 
-def test_static_market_signals_exclude_oversaturated_banned_directions() -> None:
-    # 2026-07-04: 系统 prompt 禁"规则面板/系统漏洞/卡天道"方向，但静态市场信号
-    # 曾把"规则面板"当热度信号回灌进 user prompt，且 fallback 会把 signals[0]
-    # 固化为 reader_promise_axis——被禁方向必须在信号源头被过滤。
+def test_realistic_genre_does_not_route_to_urban_brain_profile() -> None:
+    assert agent._match_market_profile_key("现实题材", "生活流", "") is None
+    assert agent._static_market_signals(
+        genre="现实题材", sub_genre="生活流", genre_key="realistic-life"
+    ) == []
+
+
+def test_unknown_genre_does_not_use_profile_key_as_a_cross_genre_guess() -> None:
+    assert agent._match_market_profile_key("未知题材", "未知分支", "urban-brain") is None
+
+
+def test_methodology_keeps_heat_and_generation_sources_separate() -> None:
+    fallback = fallback_concept_methodology(
+        genre="现实题材",
+        sub_genre="生活流",
+        genre_key="realistic-life",
+        audience_orientation="neutral",
+    )
+    assert fallback.heat_source == "missing"
+    assert fallback.methodology_generation_source == "static_fallback"
+
+    parsed = parse_concept_methodology(
+        json.dumps({"mindset": "人物选择与关系变化"}, ensure_ascii=False),
+        fallback=fallback,
+    )
+    assert parsed.heat_source == "missing"
+    assert parsed.methodology_generation_source == "llm"
+    assert parsed.source == "llm"  # legacy field remains compatible
+
+
+def test_legacy_llm_payload_infers_generation_source() -> None:
+    methodology = ConceptMethodology.model_validate(
+        {"source": "llm_filled", "market_signals": ["观察"]}
+    )
+    assert methodology.methodology_generation_source == "llm"
+
+
+def test_static_profile_keeps_claims_as_unverified_observations() -> None:
+    fallback = fallback_concept_methodology(
+        genre="玄幻",
+        sub_genre="修真",
+        genre_key="xuanhuan",
+        audience_orientation="male",
+        market_signals=["蓝海赛道", "平台推荐权重更高", "可验证的读者回报"],
+    )
+    assert fallback.market_signals == [
+        "蓝海赛道",
+        "平台推荐权重更高",
+        "可验证的读者回报",
+    ]
+    assert "蓝海" not in fallback.reader_promise_axis
+    assert "推荐权重" not in " ".join(fallback.design_axes)
+
+
+@pytest.mark.asyncio
+async def test_search_preserves_valid_hit_with_market_language_and_source_url() -> None:
+    class SearchClient:
+        provider = "test"
+
+        async def search(self, query, max_results):
+            return SimpleNamespace(
+                hits=[
+                    SimpleNamespace(
+                        title="爆款观察样本",
+                        snippet="含来源的原始观察",
+                        url="https://example.test/book/1",
+                    )
+                ]
+            )
+
+        async def close(self):
+            return None
+
+    settings = SimpleNamespace(
+        pipeline=SimpleNamespace(concept_methodology_heat_search=True)
+    )
+    signals = await agent._gather_market_heat(
+        settings=settings,
+        genre="玄幻",
+        sub_genre="修真",
+        trend_keywords=[],
+        search_client=SearchClient(),
+    )
+    assert signals == [
+        "爆款观察样本：含来源的原始观察 [source_url:https://example.test/book/1]"
+    ]
+
+
+def test_methodology_prompt_marks_references_as_suggestions_not_world_facts() -> None:
+    prompt = agent.build_methodology_user_prompt(
+        genre="现实题材",
+        sub_genre="生活流",
+        description="普通人的生活选择",
+        premise="主角要守住家人的生活安排",
+        audience_orientation="neutral",
+        market_signals=["人物选择带来关系变化"],
+        trend_keywords=[],
+        fallback=fallback_concept_methodology(
+            genre="现实题材",
+            sub_genre="生活流",
+            genre_key="realistic-life",
+            audience_orientation="neutral",
+        ),
+    )
+    assert "参考" in prompt
+    assert "不是世界事实" in prompt
+    assert "不能把参考项写成必须存在的设定" in prompt
+
+
+def test_static_market_signals_preserve_source_observations() -> None:
+    # Raw market observations remain available for audit, even when fallback
+    # axes avoid saturated markers.
     signals = agent._static_market_signals(genre="玄幻", sub_genre="修真", genre_key="x")
-    for marker in ("规则面板", "系统漏洞", "天道bug"):
-        assert not any(marker in s for s in signals)
+    assert any("规则面板" in signal for signal in signals)
 
 
 def test_fallback_never_bakes_oversaturated_signal_into_axes() -> None:
@@ -87,6 +194,8 @@ def test_render_block_is_soft_not_hard_contract() -> None:
     block = render_concept_methodology_block(m, language="zh-CN")
     assert "软框架" in block or "参考" in block
     assert "不要照抄" in block or "不要稀释" in block
+    assert '"heat_source": "static"' in block
+    assert '"methodology_generation_source": "static_fallback"' in block
     # Must NOT carry the old hard-contract propagation language.
     assert "必须向下传播" not in block
     assert "命题硬合同" not in block
@@ -148,7 +257,7 @@ def test_parse_methodology_garbage_returns_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_select_uses_llm_output_with_noop_search(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_complete_text(session, settings, request):  # noqa: ANN001
+    async def fake_complete_text(session, settings, request):
         return SimpleNamespace(
             content=json.dumps(
                 {"mindset": "反差打脸引擎", "mechanism_types": ["反转"], "audience_orientation": "neutral"},
@@ -172,12 +281,14 @@ async def test_select_uses_llm_output_with_noop_search(monkeypatch: pytest.Monke
     )
     assert isinstance(m, ConceptMethodology)
     assert m.source == "llm"
+    assert m.methodology_generation_source == "llm"
+    assert m.heat_source == "static"
     assert m.mindset == "反差打脸引擎"
 
 
 @pytest.mark.asyncio
 async def test_select_falls_back_when_llm_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def boom(session, settings, request):  # noqa: ANN001
+    async def boom(session, settings, request):
         raise RuntimeError("llm down")
 
     monkeypatch.setattr(agent, "complete_text", boom)
@@ -195,4 +306,29 @@ async def test_select_falls_back_when_llm_raises(monkeypatch: pytest.MonkeyPatch
         audience_orientation="male",
     )
     assert m.source == "static_fallback"
+    assert m.heat_source == "static"
     assert m.audience_orientation == "male"
+
+
+@pytest.mark.asyncio
+async def test_select_marks_unknown_heat_as_missing_without_cross_genre_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(content="{}")
+
+    monkeypatch.setattr(agent, "complete_text", fake_complete_text)
+    settings = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            enable_concept_methodology_agent=True, concept_methodology_heat_search=False
+        )
+    )
+    m = await select_concept_methodology(
+        None,
+        settings,  # type: ignore[arg-type]
+        genre="未知题材",
+        sub_genre="未知分支",
+        genre_key="urban-brain",
+    )
+    assert m.heat_source == "missing"
+    assert m.market_signals == []

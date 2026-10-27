@@ -127,21 +127,23 @@ async def judge_collisions(
         system, user = build_collision_messages(
             concept=concept, competitors=competitors
         )
-        completion = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="critic",
-                model_tier="standard",
-                system_prompt=system,
-                user_prompt=user,
-                fallback_response=_COLLISION_FALLBACK,
-                prompt_template="market_validation_collision_judge",
-                prompt_version="v1",
-                max_tokens_override=900,
-                project_id=project_id,
-            ),
-        )
+        from bestseller.services.llm import bind_execution_operation
+        with bind_execution_operation("market-validation-collision.v1"):
+            completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    model_tier="standard",
+                    system_prompt=system,
+                    user_prompt=user,
+                    fallback_response=_COLLISION_FALLBACK,
+                    prompt_template="market_validation_collision_judge",
+                    prompt_version="v1",
+                    max_tokens_override=900,
+                    project_id=project_id,
+                ),
+            )
         if getattr(completion, "fallback_used", False):
             return [], False
         collisions, dropped = parse_collisions(
@@ -151,7 +153,10 @@ async def judge_collisions(
         if dropped:
             logger.info("Collision judge hallucinated %s titles (dropped)", dropped)
         return collisions, True
-    except Exception:
+    except Exception as error:
+        from bestseller.services.budget import ExecutionBudgetError
+        if isinstance(error, ExecutionBudgetError):
+            raise
         logger.warning("Collision judge failed (fail-open)", exc_info=True)
         return [], False
 

@@ -178,11 +178,20 @@ def _minimal_draft(
 
 
 @pytest.mark.asyncio
-async def test_runtime_stance_flip_accepts_emotion_turn_arcbeat() -> None:
+async def test_runtime_stance_flip_accepts_emotion_turn_arcbeat(monkeypatch) -> None:
     character_id = uuid4()
     character = SimpleNamespace(id=character_id, name="苏瑶")
-    current_snapshot = SimpleNamespace(character_id=character_id, stance="enemy")
+    current_snapshot = SimpleNamespace(character_id=character_id, stance="enemy",
+        source_binding={"accepted_fields": {"stance": True}})
     prior_snapshot = SimpleNamespace(stance="ally")
+    from unittest.mock import AsyncMock
+    from bestseller.services import character_snapshot_sources
+    # Provenance itself is exercised with real SQLite consumer-fence tests.
+    # This unit isolates the turning-beat rule on already verified projections.
+    monkeypatch.setattr(character_snapshot_sources, "snapshot_source_status",
+        AsyncMock(return_value={"status": "eligible", "reason": "source_current"}))
+    monkeypatch.setattr(character_snapshot_sources, "load_eligible_character_snapshots",
+        AsyncMock(return_value=[prior_snapshot]))
     emotion_turn_beat = SimpleNamespace(beat_kind="emotion_turn")
     session = _BibleGateSession(
         scalars_results=[[current_snapshot], [emotion_turn_beat]],

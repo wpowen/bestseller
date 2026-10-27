@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from test_ideology_cost_source_projection import author_metadata, cached
+
 from bestseller.domain.ideology import (
     IdeologyKernel,
     LAYER_KEYS,
@@ -354,11 +356,11 @@ def test_kernel_tolerates_llm_aliases() -> None:
             "shatter": "故人换了三代。",
             "reconstruction": "在有限里找锚点。",
         },
-        # No cost_system at all — must be synthesized, not crash.
+        # Missing costs stay unknown; alias hydration must not invent laws.
     }
     kernel = ideology_kernel_from_dict(payload)
     assert kernel.primary_motif.layer == "ethical_reversal"
-    assert kernel.cost_system, "empty cost_system must be backfilled"
+    assert kernel.cost_system == [], "missing cost laws must remain missing"
     assert kernel.thesis_statement == "活着本身就是代价。"
 
 
@@ -372,21 +374,28 @@ def test_kernel_drops_unsalvageable_secondary_entries() -> None:
     assert len(kernel.secondary_motifs) >= 2
 
 
+def _author_kernel_metadata(payload, style=None):
+    fields = {key: value for key, value in payload.items() if key != "cost_style"}
+    return author_metadata(style, ideology_fields=fields)
+
+
 def test_render_kernel_prompt_block_contains_spine() -> None:
     kernel = ideology_kernel_from_dict(_minimal_kernel_dict())
-    block = render_ideology_kernel_prompt_block(kernel)
-    assert "主主题" in block
-    assert "核心问题" in block
-    assert "信念弧" in block
-    assert "代价系统" in block
+    block = render_ideology_kernel_prompt_block(kernel, metadata=_author_kernel_metadata(_minimal_kernel_dict(), "standard"))
+    assert kernel.thesis_statement in block
+    assert kernel.core_question in block
+    assert kernel.belief_arc.midpoint_shatter in block
+    assert kernel.cost_system[0].costs in block
     assert "天地不仁" in block
-    assert "禁用的廉价解法" in block
+    assert kernel.forbidden_resolutions[0] in block
 
 
 def test_render_kernel_prompt_block_handles_dict_and_none() -> None:
     assert render_ideology_kernel_prompt_block(None) == ""
-    block = render_ideology_kernel_prompt_block(_minimal_kernel_dict())
-    assert "主主题" in block
+    payload = _minimal_kernel_dict()
+    assert render_ideology_kernel_prompt_block(payload) == ""
+    block = render_ideology_kernel_prompt_block(payload, metadata=_author_kernel_metadata(payload))
+    assert payload["thesis_statement"] in block
     # Malformed dict must not raise.
     assert render_ideology_kernel_prompt_block({"garbage": 1}) == ""
 
@@ -401,8 +410,9 @@ def test_kernel_carries_sub_themes() -> None:
     assert len(kernel.sub_themes) == 2
     assert kernel.sub_themes[0].motif_key == "daijia"
     assert kernel.sub_themes[1].proposition  # string coerced
-    block = render_ideology_kernel_prompt_block(kernel)
-    assert "穿插子题" in block
+    block = render_ideology_kernel_prompt_block(kernel, metadata=_author_kernel_metadata(payload))
+    assert kernel.sub_themes[1].proposition in block
+    assert payload["sub_themes"][0]["proposition"] in block
 
 
 def test_binding_requires_action_and_suspense_roles_only_on_secondary() -> None:
@@ -426,47 +436,42 @@ class TestCostStyleTiers:
     """standard 逐字节兼容旧渲染 + external/minimal 变体 + schema/accessor。"""
 
     def _kernel(self, cost_style: str = "standard") -> IdeologyKernel:
-        from bestseller.services.ideology_kernel import fallback_ideology_kernel
+        # Historical complete kernels remain readable; the new fallback is neutral.
+        return ideology_kernel_from_dict(cached(cost_style))
 
-        fb = fallback_ideology_kernel(
-            premise="少年得神秘传承闯仙界", volumes=3, seed="cs-seed"
-        )
-        k = ideology_kernel_from_dict(fb)
-        return k if cost_style == "standard" else k.model_copy(
-            update={"cost_style": cost_style}
-        )
-
-    def test_standard_preserves_legacy_cost_block(self) -> None:
-        block = render_ideology_kernel_prompt_block(self._kernel("standard"))
-        assert "### 代价系统（力量/真相/救赎都必须付费, 不可白给）" in block
-        assert "→ 代价「" in block
+    def test_standard_choice_preserves_only_authored_cost_direction(self) -> None:
+        block = render_ideology_kernel_prompt_block(self._kernel("standard"), metadata=author_metadata("standard"))
+        assert "标准代价" in block
+        assert self._kernel().cost_system[0].costs not in block
+        assert self._kernel().thesis_statement not in block
         assert "外置代价" not in block and "极简代价" not in block
 
     def test_external_externalizes_and_forbids_self_harm(self) -> None:
-        block = render_ideology_kernel_prompt_block(self._kernel("external"))
+        block = render_ideology_kernel_prompt_block(self._kernel("external"), metadata=author_metadata("external"))
         assert "外置代价" in block
-        assert "禁止：削减主角的记忆/身体/关系/寿命/地位" in block
+        assert "主角不自损" in block
         assert "力量/真相/救赎都必须付费" not in block
 
     def test_minimal_softens_cost(self) -> None:
-        block = render_ideology_kernel_prompt_block(self._kernel("minimal"))
+        block = render_ideology_kernel_prompt_block(self._kernel("minimal"), metadata=author_metadata("minimal"))
         assert "极简代价" in block
-        assert "不写削弱主角的代价账" in block
+        assert "不强制削弱" in block
 
     def test_cost_style_field_defaults_standard_and_round_trips(self) -> None:
         k = self._kernel("standard")
-        assert k.cost_style == "standard"
+        assert k.cost_style == "standard"  # Legacy scalar is readable, not authority.
         assert k.model_copy(update={"cost_style": "external"}).cost_style == "external"
 
-    def test_derive_prompt_standard_is_byte_identical(self) -> None:
+    def test_derive_prompt_does_not_turn_scalar_cost_into_authored_theme(self) -> None:
         from bestseller.services.ideology_kernel import build_ideology_user_prompt
 
         base = build_ideology_user_prompt(premise="x", volumes=1)
-        assert build_ideology_user_prompt(
-            premise="x", volumes=1, cost_style="standard"
-        ) == base
+        standard = build_ideology_user_prompt(premise="x", volumes=1, cost_style="standard")
+        assert "天地不仁" not in base and "天地不仁" not in standard
         ext = build_ideology_user_prompt(premise="x", volumes=1, cost_style="external")
-        assert "代价风格=外置" in ext and ext != base
+        assert "天地不仁" not in ext
+        # A bare style scalar cannot establish author methodology or cost provenance.
+        assert ext == base
 
     def test_selection_schema_and_accessor(self) -> None:
         from bestseller.services.story_enhancers import (
@@ -483,6 +488,17 @@ class TestCostStyleTiers:
         assert StoryEnhancerSelection(cost_style="external").is_default() is False
         assert StoryEnhancerSelection().is_default() is True
         assert resolve_cost_style(
-            {STORY_ENHANCERS_METADATA_KEY: {"cost_style": "minimal"}}
+            {"creation_intent_contract": {"field_sources": {"story_enhancers": "explicit"}, STORY_ENHANCERS_METADATA_KEY: {"cost_style": "minimal"}}}
         ) == "minimal"
-        assert resolve_cost_style({}) == "standard"
+        assert resolve_cost_style({}) == ""
+
+
+def test_sparse_kernel_hydration_does_not_invent_a_world_motif_or_belief_arc():
+    kernel = ideology_kernel_from_dict({"version": 2, "thesis_statement": "修补旧钟也是修复信任。"})
+    assert kernel.thesis_statement == "修补旧钟也是修复信任。"
+    assert kernel.cosmic_premise == ""
+    assert kernel.primary_motif is None
+    assert kernel.hidden_endgame_motif is None
+    assert kernel.belief_arc is None
+    assert kernel.cost_system == []
+    assert kernel.layer_coverage == {}

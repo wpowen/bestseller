@@ -99,6 +99,9 @@ class PromptPack(BaseModel):
     source_notes: list[str] = Field(default_factory=list)
     anti_patterns: list[str] = Field(default_factory=list)
     writing_profile_overrides: dict[str, Any] = Field(default_factory=dict)
+    # Optional story starters are data for an author to adopt, never automatic
+    # genre technique. Consumers must not merge this into a project implicitly.
+    story_profile_overrides: dict[str, Any] = Field(default_factory=dict)
     fragments: PromptPackFragments = Field(default_factory=PromptPackFragments)
     obligatory_scenes: list[ObligatoryScene] = Field(default_factory=list)
 
@@ -318,12 +321,24 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
         )
     ):
         return "cozy-fantasy"
+    # Explicit urban-psionic remains a power-system route.  It must run before
+    # the realistic backdrop route below because both may contain 都市/现实.
+    if any(token in label for token in ("都市异能", "异能", "超能力", "urban psionic")):
+        return "urban-power-reversal"
+    # Realistic-life fiction has its own consequence/relationship method.  A
+    # bare 现实 token describes the story driver; it must not inherit the
+    # power-reversal deck merely because the setting is urban.
+    if any(
+        token in label
+        for token in ("现实百态", "现实题材", "现实生活", "都市现实", "家庭伦理", "行业职场", "创业商战")
+    ):
+        return "realistic-life"
     # Urban power — MUST run before the generic xianxia catch-all below.
     # The catch-all matches the over-broad token "升级", which appears in
     # nearly every 爽文 (including urban). A 都市/异能 book whose generated
     # sub-genre or tone mentions 升级 (e.g. "迪化升级", "系统升级流") would
     # otherwise be hijacked to xianxia-upgrade-core. Regression: 误读成神.
-    if any(token in label for token in ("都市", "异能", "现实")):
+    if any(token in label for token in ("都市", "异能")):
         return "urban-power-reversal"
     # Romance / female-frequency (general) — also runs before the xianxia
     # catch-all, since "成长" frequently pairs with "升级" in these labels.

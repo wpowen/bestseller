@@ -136,6 +136,80 @@ def test_final_surface_still_scans_story_facts() -> None:
     }
 
 
+def test_generated_taxonomy_drift_is_removed_without_touching_story_facts() -> None:
+    """A generated market label gets deterministic field-scoped repair.
+
+    The live canary's premise stayed in an otherworld, but the commercial agent
+    appended ``职场博弈`` to trope keywords and the final tag list.  A taxonomy
+    label should not kill a whole book after an expensive conception run; remove
+    only generated labels, while leaving premise/synopsis to the strict gate.
+    """
+
+    from bestseller.services.conception import (
+        _sanitize_generated_ontology_taxonomy,
+    )
+
+    payload = {
+        "premise": "他在异世宗门里掏出手机查看任务。",
+        "tags": ["异世大陆", "职场博弈", "经营"],
+        "writing_profile": {
+            "market": {"trope_keywords": ["升级流", "职场博弈"]},
+            "style": {"taboo_topics": ["现代职场"]},
+        },
+    }
+    cleaned, removed = _sanitize_generated_ontology_taxonomy(
+        payload,
+        genre_intent_contract=_native_contract(),
+        user_intent_text="异世大陆 经营 升级流",
+    )
+
+    assert cleaned["tags"] == ["异世大陆", "经营"]
+    assert cleaned["writing_profile"]["market"]["trope_keywords"] == ["升级流"]
+    assert cleaned["writing_profile"]["style"]["taboo_topics"] == ["现代职场"]
+    assert cleaned["premise"] == payload["premise"]
+    assert {item["path"] for item in removed} == {
+        "tags",
+        "writing_profile.market.trope_keywords",
+    }
+
+
+def test_user_selected_modern_taxonomy_is_not_silently_removed() -> None:
+    from bestseller.services.conception import (
+        _sanitize_generated_ontology_taxonomy,
+    )
+
+    payload = {"tags": ["职场博弈", "经营"]}
+    cleaned, removed = _sanitize_generated_ontology_taxonomy(
+        payload,
+        genre_intent_contract=_native_contract(),
+        user_intent_text="用户明确选择职场博弈",
+    )
+
+    assert cleaned == payload
+    assert removed == []
+
+
+def test_taxonomy_sanitizer_is_wired_before_downstream_prompt_consumers() -> None:
+    import inspect
+
+    from bestseller.services import conception
+
+    source = inspect.getsource(conception.run_conception_pipeline)
+    commercial_clean = source.index(
+        '_sanitize_stage_taxonomy("commercial_brief", commercial_brief)'
+    )
+    commercial_publish = source.index('ctx["commercial_brief"] = commercial_brief')
+    market_clean = source.index('_sanitize_stage_taxonomy("market_proposal", market_proposal)')
+    finalize_prompt = source.index("finalize_user_prompt =")
+    final_clean = source.index('_sanitize_stage_taxonomy("final_result", final_result)')
+    final_log = source.index('conception_log.append({"round": 3, "agent": "project_director"')
+
+    assert commercial_clean < commercial_publish
+    assert market_clean < finalize_prompt
+    assert final_clean < final_log
+    assert '_sanitize_stage_taxonomy("post_seed_fidelity"' in source
+
+
 @pytest.mark.asyncio
 async def test_late_story_drift_gets_one_genre_native_repair(monkeypatch) -> None:
     """Copywriting may introduce drift after the early scan; repair it once."""
@@ -335,16 +409,14 @@ def test_every_ontology_call_site_applies_the_user_intent_exemption() -> None:
         for idx in range(len(source))
         if source.startswith("detect_genre_native_ontology_violations(", idx)
     ]
-    assert len(call_sites) >= 3, (
-        f"expected the known call sites, found {len(call_sites)}"
-    )
+    assert len(call_sites) >= 3, f"expected the known call sites, found {len(call_sites)}"
 
     seed_markers = ("_explicit_seed_text", "_final_seed_text", "_ontology_user_seed")
     for idx in call_sites:
         window = source[max(0, idx - 900) : idx + 1500]
         assert any(marker in window for marker in seed_markers), (
             "an ontology call site with no user-intent exemption in scope: "
-            f"...{source[max(0, idx - 120): idx + 80]!r}"
+            f"...{source[max(0, idx - 120) : idx + 80]!r}"
         )
 
 

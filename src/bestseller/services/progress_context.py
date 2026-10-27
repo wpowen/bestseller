@@ -25,14 +25,21 @@ them is always safe and never breaks the pipeline.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable, Iterator
 import contextlib
-import logging
 from contextvars import ContextVar
-from typing import Any, Callable, Iterator
+import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
+CancellationChecker = Callable[[], Awaitable[None]]
+
+
+class TaskCancelledError(asyncio.CancelledError):
+    """Control-flow exception used to stop a user-cancelled pipeline."""
 
 #: Payload key carrying the milestone/activity tier hint to the progress sink.
 #: The sink (e.g. ``WebTaskManager._push_progress``) reads this to decide whether
@@ -56,6 +63,11 @@ class ProgressEmitter:
         data.setdefault(TIER_KEY, tier)
         try:
             self._callback(stage, data)
+        except TaskCancelledError:
+            # Cancellation is pipeline control flow, not a best-effort
+            # telemetry failure.  Let the worker's terminal handler mark the
+            # task cancelled and stop subsequent model calls.
+            raise
         except Exception:  # best-effort: progress reporting must never break the pipeline
             logger.debug("progress emit failed for stage %s", stage, exc_info=True)
 
@@ -68,6 +80,9 @@ class ProgressEmitter:
 
 _AMBIENT: ContextVar[ProgressEmitter | None] = ContextVar(
     "bestseller_progress_emitter", default=None
+)
+_CANCELLATION_CHECKER: ContextVar[CancellationChecker | None] = ContextVar(
+    "bestseller_cancellation_checker", default=None
 )
 
 
@@ -105,6 +120,20 @@ def current_emitter() -> ProgressEmitter | None:
     """Return the ambient emitter, or ``None`` when nothing is bound."""
 
     return _AMBIENT.get()
+
+
+def set_cancellation_checker(checker: CancellationChecker | None) -> None:
+    """Bind the worker's durable stop check to the current async call chain."""
+
+    _CANCELLATION_CHECKER.set(checker)
+
+
+async def check_cancellation() -> None:
+    """Raise the worker's cancellation exception before a paid provider call."""
+
+    checker = _CANCELLATION_CHECKER.get()
+    if checker is not None:
+        await checker()
 
 
 def emit_activity(stage: str, payload: dict[str, Any] | None = None) -> None:

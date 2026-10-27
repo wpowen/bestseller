@@ -115,8 +115,9 @@ def test_summarize_and_evaluate_targets() -> None:
         vs_t2_win_rate_min=0.5, vs_t1_win_rate_min=0.35, min_pairs_per_tier=8
     )
     evaluation = evaluate_targets({"t2": summary}, targets)
-    # t2 passes its floor; t1 has no pairs → inconclusive but does not gate.
-    assert evaluation.passed is True
+    # t2 passes its floor; missing t1 evidence makes the overall legacy
+    # diagnostic inconclusive. One tier may not cover for the other.
+    assert evaluation.passed is False
     assert evaluation.details["t2"]["status"] == "pass"
     assert evaluation.details["t1"]["status"] == "inconclusive"
 

@@ -6,6 +6,7 @@ import pytest
 
 from bestseller.services.story_spine import (
     SPINE_FIELDS,
+    normalize_story_spine,
     render_story_spine_block,
     validate_story_spine,
 )
@@ -49,6 +50,37 @@ def test_question_must_be_interrogative() -> None:
     bad = dict(_GOOD); bad["question"] = "他会找出真凶。"
     v = validate_story_spine(bad)
     assert any("疑问句" in x for x in v)
+
+
+def test_question_without_terminal_mark_is_normalized_when_semantically_interrogative() -> None:
+    raw = dict(_GOOD)
+    raw["question"] = "一个现代物流官，真能扛住同行反噬，把废城推到天下枢城吗"
+
+    normalized = normalize_story_spine(raw, language="zh-CN")
+
+    assert normalized is not raw
+    assert normalized["question"].endswith("？")
+    assert validate_story_spine(normalized) == []
+
+
+def test_declarative_question_field_is_not_disguised_by_normalization() -> None:
+    raw = dict(_GOOD)
+    raw["question"] = "他最终会找出真凶。"
+
+    normalized = normalize_story_spine(raw, language="zh-CN")
+
+    assert normalized["question"] == raw["question"]
+    assert any("疑问句" in item for item in validate_story_spine(normalized))
+
+
+def test_embedded_question_word_does_not_turn_a_declaration_into_a_question() -> None:
+    raw = dict(_GOOD)
+    raw["question"] = "他还不知道谁是真凶。"
+
+    normalized = normalize_story_spine(raw, language="zh-CN")
+
+    assert normalized["question"] == raw["question"]
+    assert any("疑问句" in item for item in validate_story_spine(normalized))
 
 
 def test_invalid_spine_renders_empty() -> None:

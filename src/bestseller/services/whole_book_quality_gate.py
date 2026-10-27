@@ -570,12 +570,13 @@ def _emotion_quality_metrics_and_findings(
     emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None,
     ledger: Sequence[ChapterEngagementRecord],
     *,
-    cost_style: str = "standard",
+    cost_style: str | None = None,
 ) -> tuple[dict[str, object], list[WholeBookQualityFinding]]:
     chapter_numbers = [record.chapter_number for record in ledger]
     chapter_count = len(chapter_numbers)
     metrics: dict[str, object] = {"available": emotion_driven_kernel is not None}
     findings: list[WholeBookQualityFinding] = []
+    standard_cost_required = cost_style == "standard"
 
     kernel, kernel_error = _coerce_emotion_kernel(emotion_driven_kernel)
     if kernel is None:
@@ -703,7 +704,8 @@ def _emotion_quality_metrics_and_findings(
             )
         )
     if (
-        chapter_count >= 3
+        standard_cost_required
+        and chapter_count >= 3
         and cost_coverage < _EMOTION_COVERAGE_MIN
         and any(record.has_payoff for record in ledger)
     ):
@@ -739,17 +741,9 @@ def _emotion_quality_metrics_and_findings(
                 evidence=str(repeated_modes[:3] or "emotion_chain_missing"),
             )
         )
-    # A cost-free win is a defect only when the book was supposed to charge for
-    # its wins. When the reader of the create form ticked 爽文无代价 / 代价外置,
-    # cost-free wins are the product, not a fault.
-    #
-    # This is the self-harm shape this repo has hit before from the other side
-    # (a book was ordered to write a cost and then killed by a gate for having
-    # one). Repairing the generator without teaching the gate would simply
-    # invert it: the generator would correctly omit costs and this finding would
-    # then flag every chapter of a book that is doing exactly what was asked.
-    _cs = str(cost_style or "standard").strip().lower()
-    if cost_free_sources and _cs not in ("minimal", "external"):
+    # Only an explicitly supplied standard choice authorizes a missing-cost
+    # finding. Unknown, minimal and external do not require self-harm.
+    if cost_free_sources and standard_cost_required:
         findings.append(
             WholeBookQualityFinding(
                 code="emotion_cost_free_win",
@@ -787,14 +781,13 @@ def evaluate_whole_book_quality(
     volume_plan: object = None,
     rolling_window: int = 10,
     emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None = None,
-    cost_style: str = "standard",
+    cost_style: str | None = None,
 ) -> WholeBookQualityReport:
     """Whole-book structural report.
 
     ``cost_style`` carries the creation-form cost option so cost-shaped checks
-    can tell "this book failed to pay for its wins" apart from "this book was
-    explicitly asked not to charge for them". Defaulting to ``standard`` keeps
-    every existing caller byte-identical.
+    require costs only for an explicitly supplied ``standard`` choice. Omitted
+    or unknown choices do not authorize a missing-cost finding.
     """
 
     chapters = _normalize_chapter_texts(chapter_texts)

@@ -30,6 +30,7 @@ def test_gate_registry_exposes_non_quality_block_keys() -> None:
     assert "blocked_by_write_safety_gate" in keys
     assert "blocked_by_chapter_predraft_quality_gate" in keys
     assert "qimao_opening_gate_blocked" in keys
+    assert "effect_realization_blocked" in keys
 
 
 def test_qimao_exhaustion_is_not_project_terminal() -> None:
@@ -317,3 +318,95 @@ def test_production_block_code_is_read_like_write_safety_code() -> None:
     assert chapter_block_is_structural({"production_block_code": "CANON_CONTRADICTION"})
     # 无码仍保守
     assert chapter_block_is_structural({})
+
+
+def test_hook_echo_production_block_is_local_but_unknown_remains_structural() -> None:
+    """A real interrupted chapter-2 hook repair must not stop chapter 11."""
+
+    assert not chapter_block_is_structural(
+        {
+            "blocked_by_write_safety_gate": True,
+            "production_block_code": "HOOK_ECHO_MISSING",
+            "chapter_quality_debt": True,
+        }
+    )
+    assert chapter_block_is_structural(
+        {
+            "blocked_by_write_safety_gate": True,
+            "production_block_code": "UNCLASSIFIED_CANON_FAILURE",
+        }
+    )
+
+
+def test_opening_sentence_length_and_hook_combo_is_local() -> None:
+    """The real ch2 metadata has two local prose findings, not a canon break."""
+
+    assert not chapter_block_is_structural(
+        {
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "OPENING_FIRST_SENTENCE_TOO_LONG",
+            "production_block_code": "HOOK_ECHO_MISSING",
+            "chapter_quality_debt": True,
+            "auto_repair_last_block_codes": [
+                "OPENING_FIRST_SENTENCE_TOO_LONG",
+                "HOOK_ECHO_MISSING",
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize('metadata,has_draft,expected', [
+    ({'blocked_by_fanqie_long_ranking_gate': True}, True, True),
+    ({'blocked_by_fanqie_long_ranking_gate': True,
+      'chapter_quality_debt_reason': 'chapter_promotion_ineligible'}, True, True),
+    ({'chapter_quality_debt': True,
+      'chapter_quality_debt_reason': 'chapter_promotion_ineligible'}, True, False),
+    ({'blocked_by_fanqie_long_ranking_gate': True}, False, False),
+    ({}, True, False),
+    ({'blocked_by_fanqie_long_ranking_gate': True,
+      'blocked_by_material_referential_integrity_gate': True}, True, False),
+    ({'blocked_by_fanqie_long_ranking_gate': True,
+      'blocked_by_unknown_gate': True}, True, False),
+    ({'blocked_by_fanqie_long_ranking_gate': True,
+      'chapter_quality_debt_reason': 'unknown_failure'}, True, False),
+    ({'production_block_code': 'LENGTH_UNDER'}, True, True),
+    ({'production_block_code': 'LENGTH_UNDER',
+      'production_block_codes': ['CANON_CONTRADICTION']}, True, False),
+    ({'write_safety_block_code': 'LENGTH_UNDER',
+      'production_block_code': 'CANON_CONTRADICTION'}, True, False),
+    ({'blocked_by_fanqie_long_ranking_gate': True,
+      'new_blocking_codes': ['UNKNOWN_FAILURE']}, True, False),
+])
+def test_local_debt_continuation_requires_positive_local_evidence(metadata, has_draft, expected):
+    from bestseller.services.gate_registry import chapter_local_debt_allows_continuation
+    assert chapter_local_debt_allows_continuation(metadata, has_current_draft=has_draft) is expected
+
+
+@pytest.mark.parametrize('extra,expected', [
+    ({}, True),
+    ({'production_block_codes': ['CANON_CONTRADICTION']}, False),
+    ({'blocked_by_unknown_gate': True}, False),
+    ({'blocked_by_material_referential_integrity_gate': True}, False),
+])
+def test_persona_numeric_debt_is_local_but_mixed_structural_stops(extra, expected):
+    from bestseller.services.gate_registry import chapter_local_debt_allows_continuation
+    metadata = {'production_block_code': 'PERSONA_WEIGHTED_SCORE_LOW',
+        'chapter_quality_debt_reason': 'chapter_review_without_promotion', **extra}
+    assert chapter_local_debt_allows_continuation(metadata, has_current_draft=True) is expected
+
+
+@pytest.mark.parametrize('history,verified,expected', [
+    (['ENDING_HOOK_MISSING','LENGTH_UNDER','CHAPTER_LENGTH_BLOCK_LOW','PERSONA_WEIGHTED_SCORE_LOW'], True, True),
+    (['ENDING_HOOK_MISSING','CANON_CONTRADICTION'], True, False),
+    (['UNKNOWN_NEW_GATE'], True, False),
+    (['ENDING_HOOK_MISSING'], False, False),
+])
+def test_numeric_receipt_only_discounts_recognized_local_repair_history(history, verified, expected):
+    from bestseller.services.gate_registry import chapter_local_debt_allows_continuation
+    metadata = {'production_block_code': 'PERSONA_WEIGHTED_SCORE_LOW',
+        'chapter_quality_debt_reason': 'chapter_review_without_promotion',
+        'numeric_promotion_debt': {'schema': 'numeric_promotion_debt_v1'},
+        'auto_repair_last_block_codes': history,
+        'retention_retry_last_block_codes': ['PERSONA_WEIGHTED_SCORE_LOW']}
+    assert chapter_local_debt_allows_continuation(metadata, has_current_draft=True,
+        numeric_debt_binding_verified=verified) is expected

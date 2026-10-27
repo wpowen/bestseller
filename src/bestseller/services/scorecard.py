@@ -28,8 +28,9 @@ from datetime import datetime
 from itertools import pairwise
 import logging
 import math
-import statistics
 from pathlib import Path
+import statistics
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -59,6 +60,10 @@ from bestseller.services.hype_engine import (
     HypeScheme,
     HypeType,
     hype_scheme_from_dict,
+)
+from bestseller.services.quality_report_claim import (
+    graded_text_fingerprint,
+    report_grades_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -140,6 +145,16 @@ class NovelScorecard:
     # ------------------------------------------------------------------
     character_action_diversity: tuple[tuple[str, float], ...] = ()
     arc_tension_summary: Mapping[str, Any] = field(default_factory=dict)
+    # Quality reports are versioned evidence.  A report without a matching
+    # graded-text fingerprint is unknown for the current draft and must not
+    # silently become a green result in the aggregate.
+    quality_report_coverage: Mapping[str, int] = field(default_factory=dict)
+    quality_report_unknown_chapters: tuple[int, ...] = ()
+    # The shared legacy fingerprint deliberately normalizes away punctuation.
+    # Keep this limitation visible to consumers; this is not an exact-byte
+    # claim until producers persist an exact body fingerprint.
+    quality_report_binding: str = "cjk_normalized"
+    quality_score_status: str = "verified"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -175,6 +190,12 @@ class NovelScorecard:
                 for name, score in self.character_action_diversity
             },
             "arc_tension_summary": dict(self.arc_tension_summary or {}),
+            "quality_report_coverage": dict(self.quality_report_coverage or {}),
+            "quality_report_unknown_chapters": list(
+                self.quality_report_unknown_chapters
+            ),
+            "quality_report_binding": self.quality_report_binding,
+            "quality_score_status": self.quality_score_status,
         }
 
 
@@ -507,6 +528,55 @@ def _quality_report_applies_to_current_state(
     return True
 
 
+def _claim_scorecard_quality_report(
+    rows: Sequence[Any],
+    *,
+    current_draft_text: str | None,
+    current_draft_created_at: datetime | None,
+    production_state: str | None,
+) -> tuple[Any | None, str]:
+    """Select quality evidence that can be proven to describe this draft.
+
+    ``created_at`` is only a freshness hint.  The scorecard must use the
+    shared graded-text claim contract before counting a report; otherwise a
+    rejected candidate can resurrect a violation on a different current
+    draft.  Legacy rows and rows for another body are explicitly unknown.
+    """
+
+    rows = list(rows)
+    if not rows:
+        return None, "empty"
+    if current_draft_text is None:
+        return None, "no_draft"
+    current_fingerprint = graded_text_fingerprint(current_draft_text)
+    # A zero-CJK fingerprint is shared by every all-ASCII body.  It cannot
+    # establish that this report evaluated the current prose, so fail closed.
+    if int(current_fingerprint.get("chars") or 0) <= 0:
+        return None, "ambiguous_fingerprint"
+    saw_fingerprinted = False
+    saw_not_applicable = False
+    for row in rows:
+        report_json = getattr(row, "report_json", None)
+        if (report_json or {}).get("graded"):
+            saw_fingerprinted = True
+        if not report_grades_text(report_json, current_draft_text):
+            continue
+        if int((report_json or {}).get("graded", {}).get("chars") or 0) <= 0:
+            continue
+        if not _quality_report_applies_to_current_state(
+            report_created_at=getattr(row, "created_at", None),
+            current_draft_created_at=current_draft_created_at,
+            production_state=production_state,
+            blocks_write=bool(getattr(row, "blocks_write", False)),
+        ):
+            saw_not_applicable = True
+            continue
+        return row, "claimed"
+    if saw_not_applicable:
+        return None, "claimed_not_applicable"
+    return None, "no_claim" if saw_fingerprinted else "unfingerprinted"
+
+
 def _latest_audit_is_fresher(
     latest_audit_at: datetime | None,
     latest_quality_at: datetime | None,
@@ -575,6 +645,8 @@ async def compute_scorecard(
 
     chapter_numbers: list[int] = []
     current_draft_created_at_by_chapter_id: dict[UUID, datetime | None] = {}
+    current_draft_content_by_chapter_id: dict[UUID, str | None] = {}
+    chapter_number_by_id: dict[UUID, int] = {}
     production_state_by_chapter_id: dict[UUID, str] = {}
     lengths: list[int] = []
     hype_chapter_count = 0
@@ -590,6 +662,8 @@ async def compute_scorecard(
         production_state,
     ) in chapter_rows:
         current_draft_created_at_by_chapter_id[chapter_id] = current_draft_created_at
+        current_draft_content_by_chapter_id[chapter_id] = content_md
+        chapter_number_by_id[chapter_id] = int(ch_no)
         production_state_by_chapter_id[chapter_id] = (
             str(production_state) if production_state is not None else ""
         )
@@ -624,26 +698,41 @@ async def compute_scorecard(
     )
     raw_quality_rows = (await session.execute(quality_stmt)).all()
     quality_rows: list[tuple[bool, dict[str, Any], UUID]] = []
-    seen_quality_chapter_ids: set[UUID] = set()
+    quality_candidates_by_chapter_id: dict[UUID, list[Any]] = {}
+    quality_report_coverage: Counter[str] = Counter()
+    quality_report_unknown_chapters: set[int] = set()
     latest_quality_at: datetime | None = None
-    for blocks_write, report_json, chapter_id, _created_at in raw_quality_rows:
-        if not _quality_report_applies_to_current_state(
-            report_created_at=_created_at,
+    for blocks_write, report_json, chapter_id, created_at in raw_quality_rows:
+        quality_candidates_by_chapter_id.setdefault(chapter_id, []).append(
+            SimpleNamespace(
+                blocks_write=bool(blocks_write),
+                report_json=report_json,
+                chapter_id=chapter_id,
+                created_at=created_at,
+            )
+        )
+    quality_report_coverage["chapters_total"] = total_chapters
+    for chapter_id in current_draft_content_by_chapter_id:
+        selected, reason = _claim_scorecard_quality_report(
+            quality_candidates_by_chapter_id.get(chapter_id, []),
+            current_draft_text=current_draft_content_by_chapter_id.get(chapter_id),
             current_draft_created_at=current_draft_created_at_by_chapter_id.get(
                 chapter_id
             ),
             production_state=production_state_by_chapter_id.get(chapter_id),
-            blocks_write=bool(blocks_write),
-        ):
+        )
+        quality_report_coverage[reason] += 1
+        if selected is None:
+            quality_report_unknown_chapters.add(chapter_number_by_id[chapter_id])
             continue
-        if chapter_id in seen_quality_chapter_ids:
-            continue
-        seen_quality_chapter_ids.add(chapter_id)
-        if _created_at is not None and (
-            latest_quality_at is None or _created_at > latest_quality_at
+        created_at = getattr(selected, "created_at", None)
+        if created_at is not None and (
+            latest_quality_at is None or created_at > latest_quality_at
         ):
-            latest_quality_at = _created_at
-        quality_rows.append((blocks_write, report_json, chapter_id))
+            latest_quality_at = created_at
+        quality_rows.append(
+            (selected.blocks_write, selected.report_json, selected.chapter_id)
+        )
 
     blocked_chapter_ids: set[UUID] = set()
     violation_counter: Counter[str] = Counter()
@@ -988,6 +1077,11 @@ async def compute_scorecard(
         overdue_debts_count=debt_counts.get("overdue", 0),
         character_action_diversity=character_action_diversity,
         arc_tension_summary=arc_tension_summary,
+        quality_report_coverage=dict(quality_report_coverage),
+        quality_report_unknown_chapters=tuple(sorted(quality_report_unknown_chapters)),
+        quality_score_status=(
+            "provisional" if quality_report_unknown_chapters else "verified"
+        ),
     )
 
 

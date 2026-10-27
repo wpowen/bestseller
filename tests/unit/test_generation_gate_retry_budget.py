@@ -8,8 +8,6 @@ open from the other side.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from bestseller.services.retry_ledger import (
@@ -23,13 +21,13 @@ from bestseller.services.retry_ledger import (
 
 
 @pytest.mark.unit
-def test_scope_is_per_failure_mode_not_per_book() -> None:
-    """Spinning on one gate stops; reaching a different gate is progress."""
+def test_scope_is_shared_across_failure_modes_within_book() -> None:
+    """Renamed gate codes must not replenish the task's retry credit."""
 
     assert generation_gate_scope("bible_gate_failed") == generation_gate_scope(
         "bible_gate_failed:chapter=7"
     )
-    assert generation_gate_scope("bible_gate_failed") != generation_gate_scope(
+    assert generation_gate_scope("bible_gate_failed") == generation_gate_scope(
         "volume_outline_gate_failed"
     )
 
@@ -37,7 +35,7 @@ def test_scope_is_per_failure_mode_not_per_book() -> None:
 @pytest.mark.unit
 def test_unknown_reason_still_gets_a_stable_scope() -> None:
     assert generation_gate_scope(None) == generation_gate_scope("")
-    assert generation_gate_scope(None).endswith("unknown")
+    assert generation_gate_scope(None) == generation_gate_scope("bible_gate_failed")
 
 
 @pytest.mark.unit
@@ -52,13 +50,12 @@ def test_budget_reads_the_shared_env_knob(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.unit
-def test_default_budget_matches_self_heal_constant() -> None:
+def test_default_budget_matches_self_heal_constant(monkeypatch) -> None:
     """Guards against the two paths drifting apart again."""
 
     from bestseller.worker import self_heal
 
-    if "BESTSELLER_GENERATION_GATE_MAX_AUTO_RESUMES" in os.environ:
-        pytest.skip("env override active")
+    monkeypatch.delenv("BESTSELLER_GENERATION_GATE_MAX_AUTO_RESUMES", raising=False)
     assert (
         generation_gate_budget().effective_limit
         == self_heal.GENERATION_GATE_MAX_AUTO_RESUMES
@@ -98,7 +95,7 @@ def test_repeated_failures_on_one_gate_exhaust_and_stay_exhausted() -> None:
 
 
 @pytest.mark.unit
-def test_progressing_to_a_different_gate_earns_a_fresh_budget() -> None:
+def test_different_gate_does_not_reopen_exhausted_task_budget() -> None:
     budget = generation_gate_budget()
     metadata: dict[str, object] = {}
 
@@ -117,7 +114,7 @@ def test_progressing_to_a_different_gate_earns_a_fresh_budget() -> None:
     ).allowed
 
     progressed_scope = generation_gate_scope("bible_gate_failed")
-    assert evaluate_retry(
+    assert not evaluate_retry(
         load_chain(metadata, scope=progressed_scope),
         trigger=RetryTrigger.AUTO,
         budget=budget,

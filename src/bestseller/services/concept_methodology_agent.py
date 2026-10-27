@@ -20,16 +20,19 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.budget import ExecutionBudgetError
 from bestseller.services.progress_context import emit_activity, emit_milestone
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
+
+HeatSource = Literal["search", "static", "missing"]
 
 
 # ── Contract ──────────────────────────────────────────────────────────────
@@ -52,6 +55,24 @@ class ConceptMethodology(BaseModel, frozen=True):
     market_signals: list[str] = Field(default_factory=list)  # heat/static evidence
     rationale: str = ""
     source: str = "static_fallback"  # llm | static_fallback
+    # ``source`` is retained for old metadata readers.  These two fields make
+    # the provenance dimensions explicit without introducing a new envelope.
+    heat_source: HeatSource = "missing"
+    methodology_generation_source: Literal["llm", "static_fallback"] = "static_fallback"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_legacy_generation_source(cls, value: object) -> object:
+        """Preserve the generation provenance of old payloads that only had source."""
+
+        if isinstance(value, dict) and "methodology_generation_source" not in value:
+            value = dict(value)
+            value["methodology_generation_source"] = (
+                "llm"
+                if str(value.get("source") or "").startswith("llm")
+                else "static_fallback"
+            )
+        return value
 
 
 def sanitize_concept_methodology(
@@ -138,41 +159,31 @@ def sanitize_concept_methodology(
 _PROFILE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("xuanhuan-brain", ("玄幻", "仙侠", "修真", "修仙", "奇幻", "fantasy", "cultivation")),
     ("urban-high-martial", ("高武", "都市异能", "异能", "martial")),
-    ("urban-brain", ("都市", "职场", "现实", "urban", "city")),
+    ("urban-brain", ("都市", "urban", "city")),
     ("suspense-brain", ("悬疑", "推理", "探案", "惊悚", "无限", "suspense", "mystery", "thriller")),
     ("modern-romance-brain", ("言情", "恋爱", "romance", "甜宠", "虐恋", "情感", "女频")),
 )
 
+_REALISTIC_MARKERS = ("现实题材", "现实生活", "生活流", "现实", "职场")
+
 
 def _match_market_profile_key(genre: str, sub_genre: str, genre_key: str) -> str | None:
-    haystack = " ".join((genre or "", sub_genre or "", genre_key or "")).lower()
+    # A realistic/unknown label must not inherit a neighbouring profile merely
+    # because a legacy ``genre_key`` happens to contain that profile name.
+    labels = " ".join((genre or "", sub_genre or "")).lower()
+    if any(marker.lower() in labels for marker in _REALISTIC_MARKERS):
+        return None
+    haystack = labels
     for profile_key, needles in _PROFILE_KEYWORDS:
         for needle in needles:
             if needle.lower() in haystack:
                 return profile_key
+    # Only accept an explicit profile key when the semantic labels are absent.
+    # This keeps old callers that provide only a known key working while an
+    # unknown genre can never be silently classified as that key.
+    if not labels and genre_key in {key for key, _ in _PROFILE_KEYWORDS}:
+        return genre_key
     return None
-
-
-# Signals matching these markers are the very micro-trends the system prompt
-# bans as oversaturated ("卡天道/系统漏洞/规则面板/钻规则空子"). Injecting them
-# as market-heat signals — or worse, baking them into the deterministic
-# fallback's reader_promise_axis/design_axes — contradicts the
-# anti-homogenization red line, so they are filtered at the source.
-_OVERSATURATED_SIGNAL_MARKERS: tuple[str, ...] = (
-    "规则面板",
-    "系统面板",
-    "系统漏洞",
-    "规则漏洞",
-    "天道漏洞",
-    "天道bug",
-    "卡bug",
-    "钻规则",
-    "规则空子",
-)
-
-
-def _filter_oversaturated_signals(signals: list[str]) -> list[str]:
-    return [s for s in signals if not any(m in s for m in _OVERSATURATED_SIGNAL_MARKERS)]
 
 
 def _static_market_signals(*, genre: str, sub_genre: str, genre_key: str) -> list[str]:
@@ -189,12 +200,17 @@ def _static_market_signals(*, genre: str, sub_genre: str, genre_key: str) -> lis
         logger.debug("static market profile load failed for %s", profile_key, exc_info=True)
         return []
     signals: list[str] = []
-    for field in ("reader_promise", "advantage_patterns", "chapter_loop", "entry_pressure_patterns"):
+    for field in (
+        "reader_promise",
+        "advantage_patterns",
+        "chapter_loop",
+        "entry_pressure_patterns",
+    ):
         for item in payload.get(field) or []:
             text = str(item).strip()
             if text and text not in signals:
                 signals.append(text)
-    return _filter_oversaturated_signals(signals)[:10]
+    return signals[:10]
 
 
 async def _gather_market_heat(
@@ -232,7 +248,10 @@ async def _gather_market_heat(
         for hit in getattr(response, "hits", ()):  # SearchHit
             text = (getattr(hit, "title", "") or "").strip()
             snippet = (getattr(hit, "snippet", "") or "").strip()
+            source_url = (getattr(hit, "url", "") or "").strip()
             combined = f"{text}：{snippet[:80]}" if snippet else text
+            if source_url:
+                combined = f"{combined} [source_url:{source_url}]"
             if combined and combined not in signals:
                 signals.append(combined)
         return signals[:8]
@@ -270,32 +289,44 @@ def fallback_concept_methodology(
     recommended_audiences: list[str] | None = None,
     trend_keywords: list[str] | None = None,
     market_signals: list[str] | None = None,
+    heat_source: str | None = None,
 ) -> ConceptMethodology:
     """Deterministic methodology from the genre preset + static profile."""
 
     orientation = (audience_orientation or "").strip().lower()
     if orientation not in {"male", "female", "neutral"}:
         orientation = _orientation_from_audiences(recommended_audiences or [])
-    signals = _filter_oversaturated_signals(
-        list(market_signals or [])
-    ) or _static_market_signals(genre=genre, sub_genre=sub_genre, genre_key=genre_key)
+    explicit_signals = list(market_signals or [])
+    signals = explicit_signals or _static_market_signals(
+        genre=genre, sub_genre=sub_genre, genre_key=genre_key
+    )
+    resolved_heat_source = heat_source or ("static" if signals else "missing")
+    normalized_heat_source: HeatSource
+    if resolved_heat_source == "search":
+        normalized_heat_source = "search"
+    elif resolved_heat_source == "static":
+        normalized_heat_source = "static"
+    else:
+        normalized_heat_source = "missing"
     keywords = [k for k in (trend_keywords or []) if k][:6]
     mechanism_types = keywords[:4] or ["反差/反转", "信息差", "行动回报", "递进升级"]
     return ConceptMethodology(
         audience_orientation=orientation,
         mindset=f"{genre}核心爽感引擎（按题材自然生长）",
         mechanism_types=mechanism_types,
-        reader_promise_axis=(signals[0] if signals else f"{genre}读者的核心期待"),
+        reader_promise_axis=f"{genre}读者的核心期待",
         shuangdian_cadence=[
             "开篇即建立反常识/反差压力",
             "每章给一次可见回报并产生新的选择",
             "章末抛出更高一层的钩子",
         ],
-        design_axes=signals[:4] or ["压力升级", "信息揭示", "关系/实力跃迁"],
+        design_axes=["压力升级", "信息揭示", "关系/实力跃迁"],
         anti_patterns=["大段世界观开篇", "回报缺少可见结果", "套路化金手指"],
         market_signals=signals,
-        rationale="无可用模型输出，按题材趋势关键词 + 静态市场画像生成的兜底方法论。",
+        rationale="无可用模型输出，按题材关键词与可用静态观察生成的兜底方法论；不构成市场结论。",
         source="static_fallback",
+        heat_source=normalized_heat_source,
+        methodology_generation_source="static_fallback",
     )
 
 
@@ -319,7 +350,9 @@ def build_methodology_system_prompt(*, language: str = "zh") -> str:
             "Output a methodology, NOT a concrete plot. "
             "Never name a specific gimmick or borrow a source work's setting — only "
             "directions the writer must transform into an original, executable, "
-            "escalating mechanism. Respond with a single valid JSON object, no prose."
+            "escalating mechanism. Without independent evidence, do not claim a blue-ocean, "
+            "obsolete trend, platform recommendation weight, or hit status. Respond with a "
+            "single valid JSON object, no prose."
         )
     return (
         "你是网文市场分析师 + 故事方法论专家。给定题材与市场热度信号，"
@@ -333,7 +366,8 @@ def build_methodology_system_prompt(*, language: str = "zh") -> str:
         "你输出的是方法论（思维方向 + 机制类型 + 节奏轴），不是具体剧情，"
         "更不是某个固定金手指。绝不照搬任何源作品的设定或专属名词；"
         "你给的每一项都必须是写手可以在该题材里重新长出「可执行、可升级、能持续变化」"
-        "原创机制的方向。只输出一个合法 JSON 对象，不要解释。"
+        "原创机制的方向。没有独立来源时,不要声称蓝海、过时、平台推荐权重或爆款结论;"
+        "只输出一个合法 JSON 对象，不要解释。"
     )
 
 
@@ -394,6 +428,11 @@ def build_methodology_user_prompt(
         "For minimal cost style, build momentum from choices, opposition, exposure, "
         "resource movement, and relationships; do not require a recurring universal price.\n"
     )
+    reference_rule = (
+        f"当前市场信号来源标记为 {fallback.heat_source};信号和模型解释都只是未验证的参考观察,"
+        "只提供可选的提问方向,不是世界事实或硬合同;"
+        "不能把参考项写成必须存在的设定,也不能凭参考替换用户已选题材、人物或前提。\n"
+    )
     if str(language or "").startswith("en"):
         return (
             f"Genre: {genre} ({sub_genre})\n"
@@ -402,6 +441,7 @@ def build_methodology_user_prompt(
             f"Reader orientation: {orientation_label}\n\n"
             f"{ontology_rule}"
             f"{control_rule}"
+            f"{reference_rule}"
             f"Market-heat signals:\n{signals_block}\n\n"
             "Return JSON with exactly these keys (values illustrate intent):\n"
             f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -413,6 +453,7 @@ def build_methodology_user_prompt(
         f"读者取向：{orientation_label}\n\n"
         f"{ontology_rule}"
         f"{control_rule}"
+        f"{reference_rule}"
         f"市场热度信号：\n{signals_block}\n\n"
         "请输出 JSON，键固定如下（值仅示意，请替换为贴合本题材的内容）：\n"
         f"{json.dumps(schema, ensure_ascii=False, indent=2)}"
@@ -468,6 +509,8 @@ def parse_concept_methodology(
             market_signals=fallback.market_signals,
             rationale=str(data.get("rationale") or fallback.rationale).strip(),
             source="llm",
+            heat_source=fallback.heat_source,
+            methodology_generation_source="llm",
         )
     except Exception:  # pragma: no cover - validation guard
         logger.debug("concept methodology validation failed; using fallback", exc_info=True)
@@ -506,21 +549,20 @@ async def select_concept_methodology(
         "heat_search_started",
         {"genre": genre, "sub_genre": sub_genre},
     )
-    heat_signals = _filter_oversaturated_signals(
-        await _gather_market_heat(
-            settings=settings,
-            genre=genre,
-            sub_genre=sub_genre,
-            trend_keywords=trend_keywords or [],
-            search_client=search_client,
-        )
+    heat_signals = await _gather_market_heat(
+        settings=settings,
+        genre=genre,
+        sub_genre=sub_genre,
+        trend_keywords=trend_keywords or [],
+        search_client=search_client,
     )
-    heat_source = "search"
+    heat_source = "search" if heat_signals else "missing"
     if not heat_signals:
         heat_signals = _static_market_signals(
             genre=genre, sub_genre=sub_genre, genre_key=genre_key
         )
-        heat_source = "static"
+        if heat_signals:
+            heat_source = "static"
     emit_milestone(
         "heat_search_completed",
         {"count": len(heat_signals or []), "source": heat_source},
@@ -533,6 +575,7 @@ async def select_concept_methodology(
         recommended_audiences=recommended_audiences,
         trend_keywords=trend_keywords,
         market_signals=heat_signals,
+        heat_source=heat_source,
     )
     try:
         completion = await complete_text(
@@ -566,6 +609,8 @@ async def select_concept_methodology(
                 max_tokens_override=1800,
             ),
         )
+    except ExecutionBudgetError:
+        raise
     except Exception:  # pragma: no cover - LLM failure → deterministic fallback
         logger.warning("concept methodology LLM failed; using fallback", exc_info=True)
         return sanitize_concept_methodology(
@@ -606,6 +651,9 @@ def render_concept_methodology_block(
         "shuangdian_cadence": methodology.shuangdian_cadence,
         "design_axes": methodology.design_axes,
         "anti_patterns": methodology.anti_patterns,
+        "heat_source": methodology.heat_source,
+        "methodology_generation_source": methodology.methodology_generation_source,
+        "market_signals": methodology.market_signals,
     }
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     if is_en:
@@ -613,13 +661,16 @@ def render_concept_methodology_block(
             "[Concept Methodology — soft framework]\n"
             "Use this as a *direction*, not a template. Grow your own original, "
             "cost-bearing, escalating mechanisms that fit this genre and protagonist; "
-            "do NOT copy these type-words verbatim.\n"
+            "do NOT copy these type-words verbatim. Market signals and rationale are "
+            "unverified advisory observations, not world facts or market proof.\n"
             f"{body}\n"
         )
     return (
-        "【脑洞/爽点方法论 — 软框架（参考，非硬合同）】\n"
+        "【脑洞/爽点方法论 - 软框架(参考,非硬合同)】\n"
         "把它当作思维方向，而不是套路模板。请基于本题材与主角，长出你自己的"
-        "「可执行、可升级、会改变局面」的原创机制；不要照抄这些类型词，更不要稀释成普通题材说明。\n"
+        "「可执行、可升级、会改变局面」的原创机制；不要照抄这些类型词，更不要稀释成普通题材说明。"
+        f"市场信号来源标记为 {methodology.heat_source};信号和模型解释都是未验证参考,"
+        "不是世界事实或市场证明。\n"
         f"{body}\n"
     )
 

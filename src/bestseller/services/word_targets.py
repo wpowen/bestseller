@@ -97,6 +97,10 @@ def model_output_token_ceiling(model_name: str | None) -> int | None:
     """Best-known high output cap for provider/model families we tune for."""
 
     model = (model_name or "").strip().lower()
+    if model.split("/")[-1] == "minimax-m3.1-flash":
+        # Exact formal model; official max output includes thinking. Keep
+        # legacy/preview families on their existing conservative ceilings.
+        return 524288
     if "minimax-m3" in model:
         return 32768
     if "minimax-m2" in model:
@@ -230,6 +234,12 @@ def project_word_target_policy(project: Any, settings: AppSettings) -> WordTarge
     """Apply an explicit per-project chapter band when the project declares one."""
 
     base = word_target_policy(settings)
+    from bestseller.services.creation_configuration import read_configuration
+    configured = read_configuration(project)
+    if configured is not None:
+        return WordTargetPolicy(chapter_min=base.chapter_min, chapter_target=configured.book.chapter_target,
+            chapter_max=base.chapter_max, scene_min=base.scene_min, scene_target=base.scene_target,
+            scene_max=base.scene_max)
     metadata = getattr(project, "metadata_json", None)
     override = metadata.get("words_per_chapter") if isinstance(metadata, dict) else None
     if not isinstance(override, dict):
@@ -293,6 +303,10 @@ def project_average_chapter_words(project: Any) -> int | None:
 def effective_chapter_word_target(project: Any, settings: AppSettings) -> int:
     """Resolve the chapter target that planning, writing, and gates should share."""
 
+    from bestseller.services.creation_configuration import read_configuration
+    configured = read_configuration(project)
+    if configured is not None:
+        return configured.book.chapter_target
     policy = project_word_target_policy(project, settings)
     floor_safe = _floor_safe_chapter_target(policy)
     project_average = project_average_chapter_words(project)
@@ -303,6 +317,10 @@ def effective_chapter_word_target(project: Any, settings: AppSettings) -> int:
 
 
 def normalize_chapter_word_target(raw_target: Any, project: Any, settings: AppSettings) -> int:
+    from bestseller.services.creation_configuration import read_configuration
+    configured = read_configuration(project)
+    if configured is not None:
+        return configured.book.chapter_target
     policy = project_word_target_policy(project, settings)
     floor_safe = _floor_safe_chapter_target(policy)
     parsed = _positive_int(raw_target)

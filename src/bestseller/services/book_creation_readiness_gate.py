@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bestseller.domain.gate_verdict import AggregateGateReport, GateFinding, GateVerdict
+from bestseller.services.planning_capability_selection import (
+    CAPABILITIES,
+    resolve_planning_capability,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,9 +28,7 @@ class BookCreationReadinessThresholds:
             "require_category_key": self.require_category_key,
             "require_story_design_grammar_key": self.require_story_design_grammar_key,
             "require_distilled_strategy_card": self.require_distilled_strategy_card,
-            "min_distilled_strategy_maturity_score": (
-                self.min_distilled_strategy_maturity_score
-            ),
+            "min_distilled_strategy_maturity_score": (self.min_distilled_strategy_maturity_score),
             "require_story_design_kernel_valid": self.require_story_design_kernel_valid,
             "require_volume_plan_passed": self.require_volume_plan_passed,
             "require_prewrite_passed": self.require_prewrite_passed,
@@ -138,9 +140,7 @@ class BookCreationReadinessReport:
             "passed": self.passed,
             "readiness_level": self.readiness_level,
             "aggregate_gate_report": self.aggregate_gate_report.model_dump(mode="json"),
-            "domain_statuses": [
-                domain_status.to_dict() for domain_status in self.domain_statuses
-            ],
+            "domain_statuses": [domain_status.to_dict() for domain_status in self.domain_statuses],
             "findings": [finding.to_dict() for finding in self.findings],
             "blocking_issue_codes": [
                 finding.code for finding in self.findings if finding.severity == "critical"
@@ -163,15 +163,21 @@ def evaluate_book_creation_readiness(
     forward_state_report: Mapping[str, Any] | None = None,
     reveal_alignment_report: Mapping[str, Any] | None = None,
     thresholds: BookCreationReadinessThresholds | None = None,
+    project: object | None = None,
 ) -> BookCreationReadinessReport:
     thresholds = thresholds or BookCreationReadinessThresholds()
     metadata = _as_mapping(project_metadata)
     strict = _is_strict(metadata)
+    selections = {key: resolve_planning_capability(metadata, key) for key in CAPABILITIES}
+    story_selected = selections["story_design_kernel"]["selected"]
+    planning_report_applicable = _planning_report_applicable(planning_kernel_report, selections)
 
     project_findings = _evaluate_project_identity(
         metadata,
         strict=strict,
         thresholds=thresholds,
+        project=project,
+        story_design_selected=story_selected,
     )
     planning_findings = _evaluate_planning_assets(
         target_chapters=target_chapters,
@@ -179,6 +185,8 @@ def evaluate_book_creation_readiness(
         story_design_kernel=story_design_kernel,
         planning_kernel_report=planning_kernel_report,
         thresholds=thresholds,
+        story_design_selected=story_selected,
+        planning_report_applicable=planning_report_applicable,
     )
     outline_findings = _evaluate_outline_assets(
         volume_plan_report=volume_plan_report,
@@ -195,10 +203,12 @@ def evaluate_book_creation_readiness(
             {
                 "strict": strict,
                 "category_key": str(metadata.get("category_key") or ""),
-                "story_design_grammar_key": str(
-                    metadata.get("story_design_grammar_key") or ""
+                "story_design_grammar_key": str(metadata.get("story_design_grammar_key") or ""),
+                "distilled_strategy_expected": _distilled_expected(
+                    metadata,
+                    strict,
+                    project=project,
                 ),
-                "distilled_strategy_expected": _distilled_expected(metadata, strict),
             },
         ),
         _domain_status(
@@ -209,8 +219,16 @@ def evaluate_book_creation_readiness(
                 "planned_chapters": planned_chapters,
                 "story_design_kernel_valid": _story_design_valid(
                     story_design_kernel, planning_kernel_report
-                ),
-                "planning_kernel_passed": _report_passed(planning_kernel_report),
+                )
+                if story_selected
+                else None,
+                "planning_capabilities": selections,
+                "planning_kernel_passed": _report_passed(planning_kernel_report)
+                if planning_report_applicable
+                else None,
+                "planning_kernel_report_status": "applicable"
+                if planning_report_applicable
+                else "not_applicable_unselected_capabilities_only",
             },
         ),
         _domain_status(
@@ -224,9 +242,7 @@ def evaluate_book_creation_readiness(
             },
         ),
     )
-    findings = tuple(
-        finding for status in domain_statuses for finding in status.findings
-    )
+    findings = tuple(finding for status in domain_statuses for finding in status.findings)
     return BookCreationReadinessReport(
         slug=project_slug,
         domain_statuses=domain_statuses,
@@ -237,6 +253,7 @@ def evaluate_book_creation_readiness(
             "planned_chapters": planned_chapters,
             "category_key": str(metadata.get("category_key") or ""),
             "story_design_grammar_key": str(metadata.get("story_design_grammar_key") or ""),
+            "planning_capabilities": selections,
         },
         thresholds=thresholds,
     )
@@ -247,6 +264,8 @@ def _evaluate_project_identity(
     *,
     strict: bool,
     thresholds: BookCreationReadinessThresholds,
+    project: object | None = None,
+    story_design_selected: bool = False,
 ) -> list[BookCreationReadinessFinding]:
     findings: list[BookCreationReadinessFinding] = []
     category_key = str(metadata.get("category_key") or "").strip()
@@ -263,14 +282,17 @@ def _evaluate_project_identity(
                 repair_action="Resolve novel category and persist project metadata.",
             )
         )
-    if strict and thresholds.require_story_design_grammar_key and not grammar_key:
+    if (
+        story_design_selected
+        and strict
+        and thresholds.require_story_design_grammar_key
+        and not grammar_key
+    ):
         findings.append(
             _finding(
                 code="story_design_grammar_key_missing",
                 domain="project_identity",
-                message=(
-                    "Strict projects require a story design grammar key before writing."
-                ),
+                message=("Strict projects require a story design grammar key before writing."),
                 path="project.metadata.story_design_grammar_key",
                 expected="non-empty grammar key",
                 actual=grammar_key,
@@ -278,10 +300,40 @@ def _evaluate_project_identity(
             )
         )
 
-    strategy_card = _as_mapping(metadata.get("distilled_strategy_card"))
+    from bestseller.services.character_intelligence.strategy import (
+        AdoptedReferenceUnavailable,
+        reference_projection_required,
+        required_reference_projection,
+    )
+
+    for key in ("distilled_strategy_card", "character_strategy"):
+        try:
+            required_reference_projection(metadata, key, project=project)
+        except AdoptedReferenceUnavailable as exc:
+            findings.append(
+                _finding(
+                    code=exc.code,
+                    domain="project_identity",
+                    message=str(exc),
+                    path=f"project.metadata.{key}",
+                    repair_action="Restore the adopted source or explicitly revise the author adoption.",
+                )
+            )
+    if not reference_projection_required(project, "distilled_strategy_card"):
+        return findings
+    try:
+        strategy_card = _as_mapping(
+            required_reference_projection(
+                metadata,
+                "distilled_strategy_card",
+                project=project,
+            )
+        )
+    except AdoptedReferenceUnavailable:
+        return findings
     if (
         thresholds.require_distilled_strategy_card
-        and _distilled_expected(metadata, strict)
+        and _distilled_expected(metadata, strict, project=project)
         and not strategy_card
     ):
         findings.append(
@@ -293,8 +345,7 @@ def _evaluate_project_identity(
                 expected="compiled strategy card",
                 actual=None,
                 repair_action=(
-                    "Compile a project-specific distilled strategy card for the "
-                    "resolved category."
+                    "Compile a project-specific distilled strategy card for the resolved category."
                 ),
             )
         )
@@ -312,8 +363,7 @@ def _evaluate_project_identity(
                     message="Distilled strategy card is below the strict readiness bar.",
                     path="project.metadata.distilled_strategy_card.maturity",
                     expected=(
-                        f">={thresholds.min_distilled_strategy_maturity_score} "
-                        "and not unsafe"
+                        f">={thresholds.min_distilled_strategy_maturity_score} and not unsafe"
                     ),
                     actual={"maturity_status": status, "maturity_score": score},
                     repair_action=(
@@ -332,6 +382,8 @@ def _evaluate_planning_assets(
     story_design_kernel: Mapping[str, Any] | None,
     planning_kernel_report: Mapping[str, Any] | None,
     thresholds: BookCreationReadinessThresholds,
+    story_design_selected: bool = False,
+    planning_report_applicable: bool = True,
 ) -> list[BookCreationReadinessFinding]:
     findings: list[BookCreationReadinessFinding] = []
     if target_chapters <= 0:
@@ -359,7 +411,8 @@ def _evaluate_planning_assets(
             )
         )
     if (
-        thresholds.require_story_design_kernel_valid
+        story_design_selected
+        and thresholds.require_story_design_kernel_valid
         and _story_design_valid(story_design_kernel, planning_kernel_report) is not True
     ):
         findings.append(
@@ -373,7 +426,11 @@ def _evaluate_planning_assets(
                 repair_action="Materialize and validate StoryDesignKernel before writing.",
             )
         )
-    if planning_kernel_report is not None and _report_passed(planning_kernel_report) is False:
+    if (
+        planning_report_applicable
+        and planning_kernel_report is not None
+        and _report_passed(planning_kernel_report) is False
+    ):
         findings.append(
             _finding(
                 code="planning_kernel_not_passed",
@@ -504,15 +561,54 @@ def _is_strict(metadata: Mapping[str, Any]) -> bool:
     return mode == "strict" or metadata.get("methodology_contract_strict") is True
 
 
-def _distilled_expected(metadata: Mapping[str, Any], strict: bool) -> bool:
+def _distilled_expected(
+    metadata: Mapping[str, Any],
+    strict: bool,
+    *,
+    project: object | None = None,
+) -> bool:
     # Distillation is an optional external reference capability, not project
     # truth.  Strict story planning must never make an unavailable or unsafe
     # aggregate mandatory merely because the book has a category.  Only an
-    # explicitly enabled or already materialized card participates in gates.
-    return bool(
-        metadata.get("distilled_strategy_expected")
-        or metadata.get("distilled_strategy_card")
-        or metadata.get("distilled_strategy_blocks")
+    # explicit author adoption can require its consumption.
+    from bestseller.services.character_intelligence.strategy import reference_projection_required
+
+    return reference_projection_required(project, "distilled_strategy_card")
+
+
+def _planning_report_applicable(
+    report: Mapping[str, Any] | None,
+    selections: Mapping[str, Any],
+) -> bool:
+    """Only a fully enumerated optional-only failure can become inapplicable.
+
+    Keep aggregate/unknown failures and every unrelated hard finding blocking.
+    This does not manufacture a new passed report or alter retained evidence.
+    """
+    data = _as_mapping(report)
+    if data.get("passed") is not False:
+        return True
+    if any(not isinstance(data.get(key, []), list) for key in ("blocking_findings", "warnings")):
+        return True
+    findings = [*data.get("blocking_findings", []), *data.get("warnings", [])]
+    optional_codes = {
+        "story_design_kernel_missing": "story_design_kernel",
+        "story_design_contract_invalid": "story_design_kernel",
+        "story_design_contract_thin": "story_design_kernel",
+        "emotion_driven_kernel_missing": "emotion_driven_kernel",
+        "empathy_contract_missing": "emotion_driven_kernel",
+        "bomb_contract_not_consumed": "emotion_driven_kernel",
+        "antagonist_moral_contract_thin": "emotion_driven_kernel",
+        "ending_texture_missing": "emotion_driven_kernel",
+        "public_emotion_kernel_missing": "public_emotion_kernel",
+        "public_emotion_bridge_missing": "public_emotion_kernel",
+        "entry_system_kernel_invalid": "entry_system_kernel",
+    }
+    return not findings or not all(
+        isinstance(item, Mapping)
+        and item.get("code") in optional_codes
+        and not selections[optional_codes[item["code"]]]["selected"]
+        for item in findings
     )
 
 

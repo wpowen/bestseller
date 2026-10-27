@@ -1,0 +1,48 @@
+"""Lossless current-chapter task channel from a verified approved prefix."""
+from copy import deepcopy
+from uuid import UUID
+import json
+from bestseller.infra.db.models import PlanningArtifactVersionModel
+from bestseller.services.prompt_compiler import PromptBlock,PromptProvenance
+from bestseller.services.prompt_source_policy import content_hash
+
+
+def delivery_block(*,project_id,chapter_id,chapter_number,artifact_id,approved,receipt):
+    if approved.get('chapter_number')!=chapter_number or chapter_number not in receipt['chapter_numbers']:
+        raise ValueError('chapter_writer_delivery_scope_changed')
+    keys=('scene_number','participants','entry_state','exit_state','action_sequence',
+        'forbidden_actions','hook_requirement','concrete_goal','information_introduced','information_held_back','target_word_count')
+    scenes=[{key:deepcopy(row[key]) for key in keys if key in row and row[key] is not None}
+        for row in approved['scenes']]
+    payload={'schema':'approved-current-chapter-delivery.v1','project_id':str(project_id),
+        'chapter_id':str(chapter_id),'chapter_number':chapter_number,'artifact_id':str(artifact_id),
+        'approved_chapter_sha256':content_hash(approved),'readiness_receipt_sha256':content_hash(receipt),
+        'authority':'Approved future task for this chapter, not already occurred history.', 'scenes':scenes}
+    if approved.get('target_word_count') is not None:
+        payload['chapter_target_word_count_reference']=deepcopy(approved['target_word_count'])
+    instruction=('【本章已批准的完整推进任务·不可截断】\n'
+        '上一章正文与尾段只用于核对既成事实和入场状态，不能复制为本章正文；不得把已发生的对话、发现或动作重新演一遍。'
+        '本章新增事件及结果只从以下本章已批准任务展开；入场状态已成立，动作序列尚待执行，完整出场状态必须在本章落地。'
+        '用新的现场叙述完成任务，不机械替换上一章词语；保留任务中的限定、否定、先后顺序与必要原句。'
+        '这些计划不授权撤销历史，也不构成角色已经知道全部信息的证据；入场措辞与已核验前文冲突时，以前文为准，保留规划偏差。'
+        '篇幅按本章已明确的总目标和范围执行；已有场景目标只作展开篇幅参考，不是新增逐场硬配额，也不要求平均。'
+        '中文按汉字逐字计数，连续英文或数字词组按词计数，标点、空白与Markdown标记不计；不要把含标点总字符数当有效字数。'
+        '用必要现场行动、选择与后果完成任务，未达已明确下限前不得提前收束成摘要；不复述、堆环境或把一个动作切成瞬间凑字。\n')
+    return PromptBlock(key='chapter_first.approved_current_delivery',channel='user',layer='scene_spec',
+        authority=90,instruction_family='writer.current_chapter.delivery',required=True,trim_policy='preserve',
+        source='chapter_writer_delivery.v1',text=instruction+json.dumps(payload,ensure_ascii=False,separators=(',',':')),
+        provenance=PromptProvenance(kind='scene_spec',source_id=str(artifact_id),source_hash=content_hash(approved),
+            field_paths=tuple('/scenes/'+str(i)+'/'+key for i,row in enumerate(approved['scenes']) for key in keys if key in row)))
+
+
+async def load_delivery_blocks(session,settings,*,project,chapter,scenes):
+    marker=(chapter.metadata_json or {}).get('outline_prefix_readiness')
+    if marker is None:return []
+    from bestseller.services.chapter_outline_readiness import verify_outline_prefix_readiness
+    receipt=await verify_outline_prefix_readiness(session,project=project,artifact_id=UUID(marker['artifact_id']),
+        chapter=chapter,scenes=scenes,settings=settings)
+    artifact=await session.get(PlanningArtifactVersionModel,UUID(marker['artifact_id']))
+    matches=[row for row in artifact.content['chapters'] if row['chapter_number']==chapter.chapter_number]
+    if len(matches)!=1:raise ValueError('chapter_writer_delivery_approved_chapter_missing')
+    return [delivery_block(project_id=project.id,chapter_id=chapter.id,chapter_number=chapter.chapter_number,
+        artifact_id=artifact.id,approved=matches[0],receipt=receipt)]

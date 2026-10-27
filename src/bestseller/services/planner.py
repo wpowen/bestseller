@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from bestseller.services.invariants import project_invariants_from_row
+
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -9,6 +11,7 @@ import json
 import logging
 import math
 from pathlib import Path
+from bestseller.services.prompt_source_policy import outline_dependency_hash, content_hash, valid_reference_value
 import re
 from typing import Any
 from uuid import UUID
@@ -27,6 +30,7 @@ from bestseller.domain.planning import (
 from bestseller.domain.story_bible import (
     is_safe_character_role_label,
     normalize_character_age,
+    normalize_character_gender,
     normalize_character_role_label,
 )
 from bestseller.infra.db.models import (
@@ -80,6 +84,7 @@ from bestseller.services.entry_system_kernel import (
 from bestseller.services.hook_ledger_runtime import render_hook_ledger_planner_contract
 from bestseller.services.payoff_ledger_runtime import render_payoff_ledger_planner_contract
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.word_targets import resolve_llm_role_max_tokens
 from bestseller.services.methodology_compiler import MethodologyStage
 from bestseller.services.planner_prompt_helpers import attach_planner_methodology
 from bestseller.services.novel_categories import (
@@ -136,7 +141,9 @@ from bestseller.services.story_bible import (
 )
 from bestseller.services.narrative_contracts import (
     IDENTITY_POLICY_VERSION,
+    is_framework_scene_emotion_placeholder,
     repair_commercial_zh_identity_policy,
+    strip_framework_effect_landing_labels,
     validate_commercial_zh_identity_policy,
 )
 from bestseller.services.story_design_grammars import (
@@ -160,7 +167,7 @@ from bestseller.services.story_enhancers import (
     audit_story_enhancer_coverage,
     render_story_enhancer_contract_block,
     resolve_cost_style,
-    resolve_story_enhancers,
+    resolve_explicit_story_enhancers,
     story_enhancer_repair_directives,
 )
 from bestseller.services.brainhole_engine import BRAINHOLE_PROFILE_METADATA_KEY
@@ -205,10 +212,19 @@ from bestseller.settings import AppSettings, get_settings
 from bestseller.services.progress_context import emit_activity, emit_milestone
 
 logger = logging.getLogger(__name__)
+_STRUCTURED_FUNCTION_SUFFIX = (
+    "\nIf the provider offers the supplied structured function, prefer exactly one call to that function; "
+    "otherwise return one complete strict JSON object. Do not emit both formats.\n"
+)
+
 
 
 def _methodology_stage_for_planner_artifact(logical_name: str) -> MethodologyStage | None:
     name = logical_name.lower()
+    # These prompts already carry an approved-source contract. A generic
+    # whole-book pack can introduce a different engine into a narrow asset edit.
+    if name in {"world_spec_source_bound_expansion", "cast_spec_source_bound_expansion"}:
+        return None
     if "chapter_outline" in name or "prewrite" in name:
         return MethodologyStage.OUTLINE_CHAPTER
     if any(token in name for token in ("volume", "act", "world_disclosure")):
@@ -232,6 +248,14 @@ class PlannerFallbackError(RuntimeError):
 
 class OutlineBatchShrinkRequired(PlannerFallbackError):
     """Raised when a strict outline batch must be split before retrying."""
+
+
+class OutlineContractValidationError(PlannerFallbackError):
+    """A real deterministic contract report, preserved for bounded repair."""
+
+    def __init__(self, message: str, *, report: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.report = copy.deepcopy(report)
 
 
 class OutlineEventDuplicationError(PlannerFallbackError):
@@ -415,29 +439,8 @@ def _story_package_candidate_paths(project: ProjectModel) -> list[Path]:
 
 
 def _load_story_package_seed(project: ProjectModel) -> dict[str, Any]:
-    for path in _story_package_candidate_paths(project):
-        if not path.is_file():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        return {
-            "path": str(path),
-            "book": data.get("book") if isinstance(data.get("book"), dict) else {},
-            "reader_desire_map": data.get("reader_desire_map")
-            if isinstance(data.get("reader_desire_map"), dict)
-            else {},
-            "story_bible": data.get("story_bible")
-            if isinstance(data.get("story_bible"), dict)
-            else {},
-            "route_graph": data.get("route_graph")
-            if isinstance(data.get("route_graph"), dict)
-            else {},
-        }
-    return {}
+    from bestseller.services.prompt_source_policy import load_adopted_story_package
+    return load_adopted_story_package(project)
 
 
 def _story_package_prompt_block(project: ProjectModel, *, language: str | None = None) -> str:
@@ -498,20 +501,20 @@ def _trim_distilled_reference_part(text: str, *, max_chars: int) -> str:
 def _distilled_design_reference_block(project: ProjectModel, phase: str) -> str:
     """Return a pre-rendered distilled mature-fiction design block for a phase."""
 
-    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    from bestseller.services.prompt_source_policy import valid_reference_value
     parts: list[str] = []
     max_chars = _DISTILLED_REFERENCE_PHASE_CHAR_BUDGETS.get(phase, 2400)
-    strategy_blocks = metadata.get("distilled_strategy_blocks")
+    strategy_blocks = valid_reference_value(project, "distilled_strategy_blocks")
     if isinstance(strategy_blocks, dict):
         strategy_block = strategy_blocks.get(phase)
         if isinstance(strategy_block, str) and strategy_block.strip():
             parts.append(strategy_block.strip())
-    blocks = metadata.get("distilled_design_reference_blocks")
+    blocks = valid_reference_value(project, "distilled_design_reference_blocks")
     if isinstance(blocks, dict):
         block = blocks.get(phase)
         if isinstance(block, str) and block.strip():
             parts.append(block.strip())
-    block = metadata.get("distilled_design_reference_block")
+    block = valid_reference_value(project, "distilled_design_reference_block")
     if phase == "architecture" and isinstance(block, str) and block.strip():
         parts.append(block.strip())
     if parts:
@@ -812,6 +815,112 @@ def _extract_json_payload(text: str) -> Any:
     raise ValueError("Planner output does not contain valid JSON.")
 
 
+def _extract_strict_json_payload(text: str) -> Any:
+    """Parse bounded source-bound expansions without lossy JSON repair.
+
+    These payloads contain role-indexed records. Repairing malformed JSON can
+    silently splice one character into another, so only a complete JSON object
+    (optionally wrapped in a markdown fence) is accepted; the normal bounded
+    retry loop supplies the recovery path.
+    """
+
+    unfenced = _strip_markdown_fences(str(text or "").strip())
+    if not unfenced:
+        raise ValueError("Planner returned empty content.")
+    payload = json.loads(unfenced)
+    if not isinstance(payload, Mapping):
+        raise ValueError("Source-bound expansion must be a JSON object.")
+    return payload
+
+
+def _source_bound_structured_output_tool(logical_name: str) -> dict[str, Any] | None:
+    """Return a narrow optional function schema for the two source-bound artifacts."""
+
+    if logical_name == "cast_spec_source_bound_identity_completion":
+        name = "source_bound_identity_completion"
+        parameters = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "protagonist": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "name": {"type": "string"},
+                        "gender": {"type": "string", "enum": ["male", "female", "nonbinary", "unknown"]},
+                        "identity_evidence_quote_id": {"type": "string"},
+                    },
+                    "required": ["name", "gender", "identity_evidence_quote_id"],
+                }
+            },
+            "required": ["protagonist"],
+        }
+    elif logical_name == "cast_spec_source_bound_expansion":
+        name = "source_bound_cast_expansion"
+        person = {
+            "type": "object",
+            # Optional CastSpec person fields remain governed by the existing
+            # parser/validator; the tool schema must not force voice/psychology.
+            "additionalProperties": True,
+            "properties": {
+                "name": {"type": "string"},
+                "gender": {"type": "string"},
+                "pronoun_set_zh": {"type": "string"},
+                "pronoun_set_en": {"type": "string"},
+                "identity_evidence_quote_id": {"type": "string"},
+            },
+            "required": ["name"],
+        }
+        parameters = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "protagonist": person,
+                "antagonist": {**person, "type": "object"},
+                "supporting_cast": {"type": "array", "items": person},
+                "conflict_map": {"type": "array", "items": {"type": "object"}},
+            },
+        }
+    else:
+        return None
+    return {"type": "function", "function": {"name": name, "parameters": parameters}}
+
+
+def _extract_source_bound_structured_payload(completion: Any, logical_name: str) -> tuple[Any, str]:
+    """Prefer one exact tool call; retain strict text JSON compatibility."""
+
+    calls = getattr(completion, "tool_calls", None)
+    tool = _source_bound_structured_output_tool(logical_name)
+    if calls:
+        if tool is None or len(calls) != 1:
+            raise ValueError("Source-bound structured output must contain exactly one target tool call")
+        call = calls[0] if isinstance(calls[0], Mapping) else {}
+        function = _mapping(call.get("function"))
+        expected = _mapping(tool.get("function")).get("name")
+        if call.get("type", "function") != "function" or function.get("name") != expected:
+            raise ValueError(f"Source-bound structured output used the wrong function; expected {expected}")
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str) or not arguments.strip():
+            raise ValueError("Source-bound structured output tool arguments must be non-empty JSON")
+        payload = json.loads(arguments)
+        if not isinstance(payload, dict):
+            raise ValueError("Source-bound structured output tool arguments must be a JSON object")
+        return payload, "tool_call"
+    return _extract_strict_json_payload(str(getattr(completion, "content", "") or "")), "text_json"
+
+
+def _planner_completion_failure_content(completion: Any) -> str:
+    """Persist tool arguments too when providers leave assistant content empty."""
+
+    content = str(getattr(completion, "content", "") or "")
+    if content.strip():
+        return content
+    calls = getattr(completion, "tool_calls", None)
+    if calls:
+        return _json_dumps({"tool_calls": calls})
+    return content
+
+
 def _persist_failing_planner_output(
     *,
     project: ProjectModel,
@@ -871,20 +980,15 @@ def _persist_failing_planner_output(
 
 
 def _planner_length_retry_prompt(user_prompt: str, logical_name: str) -> str:
+    # A truncated response changes output packaging, not story scope or roster.
     compact_contract = (
         "\n\n[STRICT RETRY AFTER TRUNCATED OUTPUT]\n"
-        "The previous response hit the output token limit. Regenerate a compact, complete JSON object only. "
-        "Do not include optional empty/null-heavy subobjects. Keep every free-text field to one concise sentence. "
-        "Prefer fewer, sharper entries over exhaustive lists. The JSON must close cleanly."
+        "The previous response hit the output token limit. Return one complete JSON asset "
+        "matching the original current output contract and root type. Keep every required "
+        "field, character, volume and delivery item. Use concise field wording without "
+        "inventing values, reducing source requirements or imposing a new roster/template. "
+        "The JSON must close cleanly."
     )
-    if logical_name == "cast_spec":
-        compact_contract += (
-            "\nFor CastSpec specifically: output protagonist, one primary antagonist, "
-            "2 antagonist_forces, 3-4 supporting_cast entries, and a compact conflict_map. "
-            "For each character include only plot function, goal/desire, flaw, voice_profile, "
-            "moral_framework, relationships, gender, pronoun_set_zh, pronoun_set_en, and name_reasoning. "
-            "Do not emit large psych_profile/life_history/social_network/family_imprint objects unless they contain concrete story-useful values."
-        )
     return f"{user_prompt.rstrip()}{compact_contract}"
 
 
@@ -975,18 +1079,9 @@ def _planner_title_text(value: Any, *, max_chars: int = 1200) -> str:
     return text[:max_chars]
 
 
-def _extract_planning_title_terms(text: str, markers: tuple[str, ...]) -> list[str]:
-    found: list[str] = []
-    for marker in markers:
-        if marker in text and marker not in found:
-            found.append(marker)
-    return found[:8]
-
-
 def _extract_title_identity_from_planning(
     premise: str,
     cast_spec_payload: Any,
-    story_text: str,
 ) -> str:
     cast = _mapping(cast_spec_payload)
     protagonist = _mapping(cast.get("protagonist"))
@@ -994,22 +1089,15 @@ def _extract_title_identity_from_planning(
         text = _non_empty_string(protagonist.get(key), "")
         if text and text != "protagonist":
             return text
-    for pattern in (
-        r"「([^」]{2,12}(?:验房师|师|官|员|士|客|者))」",
-        r"([\u4e00-\u9fff]{2,12}(?:验房师|风水师|炼丹师|剑修|法医|捕头|秘书|神医|道士|执照))",
-    ):
-        match = re.search(pattern, premise)
-        if match:
-            return match.group(1).strip()
-    cast_text = _planner_title_text(cast_spec_payload, max_chars=1600)
-    for pattern in (
-        r'"identity"\s*:\s*"([^"]{2,24})"',
-        r'"role"\s*:\s*"([^"]{2,24})"',
-    ):
-        match = re.search(pattern, cast_text)
-        if match:
-            return match.group(1).strip()
-    match = re.search(r"([\u4e00-\u9fff]{2,12}(?:师|官|员|士|客|者))", story_text)
+    # Only infer an occupation from the protagonist's opening sentence. A
+    # profession suffix anywhere in serialized cast data can belong to a pupil
+    # or even a rule ("未出师"), not to the protagonist.
+    opening = re.split(r"[。！？]", premise, maxsplit=1)[0]
+    match = re.search(
+        r"(?:从事|干了|做了)(?:[零一二三四五六七八九十百两0-9]+年)?"
+        r"([^，,。；;]{2,12})(?=[，,。；;]|$)",
+        opening,
+    )
     return match.group(1).strip() if match else ""
 
 
@@ -1045,64 +1133,47 @@ def _build_story_grounded_title_profile(
     market = _mapping(writing_profile.get("market"))
     volume_plan = _mapping_list(volume_plan_payload)
     first_volume = volume_plan[0] if volume_plan else {}
-    story_text = " ".join(
-        filter(
-            None,
-            [
-                premise,
-                _planner_title_text(book_spec_payload, max_chars=700),
-                _planner_title_text(story_design_payload, max_chars=900),
-                _planner_title_text(first_volume, max_chars=900),
-                _planner_title_text(prewrite_payload, max_chars=500),
-            ],
-        )
-    )
     protagonist = _extract_title_protagonist(cast_spec_payload, premise)
     identity = _extract_title_identity_from_planning(
-        premise, cast_spec_payload, story_text
+        premise, cast_spec_payload
     )
-    action_terms = _extract_planning_title_terms(
-        story_text,
-        (
-            "签出",
-            "签发",
-            "强制复检",
-            "双人交叉验房",
-            "指出违规",
-            "钉死",
-            "倒查",
-            "触发复检",
-            "写进现场笔记",
-            "条款反杀",
-        ),
+    from bestseller.services.hook_strength_gate import premise_anchor_groups
+    from bestseller.services.title_tournament import extract_title_entities
+
+    hook = _mapping(metadata.get("hook_card"))
+    central_action = _non_empty_string(hook.get("story_motion"), "") or str(
+        first_volume.get("volume_goal") or ""
     )
-    object_terms = _extract_planning_title_terms(
-        story_text,
-        (
-            "验房报告",
-            "终版报告",
-            "现场笔记",
-            "岗位说明书",
-            "豁免清单",
-            "合规台账",
-            "执照扣分",
-            "48小时",
-            "写字楼",
-        ),
+    conflict = _non_empty_string(hook.get("central_contradiction"), "") or str(
+        first_volume.get("volume_obstacle") or ""
     )
-    stakes_terms = _extract_planning_title_terms(
-        story_text,
-        (
-            "执照扣分",
-            "吊销线",
-            "冷门岗位",
-            "职业边界",
-            "越权",
-            "曝光度",
-            "存续审查",
-            "签约前",
-        ),
+    stakes = _non_empty_string(hook.get("emotional_promise"), "") or str(
+        _mapping(first_volume.get("volume_resolution")).get("cost_paid") or ""
     )
+    derived = premise_anchor_groups({
+        "premise": premise,
+        "story_title_dna": {
+            "protagonist": protagonist,
+            "identity": identity,
+            "central_action": central_action,
+            "conflict": conflict,
+            "stakes": stakes,
+        },
+    })
+    entities = extract_title_entities(
+        protagonist_name=protagonist,
+        logline=hook.get("one_liner") or premise,
+        premise=premise,
+    )
+    # Mechanism extraction includes named tools/accounts. Keep those in the
+    # object group, never duplicate nouns into action slots.
+    object_terms = list(dict.fromkeys([
+        *derived.get("mechanism", []), entities.object_name, entities.place,
+    ]))
+    object_terms = [term for term in object_terms if 2 <= len(term) <= 12]
+    action_terms = [central_action] if 2 <= len(central_action) <= 12 else []
+    object_terms = [term for term in object_terms if term not in action_terms]
+    stakes_terms = derived.get("pressure", [])
     return {
         "language": project.language or "zh-CN",
         "primary_title": project.title,
@@ -1125,15 +1196,15 @@ def _build_story_grounded_title_profile(
             or str(market.get("logline") or "").strip()
             or premise
         ),
+        "premise": premise,
         "reader_promise": market.get("reader_promise") or "",
         "story_title_dna": {
             "protagonist": protagonist,
             "identity": identity,
             "opening": premise,
-            "central_action": first_volume.get("volume_goal") or "",
-            "conflict": first_volume.get("volume_obstacle") or "",
-            "stakes": _mapping(first_volume.get("volume_resolution")).get("cost_paid")
-            or "",
+            "central_action": central_action,
+            "conflict": conflict,
+            "stakes": stakes,
             "payoff": first_volume.get("volume_climax")
             or first_volume.get("volume_goal")
             or "",
@@ -1212,11 +1283,30 @@ async def _refresh_story_grounded_project_title(
     title_meta = _mapping(market.get("title_workflow_primary")) or _mapping(
         metadata.get("title_workflow_primary")
     )
+    revision_status = _mapping(metadata.get("title_revision_status"))
+    incomplete_prior_review = bool(
+        revision_status.get("llm_run_id")
+        and revision_status.get("was_revised") is False
+        and not revision_status.get("skipped")
+        and _mapping(revision_status.get("title_evaluation")).get("decision") != "pass"
+    )
+    pending_revision = bool(
+        incomplete_prior_review
+        or revision_status.get("quality_status") == "needs_revision"
+        or revision_status.get("blocked")
+        or revision_status.get("retryable")
+    )
+    recorded_adoption = _non_empty_string(revision_status.get("adopted_title"), "")
+    lineage_mismatch = bool(recorded_adoption and recorded_adoption != current_title)
     issue = title_readability_issue(current_title)
+    if lineage_mismatch:
+        issue = "title_adoption_lineage_mismatch"
     has_full_title_workflow = isinstance(metadata.get("title_workflow"), Mapping) and isinstance(
         metadata.get("title_candidates"), list
     )
-    should_refresh = bool(issue or title_meta.get("llm_revised") or not has_full_title_workflow)
+    should_refresh = bool(
+        pending_revision or issue or title_meta.get("llm_revised") or not has_full_title_workflow
+    )
     if not should_refresh:
         return current_title, False, None, {
             "skipped": "current_title_not_marked_weak",
@@ -1242,7 +1332,9 @@ async def _refresh_story_grounded_project_title(
         current_primary.get("provisional") or current_primary.get("requires_llm_revision")
     )
     if (
-        _non_empty_string(current_primary.get("title"), "") == current_title
+        not lineage_mismatch
+        and not pending_revision
+        and _non_empty_string(current_primary.get("title"), "") == current_title
         and current_evaluation.get("decision") == "pass"
         and not _current_is_provisional
     ):
@@ -1285,6 +1377,17 @@ async def _refresh_story_grounded_project_title(
         target_platform=target_platform,
         reason=issue or "conception_title_needs_planning_grounding",
     )
+    rejected_title = _non_empty_string(revision_status.get("rejected_title"), "")
+    previous_feedback = _mapping(
+        _mapping(revision_status.get("title_evaluation")).get("feedback")
+    )
+    revision_prompt = _non_empty_string(previous_feedback.get("revision_prompt"), "")
+    if pending_revision and (rejected_title or revision_prompt):
+        user_prompt += (
+            "\n\n上次候选未通过，请依据反馈改写，不要重复被拒绝的候选。"
+            f"\n被拒候选：{rejected_title or '（未记录）'}"
+            f"\n修订反馈：{revision_prompt or '未通过完整标题评价，请重新构思。'}"
+        )
     completion = await complete_text(
         session,
         settings,
@@ -1320,6 +1423,23 @@ async def _refresh_story_grounded_project_title(
         "reason": issue or "planning_grounding",
         "title_anchor_groups": profile.get("title_anchor_groups"),
     }
+    if not was_revised:
+        evidence.update({
+            "blocked": "title_revision_no_candidate_adopted",
+            "adopted_title": current_title,
+            "was_revised": False,
+            "rejected_candidate_text": completion.content,
+            "rejected_title": revision_status.get("rejected_title") or "",
+            "title_evaluation": {
+                "feedback": {
+                    "revision_prompt": (
+                        _non_empty_string(previous_feedback.get("revision_prompt"), "")
+                        or "本次候选未通过标题采用门禁。请给出贴合故事且满足可读性、长度和故事锚点的新候选。"
+                    ),
+                },
+            },
+        })
+        return current_title, False, completion.llm_run_id, evidence
     if was_revised:
         workflow_profile = dict(profile)
         workflow_profile["primary_title"] = adopted
@@ -1327,30 +1447,33 @@ async def _refresh_story_grounded_project_title(
             workflow_profile,
             target_platform=target_platform,
         )
-        primary_candidate = _mapping(title_workflow.get("recommended_primary_title"))
-        primary_evaluation = _mapping(primary_candidate.get("title_evaluation"))
-        if (
-            _non_empty_string(primary_candidate.get("title"), "")
-            and primary_evaluation.get("decision") == "pass"
-        ):
-            adopted = _non_empty_string(primary_candidate.get("title"), adopted)
-        else:
-            adopted_evaluation = _mapping(
-                title_workflow.get("candidate_evaluations", {}).get(adopted)
-                if isinstance(title_workflow.get("candidate_evaluations"), Mapping)
-                else {}
-            )
-            if adopted_evaluation.get("decision") != "pass":
-                evidence["blocked"] = "title_workflow_primary_not_pass"
-                evidence["title_evaluation"] = adopted_evaluation
-                return current_title, False, completion.llm_run_id, evidence
-            primary_candidate = {
-                "title": adopted,
+        # The matrix ranks alternatives; it has no authority to substitute a
+        # different title for the exact candidate being adopted from this run.
+        adopted_evaluation = _mapping(
+            _mapping(title_workflow.get("candidate_evaluations")).get(adopted)
+        )
+        if adopted_evaluation.get("decision") != "pass":
+            evidence.update({
+                "blocked": "title_workflow_primary_not_pass",
+                "rejected_title": adopted,
+                "adopted_title": current_title,
+                "was_revised": False,
                 "title_evaluation": adopted_evaluation,
-                "platform_label": title_workflow.get("platform_label"),
-                "scope_label": "目标平台",
-                "pattern": "story_grounded_planning_revision",
-            }
+            })
+            return current_title, False, completion.llm_run_id, evidence
+        primary_candidate = {
+            "title": adopted,
+            "title_evaluation": adopted_evaluation,
+            "platform_label": title_workflow.get("platform_label"),
+            "scope_label": "目标平台",
+            "pattern": "story_grounded_planning_revision",
+            "llm_run_id": str(completion.llm_run_id) if completion.llm_run_id else None,
+        }
+        title_workflow = {
+            **title_workflow,
+            "recommended_primary_title": primary_candidate,
+        }
+        evidence["title_evaluation"] = adopted_evaluation
         project.title = adopted
         metadata = dict(project.metadata_json or {})
         workflow_candidates = (
@@ -1381,6 +1504,41 @@ async def _refresh_story_grounded_project_title(
             title_workflow=title_workflow,
         )
     return adopted, was_revised, completion.llm_run_id, evidence
+
+
+
+async def _refresh_foundation_project_title(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    **planning_context: Any,
+) -> tuple[str, bool, UUID | None, dict[str, Any]]:
+    """Run the shared title review without making packaging a prose blocker."""
+    try:
+        title, revised, run_id, evidence = await _refresh_story_grounded_project_title(
+            session, settings, project=project, **planning_context,
+        )
+    except Exception as exc:
+        logger.warning("Foundation title revision needs retry", exc_info=True)
+        title, revised, run_id = project.title, False, None
+        evidence = {
+            "blocked": "title_revision_call_failed",
+            "error_type": type(exc).__name__,
+        }
+    issue = title_readability_issue(title)
+    needs_revision = bool(issue or evidence.get("blocked"))
+    evidence = {
+        **evidence,
+        "quality_status": "needs_revision" if needs_revision else "unchanged_or_revised",
+        "retryable": needs_revision,
+        "readability_issue": issue,
+    }
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "title_revision_status": evidence,
+    }
+    return title, revised, run_id, evidence
 
 
 def _non_empty_string(value: Any, default: str) -> str:
@@ -1822,8 +1980,9 @@ def _repair_generated_volume_outline_contract_inputs(
 ) -> int:
     """Repair deterministic scene-card fields before planner contract validation.
 
-    This keeps the identity manifest locked: unknown ad-hoc participants are
-    removed instead of being silently promoted into canonical cast.
+    This keeps the identity manifest locked: aliases resolve to existing cast,
+    while explicit unregistered participants remain visible for identity review.
+    Neither missing participants nor prose mentions authorize invented presence.
 
     It also backfills required-but-frequently-empty fields the model leaves
     blank (scene ``entry_state``/``exit_state`` dicts, chapter
@@ -1942,10 +2101,11 @@ def _repair_generated_volume_outline_contract_inputs(
                     continue
                 if identity_index:
                     identity = identity_index.get(token)
-                    if identity is None:
-                        repaired += 1
-                        continue
-                    participant = _non_empty_string(identity.get("name"), str(raw_participant))
+                    participant = (
+                        _non_empty_string(identity.get("name"), str(raw_participant))
+                        if identity is not None
+                        else _non_empty_string(raw_participant, "")
+                    )
                 else:
                     participant = _non_empty_string(raw_participant, "")
                 participant_token = _outline_identity_token(participant)
@@ -1953,48 +2113,26 @@ def _repair_generated_volume_outline_contract_inputs(
                     participant_tokens.add(participant_token)
                     repaired_participants.append(participant)
 
-            if not repaired_participants:
-                repaired_participants = [protagonist_name]
-                participant_tokens = {_outline_identity_token(protagonist_name)}
-                repaired += 1
             if repaired_participants != list(getattr(scene, "participants", []) or []):
                 scene.participants = repaired_participants
+                repaired += 1
 
             purpose = dict(getattr(scene, "purpose", None) or {})
+            if is_framework_scene_emotion_placeholder(purpose.get("emotion")):
+                purpose.pop("emotion", None)
+                repaired += 1
+            stripped_story = strip_framework_effect_landing_labels(
+                purpose.get("story"),
+                getattr(chapter, "selected_effect_skills", None),
+            )
+            if stripped_story and stripped_story != _non_empty_string(purpose.get("story"), ""):
+                purpose["story"] = stripped_story
+                repaired += 1
             story_purpose = _non_empty_string(purpose.get("story"), "")
-            if story_purpose and identity_index:
-                for referenced_name in _outline_purpose_character_names(
-                    story_purpose, identity_index
-                ):
-                    token = _outline_identity_token(referenced_name)
-                    identity = identity_index.get(token)
-                    canonical = _non_empty_string(
-                        identity.get("name") if identity else referenced_name,
-                        referenced_name,
-                    )
-                    canonical_token = _outline_identity_token(canonical)
-                    if canonical and canonical_token not in participant_tokens:
-                        scene.participants.append(canonical)
-                        participant_tokens.add(canonical_token)
-                        repaired += 1
-            elif not story_purpose:
+            if not story_purpose:
                 purpose["story"] = _outline_scene_story_repair(chapter, scene)
                 repaired += 1
 
-            if not _non_empty_string(purpose.get("emotion"), ""):
-                # Derive a scene-specific emotion task from the story purpose
-                # instead of a fixed placeholder — the old constant sentence
-                # produced identical low-signal emotion tasks on every thin
-                # card, and the writer got zero guidance on WHOSE fear/want
-                # this scene turns on.
-                _story_hint = _non_empty_string(purpose.get("story"), "")[:40]
-                purpose["emotion"] = (
-                    f"围绕「{_story_hint}」写出当事人一个具体的怕、要或误判，"
-                    "让读者看见情绪来源，并把选择或代价推到下一拍。"
-                    if _story_hint
-                    else "写出当事人此刻一个具体的怕、要或误判，让读者看见情绪来源。"
-                )
-                repaired += 1
             if purpose != getattr(scene, "purpose", None):
                 scene.purpose = purpose
 
@@ -2131,19 +2269,12 @@ def _enrich_generated_volume_outline_systemic_fields(
 ) -> int:
     """Deterministically backfill systemically-missing outline batch fields.
 
-    Production 500-chapter runs showed three batch-level gaps that downstream
-    hard gates treat as fatal only much later: empty ``opening_situation``
-    (commercial_planning_readiness ``missing_opening_situation``),
-    protagonist-only scene ``participants`` on every scene
-    (``golden_three_solo_scene_chain``), and whole batches without
-    ``causal_contract`` (chapter_causality_contract at materialization).
-    All three are derivable from fields the model did emit, so they are
-    repaired here — before batch validation — instead of killing the book
-    hundreds of steps downstream.
+    Structural fields can reuse existing planner content. Scene participation
+    cannot be derived from roster membership, prose mentions or chapter position;
+    preserve explicit lists and leave missing presence evidence for model repair.
     """
 
     is_en = is_english_language(language)
-    match_candidates = _outline_identity_match_candidates(identity_manifest)
     repaired = 0
 
     try:
@@ -2160,39 +2291,13 @@ def _enrich_generated_volume_outline_systemic_fields(
             return None
 
     for chapter in getattr(batch, "chapters", []) or []:
-        chapter_text = _outline_chapter_match_text(chapter)
         scenes = list(getattr(chapter, "scenes", []) or [])
         main_conflict = getattr(chapter, "main_conflict", None)
         chapter_goal = getattr(chapter, "chapter_goal", None)
         hook_description = getattr(chapter, "hook_description", None)
 
-        # ── 1) participants: text-match cast names into under-populated scenes ──
-        participants_backfilled = False
-        for scene in scenes:
-            participants = [
-                item
-                for item in getattr(scene, "participants", []) or []
-                if _non_empty_string(item, "")
-            ]
-            tokens = {_outline_identity_token(item) for item in participants}
-            if len(tokens) < 2 and match_candidates:
-                haystack = f"{_outline_scene_match_text(scene)} {chapter_text}"
-                for canonical, search_tokens in match_candidates:
-                    canonical_token = _outline_identity_token(canonical)
-                    if canonical_token in tokens:
-                        continue
-                    if any(token in haystack for token in search_tokens):
-                        participants.append(canonical)
-                        tokens.add(canonical_token)
-                    if len(tokens) >= 2:
-                        break
-            participants = participants[:_OUTLINE_SCENE_PARTICIPANT_CAP]
-            if participants != list(getattr(scene, "participants", []) or []):
-                scene.participants = participants
-                repaired += 1
-                participants_backfilled = True
-        if participants_backfilled:
-            _tag_enriched_outline_field(chapter, "participants")
+        # Scene presence comes only from its explicit participant list. A name
+        # in chapter/scene prose can be a memory, offscreen actor or document.
 
         # ── 2) opening_situation: synthesize in-medias-res opening pressure ──
         if not _non_empty_string(getattr(chapter, "opening_situation", None), ""):
@@ -2389,19 +2494,16 @@ def _enrich_generated_volume_outline_systemic_fields(
         # ── 5) hook_type: derive a canonical taxonomy label when the planner
         # left it blank (observed empty on whole batches, e.g. ch1-5 / ch21-30).
         # The chapter already carries a concrete hook_description / tail_hook; we
-        # map it to the nearest canonical hook key, falling back to the first
-        # canonical key so the writability gate sees a non-empty label.
+        # map it only when its existing text identifies a canonical hook key.
         if not _non_empty_string(getattr(chapter, "hook_type", None), "") and _HOOK_KEYS:
             hook_source = _first_non_empty_text(
                 hook_description, getattr(chapter, "tail_hook", None), default=""
             )
             derived_hook = _match_hook_type_key(hook_source) if hook_source else None
-            if not derived_hook:
-                chapter_number = int(getattr(chapter, "chapter_number", 1) or 1)
-                derived_hook = _HOOK_KEYS[(chapter_number - 1) % len(_HOOK_KEYS)]
-            chapter.hook_type = derived_hook
-            repaired += 1
-            _tag_enriched_outline_field(chapter, "hook_type")
+            if derived_hook:
+                chapter.hook_type = derived_hook
+                repaired += 1
+                _tag_enriched_outline_field(chapter, "hook_type")
 
     return repaired
 
@@ -2409,81 +2511,13 @@ def _enrich_generated_volume_outline_systemic_fields(
 def _rescue_golden_three_solo_scenes(
     batch: Any, *, identity_manifest: list[dict[str, Any]]
 ) -> int:
-    """Final guard before the golden-three solo-chain gate (G8).
+    """Compatibility no-op: a solo scene never authorizes another cast member.
 
-    MUST run AFTER :func:`_repair_generated_volume_outline_contract_inputs`: that
-    identity-lock repair strips ad-hoc (non-roster) participants down to the
-    protagonist, so a scene the LLM wrote as a duo can collapse back to solo
-    *after* enrichment already judged it fine. A 凡人流 solo-discovery opening
-    then trips ``golden_three_solo_scene_chain`` and the whole volume outline is
-    hard-killed. For chapters 1-3 only, this promotes a canonical roster name
-    (which survives the identity lock) into the highest-tension scene so the
-    chapter is no longer a solo chain. Deterministic; never touches ch4+.
+    Explicit participant lists are source data. Missing presence evidence must
+    be resolved by source-bound repair rather than roster or prose guesses.
     """
 
-    match_candidates = _outline_identity_match_candidates(identity_manifest)
-    if not match_candidates:
-        return 0
-    rescued = 0
-    for chapter in getattr(batch, "chapters", []) or []:
-        number = getattr(chapter, "chapter_number", None)
-        if not (isinstance(number, int) and 1 <= number <= 3):
-            continue
-        scenes = list(getattr(chapter, "scenes", []) or [])
-        if not scenes:
-            continue
-        token_sets = [
-            {
-                _outline_identity_token(p)
-                for p in getattr(sc, "participants", []) or []
-                if _non_empty_string(p, "")
-            }
-            for sc in scenes
-        ]
-        if any(len(tokens) >= 2 for tokens in token_sets):
-            continue
-        present = set().union(*token_sets) if token_sets else set()
-        chapter_text = _outline_chapter_match_text(chapter)
-        pick = next(
-            (
-                canonical
-                for canonical, search_tokens in match_candidates
-                if _outline_identity_token(canonical) not in present
-                and any(token in chapter_text for token in search_tokens)
-            ),
-            None,
-        )
-        if pick is None:
-            pick = next(
-                (
-                    canonical
-                    for canonical, _ in match_candidates
-                    if _outline_identity_token(canonical) not in present
-                ),
-                None,
-            )
-        if pick is None:
-            continue
-        idx = max(
-            range(len(scenes)),
-            key=lambda i: (len(token_sets[i]), len(_outline_scene_match_text(scenes[i]))),
-        )
-        target = scenes[idx]
-        merged = [
-            p for p in getattr(target, "participants", []) or [] if _non_empty_string(p, "")
-        ]
-        merged.append(pick)
-        distinct = {_outline_identity_token(m) for m in merged}
-        for canonical, _ in match_candidates:
-            if len(distinct) >= 2:
-                break
-            token = _outline_identity_token(canonical)
-            if token not in distinct:
-                merged.append(canonical)
-                distinct.add(token)
-        target.participants = merged[:_OUTLINE_SCENE_PARTICIPANT_CAP]
-        rescued += 1
-    return rescued
+    return 0
 
 
 def _require_outline_systemic_fields_or_raise(
@@ -2610,23 +2644,11 @@ def _repair_generated_volume_outline_contract_blocks(
             if not token or token in seen:
                 continue
             identity: dict[str, Any] | None = identity_index.get(token) if identity_index else None
-            if identity_index and identity is None:
-                # Try to alias the LLM-hallucinated name onto its likely
-                # canonical cast member (e.g. 姜澄 → 苏澄). Only fires when
-                # there is *exactly one* cast entry sharing ≥ 50% of the
-                # characters and an identical length, so ambiguous cases
-                # still fall through to the UNKNOWN gate.
-                identity = _outline_fuzzy_resolve_participant(token, identity_index)
-                if identity is None:
-                    repaired += 1
-                    continue
             canonical = _non_empty_string(identity.get("name") if identity else value, value)
             canonical_token = _outline_identity_token(canonical)
             if canonical_token and canonical_token not in seen:
                 cleaned.append(canonical)
                 seen.add(canonical_token)
-        if not cleaned:
-            cleaned = [protagonist_name]
         if cleaned != list(getattr(scene, "participants", []) or []):
             scene.participants = cleaned
             repaired += 1
@@ -2705,9 +2727,9 @@ def _repair_generated_volume_outline_contract_blocks(
             "PLAN_SCENE_STORY_PURPOSE_META",
         }:
             purpose = dict(getattr(scene, "purpose", None) or {})
+            if is_framework_scene_emotion_placeholder(purpose.get("emotion")):
+                purpose.pop("emotion", None)
             purpose["story"] = _outline_scene_story_repair(chapter, scene)
-            if not _non_empty_string(purpose.get("emotion"), ""):
-                purpose["emotion"] = "压力递进，并把选择、代价或线索推到下一拍。"
             scene.purpose = purpose
             repaired += 1
             continue
@@ -2727,16 +2749,8 @@ def _repair_generated_volume_outline_contract_blocks(
             continue
 
         if code == "PLAN_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS":
-            character = _non_empty_string(metadata.get("character"), "")
-            participants = [
-                item
-                for item in getattr(scene, "participants", []) or []
-                if _non_empty_string(item, "")
-            ]
-            if character:
-                participants.append(character)
-                _set_participants(scene, participants)
-                repaired += 1
+            # The diagnostic may refer to an offscreen name or quotation.
+            # Leave it for source-bound repair instead of asserting presence.
             continue
 
     return repaired
@@ -2747,8 +2761,15 @@ def _selected_story_effect_skill_keys(
     *,
     stage: str,
 ) -> tuple[str, ...]:
+    from bestseller.services.creation_contract_authority import select_creation_contracts
+
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    selection = _mapping(metadata.get(STORY_EFFECT_SKILL_SELECTION_METADATA_KEY))
+    approved = select_creation_contracts(metadata, source_bound=False)
+    creation = _mapping(approved.get("creation_intent_contract"))
+    hook = _mapping(creation.get("hook_spec"))
+    # A book palette authorizes goals/distribution, not stage pinning. Only a
+    # literal stage contract in the explicit creation hook can require keys.
+    selection = _mapping(hook.get(STORY_EFFECT_SKILL_SELECTION_METADATA_KEY))
     stage_selection = _mapping(selection.get(stage))
     keys: list[str] = []
     for field_name in ("primary", "secondary"):
@@ -2759,23 +2780,19 @@ def _selected_story_effect_skill_keys(
 
 
 def _brainhole_required_contract_fields(project: ProjectModel) -> tuple[str, ...]:
+    if "brainhole_engine" not in _selected_story_effect_skill_keys(
+        project, stage="chapter_outline",
+    ):
+        return ()
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    profile = _mapping(metadata.get(BRAINHOLE_PROFILE_METADATA_KEY))
-    fields = _string_list(profile.get("required_contract_fields"))
-    if fields:
-        return tuple(fields)
-    return (
-        "one_sentence_sell",
-        "character_core_used",
-        "modern_system",
-        "contrast_mechanism",
-        "visible_comedy",
-        "serious_underbelly",
-        "plot_consequence",
-        "protagonist_decision",
-        "growth_stage_fit",
-        "risk_check",
-    )
+    creation = _mapping(metadata.get("creation_intent_contract"))
+    hook = _mapping(creation.get("hook_spec"))
+    selection = _mapping(hook.get(STORY_EFFECT_SKILL_SELECTION_METADATA_KEY))
+    stage_contract = _mapping(selection.get("chapter_outline"))
+    profile = _mapping(stage_contract.get(BRAINHOLE_PROFILE_METADATA_KEY))
+    return tuple(_string_list(stage_contract.get(
+        "required_contract_fields", profile.get("required_contract_fields"),
+    )))
 
 
 def _story_effect_skill_key(value: Any) -> str:
@@ -3053,6 +3070,7 @@ def _validate_generated_volume_outline_or_raise(
     existing_titles: list[tuple[int | None, str]] | None = None,
     strict_story_effects: bool = True,
     strict_field_degeneracy: bool | None = None,
+    enforce_window_effect_distribution: bool = True,
 ) -> dict[str, Any]:
     """Normalize and validate a generated volume outline before persistence.
 
@@ -3069,42 +3087,67 @@ def _validate_generated_volume_outline_or_raise(
     from bestseller.domain.workflow import ChapterOutlineBatchInput
     from bestseller.services.narrative_contracts import validate_chapter_plan_contract
 
-    if isinstance(payload, list):
-        payload = {
-            "batch_name": f"volume-{volume_number}-outline",
-            "chapters": payload,
-        }
-    if not isinstance(payload, dict):
-        raise PlannerFallbackError(
-            f"Planner artifact '{logical_name}' returned {type(payload).__name__}, expected object."
+    source_bound = _source_bound_cast_enabled(project)
+    source_candidate = source_receipt = source_view_before = None
+    if source_bound:
+        from bestseller.services.book_design import ensure_project_book_design_snapshot
+        from bestseller.services.source_bound_outline_integrity import (
+            SourceBoundOutlineIntegrityError,
+            prepare_source_bound_outline,
+            verify_validation_view,
         )
-    vol_chapters = _mapping_list(payload.get("chapters"))
-    _require_complete_volume_outline(
-        logical_name=logical_name,
-        volume_number=volume_number,
-        expected_count=expected_count,
-        chapters=vol_chapters,
-    )
-    for idx, chapter in enumerate(vol_chapters):
-        chapter["volume_number"] = volume_number
-        chapter["chapter_number"] = chapter_number_offset + idx
-    _normalize_generated_outline_titles_or_fail(
-        vol_chapters,
-        logical_name=logical_name,
-        existing_titles=existing_titles,
-    )
 
-    batch = ChapterOutlineBatchInput.model_validate(
-        {
-            "batch_name": payload.get("batch_name") or f"volume-{volume_number}-outline",
-            "chapters": vol_chapters,
-        }
-    )
+        ensure_project_book_design_snapshot(project)  # Validate the positive locked snapshot.
+        try:
+            source_candidate, batch, source_receipt = prepare_source_bound_outline(
+                payload,
+                volume_number=volume_number,
+                expected_count=expected_count,
+                chapter_number_offset=chapter_number_offset,
+                identity_manifest=_chapter_outline_identity_manifest(cast_spec),
+                existing_titles=existing_titles or (),
+            )
+        except SourceBoundOutlineIntegrityError as exc:
+            raise OutlineContractValidationError(
+                "Source-bound outline requires explicit full-source repair.",
+                report=exc.report,
+            ) from exc
+        source_view_before = batch.model_dump(mode="json")
+    else:
+        if isinstance(payload, list):
+            payload = {
+                "batch_name": f"volume-{volume_number}-outline",
+                "chapters": payload,
+            }
+        if not isinstance(payload, dict):
+            raise PlannerFallbackError(
+                f"Planner artifact '{logical_name}' returned {type(payload).__name__}, expected object."
+            )
+        vol_chapters = _mapping_list(payload.get("chapters"))
+        _require_complete_volume_outline(
+            logical_name=logical_name,
+            volume_number=volume_number,
+            expected_count=expected_count,
+            chapters=vol_chapters,
+        )
+        for idx, chapter in enumerate(vol_chapters):
+            chapter["volume_number"] = volume_number
+            chapter["chapter_number"] = chapter_number_offset + idx
+        _normalize_generated_outline_titles_or_fail(
+            vol_chapters,
+            logical_name=logical_name,
+            existing_titles=existing_titles,
+        )
+
+        batch = ChapterOutlineBatchInput.model_validate(
+            {
+                "batch_name": payload.get("batch_name") or f"volume-{volume_number}-outline",
+                "chapters": vol_chapters,
+            }
+        )
     _meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     _concept_contract = (
-        {}
-        if _source_bound_cast_enabled(project)
-        else _mapping(_meta.get("concept_contract"))
+        {} if _source_bound_cast_enabled(project) else _mapping(_meta.get("concept_contract"))
     )
     if _concept_contract:
         from bestseller.services.seriality_outline_gate import (
@@ -3134,8 +3177,7 @@ def _validate_generated_volume_outline_or_raise(
             raise PlannerFallbackError(
                 "SERIALITY_OUTLINE_CONTRACT_FAILED: "
                 + "; ".join(
-                    f"{item.code}: {item.message}"
-                    for item in _seriality_report.findings[:12]
+                    f"{item.code}: {item.message}" for item in _seriality_report.findings[:12]
                 )
             )
     if strict_story_effects:
@@ -3156,8 +3198,7 @@ def _validate_generated_volume_outline_or_raise(
             )
         except PlannerFallbackError as exc:
             logger.warning(
-                "Soft-accepting %s with unmet story-effect contract after final "
-                "attempt: %s",
+                "Soft-accepting %s with unmet story-effect contract after final attempt: %s",
                 logical_name,
                 str(exc)[:600],
             )
@@ -3170,26 +3211,23 @@ def _validate_generated_volume_outline_or_raise(
     # only distribution (at least the configured floor across the batch), so
     # effects can be spread across suitable chapters instead of being stacked
     # mechanically into every chapter.
-    enhancer_selection = resolve_story_enhancers(_meta)
+    enhancer_selection = resolve_explicit_story_enhancers(_meta)
     enhancer_directives = story_enhancer_repair_directives(
         [chapter.model_dump(mode="json") for chapter in batch.chapters],
         enhancer_selection,
     )
-    if enhancer_directives:
+    if enhancer_directives and enforce_window_effect_distribution and not source_bound:
         gaps = audit_story_enhancer_coverage(
             [chapter.model_dump(mode="json") for chapter in batch.chapters],
             enhancer_selection,
         )
-        summary = ", ".join(
-            f"{gap['effect']}={int(float(gap['coverage']) * 100)}%"
-            for gap in gaps
-        )
+        summary = ", ".join(f"{gap['effect']}={int(float(gap['coverage']) * 100)}%" for gap in gaps)
         raise StoryEnhancerCoverageError(
             f"STORY_ENHANCER_DISTRIBUTION_MISSING in '{logical_name}': {summary}",
             directives=enhancer_directives,
         )
 
-    stripped_goal_wrappers = _strip_outline_goal_meta_prefixes(batch)
+    stripped_goal_wrappers = 0 if source_bound else _strip_outline_goal_meta_prefixes(batch)
     if stripped_goal_wrappers:
         logger.info(
             "Removed %d planner-task goal wrapper(s) before validating %s.",
@@ -3213,76 +3251,106 @@ def _validate_generated_volume_outline_or_raise(
     )
 
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
-    _cast_protagonist = _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
-    # Systemic enrichment runs BEFORE the identity-lock repair: a scene whose
-    # ad-hoc participants get stripped down to the protagonist there was not
-    # planned as a solo scene, so text-match backfill must only target scenes
-    # the model itself left under-populated.
-    enrich_count = _enrich_generated_volume_outline_systemic_fields(
-        batch,
-        identity_manifest=identity_manifest,
-        language=_planner_language(project),
-    )
-    if enrich_count:
-        logger.info(
-            "Backfilled %d systemic outline field(s) (opening_situation/participants/"
-            "causal_contract) before validating %s for project '%s'.",
-            enrich_count,
-            logical_name,
-            project.slug,
+    if not source_bound:
+        _cast_protagonist = (
+            _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
         )
-    repair_count = _repair_generated_volume_outline_contract_inputs(
-        batch,
-        identity_manifest=identity_manifest,
-        protagonist_flaw_default=_first_non_empty_text(
-            _cast_protagonist.get("flaw"),
-            _cast_protagonist.get("fatal_flaw"),
-            _cast_protagonist.get("core_wound"),
-            default="",
+        # Systemic enrichment runs BEFORE the identity-lock repair: a scene whose
+        # ad-hoc participants get stripped down to the protagonist there was not
+        # planned as a solo scene, so text-match backfill must only target scenes
+        # the model itself left under-populated.
+        enrich_count = _enrich_generated_volume_outline_systemic_fields(
+            batch,
+            identity_manifest=identity_manifest,
+            language=_planner_language(project),
         )
-        or None,
-    )
-    if repair_count:
-        logger.info(
-            "Repaired %d deterministic scene field(s) before validating %s for project '%s'.",
-            repair_count,
-            logical_name,
-            project.slug,
+        if enrich_count:
+            logger.info(
+                "Backfilled %d systemic outline field(s) (opening_situation/participants/"
+                "causal_contract) before validating %s for project '%s'.",
+                enrich_count,
+                logical_name,
+                project.slug,
+            )
+        repair_count = _repair_generated_volume_outline_contract_inputs(
+            batch,
+            identity_manifest=identity_manifest,
+            protagonist_flaw_default=_first_non_empty_text(
+                _cast_protagonist.get("flaw"),
+                _cast_protagonist.get("fatal_flaw"),
+                _cast_protagonist.get("core_wound"),
+                default="",
+            )
+            or None,
         )
+        if repair_count:
+            logger.info(
+                "Repaired %d deterministic scene field(s) before validating %s for project '%s'.",
+                repair_count,
+                logical_name,
+                project.slug,
+            )
     report = validate_chapter_plan_contract(
         batch,
         identity_manifest=identity_manifest,
         require_identity_registry=bool(identity_manifest),
     )
-    report_repair_count = _repair_generated_volume_outline_contract_blocks(
-        batch,
-        report,
-        identity_manifest=identity_manifest,
-    )
-    if report_repair_count:
-        logger.info(
-            "Repaired %d report-driven scene field(s) before accepting %s for project '%s'.",
-            report_repair_count,
-            logical_name,
-            project.slug,
-        )
-        report = validate_chapter_plan_contract(
+    if not source_bound:
+        report_repair_count = _repair_generated_volume_outline_contract_blocks(
             batch,
+            report,
             identity_manifest=identity_manifest,
-            require_identity_registry=bool(identity_manifest),
         )
+        if report_repair_count:
+            logger.info(
+                "Repaired %d report-driven scene field(s) before accepting %s for project '%s'.",
+                report_repair_count,
+                logical_name,
+                project.slug,
+            )
+            report = validate_chapter_plan_contract(
+                batch,
+                identity_manifest=identity_manifest,
+                require_identity_registry=bool(identity_manifest),
+            )
     if report.blocks:
-        raise PlannerFallbackError(
+        raise OutlineContractValidationError(
             report.error_message(
                 project_slug=project.slug,
                 artifact=f"{logical_name}/chapter_plan_contract",
-            )
+            ),
+            report=report.to_dict(),
         )
+    # A finite target needs one terminal landing.  This is intentionally
+    # scoped to the batch that reaches the target chapter; ordinary rolling
+    # windows keep their serial continuation contract.
+    _final_target = int(getattr(project, "target_chapters", 0) or 0)
+    _outline_bounds = _derive_volume_chapter_bounds(_mapping(volume_entry or {}))
+    if _final_target > 0 and _outline_bounds and _outline_bounds[1] >= _final_target:
+        _final_chapter = next(
+            (
+                chapter.model_dump(mode="json")
+                for chapter in batch.chapters
+                if int(getattr(chapter, "chapter_number", 0) or 0) == _final_target
+            ),
+            None,
+        )
+        if _final_chapter is None:
+            raise PlannerFallbackError(
+                "FINAL_CHAPTER_CLOSURE_CONTRACT_FAILED: target chapter is absent"
+            )
+        _finale_findings = _final_chapter_closure_findings(_final_chapter)
+        if _finale_findings:
+            raise PlannerFallbackError(
+                "FINAL_CHAPTER_CLOSURE_CONTRACT_FAILED: " + "; ".join(_finale_findings)
+            )
     # Final golden-three solo-rescue, AFTER the identity-lock repair has stripped
     # any ad-hoc participants — so a 凡人流 solo opening can no longer collapse
     # back to solo and hard-kill the whole volume outline (G8).
-    golden_rescued = _rescue_golden_three_solo_scenes(
-        batch, identity_manifest=identity_manifest
+    golden_rescued = (
+        0
+        if source_bound
+        else _rescue_golden_three_solo_scenes(batch, identity_manifest=identity_manifest)
     )
     if golden_rescued:
         logger.info(
@@ -3292,25 +3360,24 @@ def _validate_generated_volume_outline_or_raise(
             logical_name,
             project.slug,
         )
-    golden_fill = _soft_fill_golden_three_outline_fields(batch, project=project)
-    if golden_fill:
-        logger.info(
-            "Soft-filled %d golden-three outline field(s) for %s project '%s'.",
-            golden_fill,
-            logical_name,
-            project.slug,
-        )
-    try:
-        from bestseller.settings import get_settings as _get_settings_word
-        from bestseller.services.workflows import _normalize_outline_word_targets
+    if not source_bound:
+        golden_fill = _soft_fill_golden_three_outline_fields(batch, project=project)
+        if golden_fill:
+            logger.info(
+                "Soft-filled %d golden-three outline field(s) for %s project '%s'.",
+                golden_fill,
+                logical_name,
+                project.slug,
+            )
+        try:
+            from bestseller.settings import get_settings as _get_settings_word
+            from bestseller.services.workflows import _normalize_outline_word_targets
 
-        _normalize_outline_word_targets(
-            batch, project=project, settings=_get_settings_word()
-        )
-    except Exception:
-        logger.warning(
-            "Outline word-target normalization skipped for %s", logical_name, exc_info=True
-        )
+            _normalize_outline_word_targets(batch, project=project, settings=_get_settings_word())
+        except Exception:
+            logger.warning(
+                "Outline word-target normalization skipped for %s", logical_name, exc_info=True
+            )
     _require_outline_systemic_fields_or_raise(
         batch,
         logical_name=logical_name,
@@ -3328,7 +3395,9 @@ def _validate_generated_volume_outline_or_raise(
         strict=_strict_degeneracy,
         phase="system enrichment and contract repair",
     )
-    normalized_payload = batch.model_dump(mode="json", by_alias=True)
+    normalized_payload = (
+        source_candidate if source_bound else batch.model_dump(mode="json", by_alias=True)
+    )
     if _strict_degeneracy:
         from bestseller.services.outline_semantic_gate import (
             evaluate_outline_semantic_gate,
@@ -3352,8 +3421,7 @@ def _validate_generated_volume_outline_or_raise(
             # auto-resume loop then burned 118 calls / ~880k tokens. Still
             # detected and reported — just not a veto on this evidence.
             semantic_findings = [
-                finding.to_dict()
-                for finding in hard_contract_findings(semantic_report)
+                finding.to_dict() for finding in hard_contract_findings(semantic_report)
             ]
             if semantic_findings:
                 summary = "; ".join(
@@ -3361,10 +3429,21 @@ def _validate_generated_volume_outline_or_raise(
                     for finding in semantic_findings[:20]
                 )
                 raise OutlineSemanticQualityError(
-                    f"Planner artifact '{logical_name}' failed semantic promotion: "
-                    f"{summary}",
+                    f"Planner artifact '{logical_name}' failed semantic promotion: {summary}",
                     findings=semantic_findings,
                 )
+    if source_bound:
+        try:
+            verify_validation_view(batch, source_view_before)
+        except SourceBoundOutlineIntegrityError as exc:
+            raise OutlineContractValidationError(
+                "Source-bound validator changed its view; explicit repair required.",
+                report=exc.report,
+            ) from exc
+        metadata = dict(project.metadata_json or {})
+        receipts = dict(metadata.get("deterministic_audit_outline_integrity") or {})
+        receipts[source_receipt["projected_sha256"]] = copy.deepcopy(source_receipt)
+        project.metadata_json = {**metadata, "deterministic_audit_outline_integrity": receipts}
     return normalized_payload
 
 
@@ -3574,6 +3653,48 @@ def _outline_repair_directives_from_error(
             "brainhole_contract、场景卡必须原样保留，不得因为修复其他问题而丢弃或留空。"
         )
     )
+
+    if isinstance(error, OutlineContractValidationError):
+        report = error.report
+        if isinstance(report, dict) and report.get("passed") is False:
+            blocking = [
+                item for item in report.get("violations", [])
+                if isinstance(item, dict)
+                and item.get("severity") in {"critical", "major", "high", "fatal", "block"}
+                and isinstance(item.get("code"), str)
+                and item["code"]
+            ]
+            groups: dict[str, list[dict[str, Any]]] = {}
+            for item in blocking:
+                groups.setdefault(item["code"], []).append(copy.deepcopy(item))
+            if groups:
+                directives = []
+                for code, findings in groups.items():
+                    if code == "PLAN_SCENE_UNKNOWN_PARTICIPANT":
+                        guidance = (
+                            "Repair only the listed participants fields. Use exact canonical names "
+                            "or approved aliases from the current CastSpec; do not append role, sex "
+                            "or age annotations or silently register a new identity. Preserve the "
+                            "events and every other field."
+                            if is_en else
+                            "只修复列明的 participants 字段。使用当前 CastSpec 的准确姓名或已批准别名，"
+                            "不得附加身份、性别、年龄注释，不得把未登记身份自动变成既定角色。"
+                            "保留事件及其他字段，不要因此重写剧情。"
+                        )
+                    else:
+                        guidance = (
+                            "Repair only the named contract fields using the current approved source; "
+                            "these diagnostics grant no new story facts. Preserve unaffected fields."
+                            if is_en else
+                            "只按当前已批准来源修复列明的合同字段；诊断不授权新增故事事实，保留其他字段。"
+                        )
+                    directives.append(
+                        "[OUTLINE CONTRACT REPAIR — DIAGNOSTIC DATA]\n"
+                        + guidance + "\n"
+                        + json.dumps({"code": code, "violations": findings},
+                                     ensure_ascii=False, separators=(",", ":"))
+                    )
+                return [*directives, preserve_directive]
 
     # ── Consumed-event duplication branch (R5) ──────────────────────
     # Surfaced from the cross-batch ledger check when a fresh batch
@@ -3891,6 +4012,25 @@ def _outline_repair_directives_from_error(
                 "prior_state_refs、irreversible_state_after、no_reset_evidence，以及"
                 "accumulation_track_deltas [{track_ref, delta}]；本批必须兑现本卷分配的全部积累轴。"
             )
+    if "FINAL_CHAPTER_CLOSURE_CONTRACT_FAILED" in message:
+        if is_en:
+            directives.append(
+                "Repair ONLY the final target chapter as a terminal landing: set "
+                "methodology_contract.is_climax to a boolean reflecting whether this chapter "
+                "contains the climax (false is valid for an aftermath/epilogue), and set "
+                "pacing_mode=resolution/finale/closure; "
+                "fill causal_contract.final_state, gain_or_reveal, and state_change with concrete "
+                "completed results; resolve the central promise, clear hooks_to_plant, and make "
+                "hook_description/next_reader_desire an aftermath image. Do not add a new core "
+                "threat or require another chapter."
+            )
+        else:
+            directives.append(
+                "只修复目标终章的故事落点：methodology_contract.is_climax 必须是反映本章是否承载高潮的布尔值（高潮已在前章完成时可为 false），"
+                "pacing_mode=收束/结局/终局；补齐 causal_contract.final_state、gain_or_reveal、state_change 的具体完成结果；"
+                "兑现核心承诺，清空 hooks_to_plant，让 hook_description/next_reader_desire 写兑现后的余韵画面。"
+                "不得新增核心威胁，不得要求下一章。"
+            )
     for chunk in chunks[:10]:
         if is_en:
             directives.append(
@@ -4008,18 +4148,6 @@ def _apply_story_enhancer_route_patches(
         selected["expected_contracts"] = expected
         chapter["selected_effect_skills"] = selected
 
-        scenes = _mapping_list(chapter.get("scenes"))
-        requested_scene = patch.get("scene_number")
-        scene = next(
-            (item for item in scenes if item.get("scene_number") == requested_scene),
-            scenes[-1] if scenes else None,
-        )
-        if scene is not None:
-            purpose = dict(_mapping(scene.get("purpose")))
-            story = _non_empty_string(purpose.get("story"), "")
-            if beat not in story:
-                purpose["story"] = f"{story}；效果落点：{beat}" if story else beat
-            scene["purpose"] = purpose
         applied.add(effect)
     repaired["chapters"] = chapters
     return repaired
@@ -4033,6 +4161,7 @@ async def _repair_story_enhancer_distribution(
     workflow_run_id: UUID,
     logical_name: str,
     payload: Mapping[str, Any],
+    world_spec: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], UUID | None]:
     """Ask a compact editor call to route missing creation-time effects.
 
@@ -4043,7 +4172,7 @@ async def _repair_story_enhancer_distribution(
     """
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    selection = resolve_story_enhancers(metadata)
+    selection = resolve_explicit_story_enhancers(metadata)
     chapters = _mapping_list(payload.get("chapters"))
     gaps = audit_story_enhancer_coverage(chapters, selection)
     if not gaps:
@@ -4067,8 +4196,17 @@ async def _repair_story_enhancer_distribution(
                 ],
             }
         )
+    from bestseller.services.outline_llm_judge import (
+        OUTLINE_SOURCE_AUTHORITY_RULES,
+        render_outline_source_brief,
+    )
+
+    source_brief = _outline_judge_project_brief(
+        project, metadata=metadata, semantic_candidates=[], world_spec=world_spec,
+    )
     system_prompt = (
         "你是小说章纲的故事效果路由编辑。只输出合法 JSON，不解释，不重写既有设定。"
+        + OUTLINE_SOURCE_AUTHORITY_RULES
     )
     repaired = dict(payload)
     last_llm_run_id: UUID | None = None
@@ -4089,6 +4227,7 @@ async def _repair_story_enhancer_distribution(
             f"本书题材：{project.genre}/{project.sub_genre or '-'}；标题：{project.title}。\n"
             f"{retry_hint}\n需要补齐的建书效果：{_json_dumps(missing_effects)}\n"
             f"效果合同：\n{render_story_enhancer_contract_block(selection, language=project.language or 'zh-CN')}\n"
+            f"{render_outline_source_brief(source_brief, max_summary_chars=0)}\n"
             f"当前章纲摘要：\n{_json_dumps(compact_chapters)}\n\n"
             "返回对象 {\"patches\": [...]}。每个缺失效果最多一条 patch，字段必须包含："
             "chapter_number、scene_number、effect、slot(primary 或 secondary)、reason、"
@@ -4106,7 +4245,7 @@ async def _repair_story_enhancer_distribution(
                 user_prompt=user_prompt,
                 fallback_response='{"patches":[]}',
                 prompt_template=f"planner_{logical_name}_story_enhancer_route_repair",
-                prompt_version="1.0",
+                prompt_version="2.0-source-authority",
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 max_tokens_override=1800,
@@ -4248,6 +4387,7 @@ async def _generate_volume_outline_with_repair_loop(
     chapter_number_offset: int,
     revealed_ledger_block: str | None,
     base_constraints: list[str],
+    world_spec: Mapping[str, Any] | None = None,
     progress: PlanningProgressCallback | None = None,
     consumed_event_entries: list[dict[str, Any]] | None = None,
     event_dedup_threshold: float = OUTLINE_EVENT_DEDUP_THRESHOLD_DEFAULT,
@@ -4261,6 +4401,8 @@ async def _generate_volume_outline_with_repair_loop(
     deliberately soft on the final attempt — a residual near-duplicate is
     flagged in ``_meta`` rather than killing the whole book.
     """
+
+    from bestseller.services.budget import ExecutionBudgetError
 
     max_repair_attempts = max(
         1,
@@ -4303,6 +4445,7 @@ async def _generate_volume_outline_with_repair_loop(
             cast_spec,
             volume_plan,
             volume_entry,
+            world_spec=world_spec,
             revealed_ledger_block=revealed_ledger_block,
             extra_constraints=repair_constraints or None,
             existing_titles=existing_titles,
@@ -4313,6 +4456,11 @@ async def _generate_volume_outline_with_repair_loop(
             project_ctx=project,
             token_budget=600,
         )
+        if _source_bound_cast_enabled(project):
+            from bestseller.services.source_complete_outline_json import FORMAT_INSTRUCTION
+
+            if not vol_outline_user.endswith(FORMAT_INSTRUCTION):
+                vol_outline_user += FORMAT_INSTRUCTION
         vol_outline_system, vol_outline_user = _compile_volume_outline_prompt(
             project,
             settings,
@@ -4331,6 +4479,9 @@ async def _generate_volume_outline_with_repair_loop(
                 workflow_run_id=workflow_run_id,
                 abort_on_fallback=True,
                 merge_fallback=False,
+                prompt_version=("3.1-source-complete-strict-json"
+                                if _source_bound_cast_enabled(project) else "2.0-source-authority"),
+                attach_default_methodology=not _source_bound_cast_enabled(project),
             )
             last_llm_run_id = llm_run_id
             last_raw_payload = raw_payload if isinstance(raw_payload, dict) else None
@@ -4363,6 +4514,7 @@ async def _generate_volume_outline_with_repair_loop(
                     workflow_run_id=workflow_run_id,
                     logical_name=logical_name,
                     payload=raw_payload,
+                    world_spec=world_spec,
                 )
                 if repair_llm_run_id is not None:
                     last_llm_run_id = repair_llm_run_id
@@ -4423,7 +4575,7 @@ async def _generate_volume_outline_with_repair_loop(
             # are only weak evidence. Preserve any apparent gap for the full
             # outline LLM judge instead of forcing every selected effect into
             # every chapter and undoing agency/knowledge-boundary repairs.
-            _enhancer_selection = resolve_story_enhancers(
+            _enhancer_selection = resolve_explicit_story_enhancers(
                 project.metadata_json if isinstance(project.metadata_json, dict) else {}
             )
             _enhancer_gaps = audit_story_enhancer_coverage(
@@ -4464,6 +4616,8 @@ async def _generate_volume_outline_with_repair_loop(
                 llm_run_id=str(llm_run_id) if llm_run_id is not None else None,
             )
             return payload, llm_run_id, repair_history
+        except ExecutionBudgetError:
+            raise
         except Exception as exc:
             last_error = exc
             if (
@@ -4804,15 +4958,20 @@ def _previous_outline_batch_constraints(
     if is_english_language(language):
         return [
             "[PREVIOUS JUDGE-ROUND EDIT BASELINE — DO NOT RESTART] The JSON below "
-            "contains the prior batch's authoritative story facts and causal/scene spine. "
+            "is a lossy summary of a rejected candidate, not authoritative canon. "
+            "SOURCE AUTHORITY outranks this baseline. Keep source-consistent facts and "
+            "repair conflicting fields even when the judge did not name every occurrence. "
+            "Truncated strings and omitted scenes are incomplete references, not prose to copy. "
             "Return the same complete chapter range after applying the named judge repairs. "
-            "Preserve every unmentioned fact, decision, knowledge boundary, causal link, and "
+            "Preserve unmentioned source-consistent decisions, knowledge boundaries, causal links, and "
             "scene spine. Do not replace the plot with a new version:\n" + baseline
         ]
     return [
-        "【上一轮章纲编辑基线——定点修改，禁止推倒重写】以下 JSON 保留了上一轮的权威剧情事实、"
-        "因果链与场景骨架。本轮必须仍返回同一完整章节范围，只修改裁决明确点名的问题；未点名的"
-        "事实、人物决定、知识边界、因果链和场景骨架必须保留，不得另起一版剧情：\n" + baseline
+        "【上一轮章纲编辑基线——定点修改，禁止推倒重写】以下 JSON 是被拒绝候选的有损摘要，不是权威设定。"
+        "SOURCE AUTHORITY 优先；仅保留与来源一致的候选事实，来源冲突字段即使未被裁判逐项点名也须修复。"
+        "截断字符串和省略场景只是非完整参考，不能把残句复制为正文或当作完整动作。"
+        "本轮必须仍返回同一完整章节范围；保留未受影响且与来源一致的人物决定、知识边界、"
+        "因果链和场景骨架，不得另起一版剧情：\n" + baseline
     ]
 
 
@@ -4874,6 +5033,26 @@ def _prefer_outline_repair_baseline(
             copy.deepcopy(dict(best_payload)) if best_payload is not None else None,
             copy.deepcopy(dict(best_report)) if best_report is not None else None,
         )
+    # Old cross-run summaries truncate text and omit scenes. Their score was
+    # earned by the full source, not by the summary, so it cannot outrank a
+    # complete editable payload. They remain hints when no full source exists.
+    best_is_compact = bool(
+        (best_report or {}).get("restored_from_previous_replan")
+        and not (best_report or {}).get("baseline_is_lossless")
+    )
+    candidate_is_compact = bool(
+        candidate_report.get("restored_from_previous_replan")
+        and not candidate_report.get("baseline_is_lossless")
+    )
+    if (
+        best_payload is not None
+        and best_report is not None
+        and best_is_compact != candidate_is_compact
+    ):
+        chosen_payload, chosen_report = (
+            (candidate_payload, candidate_report) if best_is_compact else (best_payload, best_report)
+        )
+        return copy.deepcopy(dict(chosen_payload)), copy.deepcopy(dict(chosen_report))
     try:
         candidate_score = float(candidate_report.get("overall_score") or 0.0)
     except (TypeError, ValueError):
@@ -4901,23 +5080,24 @@ def _outline_baseline_covers_window(
     for chapters 9-16 that were never planned
     (2026-08-03, xianxia-upgrade-1785697772).
 
-    A payload that carries no chapter numbers is not evidence of a mismatch, so
-    it is kept: this guard only rejects a baseline that positively describes
-    chapters outside the window being planned.
+    A partial batch inside the requested window is also not a complete edit
+    source: repairing chapters 7-9 cannot produce a required 1-9 window.
+    Absent/empty payloads keep the legacy no-baseline behavior.
     """
 
     chapters = _mapping(payload).get("chapters")
-    if not isinstance(chapters, list) or not window_chapters:
+    if not isinstance(chapters, list) or not chapters or not window_chapters:
         return True
-    numbers = {
-        int(entry.get("chapter_number") or 0)
+    numbers = [
+        _int_or_none(entry.get("chapter_number"))
         for entry in chapters
         if isinstance(entry, Mapping)
-    }
-    numbers.discard(0)
-    if not numbers:
-        return True
-    return numbers <= set(window_chapters)
+    ]
+    return (
+        len(numbers) == len(chapters) == len(window_chapters)
+        and None not in numbers
+        and set(numbers) == set(window_chapters)
+    )
 
 
 def _restore_persisted_outline_repair_baseline(
@@ -4929,7 +5109,25 @@ def _restore_persisted_outline_repair_baseline(
     baseline = _mapping(metadata.get("outline_commercial_repair_baseline"))
     if not baseline:
         return None, None
+    from bestseller.services.prompt_source_policy import outline_dependency_hash
+    dependency_hash = outline_dependency_hash(metadata)
+    if dependency_hash and metadata.get("outline_repair_dependency_hash") != dependency_hash:
+        return None, None
     failure = _mapping(metadata.get("outline_commercial_last_failure"))
+    # Once a derived source revision is applied, an outline rejected against a
+    # previous source is not an editable baseline for the new source.  Keep
+    # legacy projects compatible (they have no marker), but fail closed for a
+    # marked project when the baseline has no exact revision binding.
+    revision_marker = _mapping(metadata.get("derived_input_revision"))
+    current_revision = _non_empty_string(revision_marker.get("candidate_hash"), "")
+    if current_revision:
+        baseline_revision = _non_empty_string(
+            failure.get("baseline_revision_key")
+            or metadata.get("outline_commercial_repair_baseline_revision_key"),
+            "",
+        )
+        if baseline_revision != current_revision:
+            return None, None
     try:
         score = float(
             failure.get("recovery_baseline_score")
@@ -4951,6 +5149,9 @@ def _restore_persisted_outline_repair_baseline(
             {"code": code, "severity": "high"} for code in blocking_codes[:12]
         ],
         "restored_from_previous_replan": True,
+        "baseline_is_lossless": (
+            metadata.get("outline_commercial_repair_baseline_kind") == "lossless-v1"
+        ),
     }
     return copy.deepcopy(dict(baseline)), report
 
@@ -4962,6 +5163,34 @@ async def _restore_best_historical_outline_repair_baseline(
     volume_number: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Recover the highest-scoring rejected outline from prior workflow runs."""
+
+    from bestseller.services.outline_recovery_checkpoint import (
+        matching_checkpoint,
+        reconstruct_judged_batches,
+        reconstruct_with_historical_producer,
+    )
+
+    checkpoint_pairs = []
+    for bucket in (
+        (project.metadata_json or {}).get("outline_commercial_judge_checkpoints", {}).values()
+    ):
+        record = bucket.get("best") or {}
+        if matching_checkpoint(record, project.metadata_json or {}, volume_number):
+            checkpoint_pairs.append(record)
+    checkpoint_result = None
+    if checkpoint_pairs:
+        record = max(
+            checkpoint_pairs, key=lambda row: float(row["report"].get("overall_score") or 0)
+        )
+        checkpoint_result = (
+            copy.deepcopy(record["candidate"]),
+            {
+                **copy.deepcopy(record["report"]),
+                "restored_from_historical_outline": True,
+                "baseline_is_lossless": True,
+                "restored_from_judge_checkpoint": True,
+            },
+        )
 
     step_prefix = f"volume_{volume_number}_outline_commercial_judge"
     historical_steps = list(
@@ -4997,6 +5226,36 @@ async def _restore_best_historical_outline_repair_baseline(
         key=lambda item: (item[0], item[1].created_at),
         reverse=True,
     ):
+        if checkpoint_result and _score <= float(checkpoint_result[1].get("overall_score") or 0):
+            break
+        dependency = outline_dependency_hash(project.metadata_json or {}) or content_hash({})
+        workflow = await session.scalar(
+            select(WorkflowRunModel).where(WorkflowRunModel.id == step.workflow_run_id)
+        )
+        if (
+            not workflow
+            or (workflow.metadata_json or {}).get("outline_repair_dependency_hash") != dependency
+            or report.get("outline_repair_dependency_hash") != dependency
+        ):
+            continue
+        # Historical outline artifacts are only reusable when their judge run
+        # recorded the same derived source revision currently applied to the
+        # project.  Without this check, a high-scoring rejected outline from a
+        # prior source silently reintroduces the old world/cost contract.
+        revision_marker = _mapping(project.metadata_json).get("derived_input_revision")
+        current_revision = _non_empty_string(_mapping(revision_marker).get("candidate_hash"), "")
+        if current_revision:
+            workflow = await session.scalar(
+                select(WorkflowRunModel).where(WorkflowRunModel.id == step.workflow_run_id)
+            )
+            workflow_metadata = _mapping(getattr(workflow, "metadata_json", None))
+            if (
+                _non_empty_string(workflow_metadata.get("failure_baseline_revision_key"), "")
+                != current_revision
+                or _non_empty_string(workflow_metadata.get("derived_source_candidate_hash"), "")
+                != current_revision
+            ):
+                continue
         workflow_llm_ids = select(LlmRunModel.id).where(
             LlmRunModel.workflow_run_id == step.workflow_run_id
         )
@@ -5016,21 +5275,66 @@ async def _restore_best_historical_outline_repair_baseline(
             )
             .limit(1)
         )
-        if artifact is None:
+        repaired_content = None
+        producer_replay_receipt = {}
+        if artifact is not None and content_hash(artifact.content) == report.get(
+            "graded_outline_hash"
+        ):
+            repaired_content = copy.deepcopy(dict(artifact.content or {}))
+        else:
+            batches = list(
+                (
+                    await session.scalars(
+                        select(PlanningArtifactVersionModel)
+                        .where(
+                            PlanningArtifactVersionModel.project_id == project.id,
+                            PlanningArtifactVersionModel.artifact_type
+                            == ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                            PlanningArtifactVersionModel.status == "approved",
+                            PlanningArtifactVersionModel.created_at <= step.created_at,
+                            PlanningArtifactVersionModel.source_run_id.in_(workflow_llm_ids),
+                        )
+                        .order_by(
+                            PlanningArtifactVersionModel.created_at.desc(),
+                            PlanningArtifactVersionModel.version_no.desc(),
+                        )
+                    )
+                ).all()
+            )
+            allowed_ids = set((await session.scalars(workflow_llm_ids)).all())
+            repaired_content = reconstruct_judged_batches(
+                artifacts=batches,
+                allowed_source_ids=allowed_ids,
+                report=report,
+                metadata=project.metadata_json or {},
+                workflow_metadata=workflow.metadata_json or {},
+                volume_number=volume_number,
+            )
+            if repaired_content is None:
+                repaired_content, producer_replay_receipt = (
+                    await reconstruct_with_historical_producer(
+                        session, project=project, artifacts=batches, allowed_source_ids=allowed_ids,
+                        report=report, workflow_metadata=workflow.metadata_json or {},
+                        volume_number=volume_number,
+                    )
+                )
+        if repaired_content is None:
             continue
-        repaired_content = _repair_protagonist_name_drift_for_planner(
-            project,
-            copy.deepcopy(dict(artifact.content or {})),
-            artifact_type="historical_volume_chapter_outline",
-        )
         if not _mapping_list(repaired_content.get("chapters")):
             continue
         restored_report = copy.deepcopy(dict(report))
+        restored_report.update(producer_replay_receipt)
         restored_report["restored_from_historical_outline"] = True
-        restored_report["restored_artifact_id"] = str(artifact.id)
-        restored_report["restored_artifact_version"] = artifact.version_no
+        if artifact is not None and content_hash(artifact.content) == report.get(
+            "graded_outline_hash"
+        ):
+            restored_report["restored_artifact_id"] = str(artifact.id)
+            restored_report["restored_artifact_version"] = artifact.version_no
+        else:
+            restored_report["restored_from_same_workflow_batches"] = True
+            restored_report["restored_workflow_run_id"] = str(step.workflow_run_id)
         return repaired_content, restored_report
-    return None, None
+    return checkpoint_result or (None, None)
 
 
 def _historical_outline_report_meets_declared_gate(
@@ -5063,85 +5367,300 @@ def _historical_outline_report_meets_declared_gate(
     return True
 
 
+_OUTLINE_PATCH_CHAPTER_FIELDS = {
+    "goal",
+    "chapter_goal",
+    "opening_situation",
+    "opening_pressure",
+    "main_conflict",
+    "hook_description",
+    "hook_type",
+    "target_emotion",
+    "chapter_event_role",
+    "protagonist_inner_state",
+    "tail_hook",
+    "tail_hook_description",
+    "world_state_deltas",
+    "information_gap_mode",
+    "information_control_mode",
+    "world_rule_landing",
+    "protagonist_flaw",
+    "protagonist_desire",
+    "required_payoff",
+    "chapter_information_introduced",
+    "chapter_information_held_back",
+    "chapter_concrete_actions",
+    "chapter_object_uses",
+    "key_reveals",
+    "anti_copy_boundary_notes",
+    "methodology_contract",
+    "causal_contract",
+    "event_cycle_contract",
+    "object_signal_contract",
+    "whole_chapter_logic_contract",
+}
+_OUTLINE_PATCH_CAUSAL_FIELDS = {
+    "pressure",
+    "resistance",
+    "immediate_pressure",
+    "opposition",
+    "protagonist_choice",
+    "protagonist_desire",
+    "cost_or_tradeoff",
+    "state_change",
+    "visible_action_or_reaction",
+    "gain_or_reveal",
+    "chapter_function",
+    "next_reader_desire",
+    "final_state",
+}
+_OUTLINE_PATCH_SCENE_FIELDS = {
+    "participants",
+    "purpose",
+    "entry_state",
+    "exit_state",
+    "hook_requirement",
+    "information_control_mode",
+    "concrete_goal",
+    "cut_point",
+    "action_sequence",
+    "forbidden_actions",
+    "methodology_contract",
+    "key_dialogue_beats",
+    "sensory_anchors",
+    "scene_type",
+    "time_label",
+    "signature_image",
+    "protagonist_state",
+    "object_signal",
+    "relationship_debts",
+    "information_introduced",
+    "information_held_back",
+}
+
+
+def _outline_patch_capacity(outline_payload: Mapping[str, Any]) -> int:
+    # One repair can need to update every affected projection atomically.
+    # Bound work by the actual registered targets, rather than rejecting a
+    # valid small chapter because it has more than twelve affected fields.
+    targets: set[tuple] = set()
+    for chapter in _mapping_list(outline_payload.get("chapters")):
+        number = chapter.get("chapter_number")
+        if type(number) is not int or number < 1:
+            continue
+        targets.update((number, "chapter", None, field)
+                       for field in _OUTLINE_PATCH_CHAPTER_FIELDS)
+        targets.update((number, "causal_contract", None, field)
+                       for field in _OUTLINE_PATCH_CAUSAL_FIELDS)
+        for scene in _mapping_list(chapter.get("scenes")):
+            scene_number = scene.get("scene_number")
+            if type(scene_number) is int and scene_number > 0:
+                targets.update((number, "scene", scene_number, field)
+                               for field in _OUTLINE_PATCH_SCENE_FIELDS)
+    return len(targets)
+
+
+def _outline_patch_protocol(outline_payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "patch_object_schema": {
+            "required": ["chapter_number", "scope", "field", "value"],
+            "chapter_number": "integer from targets",
+            "scope": "chapter | causal_contract | scene",
+            "field": "one field registered under that scope",
+            "value": "complete corrected field value with the registered type",
+            "scene_number": "required integer from targets for scene scope only",
+        },
+        "empty_patch_policy": "A rejected candidate requires at least one changed legal patch; an empty array is invalid, never approval.",
+        "max_patches": _outline_patch_capacity(outline_payload),
+        "capacity_policy": "registered-outline-targets.v2",
+        "targets": {str(c.get("chapter_number")): [s.get("scene_number")
+            for s in _mapping_list(c.get("scenes"))]
+            for c in _mapping_list(outline_payload.get("chapters"))},
+        "fields": {"chapter": sorted(_OUTLINE_PATCH_CHAPTER_FIELDS),
+                   "causal_contract": sorted(_OUTLINE_PATCH_CAUSAL_FIELDS),
+                   "scene": sorted(_OUTLINE_PATCH_SCENE_FIELDS)},
+        "value_types": {"participants": "array of strings", "action_sequence": "array of strings",
+            "forbidden_actions": "array of strings", "key_dialogue_beats": "array of strings",
+            "chapter_information_introduced": "array of strings",
+            "chapter_concrete_actions": "array of strings",
+            "chapter_object_uses": "array of strings", "key_reveals": "array of strings",
+            "anti_copy_boundary_notes": "array of strings",
+            "relationship_debts": "array of strings",
+            "information_introduced": "array of strings",
+            "information_held_back": "array of strings",
+            "chapter_information_held_back": "array of strings", "purpose": "object",
+            "entry_state": "object", "exit_state": "object",
+            "methodology_contract": "object", "causal_contract": "object",
+            "event_cycle_contract": "object", "object_signal_contract": "object",
+            "whole_chapter_logic_contract": "object", "sensory_anchors": "object",
+            "world_state_deltas": "array of objects; other editable fields are strings"},
+        "authority": "Only the supplied candidate's chapter/scene targets exist. Macro chapters outside this window are NOT editable. Review suggestions are not source facts.",
+    }
+
+
 def _apply_outline_commercial_patches(
     outline_payload: Mapping[str, Any],
     patches: Sequence[Mapping[str, Any]],
+    *,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Apply bounded field patches without permitting a whole-outline rewrite."""
 
     repaired = copy.deepcopy(dict(outline_payload))
     chapters = _mapping_list(repaired.get("chapters"))
-    chapter_fields = {
-        "goal",
-        "chapter_goal",
-        "opening_situation",
-        "opening_pressure",
-        "main_conflict",
-        "hook_description",
-        "tail_hook",
-        "information_gap_mode",
-        "information_control_mode",
-        "world_rule_landing",
-    }
-    causal_fields = {
-        "pressure",
-        "resistance",
-        "immediate_pressure",
-        "opposition",
-        "protagonist_choice",
-        "cost_or_tradeoff",
-        "state_change",
-        "visible_action_or_reaction",
-    }
-    scene_fields = {
-        "participants",
-        "purpose",
-        "entry_state",
-        "exit_state",
-        "hook_requirement",
-        "information_control_mode",
-        "concrete_goal",
-        "cut_point",
-    }
-    def _preserving_merge(current: Any, incoming: Any) -> Any:
-        if current in (None, "", []):
-            return copy.deepcopy(incoming)
+    patch_items = list(patches)
+    if strict and not patch_items:
+        raise PlannerFallbackError(
+            "Outline surgical repair returned an empty patch set; the rejected candidate remains unchanged."
+        )
+    patch_capacity = _outline_patch_capacity(outline_payload)
+    if strict and len(patch_items) > patch_capacity:
+        raise PlannerFallbackError(
+            f"Outline surgical repair exceeded protocol capacity ({patch_capacity} patches)."
+        )
+    chapter_fields = _OUTLINE_PATCH_CHAPTER_FIELDS
+    causal_fields = _OUTLINE_PATCH_CAUSAL_FIELDS
+    scene_fields = _OUTLINE_PATCH_SCENE_FIELDS
+    def _replace_named_values(current: Any, incoming: Any) -> Any:
+        # Preserve fields the editor did not name, not the rejected contents
+        # of fields it did name. Appending a correction retains the original
+        # contradiction, making removal-based repairs impossible.
+        if incoming is None or (isinstance(incoming, str) and not incoming.strip()):
+            return copy.deepcopy(current)
+        if current in (None, ""):
+            return copy.deepcopy(incoming) if isinstance(incoming, (str, list, Mapping)) else current
         if isinstance(current, str) and isinstance(incoming, str):
-            incoming_text = incoming.strip()
-            if not incoming_text or incoming_text in current:
-                return current
-            return f"{current}；定点补强：{incoming_text}"
+            return incoming.strip()
         if isinstance(current, list) and isinstance(incoming, list):
-            return [*current, *(item for item in incoming if item not in current)]
+            return copy.deepcopy(incoming)
         if isinstance(current, Mapping) and isinstance(incoming, Mapping):
             merged = copy.deepcopy(dict(current))
             for key, value in incoming.items():
-                merged[key] = _preserving_merge(merged.get(key), value)
+                replacement = _replace_named_values(merged.get(key), value)
+                if key in merged or replacement is not None:
+                    merged[key] = replacement
             return merged
         return copy.deepcopy(current)
 
-    for patch in patches[:16]:
+    applied = 0
+    seen_patch_targets: set[tuple] = set()
+
+    def _reject_patch(index: int, reason: str) -> None:
+        if strict:
+            raise PlannerFallbackError(
+                f"Outline surgical repair returned invalid patch {index + 1}: {reason}."
+            )
+
+    for index, patch in enumerate(patch_items[:patch_capacity if strict else 16]):
+        if strict and type(patch.get("chapter_number")) is not int:
+            _reject_patch(index, "chapter_number must be an integer")
         chapter_number = _int_or_none(patch.get("chapter_number"))
         scope = _non_empty_string(patch.get("scope"), "")
         field_name = _non_empty_string(patch.get("field"), "")
+        if strict and scope == "scene" and type(patch.get("scene_number")) is not int:
+            _reject_patch(index, "scene_number must be an integer")
         value = copy.deepcopy(patch.get("value"))
+        scene_number = _int_or_none(patch.get("scene_number")) if scope == "scene" else None
+        if strict:
+            canonical_field = "goal" if scope == "chapter" and field_name == "chapter_goal" else field_name
+            target = (chapter_number, scope, scene_number, canonical_field)
+            if target in seen_patch_targets:
+                _reject_patch(index, "duplicate target in bounded patch capacity")
+            seen_patch_targets.add(target)
         chapter = next(
             (item for item in chapters if item.get("chapter_number") == chapter_number),
             None,
         )
-        if chapter is None or value in (None, "", []):
+        if chapter is None:
+            _reject_patch(index, "target chapter does not exist")
             continue
+        if value is None:
+            _reject_patch(index, "value is null")
+            continue
+        if strict:
+            list_fields = {
+                "scene": {"participants", "action_sequence", "forbidden_actions", "key_dialogue_beats",
+                    "relationship_debts", "information_introduced", "information_held_back"},
+                "chapter": {"chapter_information_introduced", "chapter_information_held_back",
+                    "chapter_concrete_actions", "chapter_object_uses", "key_reveals",
+                    "anti_copy_boundary_notes"},
+            }.get(scope, set())
+            object_fields = {
+                "scene": {"purpose", "entry_state", "exit_state", "methodology_contract", "sensory_anchors"},
+                "chapter": {"methodology_contract", "causal_contract", "event_cycle_contract",
+                    "object_signal_contract", "whole_chapter_logic_contract"},
+            }.get(scope, set())
+            if (field_name in list_fields
+                and (not isinstance(value, list) or any(not isinstance(v, str) for v in value))):
+                _reject_patch(index, "value must be an array of strings")
+                continue
+            if field_name in object_fields and not isinstance(value, Mapping):
+                _reject_patch(index, "value must be an object")
+                continue
+            if scope == "causal_contract" and not isinstance(value, str):
+                _reject_patch(index, "causal value must be a string")
+                continue
+            if (scope == "chapter" and field_name in chapter_fields
+                and field_name not in list_fields | object_fields | {"world_state_deltas"}
+                and not isinstance(value, str)):
+                _reject_patch(index, f"chapter field {field_name!r} value must be a string")
+                continue
+            if (scope == "scene" and field_name in scene_fields
+                and field_name not in list_fields | object_fields
+                and not isinstance(value, str)):
+                _reject_patch(index, f"scene field {field_name!r} value must be a string")
+                continue
+            if scope == "chapter" and field_name == "world_state_deltas" and (
+                not isinstance(value, list) or any(not isinstance(v, Mapping) for v in value)
+            ):
+                _reject_patch(index, "world_state_deltas value must be an array of objects")
+                continue
         if scope == "chapter" and field_name in chapter_fields:
-            chapter[field_name] = _preserving_merge(chapter.get(field_name), value)
+            previous = copy.deepcopy(chapter.get(field_name))
+            replacement = _replace_named_values(previous, value)
+            if replacement == previous:
+                # A patch set can repeat an already-correct value while fixing
+                # other fields. It is idempotent, not a malformed revision.
+                # The whole-candidate no-change guard below still rejects a
+                # response that makes no material edit at all.
+                continue
+            chapter[field_name] = replacement
+            alias = {"goal": "chapter_goal", "chapter_goal": "goal"}.get(field_name)
+            if (
+                alias is not None
+                and alias in chapter
+                and isinstance(chapter[field_name], str)
+                and isinstance(value, str)
+                and value.strip()
+            ):
+                chapter[alias] = chapter[field_name]
+            applied += 1
             continue
         if scope == "causal_contract" and field_name in causal_fields:
             causal = dict(_mapping(chapter.get("causal_contract")))
-            causal[field_name] = _preserving_merge(causal.get(field_name), value)
+            previous = copy.deepcopy(causal.get(field_name))
+            replacement = _replace_named_values(previous, value)
+            if replacement == previous:
+                continue
+            causal[field_name] = replacement
             chapter["causal_contract"] = causal
+            applied += 1
+            continue
+        if scope not in {"chapter", "causal_contract", "scene"}:
+            _reject_patch(index, "scope is outside the repair protocol")
             continue
         if scope != "scene" or field_name not in scene_fields:
+            allowed = {
+                "chapter": chapter_fields,
+                "causal_contract": causal_fields,
+                "scene": scene_fields,
+            }.get(scope, set())
+            _reject_patch(
+                index,
+                f"field is outside the repair protocol: scope={scope!r}, "
+                f"field={field_name!r}; allowed fields={sorted(allowed)!r}",
+            )
             continue
-        scene_number = _int_or_none(patch.get("scene_number"))
         scene = next(
             (
                 item
@@ -5150,10 +5669,106 @@ def _apply_outline_commercial_patches(
             ),
             None,
         )
-        if scene is not None:
-            scene[field_name] = _preserving_merge(scene.get(field_name), value)
+        if scene is None:
+            _reject_patch(index, "target scene does not exist")
+            continue
+        previous = copy.deepcopy(scene.get(field_name))
+        replacement = _replace_named_values(previous, value)
+        if replacement == previous:
+            continue
+        scene[field_name] = replacement
+        applied += 1
     repaired["chapters"] = chapters
+    if strict and not applied:
+        raise PlannerFallbackError(
+            "Outline surgical repair produced no change; the rejected candidate was not adopted."
+        )
+    if strict and _without_planning_meta(repaired) == _without_planning_meta(
+        dict(outline_payload)
+    ):
+        raise PlannerFallbackError(
+            "Outline surgical repair produced no net change; the rejected candidate was not adopted."
+        )
+    if strict:
+        from pydantic import ValidationError
+
+        from bestseller.domain.workflow import ChapterOutlineBatchInput
+        from bestseller.services.outline_semantic_gate import (
+            evaluate_outline_semantic_gate,
+            hard_contract_findings,
+        )
+
+        try:
+            ChapterOutlineBatchInput.model_validate(copy.deepcopy(repaired))
+        except ValidationError as exc:
+            raise PlannerFallbackError(
+                "Outline surgical repair failed chapter-outline schema validation."
+            ) from exc
+
+        def _hard_finding_keys(payload: Mapping[str, Any]) -> set[tuple[str, int | None]]:
+            report = evaluate_outline_semantic_gate(payload)
+            return {
+                (finding.code, finding.chapter_number)
+                for finding in hard_contract_findings(report)
+            }
+
+        new_hard_findings = _hard_finding_keys(repaired) - _hard_finding_keys(outline_payload)
+        if new_hard_findings:
+            rendered = ", ".join(
+                f"{code}@{chapter if chapter is not None else '-'}"
+                for code, chapter in sorted(new_hard_findings, key=lambda item: (item[0], item[1] or 0))
+            )
+            raise PlannerFallbackError(
+                "Outline surgical repair introduced new hard semantic findings: " + rendered
+            )
     return repaired
+
+
+def _outline_commercial_repair_mode(
+    *,
+    previous_outline: Mapping[str, Any] | None,
+    directives: Sequence[str],
+    source_is_lossless: bool,
+) -> str:
+    """Choose a fresh generation only when there is no rejected candidate to edit."""
+
+    return (
+        "surgical"
+        if previous_outline and _string_list(directives) and source_is_lossless
+        else "generate"
+    )
+
+
+async def _produce_outline_commercial_candidate(
+    *,
+    previous_outline: Mapping[str, Any] | None,
+    directives: Sequence[str],
+    source_is_lossless: bool,
+    generate_candidate: Callable[
+        [], Awaitable[tuple[dict[str, Any], list[UUID], list[Any]]]
+    ],
+    repair_candidate: Callable[
+        [Mapping[str, Any], Sequence[str]],
+        Awaitable[tuple[dict[str, Any], UUID | None]],
+    ],
+) -> tuple[dict[str, Any], list[UUID], list[Any], str]:
+    """Produce one judge candidate while keeping revisions out of artifact reuse."""
+
+    mode = _outline_commercial_repair_mode(
+        previous_outline=previous_outline,
+        directives=directives,
+        source_is_lossless=source_is_lossless,
+    )
+    if mode == "generate":
+        payload, run_ids, repair_history = await generate_candidate()
+        return payload, run_ids, repair_history, mode
+    assert previous_outline is not None
+    payload, run_id = await repair_candidate(previous_outline, directives)
+    if run_id is None:
+        raise PlannerFallbackError(
+            "Outline surgical repair returned no llm_run_id; the candidate cannot be attributed."
+        )
+    return payload, [run_id], [], mode
 
 
 async def _repair_outline_commercial_findings_surgically(
@@ -5165,51 +5780,229 @@ async def _repair_outline_commercial_findings_surgically(
     logical_name: str,
     outline_payload: Mapping[str, Any],
     directives: Sequence[str],
+    world_spec: Mapping[str, Any] | None = None,
+    validation_context: Mapping[str, Any] | None = None,
+    source_report: Mapping[str, Any] | None = None,
+    source_context: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], UUID | None]:
     """Edit only judge-named fields on a strong historical outline."""
 
+    if source_context is not None:
+        from bestseller.services.planning_surgical_repair import repair
+        return await repair(session, settings, project=project, workflow_run_id=workflow_run_id,
+            logical_name=logical_name, outline_payload=outline_payload, directives=directives,
+            source_context=source_context, validation_context=validation_context,
+            source_report=source_report)
+
+    from bestseller.services.outline_llm_judge import (
+        OUTLINE_SOURCE_AUTHORITY_RULES,
+        build_outline_repair_directives,
+        render_outline_source_brief,
+        source_bound_outline_repair_directives,
+    )
+
+    # Keep a failed edit separate from the retained best source. Its current
+    # bound checkpoint also survives a dispatcher restart; a higher old score
+    # must not erase the evidence needed to avoid repeating the same edit.
+    repair_feedback = _mapping(_mapping(source_report).get("rejected_repair_feedback"))
+    if not repair_feedback:
+        from bestseller.services.outline_recovery_checkpoint import matching_checkpoint
+
+        volume_no = int(_mapping(validation_context).get("volume_number") or 1)
+        for bucket in _mapping(_mapping(project.metadata_json).get(
+            "outline_commercial_judge_checkpoints"
+        )).values():
+            latest = _mapping(_mapping(bucket).get("latest_candidate"))
+            if (latest.get("candidate_hash") != content_hash(outline_payload)
+                and matching_checkpoint(latest, _mapping(project.metadata_json), volume_no)
+                and not _mapping(latest.get("report")).get("passed")):
+                repair_feedback = {"candidate_hash": latest["candidate_hash"],
+                    "report": copy.deepcopy(latest["report"])}
+                break
+    brief = _outline_judge_project_brief(
+        project, metadata=_mapping(project.metadata_json), semantic_candidates=[],
+        world_spec=world_spec,
+    )
+    if _has_current_world_authority(brief):
+        # Rebuild old persisted diagnostics under the current evidence policy.
+        # Otherwise numeric-only legacy directives hide the actual scene issues
+        # even though their full, immutable source report is still available.
+        if source_report and any(source_report.get(key) for key in (
+            "blocking_issues", "audit_issues", "dimension_scores"
+        )):
+            from bestseller.domain.llm_quality_judge import LLMQualityJudgeResult
+
+            directives = build_outline_repair_directives(
+                LLMQualityJudgeResult.model_validate(dict(source_report)),
+                source_authority=True,
+            )
+        directives = source_bound_outline_repair_directives(directives)
+    failed_edit_context = ""
+    if repair_feedback and isinstance(repair_feedback.get("report"), Mapping):
+        from bestseller.domain.llm_quality_judge import LLMQualityJudgeResult
+
+        rejected_diagnoses = build_outline_repair_directives(
+            LLMQualityJudgeResult.model_validate(dict(repair_feedback["report"])),
+            source_authority=True,
+        )[:8]
+        failed_edit_context = (
+            "\n[REJECTED EDIT DIAGNOSTICS — untrusted, NOT the current candidate]\n"
+            "下面记录针对上次被拒绝的修订，只用于避免重现错误改法；"
+            "不是当前候选的事实或新增设定授权。先核对当前候选，"
+            "仅按 SOURCE AUTHORITY 修复真实问题，不得照抄评审提出的新能力、规则或情节。\n"
+            + _json_dumps({"candidate_hash": repair_feedback.get("candidate_hash"),
+                "diagnostics": rejected_diagnoses}) + "\n"
+        )
     system_prompt = (
         "你是小说章纲的定点修订编辑。只输出合法 JSON patch，不解释，禁止重写整份章纲。"
+        + OUTLINE_SOURCE_AUTHORITY_RULES
     )
+    prompt_candidate = _without_planning_meta(dict(outline_payload))
     user_prompt = (
         f"本书：{project.title}；题材：{project.genre}/{project.sub_genre or '-'}。\n"
+        f"项目事实：\n{render_outline_source_brief(brief)}\n"
         f"必须修复：{_json_dumps(list(directives)[:8])}\n"
-        f"当前权威章纲：{_json_dumps(dict(outline_payload))}\n\n"
+        f"{failed_edit_context}"
+        f"当前待修章纲（候选，不是来源授权）：{_json_dumps(prompt_candidate)}\n\n"
         "返回 {\"patches\":[...]}，每项字段为 chapter_number、scope、field、value；"
         "scope 只能是 chapter、causal_contract、scene，scene 项另给 scene_number。"
-        "只改裁决点名的问题，每个 patch 必须保留原剧情事实与因果。"
-        "chapter 可改 goal/chapter_goal/opening_situation/opening_pressure/main_conflict/"
-        "hook_description/tail_hook/information_gap_mode/information_control_mode/"
-        "world_rule_landing；causal_contract 可改 pressure/resistance/immediate_pressure/"
-        "opposition/protagonist_choice/cost_or_tradeoff/state_change/visible_action_or_reaction；"
-        "scene 可改 participants/purpose/entry_state/exit_state/hook_requirement/"
-        "information_control_mode/concrete_goal/cut_point。最多 12 项，不得新增、删除或改序章节。"
+        "只改裁决点名及与 SOURCE AUTHORITY 冲突的问题，每个 patch 保留其余合规剧情事实与因果。"
+        "value 必须是该字段修订后的完整值，直接替换错误旧值，不是追加说明；"
+        "对象只替换提供的子字段，未提供的子字段保留；列表是完整替换，可用空列表清除错误条目。"
+        "保留未点名事实，但被裁决指出的错误事实必须移除，不得写成旧错句加定点补强或免责声明。"
+        "同一错误若在实际章纲多个字段重复，必须分别修订这些已有字段（含钩子、状态变化和场景目的），"
+        "不要只改一处而让另一处继续断言旧事实；不要发明章纲中不存在的别名。"
+        f"最多 {_outline_patch_capacity(outline_payload)} 项，不得新增、删除或改序章节。"
+        "同一章的多个契约子字段可合并在对应对象补丁中，其他未点名子字段保持原样。"
+        "必须遵守以下可编辑目标、字段和类型协议：\n"
+        + _json_dumps(_outline_patch_protocol(outline_payload))
     )
-    completion = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="planner",
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            fallback_response='{"patches":[]}',
-            prompt_template=f"planner_{logical_name}_commercial_surgical_repair",
-            prompt_version="1.0",
-            project_id=project.id,
-            workflow_run_id=workflow_run_id,
-            max_tokens_override=5000,
-            metadata={
-                "project_slug": project.slug,
-                "artifact": logical_name,
-                "repair_kind": "outline_commercial_surgical_repair",
-            },
-        ),
-    )
-    patch_payload = _extract_json_payload(completion.content)
-    repaired = _apply_outline_commercial_patches(
-        outline_payload,
-        _mapping_list(_mapping(patch_payload).get("patches")),
-    )
+    if source_context is not None:
+        # A revision proposal needs all selected sources, not a summary inferred
+        # from an older materialized plan. The caller supplies verified raw rows
+        # and labels untrusted proposals separately; no source becomes a grade.
+        user_prompt += (
+            "\n[FULL REVISION SOURCE CONTEXT]\n"
+            "按来源归因核对以下完整原始材料；只有显式作者字段可形成作者硬约束。"
+            "已选规划是当前来源，候选与历史诊断不是新增作者授权。"
+            "只修补可执行字段与真实因果/时序冲突，不添加模板化情节。\n"
+            + _json_dumps(dict(source_context))
+        )
+    from bestseller.services.budget import ExecutionBudgetError
+
+    enforce_candidate_contract = bool(validation_context)
+    repair_user_prompt = user_prompt
+    protocol_attempts: list[dict[str, Any]] = []
+    for protocol_attempt in range(2 if enforce_candidate_contract else 1):
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="planner",
+                system_prompt=system_prompt,
+                user_prompt=repair_user_prompt,
+                fallback_response='{"patches":[]}',
+                prompt_template=f"planner_{logical_name}_commercial_surgical_repair",
+                prompt_version="3.4-window-complete-repair",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                max_tokens_override=min(12000, max(5000, _outline_patch_capacity(outline_payload) * 250)),
+                metadata={
+                    "project_slug": project.slug,
+                    "artifact": logical_name,
+                    "repair_kind": "outline_commercial_surgical_repair",
+                },
+            ),
+        )
+        if enforce_candidate_contract and (
+            completion.llm_run_id is None
+            or _non_empty_string(getattr(completion, "provider", None), "").lower()
+            in {"", "mock", "fallback", "placeholder", "fixture", "test"}
+            or bool(getattr(completion, "fallback_used", False))
+        ):
+            raise PlannerFallbackError(
+                "Outline surgical repair provider receipt was missing, mock, or fallback."
+            )
+        try:
+            if getattr(completion, "finish_reason", None) == "length":
+                raise PlannerFallbackError("Outline surgical repair response was truncated")
+            patch_payload = _extract_json_payload(completion.content)
+            raw_patches = _mapping(patch_payload).get("patches")
+            if enforce_candidate_contract and (
+                not isinstance(raw_patches, list)
+                or any(not isinstance(item, Mapping) for item in raw_patches)
+            ):
+                raise PlannerFallbackError(
+                    "Outline surgical repair patches must be a JSON array of patch objects."
+                )
+            repaired = _apply_outline_commercial_patches(
+                outline_payload,
+                _mapping_list(raw_patches),
+                strict=enforce_candidate_contract,
+            )
+            if enforce_candidate_contract:
+                context = _mapping(validation_context)
+                existing_titles = await _fetch_existing_chapter_titles(
+                    session,
+                    project.id,
+                    exclude_volume_number=_int_or_none(context.get("volume_number")),
+                )
+                repaired = _validate_generated_volume_outline_or_raise(
+                    repaired,
+                    project=project,
+                    logical_name=logical_name,
+                    volume_number=int(context["volume_number"]),
+                    expected_count=int(context["expected_count"]),
+                    chapter_number_offset=int(context["chapter_number_offset"]),
+                    cast_spec=dict(_mapping(context.get("cast_spec"))),
+                    volume_entry=dict(_mapping(context.get("volume_entry"))),
+                    existing_titles=existing_titles,
+                    strict_story_effects=True,
+                    strict_field_degeneracy=True,
+                )
+            break
+        except ExecutionBudgetError:
+            raise
+        except (PlannerFallbackError, ValueError, TypeError) as exc:
+            protocol_attempts.append({"attempt": protocol_attempt + 1,
+                "llm_run_id": str(completion.llm_run_id), "error": str(exc)[:1200]})
+            if not enforce_candidate_contract or protocol_attempt == 1:
+                raise
+            repair_user_prompt = (user_prompt + "\n上次补丁未被应用，原候选保持不变。"
+                "只纠正下面的协议/校验错误并重新返回整份补丁数组；不要改写整份章纲或来源设定。\n"
+                + _json_dumps(protocol_attempts[-1]) + "\n上次补丁候选（无权覆盖原候选）：\n"
+                + completion.content[:12000])
+    source_meta = _mapping(_mapping(outline_payload).get("_meta"))
+    source_candidate = copy.deepcopy(_without_planning_meta(dict(outline_payload)))
+    prior_receipt = _mapping(source_meta.get("surgical_repair_receipt"))
+    source_reference = {
+        key: source_meta[key]
+        for key in ("reused_artifact_id", "artifact_id", "version_no", "input_hash")
+        if source_meta.get(key) not in (None, "")
+    }
+    if prior_receipt:
+        source_reference["parent_after_candidate_hash"] = prior_receipt.get(
+            "after_candidate_hash"
+        )
+        source_reference["parent_llm_run_id"] = prior_receipt.get("llm_run_id")
+    repaired["_meta"] = {
+        **source_meta,
+        "surgical_repair": True,
+        "surgical_source_hash": _approved_payload_hash(source_candidate),
+        "surgical_llm_run_id": str(completion.llm_run_id),
+        "workflow_run_id": str(workflow_run_id),
+        "surgical_repair_receipt": {
+            "before_candidate": source_candidate,
+            "source_reference": source_reference,
+            "source_report": copy.deepcopy(dict(source_report or {})),
+            "rejected_repair_feedback": copy.deepcopy(repair_feedback),
+            "after_candidate_hash": _approved_payload_hash(
+                _without_planning_meta(repaired)
+            ),
+            "llm_run_id": str(completion.llm_run_id),
+            "protocol_attempts": protocol_attempts,
+        },
+    }
     return repaired, completion.llm_run_id
 
 
@@ -5596,6 +6389,7 @@ async def _generate_volume_outline_batched(
     chapter_number_offset: int,
     revealed_ledger_block: str | None,
     base_constraints: list[str],
+    world_spec: Mapping[str, Any] | None = None,
     previous_outline_payload: Mapping[str, Any] | None = None,
     progress: PlanningProgressCallback | None = None,
 ) -> tuple[dict[str, Any], list[UUID], list[dict[str, Any]]]:
@@ -5622,6 +6416,7 @@ async def _generate_volume_outline_batched(
             chapter_number_offset=chapter_number_offset,
             revealed_ledger_block=revealed_ledger_block,
             base_constraints=base_constraints,
+            world_spec=world_spec,
             progress=progress,
         )
         return payload, [llm_run_id] if llm_run_id is not None else [], repair_history
@@ -5739,6 +6534,7 @@ async def _generate_volume_outline_batched(
                     chapter_number_offset=chapter_start,
                     revealed_ledger_block=revealed_ledger_block,
                     base_constraints=batch_constraints,
+                    world_spec=world_spec,
                     progress=progress,
                     consumed_event_entries=consumed_event_entries,
                     event_dedup_threshold=event_dedup_threshold,
@@ -5811,6 +6607,7 @@ async def _generate_volume_outline_batched(
                         chapter_number_offset=sub_start,
                         revealed_ledger_block=revealed_ledger_block,
                         base_constraints=sub_constraints,
+                        world_spec=world_spec,
                         progress=progress,
                         consumed_event_entries=consumed_event_entries,
                         event_dedup_threshold=event_dedup_threshold,
@@ -6829,54 +7626,63 @@ def _premise_character_descriptor(premise: str, name: str) -> str:
 
 _FEMALE_DESC_CUES = (
     "孤女", "师姐", "少女", "女子", "妇人", "娘", "妃", "母", "姑", "婆",
-    "嬷", "姐", "妹", "夫人", "小姐", "婢", "尼姑", "女修",
+    "嬷", "姐", "妹", "夫人", "小姐", "婢", "尼姑", "女修", "她", "她们",
 )
 _MALE_DESC_CUES = (
     "师兄", "少年", "翁", "公子", "兄", "父", "爷", "郎", "叟", "汉子",
-    "先生", "和尚", "道长", "执事", "男子", "男修",
+    "先生", "和尚", "道长", "执事", "男子", "男修", "他", "他们",
 )
 # Weak fallback only: given-name characters that skew strongly feminine.
 _FEMALE_NAME_CHARS = set("萤雪月兰婉莲香琴瑶玉珠媛娟妍蓉茵芷莹黛颜霜柔嫣")
 
 
 def _infer_premise_character_gender(
-    premise: str, name: str, descriptor: str = ""
+    premise: str, name: str, descriptor: str = "", *, allow_name_guess: bool = True
 ) -> str:
     """Best-effort deterministic gender for a premise-locked character.
 
-    The foundation_identity_contract requires a non-unknown gender at
-    materialization. Premise-locked entries are appended after the LLM cast
-    gates that normally fill this, so they arrive blank. Infer from explicit
-    cues in the descriptor / premise window (孤女/师姐/翁/执事…), then a weak
-    feminine-name-character fallback, and finally default to ``male`` (the most
-    common xianxia supporting default) so materialization is never blocked.
-    The value is correctable later — a defaulted gender beats a dropped name.
+    Infer from explicit cues in the descriptor / premise window (孤女/师姐/翁/执事…)
+    and a weak feminine-name-character fallback.  If the approved source does
+    not carry enough evidence, preserve ``unknown`` so the identity gate can
+    fail closed; a reader channel is not evidence about a character's gender.
     """
 
-    window = descriptor or ""
+    descriptor_text = descriptor or ""
+    descriptor_female = any(cue in descriptor_text for cue in _FEMALE_DESC_CUES)
+    descriptor_male = any(cue in descriptor_text for cue in _MALE_DESC_CUES)
+    if descriptor_female and not descriptor_male:
+        return "female"
+    if descriptor_male and not descriptor_female:
+        return "male"
+
+    window = descriptor_text
     idx = premise.find(name) if premise else -1
     if idx != -1:
         window += " " + premise[max(0, idx - 8):idx + 48]
-    for cue in _FEMALE_DESC_CUES:
-        if cue in window:
-            return "female"
-    for cue in _MALE_DESC_CUES:
-        if cue in window:
-            return "male"
-    if any(ch in _FEMALE_NAME_CHARS for ch in name[1:]):
+    female_evidence = any(cue in window for cue in _FEMALE_DESC_CUES)
+    male_evidence = any(cue in window for cue in _MALE_DESC_CUES)
+    if female_evidence and not male_evidence:
         return "female"
-    return "male"
+    if male_evidence and not female_evidence:
+        return "male"
+    if allow_name_guess and any(ch in _FEMALE_NAME_CHARS for ch in name[1:]):
+        return "female"
+    return "unknown"
 
 
 def _premise_locked_identity_fields(
     premise: str, name: str, descriptor: str = ""
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """gender + zh/en pronoun set for a premise-locked character (contract-required)."""
 
     gender = _infer_premise_character_gender(premise, name, descriptor)
     if gender == "female":
         return {"gender": "female", "pronoun_set_zh": "她", "pronoun_set_en": "she/her"}
-    return {"gender": "male", "pronoun_set_zh": "他", "pronoun_set_en": "he/him"}
+    if gender == "male":
+        return {"gender": "male", "pronoun_set_zh": "他", "pronoun_set_en": "he/him"}
+    if gender == "nonbinary":
+        return {"gender": "nonbinary", "pronoun_set_zh": "他", "pronoun_set_en": "they/them"}
+    return {"gender": "unknown", "pronoun_set_zh": None, "pronoun_set_en": None}
 
 
 def _enforce_premise_locked_cast(
@@ -8018,6 +8824,44 @@ async def _repair_seriality_volume_mapping_if_needed(
     return (repaired, run_id) if repaired_report.passed else (volume_plan_payload, run_id)
 
 
+async def _skip_source_bound_current_cast_gate(
+    *, session: AsyncSession, project: ProjectModel, workflow_run_id: UUID, gate: str,
+) -> bool:
+    """Whole-book roster templates do not apply to approved current-cast assets.
+
+    The source-bound compiler and enrichment contract authorize present-tense
+    cast only. Derived lifecycle fields and the book's length cannot promote
+    that authority into a full future-roster contract.
+    """
+    if not _source_bound_cast_enabled(project):
+        return False
+
+    snapshot = _source_bound_design_snapshot(project)
+    applicability = {
+        "status": "not_applicable",
+        "reason": "source_bound_current_cast_without_full_lifecycle_contract",
+        "source_hash": snapshot.get("source_hash"),
+        "snapshot_id": snapshot.get("snapshot_id"),
+    }
+    try:
+        workflow = await session.scalar(
+            select(WorkflowRunModel).where(WorkflowRunModel.id == workflow_run_id)
+        )
+        if workflow is not None:
+            metadata = dict(workflow.metadata_json or {})
+            workflow.metadata_json = {
+                **metadata,
+                "cast_gate_applicability": {
+                    **_mapping(metadata.get("cast_gate_applicability")),
+                    gate: applicability,
+                },
+            }
+    except Exception:
+        logger.warning("Current-cast gate applicability audit failed (non-fatal)", exc_info=True)
+    logger.info("Skipping %s: %s", gate, applicability["reason"])
+    return True
+
+
 async def _repair_cast_foundation_if_needed(
     *,
     session: AsyncSession,
@@ -8043,6 +8887,12 @@ async def _repair_cast_foundation_if_needed(
     None)``. Any failure falls back to the original cast spec; this is a
     best-effort guardrail, not a blocking gate.
     """
+    if await _skip_source_bound_current_cast_gate(
+        session=session, project=project, workflow_run_id=workflow_run_id,
+        gate="foundation_richness",
+    ):
+        return cast_spec_payload, None
+
     try:
         from bestseller.services.foundation_richness import (
             scan_cast_foundation_richness,
@@ -8122,6 +8972,18 @@ async def _repair_cast_foundation_if_needed(
                 "重构 antagonist_forces 与 supporting_cast 两个字段，"
                 "使之满足上面列出的所有约束；不要缩减任何已有字段。"
             )
+        if _source_bound_cast_enabled(project):
+            repair_user += (
+                "\nSource-bound identity contract: every newly named antagonist or supporting_cast "
+                "member must include a non-unknown gender and matching pronoun_set_zh/pronoun_set_en. "
+                "Preserve identity fields of retained approved characters exactly; do not invent a "
+                "gender for an existing unknown character. If an identity cannot be grounded, retain "
+                "the original roster entry and do not add that person."
+                if is_en
+                else "\n源约束身份契约：每个新生成的 antagonist 或 supporting_cast 具名角色必须提供非 unknown 的 gender，"
+                "并提供匹配的 pronoun_set_zh/pronoun_set_en。保留已有批准角色的身份字段，不得擅自改写；"
+                "已有角色若身份未知，不得编造性别；无法有依据完成身份时保留原条目且不要新增该人物。"
+            )
 
         repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
             session,
@@ -8136,7 +8998,6 @@ async def _repair_cast_foundation_if_needed(
         )
         if not isinstance(repaired_payload, dict):
             return cast_spec_payload, None
-
         # Sanity-check the repair before accepting it — reject if the
         # repair regressed on force count (LLM sometimes misinterprets
         # the instruction and returns a smaller list).
@@ -8156,7 +9017,18 @@ async def _repair_cast_foundation_if_needed(
         except Exception:
             pass
 
-        return repaired_payload, repair_llm_run_id
+        return await _source_bound_accept_cast_repair(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            baseline_cast=cast_spec_payload,
+            candidate_cast=repaired_payload,
+            repair_run_id=repair_llm_run_id,
+            workflow_run_id=workflow_run_id,
+            audit_key="source_bound_foundation_repair_review",
+        )
     except Exception:
         logger.warning("Cast foundation repair failed; keeping original cast spec.", exc_info=True)
         return cast_spec_payload, None
@@ -8177,7 +9049,11 @@ def _repair_cast_identity_locks_for_planner(
 
     repaired_payload, repair_count = repair_legacy_foundation_identity_locks(
         cast_spec_payload,
-        allow_unreliable_defaults=True,
+        # Source-bound CastSpec is compiled from the approved design and must
+        # never manufacture a gender to satisfy materialization.  Legacy/LLM
+        # CastSpec keeps the historical recovery behavior; the source-bound
+        # path fails at the existing foundation gate when evidence is absent.
+        allow_unreliable_defaults=not _source_bound_cast_enabled(project),
     )
     if not isinstance(repaired_payload, dict):
         return cast_spec_payload
@@ -8204,6 +9080,10 @@ def _repair_cast_identity_locks_for_planner(
             repair_count,
         )
     normalized_payload = parse_cast_spec_input(repaired_payload).model_dump(mode="json")
+    if _source_bound_cast_enabled(project):
+        # Domain normalization validates known fields; it must not erase
+        # additional complete-model story fields after source review.
+        normalized_payload = {**copy.deepcopy(repaired_payload), **normalized_payload}
     prior_meta = _mapping(repaired_payload.get("_meta"))
     prior_policy_versions = _mapping(prior_meta.get("policy_versions"))
     normalized_payload["_meta"] = {
@@ -8235,27 +9115,11 @@ def _planner_forbidden_protagonist_names(
     raw_forbidden = metadata.get("protagonist_forbidden_names")
     if isinstance(raw_forbidden, (list, tuple, set)):
         forbidden.update(str(item).strip() for item in raw_forbidden if str(item).strip())
-    # A previous planning artifact may have recorded the old name only inside
-    # a free-text field (for example ``沈渡渊需要...``), so it never reached
-    # protagonist_forbidden_names. Recover those short subject names from the
-    # project identity text and make the repair deterministic on the next
-    # artifact pass.
-    identity_sources: list[Any] = [metadata.get("protagonist")]
-    book_spec = metadata.get("book_spec")
-    if isinstance(book_spec, dict):
-        identity_sources.append(book_spec.get("protagonist"))
-        book_meta = book_spec.get("_meta")
-        if isinstance(book_meta, dict):
-            identity_sources.extend(
-                item.get("protagonist_name")
-                for item in (book_meta.get("name_drift_repair") or [])
-                if isinstance(item, dict)
-            )
-    identity_text = json.dumps(identity_sources, ensure_ascii=False)
-    for match in re.finditer(r"(?<![\u4e00-\u9fff])([\u4e00-\u9fff]{2,4})(?=(?:需要|必须|曾因|利用|会|把))", identity_text):
-        candidate = match.group(1).strip()
-        if candidate and candidate != protagonist_name:
-            forbidden.add(candidate)
+    # Do not infer forbidden names from arbitrary free text.  A phrase such as
+    # ``孙砚把柄簿`` can look like ``old-name + 把`` to a regex, while 孙砚 is
+    # actually a valid antagonist.  The creation boundary already records a
+    # changed protagonist in this explicit ledger; anything absent from it is
+    # evidence, not permission to rewrite another character's identity.
     forbidden.discard("")
     forbidden.discard(protagonist_name)
     # Allowlisted public-domain mythological names must never be drift-repaired.
@@ -8263,8 +9127,36 @@ def _planner_forbidden_protagonist_names(
     return forbidden
 
 
-def _replace_name_drift_in_value(value: Any, *, forbidden_names: set[str], replacement: str) -> Any:
+_NAME_IDENTITY_FIELDS = frozenset(
+    {
+        "name",
+        "canonical_name",
+        "aliases",
+        "name_reasoning",
+        "protagonist_name",
+        "canonical_protagonist_name",
+    }
+)
+
+
+def _replace_name_drift_payload(
+    value: Any,  # noqa: ANN401
+    *,
+    forbidden_names: set[str],
+    replacement: str,
+    field_name: str | None = None,
+) -> Any:  # noqa: ANN401
+    """Replace stale protagonist references without rewriting cast identity.
+
+    Identity fields belong to the character that owns them.  A stale-name
+    repair may update prose references (including relationship endpoints), but
+    it must leave another character's name, aliases, and naming rationale
+    untouched.  ``_meta`` is provenance and is likewise immutable here.
+    """
+
     if not forbidden_names or not replacement:
+        return value
+    if field_name == "_meta" or field_name in _NAME_IDENTITY_FIELDS:
         return value
     if isinstance(value, str):
         repaired = value
@@ -8273,7 +9165,7 @@ def _replace_name_drift_in_value(value: Any, *, forbidden_names: set[str], repla
         return repaired
     if isinstance(value, list):
         return [
-            _replace_name_drift_in_value(
+            _replace_name_drift_payload(
                 item,
                 forbidden_names=forbidden_names,
                 replacement=replacement,
@@ -8282,25 +9174,80 @@ def _replace_name_drift_in_value(value: Any, *, forbidden_names: set[str], repla
         ]
     if isinstance(value, dict):
         return {
-            key: _replace_name_drift_in_value(
+            key: _replace_name_drift_payload(
                 item,
                 forbidden_names=forbidden_names,
                 replacement=replacement,
+                field_name=key,
             )
             for key, item in value.items()
         }
     return value
 
 
-def _count_name_drift_occurrences(value: Any, *, forbidden_names: set[str]) -> int:
+def _replace_name_drift_in_active_surface(
+    value: Any,  # noqa: ANN401
+    *,
+    surface_key: str,
+    forbidden_names: set[str],
+    replacement: str,
+) -> Any:  # noqa: ANN401
+    """Repair active prose while changing only explicitly owned protagonist names.
+
+    Replan metadata contains both prose and cast-shaped objects.  The generic
+    payload walker protects every identity field, then this boundary updates
+    the two canonical protagonist slots that the worker is explicitly
+    reconciling.  Antagonist/supporting names remain identity evidence.
+    """
+
+    repaired = _replace_name_drift_payload(
+        value,
+        forbidden_names=forbidden_names,
+        replacement=replacement,
+    )
+    if not isinstance(repaired, dict):
+        return repaired
+
+    owned_objects: list[dict[str, Any]] = []
+    if surface_key == "protagonist":
+        owned_objects.append(repaired)
+    elif surface_key == "book_spec":
+        protagonist = repaired.get("protagonist")
+        if isinstance(protagonist, dict):
+            owned_objects.append(protagonist)
+    for character in owned_objects:
+        name = str(character.get("name") or "").strip()
+        if name in forbidden_names:
+            character["name"] = replacement
+    return repaired
+
+
+def _count_name_drift_occurrences(
+    value: Any,
+    *,
+    forbidden_names: set[str],
+    field_name: str | None = None,
+) -> int:
     if not forbidden_names:
+        return 0
+    if field_name == "_meta" or field_name in _NAME_IDENTITY_FIELDS:
         return 0
     if isinstance(value, str):
         return sum(value.count(forbidden) for forbidden in forbidden_names)
     if isinstance(value, list):
-        return sum(_count_name_drift_occurrences(item, forbidden_names=forbidden_names) for item in value)
+        return sum(
+            _count_name_drift_occurrences(item, forbidden_names=forbidden_names)
+            for item in value
+        )
     if isinstance(value, dict):
-        return sum(_count_name_drift_occurrences(item, forbidden_names=forbidden_names) for item in value.values())
+        return sum(
+            _count_name_drift_occurrences(
+                item,
+                forbidden_names=forbidden_names,
+                field_name=key,
+            )
+            for key, item in value.items()
+        )
     return 0
 
 
@@ -8330,7 +9277,7 @@ def _repair_protagonist_name_drift_for_planner(
     drift_count = _count_name_drift_occurrences(payload, forbidden_names=forbidden_names)
     if drift_count <= 0:
         return payload
-    repaired = _replace_name_drift_in_value(
+    repaired = _replace_name_drift_payload(
         copy.deepcopy(payload),
         forbidden_names=forbidden_names,
         replacement=locked_name,
@@ -9281,7 +10228,7 @@ async def _repair_cast_personhood_if_needed(
     cast_spec_payload: dict[str, Any],
     workflow_run_id: UUID,
 ) -> tuple[dict[str, Any], UUID | None]:
-    """Regenerate CastSpec once when the character bible is structurally thin.
+    """Repair a thin CastSpec without allowing the repair to replace the book.
 
     This wires the L2 Bible Gate feedback into the generation path for the
     fields that CastSpec can actually fix: IP anchors, tag memories,
@@ -9306,12 +10253,11 @@ async def _repair_cast_personhood_if_needed(
             validate_bible_completeness,
         )
         from bestseller.services.invariants import (
-            invariants_from_dict,
             seed_invariants,
         )
 
         if getattr(project, "invariants_json", None):
-            invariants = invariants_from_dict(project.invariants_json)
+            invariants = project_invariants_from_row(project)
         else:
             _planner_meta = getattr(project, "metadata_json", None)
             _planner_pack_key = (
@@ -9350,72 +10296,101 @@ async def _repair_cast_personhood_if_needed(
         len(actionable),
     )
 
-    try:
-        language = _planner_language(project)
-        is_en = is_english_language(language)
-        repair_report = BibleCompletenessReport(deficiencies=actionable)
-        repair_system, repair_user = _cast_spec_prompts(
-            project, book_spec_payload, world_spec_payload
-        )
-        repair_user += (
-            "\n\n[Character bible repair - regenerate CastSpec to satisfy "
-            "these hard requirements]\n"
-            if is_en
-            else "\n\n【人物圣经修复 — 请重生 CastSpec 以满足以下硬性要求】\n"
-        )
-        repair_user += repair_report.feedback_for_regen()
-        repair_user += (
-            "\nRegenerate the ENTIRE CastSpec JSON. Preserve the core premise, names, "
-            "relationships, antagonist_forces, and conflict_map when possible, but "
-            "fill every missing IP anchor, ability origin contract, personhood layer, "
-            "and villain charisma field; "
-            "also separate any overlapping antagonist motives. "
-            "Do not return a partial patch."
-            if is_en
-            else "\n请重新生成整份 CastSpec JSON。尽量保留核心设定、角色姓名、关系、"
-            "antagonist_forces 和 conflict_map，但必须补齐所有缺失的 IP 锚点、"
-            "能力来源合同、人格底层和反派魅力字段，并拆分任何过度重合的反派动机。不要输出局部补丁。"
-        )
+    language = _planner_language(project)
+    is_en = is_english_language(language)
+    best_payload = copy.deepcopy(cast_spec_payload)
+    best_actionable = actionable
+    best_llm_run_id: UUID | None = None
 
-        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
-            session,
-            settings,
-            project=project,
-            logical_name="cast_spec_personhood_repair",
-            system_prompt=repair_system,
-            user_prompt=repair_user,
-            fallback_payload=cast_spec_payload,
-            workflow_run_id=workflow_run_id,
-            validator=parse_cast_spec_input,
-        )
-        if not isinstance(repaired_payload, dict):
-            return cast_spec_payload, None
+    # A whole-document rewrite is necessary because CastSpec is a validated
+    # object, but every round is anchored to the best accepted candidate. A
+    # regressing rewrite is quarantined and never becomes the next baseline.
+    for repair_round in range(1, 3):
         try:
+            repair_report = BibleCompletenessReport(deficiencies=best_actionable)
+            repair_system, repair_user = _cast_spec_prompts(
+                project, book_spec_payload, world_spec_payload
+            )
+            repair_user += (
+                "\n\n[Character bible repair - edit the approved CastSpec baseline "
+                "to satisfy only these hard requirements]\n"
+                if is_en
+                else "\n\n【人物圣经修复 — 仅基于当前已通过的 CastSpec 修复以下硬性缺口】\n"
+            )
+            repair_user += repair_report.feedback_for_regen()
+            repair_user += (
+                "\nReturn the ENTIRE CastSpec JSON. Copy all already-approved names, "
+                "goals, relationships, antagonist_forces, conflict_map, and story facts "
+                "exactly. Only fill the listed missing personhood fields. Do not invent "
+                "a replacement premise, goal, role, relationship, or character."
+                if is_en
+                else "\n请返回完整 CastSpec JSON。所有已通过的姓名、目标、关系、"
+                "antagonist_forces、conflict_map 与故事事实必须原样复制；只补齐清单中的"
+                "人物字段。禁止改写前提、目标、身份、关系或另造一套人物。"
+            )
+            repair_user += (
+                "\n\n[Current approved CastSpec - the only edit baseline]\n"
+                if is_en
+                else "\n\n【当前已通过的 CastSpec（唯一修改基线）】\n"
+            )
+            repair_user += json.dumps(best_payload, ensure_ascii=False)[:30000]
+
+            repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+                session,
+                settings,
+                project=project,
+                logical_name="cast_spec_personhood_repair",
+                system_prompt=repair_system,
+                user_prompt=repair_user,
+                fallback_payload=best_payload,
+                workflow_run_id=workflow_run_id,
+                validator=parse_cast_spec_input,
+            )
+            if not isinstance(repaired_payload, dict):
+                continue
             repaired_draft = build_draft_from_materialization_content(
                 book_spec_content=book_spec_payload,
                 world_spec_content=world_spec_payload,
                 cast_spec_content=repaired_payload,
             )
             repaired_report = validate_bible_completeness(repaired_draft, invariants)
-            repaired_actionable = [
-                d for d in repaired_report.deficiencies if d.code in _CAST_PERSONHOOD_REPAIR_CODES
-            ]
-            if len(repaired_actionable) >= len(actionable):
-                logger.warning(
-                    "Cast personhood repair did not reduce deficiencies "
-                    "(%d -> %d); keeping original.",
-                    len(actionable),
-                    len(repaired_actionable),
-                )
-                return cast_spec_payload, None
+            repaired_actionable = tuple(
+                d
+                for d in repaired_report.deficiencies
+                if d.code in _CAST_PERSONHOOD_REPAIR_CODES
+            )
         except Exception:
-            logger.warning("Cast personhood repaired payload validation failed", exc_info=True)
-            return cast_spec_payload, None
+            logger.warning(
+                "Cast personhood repair round %d failed; retaining best baseline.",
+                repair_round,
+                exc_info=True,
+            )
+            continue
 
-        return repaired_payload, repair_llm_run_id
-    except Exception:
-        logger.warning("Cast personhood repair failed; keeping original cast spec.", exc_info=True)
-        return cast_spec_payload, None
+        if len(repaired_actionable) >= len(best_actionable):
+            logger.warning(
+                "Cast personhood repair round %d regressed or stalled (%d -> %d); "
+                "quarantining candidate.",
+                repair_round,
+                len(best_actionable),
+                len(repaired_actionable),
+            )
+            continue
+
+        best_payload = repaired_payload
+        best_actionable = repaired_actionable
+        best_llm_run_id = repair_llm_run_id
+        if not best_actionable:
+            return best_payload, best_llm_run_id
+
+    if best_actionable and is_strict_prewrite_project(project):
+        remaining_codes = sorted({item.code for item in best_actionable})
+        raise PlannerFallbackError(
+            "Cast personhood repair exhausted with "
+            f"{len(best_actionable)} unresolved deficiency(ies): "
+            + ", ".join(remaining_codes)
+        )
+    return best_payload, best_llm_run_id
 
 
 async def _repair_world_spec_richness_if_needed(
@@ -10055,6 +11030,12 @@ async def _repair_cast_spec_antagonist_lifecycle_if_needed(
     Best-effort: any failure falls back to the original cast spec.
     """
 
+    if await _skip_source_bound_current_cast_gate(
+        session=session, project=project, workflow_run_id=workflow_run_id,
+        gate="antagonist_lifecycle",
+    ):
+        return cast_spec_payload, None
+
     try:
         from bestseller.services.antagonist_lifecycle import (
             scan_antagonist_lifecycle,
@@ -10160,7 +11141,6 @@ async def _repair_cast_spec_antagonist_lifecycle_if_needed(
         )
         if not isinstance(repaired_payload, dict):
             return cast_spec_payload, None
-
         # Sanity-check: the repaired cast_spec must at least reduce the
         # critical count; otherwise keep the original.
         try:
@@ -10188,7 +11168,18 @@ async def _repair_cast_spec_antagonist_lifecycle_if_needed(
         except Exception:
             pass
 
-        return repaired_payload, repair_llm_run_id
+        return await _source_bound_accept_cast_repair(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            baseline_cast=cast_spec_payload,
+            candidate_cast=repaired_payload,
+            repair_run_id=repair_llm_run_id,
+            workflow_run_id=workflow_run_id,
+            audit_key="source_bound_antagonist_lifecycle_repair_review",
+        )
     except Exception:
         logger.warning(
             "Antagonist-lifecycle repair failed; keeping original cast spec.",
@@ -10218,6 +11209,12 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
 
     Best-effort: any failure falls back to the original cast spec.
     """
+
+    if await _skip_source_bound_current_cast_gate(
+        session=session, project=project, workflow_run_id=workflow_run_id,
+        gate="relationship_scaling",
+    ):
+        return cast_spec_payload, None
 
     try:
         from bestseller.services.relationship_scaling import (
@@ -10326,7 +11323,6 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
         )
         if not isinstance(repaired_payload, dict):
             return cast_spec_payload, None
-
         # Sanity-check: the repaired cast_spec must at least reduce the
         # critical count; otherwise keep the original. Guards against the
         # LLM misinterpreting the repair instruction and returning a
@@ -10356,7 +11352,18 @@ async def _repair_cast_spec_relationship_scaling_if_needed(
         except Exception:
             pass
 
-        return repaired_payload, repair_llm_run_id
+        return await _source_bound_accept_cast_repair(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            baseline_cast=cast_spec_payload,
+            candidate_cast=repaired_payload,
+            repair_run_id=repair_llm_run_id,
+            workflow_run_id=workflow_run_id,
+            audit_key="source_bound_relationship_scaling_repair_review",
+        )
     except Exception:
         logger.warning(
             "Relationship-scaling repair failed; keeping original cast spec.",
@@ -10942,6 +11949,7 @@ def _ensure_book_spec_bible_fields(
     """Ensure BookSpec carries the project-level L2 Bible Gate fields."""
 
     normalized = copy.deepcopy(_mapping(book_spec))
+    source_bound_content = bool(_mapping(normalized.get("_meta")).get("source_content_policy"))
     expected = normalized.get("expected_character_count")
     try:
         expected_count = int(expected)
@@ -10952,9 +11960,13 @@ def _ensure_book_spec_bible_fields(
         normalized["expected_character_count"] = expected_count
 
     if not _non_empty_string(normalized.get("theme_statement"), ""):
+        if source_bound_content:
+            raise PlannerFallbackError("Generated source-bound BookSpec has no theme statement")
         normalized["theme_statement"] = _fallback_theme_statement(project, premise, normalized)
 
     if not _non_empty_string(normalized.get("dramatic_question"), ""):
+        if source_bound_content:
+            raise PlannerFallbackError("Generated source-bound BookSpec has no dramatic question")
         normalized["dramatic_question"] = _fallback_dramatic_question(project, premise, normalized)
 
     protagonist = _mapping(normalized.get("protagonist"))
@@ -10966,13 +11978,16 @@ def _ensure_book_spec_bible_fields(
     required_pool_size = 1 if source_bound_design else max(1, expected_count * 2)
     merged_pool = list(dict.fromkeys([*reserved_names, *existing_pool]))
     if len([name for name in merged_pool if name]) < required_pool_size:
+        if source_bound_content:
+            raise PlannerFallbackError("Generated source-bound BookSpec has no actual naming source")
         merged_pool = _fallback_naming_pool(
             project,
             premise=premise,
             desired_count=required_pool_size,
             reserved_names=merged_pool,
         )
-    normalized["naming_pool"] = [name for name in merged_pool if name][:required_pool_size]
+    normalized["naming_pool"] = ([name for name in merged_pool if name]
+        if source_bound_content else [name for name in merged_pool if name][:required_pool_size])
     return _sanitize_book_spec_against_project_scale(project, normalized)
 
 
@@ -12390,8 +13405,6 @@ def _source_bound_cast_enabled(project: ProjectModel) -> bool:
     metadata = _mapping(getattr(project, "metadata_json", None))
     snapshot = _mapping(metadata.get("book_design_snapshot"))
     return bool(
-        resolve_cost_style(metadata) == "minimal"
-        and
         metadata.get("book_design_snapshot_status") == "locked"
         and snapshot.get("snapshot_id")
         and snapshot.get("source_hash")
@@ -12413,6 +13426,2616 @@ def _approved_payload_hash(payload: Mapping[str, Any]) -> str:
 def _source_bound_design_snapshot(project: ProjectModel) -> dict[str, Any]:
     metadata = _mapping(getattr(project, "metadata_json", None))
     return _mapping(metadata.get("book_design_snapshot"))
+
+
+def _source_bound_cast_needs_expansion(cast_spec: Mapping[str, Any]) -> bool:
+    """Whether the deterministic source projection has no usable social cast."""
+
+    antagonist = _mapping(cast_spec.get("antagonist"))
+    supporting = _mapping_list(cast_spec.get("supporting_cast"))
+    members = [_mapping(cast_spec.get("protagonist")), antagonist, *supporting]
+    missing_identity = any(
+        member.get("name") and normalize_character_gender(member.get("gender")) == "unknown"
+        for member in members
+    )
+    return missing_identity or (not antagonist.get("name") and not supporting)
+
+
+def _source_bound_world_needs_expansion(world_spec: Mapping[str, Any]) -> bool:
+    """Whether the world projection only contains framework pressure slots."""
+
+    return len(_source_bound_concrete_world_factions(world_spec)) < 2
+
+
+def _source_bound_concrete_world_factions(world_spec: Mapping[str, Any]) -> list[dict[str, Any]]:
+    factions = _mapping_list(world_spec.get("factions"))
+    return [
+        item for item in factions
+        if not (
+            "当前直接阻力" in str(item.get("name") or "")
+            or "升级后的外部压力" in str(item.get("name") or "")
+            or "当前行动单元" in str(item.get("name") or "")
+            or "current direct resistance" in str(item.get("name") or "").lower()
+            or "current action unit" in str(item.get("name") or "").lower()
+            or "escalating external pressure" in str(item.get("name") or "").lower()
+        )
+    ]
+
+
+def _source_bound_expansion_contract(
+    project: ProjectModel,
+    *,
+    asset: str,
+    book_spec: Mapping[str, Any],
+    world_spec: Mapping[str, Any],
+) -> str:
+    """Bind new planning proposals to actual source authority, not a closed world."""
+
+    is_en = is_english_language(project.language)
+    protagonist = _mapping(book_spec.get("protagonist"))
+    name = _first_non_empty_text(protagonist.get("name"), default="the protagonist")
+    mechanism = _first_non_empty_text(
+        _mapping(book_spec.get("series_engine")).get("core_serial_engine"),
+        book_spec.get("unique_hook"),
+        default="the approved story engine",
+    )
+    if asset == "cast":
+        return (
+            "\n\n[SOURCE-BOUND CAST EXPANSION — PLANNING PROPOSALS]\n"
+            f"Preserve the explicitly sourced protagonist identity ({name}), approved facts and "
+            f"story commitments ({mechanism}). Honor actual explicit creator controls, adopted past "
+            "events and approved canonical facts. A compiler default, dramatic question, emotional "
+            "promise or genre label is not a character fact or an author prohibition. New roles, "
+            "relationships, motives, personal history and mechanisms may be proposed wherever the "
+            "source leaves them open, including more than one ability or mechanism when no explicit "
+            "source limit forbids it. New planning content need not have already occurred in prose. "
+            "Do not contradict an established past event or explicit invariant, attribute a proposal "
+            "to the author, or rewrite the approved snapshot. Keep new content marked as a derived "
+            "proposal pending source/semantic review; source silence is not a closed inventory."
+            if is_en
+            else "\n\n【源约束 Cast 扩展——规划提案】\n"
+            f"保留有明确来源的主角身份（{name}）、已批准事实与故事承诺（{mechanism}）。"
+            "遵守真实的作者明确控制、正式采用的过去事件和已批准 Canon 事实；编译器默认值、戏剧问题、"
+            "情绪承诺或题材标签不是人物事实，也不是作者禁令。来源未限定之处可以提出角色、关系、动机、"
+            "个人前史与机制；没有明确来源限制时也可以规划多种能力或机制。新增规划不要求已经在正文发生。"
+            "不得矛盾改写既定过去或明确不变量，不得把新提案归称作者要求，不得改写批准快照。"
+            "新增内容保留为待来源与语义审查的派生提案；来源沉默不构成封闭清单。"
+        )
+    return (
+        "\n\n[SOURCE-BOUND WORLD EXPANSION — PLANNING PROPOSALS]\n"
+        f"Preserve the explicitly sourced protagonist ({name}), approved story commitments "
+        f"({mechanism}), actual creator controls, adopted past events and explicit canonical "
+        "invariants. Respect the requested output schema without treating it as a ban on fictional "
+        "development. New places, factions, historical details or mechanisms are planning proposals "
+        "when the source leaves them open; they need not have already occurred in prose. Multiple "
+        "mechanisms are not forbidden by a genre label or missing prior mention. Do not overwrite "
+        "established source facts, falsely attribute proposals to the author or rewrite the approved "
+        "snapshot. Compiler defaults are not source authority. Keep additions pending independent "
+        "source/semantic review; source silence and open inventories are not prohibitions."
+        if is_en
+        else "\n\n【源约束 World 扩展——规划提案】\n"
+        f"保留有明确来源的主角（{name}）、批准的故事承诺（{mechanism}）、真实作者控制、正式采用的过去"
+        "与明确 Canon 不变量。遵守本次输出 schema，但不能把 schema 的范围解释成创作禁令。"
+        "来源未限定之处可以提出新地点、势力、历史细节或机制，不要求已经在正文发生；不能因题材标签或此前未提及"
+        "就禁止多机制。不得覆盖既定源事实、把新提案归称作者要求或改写批准快照。编译器默认值没有来源权威。"
+        "新增内容继续接受独立来源与语义审查；来源沉默与开放清单不构成禁止。"
+    )
+
+
+def _source_bound_world_expansion_prompts(
+    project: ProjectModel,
+    premise: str,
+    book_spec: Mapping[str, Any],
+    world_baseline: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Build the narrow source-bound World enrichment prompt.
+
+    The normal world prompt deliberately asks for a complete, scale-sized
+    world.  That contract is wrong for this branch: the compiler already owns
+    the canonical world fields and only needs present-tense locations/factions
+    to carry the approved hook and spine into Cast/outline planning.
+    """
+
+    is_en = is_english_language(project.language)
+    authority = _source_bound_design_snapshot(project)
+    input_block = _json_dumps(
+        {
+            "approved_book_spec": _without_planning_meta(book_spec),
+            "approved_source_snapshot": _without_planning_meta(authority),
+            "current_world_baseline": {
+                "locations": _mapping_list(world_baseline.get("locations")),
+                "factions": _mapping_list(world_baseline.get("factions")),
+            },
+            "premise": premise,
+        }
+    )
+    if is_en:
+        return (
+            "You are a source-bound present-tense enrichment editor. Return JSON only.",
+            "Generate only concrete locations and factions needed by the approved "
+            "hook/spine's current action. Preserve every existing named entity and "
+            "do not rewrite the approved protagonist, mechanism, rules, history, cost, "
+            "power system, or endgame. New names are allowed only as current derived "
+            "entities and remain subject to independent semantic review. Do not add "
+            "second abilities, hidden history, or a new endgame threat. This step is called "
+            "because concrete action assets are missing: return at least one usable location "
+            "or faction, not two empty arrays. Source fidelity does not require every derived "
+            "entity name to occur verbatim in the approved input. Read the approved opening "
+            "action, preserve its participants and stakes, and name the ordinary place or "
+            "social group needed to stage it. A faction is optional when the story needs none; "
+            "do not invent an organization merely to meet a count. Each location must be an object such as "
+            "{\"name\":\"North Archive\",\"location_type\":\"archive\",\"story_role\":\"current lead\"}; "
+            "each faction must be an object such as "
+            "{\"name\":\"Archive Wardens\",\"goal\":\"hold the gate\",\"method\":\"inspect permits\"}. "
+            "Return exactly {\"locations\": [...], \"factions\": [...]}.\n"
+            f"Approved inputs:\n{input_block}",
+        )
+    return (
+        "你是源约束的当下世界扩写编辑器。只返回合法 JSON，不要解释。",
+        "只为已批准 hook/spine 的当下行动补充具体地点和势力。保留基线中所有已有命名实体，"
+        "不得重写已批准主角、核心机制、规则、历史、代价、力量体系或终局。新名字只能作为当下派生实体提出，"
+        "并继续接受独立语义审查。不得新增第二能力、隐藏前史或未经批准的终局威胁。"
+        "本步骤因当下行动缺少具体资产而触发，地点或势力至少补全一项，不能两个数组都为空。"
+        "源保真不等于派生实体的名称必须在原文逐字出现：先读批准的开场行动，保留其人物、目标与利害关系，"
+        "为该行动补出所需的普通场所或社会组织。没有组织对抗的题材可以只补地点，不要为了凑数量发明势力。"
+        "地点对象至少有 name 和具体 story_role，可使用 location_type、atmosphere、"
+        "key_rules、story_role；势力对象至少有 name，可使用 goal、method、relationship_to_protagonist、"
+        "internal_conflict。严格只返回 {\"locations\": [...], \"factions\": [...]}。\n"
+        f"已批准输入：\n{input_block}",
+    )
+
+
+def _validate_source_bound_world_expansion_payload(payload: Any) -> None:
+    """Validate the deliberately partial World enrichment response."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("Source-bound World expansion must be an object.")
+    unexpected = set(payload) - {"locations", "factions"}
+    if unexpected:
+        raise ValueError(
+            "Source-bound World expansion may only return locations/factions: "
+            + ", ".join(sorted(str(item) for item in unexpected))
+        )
+    for key in ("locations", "factions"):
+        entries = payload.get(key, [])
+        if not isinstance(entries, list):
+            raise ValueError(f"Source-bound World expansion field '{key}' must be a list.")
+        for entry in entries:
+            if not isinstance(entry, Mapping) or not _non_empty_string(entry.get("name"), ""):
+                raise ValueError(
+                    f"Source-bound World expansion field '{key}' contains an unnamed entry."
+                )
+    if not payload.get("locations") and not payload.get("factions"):
+        raise ValueError(
+            "Source-bound World expansion requires a concrete location or faction for the "
+            "approved opening action. Both arrays are empty. Derive an ordinary present-tense "
+            "place from that action; its name need not occur verbatim in the source. "
+            "Do not add history, abilities, or rewrite approved facts. Return only locations/factions."
+        )
+
+
+def _rebind_source_bound_world_expansion(
+    fallback: Mapping[str, Any], generated: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Accept only enrichment fields while retaining canonical world fields."""
+
+    merged = copy.deepcopy(dict(fallback))
+    accepted_fields: list[str] = []
+    for key in ("locations", "factions"):
+        baseline_entries = [
+            copy.deepcopy(dict(item))
+            for item in _mapping_list(fallback.get(key))
+            if _non_empty_string(item.get("name"), "")
+        ]
+        by_name = {
+            _non_empty_string(item.get("name"), ""): index
+            for index, item in enumerate(baseline_entries)
+        }
+        entries = copy.deepcopy(baseline_entries)
+        candidate = generated.get(key)
+        if isinstance(candidate, list):
+            for item in candidate:
+                if not isinstance(item, Mapping):
+                    continue
+                name = _non_empty_string(item.get("name"), "")
+                if not name:
+                    continue
+                allowed_keys = (
+                    {"name", "location_type", "type", "atmosphere", "key_rules", "story_role"}
+                    if key == "locations"
+                    else {
+                        "name",
+                        "goal",
+                        "method",
+                        "relationship_to_protagonist",
+                        "internal_conflict",
+                    }
+                )
+                candidate_entry = {
+                    field: copy.deepcopy(value)
+                    for field, value in item.items()
+                    if field in allowed_keys
+                }
+                index = by_name.get(name)
+                if index is None:
+                    by_name[name] = len(entries)
+                    entries.append(candidate_entry)
+                else:
+                    # A named source entity can be sparse too. Preserve its
+                    # approved values while accepting missing derived detail;
+                    # the resulting delta still requires semantic review.
+                    for field, value in candidate_entry.items():
+                        if field != "name" and value and not entries[index].get(field):
+                            entries[index][field] = value
+        if entries != baseline_entries:
+            merged[key] = entries
+            accepted_fields.append(key)
+        elif baseline_entries:
+            merged[key] = baseline_entries
+    meta = _mapping(merged.get("_meta"))
+    merged["_meta"] = {
+        **meta,
+        "source_bound_expansion": "derived_pending_review" if accepted_fields else "unavailable",
+        "source_bound_expansion_fields": accepted_fields,
+        "source_bound_expansion_review": "independent_semantic_review_required"
+        if accepted_fields
+        else None,
+        "source_bound_expansion_reason": (
+            "accepted_generated_fields" if accepted_fields else "generator_returned_no_concrete_fields"
+        ),
+    }
+    return merged
+
+
+_SOURCE_BOUND_IDENTITY_MARKERS = {
+    "male": r"(?<!其)他(?!人)|男性|男子|男人|\bhe\b|\bmale\b",
+    "female": r"她|女性|女子|女人|\bshe\b|\bfemale\b",
+    "nonbinary": r"非二元|\bnonbinary\b|they/them",
+}
+
+
+def _source_bound_identity_quote_options(protagonist: Mapping[str, Any]) -> list[dict[str, str]]:
+    source = _non_empty_string(_mapping(protagonist.get("metadata")).get("identity_source_text"), "")
+    return [
+        {"quote_id": "iq_" + hashlib.sha256(sentence.encode("utf-8")).hexdigest()[:12], "quote": sentence}
+        for sentence in dict.fromkeys(re.split(r"(?<=[。！？.!?])", source))
+        if any(re.search(pattern, sentence, re.IGNORECASE) for pattern in _SOURCE_BOUND_IDENTITY_MARKERS.values())
+    ][:8]
+
+
+def _source_bound_identity_quote(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> str:
+    quote_id = _non_empty_string(candidate.get("identity_evidence_quote_id"), "")
+    literal = _non_empty_string(candidate.get("identity_evidence"), "")
+    if not quote_id:
+        return literal
+    options = {row["quote_id"]: row["quote"] for row in _source_bound_identity_quote_options(baseline)}
+    if quote_id not in options:
+        raise ValueError("identity_evidence_quote_id is unknown; choose one of the supplied quote IDs")
+    if literal and literal != options[quote_id]:
+        raise ValueError("identity_evidence conflicts with identity_evidence_quote_id; return only the selected ID")
+    return options[quote_id]
+
+
+def _normalize_source_bound_character_identity(character: Mapping[str, Any]) -> dict[str, Any]:
+    from bestseller.domain.story_bible import CharacterInput
+
+    normalized = CharacterInput.model_validate({
+        key: character[key] for key in ("name", "gender", "pronoun_set_zh", "pronoun_set_en")
+        if key in character
+    })
+    normalized_payload = {
+        **character,
+        "gender": normalized.gender,
+        "pronoun_set_zh": normalized.pronoun_set_zh,
+        "pronoun_set_en": normalized.pronoun_set_en,
+    }
+    # Models often include the possessive form in an otherwise compatible
+    # English pronoun set (for example ``he/him/his``).  Pronouns are derived
+    # display fields, so canonicalize equivalent sets while still rejecting a
+    # set whose subject conflicts with the locked gender below.
+    compatible = {
+        "male": {"he", "he/him", "he/him/his"},
+        "female": {"she", "she/her", "she/her/her", "she/her/hers"},
+        "nonbinary": {"they", "they/them", "they/them/theirs"},
+    }
+    canonical = {
+        "male": "he/him",
+        "female": "she/her",
+        "nonbinary": "they/them",
+    }.get(normalized.gender)
+    raw_en = _non_empty_string(normalized_payload.get("pronoun_set_en"), "").lower()
+    if canonical and raw_en in compatible[normalized.gender]:
+        normalized_payload["pronoun_set_en"] = canonical
+    return normalized_payload
+
+
+def _canonicalize_source_bound_social_member(
+    character: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Map harmless model field aliases onto the CastSpec social contract."""
+
+    result = dict(character)
+    if not _non_empty_string(result.get("motivation"), ""):
+        for alias in ("current_motive", "motivation_now", "current_motivation"):
+            value = _non_empty_string(result.get(alias), "")
+            if value:
+                result["motivation"] = value
+                break
+    if not _non_empty_string(result.get("relationship_to_protagonist"), ""):
+        for alias in ("relation_to_protagonist", "relationship_to_hero"):
+            value = _non_empty_string(result.get(alias), "")
+            if value:
+                result["relationship_to_protagonist"] = value
+                break
+    return result
+
+
+def _source_bound_protagonist_identity_evidence_error(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any]
+) -> str:
+    """Explain why a proposed identity cannot be admitted for semantic review."""
+    candidate_name = _non_empty_string(candidate.get("name"), "")
+    baseline_name = _non_empty_string(baseline.get("name"), "")
+    if not candidate_name:
+        return (
+            "protagonist identity completion is missing; return the canonical baseline name "
+            "when completing an unknown identity"
+        )
+    if candidate_name != baseline_name:
+        return "protagonist.name must equal the canonical baseline name"
+    gender = normalize_character_gender(candidate.get("gender"))
+    if gender not in _SOURCE_BOUND_IDENTITY_MARKERS:
+        return "protagonist.gender must be male/female/nonbinary supported by the approved source"
+    try:
+        evidence = _source_bound_identity_quote(baseline, candidate)
+    except ValueError as exc:
+        return str(exc)
+    if not evidence:
+        return "protagonist.identity_evidence is missing"
+    source = _non_empty_string(_mapping(baseline.get("metadata")).get("identity_source_text"), "")
+    if not source or evidence not in source:
+        return "protagonist.identity_evidence must be an exact contiguous quotation from identity_source_text"
+    if not re.search(_SOURCE_BOUND_IDENTITY_MARKERS[gender], evidence, re.IGNORECASE):
+        return "protagonist.identity_evidence has no gender/pronoun cue supporting the proposed gender; name, age and occupation are not gender evidence"
+    return ""
+
+
+def _source_bound_pending_identity_candidate(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Derive a review-only gender hypothesis from one unambiguous quote cue."""
+
+    if normalize_character_gender(candidate.get("gender")) != "unknown":
+        return None
+    try:
+        evidence = _source_bound_identity_quote(baseline, candidate)
+    except ValueError:
+        return None
+    if not evidence:
+        return None
+    matches = [
+        gender for gender, marker in _SOURCE_BOUND_IDENTITY_MARKERS.items()
+        if re.search(marker, evidence, re.IGNORECASE)
+    ]
+    if len(matches) != 1:
+        return None
+    pending = copy.deepcopy(dict(candidate))
+    pending["gender"] = matches[0]
+    pending["identity_evidence"] = evidence
+    return pending
+
+
+def _rebind_source_bound_cast_expansion(
+    fallback: Mapping[str, Any], generated: Mapping[str, Any], *,
+    canonical_protagonist: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Retain known same-field source facts; keep new planning fields as proposals.
+
+    The caller must obtain canonical_protagonist from the actual approved source,
+    never from compiler defaults or the generated response. A compiled baseline
+    without this projection is ambiguous and cannot authorize a new merge.
+    Unmarked legacy baselines retain their existing identity-only behavior.
+    """
+
+    if not isinstance(fallback, Mapping) or not isinstance(generated, Mapping):
+        raise ValueError("source_bound_cast_objects_required")
+    baseline_protagonist = fallback.get("protagonist")
+    if not isinstance(baseline_protagonist, Mapping) or not _non_empty_string(baseline_protagonist.get("name"), ""):
+        raise ValueError("source_bound_canonical_protagonist_required")
+    compiled = bool(_mapping(fallback.get("_meta")).get("source_compiler")
+        or _mapping(baseline_protagonist.get("metadata")).get("source_bound_design"))
+    if compiled and canonical_protagonist is None:
+        raise ValueError("source_bound_same_semantic_canonical_projection_required")
+    known = None
+    if canonical_protagonist is not None:
+        if (not isinstance(canonical_protagonist, Mapping)
+                or not _non_empty_string(canonical_protagonist.get("name"), "")
+                or canonical_protagonist["name"] != baseline_protagonist["name"]):
+            raise ValueError("source_bound_canonical_protagonist_binding_invalid")
+
+        def _validate_source_value(value: Any) -> None:
+            if isinstance(value, Mapping):
+                for key, item in value.items():
+                    if not isinstance(key, str) or not key or key in {"_meta", "metadata"}:
+                        raise ValueError("source_bound_canonical_field_invalid")
+                    _validate_source_value(item)
+            elif isinstance(value, list):
+                for item in value:
+                    _validate_source_value(item)
+            elif value is not None and type(value) not in (str, int, float, bool):
+                raise ValueError("source_bound_canonical_value_invalid")
+
+        _validate_source_value(canonical_protagonist)
+        try:
+            json.dumps(dict(canonical_protagonist), allow_nan=False)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("source_bound_canonical_value_invalid") from exc
+        known = copy.deepcopy(dict(canonical_protagonist))
+        # Unknown is absence of a gender fact, not an immutable identity claim.
+        if normalize_character_gender(known.get("gender")) == "unknown":
+            if known.get("gender") not in (None, "", "unknown"):
+                raise ValueError("source_bound_canonical_gender_invalid")
+            known.pop("gender", None)
+
+    generated = copy.deepcopy(dict(generated))
+    for key in ("protagonist", "antagonist"):
+        if isinstance(generated.get(key), Mapping) and generated[key].get("name"):
+            generated[key] = _canonicalize_source_bound_social_member(
+                _normalize_source_bound_character_identity(generated[key])
+            )
+    if isinstance(generated.get("supporting_cast"), list):
+        generated["supporting_cast"] = [
+            _canonicalize_source_bound_social_member(
+                _normalize_source_bound_character_identity(item)
+            )
+            if isinstance(item, Mapping) and item.get("name")
+            else item
+            for item in generated["supporting_cast"]
+        ]
+    merged = copy.deepcopy(dict(fallback))
+    accepted_fields: list[str] = []
+
+    def _name_key(value: Any) -> str:
+        return re.sub(r"\s+", "", _non_empty_string(value, "")).casefold()
+
+    def _merge_member(
+        baseline: Mapping[str, Any], candidate: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Add derived fields without replacing approved identity evidence."""
+
+        result = copy.deepcopy(dict(baseline))
+        identity_keys = {"gender", "pronoun_set_zh", "pronoun_set_en"}
+        for key, value in candidate.items():
+            if key == "name":
+                continue
+            if key in identity_keys:
+                existing = result.get(key)
+                if key == "gender":
+                    if normalize_character_gender(existing) != "unknown":
+                        continue
+                elif _non_empty_string(existing, ""):
+                    continue
+                result[key] = copy.deepcopy(value)
+                continue
+            if key not in result or result.get(key) in (None, "", [], {}):
+                result[key] = copy.deepcopy(value)
+        return result
+
+    def _merge_roster(
+        baseline: Any, candidates: list[Any]
+    ) -> list[dict[str, Any]]:
+        roster = [copy.deepcopy(dict(item)) for item in _mapping_list(baseline)]
+        by_name = {
+            _name_key(item.get("name")): index
+            for index, item in enumerate(roster)
+            if _name_key(item.get("name"))
+        }
+        for candidate in candidates:
+            if not isinstance(candidate, Mapping):
+                continue
+            name = _name_key(candidate.get("name"))
+            if not name:
+                continue
+            index = by_name.get(name)
+            if index is None:
+                by_name[name] = len(roster)
+                roster.append(copy.deepcopy(dict(candidate)))
+            else:
+                roster[index] = _merge_member(roster[index], candidate)
+        return roster
+
+    for key in ("antagonist", "supporting_cast", "antagonists", "conflict_map"):
+        candidate = generated.get(key)
+        if key == "antagonist":
+            if isinstance(candidate, Mapping) and candidate.get("name"):
+                baseline = _mapping(merged.get(key))
+                if not baseline.get("name"):
+                    merged[key] = copy.deepcopy(dict(candidate))
+                    accepted_fields.append(key)
+                elif _name_key(baseline.get("name")) == _name_key(candidate.get("name")):
+                    merged[key] = _merge_member(baseline, candidate)
+                    accepted_fields.append(key)
+        elif isinstance(candidate, list) and candidate:
+            if key == "supporting_cast":
+                merged[key] = _merge_roster(merged.get(key), candidate)
+            else:
+                merged[key] = copy.deepcopy(candidate)
+            accepted_fields.append(key)
+    merged["protagonist"] = copy.deepcopy(known if known is not None else dict(baseline_protagonist))
+    # Keep the canonical identity/mechanism but let the central character gain
+    # concrete voice and behaviour. These fields are derived, and the complete
+    # resulting protagonist enters the same independent semantic review.
+    generated_protagonist = _mapping(generated.get("protagonist"))
+    protagonist = merged["protagonist"]
+    if known is not None:
+        if generated_protagonist and _name_key(generated_protagonist.get("name")) != _name_key(protagonist.get("name")):
+            raise ValueError("source_bound_generated_protagonist_binding_invalid")
+
+        def _merge_known_fields(source: Mapping[str, Any], proposal: Mapping[str, Any]) -> dict[str, Any]:
+            # Exact field names only: a hook/question/promise is not a secret,
+            # and a general theme is not a person's philosophical belief.
+            result = copy.deepcopy(dict(proposal))
+            for key, value in source.items():
+                if value is None or value in ("", [], {}):
+                    continue
+                if isinstance(value, Mapping) and isinstance(result.get(key), Mapping):
+                    result[key] = _merge_known_fields(value, result[key])
+                else:
+                    result[key] = copy.deepcopy(value)
+            return result
+
+        proposal = {key: value for key, value in generated_protagonist.items()
+            if key not in {"_meta", "metadata", "identity_evidence", "identity_evidence_quote_id"}}
+        protagonist = merged["protagonist"] = _merge_known_fields(known, proposal)
+        # Preserve source provenance separately; a generated metadata object
+        # cannot promote itself to source authority.
+        if isinstance(baseline_protagonist.get("metadata"), Mapping):
+            protagonist["metadata"] = copy.deepcopy(dict(baseline_protagonist["metadata"]))
+        gender = normalize_character_gender(protagonist.get("gender"))
+        if gender != "unknown":
+            zh, en = {"male": ("他", "he/him"), "female": ("她", "she/her"), "nonbinary": ("他", "they/them")}[gender]
+            if any(known.get(key) not in (None, "", value)
+                    for key, value in (("pronoun_set_zh", zh), ("pronoun_set_en", en))):
+                raise ValueError("source_bound_canonical_pronouns_conflict")
+            protagonist["pronoun_set_zh"], protagonist["pronoun_set_en"] = zh, en
+        if generated_protagonist and protagonist != baseline_protagonist and "protagonist" not in accepted_fields:
+            accepted_fields.append("protagonist")
+    gender = normalize_character_gender(protagonist.get("gender"))
+    if known is None and gender == "unknown" and _name_key(generated_protagonist.get("name")) == _name_key(protagonist.get("name")):
+        candidate_gender = normalize_character_gender(generated_protagonist.get("gender"))
+        if not _source_bound_protagonist_identity_evidence_error(protagonist, generated_protagonist):
+            evidence = _source_bound_identity_quote(protagonist, generated_protagonist)
+            protagonist["gender"] = gender = candidate_gender
+            protagonist["identity_evidence"] = evidence
+            accepted_fields.append("protagonist")
+    if gender != "unknown":
+        zh, en = {"male": ("他", "he/him"), "female": ("她", "she/her"), "nonbinary": ("他", "they/them")}[gender]
+        for key, value in (("pronoun_set_zh", zh), ("pronoun_set_en", en)):
+            if not protagonist.get(key):
+                protagonist[key] = value
+                if "protagonist" not in accepted_fields:
+                    accepted_fields.append("protagonist")
+    for key in (() if known is not None else ("voice_profile", "psych_profile", "decision_policy", "appearance", "relationships", "social_network")):
+        value = generated_protagonist.get(key)
+        if value and value != merged["protagonist"].get(key):
+            merged["protagonist"][key] = copy.deepcopy(value)
+            if "protagonist" not in accepted_fields:
+                accepted_fields.append("protagonist")
+    meta = _mapping(merged.get("_meta"))
+    merged["_meta"] = {
+        **meta,
+        "source_bound_expansion": "derived_pending_review" if accepted_fields else "unavailable",
+        "source_bound_expansion_fields": accepted_fields,
+        "source_bound_expansion_review": "independent_semantic_review_required"
+        if accepted_fields
+        else None,
+        "source_bound_expansion_reason": (
+            "accepted_generated_fields" if accepted_fields else "generator_returned_no_concrete_fields"
+        ),
+    }
+    if known is not None:
+        merged["_meta"]["source_bound_canonical_rebind"] = {
+            "policy": "same-semantic-known-cast.v1",
+            "canonical_protagonist_sha256": _approved_payload_hash(known),
+            "source_fields": sorted(known),
+            "proposals_are_canonical": False,
+        }
+    return merged
+
+
+def _source_bound_cast_expansion_prompts(
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_spec: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Build the narrow Cast enrichment prompt for source-bound projects."""
+
+    is_en = is_english_language(project.language)
+    authority = _source_bound_design_snapshot(project)
+    social_gap = not (
+        _mapping(cast_baseline.get("antagonist")).get("name")
+        or _mapping_list(cast_baseline.get("supporting_cast"))
+    )
+    social_gap_instruction = (
+        "The baseline has no named antagonist or supporting character: return at least one concrete named "
+        "present-tense role with a motive and relationship to the protagonist; do not satisfy this with an empty array."
+        if social_gap
+        else "The baseline already has a named social role; do not invent another role unless the approved current action needs it."
+    )
+    social_gap_instruction_zh = (
+        "基线没有具名反派或配角：必须至少补一个有具体姓名、当下动机和与主角关系的角色；不能用空数组满足缺口。"
+        if social_gap
+        else "基线已有具名社会角色：除非批准的当下行动确实需要，不要额外发明角色。"
+    )
+    input_block = _json_dumps(
+        {
+            "approved_book_spec": _without_planning_meta(book_spec),
+            "approved_source_snapshot": _without_planning_meta(authority),
+            "approved_world": _without_planning_meta(world_spec),
+            "cast_baseline": _without_planning_meta(cast_baseline),
+            "identity_quote_candidates_not_attribution": _source_bound_identity_quote_options(
+                _mapping(cast_baseline.get("protagonist"))
+            ),
+        }
+    )
+    if is_en:
+        return (
+            "[SOURCE-BOUND CAST EXPANSION] 【源约束 Cast 扩展】 You are a source-bound present-tense cast enrichment editor. Return JSON only.",
+            "[SOURCE-BOUND CAST EXPANSION] 【源约束 Cast 扩展】 "
+            f"{social_gap_instruction} Add only the current antagonist/supporting roles needed to stage the approved "
+            "hook and spine. Preserve the approved protagonist identity, goal, mechanism, "
+            "cost, and existing facts. Concrete voice, relationship, decision, and compact "
+            "psychology fields are allowed when they describe present-tense behavior. Do not "
+            "invent hidden history, secret bloodlines, old debts, a second ability, an "
+            "unlicensed endgame/hidden boss, or a new hard protagonist limitation. Do not "
+            "require lifecycle-wide hidden threats or a minimum roster. Return exactly an "
+            "object containing optional protagonist/antagonist, supporting_cast, and conflict_map; "
+            'minimal shape: {"protagonist":{"name":"<canonical name>","gender":"<source-confirmed>",'
+            '"identity_evidence_quote_id":"<supplied quote_id>"},"antagonist":null,"supporting_cast":[],"conflict_map":[]}. '
+            "Return only missing fields and current cast additions, not the entire CastSpec. Do not repeat "
+            "locked protagonist background, goal, fear, flaw or power_tier, and do not add percentages, "
+            "power levels or world mechanisms. "
+            "each person object must have a non-empty name. decision_policy, voice_profile, psych_profile "
+            "and identity_evidence belong inside a person object, never at top level. If voice_profile is present it must be "
+            "an object shaped {speech_register, verbal_tics: [string], sentence_style, "
+            "emotional_expression, mannerisms: [string]}; conflict_map entries must be shaped "
+            "{character_a, character_b, conflict_type, trigger_condition}. For every new named "
+            "antagonist or supporting character, emit gender (male/female/nonbinary) and both "
+            "pronoun_set_zh and pronoun_set_en; choose an ordinary present-tense identity when "
+            "the approved source leaves it open. Never alter an explicit identity field already "
+            "present in the cast_baseline. If protagonist gender is unknown, return protagonist with "
+            "the canonical name, a gender grounded in the approved premise, and identity_evidence "
+            "quoting the exact premise passage with its gender/pronoun cue. Do not infer from name, "
+            "occupation or audience; leave unknown if no evidence exists. Pronouns are derived by "
+            "the framework from confirmed protagonist gender. identity_quote_candidates_not_attribution are "
+            "verbatim source passages, not confirmed protagonist attributions; verify their referent first.\n"
+            f"Approved inputs:\n{input_block}"
+            "\nFINAL IDENTITY TASK: choose identity_evidence_quote_id from the supplied quote options "
+            "whose pronoun refers to the protagonist; do not recopy or shorten the quote. "
+            "Unknown IDs are rejected. Raw identity_evidence remains accepted only as an exact source quote. "
+            "Pronouns are strings: male 他 / he/him; female 她 / she/her; nonbinary 他 / they/them.",
+        )
+    return (
+        "【源约束 Cast 扩展】你是源约束的当下人物扩写编辑器。只返回合法 JSON，不要解释。",
+        f"{social_gap_instruction_zh}"
+        "【源约束 Cast 扩展】只补齐已批准 hook/spine 在当下行动中需要的反派和配角。必须保留已批准主角身份、目标、核心机制、"
+        "代价与已有事实。可以补充具体语气、关系、决策方式和简洁的当下心理表现，但不得发明隐藏前史、"
+        "秘密血统、旧债、第二能力、未经批准的终局/隐藏 Boss，或新的主角硬性心理限制。不要要求跨卷暗线反派，"
+        "也不要强制最少角色数量。严格返回可选 protagonist/antagonist、supporting_cast、conflict_map；"
+        '最小形状为 {"protagonist":{"name":"<规范姓名>","gender":"<源证据确认性别>",'
+        '"identity_evidence_quote_id":"<已提供quote_id>"},"antagonist":null,"supporting_cast":[],"conflict_map":[]}。'
+        "只返回缺失字段和当前人物增量，不返回整份 CastSpec，不复述已锁主角 background、goal、fear、"
+        "flaw、power_tier，不新增百分比、能力等级或世界机制。"
+        "每个具名人物对象必须有非空 name；decision_policy、voice_profile、psych_profile、identity_evidence "
+        "只能放在对应人物对象内部，禁止置于顶层，也不要返回整份 CastSpec 或摘要字段。voice_profile 若出现必须是包含 speech_register、verbal_tics、"
+        "sentence_style、emotional_expression、mannerisms 的对象；conflict_map 每项必须包含 character_a、"
+        "character_b、conflict_type、trigger_condition。每个新反派或配角都必须输出 gender（male/female/nonbinary）、"
+        "pronoun_set_zh 和 pronoun_set_en；批准来源未指定时，可以为当下人物作普通身份选择，"
+        "但不得改写 cast_baseline 中已有的明确身份字段。主角 gender 为 unknown 时必须返回 protagonist，"
+        "保留规范姓名，根据批准 premise 的明确性别或指代证据补齐 gender，并用 identity_evidence 原样引用"
+        "包含性别或代词的原文片段；禁止根据姓名、职业、读者频道猜测，无证据则保留 unknown。"
+        "主角代词由框架根据确认的 gender 确定性生成。identity_quote_candidates_not_attribution 是逐字原文候选，"
+        "不表示该句指向主角，必须先核实代词归属，不得摘取配角的性别作为主角证据。\n"
+        f"已批准输入：\n{input_block}"
+        "\n最后核对：主角身份请用 identity_evidence_quote_id 选择上面确实指向主角的原句ID，"
+        "不要重抄或截短引文；未知ID拒绝。仍兼容逐字原文 identity_evidence，但优先只返回ID。"
+        "全员代词必须是字符串：male=他/he/him，female=她/she/her，nonbinary=他/they/them。",
+    )
+
+
+def _source_bound_cast_retry_contract(fallback: Mapping[str, Any]) -> str:
+    """Keep independent source-bound obligations together across retries."""
+
+    protagonist = _mapping(fallback.get("protagonist"))
+    if normalize_character_gender(protagonist.get("gender")) != "unknown":
+        return ""
+    social_gap = not (
+        _mapping(fallback.get("antagonist")).get("name")
+        or _mapping_list(fallback.get("supporting_cast"))
+    )
+    social = (
+        " Also include at least one named antagonist or supporting character with a present-tense "
+        "motive or relationship because the approved baseline has no social cast."
+        if social_gap
+        else " Preserve any approved social roster; do not replace it with identity-only output."
+    )
+    return (
+        "SOURCE-BOUND RETRY CONTRACT: The approved protagonist gender is still unknown. "
+        "This response must include the canonical protagonist name and a verifiable identity quote "
+        "that refers to that protagonist; do not omit protagonist or substitute another character."
+        + social
+        + " Complete both the protagonist identity obligation and the current social-cast obligation "
+        "in the same JSON response."
+    )
+
+
+def _source_bound_identity_completion_prompts(
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_spec: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Request only an unresolved protagonist identity before cast enrichment."""
+
+    is_en = is_english_language(project.language)
+    input_block = _json_dumps(
+        {
+            "approved_book_spec": _without_planning_meta(book_spec),
+            "approved_source_snapshot": _without_planning_meta(_source_bound_design_snapshot(project)),
+            "approved_world": _without_planning_meta(world_spec),
+            "cast_baseline_protagonist": _mapping(cast_baseline.get("protagonist")),
+            "identity_quote_candidates_not_attribution": _source_bound_identity_quote_options(
+                _mapping(cast_baseline.get("protagonist"))
+            ),
+        }
+    )
+    system = (
+        "[SOURCE-BOUND IDENTITY COMPLETION] Return one compact JSON object only."
+        if is_en
+        else "【源约束身份补全】只返回一个紧凑合法 JSON 对象，不要解释。"
+    )
+    if is_en:
+        instruction = (
+            "Complete only the approved protagonist identity that is currently unknown. "
+            "Return exactly {\"protagonist\":{\"name\":\"<canonical name>\",\"gender\":\"male|female|nonbinary\","
+            "\"identity_evidence_quote_id\":\"<supplied quote id>\"}}. Keep the canonical name. "
+            "Choose a quote whose gender/pronoun unambiguously refers to this protagonist; the supplied options "
+            "are not attribution by themselves. Never infer from name, occupation, or audience. "
+            "If no unambiguous approved evidence exists, do not guess: return the unresolved identity and let the gate block.\n"
+        )
+    else:
+        instruction = (
+            "只补齐当前 unknown 的已批准主角身份。严格返回 "
+            '{"protagonist":{"name":"<规范姓名>","gender":"male|female|nonbinary",'
+            '"identity_evidence_quote_id":"<已提供quote_id>"}}。必须保留规范姓名。'
+            "只能选择明确指向该主角的性别或代词证据；候选原文默认不是主角归属。"
+            "禁止根据姓名、职业或读者频道猜测；无明确证据不要猜，让门禁阻断。\n"
+        )
+    return system, instruction + ("Approved inputs:\n" if is_en else "已批准输入：\n") + input_block
+
+
+def _validate_source_bound_identity_completion(
+    payload: Any,
+    *,
+    fallback: Mapping[str, Any],
+    allow_pending_unknown: bool = False,
+) -> None:
+    """Validate the small identity phase before any social cast is generated."""
+
+    if not isinstance(payload, Mapping) or set(payload) - {"protagonist"}:
+        raise ValueError("Source-bound identity completion may only return protagonist.")
+    candidate = _mapping(payload.get("protagonist"))
+    baseline = _mapping(fallback.get("protagonist"))
+    allowed_fields = {
+        "name",
+        "gender",
+        "pronoun_set_zh",
+        "pronoun_set_en",
+        "identity_evidence",
+        "identity_evidence_quote_id",
+    }
+    unexpected = set(candidate) - allowed_fields
+    if unexpected:
+        raise ValueError(
+            "Source-bound identity completion may only return identity fields: "
+            + ", ".join(sorted(str(item) for item in unexpected))
+        )
+    if not _non_empty_string(candidate.get("name"), ""):
+        raise ValueError("Source-bound identity completion must return the canonical protagonist name.")
+    if candidate.get("name") != baseline.get("name"):
+        raise ValueError("Source-bound identity completion cannot rename the canonical protagonist.")
+    if allow_pending_unknown and normalize_character_gender(candidate.get("gender")) == "unknown":
+        if _source_bound_pending_identity_candidate(baseline, candidate) is None:
+            raise ValueError(
+                "Source-bound identity completion unknown gender requires one valid, unambiguous identity quote"
+            )
+        return
+    error = _source_bound_protagonist_identity_evidence_error(baseline, candidate)
+    if error:
+        raise ValueError("Source-bound identity completion " + error)
+
+
+async def _complete_source_bound_cast_identity(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_spec: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Complete and independently review identity before social cast generation."""
+
+    system, user = _source_bound_identity_completion_prompts(
+        project, book_spec, world_spec, cast_baseline
+    )
+    generated, llm_run_id = await _generate_structured_artifact(
+        session,
+        settings,
+        project=project,
+        logical_name="cast_spec_source_bound_identity_completion",
+        system_prompt=system,
+        user_prompt=user,
+        fallback_payload={"protagonist": copy.deepcopy(_mapping(cast_baseline.get("protagonist")))},
+        workflow_run_id=workflow_run_id,
+        validator=lambda payload: _validate_source_bound_identity_completion(
+            payload, fallback=cast_baseline, allow_pending_unknown=True
+        ),
+        abort_on_fallback=True,
+        merge_fallback=False,
+        prompt_version="1.0-identity-only",
+        max_attempts=1,
+    )
+    generated_protagonist = _mapping(generated.get("protagonist"))
+    model_gender = normalize_character_gender(generated_protagonist.get("gender"))
+    pending = _source_bound_pending_identity_candidate(cast_baseline.get("protagonist", {}), generated_protagonist)
+    review_protagonist = pending or generated_protagonist
+    completed = _rebind_source_bound_cast_expansion(
+        cast_baseline, {"protagonist": review_protagonist},
+        canonical_protagonist=_source_bound_canonical_protagonist(
+            project, str((project.metadata_json or {}).get("premise") or "")),
+    )
+    report = await _review_source_bound_expansion(
+        session,
+        settings,
+        project=project,
+        book_spec=book_spec,
+        world_baseline=world_spec,
+        cast_baseline=cast_baseline,
+        world_derived=world_spec,
+        cast_derived=completed,
+        workflow_run_id=workflow_run_id,
+        identity_only=True,
+    )
+    if pending is not None:
+        report["protagonist_identity_model_gender"] = model_gender
+        report["protagonist_identity_resolution"] = "pending_quote_cue_review"
+    _store_source_bound_review(project, report)
+    if report is None or not _source_bound_report_is_draft_eligible(report):
+        _persist_failing_planner_output(
+            project=project,
+            logical_name="cast_spec_source_bound_identity_review",
+            attempt=1,
+            content=_json_dumps(report or {}),
+            error=ValueError(
+                str((report or {}).get("feedback") or (report or {}).get("reason") or "review blocked")
+            ),
+        )
+        raise PlannerFallbackError(
+            "Source-bound protagonist identity review blocked: "
+            + str((report or {}).get("feedback") or (report or {}).get("reason") or "unavailable")
+        )
+    if report.get("protagonist_identity_supported") is not True:
+        raise PlannerFallbackError(
+            "Source-bound protagonist identity review did not confirm protagonist attribution"
+        )
+    return completed, llm_run_id
+
+
+def _validate_source_bound_cast_expansion_payload(
+    payload: Any,
+    *,
+    fallback: Mapping[str, Any] | None = None,
+) -> None:
+    """Validate the partial current-cast response without demanding a full bible."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("Source-bound Cast expansion must be an object.")
+    unexpected = set(payload) - {"protagonist", "antagonist", "supporting_cast", "conflict_map"}
+    if unexpected:
+        raise ValueError(
+            "Source-bound Cast expansion may only return current cast fields: "
+            + ", ".join(sorted(str(item) for item in unexpected))
+            + ". Top-level keys must be protagonist, antagonist, supporting_cast, conflict_map only. "
+            "Move person-specific decision_policy, voice_profile, psych_profile and identity_evidence "
+            "inside the relevant named character object; do not return a whole CastSpec or summary fields."
+        )
+    for key in ("protagonist", "antagonist"):
+        value = payload.get(key)
+        if value is not None and (
+            not isinstance(value, Mapping) or not _non_empty_string(value.get("name"), "")
+        ):
+            raise ValueError(f"Source-bound Cast expansion field '{key}' must be a named object.")
+    supporting = payload.get("supporting_cast", [])
+    if not isinstance(supporting, list):
+        raise ValueError("Source-bound Cast expansion supporting_cast must be a list.")
+    for item in supporting:
+        if not isinstance(item, Mapping) or not _non_empty_string(item.get("name"), ""):
+            raise ValueError("Source-bound Cast expansion contains an unnamed supporting character.")
+        _validate_source_bound_expansion_identity(item, "supporting_cast")
+    antagonist = payload.get("antagonist")
+    if isinstance(antagonist, Mapping):
+        _validate_source_bound_expansion_identity(antagonist, "antagonist")
+    conflict_map = payload.get("conflict_map", [])
+    if not isinstance(conflict_map, list):
+        raise ValueError("Source-bound Cast expansion conflict_map must be a list.")
+    try:
+        # Reuse the production Pydantic contract so malformed nested shapes
+        # enter _generate_structured_artifact's normal bounded retry loop.
+        parse_cast_spec_input(dict(payload))
+    except Exception as exc:
+        raise ValueError(f"Source-bound Cast expansion schema invalid: {exc}") from exc
+
+    if fallback is not None:
+        baseline_has_social_role = bool(
+            _mapping(fallback.get("antagonist")).get("name")
+            or _mapping_list(fallback.get("supporting_cast"))
+        )
+        candidate_has_social_role = bool(
+            isinstance(payload.get("antagonist"), Mapping)
+            and _non_empty_string(payload["antagonist"].get("name"), "")
+        ) or any(
+            isinstance(item, Mapping) and _non_empty_string(item.get("name"), "")
+            for item in _mapping_list(payload.get("supporting_cast"))
+        )
+        if not baseline_has_social_role and not candidate_has_social_role:
+            raise ValueError(
+                "Source-bound Cast expansion must add at least one named antagonist or supporting character "
+                "with a present-tense motive/relationship when the baseline has no social cast."
+            )
+        if not baseline_has_social_role:
+            social_members = []
+            antagonist = payload.get("antagonist")
+            if isinstance(antagonist, Mapping):
+                social_members.append(antagonist)
+            social_members.extend(_mapping_list(payload.get("supporting_cast")))
+            if not any(
+                _non_empty_string(
+                    _canonicalize_source_bound_social_member(member).get("goal"), ""
+                )
+                or _non_empty_string(
+                    _canonicalize_source_bound_social_member(member).get("motivation"), ""
+                )
+                or _non_empty_string(
+                    _canonicalize_source_bound_social_member(member).get(
+                        "relationship_to_protagonist"
+                    ),
+                    "",
+                )
+                for member in social_members
+            ):
+                raise ValueError(
+                    "Source-bound Cast expansion social roles must include a present-tense goal, motivation, "
+                    "or relationship_to_protagonist."
+                )
+        # The model may omit an existing baseline member while returning a
+        # complete replacement-looking roster. Rebind before accepting the
+        # candidate so every final named person, including retained baseline
+        # entries, receives the same model-completion identity check.
+        rebound = _rebind_source_bound_cast_expansion(fallback, payload)
+        rebound_protagonist = _mapping(rebound.get("protagonist"))
+        if rebound_protagonist.get("name"):
+            if normalize_character_gender(rebound_protagonist.get("gender")) == "unknown":
+                reason = _source_bound_protagonist_identity_evidence_error(
+                    _mapping(fallback.get("protagonist")), _mapping(payload.get("protagonist"))
+                )
+                raise ValueError(
+                    "Source-bound Cast expansion merged protagonist identity incomplete: " + reason
+                    + ". Correct identity_evidence, not merely the gender field: quote an exact approved "
+                    "premise passage containing a gender/pronoun cue that refers to the canonical protagonist. "
+                    "Evidence about another character is invalid; if no such evidence exists, retain unknown."
+                )
+            _validate_source_bound_expansion_identity(rebound_protagonist, "merged protagonist")
+        rebound_supporting = _mapping_list(rebound.get("supporting_cast"))
+        for item in rebound_supporting:
+            _validate_source_bound_expansion_identity(item, "merged supporting_cast")
+        rebound_antagonist = rebound.get("antagonist")
+        if isinstance(rebound_antagonist, Mapping) and _non_empty_string(
+            rebound_antagonist.get("name"), ""
+        ):
+            _validate_source_bound_expansion_identity(rebound_antagonist, "merged antagonist")
+
+
+def _validate_source_bound_expansion_identity(
+    character: Mapping[str, Any], location: str
+) -> None:
+    """Require the model to complete identity for every derived named person."""
+
+    character = _normalize_source_bound_character_identity(character)
+    gender = normalize_character_gender(character.get("gender"))
+    if gender == "unknown":
+        raise ValueError(
+            f"Source-bound Cast expansion {location} character '{character.get('name')}' "
+            "must provide a non-unknown gender."
+        )
+    zh = _non_empty_string(character.get("pronoun_set_zh"), "")
+    en = _non_empty_string(character.get("pronoun_set_en"), "")
+    expected = {
+        "male": ("他", "he/him"),
+        "female": ("她", "she/her"),
+        "nonbinary": ("他", "they/them"),
+    }[gender]
+    if zh != expected[0] or en.lower() != expected[1]:
+        raise ValueError(
+            f"Source-bound Cast expansion {location} character '{character.get('name')}' "
+            f"must use pronouns {expected[0]}/{expected[1]} for gender {gender}."
+        )
+
+
+def _validate_source_bound_merged_cast_identities(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any], *,
+    canonical_protagonist: Mapping[str, Any] | None = None,
+) -> None:
+    """Validate every named role after a whole-CastSpec repair merge."""
+
+    merged = _rebind_source_bound_cast_expansion(
+        baseline, candidate, canonical_protagonist=canonical_protagonist,
+    )
+    protagonist = merged.get("protagonist")
+    if isinstance(protagonist, Mapping) and _non_empty_string(protagonist.get("name"), ""):
+        _validate_source_bound_expansion_identity(protagonist, "merged protagonist")
+    antagonist = merged.get("antagonist")
+    if isinstance(antagonist, Mapping) and _non_empty_string(antagonist.get("name"), ""):
+        _validate_source_bound_expansion_identity(antagonist, "merged antagonist")
+    for member in _mapping_list(merged.get("supporting_cast")):
+        _validate_source_bound_expansion_identity(member, "merged supporting_cast")
+
+
+async def _source_bound_accept_cast_repair(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: Mapping[str, Any],
+    world_spec_payload: Mapping[str, Any],
+    baseline_cast: dict[str, Any],
+    candidate_cast: dict[str, Any],
+    repair_run_id: UUID,
+    workflow_run_id: UUID,
+    audit_key: str,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Accept a whole-Cast repair only after source-bound identity and review."""
+
+    if not _source_bound_cast_enabled(project):
+        return candidate_cast, repair_run_id
+    try:
+        _validate_source_bound_merged_cast_identities(
+            baseline_cast, candidate_cast,
+            canonical_protagonist=_source_bound_canonical_protagonist(
+                project, str((project.metadata_json or {}).get("premise") or "")),
+        )
+    except ValueError as exc:
+        logger.warning("Source-bound Cast repair identity contract rejected: %s", exc)
+        return baseline_cast, None
+    source_review = await _review_source_bound_expansion(
+        session,
+        settings,
+        project=project,
+        book_spec=book_spec_payload,
+        world_baseline=world_spec_payload,
+        cast_baseline=baseline_cast,
+        world_derived=world_spec_payload,
+        cast_derived=candidate_cast,
+        workflow_run_id=workflow_run_id,
+    )
+    if source_review is None or not _source_bound_report_is_draft_eligible(source_review):
+        if source_review is not None:
+            project.metadata_json = {
+                **(_mapping(getattr(project, "metadata_json", None))),
+                audit_key: dict(source_review),
+            }
+        logger.warning("Source-bound Cast repair failed immutable review; keeping approved CastSpec.")
+        return baseline_cast, None
+    _store_source_bound_review(project, source_review)
+    return candidate_cast, repair_run_id
+
+
+def _source_bound_quote_in_payload(quote: Any, payload: Any) -> bool:
+    """Check a review quotation against the supplied source/candidate JSON.
+
+    The reviewer is required to quote material that is actually present in the
+    input.  Whitespace is layout, so it is ignored; the words themselves are
+    not.  This deliberately does not infer semantic equivalence.
+    """
+
+    text = str(quote or "").strip()
+    if not text or text.lower() in {"unknown", "n/a", "none"}:
+        return False
+    def _compact(value: Any) -> str:
+        # English and Chinese colon punctuation are equivalent layout in a
+        # structured entity citation; the cited name/value still must come
+        # from one concrete Mapping below.
+        return "".join(str(value).replace("：", ":").split())
+
+    compact_quote = _compact(text)
+    if isinstance(payload, str):
+        return compact_quote in _compact(payload)
+    if isinstance(payload, Mapping):
+        name = _non_empty_string(payload.get("name"), "")
+        if name:
+            for key, value in payload.items():
+                if key == "name" or not isinstance(value, str) or not value.strip():
+                    continue
+                # A citation such as "Archive Wardens: seal evidence" is
+                # valid only when both pieces are direct values on this same
+                # entity. This prevents cross-entity or invented-value joins.
+                if compact_quote in _compact(f"{name}: {value}"):
+                    return True
+        return any(_source_bound_quote_in_payload(text, value) for value in payload.values())
+    if isinstance(payload, (list, tuple)):
+        return any(_source_bound_quote_in_payload(text, value) for value in payload)
+    return False
+
+
+def _source_bound_field_payload(payload: Mapping[str, Any], field: str) -> Any:
+    """Resolve an exact ``world.locations``/``cast.antagonist`` field path."""
+
+    parts = str(field).split(".")
+    if len(parts) != 2 or parts[0] not in {"world", "cast"}:
+        return None
+    section = _mapping(payload.get(f"{parts[0]}_spec"))
+    return section.get(parts[1])
+
+
+def _source_bound_normalize_evidence_field(field: Any) -> str:
+    """Normalize only the historical World/Cast artifact path aliases."""
+
+    value = str(field or "").strip()
+    for old, new in (("world_spec.", "world."), ("cast_spec.", "cast.")):
+        if value.startswith(old):
+            return new + value[len(old) :]
+    return value
+
+
+def _source_bound_string_leaves(value: Any) -> list[str]:
+    leaves: list[str] = []
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    if isinstance(value, Mapping):
+        for item in value.values():
+            leaves.extend(_source_bound_string_leaves(item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            leaves.extend(_source_bound_string_leaves(item))
+    return leaves
+
+
+def _source_bound_string_leaves_with_paths(value: Any, path: str = "") -> list[tuple[str, str]]:
+    """Return literal source leaves with their bounded authority path."""
+
+    if isinstance(value, str) and value.strip():
+        return [(path or "$", value.strip())]
+    leaves: list[tuple[str, str]] = []
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            child = f"{path}.{key}" if path else str(key)
+            leaves.extend(_source_bound_string_leaves_with_paths(item, child))
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            leaves.extend(_source_bound_string_leaves_with_paths(item, f"{path}[{index}]"))
+    return leaves
+
+
+def _source_bound_evidence_options(
+    base_payload: Mapping[str, Any],
+    candidate_payload: Mapping[str, Any],
+    changed_fields: list[str],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Expose stable, bounded literal choices independent of mapping key order."""
+
+    def stable_mapping_order(value: Any) -> Any:
+        # Apply before leaf traversal, deduplication, limits and quote IDs.
+        # Arrays carry story order; scalar spelling/case/Unicode stay literal.
+        if isinstance(value, Mapping):
+            return {key: stable_mapping_order(value[key]) for key in sorted(value)}
+        if isinstance(value, list):
+            return [stable_mapping_order(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(stable_mapping_order(item) for item in value)
+        return value
+
+    base_payload = stable_mapping_order(base_payload)
+    candidate_payload = stable_mapping_order(candidate_payload)
+
+    source_options: list[dict[str, str]] = []
+    seen_source: set[str] = set()
+    for source_path, quote in _source_bound_string_leaves_with_paths(base_payload):
+        if quote in seen_source:
+            continue
+        seen_source.add(quote)
+        source_options.append(
+            {"quote_id": f"s{len(source_options)}", "source_path": source_path, "quote": quote[:160]}
+        )
+        if len(source_options) >= 32:
+            break
+    candidate_options: list[dict[str, str]] = []
+    for field in changed_fields:
+        seen_candidate: set[str] = set()
+        for quote in _source_bound_string_leaves(_source_bound_field_payload(candidate_payload, field)):
+            if quote in seen_candidate:
+                continue
+            seen_candidate.add(quote)
+            candidate_options.append(
+                {"quote_id": f"c{len(candidate_options)}", "field": field, "quote": quote[:160]}
+            )
+            if len(seen_candidate) >= 16:
+                break
+    # Identity confirmation must be citeable even when ordinary DFS budgets
+    # are exhausted before late protagonist fields. Never truncate its quote.
+    base_hero = _mapping(_mapping(base_payload.get("cast_spec")).get("protagonist"))
+    candidate_hero = _mapping(_mapping(candidate_payload.get("cast_spec")).get("protagonist"))
+    identity_quote = _non_empty_string(candidate_hero.get("identity_evidence"), "")
+    if (
+        "cast.protagonist" in changed_fields and identity_quote
+        and normalize_character_gender(base_hero.get("gender")) == "unknown"
+    ):
+        if _source_bound_quote_in_payload(identity_quote, base_payload):
+            source_options.append({"quote_id": "s_identity", "quote": identity_quote})
+        candidate_options.append({
+            "quote_id": "c_identity", "field": "cast.protagonist", "quote": identity_quote,
+        })
+    # A removed/empty/nontext field has no literal sentence to quote. Bind its
+    # exact structural state without pretending that the observation is authored text.
+    covered = {option["field"] for option in candidate_options}
+    structural_fields = [field for field in changed_fields if field not in covered]
+    if structural_fields:
+        from bestseller.services.source_bound_field_evidence import compile_field_presence_options
+
+        source_options.extend(compile_field_presence_options(
+            base_payload, fields=structural_fields, side="source"))
+        candidate_options.extend(compile_field_presence_options(
+            candidate_payload, fields=structural_fields, side="candidate"))
+    return source_options, candidate_options
+
+
+def _source_bound_candidate_quote_bindings(
+    options: list[Mapping[str, str]],
+) -> dict[str, list[str]]:
+    """Expose the field ownership of candidate quote ids to the reviewer.
+
+    Candidate quote ids are intentionally global, while each id is valid for
+    exactly one changed field.  Keeping that mapping explicit in the prompt
+    prevents a compact model response from reusing the first id for every
+    field; the resolver remains the authoritative fail-closed check.
+    """
+
+    bindings: dict[str, list[str]] = {}
+    for option in options:
+        field = _source_bound_normalize_evidence_field(option.get("field"))
+        quote_id = str(option.get("quote_id") or "").strip()
+        if field and quote_id:
+            bindings.setdefault(field, []).append(quote_id)
+    return bindings
+
+
+def _source_bound_resolve_evidence(
+    entries: list[Mapping[str, Any]],
+    options: list[Mapping[str, str]],
+    *,
+    candidate: bool,
+    payload: Mapping[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Resolve bounded quote references without trusting model-supplied text."""
+
+    by_id = {str(option.get("quote_id")): option for option in options}
+    resolved: list[dict[str, Any]] = []
+    valid = True
+    for item in entries:
+        row = dict(item)
+        raw_field = _source_bound_normalize_evidence_field(row.get("field"))
+        quote_id = str(row.get("quote_id") or "").strip()
+        if quote_id:
+            option = by_id.get(quote_id)
+            if option is None:
+                valid = False
+                continue
+            if option.get("schema") == "source-bound-field-presence.v1":
+                from bestseller.services.source_bound_field_evidence import resolve_field_presence_evidence
+
+                try:
+                    if payload is None:
+                        raise ValueError("presence_payload_required")
+                    row = resolve_field_presence_evidence(
+                        row, options, payload=payload,
+                        side="candidate" if candidate else "source")
+                except ValueError:
+                    valid = False
+                    continue
+                resolved.append(row)
+                continue
+            # Model-supplied structural claims cannot bypass a literal catalog entry.
+            if row.get("schema") == "source-bound-field-presence.v1":
+                valid = False
+                continue
+            option_field = _source_bound_normalize_evidence_field(option.get("field"))
+            if candidate and option_field != raw_field:
+                valid = False
+                continue
+            supplied_quote = str(row.get("quote") or "").strip()
+            option_quote = str(option.get("quote") or "").strip()
+            compact_supplied = re.sub(r"\s+", "", supplied_quote).replace("：", ":")
+            compact_option = re.sub(r"\s+", "", option_quote).replace("：", ":")
+            if supplied_quote and compact_supplied not in compact_option:
+                valid = False
+                continue
+            row["field"] = option_field if candidate else raw_field
+            row["quote"] = option_quote
+        else:
+            row["field"] = raw_field
+        resolved.append(row)
+    return resolved, valid
+
+
+def _source_bound_changed_fields(
+    baseline: Mapping[str, Any], derived: Mapping[str, Any]
+) -> list[str]:
+    """Return top-level story fields changed by the bounded expansion."""
+
+    fields: list[str] = []
+    for key in sorted(set(baseline) | set(derived)):
+        if key == "_meta":
+            continue
+        if baseline.get(key) != derived.get(key):
+            fields.append(str(key))
+    return fields
+
+
+def _source_bound_review_fallback() -> dict[str, Any]:
+    return {
+        "decision": "uncertain",
+        "source_evidence": [],
+        "candidate_evidence": [],
+        "changed_fields": [],
+        "feedback": "Independent semantic review was unavailable.",
+    }
+
+
+async def _repair_source_bound_review_evidence(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    workflow_run_id: UUID,
+    source_quote_options: list[dict[str, str]],
+    candidate_quote_options: list[dict[str, str]],
+    candidate_payload: Mapping[str, Any],
+    missing_source_fields: list[str],
+    missing_candidate_fields: list[str],
+    source_hash: str,
+    candidate_hash: str,
+    source_payload: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Complete only unverifiable evidence after a valid semantic pass.
+
+    The repair response is deliberately a two-key evidence fragment.  It
+    cannot restate or mutate the semantic verdict, hashes, or candidate, and
+    is accepted only when every requested field resolves to a provided literal.
+    """
+
+    presence_instruction = (
+        "source-bound-field-presence.v1 options are structural observations, not quotations or deletion permission. "
+        "Use their provided quote_id and field without inventing quote text or state; semantic verdict remains unchanged. "
+        if any(option.get("schema") == "source-bound-field-presence.v1"
+               for option in [*source_quote_options, *candidate_quote_options]) else ""
+    )
+    repair_prompt = (
+        "Return exactly one JSON object with only source_evidence and candidate_evidence arrays. "
+        "This is evidence completion for an already completed semantic review. Do not return or change "
+        "decision, core_preserved, core_conflicts, quality_findings, hashes, feedback, or candidate content. "
+        "For every requested path emit exactly one entry using only a provided quote_id and a concise source_relation. "
+        "Candidate quote ids are field-bound: use an id only for the exact field listed in its option. "
+        "Never reuse one candidate quote_id for a different missing field, even when the quote text looks related. "
+        f"{presence_instruction}"
+        "Source options include source_path. A style/tone statement can support presentation style only; it cannot by itself support a concrete plot, world, or character fact. "
+        f"missing_source_fields={_json_dumps(missing_source_fields)}\n"
+        f"missing_candidate_fields={_json_dumps(missing_candidate_fields)}\n"
+        f"source_quote_options={_json_dumps(source_quote_options)}\n"
+        f"candidate_quote_options={_json_dumps(candidate_quote_options)}\n"
+        f"candidate_payload={_json_dumps(candidate_payload)}\n"
+        f"candidate_quote_field_bindings={_json_dumps(_source_bound_candidate_quote_bindings(candidate_quote_options))}\n"
+        f"authority_snapshot_hash={source_hash}\n"
+        f"candidate_hash={candidate_hash}\n"
+        'Response JSON: {"source_evidence":[{"field":"<missing source field>","quote_id":"s0",'
+        '"source_relation":"<bounded derivation>"}],"candidate_evidence":[{"field":"<missing candidate field>",'
+        '"quote_id":"c0","source_relation":"<bounded preservation>"}]}'
+    )
+    max_tokens_override = min(
+        3000,
+        max(1000, 600 + 250 * (len(missing_source_fields) + len(missing_candidate_fields))),
+    )
+    try:
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="critic",
+                system_prompt=(
+                    "You repair evidence references only. Return JSON only; never alter the completed semantic verdict."
+                ),
+                user_prompt=repair_prompt,
+                fallback_response=_json_dumps(
+                    {"source_evidence": [], "candidate_evidence": []}
+                ),
+                prompt_template="planner_source_bound_expansion_evidence_repair",
+                prompt_version="1.0-evidence-only",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                max_tokens_override=max_tokens_override,
+                metadata={
+                    "artifact": "source_bound_expansion_evidence_repair",
+                    "missing_source_fields": missing_source_fields,
+                    "missing_candidate_fields": missing_candidate_fields,
+                    "authority_snapshot_hash": source_hash,
+                    "candidate_hash": candidate_hash,
+                },
+            ),
+        )
+        raw_response = str(getattr(completion, "content", "") or "")
+        raw_response_hash = hashlib.sha256(raw_response.encode("utf-8")).hexdigest()
+        provider = str(getattr(completion, "provider", "") or "").strip().lower()
+        finish_reason = str(getattr(completion, "finish_reason", "") or "").strip().lower()
+        run_id = getattr(completion, "llm_run_id", None)
+        receipt = {
+            "provider": provider,
+            "model_name": str(getattr(completion, "model_name", "") or ""),
+            "llm_run_id": str(run_id) if run_id else None,
+            "input_tokens": getattr(completion, "input_tokens", None),
+            "output_tokens": getattr(completion, "output_tokens", None),
+            "max_tokens_override": max_tokens_override,
+            "finish_reason": finish_reason,
+            "fallback_used": bool(getattr(completion, "fallback_used", False)),
+            "raw_response_hash": raw_response_hash,
+            "missing_source_fields": missing_source_fields,
+            "missing_candidate_fields": missing_candidate_fields,
+        }
+        real_provider_receipt = bool(
+            run_id
+            and provider not in {"", "unknown", "mock", "fallback", "placeholder", "fixture", "test"}
+            and not bool(getattr(completion, "fallback_used", False))
+            and finish_reason in {"stop", "end_turn", "completed"}
+            and raw_response.strip()
+        )
+        if not real_provider_receipt:
+            return None, {**receipt, "reason": "provider_receipt_rejected"}
+        parsed = _mapping(
+            _unwrap_planner_envelope(
+                _extract_json_payload(raw_response),
+                "source_bound_expansion_evidence_repair",
+            )
+        )
+        # Any semantic or content key is a protocol violation.  In particular,
+        # never let the evidence call turn revise/uncertain into pass.
+        if set(parsed) != {"source_evidence", "candidate_evidence"}:
+            return None, {**receipt, "reason": "evidence_only_contract_violation"}
+        raw_source = [
+            item for item in _mapping_list(parsed.get("source_evidence")) if isinstance(item, Mapping)
+        ]
+        raw_candidate = [
+            item for item in _mapping_list(parsed.get("candidate_evidence")) if isinstance(item, Mapping)
+        ]
+        resolved_source, source_refs_ok = _source_bound_resolve_evidence(
+            raw_source, source_quote_options, candidate=False, payload=source_payload
+        )
+        resolved_candidate, candidate_refs_ok = _source_bound_resolve_evidence(
+            raw_candidate, candidate_quote_options, candidate=True, payload=candidate_payload
+        )
+        source_fields = [
+            _source_bound_normalize_evidence_field(item.get("field")) for item in resolved_source
+        ]
+        candidate_fields = [
+            _source_bound_normalize_evidence_field(item.get("field")) for item in resolved_candidate
+        ]
+        if (
+            not source_refs_ok
+            or not candidate_refs_ok
+            or set(source_fields) != set(missing_source_fields)
+            or set(candidate_fields) != set(missing_candidate_fields)
+            or len(source_fields) != len(missing_source_fields)
+            or len(candidate_fields) != len(missing_candidate_fields)
+        ):
+            return None, {**receipt, "reason": "evidence_repair_unverifiable"}
+        return {
+            "source_evidence": raw_source,
+            "candidate_evidence": raw_candidate,
+        }, {**receipt, "reason": "evidence_repair_passed"}
+    except Exception as exc:  # noqa: BLE001 - evidence repair must fail closed
+        return None, {
+            "reason": "evidence_repair_unavailable",
+            "error_type": type(exc).__name__,
+        }
+
+
+def _parse_source_bound_review_json(raw_response: str) -> dict[str, Any]:
+    """Parse an approval receipt without repairing or discarding ambiguous JSON."""
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate review JSON key")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"Invalid JSON constant: {value}")
+
+    payload = json.loads(
+        raw_response, object_pairs_hook=unique_object, parse_constant=reject_constant
+    )
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Review JSON must be a nonempty object")
+    envelope_keys = _PLANNER_GENERIC_ENVELOPE_KEYS | {
+        _normalize_envelope_key("source_bound_expansion_semantic_review")
+    }
+    for key, inner in payload.items():
+        if _normalize_envelope_key(key) not in envelope_keys:
+            continue
+        if len(payload) != 1 or not isinstance(inner, dict) or not inner:
+            raise ValueError("Review envelope must contain only one unambiguous object")
+        return inner
+    return payload
+
+
+def _source_bound_has_concrete_asset_delta(
+    baseline: Mapping[str, Any], candidate: Mapping[str, Any], *, asset: str
+) -> bool:
+    """Detect repaired assets, never infer recovery from unrelated story edits.
+
+    This only invalidates a stale unavailable marker. It does not approve the
+    candidate: all story-field deltas still enter the independent review.
+    """
+
+    fields = ("locations", "factions") if asset == "world" else ("antagonist", "supporting_cast")
+    detail_fields = (
+        {"location_type", "type", "atmosphere", "key_rules", "story_role", "goal", "method",
+         "relationship_to_protagonist", "internal_conflict"}
+        if asset == "world"
+        else {"role", "goal", "motivation", "relationship_to_protagonist"}
+    )
+    for field in fields:
+        before = [_mapping(baseline.get(field))] if field == "antagonist" else _mapping_list(baseline.get(field))
+        after = (
+            [_mapping(candidate.get(field))]
+            if field == "antagonist"
+            else _source_bound_concrete_world_factions(candidate)
+            if field == "factions"
+            else _mapping_list(candidate.get(field))
+        )
+        by_name = {_non_empty_string(item.get("name"), ""): item for item in before}
+        for item in after:
+            name = _non_empty_string(item.get("name"), "")
+            if field == "locations" and name in {
+                location["name"] for location in _source_bound_locations([])
+            }:
+                continue
+            if not name or not any(item.get(key) for key in detail_fields):
+                continue
+            prior = by_name.get(name)
+            if prior is None or any(item.get(key) != prior.get(key) for key in detail_fields):
+                return True
+    return False
+
+
+def _source_bound_review_baseline(project, *, book_spec, world_baseline, cast_baseline, authority):
+    """One exact source/explicit-control baseline for judging and repair admission."""
+    base = {"book_spec": _without_planning_meta(book_spec),
+            "world_spec": _without_planning_meta(world_baseline),
+            "cast_spec": _without_planning_meta(cast_baseline),
+            "authority_snapshot": _without_planning_meta(authority)}
+    binding = getattr(project, "_source_bound_planning_canonical", None)
+    if isinstance(binding, Mapping):base["canonical_source"] = copy.deepcopy(dict(binding))
+    from bestseller.services.creation_contract_authority import select_creation_contracts
+    base["explicit_author_controls"] = select_creation_contracts(project.metadata_json or {}, source_bound=True)
+    return base
+
+
+async def _review_source_bound_expansion(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_baseline: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+    world_derived: Mapping[str, Any],
+    cast_derived: Mapping[str, Any],
+    workflow_run_id: UUID,
+    identity_only: bool = False,
+) -> dict[str, Any] | None:
+    """Run one bounded semantic review for newly accepted source-bound assets.
+
+    Deterministic compiler output and historical replay do not enter this path.
+    A sparse/fallback expansion is represented as unavailable; a real derived
+    expansion must receive a real, evidence-backed review before prewrite.
+    """
+
+    world_meta = _mapping(_mapping(world_derived.get("_meta")))
+    cast_meta = _mapping(_mapping(cast_derived.get("_meta")))
+    world_fields = _source_bound_changed_fields(world_baseline, world_derived)
+    cast_fields = _source_bound_changed_fields(cast_baseline, cast_derived)
+    # The final Cast payload may be changed by a later personhood/foundation
+    # repair without carrying the expansion marker.  Any real story-field
+    # delta must therefore enter the same review path; metadata-only changes
+    # (quality receipts, hashes, and planning markers) remain ignored.
+    pending = bool(world_fields or cast_fields) or any(
+        meta.get("source_bound_expansion") in {"derived_pending_review", "unavailable"}
+        for meta in (world_meta, cast_meta)
+    )
+    if not pending:
+        return None
+
+    changed_fields = [f"world.{field}" for field in world_fields] + [
+        f"cast.{field}" for field in cast_fields
+    ]
+    authority = _source_bound_design_snapshot(project)
+    base_payload = _source_bound_review_baseline(project,book_spec=book_spec,
+        world_baseline=world_baseline,cast_baseline=cast_baseline,authority=authority)
+    explicit_controls = base_payload["explicit_author_controls"]
+    canonical_binding = base_payload.get("canonical_source")
+    candidate_payload = {
+        "world_spec": _without_planning_meta(world_derived),
+        "cast_spec": _without_planning_meta(cast_derived),
+    }
+    if identity_only:
+        # Identity confirmation is a separate narrow review. Do not make the
+        # reviewer sift through social roles, antagonists, world assets, or
+        # unrelated book planning while deciding who a pronoun refers to.
+        # The full candidate is reviewed later by the normal Cast review.
+        baseline_identity = _mapping(cast_baseline.get("protagonist"))
+        candidate_identity = _mapping(cast_derived.get("protagonist"))
+        approved_identity_text = _non_empty_string(
+            _mapping(baseline_identity.get("metadata")).get("identity_source_text"), ""
+        )
+        base_payload = {
+            "cast_spec": {"protagonist": baseline_identity},
+            "authority_snapshot": {"protagonist_identity": approved_identity_text},
+        }
+        candidate_payload = {"cast_spec": {"protagonist": candidate_identity}}
+    source_quote_options, candidate_quote_options = _source_bound_evidence_options(
+        base_payload, candidate_payload, changed_fields
+    )
+    candidate_quote_field_bindings = _source_bound_candidate_quote_bindings(candidate_quote_options)
+    presence_review = any(option.get("schema") == "source-bound-field-presence.v1"
+                          for option in candidate_quote_options)
+    review_version = ("source-bound-expansion-semantic-review.v4.3-field-presence"
+                      if presence_review else "source-bound-expansion-semantic-review.v4.2-stable-catalog")
+    base_hash = _approved_payload_hash(base_payload)
+    candidate_hash = _approved_payload_hash(candidate_payload)
+    source_hash = _approved_payload_hash(authority)
+    report_base: dict[str, Any] = {
+        "review_version": review_version,
+        "decision": "uncertain",
+        "status": "blocked",
+        "changed_fields": changed_fields,
+        "authority_snapshot_hash": source_hash,
+        "canonical_baseline_hash": base_hash,
+        "candidate_hash": candidate_hash,
+        "llm_run_id": None,
+        "core_preserved": None,
+        "core_conflicts": [],
+        "draft_eligible": False,
+        "source_evidence": [],
+        "candidate_evidence": [],
+        # Keep a bounded receipt trail when a real provider is retried after
+        # truncation or malformed JSON. The raw response is limited to the final attempt;
+        # hashes and token metadata are enough to audit the first attempt.
+        "review_attempts": [],
+        "evidence_repair_attempts": [],
+        "evidence_repair_status": "not_needed",
+    }
+    if identity_only and any(field not in {"protagonist", "cast.protagonist"} for field in changed_fields):
+        return {
+            **report_base,
+            "reason": "identity_review_scope_violation",
+            "feedback": "Identity-only review may contain only the protagonist identity delta.",
+        }
+    if identity_only:
+        identity_fields = {
+            "name", "gender", "pronoun_set_zh", "pronoun_set_en",
+            "identity_evidence", "identity_evidence_quote_id",
+        }
+        baseline_hero = _mapping(cast_baseline.get("protagonist"))
+        candidate_hero = _mapping(cast_derived.get("protagonist"))
+        non_identity_changes = [
+            key for key in set(baseline_hero) | set(candidate_hero)
+            if key not in identity_fields and baseline_hero.get(key) != candidate_hero.get(key)
+        ]
+        if non_identity_changes:
+            return {
+                **report_base,
+                "reason": "identity_review_scope_violation",
+                "feedback": "Identity-only review may not carry non-identity protagonist fields.",
+            }
+    if any(
+        meta.get("source_bound_expansion") == "unavailable"
+        and not _source_bound_has_concrete_asset_delta(baseline, candidate, asset=asset)
+        for meta, baseline, candidate, asset in (
+            (world_meta, world_baseline, world_derived, "world"),
+            *([] if identity_only else [(cast_meta, cast_baseline, cast_derived, "cast")]),
+        )
+    ):
+        return {
+            **report_base,
+            "reason": "sparse_asset_expansion_unavailable",
+            "feedback": "Required World/Cast expansion produced no usable concrete assets.",
+        }
+    if not changed_fields:
+        return {
+            **report_base,
+            "reason": "no_actual_changed_fields",
+            "feedback": "Derived expansion was marked pending but produced no actual fields.",
+        }
+    if bool(getattr(getattr(settings, "llm", None), "mock", False)):
+        return {
+            **report_base,
+            "reason": "mock_provider_rejected",
+            "feedback": "Mock or fixture output cannot approve a source-bound expansion.",
+        }
+
+    is_en = is_english_language(project.language)
+    system_prompt = (
+        "You are a bounded source-fidelity reviewer. Return JSON only. Decide pass, revise, or uncertain. "
+        "A pass requires exact source and candidate quotations for every changed field; never invent evidence. "
+        "New locations, factions, personalities, relationships, and supporting roles may be derived from approved "
+        "hook/spine/seriality; they do not need to be named in the snapshot. Reject only replacement of the "
+        "approved protagonist/core ability/core engine or a breach of an actual explicit author constraint."
+        " Distinguish planning_candidate assets from observed_fact events claimed to have already happened. "
+        "SB-R002/SB-R007 govern assertions of past or already-confirmed facts; they do not ban "
+        "planning ordinary current scene locations or social roles before prose exists. "
+        "A source-grounded draft location may be independently reviewed now without a prior "
+        "chapter confirming its name. Reject contradiction of positively sourced approved history, past misconduct or the approved mechanism. "
+        "Backstory not established in a verified source may be proposed as new worldbuilding; "
+        "it must not be falsely attributed to an author or to already adopted prose."
+        if is_en
+        else "你是一次有界的源保真评审器，只返回 JSON。decision 只能是 pass、revise 或 uncertain。"
+        "pass 必须为每个 changed field 提供源与候选逐字摘录，不得编造证据。"
+        "批准 hook/spine/seriality 可以派生具体地点、势力、人格、关系和配角，不要求快照逐字列名；"
+        "只拒绝替换已批准主角、核心能力、核心引擎，或违反真实作者明确控制。"
+        "必须区分派生规划草案(planning_candidate)与宣称已发生的正文事实(observed_fact)：SB-R002/SB-R007约束过去事件或已确认事实的断言，"
+        "不禁止在正文出现前规划普通的当前场景地点与社会角色。源约束的地点草案可以现在接受独立评审，"
+        "无需先有章节证明其名称。应拒绝与有来源的已批准历史、人物既定经历或核心机制矛盾的内容。未知背景可以作为新的世界构建提案，不得伪称已被作者授权或已在采用正文中发生。"
+    )
+    user_prompt = (
+        "Review the immutable candidate once. If transport truncates this response, the server may request one compact completion; do not change the candidate. "
+        "Judge only whether the derived World/Cast enrichment preserves the approved story; "
+        "protagonist replacement, contradiction of an established mechanism, or breach of a positively sourced author control is revise. "
+        "Source silence does not forbid additional abilities, history, factions or ordinary worldbuilding proposals. "
+        "New concrete story roles are allowed when the source_relation explains their derivation. "
+        "Return core_preserved (true only when protagonist/core ability/engine are preserved) and "
+        "core_conflicts (only explicit replacement, contradiction of established source facts, breach of an actual author control, or other P0 core breach). "
+        "Put concrete naming, ordinary psychology, and details needing prose verification in quality_findings; "
+        "these are not core_conflicts. Return source_evidence and candidate_evidence entries with the exact full field path "
+        "and a provided reference. Return only field, quote_id, and source_relation in evidence entries. "
+        "Do not emit quote text; the server resolves the referenced literal. "
+        "A candidate quote_id is valid only for its listed changed field. Echo authority_snapshot_hash and candidate_hash exactly. "
+        f"Candidate quote ownership is explicit: { _json_dumps(candidate_quote_field_bindings) }. "
+        "Select a quote_id from the exact changed field; never reuse an id across fields. "
+        "Use source_path to ground source_relation in the relevant approved engine or world boundary; a style/tone quote alone cannot support a concrete plot, world, or character fact. "
+        "Emit exactly one source_evidence and one candidate_evidence entry per changed field; never repeat a field. "
+        "Keep quality_findings to at most 3 concise P1 findings (each <= 120 characters); preserve every P0 core_conflict. "
+        "Keep feedback <= 200 characters and emit compact JSON with no commentary. "
+        f"\nauthority_snapshot_hash={source_hash}\ncanonical_baseline_hash={base_hash}\ncandidate_hash={candidate_hash}\n"
+        'Response JSON: {"decision":"pass|revise|uncertain","core_preserved":true,"core_conflicts":[],"quality_findings":[],"authority_snapshot_hash":"<exact input>",'
+        '"candidate_hash":"<exact input>","source_evidence":[{"field":"<changed field>","quote_id":"s0",'
+        '"source_relation":"<how it supports derivation>"}],'
+        '"candidate_evidence":[{"field":"<changed field>","quote_id":"c0",'
+        '"source_relation":"<how the derived fact preserves the core>"}],"feedback":"<narrow findings>"}\n'
+        f"source_quote_options={_json_dumps(source_quote_options)}\n"
+        f"candidate_quote_options={_json_dumps(candidate_quote_options)}\n"
+        f"explicit_author_controls={_json_dumps(explicit_controls)}\n"
+        f"candidate_quote_field_bindings={_json_dumps(candidate_quote_field_bindings)}\n"
+        f"changed_fields={_json_dumps(changed_fields)}\n"
+        f"authority_and_baseline={_json_dumps(base_payload)}\n"
+        f"derived_candidates={_json_dumps(candidate_payload)}"
+    )
+    if presence_review:
+        presence_instruction = (
+            "For a field with a source-bound-field-presence.v1 option, cite that quote_id "
+            "instead of a textual quotation. It proves only exact field presence/type/value hash "
+            "in the bound source or candidate payload; absence, null and empty values differ. "
+            "It is not an authored sentence, permission to delete, a fact, or a semantic verdict. "
+            "Judge legality against the full canonical source and actual explicit controls. "
+            "Return field, quote_id and source_relation only; never invent quote text or state."
+        )
+        system_prompt += " " + presence_instruction
+    identity_completion = bool(
+        _mapping(cast_derived.get("protagonist")).get("identity_evidence")
+        and normalize_character_gender(_mapping(cast_baseline.get("protagonist")).get("gender")) == "unknown"
+    )
+    if identity_completion:
+        baseline_hero = _mapping(cast_baseline.get("protagonist"))
+        candidate_hero = _mapping(cast_derived.get("protagonist"))
+        identity_review_context = {
+            "canonical_protagonist": baseline_hero.get("name"),
+            "approved_full_premise": _mapping(baseline_hero.get("metadata")).get("identity_source_text"),
+            "candidate_gender": candidate_hero.get("gender"),
+            "selected_identity_evidence": candidate_hero.get("identity_evidence"),
+            "source_quote_id": "s_identity" if any(item["quote_id"] == "s_identity" for item in source_quote_options) else None,
+            "candidate_quote_id": "c_identity",
+        }
+        user_prompt += (
+            "\nidentity_review_context=" + _json_dumps(identity_review_context)
+        )
+        user_prompt += (
+            "\nPROTAGONIST IDENTITY CHECK: The candidate completed previously unknown protagonist gender. "
+            "Use the dedicated s_identity/c_identity literal references for cast.protagonist when available; "
+            "ordinary quote options are bounded previews, not the complete source evidence. "
+            "Verify identity_evidence against approved_full_premise in identity_review_context and resolve who its gender/pronoun "
+            "refers to. Evidence about a supporting character, spouse or opponent is NOT evidence about "
+            "the protagonist. A name, occupation or reader channel is never gender evidence. "
+            "For Chinese source text, an unambiguous 他 or 她 pronoun whose grammatical referent is the canonical protagonist "
+            "is valid gender evidence; an explicit noun such as 男性 is not required. Do not reject it merely because the "
+            "sentence does not contain a gender noun. "
+            "Return an additional boolean protagonist_identity_supported. Set it true only if the "
+            "quoted evidence unambiguously supports the canonical protagonist's proposed identity. "
+            "Otherwise set false and decision uncertain/revise; this is a P0 core identity breach."
+        )
+        # Put the narrow identity contract last as well as in the structured
+        # context above. The full immutable World/Cast payload can be large;
+        # repeating the scope at the decision boundary prevents the reviewer
+        # from attributing a pronoun or quote to a supporting role.
+        user_prompt += (
+            "\nFINAL IDENTITY SCOPE (highest priority): review only the canonical protagonist "
+            f"{identity_review_context['canonical_protagonist']!r}. "
+            "The proposed gender must be supported by the selected identity evidence and its "
+            "literal approved premise context. Ignore every supporting_cast, antagonist, and "
+            "conflict_map identity or pronoun when deciding protagonist_identity_supported. "
+            "A valid quote_id alone is insufficient; confirm the quote's referent is this exact protagonist. "
+            "For Chinese text, a unique 他/她 pronoun with this exact referent is sufficient gender evidence; "
+            "an explicit gender noun is optional. "
+            "If the premise is ambiguous or the quote refers to another person, return false."
+        )
+        user_prompt += (
+            "\nIDENTITY RESPONSE CONTRACT: protagonist_identity_supported is required, not optional. "
+            "Return it as a JSON boolean in the top-level response. The complete response shape is: "
+            '{"decision":"pass|revise|uncertain","core_preserved":true,"core_conflicts":[],"quality_findings":[], '
+            '"authority_snapshot_hash":"<exact input>","candidate_hash":"<exact input>", '
+            '"protagonist_identity_supported":true,"source_evidence":[],"candidate_evidence":[],"feedback":"<narrow findings>"}. '
+            "Use false when the selected quote is ambiguous or refers to someone else; never omit the field."
+        )
+    review_transport: dict[str, Any] | None = None
+    if isinstance(canonical_binding, Mapping):
+        from bestseller.services.planning_review_transport import prepare_planning_review_transport
+
+        review_data = {
+            "source_quote_options": source_quote_options,
+            "candidate_quote_options": candidate_quote_options,
+            "explicit_author_controls": explicit_controls,
+            "candidate_quote_field_bindings": candidate_quote_field_bindings,
+            "changed_fields": changed_fields,
+            "authority_and_baseline": base_payload,
+            "derived_candidates": candidate_payload,
+        }
+        original_data_block = "\n".join(f"{key}={_json_dumps(value)}" for key, value in review_data.items())
+        # JSONB and in-memory objects can have different key order. Canonicalize
+        # dictionaries before rendering, preserving every value and array order.
+        review_data = {key: json.loads(json.dumps(value, ensure_ascii=False,
+            sort_keys=True, allow_nan=False)) for key, value in review_data.items()}
+        data_block = "\n".join(f"{key}={_json_dumps(value)}" for key, value in review_data.items())
+        if user_prompt.count(original_data_block) != 1:
+            raise ValueError("planning_review_stable_data_block_not_unique")
+        user_prompt = user_prompt.replace(original_data_block, data_block, 1)
+    fallback = _source_bound_review_fallback()
+    raw_response_hash: str | None = None
+    raw_response = ""
+    provider = ""
+    finish_reason = ""
+    run_id = None
+    review_attempts: list[dict[str, Any]] = []
+    initial_max_tokens = min(5000, 1600 + len(changed_fields) * 400)
+    # The observed MiniMax receipt hit 2400 output tokens exactly.  Doubling
+    # the field-scaled budget gives a bounded 4800-token retry for two changed
+    # fields; when the first budget is already capped at 5000, the retry keeps
+    # that cap and relies on the compact prompt rather than claiming a larger
+    # budget exists.
+    retry_max_tokens = min(5000, max(initial_max_tokens + 1200, initial_max_tokens * 2))
+    review_prompt = user_prompt
+    retry_reason: str | None = None
+    generated: dict[str, Any] = {}
+    try:
+        if isinstance(canonical_binding, Mapping):
+            user_prompt, review_transport = prepare_planning_review_transport(
+                system_prompt, user_prompt, data=review_data, data_block=data_block,
+            )
+            review_prompt = user_prompt
+        for review_attempt in range(2):
+            max_tokens_override = (
+                initial_max_tokens if review_attempt == 0 else retry_max_tokens
+            )
+            if isinstance(canonical_binding, Mapping) and review_attempt > 0:
+                from bestseller.services.source_bound_planning_content import (
+                    assert_source_bound_planning_prompt_capacity,
+                )
+                assert_source_bound_planning_prompt_capacity(system_prompt, review_prompt)
+            completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    system_prompt=system_prompt,
+                    user_prompt=review_prompt,
+                    fallback_response=_json_dumps(fallback),
+                    prompt_template="planner_source_bound_expansion_semantic_review",
+                    prompt_version=("4.3-field-presence" if presence_review else "4.2-stable-catalog"),
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    max_tokens_override=max_tokens_override,
+                    metadata={
+                        "artifact": "source_bound_expansion_semantic_review",
+                        "changed_fields": changed_fields,
+                        "authority_snapshot_hash": source_hash,
+                        "candidate_hash": candidate_hash,
+                        "review_attempt": review_attempt + 1,
+                        "length_retry": retry_reason == "length",
+                        "retry_reason": retry_reason,
+                        "source_transport": review_transport,
+                    },
+                ),
+            )
+            raw_response = str(getattr(completion, "content", "") or "")
+            run_id = getattr(completion, "llm_run_id", None)
+            raw_response_hash = hashlib.sha256(raw_response.encode("utf-8")).hexdigest()
+            provider = str(getattr(completion, "provider", "") or "").strip().lower()
+            finish_reason = str(getattr(completion, "finish_reason", "") or "").strip().lower()
+            receipt = {
+                "attempt": review_attempt + 1,
+                "provider": provider,
+                "model_name": str(getattr(completion, "model_name", "") or ""),
+                "llm_run_id": str(run_id) if run_id else None,
+                "input_tokens": getattr(completion, "input_tokens", None),
+                "output_tokens": getattr(completion, "output_tokens", None),
+                "max_tokens_override": max_tokens_override,
+                "finish_reason": finish_reason,
+                "fallback_used": bool(getattr(completion, "fallback_used", False)),
+                "raw_response_hash": raw_response_hash,
+            }
+            review_attempts.append(receipt)
+            report_base["review_attempts"] = review_attempts
+            real_provider_receipt = bool(
+                run_id
+                and provider not in {"", "unknown", "mock", "fallback", "placeholder", "fixture", "test"}
+                and not bool(getattr(completion, "fallback_used", False))
+            )
+            if (
+                review_attempt == 0
+                and real_provider_receipt
+                and finish_reason == "length"
+            ):
+                receipt["validation_reason"] = "provider_receipt_rejected"
+                retry_reason = "length"
+                review_prompt = (
+                    f"{user_prompt}\n\nSTRICT LENGTH RETRY: The previous real-provider response was truncated. "
+                    "Re-evaluate the identical immutable candidate and return one complete bounded review. "
+                    "Use one evidence entry per changed field, omit nonessential quality findings, "
+                    "and keep every explicit P0 core conflict. Do not change the candidate or invent evidence."
+                )
+                continue
+            if (
+                real_provider_receipt
+                and finish_reason in {"stop", "end_turn", "completed"}
+                and raw_response.strip()
+            ):
+                try:
+                    generated = _parse_source_bound_review_json(raw_response)
+                except ValueError:
+                    receipt["validation_reason"] = "malformed_review_json"
+                    if review_attempt == 0:
+                        retry_reason = "malformed_review_json"
+                        review_prompt = (
+                            f"{user_prompt}\n\nSTRICT FORMAT RETRY: "
+                            "The previous response was not valid JSON. "
+                            "Return a complete JSON object for the identical immutable "
+                            "source and candidate. "
+                            "Keep all finding strings inside their arrays, "
+                            "echo both hashes exactly, "
+                            "and return one evidence entry per changed field. "
+                            "Do not change the candidate, "
+                            "invent evidence, or emit commentary."
+                        )
+                        continue
+                    return {
+                        **report_base,
+                        "reason": "malformed_review_json",
+                        "feedback": (
+                            "Review response was not an unambiguous JSON object "
+                            "after the bounded retry."
+                        ),
+                        "provider": provider,
+                        "finish_reason": finish_reason,
+                        "raw_response": raw_response,
+                        "raw_response_hash": raw_response_hash,
+                        "llm_run_id": str(run_id),
+                    }
+            break
+        if (
+            not run_id
+            or provider in {"", "unknown", "mock", "fallback", "placeholder", "fixture", "test"}
+            or finish_reason not in {"stop", "end_turn", "completed"}
+            or bool(getattr(completion, "fallback_used", False))
+            or not raw_response.strip()
+        ):
+            return {
+                **report_base,
+                "reason": "provider_receipt_rejected",
+                "feedback": "Review provider/finish receipt was mock, fallback, truncated, or empty.",
+                "provider": provider,
+                "finish_reason": finish_reason,
+                "raw_response": raw_response,
+                "raw_response_hash": raw_response_hash,
+                "llm_run_id": str(getattr(completion, "llm_run_id", None))
+                if getattr(completion, "llm_run_id", None)
+                else None,
+            }
+        run_id = completion.llm_run_id
+    except Exception as exc:
+        return {
+            **report_base,
+            "reason": "review_call_unavailable",
+            "feedback": f"Independent semantic review unavailable: {type(exc).__name__}.",
+            "raw_response_hash": raw_response_hash,
+            "raw_response": raw_response,
+            "provider": provider,
+            "finish_reason": finish_reason,
+            "llm_run_id": str(run_id) if run_id else None,
+        }
+    decision = str(generated.get("decision") or "").strip().lower()
+    echoed_source_hash = str(generated.get("authority_snapshot_hash") or "")
+    echoed_candidate_hash = str(generated.get("candidate_hash") or "")
+    if (
+        decision not in {"pass", "revise", "uncertain"}
+        or run_id is None
+        or echoed_source_hash != source_hash
+        or echoed_candidate_hash != candidate_hash
+    ):
+        return {
+            **report_base,
+            "reason": "review_hash_mismatch"
+            if echoed_source_hash != source_hash or echoed_candidate_hash != candidate_hash
+            else "invalid_decision",
+            "feedback": (
+                "Review must echo both immutable hashes exactly "
+                "and provide pass, revise, or uncertain."
+            ),
+            "provider": provider,
+            "finish_reason": finish_reason,
+            "raw_response": raw_response,
+            "raw_response_hash": raw_response_hash,
+            "llm_run_id": str(run_id) if run_id else None,
+        }
+    report_base["protagonist_identity_check_required"] = identity_completion
+    report_base["protagonist_identity_supported"] = (
+        generated.get("protagonist_identity_supported") if identity_completion else None
+    )
+    if identity_completion and generated.get("protagonist_identity_supported") is not True:
+        return {
+            **report_base,
+            "reason": "protagonist_identity_evidence_unconfirmed",
+            "feedback": "Independent review did not confirm that the quoted gender evidence refers to the protagonist.",
+            "llm_run_id": str(run_id),
+            "raw_response": raw_response,
+            "raw_response_hash": raw_response_hash,
+        }
+    raw_core_preserved = generated.get("core_preserved")
+    core_preserved = raw_core_preserved if isinstance(raw_core_preserved, bool) else None
+    core_conflicts = _string_list(generated.get("core_conflicts"))
+    explicit_core_breach = core_preserved is False or bool(core_conflicts)
+    source_evidence, source_refs_ok = _source_bound_resolve_evidence(
+        [item for item in _mapping_list(generated.get("source_evidence")) if isinstance(item, Mapping)],
+        source_quote_options,
+        candidate=False, payload=base_payload,
+    )
+    candidate_evidence, candidate_refs_ok = _source_bound_resolve_evidence(
+        [item for item in _mapping_list(generated.get("candidate_evidence")) if isinstance(item, Mapping)],
+        candidate_quote_options,
+        candidate=True, payload=candidate_payload,
+    )
+
+    def _evidence_field_ok(
+        entries: list[Mapping[str, Any]], field: str, *, candidate: bool
+    ) -> bool:
+        from bestseller.services.source_bound_field_evidence import field_presence_evidence_matches
+
+        whole = candidate_payload if candidate else base_payload
+        options = candidate_quote_options if candidate else source_quote_options
+        catalog = {option["quote_id"]: option for option in options}
+        if any(
+            str(item.get("source_relation") or "").strip()
+            and catalog.get(item.get("quote_id"), {}).get("schema") == "source-bound-field-presence.v1"
+            and field_presence_evidence_matches(
+                item, payload=whole, field=field, side="candidate" if candidate else "source")
+            for item in entries
+        ):
+            return True
+        payload = _source_bound_field_payload(candidate_payload, field) if candidate else base_payload
+        return any(
+            _source_bound_normalize_evidence_field(item.get("field")) == field
+            and str(item.get("source_relation") or "").strip()
+            and _source_bound_quote_in_payload(item.get("quote"), payload)
+            for item in entries
+        )
+
+    source_field_ok = {
+        field: _evidence_field_ok(source_evidence, field, candidate=False)
+        for field in changed_fields
+    }
+    candidate_field_ok = {
+        field: _evidence_field_ok(candidate_evidence, field, candidate=True)
+        for field in changed_fields
+    }
+    source_ok = source_refs_ok and all(source_field_ok.values())
+    candidate_ok = candidate_refs_ok and all(candidate_field_ok.values())
+    if decision == "pass" and core_preserved is True and not explicit_core_breach and (
+        not source_ok or not candidate_ok
+    ):
+        report_base["evidence_repair_status"] = "attempted"
+        missing_source_fields = list(changed_fields) if not source_refs_ok else [
+            field for field in changed_fields if not source_field_ok[field]
+        ]
+        missing_candidate_fields = list(changed_fields) if not candidate_refs_ok else [
+            field for field in changed_fields if not candidate_field_ok[field]
+        ]
+        repair_payload, repair_receipt = await _repair_source_bound_review_evidence(
+            session,
+            settings,
+            project=project,
+            workflow_run_id=workflow_run_id,
+            source_quote_options=source_quote_options,
+            candidate_quote_options=candidate_quote_options,
+            candidate_payload=candidate_payload,
+            missing_source_fields=missing_source_fields,
+            missing_candidate_fields=missing_candidate_fields,
+            source_hash=source_hash,
+            candidate_hash=candidate_hash,
+            source_payload=base_payload,
+        )
+        report_base["evidence_repair_attempts"] = [repair_receipt]
+        if repair_payload is not None:
+            source_evidence, source_refs_ok = _source_bound_resolve_evidence(
+                [*source_evidence, *_mapping_list(repair_payload.get("source_evidence"))],
+                source_quote_options,
+                candidate=False, payload=base_payload,
+            )
+            candidate_evidence, candidate_refs_ok = _source_bound_resolve_evidence(
+                [*candidate_evidence, *_mapping_list(repair_payload.get("candidate_evidence"))],
+                candidate_quote_options,
+                candidate=True, payload=candidate_payload,
+            )
+            source_ok = source_refs_ok and all(
+                _evidence_field_ok(source_evidence, field, candidate=False)
+                for field in changed_fields
+            )
+            candidate_ok = candidate_refs_ok and all(
+                _evidence_field_ok(candidate_evidence, field, candidate=True)
+                for field in changed_fields
+            )
+        report_base["evidence_repair_status"] = "passed" if source_ok and candidate_ok else "blocked"
+    if decision == "pass" and not (source_ok and candidate_ok):
+        decision = "uncertain"
+        reason = "evidence_not_verifiable"
+    else:
+        reason = "reviewed"
+    evidence_verified = bool(source_ok and candidate_ok)
+    draft_eligible = bool(
+        evidence_verified
+        and not explicit_core_breach
+        and (decision == "pass" or core_preserved is True)
+    )
+    return {
+        **report_base,
+        "decision": decision,
+        "status": "passed" if decision == "pass" else "blocked",
+        "reason": reason,
+        "feedback": str(generated.get("feedback") or "").strip(),
+        "quality_findings": _string_list(generated.get("quality_findings")),
+        "core_preserved": core_preserved,
+        "core_conflicts": core_conflicts,
+        "draft_eligible": draft_eligible,
+        "source_evidence": source_evidence,
+        "candidate_evidence": candidate_evidence,
+        "llm_run_id": str(run_id),
+        "provider": provider,
+        "finish_reason": finish_reason,
+        "raw_response": raw_response,
+        "raw_response_hash": raw_response_hash,
+        "authority_snapshot_hash_echo": echoed_source_hash,
+        "candidate_hash_echo": echoed_candidate_hash,
+        "evidence_verified": evidence_verified,
+    }
+
+
+def _store_source_bound_review(
+    project: ProjectModel, report: Mapping[str, Any] | None
+) -> None:
+    if report is None:
+        return
+    project.metadata_json = {
+        **(_mapping(getattr(project, "metadata_json", None))),
+        "source_bound_expansion_review": dict(report),
+    }
+
+
+def _source_bound_report_is_draft_eligible(report: Mapping[str, Any]) -> bool:
+    """Read the explicit eligibility bit, preserving legacy pass receipts."""
+
+    if report.get("core_preserved") is False or _string_list(report.get("core_conflicts")):
+        return False
+    if "draft_eligible" in report:
+        return bool(
+            report.get("draft_eligible") is True
+            and report.get("evidence_verified") is True
+            and report.get("llm_run_id")
+            and report.get("raw_response_hash")
+            and report.get("authority_snapshot_hash")
+            and report.get("candidate_hash")
+            and report.get("authority_snapshot_hash_echo") == report.get("authority_snapshot_hash")
+            and report.get("candidate_hash_echo") == report.get("candidate_hash")
+            and report.get("changed_fields")
+            and report.get("source_evidence")
+            and report.get("candidate_evidence")
+        )
+    # Historical pass receipts predate the core-preservation fields. Preserve
+    # their approved behavior unless the new explicit P0 fields contradict it.
+    return bool(
+        report.get("decision") == "pass"
+        and report.get("core_preserved") is not False
+        and not _string_list(report.get("core_conflicts"))
+    )
+
+
+def _mark_source_bound_expansion_reviewed(
+    payload: Mapping[str, Any], report: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Attach a compact, evidence-bearing receipt and clear pending state."""
+
+    receipt_keys = (
+        "review_version",
+        "llm_run_id",
+        "provider",
+        "finish_reason",
+        "changed_fields",
+        "decision",
+        "reason",
+        "feedback",
+        "core_preserved",
+        "core_conflicts",
+        "quality_findings",
+        "draft_eligible",
+        "authority_snapshot_hash",
+        "canonical_baseline_hash",
+        "candidate_hash",
+        "authority_snapshot_hash_echo",
+        "candidate_hash_echo",
+        "source_evidence",
+        "candidate_evidence",
+        "evidence_verified",
+        "raw_response_hash",
+        "review_attempts",
+        "evidence_repair_attempts",
+        "evidence_repair_status",
+        "world_revision",
+    )
+    receipt = {key: report[key] for key in receipt_keys if key in report}
+    merged = copy.deepcopy(dict(payload))
+    meta = _mapping(merged.get("_meta"))
+    passed = report.get("decision") == "pass"
+    merged["_meta"] = {
+        **meta,
+        "source_bound_expansion": "reviewed" if passed else "draft_eligible",
+        "source_bound_expansion_review": "passed" if passed else "needs_review",
+        "source_bound_expansion_draft_eligible": _source_bound_report_is_draft_eligible(report),
+        "source_bound_expansion_review_receipt": receipt,
+    }
+    return merged
+
+
+def _source_bound_world_review_matches_subject(
+    report: Mapping[str, Any], *, project: ProjectModel, authority: Mapping[str, Any],
+    book_spec: Mapping[str, Any], baseline: Mapping[str, Any], candidate: Mapping[str, Any],
+    allowed_fields: set[str] | None = None,
+) -> bool:
+    """Only a verified content rejection can request a new derived candidate."""
+
+    source_hash = _approved_payload_hash(authority)
+    candidate_hash = _approved_payload_hash({
+        "world_spec": _without_planning_meta(candidate), "cast_spec": {},
+    })
+    baseline_hash = _approved_payload_hash(_source_bound_review_baseline(project,
+        book_spec=book_spec,world_baseline=baseline,cast_baseline={},authority=authority))
+    attempts = _mapping_list(report.get("review_attempts"))
+    receipt = attempts[-1] if attempts else {}
+    changed = _string_list(report.get("changed_fields"))
+    return bool(
+        report.get("reason") == "reviewed"
+        and report.get("evidence_verified") is True
+        and report.get("llm_run_id") and report.get("raw_response_hash")
+        and receipt.get("llm_run_id") == report.get("llm_run_id")
+        and receipt.get("raw_response_hash") == report.get("raw_response_hash")
+        and receipt.get("fallback_used") is False
+        and receipt.get("provider") not in {
+            None, "", "unknown", "mock", "fallback", "placeholder", "fixture", "test",
+        }
+        and receipt.get("finish_reason") in {"stop", "end_turn", "completed"}
+        and report.get("authority_snapshot_hash") == source_hash
+        and report.get("authority_snapshot_hash_echo") == source_hash
+        and report.get("candidate_hash") == candidate_hash
+        and report.get("candidate_hash_echo") == candidate_hash
+        and report.get("canonical_baseline_hash") == baseline_hash
+        and changed and set(changed) <= (allowed_fields if allowed_fields is not None else {"world.locations", "world.factions"})
+        and report.get("source_evidence") and report.get("candidate_evidence")
+    )
+
+
+def _source_bound_world_review_allows_revision(report, **kwargs):
+    return bool(report.get("decision")=="revise" and (report.get("feedback") or report.get("core_conflicts"))
+        and _source_bound_world_review_matches_subject(report,**kwargs))
+
+
+async def _approve_source_bound_world_expansion(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_baseline: Mapping[str, Any],
+    world_derived: Mapping[str, Any],
+    workflow_run_id: UUID,
+    llm_run_ids: list[UUID] | None = None,
+) -> dict[str, Any]:
+    """Review World-only derived fields before WorldSpec import or Cast use."""
+
+    if not _source_bound_cast_enabled(project):
+        return copy.deepcopy(dict(world_derived))
+    approved_reuse_id = _mapping(world_derived.get("_meta")).get("reviewed_world_reuse_artifact_id")
+    if approved_reuse_id:
+        from bestseller.services.rejected_world_restore import approved_artifact_report
+        prior = await approved_artifact_report(session,project,book=book_spec,baseline=world_baseline,
+            candidate=world_derived,artifact_id=approved_reuse_id)
+        if prior is None:raise PlannerFallbackError("Reviewed World artifact reuse binding invalid")
+        return _mark_source_bound_expansion_reviewed(world_derived,prior)
+    restored_review_id = _mapping(world_derived.get("_meta")).get("restored_rejection_review_id")
+    if restored_review_id:
+        from bestseller.services.rejected_world_restore import verified_rejection
+        report = await verified_rejection(session,project,book=book_spec,baseline=world_baseline,
+            candidate=world_derived,expected_review_id=restored_review_id)
+        if report is None:raise PlannerFallbackError("Restored World rejection binding invalid")
+    else:
+        report = await _review_source_bound_expansion(
+            session,
+            settings,
+            project=project,
+            book_spec=book_spec,
+            world_baseline=world_baseline,
+            cast_baseline={},
+            world_derived=world_derived,
+            cast_derived={},
+            workflow_run_id=workflow_run_id,
+        )
+    _store_source_bound_review(project, report)
+    if report and report.get("llm_run_id") and llm_run_ids is not None:
+        llm_run_ids.append(UUID(str(report["llm_run_id"])))
+    if report is None:
+        return copy.deepcopy(dict(world_derived))
+    authority = copy.deepcopy(_source_bound_design_snapshot(project))
+    from bestseller.services import world_semantic_revision as full_revision
+    full_handled = False
+    if (not _source_bound_report_is_draft_eligible(report)
+        and _source_bound_world_review_allows_revision(report,project=project,authority=authority,book_spec=book_spec,
+            baseline=world_baseline,candidate=world_derived,allowed_fields=full_revision.FIELDS)
+        and await full_revision.completed_candidate(session,project,world_derived)):
+        full_handled = True
+        world_derived, report = await full_revision.revise(session,settings,project=project,book=book_spec,
+            baseline=world_baseline,candidate=world_derived,report=report,
+            workflow_run_id=workflow_run_id,llm_run_ids=llm_run_ids)
+        _store_source_bound_review(project,report)
+    if not full_handled and not _source_bound_report_is_draft_eligible(report) and _source_bound_world_review_allows_revision(
+        report, project=project, authority=authority, book_spec=book_spec,
+        baseline=world_baseline, candidate=world_derived,
+    ):
+        frozen_baseline = copy.deepcopy(dict(world_baseline))
+        frozen_book = copy.deepcopy(dict(book_spec))
+        revision: dict[str, Any] = {"initial_review": copy.deepcopy(report)}
+        try:
+            completion = await complete_text(
+                session, settings, LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt="Revise derived World assets only. Return strict JSON only.",
+                    user_prompt=(
+                        "Repair the independently verified content rejection below once. Return only "
+                        "{\"locations\": [...], \"factions\": [...]} as revised derived assets. "
+                        "Keep approved baseline names and facts immutable. Remove the unsupported "
+                        "detail identified by the review; preserve unrelated valid derived assets. "
+                        "Retain at least one concrete derived location or faction needed for the approved "
+                        "current action. Do not erase all usable assets or return only functional slots. "
+                        "SB-R002/SB-R007 distinguish proposed scene plans from past events; a planned "
+                        "ordinary place need not have appeared in prose already. Remove unsupported "
+                        "history or misconduct details without deleting an otherwise licensed setting. "
+                        "Do not change protagonist, mechanism, rules, history, cost or endgame. "
+                        "Do not invent a replacement story. The result requires another independent review.\n"
+                        + _json_dumps({
+                            "approved_source": authority,
+                            "approved_book_spec": _without_planning_meta(frozen_book),
+                            "immutable_world_baseline": _without_planning_meta(frozen_baseline),
+                            "rejected_assets": {key: world_derived.get(key, []) for key in ("locations", "factions")},
+                            "verified_feedback": report.get("feedback"),
+                            "core_conflicts": report.get("core_conflicts"),
+                        })
+                    ),
+                    fallback_response="{}", prompt_template="planner_source_bound_world_revision",
+                    prompt_version="1.1-preserve-planning-candidate", project_id=project.id,
+                    workflow_run_id=workflow_run_id, max_tokens_override=4000,
+                    metadata={"authority_snapshot_hash": report["authority_snapshot_hash"],
+                              "canonical_baseline_hash": report["canonical_baseline_hash"],
+                              "rejected_candidate_hash": report["candidate_hash"], "revision_attempt": 1},
+                ),
+            )
+            raw = str(getattr(completion, "content", "") or "")
+            run_id = getattr(completion, "llm_run_id", None)
+            receipt = {
+                "llm_run_id": str(run_id) if run_id else None,
+                "provider": str(getattr(completion, "provider", "")).lower(),
+                "model_name": getattr(completion, "model_name", None),
+                "finish_reason": str(getattr(completion, "finish_reason", "")).lower(),
+                "fallback_used": bool(getattr(completion, "fallback_used", False)),
+                "raw_response_hash": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+            }
+            revision["generation_receipt"] = receipt
+            if run_id and llm_run_ids is not None:
+                llm_run_ids.append(UUID(str(run_id)))
+            if (not run_id or receipt["fallback_used"]
+                or receipt["provider"] in {"", "unknown", "mock", "fallback", "placeholder", "fixture", "test"}
+                or receipt["finish_reason"] not in {"stop", "end_turn", "completed"}):
+                raise PlannerFallbackError("World revision provider receipt rejected")
+            generated = _parse_source_bound_review_json(raw)
+            _validate_source_bound_world_expansion_payload(generated)
+            revised = _rebind_source_bound_world_expansion(frozen_baseline, generated)
+            if not _source_bound_has_concrete_asset_delta(frozen_baseline, revised, asset="world"):
+                raise PlannerFallbackError(
+                    "World revision removed all concrete derived assets or returned only functional slots"
+                )
+            if _approved_payload_hash(_source_bound_design_snapshot(project)) != _approved_payload_hash(authority):
+                raise PlannerFallbackError("World revision authority changed")
+            final_review = await _review_source_bound_expansion(
+                session, settings, project=project, book_spec=frozen_book,
+                world_baseline=frozen_baseline, cast_baseline={},
+                world_derived=revised, cast_derived={}, workflow_run_id=workflow_run_id,
+            )
+            revision["final_review"] = copy.deepcopy(final_review)
+            if final_review and final_review.get("llm_run_id") and llm_run_ids is not None:
+                llm_run_ids.append(UUID(str(final_review["llm_run_id"])))
+            if final_review is None:
+                raise PlannerFallbackError("World revision produced no independently reviewed delta")
+            report = {**final_review, "world_revision": revision}
+            world_derived = revised
+        except Exception as exc:  # noqa: BLE001 - retain the rejected candidate and fail closed
+            revision["failure"] = {"error_type": type(exc).__name__, "message": str(exc)}
+            report = {**report, "world_revision": revision}
+            from bestseller.services.budget import ExecutionBudgetError
+            if isinstance(exc, ExecutionBudgetError):
+                _store_source_bound_review(project, report)
+                raise
+        _store_source_bound_review(project, report)
+    if not _source_bound_report_is_draft_eligible(report):
+        raise PlannerFallbackError(
+            "World-bound expansion semantic review blocked: "
+            + str(report.get("feedback") or report.get("reason"))
+        )
+    return _mark_source_bound_expansion_reviewed(world_derived, report)
+
+
+async def _require_final_source_bound_cast_review(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    world_baseline: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+    world_derived: Mapping[str, Any],
+    cast_derived: Mapping[str, Any],
+    workflow_run_id: UUID,
+    llm_run_ids: list[UUID],
+) -> dict[str, Any] | None:
+    """Gate the final source-bound Cast payload immediately before approval."""
+
+    if not _source_bound_cast_enabled(project):
+        return None
+    report = await _review_source_bound_expansion(
+        session,
+        settings,
+        project=project,
+        book_spec=book_spec,
+        world_baseline=world_baseline,
+        cast_baseline=cast_baseline,
+        world_derived=world_derived,
+        cast_derived=cast_derived,
+        workflow_run_id=workflow_run_id,
+    )
+    _store_source_bound_review(project, report)
+    if report and report.get("llm_run_id"):
+        llm_run_ids.append(UUID(str(report["llm_run_id"])))
+    if report and not _source_bound_report_is_draft_eligible(report):
+        raise PlannerFallbackError(
+            "Source-bound expansion semantic review blocked: "
+            + str(report.get("feedback") or report.get("reason"))
+        )
+    return report
+
+
+async def _approve_final_source_bound_cast_artifact(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    book_spec: Mapping[str, Any],
+    world_baseline: Mapping[str, Any],
+    cast_baseline: Mapping[str, Any],
+    world_derived: Mapping[str, Any],
+    cast_derived: Mapping[str, Any],
+    workflow_run_id: UUID,
+    llm_run_ids: list[UUID],
+) -> Any:  # noqa: ANN401 - ORM artifact type is stable at runtime
+    """Review the final Cast payload before the first source-bound approval write."""
+
+    final_report = await _require_final_source_bound_cast_review(
+        session,
+        settings,
+        project=project,
+        book_spec=book_spec,
+        world_baseline=world_baseline,
+        cast_baseline=cast_baseline,
+        world_derived=world_derived,
+        cast_derived=cast_derived,
+        workflow_run_id=workflow_run_id,
+        llm_run_ids=llm_run_ids,
+    )
+    approved_payload = (
+        _mark_source_bound_expansion_reviewed(cast_derived, final_report)
+        if final_report and _source_bound_report_is_draft_eligible(final_report)
+        else copy.deepcopy(dict(cast_derived))
+    )
+    return await import_planning_artifact(
+        session,
+        project_slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.CAST_SPEC,
+            content=approved_payload, source_run_id=workflow_run_id),
+    )
+
+
+
+def _approved_cast_payload_for_downstream(candidate: Mapping[str, Any], artifact: Any) -> dict[str, Any]:
+    """Continue with the exact approved row, never its pre-approval wrapper.
+
+    Only the three existing approval bookkeeping fields may differ. Story
+    values, nested metadata and unknown root metadata remain exact sources.
+    """
+    from bestseller.services.source_bound_planning_content import _dependency_projection
+    approved = getattr(artifact, "content", None)
+    if not isinstance(candidate, Mapping) or not isinstance(approved, Mapping):
+        raise ValueError("approved_cast_downstream_payload_missing")
+    normalized = []
+    for value in (candidate, approved):
+        item = _dependency_projection(value)
+        if not isinstance(item.get("_meta"), Mapping):
+            raise ValueError("approved_cast_downstream_metadata_missing")
+        for key in ("source_bound_expansion", "source_bound_expansion_draft_eligible", "source_bound_expansion_review"):
+            item["_meta"].pop(key, None)
+        normalized.append(item)
+    if normalized[0] != normalized[1]:
+        raise ValueError("approved_cast_downstream_source_changed")
+    return copy.deepcopy(dict(approved))
 
 
 def _source_bound_cost_rules(project: ProjectModel, *, is_en: bool) -> list[str]:
@@ -12492,202 +16115,10 @@ def _compile_source_bound_book_spec(
     project: ProjectModel,
     premise: str,
 ) -> dict[str, Any]:
-    """Compile BookSpec from the immutable creation snapshot and premise.
+    """Project sourced fields only; missing creative content awaits generation."""
+    from bestseller.services.source_bound_planning_content import project_source_bound_book
 
-    In source-bound mode the BookSpec is a contract, not a creative-writing
-    surface.  It therefore cannot add a hidden history, named stranger,
-    inherited obligation, second power system, or a prewritten mystery.  Those
-    inventions used to enter here and then look like canonical user choices to
-    every downstream planner.
-    """
-
-    metadata = _mapping(getattr(project, "metadata_json", None))
-    snapshot = _source_bound_design_snapshot(project)
-    snapshot_protagonist = _mapping(snapshot.get("protagonist"))
-    creation_intent = _mapping(snapshot.get("creation_intent"))
-    genre_intent = _mapping(creation_intent.get("genre_intent"))
-    enhancers = _mapping(creation_intent.get("story_enhancers"))
-    protagonist_name = _first_non_empty_text(
-        snapshot_protagonist.get("name"),
-        metadata.get("creation_protagonist_name"),
-        default=_role_label("protagonist", language=project.language),
-    )
-    reader_promise = _first_non_empty_text(
-        snapshot.get("reader_promise"),
-        premise,
-        default=premise,
-    )
-    core_engine = _first_non_empty_text(
-        snapshot.get("core_story_engine"),
-        reader_promise,
-        default=reader_promise,
-    )
-    is_en = is_english_language(project.language)
-    tone_key = _first_non_empty_text(
-        snapshot.get("tone"),
-        creation_intent.get("tone_preference"),
-        genre_intent.get("tone_preference"),
-        default="light",
-    )
-    effect_skills = _string_list(enhancers.get("effect_skills"))
-    cost_rules = _source_bound_cost_rules(project, is_en=is_en)
-    if is_en:
-        tone = "light, brisk, direct payoff" if tone_key == "light" else tone_key
-        external_goal = f"{protagonist_name} keeps executing the approved story engine: {core_engine}"
-        internal_need = "Make present-tense choices from verified facts instead of invented history."
-        weakness = "Only limits explicitly present in the approved premise may constrain the protagonist."
-        theme_statement = "Repeated use of the approved core mechanism must create visible, cumulative change."
-        themes = ["core mechanism payoff", "cumulative progress", "escalating current pressure"]
-    else:
-        tone = (
-            "轻松、明快、爽点直接、以当下行动和结果推进"
-            if tone_key in {"light", "轻松", "轻松爽文"}
-            else tone_key
-        )
-        external_goal = f"{protagonist_name}持续执行已经批准的故事引擎：{core_engine}"
-        internal_need = "只依据当下已经验证的事实行动，不用虚构前史替代真实推进。"
-        weakness = "只承认批准构思中明确写出的限制，未声明的限制不得补写。"
-        theme_statement = "反复运行已批准的核心机制，并让每次兑现形成可见且可累积的变化。"
-        themes = ["核心机制兑现", "阶段成果积累", "当下压力升级"]
-
-    payload: dict[str, Any] = {
-        "title": project.title,
-        "genre": project.genre,
-        "target_audience": project.audience or genre_intent.get("channel_key") or "web-serial",
-        "tone": tone,
-        "themes": themes,
-        # 过门的一句话优先，premise 只作兜底——与本文件 heat-brief 处（门验 A
-        # 落 B，2026-08-13）同一条教训。此前这里硬写 premise，经 ontology 市场
-        # 字段同步盖掉 T6 提炼的 25-40 字 logline：真机《废丹成神》metadata
-        # logline 401 字、《他快死了而我是那道雷》250 字，来路都是这一行
-        # （2026-08-24 全库体检）。
-        "logline": (
-            str(
-                ((metadata.get("hook_card") or {}).get("one_liner") or "")
-                if isinstance(metadata.get("hook_card"), dict)
-                else ""
-            ).strip()
-            or _hook_shaped_or_empty(
-                (
-                    (metadata.get("writing_profile") or {}).get("market") or {}
-                    if isinstance(metadata.get("writing_profile"), dict)
-                    else {}
-                ).get("logline")
-            )
-            # market.logline 可能被 logline 门救援改写灌成 400 字答辩文
-            # （真机《废丹成神》），钩形校验挡住它，别让它顶替 premise 兜底。
-            or _hook_shaped_or_empty(metadata.get("logline"))
-            or premise
-        ),
-        "unique_hook": reader_promise,
-        "theme_statement": theme_statement,
-        "dramatic_question": external_goal,
-        # Even in source-bound mode the planner must reserve enough cast
-        # capacity for the requested serial length.  This is a structural
-        # budget, not permission to invent names; approved cast entries are
-        # attached later by ``_source_bound_roster_from_book_spec``.
-        "expected_character_count": _fallback_expected_character_count(project),
-        "naming_pool": [protagonist_name],
-        "protagonist": {
-            "name": protagonist_name,
-            "archetype": "source-bound operator",
-            "external_goal": external_goal,
-            "outer_motivation": external_goal,
-            "internal_need": internal_need,
-            "weakness": weakness,
-            "secret": reader_promise,
-            "growth_curve": core_engine,
-        },
-        "stakes": {
-            "personal": "当前目标若失败，已经取得的阶段成果会受影响。" if not is_en else "Failure would jeopardize the current objective and accumulated progress.",
-            "interpersonal": "每次公开成果都会改变其他角色下一轮的判断与行动。" if not is_en else "Each visible result changes how others act in the next round.",
-            "faction": "外部压力只能沿已批准故事引擎逐级增强。" if not is_en else "External pressure may escalate only through the approved story engine.",
-            "existential": "不得新增创建快照之外的终极威胁。" if not is_en else "No existential threat exists unless the creation snapshot states one.",
-        },
-        "power_system": {
-            "type": "approved-core-mechanism",
-            "core_axis": reader_promise,
-            "layers": [
-                {"level": "确认", "capability": "在场景中确认核心机制第一次真实生效", "ceiling": "只使用已批准构思中的事实"},
-                {"level": "复现", "capability": "让同一核心机制稳定产生第二次结果", "ceiling": "不得新增第二套机制"},
-                {"level": "转化", "capability": "把机制结果转成当前关系、资源或位置变化", "ceiling": "变化必须在正文可见"},
-                {"level": "扩张", "capability": "在更高当下压力中继续运行核心机制", "ceiling": "所有升级必须承接既有结果"},
-            ],
-            "upgrade_engine": {
-                "core_resource": reader_promise,
-                "core_mechanism": core_engine,
-                "cost_rules": cost_rules,
-            },
-            "antagonist_ladder": [
-                {"tier": "当前直接阻力", "tactic": "阻碍本轮目标兑现"},
-                {"tier": "升级后的外部压力", "tactic": "依据上一轮公开结果调整行动"},
-                {"tier": "阶段性主要压力", "tactic": "迫使主角用既有成果完成更高难度兑现"},
-            ],
-        },
-        "series_engine": _ensure_series_engine_capacity_fields(
-            project,
-            {
-            "opening_hook": reader_promise,
-            "reader_promise": reader_promise,
-            "core_serial_engine": core_engine,
-            "repeatable_story_unit": core_engine,
-            "golden_three_hooks": [
-                f"第一章让已批准构思第一次在场景中生效：{reader_promise}",
-                "第二章确认核心机制可以复现，并产生第一次可见结果。",
-                "第三章让可见结果改变当前资源、关系或位置，并引出下一轮压力。",
-            ],
-            "short_payoff_rhythm": "每2至4章让核心机制产生一次可见结果。",
-            "long_payoff_rhythm": "每个阶段让资源、关系、位置或压力层级至少一项发生明确变化。",
-            "chapter_end_hook_strategy": "当前结果的新变化、下一轮压力和未完成目标轮换出现。",
-            "unit_families": [],
-            "accumulation_tracks": [],
-            "phase_transitions": [],
-            "mystery_ladder": [],
-            "renewal_sources": [reader_promise, core_engine],
-            "effect_skills": effect_skills,
-            },
-            reader_promise=reader_promise,
-            core_engine=core_engine,
-        ),
-        "narrative_lines": {
-            "overt_line": [
-                {
-                    "name": "核心机制兑现主线",
-                    "line_role": "overt",
-                    "volumes": [1],
-                    "statement": core_engine,
-                }
-            ],
-            "undercurrent_line": [
-                {
-                    "name": "当下压力升级线",
-                    "line_role": "undercurrent",
-                    "start_volume": 1,
-                    "end_volume": max(compute_linear_hierarchy(max(project.target_chapters, 1))["volume_count"], 1),
-                    "statement": "每次可见结果都会改变下一轮当下压力，但不得增加快照外设定。",
-                }
-            ],
-            "hidden_thread": {
-                "line_role": "hidden",
-                "statement": "尚未验证的细节只能由正文中的当下行动确认，不能由隐藏前史或外部资料补写。",
-                "seed_volumes": [1],
-                "payoff_volumes": [max(compute_linear_hierarchy(max(project.target_chapters, 1))["volume_count"], 1)],
-            },
-            "core_axis": {
-                "line_role": "core",
-                "statement": theme_statement,
-                "phrasing_tokens": ["验证", "复现", "兑现", "积累", "升级"],
-            },
-        },
-        "_meta": {
-            "source_compiler": "approved-design-book.v1",
-            "source_bound_design": True,
-            "source_bound_minimal": resolve_cost_style(metadata) == "minimal",
-            "premise_hash": hashlib.sha256(premise.encode("utf-8")).hexdigest(),
-            "book_design_snapshot_hash": _approved_payload_hash(snapshot),
-        },
-    }
-    return _sanitize_book_spec_against_project_scale(project, payload)
+    return project_source_bound_book(project, premise)
 
 
 def _source_bound_world_name(project: ProjectModel, places: list[str]) -> str:
@@ -12900,14 +16331,12 @@ def derive_source_bound_power_system(
             return {
                 "name": _power_system_name(_style) or f"{_tiers[0]}起步的力量体系",
                 "tiers": _tiers,
-                "tier_progression": [
-                    {
-                        "tier": t,
-                        "bottleneck": t,
-                        "breakthrough_cost": _tiers[i + 1] if i + 1 < len(_tiers) else t,
-                    }
-                    for i, t in enumerate(_tiers)
-                ],
+                # ``power_tiers`` is only an ordered list of names.  A name is
+                # neither the bottleneck at that tier nor the cost of entering
+                # the next one.  Omitting the optional mechanics fields keeps
+                # the projection honest; downstream schema accepts a sparse
+                # progression and can still use ``tiers`` for ordering.
+                "tier_progression": [{"tier": t} for t in _tiers],
                 "acquisition_method": str(metadata.get("golden_finger") or "") or engine,
                 "hard_limits": _style or engine,
                 "protagonist_starting_tier": _tiers[0],
@@ -12971,10 +16400,11 @@ def derive_source_bound_power_system(
         tiers.append(label)
         entry: dict[str, Any] = {
             "tier": label,
-            "bottleneck": body,
-            "breakthrough_cost": (
-                steps[index + 1][1] if index + 1 < len(steps) else body
-            ),
+            # The prose describes what happens at this stage.  It does not
+            # establish either a bottleneck or a breakthrough cost, so retain
+            # it as source description instead of assigning it to a mechanic
+            # field (and especially not borrowing the next stage as a cost).
+            "description": body,
         }
         if chapter is not None:
             entry["unlocks_at_chapter"] = chapter
@@ -13112,92 +16542,10 @@ def _compile_source_bound_world_spec(
     premise: str,
     book_spec: dict[str, Any],
 ) -> dict[str, Any]:
-    """Compile only present-tense world facts licensed by the story engine."""
+    """Project known world material without manufacturing rules or history."""
+    from bestseller.services.source_bound_planning_content import project_source_bound_world
 
-    protagonist = _mapping(book_spec.get("protagonist"))
-    name = _first_non_empty_text(
-        protagonist.get("name"),
-        default=_role_label("protagonist", language=project.language),
-    )
-    hook = _first_non_empty_text(book_spec.get("unique_hook"), premise, default=premise)
-    engine = _first_non_empty_text(
-        _mapping(book_spec.get("series_engine")).get("core_serial_engine"),
-        hook,
-        default=hook,
-    )
-    cost_rules = _source_bound_cost_rules(
-        project,
-        is_en=is_english_language(project.language),
-    )
-    rule_rows = [
-        ("创建事实规则", hook, "故事身份只来自锁定创建快照与已批准构思。"),
-        ("当下验证规则", "未明确的细节必须在正文当下通过行动确认。", "不得用隐藏前史、外来资料或旁白补写答案。"),
-        ("机制复现规则", engine, "核心机制必须重复生效并产生不同的当下结果。"),
-        ("单一机制规则", "全书只使用已批准的核心机制。", "不得增加第二能力来源、秘密血统或隐藏系统。"),
-        ("结果升级规则", "每次可见结果都要改变下一轮的资源、关系、位置或压力。", "后续推进承接既有结果，不把进度清零。"),
-        ("选项代价规则", "；".join(cost_rules), "未被该选项授权的代价类别不得出现。"),
-        ("事实积累规则", "已经在正文确认的结果成为后续唯一可继承事实。", "新场景只能引用已确认事实或继续验证未知。"),
-        ("基调效果规则", "基调与效果只来自创建页面的 tone 和 effect_skills。", "效果选项不能反向改写题材、世界历史或核心机制。"),
-    ]
-    rules = [
-        {
-            "rule_id": f"SB-R{index:03d}",
-            "name": label,
-            "description": description,
-            "story_consequence": consequence,
-        }
-        for index, (label, description, consequence) in enumerate(rule_rows, start=1)
-    ]
-    story_places = extract_place_names(premise) or extract_place_names(
-        _first_non_empty_text(getattr(project, "title", ""), default="")
-    )
-    locations = _source_bound_locations(story_places)
-    approved_factions = derive_source_bound_factions(project)
-    factions = approved_factions or [
-        {"name": f"{name}的当前行动单元", "goal": engine, "method": "运行已批准核心机制并积累结果", "relationship_to_protagonist": "主角当前行动单元", "internal_conflict": "每轮只能依据已经确认的事实做选择"},
-        {"name": "当前直接阻力", "goal": "阻碍本轮目标兑现", "method": "只使用已批准构思允许的当下手段", "relationship_to_protagonist": "开局外部阻力", "internal_conflict": "没有构思授权时不得实体化为新组织或命名角色"},
-        {"name": "升级后的外部压力", "goal": "依据上一轮可见结果提高下一轮难度", "method": "改变条件、资源、关系或位置压力", "relationship_to_protagonist": "随阶段成果升级的压力", "internal_conflict": "只能承接正文已经公开的事实"},
-    ]
-    # 构思已经批准过一条阶梯就用它——框架术语阶梯是最后的兜底，不是首选。
-    # 真机书9：growth_curve 里躺着 执簿境／账本识海位面／清债之钥，而这里
-    # 写出去的是 确认→复现→转化→扩张（2026-08-24）。
-    approved_power_system = derive_source_bound_power_system(project, engine=engine)
-    normalized = parse_world_spec_input(
-        {
-            "world_name": _source_bound_world_name(project, story_places),
-            "world_premise": premise,
-            "rules": rules,
-            "power_system": approved_power_system or {
-                "name": "已批准核心机制的阶段兑现",
-                "tiers": ["确认", "复现", "转化", "扩张"],
-                "tier_progression": [
-                    {"tier": "确认", "bottleneck": "核心机制尚未在正文中第一次生效", "breakthrough_cost": "完成一次当下行动验证"},
-                    {"tier": "复现", "bottleneck": "核心机制尚未产生第二个独立结果", "breakthrough_cost": "在不新增规则的前提下再次运行"},
-                    {"tier": "转化", "bottleneck": "结果尚未改变当前状态", "breakthrough_cost": "让结果落到资源、关系、位置或压力"},
-                    {"tier": "扩张", "bottleneck": "下一轮压力已经依据旧结果升级", "breakthrough_cost": "使用已积累成果继续兑现同一机制"},
-                ],
-                "acquisition_method": engine,
-                "hard_limits": "只使用锁定快照和已批准构思；不新增隐藏历史、命名实体、代价或第二套能力来源。",
-                "protagonist_starting_tier": "确认",
-            },
-            "locations": locations,
-            "factions": factions,
-            "power_structure": "主角反复运行已批准的核心机制；外部压力只能依据正文中已经可见的结果升级。",
-            "history_key_events": [],
-            "forbidden_zones": None,
-        }
-    ).model_dump(mode="json")
-    normalized["_meta"] = {
-        "source_compiler": "approved-design-world.v1",
-        "source_bound_design": True,
-        "source_bound_minimal": resolve_cost_style(
-            _mapping(getattr(project, "metadata_json", None))
-        )
-        == "minimal",
-        "premise_hash": hashlib.sha256(premise.encode("utf-8")).hexdigest(),
-        "book_spec_hash": _approved_payload_hash(book_spec),
-    }
-    return normalized
+    return project_source_bound_world(project, premise, book_spec)
 
 
 _ANTAGONIST_ROLE_MARKERS = ("反派", "对手", "敌", "宿敌", "反面")
@@ -13316,281 +16664,10 @@ def _compile_source_bound_cast_spec(
     book_spec: dict[str, Any],
     world_spec: dict[str, Any],
 ) -> dict[str, Any]:
-    """Compile CastSpec only from the accepted premise, BookSpec, and WorldSpec.
+    """Project equivalent character fields; questions are never secrets."""
+    from bestseller.services.source_bound_planning_content import project_source_bound_cast
 
-    The compiler deliberately creates no childhood, relatives, secret origin,
-    prior failure, age, or named supporting biography.  Opposition remains a
-    set of approved present-tense forces.  This keeps downstream planning rich
-    enough to stage conflict while making invented biography structurally
-    impossible at the CastSpec boundary.
-    """
-
-    protagonist_source = _mapping(book_spec.get("protagonist"))
-    power_system = _mapping(world_spec.get("power_system"))
-    stakes = _mapping(book_spec.get("stakes"))
-    series_engine = _mapping(book_spec.get("series_engine"))
-    book_power = _mapping(book_spec.get("power_system"))
-    volume_count = int(
-        compute_linear_hierarchy(max(int(getattr(project, "target_chapters", 0) or 0), 1))
-        .get("volume_count")
-        or 1
-    )
-
-    protagonist_name = _first_non_empty_text(
-        protagonist_source.get("name"),
-        _protagonist_name_from_book_spec(
-            book_spec,
-            premise,
-            project.genre,
-            language=project.language,
-            seed_text=_project_name_seed(project, premise),
-        ),
-        default=_role_label("protagonist", language=project.language),
-    )
-    protagonist_goal = _first_non_empty_text(
-        protagonist_source.get("outer_motivation"),
-        protagonist_source.get("core_drive"),
-        book_spec.get("dramatic_question"),
-        default=premise,
-    )
-    protagonist_flaw = _first_non_empty_text(
-        protagonist_source.get("weakness"),
-        stakes.get("personal"),
-        default="",
-    )
-    protagonist_secret = _first_non_empty_text(
-        protagonist_source.get("secret"),
-        book_spec.get("unique_hook"),
-        default="",
-    )
-    protagonist_strength = _first_non_empty_text(
-        book_spec.get("unique_hook"),
-        protagonist_source.get("archetype"),
-        default=premise,
-    )
-    protagonist_background = _first_non_empty_text(
-        book_spec.get("logline"),
-        world_spec.get("world_premise"),
-        premise,
-        default=premise,
-    )
-    protagonist_arc = _first_non_empty_text(
-        protagonist_source.get("growth_curve"),
-        series_engine.get("core_serial_engine"),
-        default=protagonist_goal,
-    )
-    starting_tier = _first_non_empty_text(
-        power_system.get("protagonist_starting_tier"),
-        default="",
-    )
-    philosophical_stance = _first_non_empty_text(
-        book_spec.get("theme_statement"),
-        _mapping(book_spec.get("narrative_lines")).get("core_axis", {}).get("statement")
-        if isinstance(_mapping(book_spec.get("narrative_lines")).get("core_axis"), Mapping)
-        else None,
-        default=protagonist_goal,
-    )
-
-    orientation = _first_non_empty_text(
-        _mapping(_mapping(getattr(project, "metadata_json", None)).get("creation_intent_contract")).get(
-            "audience_orientation"
-        ),
-        _mapping(getattr(project, "metadata_json", None)).get("audience_orientation"),
-        default="",
-    ).lower()
-    protagonist_gender = "female" if orientation in {"female", "女频"} else "male"
-
-    protagonist = {
-        "name": protagonist_name,
-        "role": "protagonist",
-        "gender": protagonist_gender,
-        "background": protagonist_background,
-        "goal": protagonist_goal,
-        "fear": _first_non_empty_text(stakes.get("personal"), default=""),
-        "flaw": protagonist_flaw,
-        "strength": protagonist_strength,
-        "secret": protagonist_secret,
-        "arc_trajectory": protagonist_arc,
-        "power_tier": starting_tier or None,
-        "voice_profile": {
-            "speech_register": _first_non_empty_text(
-                book_spec.get("tone"),
-                default="贴近当前处境的直接表达",
-            ),
-            "verbal_tics": [],
-            "sentence_style": "服从创建页面选择的基调，不添加固定口癖",
-            "emotional_expression": "情绪通过当下动作和对话呈现",
-            "mannerisms": [],
-        },
-        "ip_anchor": {
-            "quirks": [],
-            "signature_objects": [],
-            "tag_memory": protagonist_strength,
-        },
-        "psych_profile": {
-            "temperament": _first_non_empty_text(
-                protagonist_source.get("archetype"),
-                default="只依据当前事实作出选择",
-            )
-        },
-        "life_history": {
-            "career_history": [
-                _first_non_empty_text(
-                    world_spec.get("world_premise"),
-                    protagonist_source.get("archetype"),
-                    default=premise,
-                )
-            ]
-        },
-        "beliefs": {"philosophical_stance": philosophical_stance},
-        "decision_policy": {
-            "character_name": protagonist_name,
-            "archetype": _first_non_empty_text(
-                protagonist_source.get("archetype"), default="当前设定中的主角"
-            ),
-            "risk_tolerance": "风险选择只依据批准构思中明确的当前限制",
-            "pressure_responses": "面对压力时继续执行核心故事引擎，不调用隐藏前史",
-            "preferred_tactics": "只使用正文已经确认的能力、资源、关系与位置",
-            "moral_boundaries": "不偏离创建快照中的主角目标与核心故事引擎",
-            "forbidden_behaviors": "不凭空改换目标，不新增第二机制或未授权身份",
-            "high_risk_allowances": "只有创建选项或已批准构思明确许可的风险才可出现",
-        },
-        "metadata": {
-            "source_bound_design": True,
-            "source_bound_minimal": resolve_cost_style(
-                _mapping(getattr(project, "metadata_json", None))
-            )
-            == "minimal",
-            "source_fields": [
-                "premise",
-                "book_spec.protagonist",
-                "book_spec.unique_hook",
-                "book_spec.stakes",
-                "world_spec.world_premise",
-                "world_spec.power_system.protagonist_starting_tier",
-            ],
-            "methodology_overlay": {
-                "ability_origin_contract": {
-                    "source": protagonist_secret or protagonist_strength,
-                    "visible_signature": protagonist_strength,
-                    "limit": _first_non_empty_text(
-                        book_spec.get("unique_hook"),
-                        power_system.get("hard_limits"),
-                        default="边界只采用已批准构思中的明确描述",
-                    ),
-                    "cost": _first_non_empty_text(
-                        stakes.get("interpersonal"),
-                        stakes.get("personal"),
-                        default="代价只采用创建页面 cost_style 允许的类别",
-                    ),
-                    "growth_trigger": _first_non_empty_text(
-                        _mapping(book_power.get("upgrade_engine")).get("core_mechanism"),
-                        protagonist_arc,
-                        default=protagonist_goal,
-                    ),
-                    "plot_use": _first_non_empty_text(
-                        series_engine.get("core_serial_engine"),
-                        series_engine.get("repeatable_story_unit"),
-                        default=protagonist_goal,
-                    ),
-                }
-            },
-        },
-    }
-
-    antagonist_forces: list[dict[str, Any]] = []
-    conflict_map: list[dict[str, Any]] = []
-    ladder = _mapping_list(book_power.get("antagonist_ladder"))
-    for index, entry in enumerate(ladder[:6], start=1):
-        raw_name = _first_non_empty_text(entry.get("tier"), default=f"当前阻力{index}")
-        force_name = re.sub(r"^Tier[-_ ]?\d+\s*", "", raw_name, flags=re.IGNORECASE).strip()
-        tactic = _first_non_empty_text(entry.get("tactic"), default=force_name)
-        antagonist_forces.append(
-            {
-                "name": force_name or f"当前阻力{index}",
-                "force_type": "faction",
-                "active_volumes": [1],
-                "threat_description": tactic,
-                "relationship_to_protagonist": f"阻止{protagonist_name}完成当前经营目标",
-                "escalation_path": tactic,
-            }
-        )
-
-    if not antagonist_forces:
-        for faction in _mapping_list(world_spec.get("factions"))[:6]:
-            force_name = _first_non_empty_text(faction.get("name"), default="")
-            if not force_name or protagonist_name in force_name:
-                continue
-            description = _first_non_empty_text(
-                faction.get("description"),
-                faction.get("holdings"),
-                default=force_name,
-            )
-            antagonist_forces.append(
-                {
-                    "name": force_name,
-                    "force_type": "faction",
-                    "active_volumes": [1],
-                    "threat_description": description,
-                    "relationship_to_protagonist": f"限制{protagonist_name}完成当前目标",
-                    "escalation_path": description,
-                }
-            )
-
-    named_antagonist, named_supporting = _source_bound_roster_from_book_spec(
-        project, book_spec, protagonist_name
-    )
-    volume_count = int(
-        compute_linear_hierarchy(max(int(project.target_chapters or 0), 1)).get(
-            "volume_count"
-        )
-        or 1
-    )
-    lifecycle_antagonists = [
-        {
-            "name": force["name"],
-            "archetype": force.get("force_type") or "faction",
-            "line_role": "overt" if index == 0 else "undercurrent",
-            "stages_of_relevance": [{"start_volume": 1, "end_volume": volume_count}],
-            "resolution_type": "ongoing",
-            "transition_volume": volume_count,
-            "transition_mechanism": force.get("escalation_path") or force.get("threat_description") or "",
-        }
-        for index, force in enumerate(antagonist_forces)
-        if force.get("name")
-    ]
-    for member in [named_antagonist, *named_supporting]:
-        if not member or not member.get("name") or not protagonist_name:
-            continue
-        conflict_map.append(
-            {
-                "character_a": protagonist_name,
-                "character_b": member["name"],
-                "conflict_type": member.get("role") or "relationship",
-                "trigger_condition": member.get("goal") or member.get("relationship_to_protagonist") or "",
-            }
-        )
-    payload = {
-        "protagonist": protagonist,
-        "antagonist": named_antagonist,
-        "antagonists": lifecycle_antagonists,
-        "antagonist_forces": antagonist_forces,
-        "supporting_cast": named_supporting,
-        "conflict_map": conflict_map,
-    }
-    normalized = parse_cast_spec_input(payload).model_dump(mode="json")
-    normalized["_meta"] = {
-        "source_compiler": "approved-design-cast.v1",
-        "source_bound_design": True,
-        "source_bound_minimal": resolve_cost_style(
-            _mapping(getattr(project, "metadata_json", None))
-        )
-        == "minimal",
-        "premise_hash": hashlib.sha256(premise.encode("utf-8")).hexdigest(),
-        "book_spec_hash": _approved_payload_hash(book_spec),
-        "world_spec_hash": _approved_payload_hash(world_spec),
-    }
-    return normalized
+    return project_source_bound_cast(project, premise, book_spec, world_spec)
 
 
 def compute_linear_hierarchy(total_chapters: int) -> dict[str, int]:
@@ -14022,189 +17099,16 @@ def _compile_source_bound_volume_plan(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Compile the macro plan without granting a new-fiction authority.
-
-    The volume layer may order and escalate accepted facts, but it may not add
-    a hidden historical incident, mystery object, secret bloodline, named
-    stranger, second mechanism, or off-screen organization.  Chapter outlines
-    remain the creative expansion surface, bounded by this compiled macro plan.
-    """
-
-    from bestseller.services.foreshadowing_scaling import compute_foreshadowing_bounds
+    """Reserve technical chapter ranges; do not fill them with stock fiction."""
+    from bestseller.services.source_bound_planning_content import project_source_bound_volumes
 
     target = max(int(project.target_chapters or 0), 1)
     hierarchy = compute_linear_hierarchy(target)
     ranges = _build_volume_ranges(target, int(hierarchy.get("volume_count") or 1))
-    protagonist = _mapping(cast_spec.get("protagonist"))
-    name = _first_non_empty_text(
-        protagonist.get("name"),
-        _mapping(book_spec.get("protagonist")).get("name"),
-        default=_role_label("protagonist", language=project.language),
+    return project_source_bound_volumes(
+        project, premise, book_spec, world_spec, cast_spec,
+        ranges, int(hierarchy["arc_batch_size"]),
     )
-    hook = _first_non_empty_text(book_spec.get("unique_hook"), premise, default=premise)
-    engine = _first_non_empty_text(
-        _mapping(book_spec.get("series_engine")).get("core_serial_engine"),
-        _mapping(book_spec.get("series_engine")).get("repeatable_story_unit"),
-        hook,
-        default=hook,
-    )
-    forces = _mapping_list(cast_spec.get("antagonist_forces"))
-    force_names = [
-        _first_non_empty_text(item.get("name"), default="")
-        for item in forces
-        if _first_non_empty_text(item.get("name"), default="")
-    ] or ["当前直接阻力", "升级后的外部压力"]
-    themes = _string_list(book_spec.get("themes")) or ["持续经营形成不可替代优势"]
-    bounds = compute_foreshadowing_bounds(target)
-    cost_rules = _source_bound_cost_rules(
-        project,
-        is_en=is_english_language(project.language),
-    )
-
-    plant_templates = [
-        "已批准核心机制将在当下场景中第一次生效",
-        "核心机制的第二次运行必须形成不同的可见结果",
-        "第一次可见结果会改变当前资源、关系或位置",
-        "公开结果会改变下一轮当下压力",
-        "主角对核心机制的认识只能来自正文内实际验证",
-        "已经取得的阶段结果会成为后续行动基础",
-        "下一轮阻力会依据上一轮已公开事实调整行动",
-        "同一核心机制必须在更高压力下继续有效",
-    ]
-    payoff_templates = [
-        "主角完成第一次当下验证并确认核心机制真实可用",
-        "核心机制被稳定复现，且没有增加第二套规则",
-        "机制结果第一次改变当前资源、关系或位置",
-        "主角使用已确认事实处理本阶段直接阻力",
-        "第一次阶段成果被后续场景真实继承",
-        "下一轮压力依据公开结果完成明确升级",
-        "主角用既有积累完成更高难度的核心机制兑现",
-        "阶段收束保持创建快照中的故事身份不变",
-    ]
-    plant_floor = int(bounds["planted"].floor)
-    payoff_floor = int(bounds["paid_off"].floor)
-    # 已批准的逐卷揭示排程优先；模板只用来补足门要求的下限（2026-08-24 真机
-    # 书9：这里原样写出去的是 8 条框架方法论，clues 表照单登记、全部埋第1章
-    # 收第50章 —— 不是伏笔，是把方法论当成了故事秘密）。
-    _approved_plants, _approved_payoffs = derive_source_bound_foreshadowing(
-        project, volume_count=len(ranges)
-    )
-    plant_items = list(_approved_plants[:plant_floor])
-    plant_items += [
-        f"[S{idx}] {plant_templates[(idx - 1) % len(plant_templates)]}"
-        for idx in range(len(plant_items) + 1, plant_floor + 1)
-    ]
-    payoff_items = list(_approved_payoffs[:payoff_floor])
-    payoff_items += [
-        f"[S{idx}] {payoff_templates[(idx - 1) % len(payoff_templates)]}"
-        for idx in range(len(payoff_items) + 1, payoff_floor + 1)
-    ]
-
-    plans: list[dict[str, Any]] = []
-    plant_cursor = 0
-    payoff_cursor = 0
-    for index, (chapter_start, chapter_end) in enumerate(ranges, start=1):
-        remaining_volumes = len(ranges) - index + 1
-        remaining_plants = len(plant_items) - plant_cursor
-        remaining_payoffs = len(payoff_items) - payoff_cursor
-        plant_take = math.ceil(remaining_plants / remaining_volumes) if remaining_plants else 0
-        payoff_take = math.ceil(remaining_payoffs / remaining_volumes) if remaining_payoffs else 0
-        volume_plants = plant_items[plant_cursor : plant_cursor + plant_take]
-        volume_payoffs = payoff_items[payoff_cursor : payoff_cursor + payoff_take]
-        plant_cursor += plant_take
-        payoff_cursor += payoff_take
-        force_name = force_names[min(index - 1, len(force_names) - 1)]
-        opening = "核心机制尚未在正文中第一次生效" if index == 1 else "承接上一阶段已经确认的结果与压力"
-        is_final = index == len(ranges)
-        plans.append(
-            {
-                "volume_number": index,
-                "volume_title": "核心机制起势" if index == 1 else f"阶段兑现{index}",
-                "volume_theme": themes[(index - 1) % len(themes)],
-                "word_count_target": int(project.target_word_count / len(ranges)),
-                "chapter_count_target": chapter_end - chapter_start + 1,
-                "conflict_phase": _assign_conflict_phases(len(ranges))[index - 1],
-                "primary_force_name": force_name,
-                "opening_state": {
-                    "protagonist_status": opening,
-                    "protagonist_power_tier": "确认" if index == 1 else "稳定复现",
-                    "world_situation": "世界状态只包含创建快照和正文已经确认的事实。",
-                },
-                "volume_goal": (
-                    f"{name}在本阶段持续运行已批准核心机制：{engine}；"
-                    "并让每次结果改变当前资源、关系、位置或压力。"
-                ),
-                "volume_obstacle": (
-                    f"{force_name}依据当前已经可见的结果提高本轮难度；"
-                    f"{name}只能使用已批准机制和正文已经确认的事实应对。"
-                ),
-                "volume_climax": (
-                    f"{force_name}把本阶段当下压力推到最高点，"
-                    f"{name}用已确认规则和已有成果完成一次更高难度的核心机制兑现，"
-                    "并取得可验证的阶段变化。"
-                ),
-                "volume_resolution": {
-                    "protagonist_power_tier": "稳定复现" if not is_final else "可持续扩张",
-                    "goal_achieved": True,
-                    "cost_paid": "；".join(cost_rules),
-                    "new_threat_introduced": (
-                        "下一阶段压力会依据本阶段公开结果调整行动。"
-                        if not is_final
-                        else "既有经营成果继续吸引更精明的外部力量，故事可以在同一核心机制上延展。"
-                    ),
-                },
-                "key_reveals": [
-                    hook,
-                    engine,
-                    "当前阶段只揭示通过正文实际行动已经验证的规则，不增加隐藏历史。",
-                ],
-                "foreshadowing_planted": volume_plants,
-                "foreshadowing_paid_off": volume_payoffs,
-                "reader_hook_to_next": (
-                    "下一轮压力已经承接上一阶段的公开结果。"
-                    if not is_final
-                    else None
-                ),
-                "arc_ranges": [
-                    [start, min(start + int(hierarchy["arc_batch_size"]) - 1, chapter_end)]
-                    for start in range(
-                        chapter_start,
-                        chapter_end + 1,
-                        int(hierarchy["arc_batch_size"]),
-                    )
-                ],
-                "is_final_volume": is_final,
-                "world_state_targets": [
-                    "核心机制：从尚未生效到形成稳定可见结果",
-                    "主角积累：至少一项资源、关系或位置发生可验证变化",
-                    "当下压力：依据上一轮公开事实明确升级",
-                ],
-                "active_authority_claims": [],
-                "map_function": "只使用已批准构思中的地点；功能场景分别承载机制生效、结果验证和状态转化。",
-                "world_asset_refs": [],
-                "asset_risk_escalation": "同一结果再次公开时，只按创建页面 cost_style 增加允许的当下压力。",
-                "reveal_budget": max(1, len(volume_plants)),
-                "primary_engine": "comedy_engine" if "comedy_engine" in _string_list(_mapping(book_spec.get("series_engine")).get("effect_skills")) else "core_story_engine",
-                "secondary_engine": "hype_satisfaction_engine" if "hype_satisfaction_engine" in _string_list(_mapping(book_spec.get("series_engine")).get("effect_skills")) else "visible_payoff",
-                "primary_effect_contract": "所选主要效果必须改变当前资源、关系、位置或压力状态。",
-                "secondary_effect_contract": "次要效果只能增强已批准核心机制，不能新增故事身份。",
-                "tone_lock": _first_non_empty_text(book_spec.get("tone"), default="轻松明快"),
-                "_meta": {
-                    "source_compiler": "approved-design-volume.v1",
-                    "source_bound_design": True,
-                    "source_bound_minimal": resolve_cost_style(
-                        _mapping(getattr(project, "metadata_json", None))
-                    )
-                    == "minimal",
-                    "premise_hash": hashlib.sha256(premise.encode("utf-8")).hexdigest(),
-                    "book_spec_hash": _approved_payload_hash(book_spec),
-                    "world_spec_hash": _approved_payload_hash(world_spec),
-                    "cast_spec_hash": _approved_payload_hash(cast_spec),
-                },
-            }
-        )
-    _volume_plan_validator_for(project)(plans)
-    return plans
 
 
 _VOLUME_REVEAL_RE = re.compile(
@@ -14287,49 +17191,10 @@ def derive_source_bound_foreshadowing(
     *,
     volume_count: int,
 ) -> tuple[list[str], list[str]]:
-    """把已批准的**逐卷揭示排程**编译成伏笔埋点/收口；没有排程就返回空。
+    """Return all sourced plants/payoffs without floors or invented placement."""
+    from bestseller.services.source_bound_planning_content import source_bound_foreshadowing
 
-    2026-08-24 真机（书9）：source-bound 的 volume_plan 写出去的是
-    `["[S1] 已批准核心机制将在当下场景中第一次生效", "[S2] …", … 共8条]`，
-    clues 表照单登记 8 条、**全部埋在第1章、全部约在第50章收**。这不是伏笔，
-    是框架方法论，而且没有排程。
-
-    而 `info_reveal_strategy` 里逐卷写好了收口：「卷一揭清债者一脉守秘人，
-    卷二揭母系血脉源头，卷三揭坊市黑市与遗族守墓人，卷四揭六大宗借力协议，
-    卷五揭上古借力源头」。
-
-    **只搬运不发明**：揭示项逐字用作收口，同一项作为埋点（埋在更早的卷）。
-    材料不足时返回已有的部分，由调用方用既有模板补齐下限——不发明，也不让
-    门要求的下限落空。
-    """
-
-    metadata = _mapping(getattr(project, "metadata_json", None))
-    world = _mapping(_mapping(metadata.get("writing_profile")).get("world"))
-    schedule: list[tuple[int, str]] = []
-    for raw_num, body in _VOLUME_REVEAL_RE.findall(
-        str(world.get("info_reveal_strategy") or "")
-    ):
-        ordinal = _chapter_ordinal(raw_num)
-        text = body.strip()
-        if ordinal is None or not text:
-            continue
-        schedule.append((ordinal, text))
-    if not schedule:
-        return [], []
-    schedule.sort(key=lambda item: item[0])
-
-    plants: list[str] = []
-    payoffs: list[str] = []
-    seen: set[str] = set()
-    for ordinal, text in schedule:
-        if text in seen:
-            continue
-        seen.add(text)
-        # 埋点放在收口之前的那一卷（首卷的收口就埋在首卷内）。
-        plant_volume = max(1, min(ordinal - 1, max(1, int(volume_count or 1))))
-        plants.append(f"[卷{plant_volume}] {text}的线索落地")
-        payoffs.append(f"[卷{ordinal}] 揭示{text}")
-    return plants, payoffs
+    return source_bound_foreshadowing(project)
 
 
 def _compile_source_bound_world_disclosure(
@@ -15603,6 +18468,43 @@ def _fallback_hook_description(
     return f"{protagonist}刚处理完「{unique_beat}」，却发现{hook_event}。"
 
 
+def _fallback_finale_hook_description(*, protagonist: str, language: str | None = None) -> str:
+    """Return an end-state landing instead of a serial continuation hook."""
+
+    if is_english_language(language):
+        return (
+            f"{protagonist} completes the central choice, pays its final cost, "
+            "and leaves the story on a settled image that shows what changed."
+        )
+    return f"{protagonist}完成核心选择并付出最后代价，故事停在一个呈现变化的确定性收束画面。"
+
+
+def _final_chapter_closure_findings(chapter: Mapping[str, Any]) -> list[str]:
+    """Check the small, typed shape required of a finite-story final chapter.
+
+    This is deliberately structural: ordinary chapter hooks remain untouched;
+    only the chapter at the declared target horizon uses this contract.
+    """
+
+    methodology = _mapping(chapter.get("methodology_contract"))
+    causal = _mapping(chapter.get("causal_contract"))
+    findings: list[str] = []
+    if not isinstance(methodology.get("is_climax"), bool):
+        findings.append("methodology_contract.is_climax must be a boolean")
+    pacing = _non_empty_string(methodology.get("pacing_mode"), "").lower()
+    if pacing not in {"resolution", "finale", "closure", "结局", "收束", "终局", "结局收束"}:
+        findings.append("methodology_contract.pacing_mode must declare resolution")
+    if not _non_empty_string(causal.get("gain_or_reveal"), ""):
+        findings.append("causal_contract.gain_or_reveal is required")
+    if not _non_empty_string(causal.get("state_change"), ""):
+        findings.append("causal_contract.state_change is required")
+    if not _non_empty_string(causal.get("final_state"), ""):
+        findings.append("causal_contract.final_state is required")
+    if methodology.get("hooks_to_plant") not in (None, [], ""):
+        findings.append("final chapter cannot plant an unresolved hook")
+    return findings
+
+
 # After high-tension phases, insert low-tension scene types to create rhythm.
 _SCENE_TYPE_AFTER_CLIMAX = [
     "aftermath",
@@ -16705,6 +19607,11 @@ def _fallback_chapter_outline_batch(
                 protagonist=protagonist_name,
                 language=project.language,
             )
+            if chapters_from_end == 0:
+                chapter_hook_description = _fallback_finale_hook_description(
+                    protagonist=protagonist_name,
+                    language=project.language,
+                )
             chapter_conflict = _render_chapter_conflict(
                 conflict_phase,
                 phase,
@@ -16969,12 +19876,16 @@ def _fallback_chapter_outline_batch(
                     }
                 )
 
-            # Final scene: closing hook
+            # Final scene: a terminal landing for the finite target horizon;
+            # ordinary chapters retain the serial closing-hook behavior.
+            is_finale_chapter = chapters_from_end == 0
             scenes.append(
                 {
                     "scene_number": len(scenes) + 1,
-                    "scene_type": "hook",
-                    "title": "Closing Hook" if is_en else "尾钩",
+                    "scene_type": "aftermath" if is_finale_chapter else "hook",
+                    "title": "Final Landing" if is_en and is_finale_chapter else (
+                        "Closing Hook" if is_en else ("最终落点" if is_finale_chapter else "尾钩")
+                    ),
                     "time_label": (
                         f"Closing pressure: {chapter_unique_beat}"
                         if is_en
@@ -16985,9 +19896,15 @@ def _fallback_chapter_outline_batch(
                     else [protagonist_name, volume_antag_participant],
                     "purpose": {
                         "story": chapter_hook_description,
-                        "emotion": "Make the reader unable to stop — they MUST read the next chapter."
-                        if is_en
-                        else "让读者必须继续追下一章",
+                        "emotion": (
+                            "Let the final image carry the emotional aftereffect of the resolved choice."
+                            if is_en and is_finale_chapter
+                            else "Make the reader unable to stop — they MUST read the next chapter."
+                            if is_en
+                            else "让最终画面承接已兑现选择的情感余韵"
+                            if is_finale_chapter
+                            else "让读者必须继续追下一章"
+                        ),
                     },
                     "entry_state": {
                         protagonist_name: {
@@ -17014,7 +19931,9 @@ def _fallback_chapter_outline_batch(
                     "exit_state": {
                         protagonist_name: {
                             "arc_state": _pick_by_seed(
-                                [
+                                ["停在已兑现选择的后果上", "带着代价获得新的平衡"]
+                                if is_finale_chapter
+                                else [
                                     "被迫进入更难局面",
                                     "发现更大的真相",
                                     "失去重要倚仗",
@@ -17105,6 +20024,12 @@ def _fallback_chapter_outline_batch(
                     "next_reader_desire": chapter_hook_description,
                 }
             )
+            if chapters_from_end == 0:
+                causal_contract["final_state"] = (
+                    f"{protagonist_name}完成核心选择，承担最后代价，停在已兑现变化的最终画面。"
+                    if not is_en
+                    else f"{protagonist_name} completes the central choice, pays the final cost, and reaches a settled final image."
+                )
 
             # ── Phase-3: assign Swain scene/sequel pattern ──
             for si, sc_dict in enumerate(scenes):
@@ -17194,6 +20119,18 @@ def _fallback_chapter_outline_batch(
                     )
                 ),
             }
+            if chapters_from_end == 0:
+                chapter_payload["methodology_contract"] = {
+                    "conflict_stakes": chapter_conflict,
+                    "conflict_buffs": [],
+                    "hooks_to_resolve": [chapter_unique_beat],
+                    "hooks_to_plant": [],
+                    "relationship_debts": [],
+                    "pacing_mode": "finale" if is_en else "结局",
+                    "emotion_phase": "afterglow" if is_en else "余韵",
+                    "is_climax": True,
+                    "loop_position": "terminal_landing",
+                }
             if worldview_outline_contract:
                 landing_seed = _non_empty_string(
                     worldview_outline_contract.get("world_rule_landing"), ""
@@ -17453,6 +20390,10 @@ def _stash_distilled_design_reference_blocks(
 ) -> None:
     """Pre-render distilled mature-fiction reference blocks into project metadata."""
 
+    from bestseller.services.prompt_source_policy import archive_metadata, stamp_reference_cache
+    project.metadata_json = archive_metadata(
+        project.metadata_json or {}, ('distilled_design_reference_blocks', 'distilled_design_reference_block'), reason="reference_refresh_or_disabled"
+    )
     try:
         if not getattr(settings.pipeline, "enable_distilled_design_reference", True):
             return
@@ -17481,6 +20422,7 @@ def _stash_distilled_design_reference_blocks(
         if blocks.get("architecture"):
             metadata["distilled_design_reference_block"] = blocks["architecture"]
         project.metadata_json = metadata
+        stamp_reference_cache(project, ('distilled_design_reference_blocks', 'distilled_design_reference_block'), producer='design_reference_renderer')
     except Exception:
         logger.exception("Planner distilled design reference block failed — continuing without it")
 
@@ -17536,7 +20478,7 @@ def _story_enhancer_contract_line(project: ProjectModel, language: str) -> str:
     """
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    selection = resolve_story_enhancers(metadata)
+    selection = resolve_explicit_story_enhancers(metadata)
     block = render_story_enhancer_contract_block(selection, language=language)
     from bestseller.services.ideology_kernel import cost_style_directive
 
@@ -17767,6 +20709,10 @@ def _stash_distilled_strategy_card(
 ) -> None:
     """Compile and stash project-specific distilled strategy metadata."""
 
+    from bestseller.services.prompt_source_policy import archive_metadata, stamp_reference_cache
+    project.metadata_json = archive_metadata(
+        project.metadata_json or {}, ('distilled_strategy_card', 'distilled_strategy_blocks', 'distilled_strategy_block', 'distilled_strategy_expected', 'character_strategy'), reason="reference_refresh_or_disabled"
+    )
     try:
         if not getattr(settings.pipeline, "enable_distilled_design_reference", True):
             return
@@ -17811,6 +20757,7 @@ def _stash_distilled_strategy_card(
             if blocks.get("architecture"):
                 metadata["distilled_strategy_block"] = blocks["architecture"]
         project.metadata_json = metadata
+        stamp_reference_cache(project, ('distilled_strategy_blocks', 'distilled_strategy_block', 'distilled_strategy_card', 'character_strategy', 'distilled_strategy_expected'), producer='strategy_compiler')
     except Exception:
         logger.exception("Planner distilled strategy card failed — continuing without it")
 
@@ -19429,25 +22376,32 @@ def _compile_volume_outline_prompt(
     from bestseller.services.book_design import ensure_project_book_design_snapshot
     from bestseller.services.prompt_compiler import (
         PromptBlock,
+        PromptBudgetError,
         PromptProvenance,
         compile_prompt,
     )
 
-    task_positions = [
-        position
-        for marker in ("Generate a ChapterOutlineBatch", "请仅生成第")
-        if (position := user_prompt.find(marker)) >= 0
-    ]
-    if not task_positions:
-        raise PlannerFallbackError(
-            "Volume outline prompt is missing its primary task boundary."
-        )
-    task_position = min(task_positions)
-    context_text = user_prompt[:task_position].strip()
-    task_text = user_prompt[task_position:].strip()
+    def split_task(value: str) -> tuple[str, str]:
+        explicit = "\n[ROLLING OUTLINE TASK]\n"
+        if explicit in value:
+            if value.count(explicit) != 1:
+                raise PlannerFallbackError("Volume outline task boundary is ambiguous.")
+            position = value.index(explicit)
+        else:
+            positions = [position for marker in ("Generate a ChapterOutlineBatch", "请仅生成第")
+                         if (position := value.find(marker)) >= 0]
+            if not positions:
+                raise PlannerFallbackError(
+                    "Volume outline prompt is missing its primary task boundary."
+                )
+            position = min(positions)
+        return value[:position].strip(), value[position:].strip()
+
+    context_text, task_text = split_task(user_prompt)
     snapshot = ensure_project_book_design_snapshot(project)
-    compiled = compile_prompt(
-        [
+    # Required facts and task are atomic. Optional material must be selected
+    # before this boundary; silently trimming a mixed canonical block loses truth.
+    blocks = [
             PromptBlock(
                 key="rolling_outline.system_contract",
                 channel="system",
@@ -19459,7 +22413,7 @@ def _compile_volume_outline_prompt(
                 source="planner._volume_outline_prompts.system",
                 text=system_prompt,
                 provenance=PromptProvenance(
-                    kind="derived",
+                    kind="framework_protocol",
                     source_id="volume_outline_system",
                 ),
                 phase="rolling_outline",
@@ -19473,8 +22427,7 @@ def _compile_volume_outline_prompt(
                 semantic_key="rolling_outline.canonical_context",
                 required=True,
                 min_tokens=1000,
-                max_tokens=4500,
-                trim_policy="truncate_tail",
+                trim_policy="preserve",
                 source="book_design_snapshot+planning_artifacts",
                 text=context_text,
                 provenance=PromptProvenance(
@@ -19506,7 +22459,8 @@ def _compile_volume_outline_prompt(
                 ),
                 phase="rolling_outline",
             ),
-        ],
+        ]
+    compile_kwargs = dict(
         total_budget_tokens=int(settings.llm.planner_prompt_budget_tokens),
         safety_margin=float(settings.llm.planner_prompt_safety_margin),
         canonical_snapshot_hash=snapshot.source_hash,
@@ -19514,14 +22468,179 @@ def _compile_volume_outline_prompt(
         require_provenance=True,
         phase="rolling_outline",
     )
-    report_payload = compiled.report.model_dump(mode="json")
-    metadata = dict(getattr(project, "metadata_json", None) or {})
-    prior_reports = metadata.get("planner_prompt_compiler_reports")
-    reports = list(prior_reports) if isinstance(prior_reports, list) else []
-    metadata["planner_prompt_compiler_reports"] = [*reports[-19:], report_payload]
-    metadata["planner_prompt_compiler_latest"] = report_payload
-    project.metadata_json = metadata
-    return compiled.system, compiled.user
+    # A finite book can retain its complete neutral source document within its
+    # own larger physical request allowance. Do not delete unclassified fields
+    # to force it into the preferred global compiler allocation.
+    from bestseller.services.finite_book_budget import compiler_capacity_for
+    finite_compiler = compiler_capacity_for(project.id, output_tokens=_PLANNER_MAX_OUTPUT_TOKENS)
+    if finite_compiler is not None and _source_bound_cast_enabled(project):
+        from bestseller.services.rolling_outline_source_transport import _split
+        from bestseller.services.source_bound_rolling_outline_prompt import POLICY
+
+        source_document = _split(system_prompt, user_prompt)[3]
+        if (
+            source_document.get("schema") == POLICY
+            and str(source_document.get("project", {}).get("id")) == str(project.id)
+        ):
+            compile_kwargs["total_budget_tokens"] = max(
+                compile_kwargs["total_budget_tokens"], finite_compiler["input_ceiling"]
+            )
+        else:
+            finite_compiler = None
+    else:
+        finite_compiler = None
+    transport_receipt = None
+    complete_capacity_receipt = None
+
+    def retain_compiler_report(result, *, source_transport=None, stage_selection=None,
+                               complete_capacity=None):
+        payload = result.report.model_dump(mode="json")
+        if finite_compiler is not None:
+            payload["finite_book_compiler_capacity"] = finite_compiler
+        if source_transport is not None:
+            payload["source_transport"] = source_transport
+        if stage_selection is not None:
+            payload["stage_source_selection"] = stage_selection
+        if complete_capacity is not None:
+            payload["source_complete_capacity"] = complete_capacity
+        metadata = dict(getattr(project, "metadata_json", None) or {})
+        previous = metadata.get("planner_prompt_compiler_reports")
+        reports = list(previous) if isinstance(previous, list) else []
+        metadata["planner_prompt_compiler_reports"] = [*reports[-19:], payload]
+        metadata["planner_prompt_compiler_latest"] = payload
+        project.metadata_json = metadata
+        return result.system, result.user
+
+    try:
+        compiled = compile_prompt(blocks, **compile_kwargs)
+    except PromptBudgetError as original_error:
+        if "\n[SOURCE AUTHORITY]\n" not in user_prompt:
+            raise
+        from bestseller.services.rolling_outline_source_transport import (
+            iter_source_complete_outline_transports,
+            verify_source_complete_outline_transport,
+        )
+
+        candidates = iter_source_complete_outline_transports(
+            system_prompt, user_prompt
+        )
+        for wire_system, wire_user, candidate_receipt in candidates:
+            wire_context, wire_task = split_task(wire_user)
+            wire_blocks = [block.model_copy(update={"text": text})
+                           for block, text in zip(blocks, (wire_system, wire_context, wire_task), strict=True)]
+            try:
+                compiled = compile_prompt(wire_blocks, **compile_kwargs)
+            except PromptBudgetError:
+                continue
+            verify_source_complete_outline_transport(
+                system_prompt, user_prompt, wire_system, wire_user, candidate_receipt
+            )
+            transport_receipt = candidate_receipt
+            break
+        else:
+            # Stage selection uses the SAME compiler and original budget. The
+            # full original source and each exact path/hash decision remain in
+            # its receipt. A real structured rolling source must not silently
+            # escape this bound through the legacy complete-source ceiling.
+            from bestseller.services.rolling_outline_source_transport import _split
+            original_source = _split(system_prompt, user_prompt)[3]
+            if isinstance(original_source.get("story_assets"), dict):
+                from bestseller.services.rolling_outline_stage_selection import (
+                    stage_selected_outline_prompt,
+                    verified_selection_inputs,
+                )
+                stage_system, stage_user, selection = stage_selected_outline_prompt(
+                    system_prompt, user_prompt, **verified_selection_inputs(project, original_source))
+                if not selection["selection_dispatchable"]:
+                    original_error.stage_source_selection = {
+                        "receipt": selection, "reason": "unclassified_source_provenance",
+                        "budget_increased": False,
+                    }
+                    raise original_error
+                attempts = []
+                for wire_system, wire_user, receipt in iter_source_complete_outline_transports(
+                        stage_system, stage_user):
+                    wire_context, wire_task = split_task(wire_user)
+                    wire_blocks = [block.model_copy(update={"text": text})
+                        for block, text in zip(blocks, (wire_system, wire_context, wire_task), strict=True)]
+                    try:
+                        result = compile_prompt(wire_blocks, **compile_kwargs)
+                    except PromptBudgetError as error:
+                        attempts.append({"codec": receipt.get("codec_requested_version"),
+                            "required_tokens": error.required_tokens,
+                            "usable_budget": error.usable_budget})
+                        continue
+                    verify_source_complete_outline_transport(
+                        stage_system, stage_user, wire_system, wire_user, receipt)
+                    return retain_compiler_report(result, stage_selection={
+                        "selection": selection, "selected_source_transport": receipt})
+                original_error.stage_source_selection = {
+                    "receipt": selection, "compiler_attempts": attempts,
+                    "reason": "stage_required_source_exceeds_original_budget",
+                    "budget_increased": False,
+                    "unclassified_fields_not_omitted": True,
+                }
+                raise original_error
+            # This versioned producer carries complete assets instead of the
+            # legacy summaries. Its explicit separate ceiling is still bounded
+            # by whole physical request/output admission; other producers keep
+            # the original configured compiler budget.
+            from bestseller.services.rolling_outline_source_transport import _split
+            from bestseller.services.source_bound_rolling_outline_prompt import POLICY
+            source_document = _split(system_prompt, user_prompt)[3]
+            complete_protocol = (
+                _source_bound_cast_enabled(project)
+                and source_document.get("schema") == POLICY
+                and isinstance(source_document.get("project"), dict)
+                and str(source_document.get("project", {}).get("id")) == str(project.id)
+                and "\n[ROLLING OUTLINE TASK]\n" in user_prompt
+            )
+            if not complete_protocol:
+                raise original_error
+            ceiling_value = settings.llm.planner_source_complete_input_budget_tokens
+            if ceiling_value is None:
+                raise original_error
+            ceiling = int(ceiling_value)
+            if ceiling <= compile_kwargs["total_budget_tokens"]:
+                raise original_error
+            from bestseller.services.source_bound_planning_content import (
+                assert_source_bound_planning_request_capacity,
+                SourceBoundPlanningCapacityError,
+            )
+            expanded_kwargs = {**compile_kwargs, "total_budget_tokens": ceiling}
+            admitted = []
+            for wire_system, wire_user, candidate_receipt in candidates:
+                try:
+                    capacity = assert_source_bound_planning_request_capacity(
+                        wire_system, wire_user, tools=None, output_tokens=_PLANNER_MAX_OUTPUT_TOKENS,
+                    )
+                except SourceBoundPlanningCapacityError:
+                    continue
+                admitted.append((capacity["estimated_input_tokens"], wire_system, wire_user,
+                                 candidate_receipt, capacity))
+            for _, wire_system, wire_user, candidate_receipt, capacity in sorted(admitted, key=lambda row: row[0]):
+                wire_context, wire_task = split_task(wire_user)
+                wire_blocks = [block.model_copy(update={"text": text})
+                               for block, text in zip(blocks, (wire_system, wire_context, wire_task), strict=True)]
+                try:
+                    compiled = compile_prompt(wire_blocks, **expanded_kwargs)
+                except PromptBudgetError:
+                    continue
+                verify_source_complete_outline_transport(
+                    system_prompt, user_prompt, wire_system, wire_user, candidate_receipt,
+                )
+                transport_receipt = candidate_receipt
+                complete_capacity_receipt = {
+                    "policy": "rolling-outline-complete-source-capacity.v1",
+                    "preferred_input_budget": compile_kwargs["total_budget_tokens"],
+                    "source_complete_input_ceiling": ceiling,
+                    "physical_request": capacity,
+                }
+                break
+            else:
+                raise original_error
+    return retain_compiler_report(compiled, source_transport=transport_receipt,
+                                  complete_capacity=complete_capacity_receipt)
 
 
 def _volume_outline_prompts(
@@ -19531,6 +22650,7 @@ def _volume_outline_prompts(
     volume_plan: list[dict[str, Any]],
     volume_entry: dict[str, Any],
     *,
+    world_spec: Mapping[str, Any] | None = None,
     revealed_ledger_block: str | None = None,
     extra_constraints: list[str] | None = None,
     existing_titles: list[tuple[int | None, str]] | None = None,
@@ -19557,6 +22677,21 @@ def _volume_outline_prompts(
     capped (most recent ~200 entries) to keep prompt size bounded
     regardless of how many chapters the book already has.
     """
+    if _source_bound_cast_enabled(project):
+        from bestseller.services.source_bound_rolling_outline_prompt import (
+            build_source_bound_rolling_outline_prompt,
+        )
+
+        authority = _outline_judge_project_brief(
+            project, metadata=_mapping(project.metadata_json), semantic_candidates=[],
+            world_spec=world_spec,
+        )
+        return build_source_bound_rolling_outline_prompt(
+            project=project, book_spec=book_spec, world_spec=_mapping(world_spec),
+            cast_spec=cast_spec, volume_plan=volume_plan, volume_entry=volume_entry,
+            authority=authority, extra_constraints=extra_constraints or (),
+            revealed_ledger_block=revealed_ledger_block, existing_titles=existing_titles or (),
+        )
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
     from bestseller.services.volume_fingerprint import (
         render_prior_volumes_summary_block,
@@ -19760,6 +22895,33 @@ def _volume_outline_prompts(
             "Webnovel method-cards block injection failed (non-fatal)",
             exc_info=True,
         )
+    _is_finale_batch = bool(
+        chapter_bounds is not None
+        and int(getattr(project, "target_chapters", 0) or 0) > 0
+        and int(chapter_bounds[1]) >= int(getattr(project, "target_chapters", 0) or 0)
+    )
+    _finale_contract_en = (
+        "[FINITE STORY FINALE — this batch reaches the project's target chapter] "
+        "The final chapter is a terminal landing, not a bridge to another chapter. "
+        "Set methodology_contract.is_climax to a boolean reflecting whether this chapter contains the climax "
+        "(false is valid when the climax was completed in the preceding chapter), and set pacing_mode to "
+        "resolution/finale/closure; "
+        "set causal_contract.final_state, gain_or_reveal, and state_change to concrete completed results. "
+        "Resolve the central promise and emotional choice, leave hooks_to_plant empty, and use hook_description "
+        "and next_reader_desire only for aftermath, resonance, or an optional epilogue image. "
+        "Do not introduce a new core threat, say the protagonist must continue/escape next, or require a next chapter.\n"
+        if _is_finale_batch
+        else ""
+    )
+    _finale_contract_zh = (
+        "【有限篇幅终章硬契约——本批次覆盖项目目标章】最终章必须是故事落地，不是下一章的桥。"
+        "methodology_contract.is_climax 必须是反映本章是否承载高潮的布尔值（高潮已在前章完成时可为 false），pacing_mode 必须写收束/结局/终局；"
+        "causal_contract 必须给出 final_state、gain_or_reveal、state_change 的具体完成结果。"
+        "核心承诺和情感选择必须兑现，hooks_to_plant 必须为空；hook_description 与 next_reader_desire 只能写兑现后的余韵、后果或可选尾声画面。"
+        "不得引入新的核心威胁，不得写继续逃离、下一步行动或必须读下一章。\n"
+        if _is_finale_batch
+        else ""
+    )
     system_prompt = (
         "You are a chapter-outline planner for long-form commercial fiction. Output valid JSON only."
         if is_en
@@ -20026,6 +23188,7 @@ def _volume_outline_prompts(
             "Never use placeholder hooks such as 'new evidence, deadline, or cost appears'. "
             "Each chapter must advance at least two concrete state dimensions: plot, relationship, clue, power, resource, status, or exposure risk. "
             "Write the visible change into goal/main_conflict/scenes; never write author notes like 'build worldbuilding', 'introduce a faction', or 'deepen theme'."
+            f"{_finale_contract_en}"
         )
         if is_en
         else (
@@ -20131,6 +23294,7 @@ def _volume_outline_prompts(
             "hook_description 必须是具体下一步事件，禁止写「围绕某冲突出现新的证据、时限或代价」这类占位句。"
             "每章必须至少推进两个真实状态维度：剧情、关系、线索、能力、资源、身份/地位、暴露风险；"
             "这种变化必须写进 goal/main_conflict/scenes，禁止写「建立世界观」「引入势力」「完善体系」「深化主题」这类作者笔记。"
+            f"{_finale_contract_zh}"
         )
     )
     _genre_instruction = getattr(
@@ -20151,30 +23315,74 @@ def _volume_outline_prompts(
         language=language,
         chapter_number=_batch_start,
     )
-    merged_extra_constraints = [*(extra_constraints or []), *hook_constraints]
-    if merged_extra_constraints:
-        header = (
-            "[Hard constraints — MUST be reflected in the outline]"
-            if is_en
-            else "【硬约束 — 必须体现在章纲中】"
+    # A repair baseline is data, not a low-priority hint.  Previously this
+    # potentially large JSON entry stopped the reverse budget scan, dropping
+    # both the baseline and every commercial directive preceding it.  Keep
+    # the complete active repair contract in the required primary task; the
+    # compiler enforces the unchanged total token budget before any LLM call.
+    # Keep the same approved facts seen by the judge in the required task,
+    # outside both the reference-summary trim and the auxiliary hint budget.
+    from bestseller.services.outline_llm_judge import (
+        OUTLINE_SOURCE_AUTHORITY_RULES,
+        render_outline_source_brief,
+        source_bound_outline_repair_directives,
+    )
+
+    source_brief = _outline_judge_project_brief(
+        project, metadata=_mapping(project.metadata_json), semantic_candidates=[],
+        world_spec=world_spec,
+    )
+    if _has_current_world_authority(source_brief):
+        # Formatting whitespace must not let a persisted judge-advice prefix
+        # bypass source-authority sanitization and enter the required pool raw.
+        extra_constraints = source_bound_outline_repair_directives(
+            [constraint.lstrip() for constraint in (extra_constraints or [])]
         )
-        # (2026-08-03) Bounded by the budget that is actually left, not by a
-        # fixed number. These lines are appended AFTER the primary-task marker,
-        # so the compiler files them into `primary_task` — a required block with
-        # no max_tokens and no trim policy, i.e. the one thing in the prompt
-        # that cannot be shrunk. Each repair round adds more, so a book that
-        # needed two rounds of judge feedback grew its own un-truncatable block
-        # until the compile failed with "required hard core exceeds combined
-        # writer prompt budget" and the book died (2026-08-03: 《雾街债主》
-        # 15,336 vs 14,400; 《废意回收》 15,685 vs 14,400). A fixed ceiling is
-        # not enough because the base prompt already sits at ~92% of the budget
-        # — the ceiling has to shrink as the base grows. Newest directives win:
-        # they answer the latest verdict.
+    system_prompt += OUTLINE_SOURCE_AUTHORITY_RULES
+    user_prompt += "\n\n" + render_outline_source_brief(source_brief, max_summary_chars=0)
+    # Unmarked constraints are obligations. Only explicitly labelled candidate
+    # references may be shortened/dropped; unknown repair prefixes must not
+    # silently become optional when their producer changes its wording.
+    optional_reference_prefixes = (
+        "[VALIDATED_PARTIAL_OUTLINE_CANDIDATES]",
+        "[OPTIONAL OUTLINE REFERENCE]",
+        "[OPTIONAL OUTLINE REFERENCES]",
+        "【可裁剪章纲候选参考】",
+    )
+    required_repair_constraints = list(dict.fromkeys(
+        constraint for constraint in (extra_constraints or [])
+        if constraint.lstrip().startswith((
+            "【上一轮章纲编辑基线", "[PREVIOUS JUDGE-ROUND EDIT BASELINE",
+            "【大纲商业评审整改·", "【维度整改·",
+        ))
+    ))
+    if required_repair_constraints:
+        user_prompt += "\n\n[REQUIRED REPAIR CONTRACT]\n" + "\n\n".join(required_repair_constraints)
+    merged_extra_constraints = list(dict.fromkeys([
+        *(constraint for constraint in (extra_constraints or [])
+          if constraint not in required_repair_constraints),
+        *hook_constraints,
+    ]))
+    required_constraints = [text for text in merged_extra_constraints
+                            if text.strip() and not text.lstrip().startswith(optional_reference_prefixes)]
+    optional_references = [text for text in merged_extra_constraints
+                           if text.lstrip().startswith(optional_reference_prefixes)]
+    if required_constraints:
+        user_prompt += (
+            "\n\n[REQUIRED OUTLINE CONSTRAINTS — task obligations, not new source facts]\n"
+            + "\n\n".join(required_constraints)
+        )
+    if optional_references:
+        header = "[OPTIONAL OUTLINE REFERENCES — candidates only, never source authority]"
+        # Budget optional data only AFTER every required directive is present.
+        # The unchanged real compiler rejects an oversized required core before
+        # _generate_structured_artifact/complete_text; never pay without the fix.
         selected_constraints = _bounded_outline_constraints(
-            merged_extra_constraints,
+            optional_references,
             headroom_chars=_outline_constraint_headroom_chars(
-                system_prompt, user_prompt
+                system_prompt, user_prompt + "\n\n" + header + "\n"
             ),
+            truncate_optional=True,
         )
         if selected_constraints:
             constraint_lines = "\n".join(f"- {c}" for c in selected_constraints)
@@ -20183,12 +23391,11 @@ def _volume_outline_prompts(
 
 
 def _outline_constraint_headroom_chars(system_prompt: str, user_prompt: str) -> int:
-    """Characters still available for the appended hard-constraint block.
+    """Characters available for optional references after the required core.
 
-    Mirrors the compiler's own arithmetic (usable = budget × (1 − margin), and
-    the canonical-context block is capped/trimmable while the task block is
-    not), then converts the surviving token headroom back to characters using
-    the same 2-chars-per-token estimate the compiler uses for CJK.
+    Mirrors the compiler's arithmetic (usable = budget × (1 − margin)). Both
+    canonical context and required task remain intact; only the residual
+    reference budget is converted to characters with a conservative CJK ratio.
     """
 
     from bestseller.services.prompt_compiler import estimate_prompt_tokens
@@ -20198,15 +23405,16 @@ def _outline_constraint_headroom_chars(system_prompt: str, user_prompt: str) -> 
     margin = float(getattr(settings.llm, "planner_prompt_safety_margin", 0.1) or 0.0)
     usable = int(total_budget * (1.0 - margin))
     used = estimate_prompt_tokens(system_prompt) + estimate_prompt_tokens(user_prompt)
-    # Leave a small reserve so rounding in the compiler's own estimate cannot
-    # tip a borderline prompt over the edge.
-    headroom_tokens = usable - used - 200
+    # The caller appends up to 600 tokens of planner methodology afterwards.
+    # Reserve that plus compiler framing/rounding; optional data must not make
+    # an otherwise fitting required contract fail at the final compile.
+    headroom_tokens = usable - used - 800
     if headroom_tokens <= 0:
         return 0
     return min(_OUTLINE_CONSTRAINT_BLOCK_CHAR_CAP, headroom_tokens * 2)
 
 
-#: Upper ceiling for the appended hard-constraint block. The effective cap is
+#: Upper ceiling for optional outline references. The effective cap is
 #: the smaller of this and whatever budget headroom is actually left.
 _OUTLINE_CONSTRAINT_BLOCK_CHAR_CAP = 4000
 
@@ -20215,12 +23423,13 @@ def _bounded_outline_constraints(
     constraints: list[str],
     *,
     headroom_chars: int | None = None,
+    truncate_optional: bool = False,
 ) -> list[str]:
-    """Keep the newest directives that fit the remaining prompt budget.
+    """Select optional reference text only; required directives bypass this pool.
 
     ``headroom_chars`` is what the compiler can still accept; when it is 0 the
-    prompt is already at its limit and every directive is dropped, because a
-    prompt that will not compile helps nobody — the alternative is a dead book.
+    prompt has no optional headroom. The real compiler still has to accept
+    every required directive before a paid request can be sent.
     """
 
     cap = (
@@ -20231,8 +23440,8 @@ def _bounded_outline_constraints(
     if cap <= 0:
         if constraints:
             logger.warning(
-                "outline prompt has no budget headroom; dropping all %d hard "
-                "constraint(s) so the prompt still compiles",
+                "outline prompt has no optional budget headroom; omitting %d "
+                "candidate reference(s); required constraints remain intact",
                 len(constraints),
             )
         return []
@@ -20245,13 +23454,20 @@ def _bounded_outline_constraints(
             continue
         cost = len(text) + 3  # "- " prefix + newline
         if used + cost > cap:
+            if truncate_optional:
+                remaining = cap - used - 3
+                suffix = "\n[optional candidate reference truncated; no source authority]"
+                if remaining > len(suffix):
+                    prefix = text[:remaining - len(suffix)]
+                    kept.append(prefix + suffix)
+                    used = cap
+                    continue
             logger.warning(
-                "outline hard-constraint block hit its %d-char budget; dropping "
-                "%d older directive(s) so the prompt still compiles",
+                "outline optional reference exceeds remaining %d-char budget; "
+                "skipping this entry and checking earlier constraints",
                 cap,
-                len(constraints) - len(kept),
             )
-            break
+            continue
         kept.append(text)
         used += cost
     kept.reverse()
@@ -20620,20 +23836,13 @@ def _merge_volume_world_disclosure_into_world_spec(
     if factions:
         merged["factions"] = factions
 
-    frontier_summary = _non_empty_string(world_disclosure.get("frontier_summary"), "")
-    if frontier_summary:
-        history_key_events = list(_mapping_list(merged.get("history_key_events")))
-        history_key_events.append(
-            {
-                "event": frontier_summary,
-                "relevance": (
-                    f"Volume {volume_number} frontier update"
-                    if re.search(r"[A-Za-z]", frontier_summary)
-                    else f"第{volume_number}卷世界边界更新"
-                ),
-            }
-        )
-        merged["history_key_events"] = history_key_events
+    # A disclosure frontier is a volume goal, not evidence of a past event.
+    # Keep source-bound planning receipts stable across resume/world versions.
+    from bestseller.services.world_disclosure_migration import record_planned_frontier
+
+    merged = record_planned_frontier(
+        merged, world_disclosure, volume_number=volume_number
+    )
     return merged
 
 
@@ -20786,6 +23995,10 @@ def _assert_planner_payload_has_content(logical_name: str, payload: Any) -> None
     loop fail-fasts with an error that names this artifact.
     """
 
+    if logical_name == "world_spec_source_bound_expansion":
+        _validate_source_bound_world_expansion_payload(payload)
+        return
+
     group = _planner_payload_signal_group(logical_name)
     if group is None:
         return
@@ -20820,6 +24033,252 @@ def _assert_planner_payload_has_content(logical_name: str, payload: Any) -> None
     )
 
 
+def _source_bound_canonical_protagonist(project: ProjectModel, premise: str) -> dict[str, Any]:
+    """Same-field facts from the verified source, excluding generated Book guesses."""
+    from bestseller.services.source_bound_planning_content import (
+        project_source_bound_book, project_source_bound_world, project_source_bound_cast,
+    )
+    book = project_source_bound_book(project, premise)
+    world = project_source_bound_world(project, premise, book)
+    source = project_source_bound_cast(project, premise, book, world)
+    return {key: copy.deepcopy(value) for key, value in _mapping(source.get("protagonist")).items()
+            if key not in {"metadata", "_meta"} and value not in (None, "", {}, [])}
+
+
+async def _bind_source_bound_planning_canonical(
+    session: AsyncSession, project: ProjectModel,
+) -> None:
+    """Bind the complete selected canonical row, not a lossy cached projection."""
+    if not _source_bound_cast_enabled(project):
+        return
+    from bestseller.infra.db.models import PlanningArtifactVersionModel
+    from bestseller.services.conception_snapshots import snapshot_hash
+    metadata = project.metadata_json or {}
+    source_id = metadata.get("creation_canonical_snapshot_id")
+    if metadata.get("conception_approved") is not True or not source_id:
+        raise ValueError("source_bound_planning_canonical_selection_required")
+    artifact = await session.scalar(select(PlanningArtifactVersionModel).where(
+        PlanningArtifactVersionModel.id == UUID(str(source_id)),
+        PlanningArtifactVersionModel.project_id == project.id,
+        PlanningArtifactVersionModel.artifact_type == "conception_snapshot",
+    ).execution_options(populate_existing=True).with_for_update())
+    if (artifact is None or artifact.status != "canonical"
+            or snapshot_hash(artifact.content) != metadata.get("creation_canonical_snapshot_hash")):
+        raise ValueError("source_bound_planning_canonical_selection_changed")
+    project._source_bound_planning_canonical = {
+        "id": str(artifact.id), "content_hash": snapshot_hash(artifact.content),
+        "content": copy.deepcopy(artifact.content),
+    }
+
+
+async def _assert_bound_planning_canonical(session: AsyncSession, project: ProjectModel) -> None:
+    from bestseller.infra.db.models import PlanningArtifactVersionModel
+    from bestseller.services.conception_snapshots import snapshot_hash
+    binding = getattr(project, "_source_bound_planning_canonical", None)
+    if not isinstance(binding, Mapping):
+        raise ValueError("source_bound_planning_canonical_binding_required")
+    # Read just the committed selection; never overwrite pending project edits.
+    metadata = await session.scalar(select(ProjectModel.metadata_json).where(ProjectModel.id == project.id))
+    artifact = await session.get(PlanningArtifactVersionModel, UUID(binding["id"]), populate_existing=True)
+    if (not isinstance(metadata, Mapping)
+            or metadata.get("creation_canonical_snapshot_id") != binding["id"]
+            or metadata.get("creation_canonical_snapshot_hash") != binding["content_hash"]
+            or metadata.get("conception_approved") is not True
+            or artifact is None or artifact.project_id != project.id
+            or artifact.status != "canonical" or snapshot_hash(artifact.content) != binding["content_hash"]):
+        raise ValueError("source_bound_planning_canonical_changed_during_generation")
+
+
+from bestseller.services.model_context_capacity import planning_model_capacity
+
+@planning_model_capacity
+async def _complete_source_bound_planning_content(
+    session: AsyncSession, settings: AppSettings, *, project: ProjectModel,
+    premise: str, kind: str, projection: Any, workflow_run_id: UUID,
+    book_spec: Any = None, world_spec: Any = None, cast_spec: Any = None,
+    revision_context: Mapping[str, Any] | None = None,
+) -> tuple[Any, UUID | None]:
+    """Generate missing story content from real sources, never a scaffold grade.
+
+    Existing compiled assets remain historical. This request has its own input
+    identity, disallows legacy cache admission and rejects provider fallbacks.
+    """
+    from bestseller.services.source_bound_planning_content import (
+        CONTENT_POLICY, planning_prompt_version, build_source_bound_planning_prompts,
+        validate_source_bound_planning_payload,
+    )
+    from bestseller.services.source_bound_planning_submission import (
+        VOLUME_NATIVE_POLICY, planning_submission_tool, parse_planning_submission,
+    )
+    submission_version = VOLUME_NATIVE_POLICY if kind == "volume_plan" else None
+    prompt_version = planning_prompt_version(kind)
+    output_tool = planning_submission_tool(kind, version=submission_version)
+    retained_source_id = getattr(project, "_retained_planning_generation_source_runs", {}).get(kind)
+    if kind == "world_spec" and revision_context is None and book_spec is not None:
+        await _assert_bound_planning_canonical(session,project)
+        from bestseller.services.rejected_world_restore import restore, reuse_approved
+        rejected = await reuse_approved(session,project=project,book=book_spec,baseline=projection,workflow_run_id=workflow_run_id)
+        if rejected is None:
+            rejected = await restore(session,project=project,book=book_spec,baseline=projection,workflow_run_id=workflow_run_id)
+        if rejected is not None:
+            _assert_planner_payload_has_content(kind,_without_planning_meta(rejected))
+            validate_source_bound_planning_payload(rejected,kind=kind,project=project,projection=projection)
+            parse_world_spec_input(rejected)
+            return rejected,None
+    # Asset lookup retains its complete original logical-source identity.
+    # Only a cache miss prepares a physical wire request inside the generator.
+    system, user = build_source_bound_planning_prompts(
+        kind=kind, project=project, premise=premise, projection=projection,
+        book_spec=book_spec, world_spec=world_spec, cast_spec=cast_spec,
+    )
+
+    def validate(payload: Any) -> None:
+        validate_source_bound_planning_payload(
+            payload, kind=kind, project=project, projection=projection,
+        )
+        if kind == "world_spec":
+            parse_world_spec_input(payload)
+        elif kind == "cast_spec":
+            parse_cast_spec_input(payload)
+        elif kind == "volume_plan":
+            _volume_plan_validator_for(project)(payload)
+
+    if kind == "cast_spec" and revision_context is None and retained_source_id is None:
+        from bestseller.services.source_cast_parts import enabled as cast_parts_enabled, generate as generate_cast_parts
+        if cast_parts_enabled(project):
+            payload = await generate_cast_parts(session, settings, project=project,
+                system=system, user=user, projection=projection, workflow_run_id=workflow_run_id,
+                validate=validate, before_dispatch=lambda: _assert_bound_planning_canonical(session, project))
+            # A composite has several actual part receipts, never a fabricated
+            # single full-asset provider response or a canonical/quality grade.
+            return payload, None
+
+    if kind == "volume_plan" and revision_context is None:
+        from bestseller.services.planning_schema_recovery import recover as recover_typed_planning_fields
+
+        recovered = await recover_typed_planning_fields(
+            session,settings,project=project,system=system,user=user,projection=projection,
+            workflow_run_id=workflow_run_id,validate=validate,
+            before_dispatch=lambda: _assert_bound_planning_canonical(session,project),
+        )
+        if recovered is not None:
+            return recovered
+
+    if revision_context is not None:
+        if kind != "world_spec":raise ValueError("full_world_revision_kind_invalid")
+        from bestseller.services.world_semantic_revision import repair_document
+        user = repair_document(user,dict(revision_context))
+    from bestseller.services.planning_transport_proposal import append_prior_proposal
+    user, prior_proposal = await append_prior_proposal(session, project, kind=kind, user_prompt=user)
+    if prior_proposal:
+        emit_activity("planning_prior_proposal_revalidation", {
+            "kind": kind, "source_llm_run_id": prior_proposal["source_llm_run_id"],
+            "grade_reused": False, "exact_historical_request_proven": False,
+        })
+    settings = settings.model_copy(deep=True)
+    settings.artifact_store.retain_prompt_payloads = True
+    submission_receipt: dict[str, Any] = {}
+    recovered_during_generation: list[Any] = []
+
+    async def recover_schema_failure() -> Any:
+        from bestseller.services.planning_schema_recovery import recover
+
+        result = await recover(session,settings,project=project,system=system,user=user,
+            projection=projection,workflow_run_id=workflow_run_id,validate=validate,
+            before_dispatch=lambda: _assert_bound_planning_canonical(session,project))
+        if result is not None:
+            recovered_during_generation.append(result)
+        return result
+
+    def parse_submission(completion: Any) -> tuple[Any, str]:
+        value, channel, retained = parse_planning_submission(
+            completion, kind=kind, version=submission_version,
+        )
+        submission_receipt.update(retained)
+        return value, channel
+
+    submission_instruction = (
+        "Submit only submit_volume_plan with exactly {volumes: [all complete typed volume objects]} "
+        "as direct arguments, never asset_json. " if kind == "volume_plan" else
+        f"Submit only submit_{kind} with the complete typed asset object as direct arguments. "
+        if kind in {"world_spec", "cast_spec"}
+        else f"Submit only submit_{kind}(asset_json) with one complete current asset. "
+    )
+    payload, run_id = await _generate_structured_artifact(
+        session, settings, project=project, logical_name=kind,
+        system_prompt=system, user_prompt=user, fallback_payload=projection,
+        workflow_run_id=workflow_run_id, validator=validate,
+        abort_on_fallback=True, merge_fallback=False, prompt_version=prompt_version,
+        attach_default_methodology=False, allow_legacy_reuse=False,
+        allow_retained_generation=True,
+        retained_generation_source_run_id=retained_source_id,
+        output_tool=output_tool, output_parser=parse_submission,
+        before_dispatch=lambda: _assert_bound_planning_canonical(session, project),
+        schema_error_recovery=recover_schema_failure if kind == "volume_plan" else None,
+        retry_contract=(f"CURRENT_ASSET={kind}. Reuse the same current_output_contract above. " +
+                        submission_instruction +
+                        "Every JSON key must be unique; do not concatenate the projection with a completion. "
+                        "No other planning kind, multi-asset envelope, or archived response schema is this task."),
+    )
+    await _assert_bound_planning_canonical(session, project)
+    if recovered_during_generation and payload is recovered_during_generation[-1][0]:
+        return payload,run_id
+    rows = payload if isinstance(payload, list) else [payload]
+    if run_id is None and not all(
+        _mapping(item.get("_meta")).get("source_content_policy") == CONTENT_POLICY
+        and _mapping(item.get("_meta")).get("generation_llm_run_id")
+        for item in rows
+    ):
+        raise ValueError("source_bound_planning_reuse_generation_receipt_missing")
+    # These are producer receipts, not source facts or new author requirements.
+    meta = {"source_bound_design": True, "source_bound_minimal": False,
+            "source_compiler": "source-bound-model-completion.v3",
+            "source_content_policy": CONTENT_POLICY,
+            "planning_status": "generated_pending_semantic_review",
+            "approved_complete": False,
+            "source_projection_sha256": _approved_payload_hash(projection),
+            "creator_authorship_asserted": False}
+    if run_id is not None:
+        meta["generation_llm_run_id"] = str(run_id)
+        # Keep exact parser evidence out of downstream story inputs: raw JSON
+        # arguments can duplicate the entire asset several times. The original
+        # physical request/response remains in LlmRun retention as well.
+        workflow = await session.get(WorkflowRunModel, workflow_run_id)
+        if workflow is None or workflow.project_id != project.id:
+            raise ValueError("source_bound_planning_workflow_missing")
+        reused_generation = _mapping(_mapping(rows[0].get("_meta")).get("retained_generation_reuse"))
+        generation_workflow_id = workflow_run_id
+        if reused_generation:
+            generation_workflow_id = UUID(reused_generation["original_workflow_run_id"])
+            original = await session.get(WorkflowRunModel, generation_workflow_id)
+            if (original is None or original.project_id != project.id
+                    or reused_generation.get("original_llm_run_id") != str(run_id)
+                    or ((original.metadata_json or {}).get("planning_submissions") or {}).get(str(run_id))
+                    != submission_receipt):
+                raise ValueError("source_bound_retained_generation_owner_changed")
+            references = copy.deepcopy((workflow.metadata_json or {}).get("planning_generation_reuses") or {})
+            references[str(run_id)] = copy.deepcopy(reused_generation)
+            workflow.metadata_json = {**(workflow.metadata_json or {}), "planning_generation_reuses": references}
+        else:
+            receipts = copy.deepcopy((workflow.metadata_json or {}).get("planning_submissions") or {})
+            receipts[str(run_id)] = copy.deepcopy(submission_receipt)
+            workflow.metadata_json = {**(workflow.metadata_json or {}), "planning_submissions": receipts}
+        meta["planning_submission_receipt"] = {
+            key: copy.deepcopy(value) for key, value in submission_receipt.items()
+            if key not in {"raw_arguments", "original_content", "asset_json"}
+        }
+        meta["planning_submission_receipt"].update(
+            workflow_run_id=str(generation_workflow_id), llm_run_id=str(run_id),
+            original_receipt_sha256=_approved_payload_hash(submission_receipt),
+        )
+    if isinstance(payload, list):
+        payload = [{**dict(item), "_meta": {**_mapping(item.get("_meta")), **meta}}
+                   for item in payload]
+    else:
+        payload = {**dict(payload), "_meta": {**_mapping(payload.get("_meta")), **meta}}
+    return payload, run_id
+
+
 async def _generate_structured_artifact(
     session: AsyncSession,
     settings: AppSettings,
@@ -20834,17 +24293,40 @@ async def _generate_structured_artifact(
     validator: Callable[[Any], Any] | None = None,
     abort_on_fallback: bool = False,
     merge_fallback: bool = True,
+    prompt_version: str = "1.0",
+    retry_contract: str | None = None,
+    max_attempts: int = 4,
+    attach_default_methodology: bool = True,
+    allow_legacy_reuse: bool | None = None,
+    allow_retained_generation: bool = False,
+    retained_generation_source_run_id: UUID | None = None,
+    output_tool: dict[str, Any] | None = None,
+    output_parser: Callable[[Any], tuple[Any, str]] | None = None,
+    before_dispatch: Callable[[], Awaitable[None]] | None = None,
+    schema_error_recovery: Callable[[], Awaitable[tuple[Any, UUID | None] | None]] | None = None,
 ) -> tuple[Any, UUID | None]:
     # Retry budget for planner artifacts.  Bumped to 4 on 2026-04-21 after
     # a production incident (romantasy-1776330993 volume_5_chapter_outline)
     # where two back-to-back MiniMax-M2.7 formatting glitches killed an
     # entire heal job.  Four attempts give non-deterministic LLM output a
     # reasonable chance to self-heal before the whole job bails.
-    _max_attempts = 4
+    strict_outline = prompt_version == "3.1-source-complete-strict-json"
+    if strict_outline:
+        from bestseller.services.source_complete_outline_json import (
+            FORMAT_INSTRUCTION, POLICY as STRICT_OUTLINE_JSON_POLICY,
+            StrictOutlineJSONError, parse_strict_outline_json,
+        )
+        if (allow_retained_generation or retained_generation_source_run_id is not None
+            or output_parser is not None or output_tool is not None):
+            raise StrictOutlineJSONError("future_text_protocol_only")
+        abort_on_fallback, merge_fallback = True, False
+    _max_attempts = max(1, int(max_attempts))
     fail_closed_artifacts = {
         "book_spec",
         "world_spec",
         "cast_spec",
+        "world_spec_source_bound_expansion",
+        "cast_spec_source_bound_expansion",
         "volume_plan",
         "volume_plan_repair",
         "story_design_kernel",
@@ -20880,10 +24362,11 @@ async def _generate_structured_artifact(
         )
 
     last_llm_run_id: UUID | None = None
+    structured_output_tool = output_tool if output_tool is not None else _source_bound_structured_output_tool(logical_name)
     stage = _methodology_stage_for_planner_artifact(logical_name)
     effective_user_prompt = (
         user_prompt
-        if "【题材方法论·" in user_prompt or stage is None
+        if not attach_default_methodology or "【题材方法论·" in user_prompt or stage is None
         else attach_planner_methodology(
             user_prompt,
             stage=stage,
@@ -20891,6 +24374,19 @@ async def _generate_structured_artifact(
             token_budget=400 if "repair" in logical_name else 800,
         )
     )
+    if structured_output_tool:
+        effective_user_prompt = (
+            effective_user_prompt.rstrip() + _STRUCTURED_FUNCTION_SUFFIX
+        )
+    if strict_outline and not effective_user_prompt.endswith(FORMAT_INSTRUCTION):
+        # Bind the actual new wire protocol before artifact reuse/capacity checks.
+        effective_user_prompt += FORMAT_INSTRUCTION
+    from bestseller.services.source_cast_output_allocation import allocation as cast_output_allocation, prompt_suffix as cast_output_suffix
+    delivery_allocation = cast_output_allocation(kind=logical_name, project=project,
+        projection=fallback_payload, prompt_version=prompt_version)
+    delivery_output_tokens = delivery_allocation["initial_output_tokens"] if delivery_allocation else None
+    if delivery_allocation:
+        effective_user_prompt += cast_output_suffix(delivery_allocation)
     base_effective_user_prompt = effective_user_prompt
     input_hash = _planner_artifact_input_hash(
         logical_name=logical_name,
@@ -20913,9 +24409,9 @@ async def _generate_structured_artifact(
             artifact_type=artifact_type,
             input_hash=input_hash,
             validator=validate_candidate,
-            allow_legacy_latest=bool(
+            allow_legacy_latest=(bool(
                 getattr(settings.pipeline, "planning_artifact_reuse_allow_legacy", True)
-            )
+            ) if allow_legacy_reuse is None else allow_legacy_reuse)
             and artifact_type != ArtifactType.VOLUME_CHAPTER_OUTLINE,
         )
         if reusable is not None:
@@ -20953,32 +24449,100 @@ async def _generate_structured_artifact(
             phase="llm_started",
             attempt=attempt + 1,
         )
-        max_tokens_override = _planner_stage_max_tokens(logical_name, project=project)
-        completion = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
+        max_tokens_override = (delivery_output_tokens if delivery_allocation else
+            _planner_stage_max_tokens(logical_name, project=project))
+        source_bound_generation = prompt_version in {
+            "source-bound-planning-content.v2", "v3-source-bound-kind-submit", "v4-volume-native",
+        }
+        complete_outline = prompt_version in {
+            "3.0-source-complete-outline", "3.1-source-complete-strict-json",
+        }
+        dispatch_transport = None
+        if source_bound_generation and retained_generation_source_run_id is None:
+            from bestseller.services.planning_dispatch_transport import prepare_planning_dispatch
+            effective_user_prompt, dispatch_transport = prepare_planning_dispatch(
+                system_prompt, effective_user_prompt,
+                tools=[structured_output_tool] if structured_output_tool else None,
+                output_tokens=int(max_tokens_override or resolve_llm_role_max_tokens(settings, role="planner") or settings.llm.planner.max_tokens),
+            )
+            if attempt == 0:
+                base_effective_user_prompt = effective_user_prompt
+        outline_capacity = None
+        if complete_outline:
+            from bestseller.services.source_bound_planning_content import (
+                assert_source_bound_planning_request_capacity,
+            )
+            outline_capacity = assert_source_bound_planning_request_capacity(
+                system_prompt, effective_user_prompt,
+                tools=[structured_output_tool] if structured_output_tool else None,
+                output_tokens=int(max_tokens_override or resolve_llm_role_max_tokens(settings, role="planner")),
+            )
+        if before_dispatch is not None:
+            await before_dispatch()
+        current_request = LLMCompletionRequest(
                 logical_role="planner",
                 system_prompt=system_prompt,
                 user_prompt=effective_user_prompt,
                 fallback_response=_json_dumps(fallback_payload),
                 prompt_template=f"planner_{logical_name}",
-                prompt_version="1.0",
+                prompt_version=prompt_version,
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
                 max_tokens_override=max_tokens_override,
+                tools=[structured_output_tool] if structured_output_tool else None,
+                tool_choice=({"type": "function", "function": {
+                    "name": structured_output_tool["function"]["name"]}}
+                    if output_tool is not None else None),
                 metadata={
                     "project_slug": project.slug,
                     "artifact": logical_name,
                     "attempt": attempt + 1,
                     "fail_closed": effective_abort_on_fallback,
+                    **({"strict_outline_json_policy": STRICT_OUTLINE_JSON_POLICY}
+                       if strict_outline else {}),
                     "input_hash": input_hash,
                     "max_tokens_override": max_tokens_override,
+                    "structured_output_channel": "tool_call_or_text_json"
+                    if structured_output_tool
+                    else "text_json",
                     "semantic_repair_history": semantic_repair_history[-3:],
+                    **({"source_cast_output_allocation": {**delivery_allocation,
+                        "requested_output_tokens": max_tokens_override}} if delivery_allocation else {}),
+                    **({"planning_dispatch_transport": dispatch_transport}
+                       if dispatch_transport and dispatch_transport.get("encoding") != "identity" else {}),
+                    **({"rolling_outline_request_capacity": outline_capacity} if outline_capacity else {}),
                 },
-            ),
         )
+        retained_generation = None
+        if allow_retained_generation and attempt == 0:
+            from bestseller.services.retained_planning_generation import find_retained_planning_generation
+
+            retained_generation = await find_retained_planning_generation(
+                session, settings, project=project, kind=logical_name,
+                current_request=current_request, planner_input_hash=input_hash,
+                canonical_binding=getattr(project, "_source_bound_planning_canonical", None),
+                validator=validate_candidate,
+                source_llm_run_id=retained_generation_source_run_id,
+                allow_cast_dependency_review_compatibility=(retained_generation_source_run_id is not None),
+            )
+        if retained_generation is None and prompt_version in {
+            "source-bound-planning-content.v2", "v3-source-bound-kind-submit", "v4-volume-native",
+        }:
+            from bestseller.services.source_bound_planning_content import (
+                assert_source_bound_planning_request_capacity,
+            )
+            assert_source_bound_planning_request_capacity(
+                system_prompt, effective_user_prompt, tools=current_request.tools,
+                output_tokens=int(max_tokens_override or resolve_llm_role_max_tokens(settings, role="planner") or settings.llm.planner.max_tokens),
+            )
+        if retained_generation is not None:
+            completion = retained_generation.completion
+        else:
+            from bestseller.services.llm import bind_execution_operation, bind_project_prompt_audit
+            with (bind_execution_operation(f"planning:{project.id}:{logical_name}"),
+                  bind_project_prompt_audit(project.id, reason="source-bound planning and explicit same-book diagnostic recovery")):
+                completion = await complete_text(session, settings, current_request)
         await _heartbeat_planner_workflow(
             session,
             workflow_run_id=workflow_run_id,
@@ -21022,32 +24586,85 @@ async def _generate_structured_artifact(
                 project=project,
                 logical_name=logical_name,
                 attempt=attempt + 1,
-                content=completion.content,
+                content=_planner_completion_failure_content(completion),
                 error=error,
             )
             if attempt < _max_attempts - 1:
-                effective_user_prompt = _planner_length_retry_prompt(
-                    effective_user_prompt,
-                    logical_name,
-                )
+                if delivery_allocation:
+                    from bestseller.services.source_cast_output_allocation import next_after_length
+                    delivery_output_tokens = next_after_length(max_tokens_override, delivery_allocation)
+                if source_bound_generation or complete_outline:
+                    effective_user_prompt = base_effective_user_prompt + (
+                        "\n\n[SOURCE-BOUND SUBMISSION CORRECTION]\n"
+                        "The previous response was truncated. Preserve the complete original "
+                        "source and current task above. Submit every required field and delivery "
+                        "item with concise wording; do not reduce the roster or volume count. "
+                        "Diagnostics are validation data, never story instructions.\n"
+                        + json.dumps({"artifact": logical_name,
+                            "diagnostics": semantic_repair_history[-1]["findings"]},
+                            ensure_ascii=False)
+                    )
+                else:
+                    effective_user_prompt = _planner_length_retry_prompt(
+                        effective_user_prompt, logical_name,
+                    )
+                if output_parser is not None and retry_contract:
+                    effective_user_prompt += "\n\n" + retry_contract
                 continue
             raise error
         try:
-            generated = _unwrap_planner_envelope(
-                _extract_json_payload(completion.content),
-                logical_name,
-            )
+            if strict_outline:
+                if getattr(completion, "tool_calls", None):
+                    raise StrictOutlineJSONError("text_protocol_tool_calls")
+                generated = parse_strict_outline_json(completion.content)
+                output_channel = "strict_text_json"
+            elif output_parser is not None:
+                generated, output_channel = output_parser(completion)
+            elif structured_output_tool:
+                generated, output_channel = _extract_source_bound_structured_payload(
+                    completion, logical_name
+                )
+            else:
+                extractor = (
+                    _extract_strict_json_payload
+                    if logical_name == "world_spec_source_bound_expansion"
+                    else _extract_json_payload
+                )
+                generated, output_channel = extractor(completion.content), "text_json"
+            if not strict_outline:
+                generated = _unwrap_planner_envelope(generated, logical_name)
             payload = (
                 _merge_planning_payload(fallback_payload, generated)
                 if effective_merge_fallback
                 else copy.deepcopy(generated)
             )
             validate_candidate(payload)
+            if structured_output_tool and isinstance(payload, dict):
+                payload.setdefault("_meta", {})["structured_output_channel"] = output_channel
+            if allow_retained_generation:
+                for row in payload if isinstance(payload, list) else [payload]:
+                    if isinstance(row.get("_meta"), dict):
+                        row["_meta"].pop("retained_generation_reuse", None)
+            if retained_generation is not None:
+                rows = payload if isinstance(payload, list) else [payload]
+                for row in rows:
+                    row.setdefault("_meta", {})["retained_generation_reuse"] = {
+                        "original_workflow_run_id": str(retained_generation.original_workflow_run_id),
+                        "original_llm_run_id": str(retained_generation.original_llm_run_id),
+                        "proof": copy.deepcopy(retained_generation.proof),
+                    }
+                    if retained_generation.proof.get("full_effective_input_exact") is False:
+                        row["_meta"]["consumption_input_hash"] = input_hash
+                        row["_meta"]["generation_input_hash"] = retained_generation.proof["original_planner_input_sha256"]
+                        row["_meta"]["paid_current_input_asserted"] = False
             return (
                 _with_planning_meta(
                     payload,
                     logical_name=logical_name,
-                    input_hash=input_hash,
+                    input_hash=(retained_generation.proof["original_planner_input_sha256"]
+                        if retained_generation is not None
+                        and retained_generation.proof.get("full_effective_input_exact") is False
+                        else input_hash),
                     workflow_run_id=workflow_run_id,
                     project=project,
                     finish_reason=finish_reason,
@@ -21059,6 +24676,8 @@ async def _generate_structured_artifact(
                 build_repair_user_prompt,
                 findings_from_exception,
             )
+
+            from bestseller.services.source_bound_planning_submission import PlanningSubmissionError
 
             repair_findings = findings_from_exception(exc)
             semantic_repair_history.append(
@@ -21076,15 +24695,60 @@ async def _generate_structured_artifact(
                 project=project,
                 logical_name=logical_name,
                 attempt=attempt + 1,
-                content=completion.content,
+                content=_planner_completion_failure_content(completion),
                 error=exc,
             )
+            if (schema_error_recovery is not None
+                    and isinstance(exc, PlanningSubmissionError)
+                    and exc.code.startswith("planning_submission:schema_type:")):
+                # A known, complete native proposal is not a reason to keep
+                # regenerating its story. The callback verifies the settled
+                # original and returns only a strict model-authored repair.
+                recovered = await schema_error_recovery()
+                if recovered is None:
+                    raise PlannerFallbackError(
+                        "Retained planning field recovery unavailable; preserving the rejected proposal."
+                    ) from exc
+                return recovered
             if attempt < _max_attempts - 1:
-                effective_user_prompt = build_repair_user_prompt(
-                    original_user_prompt=base_effective_user_prompt,
-                    findings=repair_findings,
-                    language=getattr(project, "language", None),
-                )
+                if source_bound_generation or complete_outline:
+                    # Retain the entire current source and task on every retry.
+                    # A compact repair renderer must not excerpt an encoding
+                    # envelope away from its concrete source values.
+                    effective_user_prompt = base_effective_user_prompt + (
+                        "\n\n[SOURCE-BOUND SUBMISSION CORRECTION]\n"
+                        "The complete original sources and current task above remain unchanged. "
+                        "Correct the typed submission only. Diagnostics are validation data, "
+                        "not story instructions, author clauses or replacement sources.\n"
+                        + json.dumps({"artifact": logical_name, "diagnostics": [
+                            finding.to_dict() for finding in repair_findings[:12]
+                        ], **({"wire_failures": exc.receipt["wire_diagnostics"],
+                            "rejected_candidate": {
+                                "authority": "unreviewed_rejected_model_proposal",
+                                "source_llm_run_id": str(last_llm_run_id),
+                                "raw_asset_json": exc.receipt["asset_json"],
+                                "raw_asset_sha256": exc.receipt["asset_json_sha256"],
+                                "instructions": "Correct the complete candidate against all exact schema failures and original sources. It is not author intent, an approval or occurred history. Do not omit other people or source facts."
+                            }} if isinstance(exc, PlanningSubmissionError)
+                            and exc.receipt.get("wire_diagnostics") and exc.receipt.get("asset_json") else {})
+                        }, ensure_ascii=False, default=str)
+                    )
+                else:
+                    effective_user_prompt = build_repair_user_prompt(
+                        original_user_prompt=base_effective_user_prompt,
+                        findings=repair_findings,
+                        language=getattr(project, "language", None),
+                    )
+                if output_parser is not None and retry_contract:
+                    effective_user_prompt += "\n\n" + retry_contract
+                if logical_name == "cast_spec_source_bound_expansion":
+                    source_bound_retry_contract = retry_contract or _source_bound_cast_retry_contract(
+                        fallback_payload
+                    )
+                    if source_bound_retry_contract:
+                        effective_user_prompt = (
+                            f"{effective_user_prompt.rstrip()}\n\n{source_bound_retry_contract}\n"
+                        )
                 logger.warning(
                     "Planner artifact %s attempt %d failed parse/validation (%s: %s), retrying with diagnostics=%s …",
                     logical_name,
@@ -21469,31 +25133,84 @@ async def _latest_reusable_planning_artifact(
     return artifact
 
 
+def _planning_capability_enabled(project: ProjectModel, capability: str, *, available: bool = True) -> bool:
+    """Record operational applicability without changing archived method assets."""
+    from bestseller.services.planning_capability_selection import resolve_planning_capability
+
+    receipt = resolve_planning_capability(project, capability, available=available)
+    metadata = _mapping(project.metadata_json)
+    key = "deterministic_audit_planning_capabilities"
+    previous = metadata.get(key)
+    if previous is not None and not isinstance(previous, Mapping):
+        raise ValueError("planning_capability_runtime_audit_invalid")
+    audit = copy.deepcopy(dict(previous or {}))
+    if audit.get(capability) != receipt:
+        old = audit.get(capability)
+        history_key = "deterministic_audit_planning_capabilities_history"
+        history = copy.deepcopy(metadata.get(history_key) or [])
+        if old is not None:
+            history.append({"capability": capability, "receipt": copy.deepcopy(old)})
+        audit[capability] = receipt
+        project.metadata_json = {**metadata, key: audit, history_key: history}
+    return receipt["selected"]
+
+
+def _assert_planning_capabilities_available(project: ProjectModel, settings: AppSettings) -> None:
+    """Validate explicit choices before any paid planning or writing stage."""
+    from bestseller.services.planning_capability_selection import resolve_planning_capability
+
+    for capability in ("story_design_kernel", "emotion_driven_kernel", "entry_system_kernel", "public_emotion_kernel"):
+        available = bool(getattr(settings.pipeline, "enable_" + capability, True))
+        resolve_planning_capability(project, capability, available=available)
+
+
+def _not_applicable_method_gate(project: ProjectModel, report_key: str) -> dict[str, Any] | None:
+    """Supersede a derived method projection, preserving every historical grade."""
+    from bestseller.services.planning_capability_selection import resolve_planning_capability
+
+    selection = resolve_planning_capability(project, "story_design_kernel")
+    if selection["selected"]:
+        return None
+    result = {"schema": "planning-method-applicability.v1", "status": "not_applicable",
+        "passed": None, "required": False, "grade_created": False, "selection": selection,
+        "independent_canon_identity_world_checks_required": True}
+    metadata = _mapping(project.metadata_json)
+    old = metadata.get(report_key)
+    if old != result:
+        history_key = report_key + "_history"
+        history = copy.deepcopy(metadata.get(history_key) or [])
+        if old is not None:
+            history.append(copy.deepcopy(old))
+        project.metadata_json = {**metadata, report_key: result, history_key: history}
+    return result
+
+
 def _story_design_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     raw = _mapping(metadata.get("story_design_kernel"))
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    raw_ideology = raw.get("ideology_kernel") or metadata.get("ideology_kernel")
+    resolve_ideology_methodology_source(raw_ideology, metadata)
+    if not planning_capability_selected(metadata, "story_design_kernel"):
+        return render_ideology_kernel_prompt_block(raw_ideology or {}, metadata=metadata)
     if not raw:
-        return ""
-    try:
-        return "\n\n" + render_story_design_kernel_prompt_block(raw)
-    except Exception:
-        logger.warning("Failed to render StoryDesignKernel prompt block", exc_info=True)
-        return ""
+        raise ValueError("selected_planning_capability_asset_missing:story_design_kernel")
+    return "\n\n" + render_story_design_kernel_prompt_block(raw, metadata=metadata)
 
 
 def _emotion_driven_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    if not planning_capability_selected(metadata, "emotion_driven_kernel"):
+        return ""
     raw = _mapping(metadata.get("emotion_driven_kernel"))
     if not raw:
-        return ""
-    try:
-        return "\n\n" + render_emotion_driven_kernel_prompt_block(
-            raw,
-            language=_planner_language(project),
-        )
-    except Exception:
-        logger.warning("Failed to render EmotionDrivenKernel prompt block", exc_info=True)
-        return ""
+        raise ValueError("selected_planning_capability_asset_missing:emotion_driven_kernel")
+    return "\n\n" + render_emotion_driven_kernel_prompt_block(
+        raw, language=_planner_language(project), metadata=metadata)
 
 
 def _truncate_for_prompt(value: Any, max_chars: int) -> str:
@@ -21517,14 +25234,10 @@ def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 16
     # would drop the deeply-nested ideology_kernel and lose the thematic spine.
     ideology_block = ""
     sdk = _mapping(metadata.get("story_design_kernel"))
-    ideology_raw = _mapping(sdk.get("ideology_kernel"))
-    if ideology_raw:
-        try:
-            from bestseller.domain.ideology import render_ideology_compact_block
+    ideology_raw = sdk.get("ideology_kernel") or metadata.get("ideology_kernel")
+    from bestseller.domain.ideology import render_ideology_compact_block
 
-            ideology_block = render_ideology_compact_block(ideology_raw)
-        except Exception:
-            ideology_block = ""
+    ideology_block = render_ideology_compact_block(ideology_raw or {}, metadata=metadata)
     picked: dict[str, Any] = {}
     for key in (
         "story_design_kernel",
@@ -21533,7 +25246,23 @@ def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 16
         "compliance_boundary_kernel",
         "entry_system_kernel",
     ):
+        from bestseller.services.planning_capability_selection import planning_capability_selected
+
+        if key != "compliance_boundary_kernel" and not planning_capability_selected(metadata, key):
+            continue
+        if key != "compliance_boundary_kernel":
+            {"story_design_kernel": _story_design_kernel_prompt_block,
+             "emotion_driven_kernel": _emotion_driven_kernel_prompt_block,
+             "public_emotion_kernel": _public_emotion_kernel_prompt_block,
+             "entry_system_kernel": _entry_system_kernel_prompt_block}[key](project)
         raw = _mapping(metadata.get(key))
+        if key == "story_design_kernel":
+            # The source-aware block above owns ideology in this prompt. A raw
+            # JSON copy would reintroduce superseded cost policy depending on
+            # insertion order and the truncation budget. Preserve the cache.
+            raw = {name: value for name, value in raw.items() if name != "ideology_kernel"}
+        elif key == "entry_system_kernel" and raw:
+            raw = {"effective_projection": _entry_system_kernel_prompt_block(project)}
         if raw:
             picked[key] = _truncate_for_prompt(_json_dumps(raw), max_chars // 7)
     if not picked and not ideology_block:
@@ -21550,17 +25279,17 @@ def _compact_outline_context_block(project: ProjectModel, *, max_chars: int = 16
 
 def _public_emotion_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    if not planning_capability_selected(metadata, "public_emotion_kernel"):
+        return ""
     raw = _mapping(metadata.get("public_emotion_kernel"))
     if not raw:
-        return ""
-    try:
-        return "\n\n" + render_public_emotion_prompt_block(
-            raw,
-            language=_planner_language(project),
-        )
-    except Exception:
-        logger.warning("Failed to render PublicEmotionKernel prompt block", exc_info=True)
-        return ""
+        raise ValueError("selected_planning_capability_asset_missing:public_emotion_kernel")
+    # Rendering is not a fallback boundary for an explicit selected contract.
+    public_emotion_kernel_from_dict(raw)
+    return "\n\n" + render_public_emotion_prompt_block(
+        raw, language=_planner_language(project), metadata=metadata)
 
 
 def _compliance_boundary_prompt_block(project: ProjectModel) -> str:
@@ -21580,18 +25309,22 @@ def _compliance_boundary_prompt_block(project: ProjectModel) -> str:
 
 def _entry_system_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    if not planning_capability_selected(metadata, "entry_system_kernel"):
+        return ""
     raw = _mapping(metadata.get("entry_system_kernel"))
     if not raw:
-        return ""
-    try:
-        return "\n\n" + render_entry_system_kernel_prompt_block(raw)
-    except Exception:
-        logger.warning("Failed to render EntrySystemKernel prompt block", exc_info=True)
-        return ""
+        raise ValueError("selected_planning_capability_asset_missing:entry_system_kernel")
+    return "\n\n" + render_entry_system_kernel_prompt_block(raw, metadata=metadata)
 
 
 def _entry_registry_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    if not planning_capability_selected(metadata, "entry_system_kernel"):
+        return ""
     raw = _mapping(metadata.get("entry_registry"))
     if not raw:
         return ""
@@ -21604,7 +25337,7 @@ def _entry_registry_prompt_block(project: ProjectModel) -> str:
 
 def _distilled_worldview_bindings_for_project(project: ProjectModel) -> dict[str, Any]:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    distilled_card = _mapping(metadata.get("distilled_strategy_card"))
+    distilled_card = _mapping(valid_reference_value(project, "distilled_strategy_card"))
     if not distilled_card:
         return {}
     world_bindings = _mapping(distilled_card.get("worldview_bindings"))
@@ -22215,6 +25948,18 @@ def _story_design_kernel_prompts(
     ideology_block: str = "",
     world_model_block: str = "",
 ) -> tuple[str, str]:
+    # Old artifact/fallback dictionaries are another model-facing view. Keep
+    # their original row intact, but never re-emit unselected ideology through
+    # the JSON example beside the source-aware rendered block.
+    if isinstance(fallback_payload.get("ideology_kernel"), dict):
+        from bestseller.services.ideology_methodology import project_ideology_kernel
+
+        fallback_payload = {
+            **fallback_payload,
+            "ideology_kernel": project_ideology_kernel(
+                fallback_payload["ideology_kernel"], _mapping(project.metadata_json)
+            ),
+        }
     language = _planner_language(project)
     is_en = is_english_language(language)
     grammar = resolve_story_design_grammar(
@@ -22281,7 +26026,10 @@ def _story_design_kernel_prompts(
             "worldview_kernel, structure_strategy, plot_tree, beat_schedule, change_vectors, and "
             "uniqueness_constraints. It should also include the optional writing-principle fields "
             "four_causes_contract, macro_structure_contract, reader_desire_matrix, and "
-            "event_pattern_inventory. Treat event patterns as multi-chapter event-unit roles; "
+            "event_pattern_inventory. Each event_pattern_inventory item must contain non-empty "
+            "pattern_type, use_case, and reader_effect: state the pattern, when it applies, "
+            "and the specific reader expectation or emotional response it creates. "
+            "Treat event patterns as multi-chapter event-unit roles; "
             "do not require every chapter to carry all six event steps. Every non-main plot_tree "
             "node must depend on the mainline. "
             "The worldview_kernel is the book-specific operating system: define invariants, "
@@ -22314,7 +26062,9 @@ def _story_design_kernel_prompts(
             "beat_schedule、change_vectors、uniqueness_constraints。plot_tree 中每条非主线都必须说明"
             " dependency_on_mainline；每条线都必须说明 failure_if_removed。"
             "同时建议包含写作原理扩展字段：four_causes_contract、macro_structure_contract、"
-            "reader_desire_matrix、event_pattern_inventory。事件模式是跨章节的事件单元角色，"
+            "reader_desire_matrix、event_pattern_inventory。event_pattern_inventory 中每项都必须包含非空的 "
+            "pattern_type、use_case、reader_effect，分别说明模式、使用情境及它产生的具体读者期待或情绪反应。"
+            "事件模式是跨章节的事件单元角色，"
             "不能要求每一章都完整承载六步，否则会造成章节同质化。"
             "worldview_kernel 是本书专属世界观操作系统，必须定义 invariants、systems、factions、"
             "locations、reveal_ladder、integration_contract，让卷纲和章纲必须遵循这个世界。"
@@ -22333,11 +26083,11 @@ def _story_design_kernel_prompts(
     # not just its genre. Insert once, after the first occurrence of the premise.
     if ideology_block and premise and premise in user_prompt:
         header = (
-            "\n\n## Ideology Kernel — the book's thematic spine "
-            "(worldview/plot_tree/beat_schedule MUST serve it)\n"
+            "\n\n## Effective author clauses "
+            "(only explicit author clauses apply within their stated scope)\n"
             if is_en
-            else "\n\n## 核心理念内核 — 本书思想脊柱"
-            "（worldview_kernel / plot_tree / beat_schedule 都必须服务它）\n"
+            else "\n\n## 当前作者条款"
+            "(仅明示范围生效,不新增主题或结构义务)\n"
         )
         user_prompt = user_prompt.replace(
             premise, premise + header + ideology_block, 1
@@ -22372,7 +26122,14 @@ async def _generate_story_design_kernel(
     step_order: int,
     llm_run_ids: list[UUID],
     artifact_records: list[PlanningArtifactRecord],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if not _planning_capability_enabled(project, "story_design_kernel", available=settings.pipeline.enable_story_design_kernel):
+        return None
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
+
+    # Invalid explicit author input must not silently degrade into an absent
+    # method before this stage sends any model request.
+    resolve_ideology_methodology_source(None, _mapping(project.metadata_json))
     fallback = _fallback_story_design_kernel(
         project,
         premise,
@@ -22402,9 +26159,17 @@ async def _generate_story_design_kernel(
             cost_style=resolve_cost_style(getattr(project, "metadata_json", None) or {}),
             project_id=getattr(project, "id", None),
             workflow_run_id=workflow_run_id,
+            metadata=_mapping(project.metadata_json),
         )
         ideology_payload = ideology_kernel_to_dict(ideology_kernel)
-        ideology_block = render_ideology_kernel_prompt_block(ideology_kernel)
+        ideology_block = render_ideology_kernel_prompt_block(
+            ideology_kernel,
+            metadata={
+                "creation_intent_contract": _mapping(project.metadata_json).get(
+                    "creation_intent_contract"
+                )
+            },
+        )
     except Exception:  # noqa: BLE001 - ideology is additive; never block planning
         logger.warning("Ideology kernel derivation failed; planning without it", exc_info=True)
     # Compile the WorldModel only from the approved WorldSpec.  There must be one
@@ -22475,11 +26240,16 @@ async def _generate_story_design_kernel(
     # to every downstream prompt via render_story_design_kernel_prompt_block. Run
     # the structural coherence gate as an ADVISORY check (never hard-aborts; per
     # the 2026-05/06 regression lesson the theme levers report+repair, not block).
-    if isinstance(payload, dict) and ideology_payload and not payload.get("ideology_kernel"):
+    if isinstance(payload, dict) and ideology_payload:
         payload["ideology_kernel"] = ideology_payload
         try:
             ideology_gate = evaluate_ideology_kernel_coherence(
-                ideology_payload, volumes=est_volumes, total_chapters=target_chapters
+                ideology_payload, volumes=est_volumes, total_chapters=target_chapters,
+                metadata={
+                    "creation_intent_contract": _mapping(project.metadata_json).get(
+                        "creation_intent_contract"
+                    )
+                },
             )
             logger.info(
                 "Ideology kernel attached: thesis=%r gate=%s coverage=%.2f",
@@ -22561,7 +26331,9 @@ async def _generate_entry_system_kernel_artifacts(
     workflow_run_id: UUID,
     step_order: int,
     artifact_records: list[PlanningArtifactRecord],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if not _planning_capability_enabled(project, "entry_system_kernel", available=get_settings().pipeline.enable_entry_system_kernel):
+        return None
     payload = _persist_entry_system_kernel_metadata(
         project,
         story_design_kernel=story_design_kernel,
@@ -22609,6 +26381,8 @@ async def _persist_story_engine_shadow_advisory(
     artifact_records: list[PlanningArtifactRecord],
 ) -> PlanningArtifactVersionModel | None:
     """Persist StoryEngine V2 telemetry without changing planner authority."""
+    if not _planning_capability_enabled(project, "story_design_kernel", available=settings.pipeline.enable_story_design_kernel):
+        return None
 
     if (
         not settings.pipeline.enable_story_engine_shadow
@@ -22667,7 +26441,13 @@ def _fallback_emotion_driven_kernel(
 ) -> dict[str, Any]:
     is_en = is_english_language(project.language)
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
-    story_design = _mapping(story_design_kernel) or _mapping(metadata.get("story_design_kernel"))
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    # Selecting emotion does not authorize a separate StoryDesign method.
+    story_design = (
+        _mapping(story_design_kernel) or _mapping(metadata.get("story_design_kernel"))
+        if planning_capability_selected(project, "story_design_kernel") else {}
+    )
     premise_contract = _mapping(story_design.get("premise_contract"))
     beat_schedule = _mapping_list(story_design.get("beat_schedule"))
     first_beat = beat_schedule[0] if beat_schedule else {}
@@ -23288,7 +27068,7 @@ def _emotion_driven_kernel_prompts(
     if story_design_kernel:
         try:
             story_design_block = "\n\n" + render_story_design_kernel_prompt_block(
-                story_design_kernel
+                story_design_kernel, metadata=_mapping(project.metadata_json)
             )
         except Exception:
             logger.warning(
@@ -23359,7 +27139,9 @@ async def _generate_emotion_driven_kernel(
     llm_run_ids: list[UUID],
     artifact_records: list[PlanningArtifactRecord],
     story_design_kernel: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if not _planning_capability_enabled(project, "emotion_driven_kernel", available=settings.pipeline.enable_emotion_driven_kernel):
+        return None
     if _source_bound_cast_enabled(project):
         payload = _compile_source_bound_emotion_driven_kernel(
             project,
@@ -23451,6 +27233,10 @@ def _project_target_audiences(
     book_spec: Mapping[str, Any],
     metadata: Mapping[str, Any],
 ) -> list[str]:
+    from bestseller.services.creation_configuration import read_configuration
+    configured = read_configuration(project)
+    if configured is not None:
+        return [configured.readers.primary] if configured.readers.primary else []
     audiences = _string_list(metadata.get("target_audiences"))
     if audiences:
         return audiences
@@ -23462,6 +27248,10 @@ def _project_target_audiences(
 
 
 def _project_target_platform(project: ProjectModel, metadata: Mapping[str, Any]) -> str:
+    from bestseller.services.creation_configuration import read_configuration, primary_platform_label
+    configured = read_configuration(project)
+    if configured is not None:
+        return primary_platform_label(configured) or "general"
     writing_profile = _mapping(metadata.get("writing_profile"))
     market = _mapping(writing_profile.get("market"))
     return _first_non_empty_text(
@@ -23506,7 +27296,9 @@ async def _generate_public_emotion_kernel_artifact(
     workflow_run_id: UUID,
     step_order: int,
     artifact_records: list[PlanningArtifactRecord],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if not _planning_capability_enabled(project, "public_emotion_kernel"):
+        return None
     metadata = dict(project.metadata_json or {})
     existing = _mapping(metadata.get("public_emotion_kernel"))
     seed = build_public_emotion_kernel_seed(
@@ -24174,6 +27966,40 @@ def _outline_judge_repair_directives(
     return _string_list(judge_payload.get("repair_directives"))[:8]
 
 
+def _may_promote_outline_quality_debt(project: ProjectModel) -> bool:
+    """Allow an ordinary first draft to carry bounded commercial quality debt.
+
+    The commercial outline judge is an editorial/P1 signal.  A strict new
+    project without an explicit per-chapter enhancer contract may therefore
+    continue with the existing quality-debt receipt after its bounded repair
+    rounds.  User-selected enhancer contracts remain protected: their missing
+    coverage must still return through the repair path instead of being
+    silently conceded.
+    """
+
+    from bestseller.services.finite_book_budget import bound_book_plan
+    if bound_book_plan(project.id):
+        # This is a provisional proposal, not an admitted chapter. The normal
+        # prefix hard-admission stage still checks every explicit requirement
+        # against the complete source before materialization or writing.
+        return True
+    if not is_strict_prewrite_project(project):
+        return True
+    metadata = project.metadata_json if isinstance(project.metadata_json, Mapping) else {}
+    return resolve_explicit_story_enhancers(metadata).is_empty()
+
+
+def _outline_commercial_repair_round_budget(
+    project: ProjectModel, settings: AppSettings
+) -> int:
+    """Return the bounded commercial repair budget for a volume window."""
+
+    configured = int(
+        getattr(settings.pipeline, "outline_commercial_judge_repair_rounds", 1) or 0
+    )
+    return 0 if _may_promote_outline_quality_debt(project) else configured
+
+
 def _outline_next_repair_directives(
     judge_payload: Mapping[str, Any] | None,
     outline_payload: Mapping[str, Any] | None,
@@ -24197,7 +28023,7 @@ def _outline_next_repair_directives(
     chapters = _mapping_list(_mapping(outline_payload).get("chapters"))
     enhancer_directives = story_enhancer_repair_directives(
         chapters,
-        resolve_story_enhancers(project_metadata),
+        resolve_explicit_story_enhancers(project_metadata),
     )
     commercial_directives = _outline_judge_repair_directives(
         judge_payload,
@@ -24212,6 +28038,137 @@ def _outline_next_repair_directives(
     return combined[:8]
 
 
+def _select_outline_repair_source_and_directives(
+    *,
+    best_payload: Mapping[str, Any] | None,
+    best_report: Mapping[str, Any] | None,
+    candidate_payload: Mapping[str, Any] | None,
+    candidate_report: Mapping[str, Any] | None,
+    project_metadata: Mapping[str, Any] | None,
+    round_idx: int,
+    max_rounds: int,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, list[str]]:
+    """Keep the best source paired with its grade, carrying rejected edits separately."""
+
+    source_payload: dict[str, Any] | None
+    source_report: dict[str, Any] | None
+    candidate_passed = bool(
+        _mapping(candidate_report).get("passed")
+        or _mapping(candidate_report).get("pass")
+    )
+    best_passed = bool(
+        _mapping(best_report).get("passed") or _mapping(best_report).get("pass")
+    )
+    if candidate_payload is not None and candidate_report is not None and candidate_passed:
+        source_payload = copy.deepcopy(dict(candidate_payload))
+        source_report = copy.deepcopy(dict(candidate_report))
+    elif best_payload is not None and best_report is not None and best_passed:
+        source_payload = copy.deepcopy(dict(best_payload))
+        source_report = copy.deepcopy(dict(best_report))
+    else:
+        source_payload, source_report = _prefer_outline_repair_baseline(
+            best_payload=best_payload,
+            best_report=best_report,
+            candidate_payload=candidate_payload,
+            candidate_report=candidate_report,
+        )
+        from bestseller.services.outline_recovery_checkpoint import select_active_surgical_repair_source
+
+        source_payload, source_report = select_active_surgical_repair_source(
+            best_payload=source_payload, best_report=source_report,
+            candidate_payload=candidate_payload, candidate_report=candidate_report,
+        )
+    directives = _outline_next_repair_directives(
+        source_report,
+        source_payload,
+        project_metadata=project_metadata,
+        round_idx=round_idx,
+        max_rounds=min(max_rounds, 3),
+    )
+    if (source_payload is None or source_report is None or candidate_payload is None
+        or candidate_report is None or candidate_passed or best_passed):
+        return source_payload, source_report, directives
+
+    source_body_hash = content_hash(_without_planning_meta(source_payload))
+    candidate_body_hash = content_hash(_without_planning_meta(dict(candidate_payload)))
+    # A proven child continues as unapproved working state. The score-best
+    # checkpoint remains separately retained; do not describe this same working
+    # body as an unrelated rejected edit in the next model's diagnostic block.
+    if (source_payload == candidate_payload
+        and best_payload is not None
+        and content_hash(_without_planning_meta(dict(best_payload))) != candidate_body_hash):
+        return source_payload, source_report, directives
+
+    raw_report = {key: copy.deepcopy(value) for key, value in candidate_report.items()
+                  if key != "rejected_repair_feedback"}
+    feedback_report = copy.deepcopy(raw_report)
+    serialized_report = json.dumps(raw_report, ensure_ascii=False, default=str)
+    oversized = len(serialized_report) > 12000 or len(raw_report) > 32 or any(
+        isinstance(raw_report.get(key), (list, tuple)) and len(raw_report[key]) > limit
+        for key, limit in (("blocking_issues", 4), ("audit_issues", 2), ("repair_directives", 3))
+    ) or (isinstance(raw_report.get("dimension_scores"), Mapping)
+          and len(raw_report["dimension_scores"]) > 16)
+    if oversized:
+        # This is bounded quoted diagnostic material for the editor, not a
+        # replacement grade or source authority. Original reports stay intact.
+        feedback_report = {key: copy.deepcopy(raw_report[key]) for key in (
+            "scope", "passed", "pass", "overall_score", "llm_run_id", "schema_version"
+        ) if key in raw_report and isinstance(raw_report[key], (str, int, float, bool, type(None)))}
+        for key in ("scope", "llm_run_id", "schema_version"):
+            if isinstance(feedback_report.get(key), str):
+                feedback_report[key] = feedback_report[key][:128]
+        severity_order = {"critical": 0, "blocker": 0, "high": 1, "medium": 2, "low": 3}
+        for key, limit in (("blocking_issues", 4), ("audit_issues", 2)):
+            raw_issues = raw_report.get(key)
+            issues = [item for item in raw_issues if isinstance(item, Mapping)] if isinstance(raw_issues, (list, tuple)) else []
+            issues.sort(key=lambda item: severity_order.get(str(item.get("severity", "")).lower(), 4))
+            feedback_report[key] = [{field: str(item[field])[:cap] for field, cap in (
+                ("code", 80), ("severity", 32), ("evidence", 300), ("required_fix", 160)
+            ) if item.get(field) is not None} for item in issues[:limit]]
+        scores = raw_report.get("dimension_scores")
+        if isinstance(scores, Mapping):
+            feedback_report["dimension_scores"] = {
+                str(key)[:80]: value for key, value in list(scores.items())[:16]
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+        if isinstance(raw_report.get("repair_directives"), (list, tuple)):
+            feedback_report["repair_directives"] = [str(item)[:300] for item in raw_report["repair_directives"][:3]]
+        if isinstance(raw_report.get("raw_excerpt"), str):
+            feedback_report["raw_excerpt"] = raw_report["raw_excerpt"][:400]
+
+    # Ignore run IDs, cache telemetry and grade-only fluctuations when deciding
+    # whether the next editor would receive genuinely new visible diagnostics.
+    diagnostics = {key: feedback_report[key] for key in (
+        "blocking_issues", "audit_issues", "dimension_scores", "repair_directives"
+    ) if feedback_report.get(key)}
+    if not diagnostics and feedback_report.get("raw_excerpt"):
+        diagnostics["raw_excerpt"] = feedback_report["raw_excerpt"]
+    diagnostic_hash = content_hash(diagnostics)
+    feedback_hash = content_hash({"candidate_body_hash": candidate_body_hash, "diagnostic_hash": diagnostic_hash})
+    prior = _mapping(source_report.get("rejected_repair_feedback"))
+    previous = [value for value in (
+        prior.get("feedback_hash"), *list(prior.get("previous_attempt_hashes") or ())[:3]
+    ) if isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value)]
+    previous = list(dict.fromkeys(previous))[:3]
+    repeated = feedback_hash in previous
+    source_report["rejected_repair_feedback"] = {
+        "candidate_hash": content_hash(dict(candidate_payload)),
+        "candidate_body_hash": candidate_body_hash,
+        "same_body_as_retained_source": source_body_hash == candidate_body_hash,
+        "report": feedback_report,
+        "report_hash": content_hash(raw_report),
+        "report_truncated": oversized or "rejected_repair_feedback" in candidate_report,
+        "diagnostic_hash": diagnostic_hash,
+        "feedback_hash": feedback_hash,
+        "previous_attempt_hashes": previous,
+        "authority": "untrusted_rejected_revision_diagnostics_only",
+        "repeated_without_new_diagnostics": repeated,
+    }
+    if repeated:
+        directives = []
+    return source_payload, source_report, directives
+
+
 def _select_active_commercial_repair_directives(
     *, stored: Sequence[str], current: Sequence[str]
 ) -> list[str]:
@@ -24221,13 +28178,26 @@ def _select_active_commercial_repair_directives(
     return [str(item).strip() for item in source if str(item).strip()][:8]
 
 
+def _has_current_world_authority(brief: Mapping[str, Any] | None) -> bool:
+    """Return true only for an explicitly supplied current world artifact.
+
+    Legacy and metadata-fallback world specs remain useful compatibility
+    references, but they cannot activate source-bound repair rules or become
+    the shared fact boundary for a new planning request.
+    """
+
+    authority = _mapping(_mapping(brief).get("approved_world_authority"))
+    return authority.get("authority_status") == "current"
+
+
 def _outline_judge_project_brief(
     project: ProjectModel,
     *,
     metadata: Mapping[str, Any],
     semantic_candidates: Sequence[Mapping[str, Any]],
+    world_spec: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a compact, identity-authoritative brief for the LLM gate."""
+    """Preserve verified story sources separately from optional summary data."""
 
     snapshot = _mapping(metadata.get("book_design_snapshot"))
     snapshot_protagonist = _mapping(snapshot.get("protagonist"))
@@ -24244,20 +28214,30 @@ def _outline_judge_project_brief(
         concept_contract.get("premise"),
         default="",
     )
-    selected_contracts = {
-        key: metadata.get(key)
-        for key in (
-            "creation_intent_contract",
-            "genre_intent_contract",
-            "commercial_brief",
-            "story_enhancers",
-            "selected_effect_skills",
-            "ability_origin_contract",
-            "knowledge_boundary_contract",
-        )
-        if metadata.get(key) not in (None, "", [], {})
-        and not (source_bound and key == "commercial_brief")
-    }
+    from bestseller.services.creation_contract_authority import select_creation_contracts
+
+    selected_contracts = select_creation_contracts(metadata, source_bound=source_bound)
+    # Taxonomy routing and defaults remain references, independently of which
+    # canonical creation fields have explicit author provenance.
+    genre_reference: dict[str, Any] = {}
+    genre_contract = _mapping(
+        _mapping(metadata.get("creation_intent_contract")).get("genre_intent")
+    ) or _mapping(metadata.get("genre_intent_contract"))
+    if genre_contract:
+        genre_reference = {
+            "default_tags": copy.deepcopy(genre_contract.get("default_tags", [])),
+            "effective_tags": copy.deepcopy(genre_contract.get("tags", [])),
+            "prompt_pack_key": genre_contract.get("prompt_pack_key"),
+            "tag_source": genre_contract.get("tag_source", "legacy_inferred"),
+            "authority": "taxonomy_reference_only_not_creator_obligations",
+        }
+        if (
+            "genre_intent_contract" not in selected_contracts
+            or genre_contract.get("tag_source") != "user"
+        ):
+            genre_reference["unverified_user_tags"] = copy.deepcopy(
+                genre_contract.get("user_tags", [])
+            )
     hook_card = _mapping(concept_contract.get("hook_card"))
     story_spine = _mapping(concept_contract.get("story_spine"))
     seriality_proof = _mapping(concept_contract.get("seriality_proof"))
@@ -24283,6 +28263,99 @@ def _outline_judge_project_brief(
     embodiment_contract = _protagonist_embodiment_contract_block(
         project, language=project.language
     ).strip()
+    # An explicit current artifact (including an empty one) outranks metadata.
+    # Never fill holes in the new artifact with stale cached capabilities.
+    #
+    # ``metadata.world_spec`` is retained for legacy projects that predate the
+    # planning-artifact lineage fields.  It is compatibility input only: when
+    # it has no artifact/version marker we must not present it as the current
+    # approved authority.  Keeping the payload, while labelling its trust
+    # level, lets old projects continue to plan without silently promoting
+    # stale cached world rules.
+    effective_world = _mapping(world_spec if world_spec is not None else metadata.get("world_spec"))
+    world_from_metadata = world_spec is None and bool(effective_world)
+    world_meta = _mapping(effective_world.get("_meta")) if effective_world else {}
+    has_world_lineage = bool(
+        world_meta.get("version_no")
+        and (world_meta.get("artifact_id") or world_meta.get("source_artifact_id"))
+    )
+    power_system = _mapping(effective_world.get("power_system"))
+    progression_keys = {"tiers", "tier_progression"}
+    world_authority = (
+        {
+            "source": (
+                "current_planning_artifact"
+                if world_spec is not None
+                else "metadata_fallback_versioned_unverified"
+                if has_world_lineage
+                else "metadata_fallback_legacy_unverified"
+            ),
+            "authority_status": "current" if world_spec is not None else "unverified",
+            "authority_notice": (
+                "This world specification is a compatibility fallback from project metadata; "
+                "it is not current approved authority until the caller supplies "
+                "a validated planning artifact."
+                if world_from_metadata
+                else ""
+            ),
+            "power_system": {
+                key: value for key, value in power_system.items() if key not in progression_keys
+            },
+            "progression_reference_not_current_authorization": {
+                key: value for key, value in power_system.items() if key in progression_keys
+            },
+            "capability_boundary": (
+                "Starting tier is the foundation baseline, not a claim about all later chapters. "
+                "Future progression requires an established advancement event in the supplied "
+                "outline or confirmed prior state; a tier list alone never authorizes a power."
+            ),
+            "rules": effective_world.get("rules") or [],
+        }
+        if effective_world
+        else {}
+    )
+    if world_authority and world_spec is not None:
+        # Full story/history can establish prerequisites absent from a rules-only
+        # view. Producer bookkeeping is bound by hash, never used as story law.
+        story_source = copy.deepcopy(dict(effective_world))
+        producer_meta = story_source.pop("_meta", None)
+        world_authority["full_story_source"] = story_source
+        world_authority["source_proof"] = {
+            "source_payload_sha256": _approved_payload_hash(effective_world),
+            "story_payload_sha256": _approved_payload_hash(story_source),
+            "excluded_root_paths": ["/_meta"] if "_meta" in effective_world else [],
+            "producer_meta_sha256": _approved_payload_hash({"_meta": producer_meta})
+            if "_meta" in effective_world
+            else None,
+            "producer_meta_role": "provenance_not_story_or_author_instructions",
+            "full_story_source_role": "current_world_story_with_temporal_scope",
+            "future_capability_paths": [
+                "/full_story_source/power_system/tiers",
+                "/full_story_source/power_system/tier_progression",
+            ],
+            "permission_boundary": world_authority["capability_boundary"],
+        }
+    snapshot_source = (
+        copy.deepcopy(dict(snapshot))
+        if source_bound
+        else {
+            "protagonist": copy.deepcopy(snapshot_protagonist),
+            "identity": copy.deepcopy(_mapping(snapshot.get("identity"))),
+        }
+    )
+    snapshot_proof = (
+        {
+            "source_payload_sha256": _approved_payload_hash(snapshot_source),
+            "stored_snapshot_source_hash": snapshot.get("source_hash"),
+            "role": "locked_design_source_with_field_authority_and_temporal_scope",
+            "interpretation": (
+                "Preserve full approved story prerequisites. Producer metadata is provenance, "
+                "not author instructions. Future plans are not occurred facts or current powers."
+            ),
+        }
+        if source_bound
+        else None
+    )
     return {
         "slug": project.slug,
         "title": project.title,
@@ -24300,16 +28373,14 @@ def _outline_judge_project_brief(
         # the front: both judge prompts intentionally cap the brief length.
         "approved_concept_authority": approved_concept_authority,
         "protagonist_embodiment_authority": embodiment_contract,
-        "book_design_snapshot": {
-            "protagonist": snapshot_protagonist,
-            "identity": _mapping(snapshot.get("identity")),
-        },
-        "reader_contract": project.reader_contract_json or {},
-        "hype_scheme": project.hype_scheme_json or {},
+        "approved_world_authority": world_authority,
+        "book_design_snapshot": snapshot_source,
+        **({"book_design_source_proof": snapshot_proof} if source_bound else {}),
+        "reader_contract": copy.deepcopy(project.reader_contract_json or {}),
+        "hype_scheme": copy.deepcopy(project.hype_scheme_json or {}),
         "approved_creation_contracts": selected_contracts,
-        "deterministic_semantic_candidates": [
-            dict(candidate) for candidate in semantic_candidates
-        ],
+        "genre_taxonomy_reference": genre_reference,
+        "deterministic_semantic_candidates": [dict(candidate) for candidate in semantic_candidates],
         "deterministic_semantic_contract": (
             "Candidates are regex/similarity/heuristic evidence only. Confirm or "
             "dismiss each against the actual outline; do not treat a detector hit "
@@ -24328,10 +28399,12 @@ async def _run_planner_outline_commercial_judge(
     step_name: str,
     step_order: int,
     outline_payload: Mapping[str, Any],
+    world_spec: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not is_strict_prewrite_project(project):
         return None
     from bestseller.services.outline_llm_judge import judge_outline_commercial_readiness
+    from bestseller.services.outline_recovery_checkpoint import checkpoint_outline_candidate
     from bestseller.services.prompt_packs import resolve_prompt_pack
 
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
@@ -24345,15 +28418,16 @@ async def _run_planner_outline_commercial_judge(
         llm_adjudication_candidates,
     )
 
-    deterministic_report = evaluate_outline_semantic_gate(outline_payload)
+    # Receipt history contains rejected candidates and diagnostic quotations.
+    # Only the current story body may contribute semantic findings.
+    deterministic_report = evaluate_outline_semantic_gate(
+        _without_planning_meta(dict(outline_payload))
+    )
     semantic_candidates = [
-        finding.to_dict()
-        for finding in llm_adjudication_candidates(deterministic_report)
+        finding.to_dict() for finding in llm_adjudication_candidates(deterministic_report)
     ]
     for candidate in _mapping_list(
-        _mapping(outline_payload.get("_meta")).get(
-            "cross_batch_event_similarity_candidates"
-        )
+        _mapping(outline_payload.get("_meta")).get("cross_batch_event_similarity_candidates")
     ):
         semantic_candidates.append(
             {
@@ -24368,9 +28442,7 @@ async def _run_planner_outline_commercial_judge(
             }
         )
     for candidate in _mapping_list(
-        _mapping(outline_payload.get("_meta")).get(
-            "story_enhancer_distribution_candidates"
-        )
+        _mapping(outline_payload.get("_meta")).get("story_enhancer_distribution_candidates")
     ):
         semantic_candidates.append(
             {
@@ -24387,6 +28459,15 @@ async def _run_planner_outline_commercial_judge(
                 "evidence": dict(candidate),
             }
         )
+    volume_match = re.search(r"volume_(\d+)", step_name)
+    volume_number = int(volume_match.group(1)) if volume_match else 1
+    await checkpoint_outline_candidate(
+        session,
+        project=project,
+        workflow_run_id=workflow_run_id,
+        volume_number=volume_number,
+        candidate=outline_payload,
+    )
     result = await judge_outline_commercial_readiness(
         session,
         settings,
@@ -24395,6 +28476,7 @@ async def _run_planner_outline_commercial_judge(
             project,
             metadata=metadata,
             semantic_candidates=semantic_candidates,
+            world_spec=world_spec,
         ),
         threshold=float(
             getattr(
@@ -24405,9 +28487,28 @@ async def _run_planner_outline_commercial_judge(
             or 0.82
         ),
         workflow_run_id=workflow_run_id,
+        project_id=project.id,
         pack=pack,
     )
+    from bestseller.services.outline_llm_judge import require_available_outline_judgement
+
+    require_available_outline_judgement(result)
     payload = result.model_dump(mode="json", by_alias=True)
+    dependency = outline_dependency_hash(project.metadata_json or {}) or content_hash({})
+    payload["outline_repair_dependency_hash"] = dependency
+    payload["graded_outline_hash"] = content_hash(outline_payload)
+    payload["outline_repair_source_snapshot_hash"] = _mapping(
+        _mapping(project.metadata_json).get("book_design_snapshot")
+    ).get("source_hash")
+    source_workflow = await session.scalar(
+        select(WorkflowRunModel).where(WorkflowRunModel.id == workflow_run_id)
+    )
+    if source_workflow is not None:
+        source_workflow.metadata_json = {
+            **(source_workflow.metadata_json or {}),
+            "outline_repair_dependency_hash": dependency,
+        }
+
     blocking_codes = [
         str(issue.get("code"))
         for issue in _mapping_list(payload.get("blocking_issues"))
@@ -24420,7 +28521,14 @@ async def _run_planner_outline_commercial_judge(
     from bestseller.services.outline_llm_judge import build_outline_repair_directives
 
     payload["repair_directives"] = (
-        build_outline_repair_directives(result) if not result.passed else []
+        build_outline_repair_directives(
+            result,
+            source_authority=bool(
+                world_spec if world_spec is not None else metadata.get("world_spec")
+            ),
+        )
+        if not result.passed
+        else []
     )
     payload["passed"] = bool(result.passed)
     payload["deterministic_semantic_candidates"] = semantic_candidates
@@ -24428,10 +28536,16 @@ async def _run_planner_outline_commercial_judge(
     output_ref = {
         **payload,
         "blocking_codes": blocking_codes,
-        "repair_targets": {
-            code: repair_target_for_block_code(code) for code in blocking_codes
-        },
+        "repair_targets": {code: repair_target_for_block_code(code) for code in blocking_codes},
     }
+    await checkpoint_outline_candidate(
+        session,
+        project=project,
+        workflow_run_id=workflow_run_id,
+        volume_number=volume_number,
+        candidate=outline_payload,
+        report=payload,
+    )
     await create_workflow_step_run(
         session,
         workflow_run_id=workflow_run_id,
@@ -24440,8 +28554,7 @@ async def _run_planner_outline_commercial_judge(
         status=WorkflowStatus.MACHINE_BLOCKED if not result.passed else WorkflowStatus.COMPLETED,
         output_ref=output_ref,
         error_message=(
-            f"{step_name} failed: score={result.overall_score:.3f}, "
-            + ", ".join(blocking_codes)
+            f"{step_name} failed: score={result.overall_score:.3f}, " + ", ".join(blocking_codes)
             if not result.passed
             else None
         ),
@@ -24453,9 +28566,9 @@ async def _run_planner_outline_commercial_judge(
         # repair; in "run + report + repair, no hard abort" mode it records the
         # MACHINE_BLOCKED step (above) and returns the report so the pipeline
         # continues instead of killing the whole book.
-        if strict_blocks(
-            project, settings, "outline_llm_commercial_judge_block_on_failure"
-        ):
+        from bestseller.services.finite_book_budget import bound_book_plan
+        if (strict_blocks(project, settings, "outline_llm_commercial_judge_block_on_failure")
+                and not bound_book_plan(project.id)):
             raise PlannerFallbackError(
                 f"{step_name} failed: score={result.overall_score:.3f}, "
                 + ", ".join(blocking_codes)
@@ -24679,6 +28792,9 @@ async def _run_reverse_outline_gate(
     step_order: int,
 ) -> dict[str, Any]:
     """Verify generated chapter outlines against the StoryDesignKernel."""
+    not_applicable = _not_applicable_method_gate(project, "reverse_outline_gate_report")
+    if not_applicable is not None:
+        return not_applicable
 
     from bestseller.services.reverse_outline_gate import (
         evaluate_reverse_outline_gate,
@@ -24732,6 +28848,9 @@ async def _run_worldview_compliance_gate(
     step_order: int,
 ) -> dict[str, Any]:
     """Verify generated chapter outlines against the WorldviewKernel."""
+    not_applicable = _not_applicable_method_gate(project, "worldview_compliance_gate_report")
+    if not_applicable is not None:
+        return not_applicable
 
     from bestseller.services.worldview_compliance_gate import (
         evaluate_worldview_compliance_gate,
@@ -24788,6 +28907,9 @@ async def _run_story_principle_gate(
     step_order: int,
 ) -> dict[str, Any]:
     """Audit event-unit writing-principle coverage across chapter outlines."""
+    not_applicable = _not_applicable_method_gate(project, "story_principle_gate_report")
+    if not_applicable is not None:
+        return not_applicable
 
     from bestseller.services.quality_gates_config import get_quality_gates_config
     from bestseller.services.story_principle_gate import (
@@ -24853,6 +28975,9 @@ async def _run_worldview_progression_gate(
     step_order: int,
 ) -> dict[str, Any]:
     """Verify the volume plan progresses the WorldviewKernel across arcs."""
+    not_applicable = _not_applicable_method_gate(project, "worldview_progression_gate_report")
+    if not_applicable is not None:
+        return not_applicable
 
     from bestseller.services.worldview_progression_gate import (
         evaluate_worldview_progression_gate,
@@ -24917,6 +29042,9 @@ async def generate_novel_plan(
     progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     project = await _assert_plan_writer_not_locked(session, project_slug)
+    from bestseller.services.creation_configuration import project_settings
+    settings = project_settings(settings, project)
+    _assert_planning_capabilities_available(project, settings)
     if (
         getattr(settings.pipeline, "enable_rolling_outline", True)
         and int(project.target_chapters or 0)
@@ -24936,6 +29064,12 @@ async def generate_novel_plan(
         project.metadata_json if isinstance(project.metadata_json, dict) else {},
         target_chapters=int(project.target_chapters or 0),
     )
+    from bestseller.services.conception_approval_bridge import prepare_adopted_design_snapshot
+
+    await prepare_adopted_design_snapshot(session, project)
+    await _bind_source_bound_planning_canonical(session, project)
+    if (project.metadata_json or {}).get("conception_approved") and (project.metadata_json or {}).get("creation_canonical_snapshot_id"):
+        premise = str(project.metadata_json["premise"])
     # Sweep/refuse BEFORE creating our own workflow_run row: a genuinely live
     # sibling planning run must abort this request outright, not get its row
     # marked FAILED after the fact while it keeps running underneath us.
@@ -25167,11 +29301,10 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.BOOK_SPEC.value,
         )
         if _source_bound_cast_enabled(project):
-            book_spec_payload = book_spec_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound BookSpec from approved design for project '%s'.",
-                project.slug,
+            book_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="book_spec", projection=book_spec_fallback,
+                workflow_run_id=workflow_run.id,
             )
         else:
             book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)
@@ -25337,7 +29470,7 @@ async def generate_novel_plan(
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
-            PlanningArtifactCreate(artifact_type=ArtifactType.BOOK_SPEC, content=book_spec_payload),
+            PlanningArtifactCreate(artifact_type=ArtifactType.BOOK_SPEC, content=book_spec_payload, source_run_id=workflow_run.id),
         )
         artifact_records.append(
             PlanningArtifactRecord(
@@ -25387,11 +29520,10 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.WORLD_SPEC.value,
         )
         if _source_bound_cast_enabled(project):
-            world_spec_payload = world_spec_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound WorldSpec from approved design for project '%s'.",
-                project.slug,
+            world_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="world_spec", projection=world_spec_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload,
             )
         else:
             world_system, world_user = _world_spec_prompts(project, premise, book_spec_payload)
@@ -25463,13 +29595,26 @@ async def generate_novel_plan(
         )
         step_order += 1
 
+        if _source_bound_cast_enabled(project):
+            world_spec_payload = await _approve_source_bound_world_expansion(
+                session,
+                settings,
+                project=project,
+                book_spec=book_spec_payload,
+                world_baseline=world_spec_fallback,
+                world_derived=world_spec_payload,
+                workflow_run_id=workflow_run.id,
+                llm_run_ids=llm_run_ids,
+            )
+
         current_step_name = "generate_world_spec"
         workflow_run.current_step = current_step_name
         world_artifact = await import_planning_artifact(
             session,
             project_slug,
             PlanningArtifactCreate(
-                artifact_type=ArtifactType.WORLD_SPEC, content=world_spec_payload
+                artifact_type=ArtifactType.WORLD_SPEC, content=world_spec_payload,
+                source_run_id=workflow_run.id,
             ),
         )
         artifact_records.append(
@@ -25513,17 +29658,30 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.CAST_SPEC.value,
         )
         if _source_bound_cast_enabled(project):
-            cast_spec_payload = _compile_source_bound_cast_spec(
-                project,
-                premise,
-                book_spec_payload,
-                world_spec_payload,
+            cast_spec_fallback = _compile_source_bound_cast_spec(
+                project, premise, book_spec_payload, world_spec_payload,
             )
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound CastSpec from approved design for project '%s'.",
-                project.slug,
+            cast_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="cast_spec", projection=cast_spec_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload, world_spec=world_spec_payload,
             )
+            generated_cast_receipts = copy.deepcopy(_mapping(cast_spec_payload.get("_meta")))
+            from bestseller.services.source_bound_cast_candidate import bind_completed_source_bound_cast
+
+            cast_spec_payload = bind_completed_source_bound_cast(
+                project=project, projection=cast_spec_fallback, raw=cast_spec_payload,
+                canonical_protagonist=_source_bound_canonical_protagonist(project, premise),
+            )
+            cast_spec_payload["_meta"] = {
+                **_mapping(cast_spec_payload.get("_meta")),
+                **{key: generated_cast_receipts[key] for key in (
+                    "source_content_policy", "generation_llm_run_id", "generation_llm_run_ids",
+                    "generation_method", "composite_generation_receipt", "input_hash",
+                    "source_projection_sha256", "source_compiler", "creator_authorship_asserted",
+                    "planning_status", "approved_complete", "source_bound_minimal",
+                ) if key in generated_cast_receipts},
+            }
         else:
             cast_spec_fallback = _fallback_cast_spec(
                 project,
@@ -25575,40 +29733,46 @@ async def generate_novel_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
-        cast_artifact = await import_planning_artifact(
-            session,
-            project_slug,
-            PlanningArtifactCreate(artifact_type=ArtifactType.CAST_SPEC, content=cast_spec_payload),
-        )
-        artifact_records.append(
-            PlanningArtifactRecord(
-                artifact_type=ArtifactType.CAST_SPEC,
-                artifact_id=cast_artifact.id,
-                version_no=cast_artifact.version_no,
+        elif _mapping(cast_spec_payload.get("_meta")).get("generation_method") == "assembled_real_model_parts":
+            llm_run_ids.extend(UUID(value) for value in cast_spec_payload["_meta"]["generation_llm_run_ids"])
+
+        if not _source_bound_cast_enabled(project):
+            cast_artifact = await import_planning_artifact(
+                session,
+                project_slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    content=cast_spec_payload, source_run_id=workflow_run.id),
             )
-        )
-        await create_workflow_step_run(
-            session,
-            workflow_run_id=workflow_run.id,
-            step_name=current_step_name,
-            step_order=step_order,
-            status=WorkflowStatus.COMPLETED,
-            output_ref={
-                "artifact_id": str(cast_artifact.id),
-                "llm_run_id": str(llm_run_id) if llm_run_id else None,
-            },
-        )
-        _emit_planner_progress(
-            progress,
-            "planning_step_completed",
-            project=project,
-            workflow_run_id=workflow_run.id,
-            current_step=current_step_name,
-            artifact_type=ArtifactType.CAST_SPEC.value,
-            artifact_id=str(cast_artifact.id),
-            llm_run_id=str(llm_run_id) if llm_run_id else None,
-        )
-        step_order += 1
+            artifact_records.append(
+                PlanningArtifactRecord(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    artifact_id=cast_artifact.id,
+                    version_no=cast_artifact.version_no,
+                )
+            )
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "artifact_id": str(cast_artifact.id),
+                    "llm_run_id": str(llm_run_id) if llm_run_id else None,
+                },
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.CAST_SPEC.value,
+                artifact_id=str(cast_artifact.id),
+                llm_run_id=str(llm_run_id) if llm_run_id else None,
+            )
+            step_order += 1
 
         (
             repaired_cast_spec,
@@ -25640,21 +29804,21 @@ async def generate_novel_plan(
                 premise=premise,
                 artifact_type=ArtifactType.CAST_SPEC.value,
             )
-            cast_artifact = await import_planning_artifact(
-                session,
-                project_slug,
-                PlanningArtifactCreate(
-                    artifact_type=ArtifactType.CAST_SPEC,
-                    content=cast_spec_payload,
-                ),
-            )
-            artifact_records.append(
-                PlanningArtifactRecord(
-                    artifact_type=ArtifactType.CAST_SPEC,
-                    artifact_id=cast_artifact.id,
-                    version_no=cast_artifact.version_no,
+            if not _source_bound_cast_enabled(project):
+                cast_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        content=cast_spec_payload, source_run_id=workflow_run.id),
                 )
-            )
+                artifact_records.append(
+                    PlanningArtifactRecord(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        artifact_id=cast_artifact.id,
+                        version_no=cast_artifact.version_no,
+                    )
+                )
 
         # ── Foundation richness gate: scan the cast spec for thin
         # antagonist roster / insufficient active_volumes coverage before
@@ -25699,21 +29863,21 @@ async def generate_novel_plan(
                 # Persist repaired cast spec as a new artifact version so
                 # downstream readers (retrieval, plan judge, review stages)
                 # see the enriched roster.
-                cast_artifact = await import_planning_artifact(
-                    session,
-                    project_slug,
-                    PlanningArtifactCreate(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        content=cast_spec_payload,
-                    ),
-                )
-                artifact_records.append(
-                    PlanningArtifactRecord(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        artifact_id=cast_artifact.id,
-                        version_no=cast_artifact.version_no,
+                if not _source_bound_cast_enabled(project):
+                    cast_artifact = await import_planning_artifact(
+                        session,
+                        project_slug,
+                        PlanningArtifactCreate(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            content=cast_spec_payload, source_run_id=workflow_run.id),
                     )
-                )
+                    artifact_records.append(
+                        PlanningArtifactRecord(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            artifact_id=cast_artifact.id,
+                            version_no=cast_artifact.version_no,
+                        )
+                    )
 
         # ── Antagonist lifecycle gate: after foundation_richness fills in
         # the antagonist_forces roster, validate that the `antagonists`
@@ -25753,21 +29917,21 @@ async def generate_novel_plan(
                     premise=premise,
                     artifact_type=ArtifactType.CAST_SPEC.value,
                 )
-                cast_artifact = await import_planning_artifact(
-                    session,
-                    project_slug,
-                    PlanningArtifactCreate(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        content=cast_spec_payload,
-                    ),
-                )
-                artifact_records.append(
-                    PlanningArtifactRecord(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        artifact_id=cast_artifact.id,
-                        version_no=cast_artifact.version_no,
+                if not _source_bound_cast_enabled(project):
+                    cast_artifact = await import_planning_artifact(
+                        session,
+                        project_slug,
+                        PlanningArtifactCreate(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            content=cast_spec_payload, source_run_id=workflow_run.id),
                     )
-                )
+                    artifact_records.append(
+                        PlanningArtifactRecord(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            artifact_id=cast_artifact.id,
+                            version_no=cast_artifact.version_no,
+                        )
+                    )
 
         # ── Relationship scaling gate: the social-fabric peer of the
         # world-richness / foundation-richness gates. Validates that the
@@ -25808,21 +29972,21 @@ async def generate_novel_plan(
                     premise=premise,
                     artifact_type=ArtifactType.CAST_SPEC.value,
                 )
-                cast_artifact = await import_planning_artifact(
-                    session,
-                    project_slug,
-                    PlanningArtifactCreate(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        content=cast_spec_payload,
-                    ),
-                )
-                artifact_records.append(
-                    PlanningArtifactRecord(
-                        artifact_type=ArtifactType.CAST_SPEC,
-                        artifact_id=cast_artifact.id,
-                        version_no=cast_artifact.version_no,
+                if not _source_bound_cast_enabled(project):
+                    cast_artifact = await import_planning_artifact(
+                        session,
+                        project_slug,
+                        PlanningArtifactCreate(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            content=cast_spec_payload, source_run_id=workflow_run.id),
                     )
-                )
+                    artifact_records.append(
+                        PlanningArtifactRecord(
+                            artifact_type=ArtifactType.CAST_SPEC,
+                            artifact_id=cast_artifact.id,
+                            version_no=cast_artifact.version_no,
+                        )
+                    )
 
         current_step_name = "cast_spec_function_gate"
         workflow_run.current_step = current_step_name
@@ -25841,14 +30005,21 @@ async def generate_novel_plan(
             report=cast_spec_quality_report,
             project=project,
         )
-        cast_artifact = await import_planning_artifact(
+        cast_artifact = await _approve_final_source_bound_cast_artifact(
             session,
-            project_slug,
-            PlanningArtifactCreate(
-                artifact_type=ArtifactType.CAST_SPEC,
-                content=cast_spec_payload,
-            ),
+            settings,
+            project=project,
+            project_slug=project_slug,
+            book_spec=book_spec_payload,
+            world_baseline=world_spec_fallback,
+            cast_baseline=cast_spec_fallback,
+            world_derived=world_spec_payload,
+            cast_derived=cast_spec_payload,
+            workflow_run_id=workflow_run.id,
+            llm_run_ids=llm_run_ids,
         )
+        if _source_bound_cast_enabled(project):
+            cast_spec_payload = _approved_cast_payload_for_downstream(cast_spec_payload, cast_artifact)
         artifact_records.append(
             PlanningArtifactRecord(
                 artifact_type=ArtifactType.CAST_SPEC,
@@ -25856,37 +30027,64 @@ async def generate_novel_plan(
                 version_no=cast_artifact.version_no,
             )
         )
+        if _source_bound_cast_enabled(project):
+            step_order += 1
+            current_step_name = "approve_final_cast_spec"
+            workflow_run.current_step = current_step_name
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "artifact_id": str(cast_artifact.id),
+                    "llm_run_id": str(llm_run_id) if llm_run_id else None,
+                },
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.CAST_SPEC.value,
+                artifact_id=str(cast_artifact.id),
+                llm_run_id=str(llm_run_id) if llm_run_id else None,
+            )
         step_order += 1
 
-        current_step_name = "generate_public_emotion_kernel"
-        workflow_run.current_step = current_step_name
-        _emit_planner_progress(
-            progress,
-            "planning_step_started",
-            project=project,
-            workflow_run_id=workflow_run.id,
-            current_step=current_step_name,
-            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
-        )
-        public_emotion_payload = await _generate_public_emotion_kernel_artifact(
-            session,
-            project=project,
-            project_slug=project_slug,
-            premise=premise,
-            book_spec_payload=book_spec_payload,
-            workflow_run_id=workflow_run.id,
-            step_order=step_order,
-            artifact_records=artifact_records,
-        )
-        _emit_planner_progress(
-            progress,
-            "planning_step_completed",
-            project=project,
-            workflow_run_id=workflow_run.id,
-            current_step=current_step_name,
-            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
-        )
-        step_order += 1
+        public_emotion_payload: dict[str, Any] | None = None
+        if _planning_capability_enabled(project, "public_emotion_kernel"):
+            current_step_name = "generate_public_emotion_kernel"
+            workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
+            )
+            public_emotion_payload = await _generate_public_emotion_kernel_artifact(
+                session,
+                project=project,
+                project_slug=project_slug,
+                premise=premise,
+                book_spec_payload=book_spec_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
+            )
+            step_order += 1
 
         current_step_name = "generate_compliance_boundary_kernel"
         workflow_run.current_step = current_step_name
@@ -25917,7 +30115,7 @@ async def generate_novel_plan(
         step_order += 1
 
         story_design_payload: dict[str, Any] | None = None
-        if settings.pipeline.enable_story_design_kernel:
+        if _planning_capability_enabled(project, "story_design_kernel", available=settings.pipeline.enable_story_design_kernel):
             current_step_name = "generate_story_design_kernel"
             workflow_run.current_step = current_step_name
             _emit_planner_progress(
@@ -25961,37 +30159,38 @@ async def generate_novel_plan(
             )
             step_order += 2
 
-        current_step_name = "generate_entry_system_kernel"
-        workflow_run.current_step = current_step_name
-        _emit_planner_progress(
-            progress,
-            "planning_step_started",
-            project=project,
-            workflow_run_id=workflow_run.id,
-            current_step=current_step_name,
-            artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
-        )
-        await _generate_entry_system_kernel_artifacts(
-            session,
-            project=project,
-            project_slug=project_slug,
-            story_design_kernel=story_design_payload,
-            workflow_run_id=workflow_run.id,
-            step_order=step_order,
-            artifact_records=artifact_records,
-        )
-        _emit_planner_progress(
-            progress,
-            "planning_step_completed",
-            project=project,
-            workflow_run_id=workflow_run.id,
-            current_step=current_step_name,
-            artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
-        )
-        step_order += 1
+        if _planning_capability_enabled(project, "entry_system_kernel", available=settings.pipeline.enable_entry_system_kernel):
+            current_step_name = "generate_entry_system_kernel"
+            workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
+            )
+            await _generate_entry_system_kernel_artifacts(
+                session,
+                project=project,
+                project_slug=project_slug,
+                story_design_kernel=story_design_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
+            )
+            step_order += 1
 
         emotion_driven_payload: dict[str, Any] | None = None
-        if settings.pipeline.enable_emotion_driven_kernel:
+        if _planning_capability_enabled(project, "emotion_driven_kernel", available=settings.pipeline.enable_emotion_driven_kernel):
             current_step_name = "generate_emotion_driven_kernel"
             workflow_run.current_step = current_step_name
             _emit_planner_progress(
@@ -26147,11 +30346,10 @@ async def generate_novel_plan(
             artifact_type=ArtifactType.VOLUME_PLAN.value,
         )
         if _source_bound_cast_enabled(project):
-            volume_plan_payload = volume_plan_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound VolumePlan from approved design for project '%s'.",
-                project.slug,
+            volume_plan_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="volume_plan", projection=volume_plan_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload, world_spec=world_spec_payload, cast_spec=cast_spec_payload,
             )
         else:
             volume_system, volume_user = _volume_plan_prompts(
@@ -26296,7 +30494,8 @@ async def generate_novel_plan(
             session,
             project_slug,
             PlanningArtifactCreate(
-                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload
+                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload,
+                source_run_id=workflow_run.id,
             ),
         )
         artifact_records.append(
@@ -26429,8 +30628,9 @@ async def generate_novel_plan(
                             session,
                             project_slug,
                             PlanningArtifactCreate(
-                                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload
-                            ),
+                                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload,
+                            source_run_id=workflow_run.id,
+                        ),
                         )
                         repaired_validation = _validate_plan(
                             genre=project.genre,
@@ -26690,18 +30890,14 @@ async def generate_novel_plan(
             _commercial_repair_directives = _string_list(
                 _outline_meta.get("outline_commercial_repair_directives")
             )
-            _outline_constraints = [
-                *prewrite_repair_directives,
-                *_deceased_constraints,
-                *_commercial_repair_directives,
-            ]
+            _outline_constraints = [*prewrite_repair_directives, *_deceased_constraints]
             # G4: generate → commercial judge → bounded in-run repair. A failing
-            # judge now regenerates the outline WITH its directives appended,
-            # instead of shipping a sub-threshold outline (shilouyan-bench-v1
+            # judge now edits the complete rejected candidate through bounded
+            # field patches instead of shipping a sub-threshold outline (shilouyan-bench-v1
             # vol-1 0.340 shipped verbatim because directives only flowed via an
             # outer heal run's metadata). The round counter prevents a loop.
-            _max_judge_repair_rounds = int(
-                getattr(settings.pipeline, "outline_commercial_judge_repair_rounds", 1) or 0
+            _max_judge_repair_rounds = _outline_commercial_repair_round_budget(
+                project, settings
             )
             outline_llm_run_ids: list[UUID] = []
             outline_repair_history: list[Any] = []
@@ -26722,6 +30918,17 @@ async def generate_novel_plan(
                 candidate_payload=_persisted_baseline,
                 candidate_report=_persisted_report,
             )
+            from bestseller.services.outline_recovery_checkpoint import restore_active_surgical_repair_source
+
+            _active_outline, _active_report = restore_active_surgical_repair_source(
+                metadata=_mapping(project.metadata_json), volume_number=vol_num,
+                best_payload=_best_outline, best_report=_best_outline_report,
+            )
+            if _active_outline is not None and _active_outline != _best_outline:
+                _best_outline, _best_outline_report = _active_outline, {
+                    **_mapping(_active_report), "baseline_is_lossless": True,
+                    "restored_from_active_surgical_branch": True,
+                }
             _judge_threshold = float(
                 getattr(
                     settings.pipeline,
@@ -26753,7 +30960,25 @@ async def generate_novel_plan(
                     "restored_declared_gate_pass": True,
                     "restored_gate_policy": "overall_threshold_plus_no_critical_blocker",
                 }
-            _judge_directives: list[str] = []
+            _previous_round_outline: dict[str, Any] | None = (
+                copy.deepcopy(_best_outline) if _best_outline else None
+            )
+            _previous_round_report = copy.deepcopy(_mapping(_best_outline_report))
+            _previous_round_outline_is_lossless = bool(
+                _mapping(_best_outline_report).get("restored_from_historical_outline")
+                or _mapping(_best_outline_report).get("baseline_is_lossless")
+            )
+            _judge_directives: list[str] = (
+                _outline_next_repair_directives(
+                    _previous_round_report,
+                    _previous_round_outline,
+                    project_metadata=_outline_meta,
+                    round_idx=0,
+                    max_rounds=max(1, _max_judge_repair_rounds),
+                )
+                if _previous_round_outline
+                else _commercial_repair_directives[:8]
+            )
             judge_rounds: Iterable[int] = (
                 ()
                 if _restore_declared_gate_pass
@@ -26761,27 +30986,64 @@ async def generate_novel_plan(
             )
             for _judge_round in judge_rounds:
                 _round_constraints = [*_outline_constraints, *_judge_directives]
+
+                async def _generate_current_outline_candidate() -> tuple[
+                    dict[str, Any], list[UUID], list[Any]
+                ]:
+                    return await _generate_volume_outline_batched(
+                        session,
+                        settings,
+                        project=project,
+                        workflow_run_id=workflow_run.id,
+                        logical_name=f"volume_{vol_num}_chapter_outline",
+                        book_spec=book_spec_payload,
+                        world_spec=world_spec_payload,
+                        cast_spec=cast_spec_payload,
+                        volume_plan=normalized_vp,
+                        volume_entry=vol_entry,
+                        fallback_payload=vol_fallback,
+                        volume_number=vol_num,
+                        expected_count=vol_ch_count,
+                        chapter_number_offset=chapter_offset,
+                        revealed_ledger_block=_ledger_block,
+                        base_constraints=_round_constraints,
+                        progress=progress,
+                    )
+
+                async def _repair_current_outline_candidate(
+                    source: Mapping[str, Any],
+                    directives: Sequence[str],
+                ) -> tuple[dict[str, Any], UUID | None]:
+                    return await _repair_outline_commercial_findings_surgically(
+                        session,
+                        settings,
+                        project=project,
+                        workflow_run_id=workflow_run.id,
+                        logical_name=f"volume_{vol_num}_chapter_outline",
+                        outline_payload=source,
+                        directives=directives,
+                        world_spec=world_spec_payload,
+                        source_report=_previous_round_report,
+                        validation_context={
+                            "volume_number": vol_num,
+                            "expected_count": vol_ch_count,
+                            "chapter_number_offset": chapter_offset,
+                            "cast_spec": cast_spec_payload,
+                            "volume_entry": vol_entry,
+                        },
+                    )
+
                 (
                     vol_outline_payload,
                     _gen_run_ids,
                     _gen_repair_history,
-                ) = await _generate_volume_outline_batched(
-                    session,
-                    settings,
-                    project=project,
-                    workflow_run_id=workflow_run.id,
-                    logical_name=f"volume_{vol_num}_chapter_outline",
-                    book_spec=book_spec_payload,
-                    cast_spec=cast_spec_payload,
-                    volume_plan=normalized_vp,
-                    volume_entry=vol_entry,
-                    fallback_payload=vol_fallback,
-                    volume_number=vol_num,
-                    expected_count=vol_ch_count,
-                    chapter_number_offset=chapter_offset,
-                    revealed_ledger_block=_ledger_block,
-                    base_constraints=_round_constraints,
-                    progress=progress,
+                    _candidate_mode,
+                ) = await _produce_outline_commercial_candidate(
+                    previous_outline=_previous_round_outline,
+                    directives=_judge_directives,
+                    source_is_lossless=_previous_round_outline_is_lossless,
+                    generate_candidate=_generate_current_outline_candidate,
+                    repair_candidate=_repair_current_outline_candidate,
                 )
                 outline_llm_run_ids.extend(_gen_run_ids)
                 if _gen_repair_history:
@@ -26797,24 +31059,22 @@ async def generate_novel_plan(
                     step_name=current_step_name,
                     step_order=step_order,
                     outline_payload=vol_outline_payload if isinstance(vol_outline_payload, dict) else {},
+                    world_spec=world_spec_payload,
                 )
                 step_order += 1
-                if outline_commercial_report is not None:
-                    _best_outline, _best_outline_report = _prefer_outline_repair_baseline(
-                        best_payload=_best_outline,
-                        best_report=_best_outline_report,
-                        candidate_payload=(
-                            vol_outline_payload
-                            if isinstance(vol_outline_payload, Mapping)
-                            else None
-                        ),
-                        candidate_report=outline_commercial_report,
-                    )
-                _judge_directives = _outline_next_repair_directives(
-                    outline_commercial_report,
-                    vol_outline_payload
-                    if isinstance(vol_outline_payload, Mapping)
-                    else None,
+                (
+                    _best_outline,
+                    _best_outline_report,
+                    _judge_directives,
+                ) = _select_outline_repair_source_and_directives(
+                    best_payload=_best_outline,
+                    best_report=_best_outline_report,
+                    candidate_payload=(
+                        vol_outline_payload
+                        if isinstance(vol_outline_payload, Mapping)
+                        else None
+                    ),
+                    candidate_report=outline_commercial_report,
                     project_metadata=(
                         project.metadata_json
                         if isinstance(project.metadata_json, Mapping)
@@ -26825,11 +31085,15 @@ async def generate_novel_plan(
                 )
                 if not _judge_directives:
                     break
+                _previous_round_outline = copy.deepcopy(_best_outline)
+                _previous_round_report = copy.deepcopy(_mapping(_best_outline_report))
+                _previous_round_outline_is_lossless = True
                 logger.warning(
                     "volume_%d outline commercial judge failed (score=%.3f); "
-                    "in-run repair round %d/%d with %d directive(s).",
+                    "in-run %s round %d/%d with %d directive(s).",
                     vol_num,
                     float((outline_commercial_report or {}).get("overall_score") or 0.0),
+                    _candidate_mode,
                     _judge_round + 1,
                     _max_judge_repair_rounds,
                     len(_judge_directives),
@@ -27284,6 +31548,11 @@ async def generate_novel_plan(
             "llm_run_ids": [str(item) for item in llm_run_ids],
         }
         await session.flush()
+        if _source_bound_cast_enabled(project):
+            from bestseller.services.foundation_selection import pin_completed_foundation
+            await pin_completed_foundation(session, project=project, workflow_id=workflow_run.id, settings=settings)
+            await session.flush()
+
 
         outline_chapters = (
             outline_payload.get("chapters", []) if isinstance(outline_payload, dict) else []
@@ -27372,6 +31641,7 @@ async def generate_foundation_plan(
     *,
     requested_by: str = "system",
     progress: PlanningProgressCallback | None = None,
+    retained_generation_source_runs: Mapping[str, UUID] | None = None,
 ) -> NovelPlanningResult:
     """Phase A of progressive planning: generate BookSpec → WorldSpec → CastSpec → VolumePlan.
 
@@ -27379,12 +31649,29 @@ async def generate_foundation_plan(
     Outlines are generated per-volume via ``generate_volume_plan()``.
     """
     project = await _assert_plan_writer_not_locked(session, project_slug)
+    from bestseller.services.creation_configuration import project_settings
+    settings = project_settings(settings, project)
+    _assert_planning_capabilities_available(project, settings)
+    selected_generations = dict(retained_generation_source_runs or {})
+    if set(selected_generations) - {"cast_spec"}:
+        raise ValueError("retained_generation_selection_cast_only")
+    selected_generations = {key: UUID(str(value)) for key, value in selected_generations.items()}
+    # Runtime recovery control, never an author clause or serialized story source.
+    project._retained_planning_generation_source_runs = selected_generations
+    from bestseller.services.creation_configuration import complete_empty_configuration_revision_lineage
+    await complete_empty_configuration_revision_lineage(session, project)
     from bestseller.services.concept_contract import require_valid_concept_contract
 
     require_valid_concept_contract(
         project.metadata_json if isinstance(project.metadata_json, dict) else {},
         target_chapters=int(project.target_chapters or 0),
     )
+    from bestseller.services.conception_approval_bridge import prepare_adopted_design_snapshot
+
+    await prepare_adopted_design_snapshot(session, project)
+    await _bind_source_bound_planning_canonical(session, project)
+    if (project.metadata_json or {}).get("conception_approved") and (project.metadata_json or {}).get("creation_canonical_snapshot_id"):
+        premise = str(project.metadata_json["premise"])
 
     # Sweep/refuse BEFORE creating our own workflow_run row — see
     # generate_novel_plan for why order matters here.
@@ -27526,6 +31813,9 @@ async def generate_foundation_plan(
                 seed_text=_project_name_seed(project, premise),
             )["protagonist"]["name"],
         )
+        from bestseller.services.book_design import ensure_project_book_design_snapshot
+
+        ensure_project_book_design_snapshot(project)
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -27558,11 +31848,10 @@ async def generate_foundation_plan(
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
         if _source_bound_cast_enabled(project):
-            book_spec_payload = book_spec_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound BookSpec from approved design for project '%s'.",
-                project.slug,
+            book_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="book_spec", projection=book_spec_fallback,
+                workflow_run_id=workflow_run.id,
             )
         else:
             book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)
@@ -27639,7 +31928,7 @@ async def generate_foundation_plan(
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
-            PlanningArtifactCreate(artifact_type=ArtifactType.BOOK_SPEC, content=book_spec_payload),
+            PlanningArtifactCreate(artifact_type=ArtifactType.BOOK_SPEC, content=book_spec_payload, source_run_id=workflow_run.id),
         )
         artifact_records.append(
             PlanningArtifactRecord(
@@ -27669,11 +31958,10 @@ async def generate_foundation_plan(
         current_step_name = "generate_world_spec"
         workflow_run.current_step = current_step_name
         if _source_bound_cast_enabled(project):
-            world_spec_payload = world_spec_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound WorldSpec from approved design for project '%s'.",
-                project.slug,
+            world_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="world_spec", projection=world_spec_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload,
             )
         else:
             world_system, world_user = _world_spec_prompts(project, premise, book_spec_payload)
@@ -27722,11 +32010,24 @@ async def generate_foundation_plan(
 
             world_spec_payload = apply_hook_to_world_spec(world_spec_payload, hook_spec)
 
+        if _source_bound_cast_enabled(project):
+            world_spec_payload = await _approve_source_bound_world_expansion(
+                session,
+                settings,
+                project=project,
+                book_spec=book_spec_payload,
+                world_baseline=world_spec_fallback,
+                world_derived=world_spec_payload,
+                workflow_run_id=workflow_run.id,
+                llm_run_ids=llm_run_ids,
+            )
+
         world_artifact = await import_planning_artifact(
             session,
             project_slug,
             PlanningArtifactCreate(
-                artifact_type=ArtifactType.WORLD_SPEC, content=world_spec_payload
+                artifact_type=ArtifactType.WORLD_SPEC, content=world_spec_payload,
+                source_run_id=workflow_run.id,
             ),
         )
         artifact_records.append(
@@ -27750,17 +32051,30 @@ async def generate_foundation_plan(
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
         if _source_bound_cast_enabled(project):
-            cast_spec_payload = _compile_source_bound_cast_spec(
-                project,
-                premise,
-                book_spec_payload,
-                world_spec_payload,
+            cast_spec_fallback = _compile_source_bound_cast_spec(
+                project, premise, book_spec_payload, world_spec_payload,
             )
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound CastSpec from approved design for project '%s'.",
-                project.slug,
+            cast_spec_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="cast_spec", projection=cast_spec_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload, world_spec=world_spec_payload,
             )
+            generated_cast_receipts = copy.deepcopy(_mapping(cast_spec_payload.get("_meta")))
+            from bestseller.services.source_bound_cast_candidate import bind_completed_source_bound_cast
+
+            cast_spec_payload = bind_completed_source_bound_cast(
+                project=project, projection=cast_spec_fallback, raw=cast_spec_payload,
+                canonical_protagonist=_source_bound_canonical_protagonist(project, premise),
+            )
+            cast_spec_payload["_meta"] = {
+                **_mapping(cast_spec_payload.get("_meta")),
+                **{key: generated_cast_receipts[key] for key in (
+                    "source_content_policy", "generation_llm_run_id", "generation_llm_run_ids",
+                    "generation_method", "composite_generation_receipt", "input_hash",
+                    "source_projection_sha256", "source_compiler", "creator_authorship_asserted",
+                    "planning_status", "approved_complete", "source_bound_minimal",
+                ) if key in generated_cast_receipts},
+            }
         else:
             cast_spec_fallback = _fallback_cast_spec(
                 project,
@@ -27812,6 +32126,8 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+        elif _mapping(cast_spec_payload.get("_meta")).get("generation_method") == "assembled_real_model_parts":
+            llm_run_ids.extend(UUID(value) for value in cast_spec_payload["_meta"]["generation_llm_run_ids"])
 
         (
             repaired_cast_spec,
@@ -27959,11 +32275,23 @@ async def generate_foundation_plan(
             cast_spec_payload, premise, language=_planner_language(project)
         )
 
-        cast_artifact = await import_planning_artifact(
+        current_step_name = "approve_final_cast_spec"
+        workflow_run.current_step = current_step_name
+        cast_artifact = await _approve_final_source_bound_cast_artifact(
             session,
-            project_slug,
-            PlanningArtifactCreate(artifact_type=ArtifactType.CAST_SPEC, content=cast_spec_payload),
+            settings,
+            project=project,
+            project_slug=project_slug,
+            book_spec=book_spec_payload,
+            world_baseline=world_spec_fallback,
+            cast_baseline=cast_spec_fallback,
+            world_derived=world_spec_payload,
+            cast_derived=cast_spec_payload,
+            workflow_run_id=workflow_run.id,
+            llm_run_ids=llm_run_ids,
         )
+        if _source_bound_cast_enabled(project):
+            cast_spec_payload = _approved_cast_payload_for_downstream(cast_spec_payload, cast_artifact)
         artifact_records.append(
             PlanningArtifactRecord(
                 artifact_type=ArtifactType.CAST_SPEC,
@@ -27981,19 +32309,68 @@ async def generate_foundation_plan(
         )
         step_order += 1
 
-        current_step_name = "generate_public_emotion_kernel"
-        workflow_run.current_step = current_step_name
-        public_emotion_payload = await _generate_public_emotion_kernel_artifact(
-            session,
-            project=project,
-            project_slug=project_slug,
-            premise=premise,
-            book_spec_payload=book_spec_payload,
-            workflow_run_id=workflow_run.id,
-            step_order=step_order,
-            artifact_records=artifact_records,
-        )
-        step_order += 1
+        # Optional methods use the same explicit project selection as the
+        # one-shot planner. Availability and archived assets are not selection.
+        story_design_payload: dict[str, Any] | None = None
+        if _planning_capability_enabled(project, "story_design_kernel", available=settings.pipeline.enable_story_design_kernel):
+            current_step_name = "generate_story_design_kernel"
+            workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
+            )
+            story_design_payload = await _generate_story_design_kernel(
+                session,
+                settings,
+                project=project,
+                project_slug=project_slug,
+                premise=premise,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                category_key=_category_key,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                llm_run_ids=llm_run_ids,
+                artifact_records=artifact_records,
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
+            )
+            await _persist_story_engine_shadow_advisory(
+                session,
+                settings=settings,
+                project=project,
+                story_design_kernel=story_design_payload,
+                workflow_run_id=workflow_run.id,
+                artifact_records=artifact_records,
+            )
+            step_order += 2
+
+        public_emotion_payload: dict[str, Any] | None = None
+        if _planning_capability_enabled(project, "public_emotion_kernel"):
+            current_step_name = "generate_public_emotion_kernel"
+            workflow_run.current_step = current_step_name
+            public_emotion_payload = await _generate_public_emotion_kernel_artifact(
+                session,
+                project=project,
+                project_slug=project_slug,
+                premise=premise,
+                book_spec_payload=book_spec_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            step_order += 1
 
         current_step_name = "generate_compliance_boundary_kernel"
         workflow_run.current_step = current_step_name
@@ -28008,7 +32385,7 @@ async def generate_foundation_plan(
         step_order += 1
 
         emotion_driven_payload: dict[str, Any] | None = None
-        if settings.pipeline.enable_emotion_driven_kernel:
+        if _planning_capability_enabled(project, "emotion_driven_kernel", available=settings.pipeline.enable_emotion_driven_kernel):
             current_step_name = "generate_emotion_driven_kernel"
             workflow_run.current_step = current_step_name
             emotion_driven_payload = await _generate_emotion_driven_kernel(
@@ -28025,22 +32402,23 @@ async def generate_foundation_plan(
                 step_order=step_order,
                 llm_run_ids=llm_run_ids,
                 artifact_records=artifact_records,
-                story_design_kernel=None,
+                story_design_kernel=story_design_payload,
             )
             step_order += 1
 
-        current_step_name = "generate_entry_system_kernel"
-        workflow_run.current_step = current_step_name
-        await _generate_entry_system_kernel_artifacts(
-            session,
-            project=project,
-            project_slug=project_slug,
-            story_design_kernel=None,
-            workflow_run_id=workflow_run.id,
-            step_order=step_order,
-            artifact_records=artifact_records,
-        )
-        step_order += 1
+        if _planning_capability_enabled(project, "entry_system_kernel", available=settings.pipeline.enable_entry_system_kernel):
+            current_step_name = "generate_entry_system_kernel"
+            workflow_run.current_step = current_step_name
+            await _generate_entry_system_kernel_artifacts(
+                session,
+                project=project,
+                project_slug=project_slug,
+                story_design_kernel=story_design_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            step_order += 1
 
         # ── VolumePlan ──
         volume_plan_fallback = (
@@ -28063,11 +32441,10 @@ async def generate_foundation_plan(
         current_step_name = "generate_volume_plan"
         workflow_run.current_step = current_step_name
         if _source_bound_cast_enabled(project):
-            volume_plan_payload = volume_plan_fallback
-            llm_run_id = None
-            logger.info(
-                "Compiled source-bound VolumePlan from approved design for project '%s'.",
-                project.slug,
+            volume_plan_payload, llm_run_id = await _complete_source_bound_planning_content(
+                session, settings, project=project, premise=premise,
+                kind="volume_plan", projection=volume_plan_fallback,
+                workflow_run_id=workflow_run.id, book_spec=book_spec_payload, world_spec=world_spec_payload, cast_spec=cast_spec_payload,
             )
         else:
             vp_system, vp_user = _volume_plan_prompts(
@@ -28137,7 +32514,8 @@ async def generate_foundation_plan(
             session,
             project_slug,
             PlanningArtifactCreate(
-                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload
+                artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload,
+                source_run_id=workflow_run.id,
             ),
         )
         artifact_records.append(
@@ -28171,10 +32549,11 @@ async def generate_foundation_plan(
                 "qimao_opening_contract": qimao_opening_contract,
             }
 
+        title_prewrite_payload = None
         if settings.pipeline.enable_prewrite_readiness_gate:
             current_step_name = "prewrite_readiness_gate"
             workflow_run.current_step = current_step_name
-            await _run_prewrite_readiness_gate(
+            title_prewrite_payload = await _run_prewrite_readiness_gate(
                 session,
                 settings,
                 project=project,
@@ -28183,6 +32562,7 @@ async def generate_foundation_plan(
                 world_spec_payload=world_spec_payload,
                 cast_spec_payload=cast_spec_payload,
                 volume_plan_payload=volume_plan_payload,
+                story_design_kernel=story_design_payload,
                 emotion_driven_kernel=emotion_driven_payload,
                 public_emotion_kernel=public_emotion_payload,
                 compliance_boundary_kernel=compliance_boundary_payload,
@@ -28191,6 +32571,39 @@ async def generate_foundation_plan(
                 artifact_records=artifact_records,
             )
             step_order += 1
+
+        current_step_name = "story_grounded_title_revision"
+        workflow_run.current_step = current_step_name
+        (
+            refreshed_title, title_was_revised, title_llm_run_id, title_refresh_evidence,
+        ) = await _refresh_foundation_project_title(
+            session,
+            settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            story_design_payload=story_design_payload,
+            volume_plan_payload=volume_plan_payload,
+            prewrite_payload=title_prewrite_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if title_llm_run_id is not None:
+            llm_run_ids.append(title_llm_run_id)
+        await create_workflow_step_run(
+            session,
+            workflow_run_id=workflow_run.id,
+            step_name=current_step_name,
+            step_order=step_order,
+            status=WorkflowStatus.COMPLETED,
+            output_ref={
+                **title_refresh_evidence,
+                "title": refreshed_title,
+                "revised": title_was_revised,
+                "llm_run_id": str(title_llm_run_id) if title_llm_run_id else None,
+            },
+        )
+        step_order += 1
 
         # ── Promotional brief: title + tags + protagonist + blurb ──
         current_step_name = "generate_promotional_brief"
@@ -28223,6 +32636,11 @@ async def generate_foundation_plan(
             "llm_run_ids": [str(i) for i in llm_run_ids],
         }
         await session.flush()
+        if _source_bound_cast_enabled(project):
+            from bestseller.services.foundation_selection import pin_completed_foundation
+            await pin_completed_foundation(session, project=project, workflow_id=workflow_run.id, settings=settings)
+            await session.flush()
+
 
         volume_count = (
             len(volume_plan_payload)
@@ -28290,6 +32708,86 @@ async def generate_volume_plan(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    # Stage selection needs the existing DB-verified canonical/retained-clause
+    # binding. Never infer author coverage from prompt data or genre defaults.
+    if _source_bound_cast_enabled(project):
+        await _bind_source_bound_planning_canonical(session, project)
+    from bestseller.services.creation_configuration import project_settings
+    settings = project_settings(settings, project)
+
+    volume_plan = _normalize_volume_plan_payload(volume_plan)
+    matching_entries = [
+        entry for entry in volume_plan
+        if int(entry.get("volume_number", 0)) == volume_number
+    ]
+    if not matching_entries:
+        raise ValueError(f"Volume {volume_number} not found in volume plan")
+    vol_entry = matching_entries[0]
+
+    # A narrative volume is context, not permission to detail-plan all of it.
+    # Validate before workflow creation, stale-workflow mutation or model calls.
+    window_size = int(getattr(settings.pipeline, "rolling_outline_window_size", 8) or 8)
+    target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+    if getattr(settings.pipeline, "enable_rolling_outline", True) and target_chapters > window_size:
+        from bestseller.services.rolling_outline import rolling_window_schedule_hash
+
+        metadata = _mapping(project.metadata_json)
+        schedule = metadata.get("rolling_outline_windows")
+        if (
+            not isinstance(schedule, list) or not schedule
+            or not all(isinstance(item, Mapping) for item in schedule)
+            or metadata.get("rolling_outline_windows_hash")
+            != rolling_window_schedule_hash(schedule)
+        ):
+            raise ValueError(
+                "rolling_outline_entry_invalid: persisted window schedule/hash required"
+            )
+        expected_start = 1
+        volume_indices: dict[int, int] = {}
+        for item in schedule:
+            fields = ("volume_number", "window_index", "window_start", "window_end")
+            if any(type(item.get(field)) is not int or item[field] < 1 for field in fields):
+                raise ValueError("rolling_outline_entry_invalid: invalid persisted window fields")
+            start, end = item["window_start"], item["window_end"]
+            size = end - start + 1
+            is_final_partial = end == target_chapters and 1 <= size < 6
+            ordinal = volume_indices.get(item["volume_number"], 0) + 1
+            if (
+                start != expected_start or end > target_chapters
+                or (not 6 <= size <= 10 and not is_final_partial)
+                or item["window_index"] != ordinal
+            ):
+                raise ValueError("rolling_outline_entry_invalid: invalid persisted window schedule")
+            expected_start = end + 1
+            volume_indices[item["volume_number"]] = ordinal
+        if expected_start != target_chapters + 1:
+            raise ValueError("rolling_outline_entry_invalid: incomplete persisted window schedule")
+
+        entry_fields = (
+            "rolling_window_index", "start_chapter_number",
+            "chapter_count_target", "end_chapter_number",
+        )
+        if len(matching_entries) != 1 or any(
+            type(vol_entry.get(field)) is not int or vol_entry[field] < 1 for field in entry_fields
+        ):
+            raise ValueError("rolling_outline_entry_invalid: one explicit rolling window required")
+        stored_window = next((item for item in schedule if (
+            item["volume_number"] == volume_number
+            and item["window_index"] == vol_entry["rolling_window_index"]
+        )), None)
+        if (
+            stored_window is None
+            or vol_entry["start_chapter_number"] != stored_window["window_start"]
+            or vol_entry["end_chapter_number"] != stored_window["window_end"]
+            or vol_entry["chapter_count_target"]
+            != stored_window["window_end"] - stored_window["window_start"] + 1
+            or ("chapter_range" in vol_entry and vol_entry["chapter_range"] != [
+                stored_window["window_start"], stored_window["window_end"],
+            ])
+        ):
+            raise ValueError(
+                "rolling_outline_entry_invalid: caller entry does not match stored window"
+            )
 
     # Sweep/refuse BEFORE creating our own workflow_run row — a genuinely live
     # sibling volume-plan run (e.g. double-click) must abort this request
@@ -28316,17 +32814,6 @@ async def generate_volume_plan(
     # Resolve category once for downstream fallback functions
     _category = resolve_novel_category(project.genre, project.sub_genre)
     _category_key: str | None = _category.key if _category else None
-
-    volume_plan = _normalize_volume_plan_payload(volume_plan)
-
-    # Find this volume's entry
-    vol_entry: dict[str, Any] | None = None
-    for v in volume_plan:
-        if int(v.get("volume_number", 0)) == volume_number:
-            vol_entry = v
-            break
-    if vol_entry is None:
-        raise ValueError(f"Volume {volume_number} not found in volume plan")
 
     # Merge caller-supplied constraints with project-level mid-flight directives.
     # Stored directives apply to ALL future volumes (rescue operation), while
@@ -28358,6 +32845,31 @@ async def generate_volume_plan(
                     _commercial_repair_directives.append(text)
     _all_constraints: list[str] = list(_stored_directives) + list(extra_constraints or [])
 
+    # Carry the applied source revision into every volume-plan run.  This is
+    # deliberately a read-only provenance stamp: it does not approve or
+    # resume the project, but lets exhausted-outline recovery reject artifacts
+    # produced against an older source revision.
+    _derived_revision_marker = _mapping(
+        _mapping(project.metadata_json).get("derived_input_revision")
+    )
+    _derived_source_candidate_hash = _non_empty_string(
+        _derived_revision_marker.get("candidate_hash"), ""
+    )
+    _workflow_revision_metadata: dict[str, Any] = {
+        "project_slug": project.slug,
+        "volume_number": volume_number,
+    }
+    if _derived_source_candidate_hash:
+        _workflow_revision_metadata.update(
+            {
+                "derived_source_candidate_hash": _derived_source_candidate_hash,
+                "failure_baseline_revision_key": _derived_source_candidate_hash,
+                "derived_input_revision_marker": copy.deepcopy(
+                    dict(_derived_revision_marker)
+                ),
+            }
+        )
+
     workflow_run = await create_workflow_run(
         session,
         project_id=project.id,
@@ -28367,13 +32879,15 @@ async def generate_volume_plan(
         scope_id=project.id,
         requested_by=requested_by,
         current_step="volume_cast_expansion",
-        metadata={"project_slug": project.slug, "volume_number": volume_number},
+        metadata=_workflow_revision_metadata,
     )
-    # Clamp volume-plan conflict phases so vol1 never opens as endgame.
-    volume_plan = _normalize_volume_plan_conflict_phases(
-        volume_plan,
-        target_chapters=int(getattr(project, "target_chapters", 0) or 0),
-    )
+    # An approved source-bound volume's declared phase is editable story data,
+    # not permission for a legacy opening recipe to replace it.
+    if not _source_bound_cast_enabled(project):
+        volume_plan = _normalize_volume_plan_conflict_phases(
+            volume_plan,
+            target_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        )
     step_order = 1
     current_step_name = "volume_cast_expansion" if volume_number > 1 else "volume_world_disclosure"
     llm_run_ids: list[UUID] = []
@@ -28670,9 +33184,8 @@ async def generate_volume_plan(
             effective_cast_spec, vol_entry, language=project.language or "zh-CN"
         )
         _all_constraints = (_all_constraints or []) + _deceased_constraints
-        _max_judge_repair_rounds = int(
-            getattr(settings.pipeline, "outline_commercial_judge_repair_rounds", 1)
-            or 0
+        _max_judge_repair_rounds = _outline_commercial_repair_round_budget(
+            project, settings
         )
         outline_llm_run_ids: list[UUID] = []
         outline_repair_history: list[Any] = []
@@ -28728,16 +33241,25 @@ async def generate_volume_plan(
 
         _stored_repair_baseline, _stored_repair_report = (
             _prefer_outline_repair_baseline(
-                # Prefer the complete historical artifact on a score tie;
-                # the persisted baseline is intentionally compact and lacks
-                # fields needed by surgical repair. A strictly better recent
-                # baseline may still replace it.
+                # Prefer complete editable sources over legacy summaries,
+                # then compare scores among sources of equal fidelity.
                 best_payload=_historical_repair_baseline,
                 best_report=_historical_repair_report,
                 candidate_payload=_stored_repair_baseline,
                 candidate_report=_stored_repair_report,
             )
         )
+        from bestseller.services.outline_recovery_checkpoint import restore_active_surgical_repair_source
+
+        _active_outline, _active_report = restore_active_surgical_repair_source(
+            metadata=_mapping(project.metadata_json), volume_number=volume_number,
+            best_payload=_stored_repair_baseline, best_report=_stored_repair_report,
+        )
+        if _active_outline is not None and _active_outline != _stored_repair_baseline:
+            _stored_repair_baseline, _stored_repair_report = _active_outline, {
+                **_mapping(_active_report), "baseline_is_lossless": True,
+                "restored_from_active_surgical_branch": True,
+            }
         _judge_directives: list[str] = _string_list(
             _mapping(_stored_repair_report).get("repair_directives")
         )[:8]
@@ -28754,10 +33276,10 @@ async def generate_volume_plan(
         _previous_round_outline: dict[str, Any] | None = (
             copy.deepcopy(_stored_repair_baseline) if _stored_repair_baseline else None
         )
-        _use_surgical_historical_repair = bool(
+        _previous_round_report = copy.deepcopy(_mapping(_stored_repair_report))
+        _previous_round_outline_is_lossless = bool(
             _mapping(_stored_repair_report).get("restored_from_historical_outline")
-            and _previous_round_outline
-            and _judge_directives
+            or _mapping(_stored_repair_report).get("baseline_is_lossless")
         )
         _judge_threshold = float(
             getattr(
@@ -28796,34 +33318,17 @@ async def generate_volume_plan(
             else range(_max_judge_repair_rounds + 1)
         )
         for _judge_round in judge_rounds:
-            if _use_surgical_historical_repair and _previous_round_outline:
-                vol_outline_payload, _surgical_run_id = (
-                    await _repair_outline_commercial_findings_surgically(
-                        session,
-                        settings,
-                        project=project,
-                        workflow_run_id=workflow_run.id,
-                        logical_name=f"volume_{volume_number}_chapter_outline",
-                        outline_payload=_previous_round_outline,
-                        directives=_judge_directives,
-                    )
-                )
-                _round_llm_run_ids = (
-                    [_surgical_run_id] if _surgical_run_id is not None else []
-                )
-                _round_repair_history = []
-            else:
-                (
-                    vol_outline_payload,
-                    _round_llm_run_ids,
-                    _round_repair_history,
-                ) = await _generate_volume_outline_batched(
+            async def _generate_current_outline_candidate() -> tuple[
+                dict[str, Any], list[UUID], list[Any]
+            ]:
+                return await _generate_volume_outline_batched(
                     session,
                     settings,
                     project=project,
                     workflow_run_id=workflow_run.id,
                     logical_name=f"volume_{volume_number}_chapter_outline",
                     book_spec=book_spec,
+                    world_spec=effective_world_spec,
                     cast_spec=effective_cast_spec,
                     volume_plan=_mapping_list(volume_plan),
                     volume_entry=vol_entry,
@@ -28837,10 +33342,8 @@ async def generate_volume_plan(
                     chapter_number_offset=chapter_number_offset,
                     revealed_ledger_block=_ledger_block,
                     # The current in-loop verdict supersedes the previous outer
-                    # heal's commercial directives.  Appending both sets grew the
-                    # required prompt core until the second repair round failed
-                    # before generation (8 old + 8 new directives).  Long-lived
-                    # non-commercial constraints remain additive.
+                    # heal's commercial directives. Long-lived non-commercial
+                    # constraints remain additive.
                     base_constraints=[
                         *_all_constraints,
                         *_select_active_commercial_repair_directives(
@@ -28851,6 +33354,46 @@ async def generate_volume_plan(
                     previous_outline_payload=_previous_round_outline,
                     progress=progress,
                 )
+
+            async def _repair_current_outline_candidate(
+                source: Mapping[str, Any],
+                directives: Sequence[str],
+            ) -> tuple[dict[str, Any], UUID | None]:
+                return await _repair_outline_commercial_findings_surgically(
+                    session,
+                    settings,
+                    project=project,
+                    workflow_run_id=workflow_run.id,
+                    logical_name=f"volume_{volume_number}_chapter_outline",
+                    outline_payload=source,
+                    directives=directives,
+                    world_spec=effective_world_spec,
+                    source_report=_previous_round_report,
+                    validation_context={
+                        "volume_number": volume_number,
+                        "expected_count": int(
+                            vol_entry.get(
+                                "chapter_count_target", len(vol_fallback_chapters) or 1
+                            )
+                        ),
+                        "chapter_number_offset": chapter_number_offset,
+                        "cast_spec": effective_cast_spec,
+                        "volume_entry": vol_entry,
+                    },
+                )
+
+            (
+                vol_outline_payload,
+                _round_llm_run_ids,
+                _round_repair_history,
+                _candidate_mode,
+            ) = await _produce_outline_commercial_candidate(
+                previous_outline=_previous_round_outline,
+                directives=_judge_directives,
+                source_is_lossless=_previous_round_outline_is_lossless,
+                generate_candidate=_generate_current_outline_candidate,
+                repair_candidate=_repair_current_outline_candidate,
+            )
             outline_llm_run_ids.extend(_round_llm_run_ids)
             outline_repair_history.extend(_round_repair_history)
 
@@ -28867,6 +33410,7 @@ async def generate_volume_plan(
                 step_name=judge_step_name,
                 step_order=step_order,
                 outline_payload=vol_outline_payload,
+                world_spec=effective_world_spec,
             )
             if outline_commercial_report is None:
                 break
@@ -28880,11 +33424,15 @@ async def generate_volume_plan(
                         candidate_report=outline_commercial_report,
                     )
                 )
-            repair_source_report = _best_failed_report or outline_commercial_report
-            repair_source_outline = _best_failed_outline or vol_outline_payload
-            _judge_directives = _outline_next_repair_directives(
-                repair_source_report,
+            (
                 repair_source_outline,
+                repair_source_report,
+                _judge_directives,
+            ) = _select_outline_repair_source_and_directives(
+                best_payload=_previous_round_outline,
+                best_report=_previous_round_report,
+                candidate_payload=vol_outline_payload,
+                candidate_report=outline_commercial_report,
                 project_metadata=(
                     project.metadata_json
                     if isinstance(project.metadata_json, Mapping)
@@ -28895,16 +33443,18 @@ async def generate_volume_plan(
             )
             if not _judge_directives:
                 break
-            # A repair round may regress even when the judge gives useful
-            # feedback.  Keep editing the highest-scoring candidate seen in
-            # this run; otherwise a 0.58 rewrite replaces a 0.62 baseline and
-            # the remaining budget oscillates between different failures.
+            # A failed repair may regress, while a commercially passed candidate
+            # may still need only the user's selected effect. Keep the paired
+            # source chosen above so neither path inherits another draft's report.
             _previous_round_outline = copy.deepcopy(repair_source_outline)
+            _previous_round_report = copy.deepcopy(_mapping(repair_source_report))
+            _previous_round_outline_is_lossless = True
             logger.warning(
                 "progressive volume_%d outline judge failed (score=%.3f); "
-                "repair round %d/%d with %d directive(s).",
+                "%s round %d/%d with %d directive(s).",
                 volume_number,
                 float(outline_commercial_report.get("overall_score") or 0.0),
+                _candidate_mode,
                 _judge_round + 1,
                 _max_judge_repair_rounds,
                 len(_judge_directives),
@@ -28960,7 +33510,11 @@ async def generate_volume_plan(
         # (live evidence 2026-08-02: 《渣道剑主》, 3 rounds, book dead). The
         # deterministic hard contract — malformed state, word budget, degenerate
         # causal contract — still blocks, because that is structure, not taste.
-        if judge_failed and not hard_findings:
+        if (
+            judge_failed
+            and not hard_findings
+            and _may_promote_outline_quality_debt(project)
+        ):
             _judge_codes = [
                 str(item.get("code") or "unknown")
                 for item in _mapping_list(outline_commercial_report.get("blocking_issues"))[:12]
@@ -28971,20 +33525,26 @@ async def generate_volume_plan(
                 volume_number,
                 ", ".join(_judge_codes) or "unspecified",
             )
-            project.metadata_json = {
-                **(project.metadata_json or {}),
-                "outline_quality_debt": [
-                    *((project.metadata_json or {}).get("outline_quality_debt") or []),
-                    {
+            debt = {
                         "volume_number": volume_number,
                         "unresolved_codes": _judge_codes,
                         "overall_score": float(
                             outline_commercial_report.get("overall_score") or 0.0
                         ),
                         "recorded_at": datetime.now(UTC).isoformat(),
-                    },
-                ],
-            }
+                    }
+            from bestseller.services.finite_book_budget import bound_book_plan
+            if bound_book_plan(project.id):
+                # Runtime editorial evidence is not a new story source. Preserve
+                # the failed verdict and bind debt to its exact provisional plan.
+                debt.update(source_outline_sha256=content_hash(vol_outline_payload),
+                    report_sha256=content_hash(outline_commercial_report),
+                    source_hard_admission_required=True, commercial_passed=False)
+                workflow_run.metadata_json = {**workflow_run.metadata_json,
+                    "editorial_quality_debt": [*(workflow_run.metadata_json.get("editorial_quality_debt") or []), debt]}
+            else:
+                project.metadata_json = {**(project.metadata_json or {}),
+                    "outline_quality_debt": [*((project.metadata_json or {}).get("outline_quality_debt") or []), debt]}
             judge_failed = False
 
         if hard_findings or judge_failed or (contextual_candidates and not llm_adjudicated):
@@ -28998,8 +33558,8 @@ async def generate_volume_plan(
             ]
             if judge_failed:
                 blocking.extend(_mapping_list(outline_commercial_report.get("blocking_issues")))
-                # Persist both the LLM's exact next actions and a bounded edit
-                # baseline before the volume workflow commits its failed state.
+                # Persist the exact rejected source and its matching verdict.
+                # Prompt compression must not become the stored story truth.
                 # The periodic self-heal owner can then resume from evidence
                 # instead of re-rolling a semantically rejected outline.
                 recovery_report = _best_failed_report or outline_commercial_report
@@ -29007,14 +33567,13 @@ async def generate_volume_plan(
                 failure_directives = _string_list(
                     recovery_report.get("repair_directives")
                 )[:8]
-                failure_baseline = _compact_outline_repair_baseline(
-                    recovery_outline,
-                    language=_planner_language(project),
-                )
+                failure_baseline = copy.deepcopy(dict(recovery_outline))
                 project.metadata_json = {
                     **(project.metadata_json or {}),
                     "outline_commercial_repair_directives": failure_directives,
                     "outline_commercial_repair_baseline": failure_baseline,
+                    "outline_commercial_repair_baseline_kind": "lossless-v1",
+                    "outline_repair_dependency_hash": outline_dependency_hash(project.metadata_json or {}),
                     "outline_commercial_last_failure": {
                         "workflow_run_id": str(workflow_run.id),
                         "volume_number": volume_number,
@@ -29023,6 +33582,17 @@ async def generate_volume_plan(
                         ),
                         "recovery_baseline_score": float(
                             recovery_report.get("overall_score") or 0.0
+                        ),
+                        # Bind this rejected editable source to the exact
+                        # derived input revision that produced the workflow.
+                        # Marker-less legacy projects intentionally keep the
+                        # historical shape and remain compatible.
+                        **(
+                            {
+                                "baseline_revision_key": _derived_source_candidate_hash,
+                            }
+                            if _derived_source_candidate_hash
+                            else {}
                         ),
                         "recovery_blocking_codes": [
                             str(item.get("code") or "unknown")
@@ -29038,6 +33608,15 @@ async def generate_volume_plan(
                         ],
                         "recorded_at": datetime.now(UTC).isoformat(),
                     },
+                    **(
+                        {
+                            "outline_commercial_repair_baseline_revision_key": (
+                                _derived_source_candidate_hash
+                            )
+                        }
+                        if _derived_source_candidate_hash
+                        else {}
+                    ),
                 }
             raise PlannerFallbackError(
                 "Progressive volume outline did not earn semantic promotion; "
@@ -29056,22 +33635,30 @@ async def generate_volume_plan(
                 "adjudication_policy": "hard_contract_plus_llm_contextual",
             }
         )
-        promoted_metadata = dict(project.metadata_json or {})
-        promoted_metadata.pop("outline_commercial_repair_directives", None)
-        promoted_metadata.pop("outline_commercial_repair_baseline", None)
-        project.metadata_json = {
-            **promoted_metadata,
-            "outline_semantic_gate_report": semantic_report_payload,
-            "outline_semantic_gate_status": "approved",
-            "outline_commercial_last_approved": {
-                "workflow_run_id": str(workflow_run.id),
-                "volume_number": volume_number,
-                "overall_score": float(
-                    (outline_commercial_report or {}).get("overall_score") or 1.0
-                ),
-                "recorded_at": datetime.now(UTC).isoformat(),
-            },
-        }
+        from bestseller.services.finite_book_budget import bound_book_plan
+        if bound_book_plan(project.id):
+            workflow_run.metadata_json = {**workflow_run.metadata_json,
+                "provisional_outline_semantic_gate": semantic_report_payload,
+                "source_hard_admission_required": True,
+                "commercial_passed": bool(outline_commercial_report and outline_commercial_report.get("passed"))}
+        else:
+            promoted_metadata = dict(project.metadata_json or {})
+            promoted_metadata.pop("outline_commercial_repair_directives", None)
+            promoted_metadata.pop("outline_commercial_repair_baseline", None)
+            promoted_metadata.pop("outline_commercial_repair_baseline_kind", None)
+            project.metadata_json = {
+                **promoted_metadata,
+                "outline_semantic_gate_report": semantic_report_payload,
+                "outline_semantic_gate_status": "approved",
+                "outline_commercial_last_approved": {
+                    "workflow_run_id": str(workflow_run.id),
+                    "volume_number": volume_number,
+                    "overall_score": float(
+                        (outline_commercial_report or {}).get("overall_score") or 1.0
+                    ),
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                },
+            }
         if outline_commercial_report is not None:
             vol_outline_payload = _attach_prewrite_quality_report(
                 vol_outline_payload,

@@ -5,6 +5,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 import contextlib
 from functools import lru_cache
+import hashlib
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ from bestseller.domain.llm_quality_judge import (
     LLMQualityJudgeResult,
     quality_judge_result_from_mapping,
 )
-from bestseller.services.golden_rules import render_golden_three_rules
+from bestseller.services.budget import ExecutionBudgetError
 from bestseller.services.independent_quality_judge import (
     BlindJudgeInput,
     IndependentJudgeResult,
@@ -33,10 +34,7 @@ from bestseller.services.judge_genre_context import (
 )
 from bestseller.services.judge_rubrics import get_judge_rubric
 from bestseller.services.llm import LLMCompletionRequest, complete_text
-from bestseller.services.protagonist_decision_agent import (
-    render_outline_decision_agent_prompt,
-)
-from bestseller.services.methodology_bridge import get_fragment
+from bestseller.services.methodology_bridge import render_methodology_applicability
 from bestseller.services.prompt_packs import PromptPack
 from bestseller.services.word_targets import (
     model_output_token_ceiling,
@@ -116,75 +114,76 @@ def _render_chapter_judge_system_prompt(
     genre_context: JudgeGenreContext,
     language: str = "zh",
 ) -> str:
-    """Assemble the chapter_commercial_quality_judge system prompt in 7-段式.
-
-    The "story-logic checks" and the book's own rule terms are now supplied by
-    :class:`JudgeGenreContext` (services/judge_genre_context.py) instead of being
-    hardcoded to one detective book's jargon (青囊/罗盘/铜钱/认账/镜债). The judge
-    therefore scores each book against ITS OWN genre's retention fundamentals and
-    ITS OWN setting terms. Stable ordering = Anthropic prompt-cache friendly.
-    """
+    """Use source-grounded assessment; reference assets cannot prescribe a story."""
     return (
-        "# ROLE\n"
-        "你是商业网文榜单主审编辑。\n"
-        "你审过 200+ 本签约小说，能从单章里判断这本书签约后能拿什么档次的推送资源。\n"
-        "你的判断标准来自三种参照：\n"
-        "- 起点 / 番茄 / 七猫的过往榜单作品规律\n"
-        "- 阅读编辑培训手册（开篇留存、付费转化、读者画像）\n"
-        "- 你自己 5 年退稿经验里的「签约死线」\n"
-        "\n"
-        "# CONTEXT\n"
-        "你正在评审单章是否达到商业榜单可用标准。\n"
-        "你的评分直接决定：这一章是 publish 还是 rewrite。\n"
-        "评分不是「感觉打」，必须基于参考样本对比 + 二元检查项 + 原文引用 evidence。\n"
-        "评分尺度必须贴合**本书所属题材**的留存规律，不要拿其它题材的套路硬套。\n"
-        "\n"
-        "# CONTEXT · 商业留存的底层规律（黄金三章尤其重要）\n"
-        "## 故事合理性 — 任一明显缺失 → 必判 blocking\n"
-        + genre_context.render_story_logic_block(language)
-        + genre_context.render_own_terms_block(language)
-        + "\n"
-        "# TASK\n"
-        "对本章打 17 个维度分（见 OUTPUT），并产出 blocking_issues / audit_issues / rewrite_plan。\n"
-        "对二元检查项逐项判定 PASS / FAIL（见 checklist 段）。\n"
-        "\n"
-        "# CONSTRAINTS · 评分纪律（必须严格执行）\n"
-        "- 不要给「感觉上还不错」的章节打 0.85+，除非它通过了参考样本对比。\n"
-        "- 0.90+ 只给在参考样本水准上能正面竞争的章节。\n"
-        "- 任意二元检查项 FAIL → 对应维度封顶（见 checklist 说明）。\n"
-        "- 每个 issue 必须含 evidence 字段，引用正文原句（≥ 1 句，禁止用「全章」/「整体」占位）。\n"
-        "- 上述 6 项故事合理性任一明显缺失 → 必判 blocking_issues（不能降为 audit）。\n"
-        "- 出现现实常识硬伤 / 角色认知越界 / 物件规则无边界 / 与生成输入前提冲突 → 必判 blocking。\n"
-        "- 主角关键选择若同时劣于正常人基线与该角色基线，且正文没有改变信息、压力或选项成本，"
-        "只靠作者需要冲突发生 → 必判 blocking。\n"
-        + render_outline_decision_agent_prompt(language=language)
-        + "\n"
-        "\n"
-        "# THINKING（产出 JSON 前在脑内 5 步）\n"
-        "1. 先读正文，标记你直觉上的「亮点段」和「卡顿段」。\n"
-        "2. 对照 17 个维度逐项内心打分。\n"
-        "3. 检查 6 项故事合理性 + checklist 二元项，任一缺失立即升级 blocking。\n"
-        "4. 检查 evidence：你的每个 issue 能引用原文 ≤ 30 字吗？不能引用 → 弃用。\n"
-        "5. Reconcile：overall_score 是否与 blocking_issues 数量一致？（≥1 blocking → overall ≤ 0.75）\n"
-        "\n"
-        "# OUTPUT FORMAT · 17 维度评分\n"
-        "返回严格 JSON，必含字段：\n"
-        "- `pass`: bool\n"
-        "- `overall_score`: 0.0-1.0\n"
-        "- `dimension_scores`: 含 17 项 0.0-1.0 评分（见 user 段维度列表）\n"
-        "- `binary_checklist`: 见 checklist 段 schema\n"
-        "- `blocking_issues`: list[{code, severity, evidence(原文≤30字), required_fix}]\n"
-        "- `audit_issues`: list[同 schema]\n"
-        "- `rewrite_plan`: {scope, preserve[], change[], instructions}\n"
-        "\n"
-        "# REFERENCE CORPUS（评分校准 — 实际样本）\n"
-        + reference_block
-        + checklist_block
-        + calibration_block
-        + "\n# RUBRIC（评分细则原文）\n"
-        + rubric.render_prompt_block()
-        + "\n# RUBRIC · system 起源\n"
-        + rubric.system_prompt
+        "# ROLE\n评估当前章节的可读性、连贯性与商业吸引力，只输出严格 JSON。\n"
+        "# SOURCE AUTHORITY\n"
+        "创作者明确要求、已成立的身份与能力边界、已发生 Canon/Timeline 及当前明确批准的硬条款优先。"
+        "AI 章纲、场次、节奏、tail_hook 和兑现时间若无明确 hard 来源，"
+        "偏离是 editorial plan variance；"
+        "不得仅因偏离而 blocking，也不能撤销符合上位来源的实际进展。"
+        "题材分类、提示词包、参考样本、全局方法论、旧报告和数值评分均不能创造剧情义务。\n"
+        "Source precedence: explicit creator requirements, established identity/ability limits and "
+        "occurred canon/timeline outrank unmarked AI proposals. Established factual constraints "
+        "remain hard without a hard label, but observations are scoped to "
+        "the event/state observed.\n"
+        "允许在已成立的故事边界内创作新的当下或未来行动、人物、物件、对白、发现与有因果的状态变化；"
+        "这些发展不要求在前章已出现或预先逐项写入批准清单。"
+        "Prior silence and open inventory observations are not closed sets or prohibitions. "
+        "Missing approval fields do not forbid new causal fictional development. "
+        "新正文不能据此改写已采用的过去，也不能违反有正面来源证明且实际适用的明确身份或世界不变量。\n"
+        "首句/首段长度、倒叙次数、钩子数量、能力展示与代价、揭示节奏和反应人数，"
+        "只有当前明确批准且适用的条款才能成为要求；须引用条款及来源。"
+        "默认 opening gate、golden rules、语料与历史报错不构成授权，"
+        "旧报告及旧整改建议均不构成授权。"
+        "AI 提案不自动成为硬前提。Numeric opening limits "
+        "require an explicitly approved current clause and source.\n"
+        "以往观测值不是未来永久上限；新事件、练习、发现和状态变化可在真实不可变规则内继续发展。"
+        "缺失或未批准的 secret/growth_curve/first_three_hook 等规划字段属于 Unknown，"
+        "不是禁止新能力、"
+        "新事件或推进。职业身份、角色和题材标签本身不构成知识禁令；叙述者/他人感受不等于主角知道。"
+        "先核对当前文本已写出的解释，不得一边承认文本正确一边据同一理由硬拒绝。\n"
+        "事实冲突须证明：同一历史事件或同一时点、同一对象状态出现互斥陈述，"
+        "或者当前发展违反有明确来源的身份/世界不变量；不能把先前没有某状态当作永远不许变化。"
+        "unexplained_transition 应指出前后状态之间缺少交代的必要因果环节，"
+        "不得把过渡缺环写成永久能力禁令，也不得仅因没有进度表或审批字段而禁止进展。\n"
+        "# ASSESSMENT\n"
+        "在实际故事中检查人物动机、事件因果、可理解性与吸引力，允许不同叙事方式。"
+        "不要预设主角有金手指、升级、复仇、羞辱、系统、异常物件或通话；不适用的维度中性记录，"
+        "不得因未采用某技巧扣分或封顶。没有后果证据的技巧偏好只记 audit。"
+        "身份矛盾、已建立能力违规、认知越界、既成事实冲突须给来源和正文证据；"
+        "缺少来源应记 Unknown，不能补造。"
+        "明确的语义缺陷须指出读者受到的具体影响，不能以句长/词频/场数单独证明。"
+        "decision_intelligence：先按角色当时实际已知信息作第一人称决策复盘，比较正常人基线与角色基线。"
+        "明显为剧情服务且没有动机依据的降智可标 PROTAGONIST_PLOT_SERVING_STUPIDITY，"
+        "须引用具体选择及其实际后果；不能以职业或题材标签代替已知信息证据。\n"
+        "# REPAIR\n"
+        "只对有证据的缺陷给最小修复方向，可指出需要补足的功能性环节，例如起因、信息取得或行动后果，"
+        "不要替作者编造具体的新人物、道具、能力、期限或模板剧情作为唯一解。"
+        "这限制的是评审建议越权指定故事，不是禁止正文在明确不变量内发展新的有因果情节。"
+        "建议不能伪称作者已授权、补造已经发生的历史或改写已采用事实。"
+        "区分硬冲突、编辑计划差异和技巧建议；商业分数不代表真实榜单或市场验证。\n"
+        "# OUTPUT — commercial-review-wire.v2\n"
+        "仅调用submit_chapter_review一次提交报告，不执行其他工具；参数是严格JSON。顶层恰为 wire_version,pass,overall_score,dimension_scores,issues,rewrite_plan；"
+        "wire_version 必须为 commercial-review-wire.v2。仅有真实适用RULE时另加checks。"
+        "分数0..1，按全文真实质量评分；issues统一列表，优先聚焦3至5个真实问题，无问题则[]。"
+        "不要按blocking/audit拆表；severity描述所评影响，不证明事实冲突或作者授权成立。"
+        "最终执行动作由服务端 action policy 决定，模型不能仅凭severity宣告剧情必须被禁止或重写。"
+        "每个issue恰为 {code,severity,assessment_kind,body_id,reason,required_fix}。"
+        "assessment_kind为narrative_quality/current_fact_conflict/prior_fact_conflict/constraint_violation。"
+        "body_id须为目录中真实current段落ID；不重复抄写原文、不输出quote或kind。"
+        "事实冲突和条款违例另需source_id；current_fact_conflict只能引current，prior_fact_conflict只能引prior/observation，constraint_violation只能引RULE。"
+        "事实冲突另需temporal_relation: same_event_or_state或unexplained_transition；不能把后续进展当旧观测的违例。"
+        "引用ID表示该完整段落或来源记录；服务端从不可变目录精确取得原文并验证来源权限，模型不能制造原文。"
+        "reason解释所引内容的具体语义缺陷、已知信息与阅读影响；不要把猜测、类型惯例或不存在的前文写成事实。"
+        "narrative_quality用于阅读体验；任何关于前文发生过什么、人物能否知道什么的断言应使用事实类型并提供真实source_id。"
+        "不得把前文缺失、作者是否授权、能力是否允许或库存是否排他的事实/权威断言改标为narrative_quality来绕过来源要求；"
+        "即使在reason中手写SRC标识，也不能代替结构化source_id及对应类型的证据。"
+        "不输出body/source对象、evidence、source_assertion、current_assertion、binary_checklist或旧列表字段。"
+        "不可发明RULE，缺失字段不是禁令，未选择的方法/技巧不构成义务。"
+        "rewrite_plan:{scope,preserve:[],change:[],instructions}；只为有证据的真实缺陷指出最小功能性修复需求，"
+        "保留作者对具体剧情实现的选择，不把缺少旧记录误写成禁止新发展。\n"
+        + render_methodology_applicability(language=language, phase="judge")
     )
 
 
@@ -192,11 +191,7 @@ def _render_chapter_judge_system_prompt(
 # Reference corpus loader
 # ---------------------------------------------------------------------------
 
-_REFERENCE_CORPORA_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / "config"
-    / "reference_corpora"
-)
+_REFERENCE_CORPORA_DIR = Path(__file__).parent.parent.parent.parent / "config" / "reference_corpora"
 
 
 @lru_cache(maxsize=16)
@@ -361,7 +356,15 @@ _PREMIUM_FRONT_TEN_FLOOR = 0.90
 _PREMIUM_GENERAL_FLOOR = 0.88
 
 _PREMIUM_WRITER_MODEL_TAGS: tuple[str, ...] = (
-    "claude", "opus", "sonnet", "gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "gemini-2",
+    "claude",
+    "opus",
+    "sonnet",
+    "gpt-4o",
+    "gpt-4.1",
+    "gpt-5",
+    "o1",
+    "o3",
+    "gemini-2",
 )
 
 
@@ -427,9 +430,7 @@ def chapter_commercial_thresholds(
             "knowledge_boundary": 0.82 + bump,
             "real_world_plausibility": 0.80 + bump,
         }
-    overall_floor = (
-        _PREMIUM_GENERAL_FLOOR if premium else float(cal.get("general_floor", 0.80))
-    )
+    overall_floor = _PREMIUM_GENERAL_FLOOR if premium else float(cal.get("general_floor", 0.80))
     return overall_floor, {
         "decision_intelligence": 0.88 if premium else 0.84,
     }
@@ -440,12 +441,12 @@ def chapter_commercial_thresholds(
 # (chapter_commercial_thresholds). Keyed by dimension key → (zh, en) directive.
 _RANKING_DIMENSION_DIRECTIVES: dict[str, tuple[str, str]] = {
     "opening_pull": (
-        "开篇拉力：前 3 行就抛出具体危险 / 异常物 / 反常状态，逼读者必须读下去，不靠铺垫。",
-        "Opening pull: a concrete danger / anomaly lands in the first 3 lines — no warm-up.",
+        "开篇拉力：结合本书明确意图评估是否吸引读者，不预设危险、异常物或固定行数。",
+        "Opening pull: engage the reader according to the approved intent, without prescribed events or line counts.",
     ),
     "commercial_pull": (
-        "商业拉力：本章必须兑现一个爽点 / 反转 / 强钩子，给读者明确的追更理由。",
-        "Commercial pull: this chapter must deliver one payoff / reversal / strong hook.",
+        "商业拉力：评估已有内容的吸引力，不强制爽点、反转或固定钩子。",
+        "Commercial pull: assess engagement without requiring a payoff, reversal or prescribed hook.",
     ),
     "decision_intelligence": (
         "决策智性：按第一人称比较正常人基线、角色基线和明摆着的安全方案；高风险选择必须有有限认知、强制压力、价值取舍、稀缺收益或可执行后手支撑。",
@@ -475,8 +476,8 @@ _RANKING_DIMENSION_DIRECTIVES: dict[str, tuple[str, str]] = {
         "Call plausibility: calls/messages fit the situation in content and timing — never plot-convenient.",
     ),
     "capability_demonstrated": (
-        "能力展示：主角的金手指 / 能力在本章有一次清晰的现实层作用，并付出可见代价。",
-        "Capability demonstrated: the protagonist's power has one clear real-world effect at a visible cost.",
+        "能力展示：仅按已批准的能力与本章要求核查；不得强制金手指显效或新增代价。",
+        "Capability demonstrated: assess only approved powers and current requirements; do not require an effect or invent a cost.",
     ),
     "hook_strength": (
         "章末钩子：结尾留一个具体未解物 / 倒计时 / 新威胁，禁止抽象感叹收尾。",
@@ -520,15 +521,31 @@ def render_ranking_self_check_block(
             "every one must clear its floor before this chapter passes)\n"
             f"{body}\n"
         )
-    return (
-        "# 榜单级硬维度自检（门禁就按这些维度打分，本章交付前每一项都必须达标）\n"
-        f"{body}\n"
-    )
+    return f"# 榜单级硬维度自检（门禁就按这些维度打分，本章交付前每一项都必须达标）\n{body}\n"
 
 
 # ---------------------------------------------------------------------------
 # Main judge entry point
 # ---------------------------------------------------------------------------
+
+
+def _commercial_source_projection(
+    source: Mapping[str, Any] | None,
+    *,
+    chapter_number: int | None = None,
+    content_md: str = "",
+    previous_chapters: Sequence[Mapping[str, Any]] = (),
+) -> Mapping[str, Any]:
+    """Select typed source context; preserve facts, clauses and adopted prose."""
+    from bestseller.services.commercial_review_context import project_commercial_source
+
+    return project_commercial_source(
+        source,
+        chapter_number=chapter_number,
+        content_md=content_md,
+        previous_chapters=previous_chapters,
+    )
+
 
 async def judge_chapter_commercial_quality(
     session: AsyncSession,
@@ -539,11 +556,24 @@ async def judge_chapter_commercial_quality(
     generation_input: Mapping[str, Any] | None = None,
     previous_chapters: Sequence[Mapping[str, Any]] = (),
     workflow_run_id: Any | None = None,
+    project_id: Any | None = None,
     pack: PromptPack | None = None,
     reference_corpus_key: str | None = None,
     genre_context: JudgeGenreContext | None = None,
     language: str = "zh",
+    sample_slot: str | int | None = None,
+    commercial_retry_context: Mapping[str, Any] | None = None,
+    chapter_id: Any | None = None,
+    draft_id: Any | None = None,
+    commercial_cohort_samples: int = 1,
+    commercial_retained_only: bool = False,
 ) -> LLMQualityJudgeResult:
+    generation_input = _commercial_source_projection(
+        generation_input,
+        chapter_number=chapter_number,
+        content_md=content_md,
+        previous_chapters=previous_chapters,
+    )
     # Genre-neutral context: scores this book against ITS OWN genre + setting terms
     # rather than a hardcoded detective rubric. Falls back to neutral when absent.
     if genre_context is None:
@@ -559,181 +589,393 @@ async def judge_chapter_commercial_quality(
         chapter_number, corpus, writer_model
     )
 
-    # This book's own rule terms / key objects, for the genre-neutral hard rules.
-    own_terms = "、".join(genre_context.specialist_terms) or "本书设定中的专业/规则术语"
-    own_objects = "、".join(genre_context.key_objects) or "本书的关键道具/能力/信号物"
-
-    generation_input_text = json.dumps(
-        generation_input or {},
-        ensure_ascii=False,
-        indent=2,
-        default=str,
-    )[:12000]
-    previous_chapters_text = json.dumps(
-        list(previous_chapters),
-        ensure_ascii=False,
-        indent=2,
-        default=str,
-    )[:6000]
-
-    fallback = json.dumps(
-        {
-            "pass": False,
-            "overall_score": 0.0,
-            "dimension_scores": {},
-            "binary_checklist": {},
-            "blocking_issues": [
-                {
-                    "code": "CHAPTER_JUDGE_UNAVAILABLE",
-                    "severity": "critical",
-                    "evidence": "LLM chapter quality judge returned fallback content.",
-                    "required_fix": "重新运行商业质量评测，不能在无评测状态下置为完成。",
-                }
-            ],
-            "rewrite_plan": {
-                "scope": "chapter",
-                "preserve": [],
-                "change": ["commercial quality validation"],
-                "instructions": "重新评测并基于具体维度补强正文。",
-            },
-        },
-        ensure_ascii=False,
+    from bestseller.services.commercial_source_evidence import (
+        PROMPT_VERSION,
+        assemble_commercial_sources,
+        commercial_input_receipt,
+        commercial_judge_unavailable,
+        commercial_output_token_budget,
     )
 
-    # Build methodology injection block
-    methodology_refs: list[str] = []
-    golden_rule_contract = render_golden_three_rules(
-        chapter_number,
-        "en" if str(language).lower().startswith("en") else "zh-CN",
-        path_mode="judge",
+    try:
+        sources = assemble_commercial_sources(
+            chapter_number=chapter_number,
+            content_md=content_md,
+            source=generation_input,
+            previous_chapters=previous_chapters,
+        )
+    except (ValueError, TypeError) as exc:
+        return commercial_judge_unavailable(
+            diagnostic=f"commercial source assembly unavailable: {exc}"
+        )
+
+    from bestseller.services.commercial_review_wire import (
+        ADAPTER_VERSION,
+        WIRE_VERSION,
+        parse_commercial_wire,
     )
-    if golden_rule_contract:
-        methodology_refs.append(golden_rule_contract)
-    if chapter_number <= 3:
-        for key in ("opening_rules", "character_design"):
-            text = get_fragment(pack, phase="judge", fragment_key=key)
-            if text:
-                methodology_refs.append(f"【{key}】\n{text}")
-    for key in ("spring_model", "stakes_design"):
-        text = get_fragment(pack, phase="judge", fragment_key=key)
-        if text:
-            methodology_refs.append(f"【{key}】\n{text}")
-    hook_design = get_fragment(pack, phase="judge", fragment_key="hook_design")
-    if hook_design:
-        methodology_refs.append(f"【hook_design】\n{hook_design}")
-    methodology_section = (
-        "\n\n## 评估时必须参照的方法论标准\n\n"
-        "以下是本作类型的写作方法论原文。你的 methodology_compliance 评分必须基于本章是否遵循这些规则，"
-        "而不是凭感觉打分。打分时请在 audit_issues 或 blocking_issues 的 evidence 字段引用具体违反的方法论条款。\n\n"
-        + "\n\n".join(methodology_refs)
-        if methodology_refs
-        else ""
+
+    from bestseller.services.commercial_judge_recovery import (
+        bind_commercial_slot_result,
+        prepare_commercial_slot_retry,
+    )
+
+    fallback = json.dumps({"judge_unavailable": True}, ensure_ascii=False)
+
+    methodology_section = render_methodology_applicability(
+        language=language,
+        phase="judge",
     )
 
     # Build reference corpus blocks
-    reference_block = _render_reference_block(corpus, genre_context=genre_context)
-    checklist_block = _render_binary_checklist(corpus, chapter_number=chapter_number)
-    calibration_block = _render_calibration_anchors(corpus)
+    reference_block = ""  # Reference prose is never automatic creative authority.
+    # Corpus checklists are reference assets, not creator-approved chapter
+    # obligations. Current task checks remain visible in generation_input.
+    checklist_block = ""
+    calibration_block = ""
     rubric = get_judge_rubric("chapter_commercial")
 
-    # Build the binary_checklist response schema description
-    checklist_items = list((corpus or {}).get("binary_checklist") or [])
-    if chapter_number == 1 and not any(
-        item.get("id") == "cold_reader_onboarding" for item in checklist_items
-    ):
-        checklist_items.insert(0, _COLD_READER_CH1_CHECKLIST_ITEM)
-    checklist_ids = [item.get("id", "") for item in checklist_items if item.get("id")]
-    binary_checklist_schema = (
-        "binary_checklist: {"
-        + ", ".join(
-            f'"{cid}": {{"result": "PASS"|"FAIL", "evidence": "<正文原句>"}}'
-            for cid in checklist_ids
-        )
-        + "}"
-        if checklist_ids
-        else ""
+    rule_ids = [key for key, entry in sources.catalog.items() if entry["kind"] == "constraint"]
+    rule_checks_prompt = (
+        "\nchecks 必须恰以这些真实 RULE IDs 为键："
+        + json.dumps(rule_ids, ensure_ascii=False)
+        + "；每项仅 {result:'PASS'或'FAIL',body_id,reason}。"
+        "body_id 是与该条款有关的真实当前段落ID；FAIL 的 reason 给出明确语义违例；服务端验证引文后派生缺失的 critical 问题，不必在列表重复。"
+        if rule_ids
+        else "\n当前无适用 RULE；不要返回 checks 或 binary_checklist。"
     )
 
-    completion = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="critic",
-            model_tier="strong",
-            system_prompt=_render_chapter_judge_system_prompt(
-                rubric=rubric,
-                reference_block=reference_block,
-                checklist_block=checklist_block,
-                calibration_block=calibration_block,
-                genre_context=genre_context,
-                language=language,
-            ),
-            user_prompt=(
-                f"章节：第{chapter_number}章\n"
-                f"通过阈值：overall >= {min_overall:.2f}；关键维度："
-                f"{json.dumps(min_dimensions, ensure_ascii=False)}\n"
-                "评测维度：opening_pull, readability, commercial_pull, character_agency, decision_intelligence, "
-                "character_voice_distinction, scene_execution, continuity, "
-                "methodology_compliance, hook_strength, knowledge_boundary, "
-                "real_world_plausibility, object_signal_logic, "
-                "call_plausibility, capability_demonstrated, material_advancement_score。\n"
-                "\n硬性判定口径（以本书自有设定为准，不要套用其它题材的器物/术语）：\n"
-                "1. 非专业 / 普通角色不得无来由地理解或主动讲出本书设定中的专业 / 规则术语"
-                f"（本书自有术语：{own_terms}）；除非正文明确写出被传授 / 附身 / 操控 / 刚被主角教会。\n"
-                "2. 报警 / 门禁 / 监控 / 医院 / 警方 / 快递 / 平台等现实流程必须符合常识；"
-                "若刻意反常或为不可能证据，正文必须明确让角色意识到'不可能 / 异常'。\n"
-                f"3. 本书的关键道具 / 能力 / 信号（{own_objects}）必须有稳定边界：每次表现分别代表什么、"
-                "能做什么、不能做什么，主角能据此合理推断。若整章 3 次以上用单一感官捷径"
-                "（如'发烫 / 心头一跳 / 一阵眩晕'）推进剧情而无多样化变化，"
-                "必须标 OBJECT_SIGNAL_SHORTCUT（audit）；偶尔使用是合理的写法。\n"
-                "4. 开场媒介：如果整章主体是电话/短信/微信单一媒介，没有任何现场画面或"
-                "物理动作支撑，必须标 OPENING_MEDIUM_WEAK（audit）。"
-                "但电话/短信作为信息传递手段配合现场行动是合理的写法。\n"
-                "5. 如果生成输入摘要包含 Material obligation packet、rule-ledger、"
-                "reveal-schedule、clue-ledger 或 required_evidence，必须判断正文是否真正推进"
-                "对应规则/揭示/证据，并在 material_advancement_score 中给分；未兑现的必演物料"
-                "必须进入 blocking_issues 或 audit_issues。\n"
-                "\n必须返回字段：pass, overall_score, dimension_scores, "
-                + (f"{binary_checklist_schema}, " if binary_checklist_schema else "")
-                + "blocking_issues, audit_issues, rewrite_plan。\n"
-                "每个 blocking_issue 和 audit_issue 必须包含 evidence 字段，"
-                "引用正文原句（≥1句，不能只写'全章'或'整体'）。\n"
-                "生成输入摘要：\n"
-                f"{generation_input_text}\n"
-                "最近章节：\n"
-                f"{previous_chapters_text}\n"
-                f"{methodology_section}\n"
-                "正文：\n"
-                f"{content_md[:18000]}"
-            ),
-            fallback_response=fallback,
-            prompt_template="chapter_commercial_quality_judge",
-            prompt_version="v2",
-            model_catalog_key=resolve_commercial_judge_model_key(settings),
-            workflow_run_id=workflow_run_id,
-            metadata={
-                "judge_scope": "chapter",
-                "chapter_number": chapter_number,
-                "threshold": min_overall,
-                # Acceptance floor is bound to the writer tier — record which
-                # tier set the line so a silent floor drop after a writer swap
-                # is visible in llm_runs instead of only in behaviour.
-                "writer_model": writer_model,
-                "writer_tier": "premium" if is_premium_writer_model(writer_model) else "budget",
-                "reference_corpus_key": reference_corpus_key,
-                "rubric": rubric.name,
-            },
-            max_tokens_override=_critic_judge_max_tokens(settings),
-        ),
+    system_prompt = _render_chapter_judge_system_prompt(
+        rubric=rubric,
+        reference_block=reference_block,
+        checklist_block=checklist_block,
+        calibration_block=calibration_block,
+        genre_context=genre_context,
+        language=language,
     )
-    return quality_judge_result_from_mapping(
-        _parse_json_object(completion.content),
-        scope="chapter",
+    user_prompt = (
+        f"章节：第{chapter_number}章\n"
+        f"通过阈值：overall >= {min_overall:.2f}；关键维度："
+        f"{json.dumps(min_dimensions, ensure_ascii=False)}\n"
+        "评测维度：opening_pull, readability, commercial_pull, "
+        "character_agency, decision_intelligence, "
+        "character_voice_distinction, scene_execution, continuity, "
+        "methodology_compliance, hook_strength, knowledge_boundary, "
+        "real_world_plausibility, object_signal_logic, "
+        "call_plausibility, capability_demonstrated, material_advancement_score。\n"
+        "\n核查当前来源条款与实际事件的因果、身份和认知边界。"
+        "计划和规则评审快照是待核实输入，不是已发生事实；没有来源的技巧要求不得补造。\n"
+        "\n必须返回 commercial-review-wire.v2 的新格式；字段 wire_version,pass,overall_score,dimension_scores,"
+        "issues,rewrite_plan。\n"
+        "每个 issue 必须使用系统所列类型化来源证据协议，选择完整来源目录中的真实ID，原文由服务端取回，不要复写引文。\n"
+        f"{methodology_section}{rule_checks_prompt}\n"
+        "完整来源包（JSON 数据，含本章全文、已提供前章和类型化引用目录）：\n"
+        f"{sources.text}"
+    )
+    from bestseller.services.commercial_review_tool import (
+        TOOL_POLICY,
+        review_submission_tools,
+        submitted_review_payload,
+        review_evaluation_contract,
+    )
+
+    tools = review_submission_tools(sources)
+    output_budget = commercial_output_token_budget(_critic_judge_max_tokens(settings))
+    evaluation_contract = review_evaluation_contract(
+        settings=settings,
+        sources=sources,
+        system_prompt=system_prompt,
+        instruction_prefix=user_prompt.split(sources.text, 1)[0],
+        tools=tools,
         min_overall=min_overall,
         min_dimensions=min_dimensions,
-        llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
-        raw_excerpt=completion.content[:6000],
+        model_catalog_key=resolve_commercial_judge_model_key(settings),
+        output_tokens=output_budget,
     )
+    from bestseller.services.commercial_review_transport import (
+        CommercialReviewTransportError, prepare_commercial_review_transport,
+        prepare_commercial_review_submission,
+    )
+
+    logical_user_prompt = user_prompt
+    try:
+        user_prompt, tools, source_transport = prepare_commercial_review_submission(
+            system_prompt, logical_user_prompt, sources=sources,
+            tools=tools, output_tokens=output_budget)
+    except CommercialReviewTransportError as exc:
+        return commercial_judge_unavailable(
+            diagnostic="complete commercial source input exceeds admission budget; no paid judge call",
+            raw=json.dumps(exc.receipt, ensure_ascii=False),
+        )
+    if "tool_schema_transport" in source_transport:
+        evaluation_contract = review_evaluation_contract(
+            settings=settings,
+            sources=sources,
+            system_prompt=system_prompt,
+            instruction_prefix=logical_user_prompt.split(sources.text, 1)[0],
+            tools=tools,
+            min_overall=min_overall,
+            min_dimensions=min_dimensions,
+            model_catalog_key=resolve_commercial_judge_model_key(settings),
+            output_tokens=output_budget,
+        )
+    if commercial_retained_only and (chapter_id is None or draft_id is None):
+        return commercial_judge_unavailable(
+            diagnostic="commercial retained probe requires exact chapter/draft binding"
+        )
+    component_call = None
+    effective_critic = None
+    prepared_input_hash = None
+    if chapter_id is not None or draft_id is not None:
+        try:
+            from bestseller.services.commercial_judge_recovery import (
+                prepare_commercial_component_slot,
+            )
+
+            effective_critic = await _commercial_effective_critic_configuration(
+                session, settings, project_id
+            )
+            from bestseller.services.llm import _effective_input_hash
+            from bestseller.settings import LLMRoleSettings
+
+            prepared_input_hash = _effective_input_hash(
+                LLMCompletionRequest(
+                    logical_role="critic", system_prompt=system_prompt, user_prompt=user_prompt,
+                    fallback_response=fallback, tools=tools, tool_choice="required",
+                    max_tokens_override=output_budget,
+                ), LLMRoleSettings.model_validate(effective_critic),
+            )
+            reusable, component_call = await prepare_commercial_component_slot(
+                session,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                draft_id=draft_id,
+                workflow_run_id=workflow_run_id,
+                content_md=content_md,
+                sources=sources,
+                evaluation_contract=evaluation_contract,
+                sample_slot=sample_slot,
+                samples=commercial_cohort_samples,
+                retry_context=commercial_retry_context,
+                effective_critic=effective_critic,
+                retained_only=commercial_retained_only,
+                current_input_hash=prepared_input_hash, settings=settings,
+            )
+        except (ValueError, TypeError, KeyError) as exc:
+            return commercial_judge_unavailable(
+                diagnostic=f"commercial component recovery unavailable: {exc}"
+            )
+        if reusable is not None:
+            return reusable
+        commercial_retry_context = component_call.get("retry_context")
+    recovery_prompt, recovery_metadata = "", None
+    if commercial_retry_context is not None:
+        try:
+            reusable, recovery_prompt, recovery_metadata = prepare_commercial_slot_retry(
+                commercial_retry_context,
+                sample_slot=sample_slot,
+                sources=sources,
+                evaluation_contract=evaluation_contract,
+            )
+        except (ValueError, TypeError) as exc:
+            return commercial_judge_unavailable(
+                diagnostic=f"commercial slot recovery unavailable: {exc}",
+            )
+        if reusable is not None:
+            return reusable
+
+    if recovery_prompt:
+        try:
+            user_prompt, source_transport = prepare_commercial_review_transport(
+                system_prompt, logical_user_prompt + recovery_prompt,
+                sources=sources, tools=tools, output_tokens=output_budget)
+        except CommercialReviewTransportError as exc:
+            return commercial_judge_unavailable(
+                diagnostic="complete commercial source retry input exceeds admission budget; no paid judge call",
+                raw=json.dumps(exc.receipt, ensure_ascii=False),
+            )
+    input_receipt = commercial_input_receipt(
+        sources,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        output_tokens=output_budget,
+        tools=tools,
+    )
+    if not input_receipt["budget_passed"]:
+        return commercial_judge_unavailable(
+            diagnostic="complete commercial source input exceeds admission budget; "
+            "no paid judge call",
+            raw=json.dumps(input_receipt, ensure_ascii=False),
+        )
+    from bestseller.services.llm import bind_execution_operation
+
+    completion_request = LLMCompletionRequest(
+        logical_role="critic",
+        model_tier="strong",
+        tools=tools,
+        tool_choice="required",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback_response=fallback,
+        prompt_template="chapter_commercial_quality_judge",
+        prompt_version=PROMPT_VERSION,
+        sample_slot=sample_slot,
+        model_catalog_key=resolve_commercial_judge_model_key(settings),
+        workflow_run_id=component_call["owner_id"] if component_call else workflow_run_id,
+        project_id=project_id,
+        metadata={
+            **({"prepared_effective_input": {"schema": "effective-input.v1", "hash": prepared_input_hash}}
+               if prepared_input_hash is not None and commercial_retry_context is None else {}),
+            "commercial_source_input_receipt": input_receipt,
+            **({"commercial_source_transport": source_transport}
+               if (source_transport["encoding"] != "identity"
+                   or "tool_schema_transport" in source_transport) else {}),
+            "commercial_evidence_recovery": recovery_metadata,
+            "commercial_wire_version": WIRE_VERSION,
+            "commercial_adapter_version": ADAPTER_VERSION,
+            "commercial_submission_policy": TOOL_POLICY,
+            "commercial_evaluation_contract": evaluation_contract,
+            "commercial_sample_slot": sample_slot,
+            "commercial_effective_critic_sha256": hashlib.sha256(
+                json.dumps(
+                    effective_critic,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode()
+            ).hexdigest()
+            if effective_critic
+            else None,
+            "judge_scope": "chapter",
+            "chapter_number": chapter_number,
+            "threshold": min_overall,
+            # Acceptance floor is bound to the writer tier — record which
+            # tier set the line so a silent floor drop after a writer swap
+            # is visible in llm_runs instead of only in behaviour.
+            "writer_model": writer_model,
+            "writer_tier": "premium" if is_premium_writer_model(writer_model) else "budget",
+            "reference_corpus_key": reference_corpus_key,
+            "rubric": rubric.name,
+            "methodology_applicability": "approved-contracts-only.v1",
+        },
+        max_tokens_override=output_budget,
+    )
+    slot_source_receipt = sources.receipt
+    if component_call:
+        from bestseller.services.commercial_judge_recovery import (
+            freeze_commercial_component_request,
+        )
+
+        completion_request, slot_source_receipt = await freeze_commercial_component_request(
+            session, component_call, completion_request, sources.receipt
+        )
+    with (
+        bind_execution_operation(component_call["namespace"])
+        if component_call
+        else contextlib.nullcontext()
+    ):
+        completion = await complete_text(session, settings, completion_request)
+
+    raw_report, submission_receipt, submission_errors = submitted_review_payload(completion)
+
+    async def record_slot(
+        result: LLMQualityJudgeResult, errors: tuple[str, ...]
+    ) -> LLMQualityJudgeResult:
+        bound = bind_commercial_slot_result(
+            result,
+            raw_report=raw_report,
+            validation_errors=errors,
+            source_receipt=slot_source_receipt,
+            sample_slot=sample_slot,
+            attempt=component_call["attempt"]
+            if component_call
+            else (2 if commercial_retry_context is not None else 1),
+            adapter_receipt={**adapter_receipt, "submission": submission_receipt},
+            evaluation_contract=evaluation_contract,
+        )
+        if component_call:
+            from bestseller.services.commercial_judge_recovery import save_commercial_component_slot
+
+            await save_commercial_component_slot(session, component_call, bound)
+        return bound
+
+    adapter_receipt = {
+        "adapter_version": ADAPTER_VERSION,
+        "wire_version": WIRE_VERSION,
+        "source_binding": dict(slot_source_receipt),
+        "status": "not_run_output_truncated",
+    }
+    if completion.finish_reason in {"length", "max_tokens", "max_output_tokens"}:
+        return await record_slot(
+            commercial_judge_unavailable(
+                diagnostic="commercial judge output truncated at structured-review reserve; judge-only repair",
+                raw=completion.content,
+                result=LLMQualityJudgeResult(
+                    llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
+                ),
+            ),
+            ("output: truncated at structured-review reserve",),
+        )
+    parsed, adapter_receipt, evidence_errors = parse_commercial_wire(raw_report, sources)
+    if submission_errors:
+        # Retain returned scores for audit without granting review authority.
+        adapter_receipt["wire_validation_status"] = adapter_receipt["status"]
+        adapter_receipt["status"] = "rejected_submission"
+        evidence_errors = (*submission_errors, *evidence_errors)
+    try:
+        result = quality_judge_result_from_mapping(
+            parsed,
+            scope="chapter",
+            min_overall=min_overall,
+            min_dimensions=min_dimensions,
+            llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
+            raw_excerpt=raw_report[:6000],
+        )
+    except (ValueError, TypeError):
+        return await record_slot(
+            commercial_judge_unavailable(
+                diagnostic="commercial judge response schema is unverified",
+                raw=completion.content,
+                result=LLMQualityJudgeResult(
+                    llm_run_id=str(completion.llm_run_id) if completion.llm_run_id else None,
+                ),
+            ),
+            ("report: response schema is unverified",),
+        )
+    if evidence_errors:
+        return await record_slot(
+            commercial_judge_unavailable(
+                diagnostic="commercial source evidence unverified: " + "; ".join(evidence_errors),
+                raw=completion.content,
+                result=result,
+            ),
+            evidence_errors,
+        )
+    return await record_slot(result, ())
+
+
+async def _commercial_effective_critic_configuration(
+    session, settings, project_id
+) -> dict[str, Any]:
+    """Resolve the same concrete model/settings without dispatching a gateway call."""
+    from bestseller.services.llm import _apply_model_override, _resolve_project_model_override
+    from bestseller.settings import apply_runtime_llm_profile
+    from bestseller.services.model_catalog import get_model_catalog_entry
+
+    effective = apply_runtime_llm_profile(settings).llm.critic
+    project_override = await _resolve_project_model_override(session, project_id)
+    if project_override is not None:
+        effective = _apply_model_override(effective, project_override)
+    catalog_key = resolve_commercial_judge_model_key(settings)
+    if catalog_key:
+        entry = get_model_catalog_entry(catalog_key)
+        if entry is None or not entry.available:
+            raise ValueError("commercial_cohort_model_catalog_unavailable")
+        effective = _apply_model_override(effective, entry)
+    if effective.model_override:
+        effective = effective.model_copy(update={"model": effective.model_override})
+    return effective.model_dump(mode="json")
 
 
 def _judge_samples_count() -> int:
@@ -742,6 +984,30 @@ def _judge_samples_count() -> int:
         return max(1, int(os.getenv("JUDGE_SAMPLES", "3") or 3))
     except ValueError:
         return 3
+
+
+async def _serial_acceptance_samples(session: AsyncSession) -> bool:
+    """Match the SDK's acceptance send policy without flushing or locking."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ExecutionBudgetModel
+    from bestseller.services.budget import current_execution_scope
+    from bestseller.services.independent_acceptance import policy
+
+    scope = current_execution_scope()
+    if scope is None:
+        return False
+    # Column values bypass stale/dirty ORM identities; never refresh caller data.
+    with session.no_autoflush:
+        row = (await session.execute(select(
+            ExecutionBudgetModel.scope_id,
+            ExecutionBudgetModel.max_calls,
+            ExecutionBudgetModel.max_tokens,
+            ExecutionBudgetModel.metadata_json,
+        ).where(ExecutionBudgetModel.scope_id == scope))).mappings().first()
+    return row is not None and policy(SimpleNamespace(**row)) is not None
 
 
 async def judge_chapter_commercial_quality_stable(
@@ -769,55 +1035,183 @@ async def judge_chapter_commercial_quality_stable(
     n = samples if samples is not None else _judge_samples_count()
     n = max(1, int(n))
 
-    async def _one_sample(sess: AsyncSession) -> LLMQualityJudgeResult:
+    async def retain_aggregate(result):
+        if kwargs.get("chapter_id") is None and kwargs.get("draft_id") is None:
+            return result
+        from bestseller.services.commercial_judge_recovery import (
+            bind_commercial_component_aggregate,
+        )
+        from bestseller.services.commercial_source_evidence import commercial_judge_unavailable
+
+        try:
+            return await bind_commercial_component_aggregate(
+                session,
+                project_id=kwargs.get("project_id"),
+                chapter_id=kwargs.get("chapter_id"),
+                content_md=content_md,
+                result=result,
+                settings=settings,
+                source_alias_inputs={
+                    "chapter_number": chapter_number,
+                    "generation_input": kwargs.get("generation_input"),
+                    "previous_chapters": kwargs.get("previous_chapters", ()),
+                    "reference_corpus_key": corpus_key,
+                    "genre_context": genre_context,
+                    "language": kwargs.get("language", "zh"),
+                },
+            )
+        except (ValueError, TypeError, KeyError) as exc:
+            unavailable = commercial_judge_unavailable(
+                diagnostic=f"commercial cohort aggregation unavailable: {exc}"
+            )
+            # An unbound aggregate is still unavailable, but its individual
+            # diagnostics remain evidence. Do not erase them with a new shell.
+            return unavailable.model_copy(update={"raw_excerpt": result.raw_excerpt})
+
+    async def _one_sample(sess: AsyncSession, slot: int) -> LLMQualityJudgeResult:
         return await judge_chapter_commercial_quality(
-            sess, settings,
-            chapter_number=chapter_number, content_md=content_md,
-            reference_corpus_key=corpus_key, genre_context=genre_context, **kwargs,
+            sess,
+            settings,
+            chapter_number=chapter_number,
+            content_md=content_md,
+            reference_corpus_key=corpus_key,
+            genre_context=genre_context,
+            # A fixed policy version separates the corrected independent cohort
+            # from legacy slot 0, whose paid operation may be quarantined.
+            **{
+                **kwargs,
+                "sample_slot": f"chapter-quality.independent-v2:{slot}",
+                "commercial_cohort_samples": n,
+            },
         )
 
     if n == 1:
-        return await _one_sample(session)
+        return await retain_aggregate(await _one_sample(session, 0))
 
-    # Run the N samples CONCURRENTLY, each with its OWN pooled session.
-    # AsyncSession is not safe for concurrent use and complete_text() persists
-    # an llm_run row, so samples cannot share one session. Sequential sampling
-    # made N critic calls serialize under the reviewer's single 90s timeout →
-    # the judge timed out and the chapter fell back to a BLIND accept-on-stall
-    # with no real bestseller verdict. Concurrency collapses wall-clock from
-    # N×latency to ~1×latency, so the judge actually returns a verdict.
+    # Keep concurrent owned sessions except where the SDK already serializes
+    # acceptance sends. There, serialize preparation/transactions as well, using
+    # scheduling only: re-entering the SDK's serialize lock would deadlock.
+    serial_samples = await _serial_acceptance_samples(session)
     results: list[LLMQualityJudgeResult]
-    try:
-        from bestseller.infra.db.session import get_server_session
+    from bestseller.infra.db.session import get_server_session
 
-        async with contextlib.AsyncExitStack() as stack:
-            sessions = [
-                await stack.enter_async_context(get_server_session())
-                for _ in range(n)
-            ]
-            results = list(
-                await asyncio.gather(*[_one_sample(s) for s in sessions])
+    stop = None
+    async with contextlib.AsyncExitStack() as stack:
+        try:
+            sessions = [await stack.enter_async_context(get_server_session()) for _ in range(n)]
+        except ExecutionBudgetError:
+            raise
+        except RuntimeError:
+            # No draw has started: an unavailable pool may use the caller's
+            # session sequentially. Paid failures never enter this fallback.
+            sessions = None
+        if sessions is not None:
+            async def owned_sample(sess: AsyncSession, slot: int) -> LLMQualityJudgeResult:
+                try:
+                    result = await _one_sample(sess, slot)
+                    # A caught proof error returns unavailable normally. Do not
+                    # hold that sample's read/row locks until its siblings drain.
+                    # Commit normal returns: unbound calls may have a flushed
+                    # LlmRun that relies on the owned session's normal commit.
+                    await sess.commit()
+                    return result
+                except BaseException:
+                    # This session belongs only to this sample. The borrowed
+                    # caller used by n=1 or fallback never enters this path.
+                    await sess.rollback()
+                    raise
+
+            cancelled = None
+            outcomes = []
+            batches = (
+                [[(slot, sess)] for slot, sess in enumerate(sessions)]
+                if serial_samples else [list(enumerate(sessions))]
             )
-    except RuntimeError:
-        # DB pool not initialized (e.g. unit tests) — fall back to sequential
-        # sampling on the shared session (original behavior, concurrency-safe).
-        results = [await _one_sample(session) for _ in range(n)]
+            for batch in batches:
+                pending = asyncio.gather(
+                    *[owned_sample(sess, slot) for slot, sess in batch],
+                    return_exceptions=True,
+                )
+                while not pending.done():
+                    try:
+                        await asyncio.shield(pending)
+                    except asyncio.CancelledError as exc:
+                        # Drain started draws, including their owned commit or
+                        # rollback, but admit no further serial sample.
+                        cancelled = exc
+                outcomes.extend(pending.result())
+                if serial_samples and (
+                    cancelled or any(isinstance(o, BaseException) for o in outcomes)
+                ):
+                    break
+            errors = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+            stop = next(
+                (error for error in errors if isinstance(error, ExecutionBudgetError)), None
+            )
+            if stop is None:
+                stop = cancelled or next(
+                    (error for error in errors if isinstance(error, asyncio.CancelledError)), None
+                )
+            if stop is None and errors:
+                stop = errors[0]
+            results = [outcome for outcome in outcomes if not isinstance(outcome, BaseException)]
+    # Close/commit the drained sample sessions normally before propagating an
+    # execution stop; one sample must not roll back its successful siblings.
+    if stop is not None:
+        raise stop
+    if sessions is None:
+        results = [await _one_sample(session, slot) for slot in range(n)]
 
-    # A sample that never got a verdict scores 0.0 with a
-    # CHAPTER_JUDGE_UNAVAILABLE blocking issue. Feeding those zeros into the
-    # median makes one timed-out call drag a perfectly good chapter under the
-    # floor — a judge outage rendered as a prose defect, then "fixed" by
-    # rewriting prose that was never the problem. Aggregate over real verdicts
-    # only; if none survive, report the infrastructure failure as itself.
+    # Unavailable draws are not prose scores. Require a majority of the
+    # requested cohort before taking a median; keep every original report.
     answered = [r for r in results if not r.infrastructure_failure]
-    if not answered:
+    required_valid = n // 2 + 1
+    receipt: dict[str, Any] = {
+        "schema_version": "chapter-quality-aggregation.v1",
+        "chapter_number": chapter_number,
+        "requested_samples": n,
+        "required_valid_samples": required_valid,
+        "valid_samples": len(answered),
+        "reference_corpus_key": corpus_key,
+        "samples": [
+            {
+                "sample_slot": f"chapter-quality.independent-v2:{slot}",
+                "valid": not result.infrastructure_failure,
+                "report": result.model_dump(mode="json"),
+            }
+            for slot, result in enumerate(results)
+        ],
+    }
+    if len(answered) < required_valid:
         logger.warning(
-            "chapter %s: all %d judge samples failed to return a verdict; "
-            "reporting infrastructure failure rather than a quality score",
+            "chapter %s: only %d/%d valid judge samples; majority %d required",
             chapter_number,
-            len(results),
+            len(answered),
+            n,
+            required_valid,
         )
-        return results[0]
+        receipt["status"] = "insufficient_valid_samples"
+        return await retain_aggregate(
+            LLMQualityJudgeResult.model_validate(
+                {
+                    "scope": "chapter",
+                    "passed": False,
+                    "blocking_issues": [
+                        {
+                            "code": "CHAPTER_JUDGE_UNAVAILABLE",
+                            "severity": "critical",
+                            "evidence": f"Only {len(answered)}/{n} valid samples; {required_valid} required.",
+                            "required_fix": "Judge-only re-evaluation; no prose verdict is available.",
+                        }
+                    ],
+                    "rewrite_plan": {
+                        "scope": "judge",
+                        "instructions": "Insufficient valid judge samples; do not rewrite the chapter.",
+                    },
+                    "raw_excerpt": json.dumps(receipt, ensure_ascii=False),
+                }
+            )
+        )
     if len(answered) < len(results):
         logger.info(
             "chapter %s: %d/%d judge samples failed to answer; aggregating the rest",
@@ -838,22 +1232,51 @@ async def judge_chapter_commercial_quality_stable(
 
     corpus = _load_reference_corpus(corpus_key)
     writer_model = resolve_llm_role_model(settings, role="writer")
-    min_overall, min_dims = chapter_commercial_thresholds(
-        chapter_number, corpus, writer_model
-    )
+    min_overall, min_dims = chapter_commercial_thresholds(chapter_number, corpus, writer_model)
     # _eps: median aggregation can yield 0.8999999999999999 for a logical 0.90;
     # only fail a floor when meaningfully below it (matches domain meets_threshold).
     _eps = 1e-6
     passed = med_overall >= min_overall - _eps and all(
         med_dims.get(k, 0.0) >= m - _eps for k, m in min_dims.items()
     )
-    # 取最接近中位的那次作为代表(保留其 issues/rewrite_plan),覆盖聚合分与 pass
+    # Scores may aggregate; a source-grounded critical finding may not be
+    # voted away by other scores or lost when selecting the representative.
     rep = min(answered, key=lambda r: abs(r.overall_score - med_overall))
-    return rep.model_copy(update={
-        "passed": passed,
-        "overall_score": float(med_overall),
-        "dimension_scores": med_dims,
-    })
+    blocking = list(rep.blocking_issues)
+    critical_slots = []
+    for slot, result in enumerate(results):
+        if result.infrastructure_failure:
+            continue
+        if result.has_critical:
+            critical_slots.append(f"chapter-quality.independent-v2:{slot}")
+        for issue in result.blocking_issues:
+            if issue.severity == "critical" and issue not in blocking:
+                blocking.append(issue)
+    passed = passed and not critical_slots
+    representative_slot = next(i for i, result in enumerate(results) if result is rep)
+    receipt.update(
+        {
+            "status": "aggregated",
+            "representative_sample_slot": f"chapter-quality.independent-v2:{representative_slot}",
+            "critical_sample_slots": critical_slots,
+            "min_overall": min_overall,
+            "min_dimensions": min_dims,
+            "median_overall": float(med_overall),
+            "median_dimensions": med_dims,
+            "passed": passed,
+        }
+    )
+    return await retain_aggregate(
+        rep.model_copy(
+            update={
+                "passed": passed,
+                "overall_score": float(med_overall),
+                "dimension_scores": med_dims,
+                "blocking_issues": tuple(blocking),
+                "raw_excerpt": json.dumps(receipt, ensure_ascii=False),
+            }
+        )
+    )
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:
@@ -886,9 +1309,7 @@ def _critic_judge_max_tokens(settings: AppSettings) -> int:
     configured = resolve_llm_role_max_tokens(settings, role="critic")
     if configured and configured > 0:
         return configured
-    model_ceiling = model_output_token_ceiling(
-        resolve_llm_role_model(settings, role="critic")
-    )
+    model_ceiling = model_output_token_ceiling(resolve_llm_role_model(settings, role="critic"))
     if model_ceiling and model_ceiling > 0:
         return model_ceiling
     return 8192

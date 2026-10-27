@@ -15,6 +15,7 @@ from bestseller.services.prewrite_quality_profile import (
     repair_target_for_block_code,
     strict_blocks,
     strict_outline_batch_size,
+    strict_outline_shrink_size,
 )
 
 pytestmark = pytest.mark.unit
@@ -42,6 +43,7 @@ def test_strict_profile_runs_thoroughly_but_does_not_force_hard_block() -> None:
     # Default batch is 3 chapters — 5 overflowed the planner token budget and
     # churned on truncation on the real 50-chapter run.
     assert strict_outline_batch_size(project, warn_settings) == 3
+    assert strict_outline_shrink_size(project, warn_settings) == 2
     # A gate explicitly configured to block still hard-blocks.
     hard_settings = SimpleNamespace(
         pipeline=SimpleNamespace(commercial_planning_readiness_block_on_failure=True)

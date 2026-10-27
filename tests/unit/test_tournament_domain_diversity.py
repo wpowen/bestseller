@@ -153,6 +153,8 @@ def test_engine_judges_score_and_schema_carry_the_fit_axes() -> None:
         assert '"tone_fit":0-10' in blob
         assert '"cost_style_fit":0-10' in blob
         assert "爽文无代价" in blob
+        assert "外部曝光、对手学习、组织反制" in blob
+        assert "不得因此扣分" in blob
     # Without options the prompts are byte-identical to the old contract.
     _, plain = ct._build_engine_judge_messages(
         kernel={"concept": "x"}, genre="东方玄幻", sub_genre="东方玄幻",

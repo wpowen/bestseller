@@ -9,6 +9,7 @@ itself supplies a visible cause, rule, or cost.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -21,6 +22,7 @@ class CommonSenseFinding(BaseModel):
     severity: Severity
     message: str
     evidence: dict[str, Any] = Field(default_factory=dict)
+    blocking: bool = True
 
 
 class CommonSenseGateReport(BaseModel):
@@ -35,6 +37,7 @@ def evaluate_common_sense_gate(
     genre: str | None = None,
     sub_genre: str | None = None,
     chapter_number: int | None = None,
+    known_rule_terms_by_character: Mapping[str, Sequence[str]] | None = None,
 ) -> CommonSenseGateReport:
     content = text or ""
     findings: list[CommonSenseFinding] = []
@@ -56,10 +59,17 @@ def evaluate_common_sense_gate(
             content, chapter_number=chapter_number, genre=genre, sub_genre=sub_genre
         )
     )
-    findings.extend(_find_lay_character_rule_knowledge_leak(content, chapter_number=chapter_number))
+    findings.extend(
+        _find_lay_character_rule_knowledge_leak(
+            content,
+            chapter_number=chapter_number,
+            known_rule_terms_by_character=known_rule_terms_by_character,
+        )
+    )
     findings.extend(_find_era_anachronism(content, genre=genre, sub_genre=sub_genre))
 
-    blocking = [finding for finding in findings if finding.severity in {"high", "medium"}]
+    blocking = [finding for finding in findings
+                if finding.blocking and finding.severity in {"high", "medium"}]
     return CommonSenseGateReport(
         passed=not blocking,
         genre_mode=genre_mode,
@@ -455,6 +465,22 @@ def _find_unintroduced_mentor_reference(
     prior = text[: match.start()]
     if "师父" in prior:
         return []
+    # A relationship can be introduced with a role phrase rather than the
+    # exact word ``师父``.  Accept only a locally bound introduction.  A
+    # relation attached to another named person must not whitelist this
+    # speaker's later authority reference.
+    prior_sentence = prior[max(prior.rfind("。"), prior.rfind("！"), prior.rfind("？")) + 1 :]
+    relation_match = re.search(
+        r"(?P<learner>[一-鿿]{2,4})(?:拜|认)[一-鿿]{0,4}为师"
+        r"|[一-鿿]{2,4}收(?P<learner_by_mentor>[一-鿿]{2,4})为徒",
+        prior_sentence,
+    )
+    if relation_match:
+        learner = relation_match.group("learner") or relation_match.group("learner_by_mentor")
+        after_relation = prior_sentence[relation_match.end() :]
+        named_speaker = re.search(r"([一-鿿]{2,4})说", after_relation)
+        if not named_speaker or not learner or named_speaker.group(1) == learner:
+            return []
     return [
         CommonSenseFinding(
             code="unintroduced_authority_reference",
@@ -694,6 +720,7 @@ def _find_lay_character_rule_knowledge_leak(
     text: str,
     *,
     chapter_number: int | None,
+    known_rule_terms_by_character: Mapping[str, Sequence[str]] | None = None,
 ) -> list[CommonSenseFinding]:
     if chapter_number is None or chapter_number > 3:
         return []
@@ -712,12 +739,52 @@ def _find_lay_character_rule_knowledge_leak(
     derived_terms = _derive_rule_terms(text)
     if not derived_terms:
         return []
+    read_terms: set[str] = set()
     for match in re.finditer(speaker_pattern, text):
+        # A quoted rule written on a wall/sign is narration, not a character
+        # speaking. Keep scanning for a real speaker later in the paragraph.
+        if any(
+            marker in match.group(0)
+            for marker in ("墙上", "门上", "纸上", "牌上", "桌上", "屏幕上", "簿页")
+        ):
+            continue
         paragraph_end = text.find("\n\n", match.start())
         if paragraph_end < 0:
             paragraph_end = len(text)
         window = text[match.start() : min(match.end() + 80, paragraph_end)]
         if not any(term in window for term in derived_terms):
+            continue
+        # Reading an explicitly indicated written clause is an on-page source
+        # of its wording, not unexplained expertise. This exempts only this
+        # speech opener; later claims of understanding are checked separately.
+        opener = match.group(0)
+        visible_clause = re.search(r"第[一二三四五六七八九十百0-9]+[行条款]|条款|协议|合同|纸上|告示", opener)
+        reading_aloud = re.search(r"念出声|念道|读出声|读道|宣读|逐字读", opener)
+        current_terms = {term for term in derived_terms if term in window}
+        if visible_clause and reading_aloud:
+            read_terms.update(current_terms)
+            continue
+        # A line-by-line explanation may repeat wording just read aloud.
+        # This is textual reference, not a general expertise exemption.
+        pointed_wording = re.search(r"(?:指|笔)[^。！？\n]{0,8}(?:点|划|按|指)", opener)
+        literal_wording = any(
+            re.search(re.escape(term) + r"[”’\"'](?:[一二三四五六七八九十0-9]+个?)?[字词]", window)
+            for term in current_terms
+        )
+        if (current_terms and current_terms <= read_terms
+                and ((visible_clause and "关键词" in window)
+                     or (pointed_wording and literal_wording))):
+            continue
+        speaker = match.group(1)
+        known_terms: set[str] = set()
+        for character_name, terms in (known_rule_terms_by_character or {}).items():
+            # Require the regex speaker token to equal the approved name. A
+            # substring match would let ``张三丰`` inherit ``张三``'s state;
+            # action-tailed or otherwise ambiguous openers remain unverified.
+            if str(character_name).strip() == speaker:
+                known_terms.update(str(term).strip() for term in terms if str(term).strip())
+        current_terms = {term for term in derived_terms if term in window}
+        if current_terms and current_terms <= known_terms:
             continue
         lead_window = text[max(0, match.start() - 160) : match.start()]
         if any(marker in lead_window for marker in ("附身", "替它说", "不是他的声音", "学着他说", "刚解释过")):
@@ -726,8 +793,12 @@ def _find_lay_character_rule_knowledge_leak(
             CommonSenseFinding(
                 code="lay_character_rule_knowledge_leak",
                 severity="medium",
-                message="前三章非专业角色主动使用或理解规则术语，缺少学习、附身或被操控铺垫。",
-                evidence={"window": window.strip()},
+                blocking=False,
+                message="重复术语附近存在疑似发言；说话者身份与知识来源未核验，"
+                "不能据此认定角色无知或知识冲突，仅供编辑参考。",
+                evidence={"window": window.strip(), "terms": sorted(current_terms),
+                          "authority": "heuristic_only", "speaker_candidate": speaker,
+                          "actor_status": "unverified", "knowledge_status": "unknown"},
             )
         ]
     return []

@@ -17,8 +17,15 @@ if str(_SRC) not in sys.path:
 from bestseller.infra.db.session import session_scope  # noqa: E402
 from bestseller.services.distillation_book_aggregator import (  # noqa: E402
     aggregate_source_package_async,
+    package_book_phase_complete,
 )
 from bestseller.settings import get_settings  # noqa: E402
+
+
+def _result_is_success(result: object, package_dir: Path) -> bool:
+    """A fallback-bearing or incomplete package is resumable, not successful."""
+
+    return not getattr(result, "fallback_stages", ()) and package_book_phase_complete(package_dir)
 
 
 async def _run(
@@ -42,8 +49,10 @@ async def _run(
                 chapter_batch_size=chapter_batch_size,
                 write_active_artifacts=write_active_artifacts,
             )
-        print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
-        return 0
+        ok = _result_is_success(result, package_dir)
+        payload = {"ok": ok, **result.__dict__}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if ok else 1
     except Exception as exc:  # noqa: BLE001
         payload = {"package_dir": str(package_dir), "error": f"{type(exc).__name__}: {exc}"}
         errors_dir.mkdir(parents=True, exist_ok=True)

@@ -205,16 +205,14 @@ async def _resurrection_scan(
         death_ch = death_map[char_id]
         if death_ch is None:
             continue
-        # Any snapshot AFTER death in the current volume range is a hit.
-        snap_count = await session.scalar(
-            select(func.count()).where(
-                CharacterStateSnapshotModel.project_id == project_id,
-                CharacterStateSnapshotModel.character_id == char_id,
-                CharacterStateSnapshotModel.chapter_number > death_ch,
-                CharacterStateSnapshotModel.chapter_number <= ch_max,
-            )
+        from bestseller.services.character_snapshot_sources import load_eligible_character_snapshots
+
+        snapshots = await load_eligible_character_snapshots(
+            session, project_id=project_id, character_id=char_id,
+            before_chapter_number=ch_max, limit=None,
         )
-        if (snap_count or 0) > 0:
+        if any(snap.chapter_number > death_ch and snap.alive_status in {"alive", "injured", "dying"}
+               for snap in snapshots):
             count += 1
     return count
 
@@ -232,15 +230,26 @@ async def _power_tier_drift(
                 CharacterStateSnapshotModel.chapter_number >= ch_min,
                 CharacterStateSnapshotModel.chapter_number <= ch_max,
                 CharacterStateSnapshotModel.power_tier.is_not(None),
-            )
+            ).execution_options(populate_existing=True, autoflush=False)
         )
     )
     if not rows:
         return 0
 
     by_char: dict[Any, list[str]] = {}
+    from bestseller.services.character_snapshot_sources import (
+        CharacterSnapshotView,
+        snapshot_source_status,
+    )
+
     for snap in rows:
-        by_char.setdefault(snap.character_id, []).append(snap.power_tier)
+        status = await snapshot_source_status(
+            session, snap, project_id=project_id, character_id=snap.character_id,
+            before_chapter_number=ch_max,
+        )
+        if status["status"] == "eligible":
+            view = CharacterSnapshotView(snap)
+            by_char.setdefault(view.character_id, []).append(view.power_tier)
 
     drift = 0
     for tiers in by_char.values():

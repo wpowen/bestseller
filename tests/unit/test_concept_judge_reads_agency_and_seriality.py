@@ -27,6 +27,7 @@ import pytest
 from bestseller.services.concept_tournament import (
     _FLOOR_AXIS_LABELS,
     _hard_floor_failed_axes,
+    _seriality_severe_collapse,
     seriality_stage_mode,
 )
 
@@ -65,10 +66,13 @@ class TestProtagonistAgencyAxis:
         floors = {"catastrophe_floor": 4.0, "soft_miss_allowance": 3}
         assert _hard_floor_failed_axes(scores, floors) == []
 
-    @pytest.mark.parametrize("marker,label", [
-        ("\njudge_weights:", "基线"),
-        ("\n  judge_weights:", "wild_mode"),
-    ])
+    @pytest.mark.parametrize(
+        "marker,label",
+        [
+            ("\njudge_weights:", "基线"),
+            ("\n  judge_weights:", "wild_mode"),
+        ],
+    )
     def test_every_weight_set_sums_to_one(self, marker: str, label: str):
         """**每一套**权重都要配平，不只是基线。
 
@@ -99,6 +103,87 @@ class TestProtagonistAgencyAxis:
 
 
 class TestSerialityStageTiering:
+    def test_extreme_cross_axis_collapse_keeps_a_high_precision_veto(self):
+        """Advisory mode cannot promote a concept whose core promise already ends.
+
+        The live Docker canary scored renewability=4 and promise_survival=3,
+        with four of six axes below 6, yet the generic advisory branch erased
+        the rejection.  This is narrower than restoring the uncalibrated judge's
+        full veto: only a configured multi-axis collapse remains blocking.
+        """
+
+        assert _seriality_severe_collapse(
+            {
+                "renewability": 4,
+                "escalation": 5,
+                "anti_reset": 6,
+                "coherence": 6,
+                "promise_survival": 3,
+                "unit_density": 5,
+            },
+            {},
+        )
+
+    def test_live_four_four_multi_axis_collapse_is_not_promoted(self):
+        """Regression for custom-xuanhuan-1788370080.
+
+        The finalist admitted that its recurring unit only changed skins and
+        scored 4/7/7/5/4/5.  Treating promise_survival=4 as advisory promoted
+        exactly the thin architecture that the user asked the framework to
+        reject before book materialisation.
+        """
+
+        assert _seriality_severe_collapse(
+            {
+                "renewability": 4,
+                "escalation": 7,
+                "anti_reset": 7,
+                "coherence": 5,
+                "promise_survival": 4,
+                "unit_density": 5,
+            },
+            {},
+        )
+
+    def test_one_noisy_low_axis_does_not_restore_the_uncalibrated_veto(self):
+        assert not _seriality_severe_collapse(
+            {
+                "renewability": 4,
+                "escalation": 8,
+                "anti_reset": 8,
+                "coherence": 8,
+                "promise_survival": 8,
+                "unit_density": 8,
+            },
+            {},
+        )
+
+    def test_severe_collapse_policy_is_configurable_and_fail_closed(self):
+        scores = {
+            "renewability": 4,
+            "escalation": 5,
+            "anti_reset": 5,
+            "coherence": 6,
+            "promise_survival": 3,
+            "unit_density": 5,
+        }
+        assert not _seriality_severe_collapse(
+            scores,
+            {"seriality_severe_collapse": {"enabled": False}},
+        )
+        assert not _seriality_severe_collapse(
+            scores,
+            {
+                "seriality_severe_collapse": {
+                    "enabled": True,
+                    "renewability_max": 2,
+                    "promise_survival_max": 2,
+                    "low_axis_floor": 6,
+                    "min_low_axes": 3,
+                }
+            },
+        )
+
     def test_the_veto_is_withheld_by_default_because_the_judge_judges_backwards(self):
         """反相关的判官不许握杀权。
 
@@ -129,8 +214,9 @@ class TestSerialityStageTiering:
         import yaml
 
         cfg = yaml.safe_load(
-            (_pathlib.Path(__file__).resolve().parents[2] / "config" / "concept_tournament.yaml")
-            .read_text(encoding="utf-8")
+            (
+                _pathlib.Path(__file__).resolve().parents[2] / "config" / "concept_tournament.yaml"
+            ).read_text(encoding="utf-8")
         )
         assert cfg["seriality_enforcing_enabled"] is False
         assert seriality_stage_mode(500, cfg)[0] == "advisory"

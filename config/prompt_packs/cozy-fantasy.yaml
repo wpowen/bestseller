@@ -1,8 +1,8 @@
 key: cozy-fantasy
 name: Cozy Fantasy
-version: '1.0'
-description: Low-stakes, warm-hearted fantasy — bookshops, bakeries, found family, and gentle magic. Comfort reading with
-  fantasy charm, targeting the post-Legends-and-Lattes KU audience.
+version: '1.1'
+description: 'Techniques for low-pressure fantasy: maintain the selected tone and narrative continuity without prescribing
+  characters, places, events, or chapter outcomes.'
 genres:
 - Fantasy
 - Cozy Fantasy
@@ -28,9 +28,35 @@ anti_patterns:
 writing_profile_overrides:
   market:
     prompt_pack_key: cozy-fantasy
+    pacing_profile: slow
+  world:
+    mystery_density: low
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: lean
+fragments:
+  global_rules: Respect the selected low-pressure tone and current creative contract. Do not prescribe a location,
+    occupation, relationship, fixed event, or emotional resolution. Genre techniques are suggestions; adopted story
+    facts and author choices take precedence.
+  scene_writer: Use precise sensory detail and character voice where relevant to the current scene. Let the adopted
+    scene goal and tone guide intensity; no mandatory props, meals, magic demonstrations, or relationship beats.
+  scene_review: Check consistency with the adopted tone, character motives and scene context. Distinguish a demonstrated
+    contradiction from an optional style suggestion; do not require a fixed event or count of emotional beats.
+  scene_rewrite: Repair only the evidenced issue within the current scene. Preserve adopted facts and author choices;
+    do not add stock events to satisfy genre expectations.
+  chapter_review: Check continuity, voice and the selected low-pressure tone against the current creative contract.
+    Do not mandate a happy resolution, a relationship milestone or a fixed number of comfort beats.
+  chapter_rewrite: Revise the evidenced issue within the authorised range. Preserve the existing story and its intended
+    ending; optional sensory or pacing improvements do not authorise new plot obligations.
+story_profile_overrides:
+  market:
+    prompt_pack_key: cozy-fantasy
     platform_target: Kindle Unlimited
-    reader_promise: Wrap the reader in warmth from page one. Deliver the comfort of a quiet life, gentle magic, good food,
-      and people who slowly become family. The stakes are personal, the victories are small, and the world feels like a hug.
+    reader_promise: Wrap the reader in warmth from page one. Deliver the comfort of a quiet life, gentle magic,
+      good food, and people who slowly become family. The stakes are personal, the victories are small, and the
+      world feels like a hug.
     selling_points:
     - found family warmth
     - gentle magic
@@ -47,21 +73,21 @@ writing_profile_overrides:
     - warm welcome
     - small magic
     - community
-    opening_strategy: Open with the protagonist arriving at or discovering the place that will become home — a bookshop, a
-      bakery, a village. The first chapter should establish the cozy atmosphere, the protagonist's need for a fresh start,
-      and a hint of the gentle conflict to come.
-    chapter_hook_strategy: Cozy hooks are about anticipation and community — a mysterious new neighbor, a festival to prepare
-      for, a recipe to perfect, a friendship deepening, a small problem to solve together. The reader should want to keep
-      reading not from anxiety but from warmth.
+    opening_strategy: Open with the protagonist arriving at or discovering the place that will become home — a bookshop,
+      a bakery, a village. The first chapter should establish the cozy atmosphere, the protagonist's need for a
+      fresh start, and a hint of the gentle conflict to come.
+    chapter_hook_strategy: Cozy hooks are about anticipation and community — a mysterious new neighbor, a festival
+      to prepare for, a recipe to perfect, a friendship deepening, a small problem to solve together. The reader
+      should want to keep reading not from anxiety but from warmth.
     pacing_profile: slow
-    payoff_rhythm: Small, warm payoffs every chapter (a shared meal, a kind gesture, a small success). Medium payoffs every
-      few chapters (a friendship milestone, a community event, a personal breakthrough). The big payoff is the protagonist
-      realizing they have found home.
+    payoff_rhythm: Small, warm payoffs every chapter (a shared meal, a kind gesture, a small success). Medium payoffs
+      every few chapters (a friendship milestone, a community event, a personal breakthrough). The big payoff is
+      the protagonist realizing they have found home.
   character:
     protagonist_archetype: Retired adventurer or gentle soul seeking a quiet life
     protagonist_core_drive: Build something meaningful — a shop, a home, a community
-    antagonist_mode: Gentle conflict — a business rival, a misunderstanding, a town tradition at risk, or an old wound to
-      heal
+    antagonist_mode: Gentle conflict — a business rival, a misunderstanding, a town tradition at risk, or an old
+      wound to heal
   world:
     mystery_density: low
     worldbuilding_density: medium
@@ -69,41 +95,3 @@ writing_profile_overrides:
     prose_style: commercial-genre
     sentence_style: balanced
     info_density: lean
-fragments:
-  global_rules: 'This is cozy fantasy — warmth is the reader''s primary experience. Every scene must contribute to the atmosphere
-    of comfort, belonging, or gentle wonder. Conflict should be low-stakes and solvable through kindness, community effort,
-    or personal growth — never through violence or betrayal. Food, drink, weather, and sensory comforts should be woven into
-    every chapter. Magic should feel whimsical and delightful, not threatening. The reader should finish every chapter feeling
-    warmer than when they started.
-
-    '
-  scene_writer: 'Write with warmth and sensory richness. Describe food in mouthwatering detail. Let the weather set the mood
-    — rain on the roof, sunlight through windows, the first snow. Use gentle humor and quiet observation. Dialogue should
-    feel natural and kind, even in conflict. Magic should delight — describe how it looks, sounds, and feels. Let small moments
-    carry big emotional weight: a shared cup of tea, a repaired fence, a name remembered. Pacing should be unhurried — give
-    the reader permission to linger.
-
-    '
-  scene_review: 'Check: Does the scene contribute to warmth, belonging, or gentle wonder? Are the senses engaged — food, weather,
-    texture, light? Is the conflict appropriate for the cozy genre (no violence, betrayal, or high-stakes drama)? Does the
-    scene deepen a relationship or advance the protagonist''s project? Is the magic whimsical and delightful? Does the scene
-    leave the reader feeling warm? Is the pacing appropriately unhurried without becoming boring?
-
-    '
-  scene_rewrite: 'If a scene feels flat, add: a shared meal or drink, a moment of quiet kindness, a sensory detail that grounds
-    the reader in the setting, a gentle humor beat, or a small magical moment that delights. If a scene feels too tense for
-    cozy, soften the conflict, add a comforting gesture, or shift the focus to community support. Cut anything that feels
-    dark, threatening, or anxiety-inducing.
-
-    '
-  chapter_review: 'Verify the chapter delivers warmth through at least two of: a relationship deepening, a project milestone,
-    a community moment, a sensory comfort scene, or a gentle magic beat. The chapter should leave the reader smiling or feeling
-    content. Check that conflict remains low-stakes and that the atmosphere never breaks the cozy promise. Pacing should be
-    comfortable — not rushed, not stalled.
-
-    '
-  chapter_rewrite: 'When rewriting, prioritize: adding sensory richness (food, weather, textures), deepening character warmth
-    through small gestures and dialogue, ensuring the chapter has a gentle forward momentum, and maintaining the cozy atmosphere
-    throughout. If the chapter ends on too much tension, add a beat of comfort or humor before the chapter break.
-
-    '

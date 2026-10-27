@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 ReaderFeedbackSeverity = Literal["blocker", "high", "medium", "low"]
 
 
+class ReaderPanelUnavailableError(ValueError):
+    """The panel did not produce a usable verdict; this is not a prose defect."""
+
+
 async def judge_reader_pair_advisory(
     session: AsyncSession,
     settings: AppSettings,
@@ -79,7 +83,9 @@ async def run_reader_panel(
 
     selected = _select_chapters(chapter_texts, target_chapter_range)
     if not selected:
-        return []
+        raise ReaderPanelUnavailableError("READER_PANEL_NO_TEXT")
+    if not panel:
+        raise ReaderPanelUnavailableError("READER_PANEL_EMPTY_PANEL")
 
     feedback: list[ReaderFeedback] = []
     for role in panel:
@@ -107,7 +113,21 @@ async def run_reader_panel(
                 max_tokens_override=4096,
             ),
         )
-        feedback.extend(_normalize_feedback(_parse_json_value(completion.content), role=role))
+        if completion.fallback_used:
+            raise ReaderPanelUnavailableError("READER_PANEL_PROVIDER_UNAVAILABLE")
+        if completion.finish_reason not in {None, "stop", "end_turn", "completed"}:
+            raise ReaderPanelUnavailableError("READER_PANEL_INCOMPLETE_RESPONSE")
+        value = _parse_json_value(completion.content)
+        if isinstance(value, Mapping):
+            value = next(
+                (value[key] for key in ("issues", "feedback", "findings") if key in value), None
+            )
+        if not isinstance(value, list):
+            raise ReaderPanelUnavailableError("READER_PANEL_INVALID_RESPONSE")
+        normalized = _normalize_feedback(value, role=role)
+        if len(normalized) != len(value):
+            raise ReaderPanelUnavailableError("READER_PANEL_INVALID_FEEDBACK")
+        feedback.extend(normalized)
     return feedback
 
 
@@ -253,7 +273,7 @@ def _parse_json_value(text: str) -> object:
         except Exception as exc:
             logger.debug("json_repair failed while parsing reader-panel output: %s", exc)
             continue
-    return []
+    return None
 
 
 def _coerce_severity(value: object) -> ReaderFeedbackSeverity:

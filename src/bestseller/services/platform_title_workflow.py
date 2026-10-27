@@ -26,9 +26,7 @@ PLATFORM_TITLE_MATRIX_KEYS = (
     "tadu",
     "general",
 )
-DEFAULT_TITLE_CANDIDATE_COUNT = (
-    PER_PLATFORM_TITLE_CANDIDATE_COUNT * len(PLATFORM_TITLE_MATRIX_KEYS)
-)
+DEFAULT_TITLE_CANDIDATE_COUNT = PER_PLATFORM_TITLE_CANDIDATE_COUNT * len(PLATFORM_TITLE_MATRIX_KEYS)
 
 BAD_TITLE_PART_MARKERS = (
     "未命名",
@@ -392,9 +390,7 @@ def _signal_tokens(profile: Mapping[str, Any]) -> dict[str, str]:
     tags = _string_list(profile.get("tags"))
     logline = _compact_text(profile.get("logline") or profile.get("short_intro"))
     promise_values = _string_list(profile.get("reader_promise"))
-    promise = _compact_text(
-        promise_values[0] if promise_values else profile.get("reader_promise")
-    )
+    promise = _compact_text(promise_values[0] if promise_values else profile.get("reader_promise"))
     characters = profile.get("main_characters")
     first_character = characters[0] if isinstance(characters, list) and characters else {}
     if not isinstance(first_character, Mapping):
@@ -408,16 +404,22 @@ def _signal_tokens(profile: Mapping[str, Any]) -> dict[str, str]:
     )
     if protagonist in {"主角设定", "Protagonist Profile / 主角设定"}:
         protagonist = "主角"
+    story_prose = _story_prose(profile)
+    grounded_tags = [item for item in tags if is_story_grounded_token(item, story_prose)]
+    signal_tags = grounded_tags if story_prose else tags
+    if story_prose and not is_story_grounded_token(raw_identity, story_prose):
+        raw_identity = secondary
     hook_candidates = [
         item
-        for item in tags
+        for item in signal_tags
         if item not in {primary, secondary, title}
         and len(item) <= 10
         and not _is_bad_title_token(item)
         and not _is_genre_like_token(item)
+        and is_story_grounded_token(item, story_prose)
     ] or [
         item
-        for item in tags
+        for item in signal_tags
         if item not in {primary, secondary, title}
         and len(item) <= 10
         and not _is_bad_title_token(item)
@@ -426,14 +428,17 @@ def _signal_tokens(profile: Mapping[str, Any]) -> dict[str, str]:
     hook2 = _first_nonempty(*(hook_candidates[1:3] or []), hook)
     hook = _reader_title_token(hook, fallback=secondary or primary)
     hook2 = _reader_title_token(hook2, fallback=hook)
-    setting = _resolve_setting(tags, primary, secondary)
-    object_token = _resolve_object_token(title, hook, hook2, logline, primary, secondary, tags)
-    threat_token = _resolve_threat_token(tags, logline, hook)
-    action = _resolve_action(primary, secondary, tags, logline)
-    identity = _resolve_identity(raw_identity, tags, logline, primary, secondary)
-    origin = _resolve_origin(primary, secondary, tags, identity)
-    entry = _resolve_entry_token(tags, logline, identity, hook)
-    twist = _resolve_twist(tags, logline, hook2)
+    setting = _resolve_setting(signal_tags, primary, secondary)
+    object_token = _resolve_object_token(
+        title, hook, hook2, _affirmative_title_source(logline), primary, secondary, signal_tags,
+        prose=story_prose,
+    )
+    threat_token = _resolve_threat_token(signal_tags, logline, hook)
+    action = _resolve_action(primary, secondary, signal_tags, logline)
+    identity = _resolve_identity(raw_identity, signal_tags, logline, primary, secondary)
+    origin = _resolve_origin(primary, secondary, signal_tags, identity)
+    entry = _resolve_entry_token(signal_tags, logline, identity, hook)
+    twist = _resolve_twist(signal_tags, logline, hook2)
     promise_token = _short_token(promise or logline, max_chars=10, fallback=hook)
     return {
         "title": title,
@@ -595,7 +600,7 @@ def _is_bare_taxonomy_title(title: str) -> bool:
         return False
     prefix = re.match(r"^([一-鿿]{2,4})[：:]", body)
     if prefix and prefix.group(1) in _GENRE_LABEL_WORDS:
-        body = body[prefix.end():]
+        body = body[prefix.end() :]
     residue = body
     for word in sorted(_BARE_TAXONOMY_RESIDUE_WORDS, key=len, reverse=True):
         residue = residue.replace(word, "")
@@ -629,7 +634,7 @@ def _title_uses_genre_label(title: str, signals: Mapping[str, str] | None = None
     # must remain subject to the genre-label check.
     prefix = re.match(r"^([一-鿿]{2,4})[：:]", body)
     if prefix and prefix.group(1) in _GENRE_LABEL_WORDS:
-        body = body[prefix.end():]
+        body = body[prefix.end() :]
     return any(word in body for word in _GENRE_LABEL_WORDS)
 
 
@@ -659,7 +664,14 @@ def _unreadable_title_reason(title: str) -> str:
     text = _clean_text(title)
     if not text:
         return "empty"
-    if re.search(r"不(?:开|出|写|发|交|下|做)?(?:整改单|验房报告|报告|台账|执照|合同|清单|表单)", text):
+    if re.search(
+        r"(?:我用|用|靠)([^，。！？：:]{2,12}?)(?:逼出|触发|签出|换来)\1(?:[，。！？：:]|$)",
+        text,
+    ):
+        return "repeated_method_result"
+    if re.search(
+        r"不(?:开|出|写|发|交|下|做)?(?:整改单|验房报告|报告|台账|执照|合同|清单|表单)", text
+    ):
         return "negative_document_verb_phrase"
     if re.search(r"(?:签发|签出|开出|写出|提交)一份会决定两?案卷", text):
         return "broken_case_file_object"
@@ -798,6 +810,8 @@ def _resolve_object_token(
     primary: str,
     secondary: str,
     tags: list[str],
+    *,
+    prose: str = "",
 ) -> str:
     priority_markers = (
         "重瞳",
@@ -816,7 +830,14 @@ def _resolve_object_token(
         "旧案",
         "血字",
     )
-    candidates = [*tags, hook2, hook, title, secondary, primary]
+    affirmative_prose = _affirmative_title_source(prose)
+    denied_markers = [
+        marker for marker in priority_markers if marker in prose and marker not in affirmative_prose
+    ]
+    candidates = [
+        item for item in [*tags, hook2, hook, title, secondary, primary]
+        if not any(marker in item for marker in denied_markers)
+    ]
     logline_tokens = re.findall(r"[\u4e00-\u9fff]{2,8}", logline)
     for marker in priority_markers:
         for item in candidates:
@@ -838,7 +859,12 @@ def _resolve_object_token(
             return item
     for item in candidates:
         token = _reader_title_token(item, fallback="")
-        if token and len(token) >= 2 and token not in vague_tokens and not _is_bad_title_token(token):
+        if (
+            token
+            and len(token) >= 2
+            and token not in vague_tokens
+            and not _is_bad_title_token(token)
+        ):
             return token
     for item in candidates:
         if item and len(item) >= 2 and item not in vague_tokens and not _is_bad_title_token(item):
@@ -898,14 +924,16 @@ def _resolve_action(primary: str, secondary: str, tags: list[str], logline: str)
     label = " ".join([primary, secondary, *tags, logline])
     if any(token in label for token in ("悬疑", "刑侦", "探案", "灵异", "规则")):
         return "破局"
-    if any(token in label for token in ("官场", "权力", "职场")):
+    if any(token in label for token in ("官场", "权力")):
         return "登阶"
+    if any(token in label for token in ("职场", "背锅", "栽赃", "公司")):
+        return "翻盘"
     if any(token in label for token in ("历史", "边关", "王朝", "争霸")):
         return "封侯"
-    if any(token in label for token in ("仙", "玄幻", "武侠", "修真", "升级")):
-        return "证道"
     if any(token in label for token in ("末世", "科幻", "星际", "废土", "系统")):
         return "重启文明"
+    if any(token in label for token in ("仙", "玄幻", "武侠", "修真", "升级")):
+        return "证道"
     if any(token in label for token in ("言情", "婚恋", "纯爱", "甜宠", "破镜")):
         return "改写关系"
     return "逆袭"
@@ -990,7 +1018,9 @@ def build_platform_title_workflow(
     per_platform_count: int = PER_PLATFORM_TITLE_CANDIDATE_COUNT,
 ) -> dict[str, Any]:
     style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
-    signals = _signal_tokens(profile) if not _is_english(_clean_text(profile.get("language"))) else {}
+    signals = (
+        _signal_tokens(profile) if not _is_english(_clean_text(profile.get("language"))) else {}
+    )
     language = _clean_text(profile.get("language"))
     is_english = _is_english(language)
     platform_groups: list[dict[str, Any]] = []
@@ -1009,11 +1039,7 @@ def build_platform_title_workflow(
             )
             group["candidate_count"] = len(group["candidates"])
         candidates = _renumber_candidates(
-            [
-                candidate
-                for group in platform_groups
-                for candidate in group["candidates"]
-            ]
+            [candidate for group in platform_groups for candidate in group["candidates"]]
         )
     elif is_english:
         target_candidates = _build_english_candidates(profile, style, candidate_count + 8)
@@ -1110,7 +1136,7 @@ def build_platform_title_workflow(
             "可搜索性：有独特锚点，降低撞名和空泛风险。",
         ],
         "candidates": candidates,
-}
+    }
 
 
 def _build_platform_matrix(
@@ -1361,9 +1387,7 @@ def should_revise_primary_title(candidate: Mapping[str, Any]) -> bool:
     if not title:
         return False
     evaluation = candidate.get("title_evaluation")
-    decision = (
-        _clean_text(evaluation.get("decision")) if isinstance(evaluation, Mapping) else ""
-    )
+    decision = _clean_text(evaluation.get("decision")) if isinstance(evaluation, Mapping) else ""
     pattern = _clean_text(candidate.get("pattern"))
     if pattern.startswith("公共情绪桥"):
         # Story-derived public-emotion bridge titles are trusted as-is.
@@ -1395,9 +1419,7 @@ def build_title_revision_messages(
 
     if not should_revise_primary_title(candidate):
         return None
-    style = resolve_title_style(
-        target_platform or _clean_text(profile.get("target_platform"))
-    )
+    style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
     original = _clean_text(candidate.get("title"))
     logline = _compact_text(profile.get("logline") or profile.get("short_intro"))
     promise_values = _string_list(profile.get("reader_promise"))
@@ -1414,6 +1436,7 @@ def build_title_revision_messages(
         feedback = evaluation.get("feedback")
         if isinstance(feedback, Mapping):
             revision_hint = _clean_text(feedback.get("revision_prompt"))
+    authoritative_seed = _compact_text(profile.get("authoritative_concept_seed"))
 
     system_prompt = (
         f"你是中文网络小说{style.label}平台的资深起名编辑。"
@@ -1430,6 +1453,13 @@ def build_title_revision_messages(
         f"主角身份：{signals.get('identity') or '（无）'}",
         f"情节标签：{'、'.join(story_tags) if story_tags else '（无）'}",
     ]
+    if authoritative_seed:
+        user_lines.extend(
+            [
+                f"用户原始创意（上位约束）：{authoritative_seed}",
+                "不得把用户禁止项改写成书名卖点，也不得用近义表达绕过限制。",
+            ]
+        )
     if revision_hint:
         user_lines.append(f"待改进点：{revision_hint}")
     user_lines.append("请据此产出一个更有点击力、且贴合平台口播风格的书名，只输出书名本身。")
@@ -1483,6 +1513,8 @@ def _story_title_dna(profile: Mapping[str, Any]) -> dict[str, str]:
 def _story_anchor_groups(profile: Mapping[str, Any]) -> dict[str, list[str]]:
     raw = profile.get("title_anchor_groups")
     groups: dict[str, list[str]] = {}
+    prose = _story_prose(profile)
+    affirmative_prose = _affirmative_title_source(prose)
     if isinstance(raw, Mapping):
         for key, value in raw.items():
             values = [
@@ -1490,13 +1522,14 @@ def _story_anchor_groups(profile: Mapping[str, Any]) -> dict[str, list[str]]:
                 for item in _string_list(value)
                 if 2 <= len(_clean_text(item)) <= 12
                 and not _is_genre_like_token(_clean_text(item))
+                and not (_clean_text(item) in prose and _clean_text(item) not in affirmative_prose)
             ]
             if values:
                 groups[str(key)] = values[:8]
     if groups:
         return groups
     dna = _story_title_dna(profile)
-    return {
+    groups = {
         "identity": [
             token
             for token in (
@@ -1521,6 +1554,11 @@ def _story_anchor_groups(profile: Mapping[str, Any]) -> dict[str, list[str]]:
             )
             if token and not _is_genre_like_token(token)
         ],
+    }
+
+    return {
+        key: [token for token in values if not (token in prose and token not in affirmative_prose)]
+        for key, values in groups.items()
     }
 
 
@@ -1548,10 +1586,7 @@ def _meaningful_story_action_terms(action_terms: Sequence[str]) -> list[str]:
         for term in (_clean_text(item) for item in action_terms)
         if term
         and term not in _GENERIC_TITLE_ACTION_TERMS
-        and (
-            any(marker in term for marker in _MEANINGFUL_TITLE_ACTION_MARKERS)
-            or len(term) >= 4
-        )
+        and (any(marker in term for marker in _MEANINGFUL_TITLE_ACTION_MARKERS) or len(term) >= 4)
     ]
     return meaningful or [
         term
@@ -1568,8 +1603,6 @@ def _passes_story_anchor_contract(profile: Mapping[str, Any], title: str) -> boo
         # supplied them explicitly from planning outputs.
         return True
     groups = _story_anchor_groups(profile)
-    if not groups:
-        return True
     text = _clean_text(title)
     identity_terms = groups.get("identity") or groups.get("entry") or []
     action_terms = groups.get("action") or []
@@ -1584,6 +1617,20 @@ def _passes_story_anchor_contract(profile: Mapping[str, Any], title: str) -> boo
         text,
         [*meaningful_action_terms, *stakes_terms, *object_terms],
     )
+    if not any((meaningful_action_terms, stakes_terms, object_terms)):
+        # Sparse extraction is not a demand to match an empty set. Require a
+        # concrete phrase from the approved prose beyond a person's name; no
+        # source text (or only a genre label) must never license an unrelated title.
+        source = _affirmative_title_source(_story_prose(profile))
+        remainder = text
+        for term in identity_terms:
+            remainder = remainder.replace(term, " ")
+        return any(
+            phrase in source and not _is_genre_like_token(phrase)
+            for chunk in re.findall(r"[\u4e00-\u9fff]{4,}", remainder)
+            for offset in range(len(chunk) - 3)
+            for phrase in [chunk[offset:offset + 4]]
+        )
     return has_story_subject and has_story_motion
 
 
@@ -1603,9 +1650,7 @@ def _story_grounded_title_score(
     text = _clean_text(title)
     if not text:
         return -100
-    style = resolve_title_style(
-        target_platform or _clean_text(profile.get("target_platform"))
-    )
+    style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
     groups = _story_anchor_groups(profile)
     identity_terms = groups.get("identity") or []
     action_terms = groups.get("action") or []
@@ -1712,13 +1757,11 @@ def build_story_grounded_title_revision_messages(
     without falling back to a broken title.
     """
 
-    style = resolve_title_style(
-        target_platform or _clean_text(profile.get("target_platform"))
-    )
+    style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
     dna = _story_title_dna(profile)
     groups = _story_anchor_groups(profile)
     anchor_line = "；".join(
-        f"{key}={ '、'.join(values) }" for key, values in groups.items() if values
+        f"{key}={'、'.join(values)}" for key, values in groups.items() if values
     )
     system_prompt = (
         f"你是中文网络小说{style.label}平台的资深起名编辑。"
@@ -1775,15 +1818,11 @@ def finalize_revised_title(
         revised = _clean_text(candidate)
         if not revised:
             continue
-        revised = re.sub(
-            r"^[《「\"'】\[\(（\s]+|[》」\"'】\]\)）\s]+$", "", revised
-        ).strip()
+        revised = re.sub(r"^[《「\"'】\[\(（\s]+|[》」\"'】\]\)）\s]+$", "", revised).strip()
         revised = revised.strip("：:，,。.！!？?；; 、")
         if not revised or revised == original:
             continue
-        style = resolve_title_style(
-            target_platform or _clean_text(profile.get("target_platform"))
-        )
+        style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
         cjk_len = len(re.findall(r"[一-鿿]", revised))
         if cjk_len < max(2, style.min_chars) or cjk_len > style.max_chars:
             continue
@@ -1803,9 +1842,7 @@ def finalize_revised_title(
             continue
         accepted.append(
             (
-                _story_grounded_title_score(
-                    profile, revised, target_platform=target_platform
-                ),
+                _story_grounded_title_score(profile, revised, target_platform=target_platform),
                 revised,
             )
         )
@@ -1948,9 +1985,7 @@ def build_story_dna_fallback_title(
     (2) the most distinctive story-DNA noun (object / threat / entry / identity).
     """
 
-    style = resolve_title_style(
-        target_platform or _clean_text(profile.get("target_platform"))
-    )
+    style = resolve_title_style(target_platform or _clean_text(profile.get("target_platform")))
     salvaged = _strip_genre_words(profile.get("primary_title"))
     if _is_valid_fallback_title(salvaged, style):
         return salvaged
@@ -2114,7 +2149,9 @@ def _filter_and_annotate_candidates(
             continue
         style = PLATFORM_TITLE_STYLES.get(
             _clean_text(row.get("platform")),
-            resolve_title_style(profile.get("target_platform") if isinstance(profile, Mapping) else None),
+            resolve_title_style(
+                profile.get("target_platform") if isinstance(profile, Mapping) else None
+            ),
         )
         _apply_title_evaluation(row, profile, style)
         if not _matrix_candidate_is_usable(
@@ -2161,9 +2198,7 @@ def _annotate_candidate_compliance(
     high_risks = [risk for risk in risks if risk.severity in {"critical", "high"}]
     row["risk_flags"] = _dedupe_strings([risk.code for risk in risks])
     if risks:
-        row["compliance_notes"] = "；".join(
-            f"{risk.severity}:{risk.term}" for risk in risks[:4]
-        )
+        row["compliance_notes"] = "；".join(f"{risk.severity}:{risk.term}" for risk in risks[:4])
     else:
         row["compliance_notes"] = "未命中配置化高风险词；仍需人工/平台审核。"
     row["risk_blocked"] = bool(high_risks)
@@ -2247,7 +2282,16 @@ def _build_story_methodology_topup_candidates(
     action_terms = groups.get("action", [])
     object_terms = groups.get("object", [])
     stakes_terms = groups.get("stakes", [])
+    # Noun extraction can put an account/person/device into the action group.
+    # A slot label and string length are not evidence that it is an action.
+    named_entities = set(identity_terms + object_terms)
+    named_entities.update(
+        re.findall(r"[“\"‘']([^”\"’']{2,24})[”\"’'](?:账号|账户|店铺|店|号)", _story_prose(profile))
+    )
+    action_terms = [term for term in action_terms if term not in named_entities]
     meaningful_action_terms = _meaningful_story_action_terms(action_terms)
+    if groups.get("action") and not meaningful_action_terms:
+        return []
     identity = _first_story_term(
         identity_terms,
         [signals.get("identity", "")],
@@ -2353,13 +2397,22 @@ def _build_story_methodology_topup_candidates(
         ],
         "feilu": [
             (f"开局{obj}在手，我逼出{action}", "故事锚点补齐：开局能力", "主推"),
-            (f"让你查{stakes_three}，你把{object_three}签爆？", "故事锚点补齐：命令反差", "广告测试"),
+            (
+                f"让你查{stakes_three}，你把{object_three}签爆？",
+                "故事锚点补齐：命令反差",
+                "广告测试",
+            ),
             (f"{stakes}倒计时，我偏要签{action}", "故事锚点补齐：代价倒计时", "广告测试"),
             (f"{identity}开局硬刚{stakes}", "故事锚点补齐：身份硬刚", "备选"),
             (f"盘点{action}名场面，{stakes_three}破防", "故事锚点补齐：口播名场面", "备选"),
             (f"开局{identity}查{stakes_three}，我签出{action}", "故事锚点补齐：职业开局", "备选"),
             (f"别人验到{stakes}，我验出{action}", "故事锚点补齐：对照口播", "备选"),
             (f"让你只写{obj}，我逼出{action}", "故事锚点补齐：职责反差", "广告测试"),
+            (
+                f"{signals.get('title') or obj}：开局{stakes}，我逼出{action}",
+                "故事锚点补齐：书名锚点开局",
+                "备选",
+            ),
         ],
         "zongheng": [
             (f"{action}秘录", "故事锚点补齐：核心事件", "主推"),
@@ -2518,11 +2571,7 @@ def _reader_title_review(
         "破局",
     )
     attraction_hits = [mark for mark in attraction_marks if mark and mark in title]
-    story_hits = [
-        mark
-        for mark in story_marks
-        if mark and len(mark) >= 2 and mark in title
-    ]
+    story_hits = [mark for mark in story_marks if mark and len(mark) >= 2 and mark in title]
     is_sentence_hook = bool(re.search(r"(我|你|他们).{1,12}(以为|全当|越|把|靠|用)", title))
     attraction_score = min(100, 45 + len(attraction_hits) * 12 + (18 if is_sentence_hook else 0))
     transmission_score = min(100, 40 + len(set(story_hits)) * 12)
@@ -2677,12 +2726,8 @@ def _evaluate_title_candidate(
     return {
         "decision": decision,
         "checks": checks,
-        "pass_conditions": [
-            key for key, item in checks.items() if item["passed"]
-        ],
-        "fail_reasons": [
-            item["reason"] for item in checks.values() if not item["passed"]
-        ],
+        "pass_conditions": [key for key, item in checks.items() if item["passed"]],
+        "fail_reasons": [item["reason"] for item in checks.values() if not item["passed"]],
         "feedback": {
             "revision_prompt": _title_revision_prompt(title, style, failed, checks),
         },
@@ -2715,11 +2760,22 @@ def _evaluate_reader_attraction(title: str, style: PlatformTitleStyle) -> dict[s
         "反杀",
         "扣分",
         "越权",
+        "被",
+        "挂成",
+        "栽赃",
+        "背锅",
+        "打脸",
+        "自爆",
+        "公开",
+        "每次",
+        "代价",
+        "反噬",
     )
     hits = [mark for mark in attraction_marks if mark in title]
     sentence_hook = bool(
         re.search(
-            r"(我|你|他们|她|他).{0,16}(以为|全当|越|把|靠|用|说|签|逼|触发|反杀|钉死)",
+            r"(我|你|他们|她|他).{0,16}"
+            r"(以为|全当|越|把|靠|用|说|让|点开|付出|签|逼|触发|反杀|钉死)",
             title,
         )
     )
@@ -2780,6 +2836,14 @@ def _evaluate_story_transmission(
         "执照扣分",
         "越权",
         "反杀",
+        "栽赃",
+        "背锅",
+        "挂成",
+        "打脸",
+        "自爆",
+        "公开道歉",
+        "代价",
+        "反噬",
     }
     anchor_groups = _story_anchor_groups(profile)
     for values in anchor_groups.values():
@@ -2799,7 +2863,8 @@ def _evaluate_story_transmission(
     has_actor_action = bool(
         re.search(
             r"(我|你|他们|她|他).{0,16}"
-            r"(想|卖|查|救|全当|以为|解释|布局|翻盘|破局|说|用|把|靠|签|逼出|触发|反杀|钉死)",
+            r"(想|卖|查|救|全当|以为|解释|布局|翻盘|破局|说|让|点开|付出|"
+            r"挂成|用|把|靠|签|逼出|触发|反杀|钉死)",
             title,
         )
     )
@@ -2810,13 +2875,11 @@ def _evaluate_story_transmission(
             title,
         )
     )
+    has_relation = has_relation or bool(re.search(r"每次.{1,14}(代价|反噬|失去|付出)", title))
     title_like_label = len(title) <= 10 and not has_actor_action and not has_relation
     score = min(
         100,
-        36
-        + len(set(hits)) * 10
-        + (24 if has_actor_action else 0)
-        + (16 if has_relation else 0),
+        36 + len(set(hits)) * 10 + (24 if has_actor_action else 0) + (16 if has_relation else 0),
     )
     if title_like_label:
         score = min(score, 58)
@@ -2850,7 +2913,9 @@ def _evaluate_platform_fit(title: str, style: PlatformTitleStyle) -> dict[str, A
         score += 8
     if style.key in {"zhangyue", "douban"} and has_long_punctuation:
         score -= 28
-    if style.key in {"zhangyue", "douban"} and any(mark in title for mark in ("开局", "让你", "全当", "他们", "我只想")):
+    if style.key in {"zhangyue", "douban"} and any(
+        mark in title for mark in ("开局", "让你", "全当", "他们", "我只想")
+    ):
         score -= 22
     if len(title) > style.max_chars:
         score -= 30
@@ -2859,9 +2924,7 @@ def _evaluate_platform_fit(title: str, style: PlatformTitleStyle) -> dict[str, A
     return {
         "passed": passed,
         "score": (
-            max(max(0, min(100, score)), 68)
-            if is_concise_ip_name
-            else max(0, min(100, score))
+            max(max(0, min(100, score)), 68) if is_concise_ip_name else max(0, min(100, score))
         ),
         "reason": (
             "凝练 IP 名可作为主书名，平台卖点由简介/副标题补足。"
@@ -2881,10 +2944,30 @@ def _story_prose(profile: Mapping[str, Any]) -> str:
     # reader_promise 是故事内容（对读者的承诺、代价机制），不是分类标签——
     # 漏掉它会误杀「记忆代价」这类真实机制词（既有测试 test_book_listing 抓到）。
     parts = [
-        _stringify_story_value(profile.get(key))
+        (
+            profile[key]
+            if isinstance(profile.get(key), str)
+            else _stringify_story_value(profile.get(key))
+        )
         for key in ("logline", "premise", "short_intro", "synopsis", "reader_promise")
     ]
     return " ".join(part for part in parts if part)
+
+
+def _affirmative_title_source(text: str) -> str:
+    """Exclude explicit denials from positive title-slot evidence.
+
+    This is deliberately a lexical extraction guard, not a semantic canon judge.
+    Stop at clause boundaries/contrast conjunctions and retain double negations.
+    """
+    return re.sub(
+        r"(?:不是(?!不|没有)|并非(?!不|没有)|(?<!不是)(?<!并非)没有(?!不)"
+        r"|(?<!不是)(?<!并非)(?<!没有)(?<!不得)(?<!不能)(?<!不可)不(?!是|仅|只|但|得不|能不|可不)"
+        r"|禁止使用|禁止引入|禁止出现)"
+        r"(?:(?!但是|但|而是|而|只是)[^，,。.!！？?；;：:\n])*",
+        " ",
+        str(text or ""),
+    )
 
 
 def is_story_grounded_token(token: str, prose: str) -> bool:
@@ -2895,7 +2978,7 @@ def is_story_grounded_token(token: str, prose: str) -> bool:
     塞进模板——「开局市井日常，我用市井日常证道」「月照市井日常」。
     这些是**分类与营销标签，不是故事里的实体**，当名词用必然读成拼接。
 
-    判据零词表、可确定性核对，与身份修复同源：**在故事正文里出现过吗**。
+    判据不依赖题材词表：词必须在正文出现，且不能仅出现在明确否定分句中。
     真机分离度：10 个分类标签命中 0/10，6 个故事实体（温迟/蒸灵锅/
     通灵百家巷/老灶君/早市/欠条）命中 6/6。
 
@@ -2908,7 +2991,7 @@ def is_story_grounded_token(token: str, prose: str) -> bool:
     text = str(prose or "").strip()
     if not text:
         return True
-    return token in text
+    return token in _affirmative_title_source(text)
 
 
 def ungrounded_title_tokens(
@@ -2976,21 +3059,21 @@ def _evaluate_title_quality(
         result["reason"] = (
             "标题把分类/营销标签当成故事实体使用（"
             + "、".join(ungrounded)
-            + "），这些词在故事正文里一次都没出现。"
+            + "），这些词在故事正文里没有肯定使用依据。"
         )
         result["ungrounded_tokens"] = list(ungrounded)
     if repeated_tags and not bare:
         result["reason"] = (
-            "标题重复使用同一分类/营销词，像模板槽位拼接（"
-            + "、".join(repeated_tags)
-            + "）。"
+            "标题重复使用同一分类/营销词，像模板槽位拼接（" + "、".join(repeated_tags) + "）。"
         )
         result["repeated_tag_tokens"] = list(repeated_tags)
     if bare:
         # Pure taxonomy names (题材名 = 书名) are a product red line → hard reject,
         # so selection can never ship them and downstream LLM revision must fire.
         result["hard_reject"] = True
-        result["reason"] = "标题只是题材/分类标签的堆叠（如「都市高武」「高武世界」），不是真正的书名。"
+        result["reason"] = (
+            "标题只是题材/分类标签的堆叠（如「都市高武」「高武世界」），不是真正的书名。"
+        )
     return result
 
 
@@ -3006,7 +3089,9 @@ def _title_revision_prompt(
     if "reader_attraction" in failed:
         instructions.append("增加人物动作、反差、误解或强处境，让读者第一眼知道为什么要点。")
     if "story_transmission" in failed:
-        instructions.append("补出人物动作和故事冲突，例如“我在做什么、别人误会/阻拦什么、局势如何升级”。")
+        instructions.append(
+            "补出人物动作和故事冲突，例如“我在做什么、别人误会/阻拦什么、局势如何升级”。"
+        )
     if "platform_fit" in failed:
         instructions.append(f"按{style.label}改写长度、标点和信息密度。")
     if "title_quality" in failed:
@@ -3025,7 +3110,9 @@ def _is_fanqie_short_profile(profile: Mapping[str, Any]) -> bool:
             " ".join(_string_list(profile.get("tags"))),
         ]
     )
-    return any(token in haystack for token in ("短故事", "单篇完结", "fanqie_short", "tomato_short"))
+    return any(
+        token in haystack for token in ("短故事", "单篇完结", "fanqie_short", "tomato_short")
+    )
 
 
 def _fanqie_short_template_specs(
@@ -3074,9 +3161,7 @@ def _fanqie_short_template_specs(
     )
     amount = _first_match(text, ("四十七万", "五十万", "一百万", "三千万"), fallback="")
     accusation_title = (
-        f"被栽赃{amount}后，我点开了{power}"
-        if amount
-        else f"被公司栽赃后，我点开了{power}"
+        f"被栽赃{amount}后，我点开了{power}" if amount else f"被公司栽赃后，我点开了{power}"
     )
     public_arena = _first_match(
         text,
@@ -3157,8 +3242,21 @@ def _candidate_label_fields(style: PlatformTitleStyle) -> dict[str, str]:
 
 
 _DETECTIVE_TITLE_MARKERS: tuple[str, ...] = (
-    "探案", "侦探", "悬疑", "推理", "刑侦", "诡案", "命案", "凶案",
-    "灵异", "怪谈", "诡事", "驱魔", "mystery", "detective", "thriller",
+    "探案",
+    "侦探",
+    "悬疑",
+    "推理",
+    "刑侦",
+    "诡案",
+    "命案",
+    "凶案",
+    "灵异",
+    "怪谈",
+    "诡事",
+    "驱魔",
+    "mystery",
+    "detective",
+    "thriller",
 )
 
 
@@ -3469,7 +3567,9 @@ def _score_candidate_breakdown(
     if style.key in {"fanqie", "feilu"} and title.startswith(fanqie_prefixes):
         attraction += 6
         platform_fit += 6
-    if style.key == "qq_read" and any(mark in title for mark in ("后", "当天", "重生", "离婚", "开局", "？")):
+    if style.key == "qq_read" and any(
+        mark in title for mark in ("后", "当天", "重生", "离婚", "开局", "？")
+    ):
         attraction += 6
         platform_fit += 5
     qimao_tokens = ("巅峰", "神医", "归来", "下山", "第一", "寒门")
@@ -3490,7 +3590,9 @@ def _score_candidate_breakdown(
         readability -= 5
         platform_fit -= 5
     generic_tokens = {"天命", "归来", "成神", "逆袭", "破局", "规则", "类型", "故事"}
-    if title in generic_tokens or any(title.endswith(token) and len(title) <= 4 for token in generic_tokens):
+    if title in generic_tokens or any(
+        title.endswith(token) and len(title) <= 4 for token in generic_tokens
+    ):
         searchability -= 4
         attraction -= 2
     if re.search(r"([\u4e00-\u9fff]{2,6})\1", title):
@@ -3574,14 +3676,14 @@ def _build_english_candidates(
                 "platform_label": style.label,
                 **label_fields,
                 "pattern": "English fallback",
-            "score": 70,
-            "score_breakdown": {
-                "attraction": 20,
-                "readability": 20,
-                "platform_fit": 20,
-                "searchability": 10,
-            },
-            "fit_notes": ["English fallback candidate."],
+                "score": 70,
+                "score_breakdown": {
+                    "attraction": 20,
+                    "readability": 20,
+                    "platform_fit": 20,
+                    "searchability": 10,
+                },
+                "fit_notes": ["English fallback candidate."],
             }
         )
         if len(rows) >= candidate_count:

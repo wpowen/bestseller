@@ -197,28 +197,27 @@ def _scan_scene_card_prose_copy(
             if len(normalized_source) < 18 or normalized_source in seen_sources:
                 continue
             seen_sources.add(normalized_source)
-            copied_at = _find_near_copy_offset(
-                normalized_source,
-                prose_segments,
-            )
-            if copied_at is None:
-                continue
-            line, col = _line_col(text, copied_at)
-            findings.append(
-                DeterministicAuditFinding(
-                    code="SCENE_CARD_PROSE_COPIED",
-                    severity="high",
-                    matched_text=source[:80],
-                    line_number=line,
-                    column=col,
-                    suggested_action=(
-                        "保留该节点要求的事实和结果，但用新的动作、对白与后果重写；"
-                        "不得照抄或换词改写场景卡句子。"
-                    ),
+            for segment in prose_segments:
+                copied_at = _find_near_copy_offset(
+                    normalized_source,
+                    [segment],
                 )
-            )
-            if len(findings) >= 3:
-                return findings
+                if copied_at is None:
+                    continue
+                line, col = _line_col(text, copied_at)
+                findings.append(
+                    DeterministicAuditFinding(
+                        code="SCENE_CARD_PROSE_COPIED",
+                        severity="high",
+                        matched_text=source[:80],
+                        line_number=line,
+                        column=col,
+                        suggested_action=(
+                            "保留该节点要求的事实和结果，但用新的动作、对白与后果重写；"
+                            "不得照抄或换词改写场景卡句子。"
+                        ),
+                    )
+                )
     return findings
 
 

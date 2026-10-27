@@ -356,7 +356,7 @@ class TestOutlineRepairDirectivesFromError:
 class TestPlannerEnrichmentTagging:
     _MANIFEST = [{"name": "闻雀", "role": "protagonist", "aliases": []}]
 
-    def test_participants_backfill_is_tagged(self):
+    def test_participant_presence_is_not_inferred_from_story_mentions(self):
         batch = _batch(
             [
                 {
@@ -376,7 +376,8 @@ class TestPlannerEnrichmentTagging:
         planner_services._enrich_generated_volume_outline_systemic_fields(
             batch, identity_manifest=self._MANIFEST, language="zh-CN"
         )
-        assert "participants" in batch.chapters[0].enriched_fields
+        assert batch.chapters[0].scenes[0].participants == []
+        assert "participants" not in batch.chapters[0].enriched_fields
 
     def test_causal_contract_and_hook_type_backfill_tagged(self):
         batch = _batch(

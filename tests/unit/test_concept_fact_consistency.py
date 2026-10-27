@@ -68,13 +68,41 @@ def test_canon_repair_consumes_detector():
     assert "det_before" in src and "det_after" in src, "采纳判定必须计入确定性冲突数"
 
 
+def test_canon_repair_has_bounded_retry_and_fatal_caller_block():
+    from bestseller.services import conception
+
+    repair_src = inspect.getsource(conception._repair_canon_contradictions)
+    pipeline_src = inspect.getsource(conception.run_conception_pipeline)
+    assert "_retry_budget" in repair_src
+    assert "fatal_blocking" in repair_src
+    assert repair_src.index("det_before = _det_conflicts") < repair_src.index(
+        "report = await verify_blurb_coherence"
+    )
+    assert "canon_fact_consistency" in pipeline_src
+    # The refactored entry calls the shared fatal blocker before packaging;
+    # its error literal lives in that helper rather than the entry's source.
+    assert "_raise_canon_fact_consistency_block_if_needed" in pipeline_src
+    from bestseller.services.story_appeal import AppealBarNotMetError
+
+    conflicts = detect_numeric_fact_conflicts({"premise": "陆家第七代", "spine": "陆家十八代"})
+    assert conflicts
+    with pytest.raises(AppealBarNotMetError) as blocked:
+        conception._raise_canon_fact_consistency_block_if_needed(
+            {"fatal_blocking": bool(conflicts), "repaired": False},
+            conception_log=[{"stage": "retained_failed_repair"}],
+        )
+    assert "canon_fact_consistency" in blocked.value.blocked_by
+    assert blocked.value.report["quality_issues"][0]["code"] == "CANON_FACT_CONSISTENCY_BLOCKED"
+    assert blocked.value.conception_log == [{"stage": "retained_failed_repair"}]
+
+
 def test_story_layer_revised_recheck_wired():
     # 白判修复：revised 卡必须复核，复核无改善不采纳
     from bestseller.services import concept_tournament
 
     src = inspect.getsource(concept_tournament.run_concept_tournament)
     assert "recheck_convicted" in src
-    assert "recheck_no_improvement" in src
+    assert "_repair_recheck_rejection(" in src
 
 
 def test_director_must_adjudicate_review():

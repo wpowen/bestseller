@@ -232,6 +232,17 @@ async def test_build_story_bible_overview_uses_latest_character_state(
 
     monkeypatch.setattr(inspection_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(inspection_services, "get_latest_character_state", fake_get_latest_character_state)
+    async def source_qualified_knowledge(_session, **_kwargs):
+        return {}
+
+    # This assembler fixture supplies an already qualified state. Real source
+    # rejection and prefix knowledge are covered by the SQLite reader tests.
+    monkeypatch.setattr(
+        "bestseller.services.character_snapshot_sources.read_character_snapshot_knowledge",
+        source_qualified_knowledge,
+    )
+    character_b.arc_state = "unqualified mutable cache"
+    character_b.knowledge_state_json = {"knows": ["unqualified mutable cache"]}
 
     session = FakeSession(
         scalars_results=[[world_rule], [location], [faction], [character_a, character_b], [relationship]]
@@ -244,6 +255,8 @@ async def test_build_story_bible_overview_uses_latest_character_state(
     shen_yan = next(item for item in result.characters if item.name == "沈砚")
     assert shen_yan.latest_state is not None
     assert shen_yan.latest_state.arc_state == "开始正视真相"
+    gu_lin = next(item for item in result.characters if item.name == "顾临")
+    assert gu_lin.arc_state is None and gu_lin.knowledge_state == {}
     assert result.relationships[0].relationship_type == "旧搭档"
 
 

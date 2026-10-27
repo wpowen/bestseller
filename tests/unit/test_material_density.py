@@ -190,6 +190,13 @@ def test_all_writing_genre_presets_select_material_and_premium_pack(
     )
 
     assert pack_id is not None
+    if preset.key == "realistic-life":
+        # Realistic creation now requires project-grounded materials/events;
+        # category templates must not masquerade as completed story history.
+        assert pack_id == "category_realistic_life_zh"
+        assert materials == []
+        assert _initial_premium_state_ledger_for_pack(pack_id) is None
+        return
     _assert_materials_meet_density(materials)
     assert _decision_policy_for_pack(pack_id)
     ledger = _initial_premium_state_ledger_for_pack(pack_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager, nullcontext
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     EmotionTrackModel,
     ProjectModel,
+    PlanningArtifactVersionModel,
     SceneCardModel,
     TimelineEventModel,
 )
@@ -23,7 +25,17 @@ from bestseller.settings import load_settings
 pytestmark = pytest.mark.unit
 
 
+def superseded_event(event: TimelineEventModel) -> TimelineEventModel:
+    return TimelineEventModel(
+        id=uuid4(), project_id=event.project_id, chapter_id=event.chapter_id,
+        scene_card_id=event.scene_card_id, event_name="旧稿事件",
+        event_type="chapter_event", story_order=1.03,
+        metadata_json={"knowledge_lineage_status": "superseded"},
+    )
+
+
 class FakeSession:
+    no_autoflush = nullcontext()
     def __init__(
         self,
         *,
@@ -33,7 +45,14 @@ class FakeSession:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
 
+    @asynccontextmanager
+    async def begin_nested(self):
+        yield self
+
     async def scalar(self, stmt: object) -> object | None:
+        if any(item.get("entity") is PlanningArtifactVersionModel
+            for item in getattr(stmt, "column_descriptions", ())):
+            return None  # This history-only fixture has no planning artifacts.
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
@@ -46,6 +65,22 @@ class FakeSession:
 
 def build_settings():
     return load_settings(env={})
+
+
+@pytest.fixture(autouse=True)
+def history_only_source_boundary(monkeypatch):
+    """These context fixtures have no planning rows or SQL execution backend.
+
+    Source admission/freshness is covered by the real SQLite entry suites; this
+    file isolates visible history and context composition at that boundary.
+    """
+    from bestseller.services import outline_source_entry
+
+    async def no_planning_rows(session, *, project, chapter):
+        assert isinstance(session, FakeSession)
+        return None
+
+    monkeypatch.setattr(outline_source_entry, "current_outline_artifact", no_planning_rows)
 
 
 def build_project() -> ProjectModel:
@@ -166,8 +201,10 @@ def test_chapter_draft_summary_from_current_text_keeps_previous_tail() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("story_time_label", ["昨夜", ""])
 async def test_build_scene_writer_context_includes_visible_history_and_filters_future(
     monkeypatch: pytest.MonkeyPatch,
+    story_time_label: str,
 ) -> None:
     settings = build_settings()
     settings.generation.active_context_scenes = 2
@@ -222,7 +259,7 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
         scene_card_id=previous_scene.id,
         event_name="发现异常",
         event_type="reveal",
-        story_time_label="昨夜",
+        story_time_label=story_time_label,
         story_order=1.02,
         participant_ids=["沈砚"],
         consequences=["调查升级"],
@@ -359,7 +396,7 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
             [previous_scene, current_scene],
             [summary_fact],
             [],  # SceneDraftVersionModel query for opening_lines
-            [event],
+            [event, superseded_event(event)],
             [participant_fact],
             [],
             [],
@@ -382,6 +419,8 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
     assert packet.project_slug == "my-story"
     assert packet.recent_scene_summaries[0].summary == "沈砚发现第一处异常。"
     assert packet.recent_timeline_events[0].event_name == "发现异常"
+    assert packet.recent_timeline_events[0].story_time_label == story_time_label
+    assert len(packet.recent_timeline_events) == 1
     assert packet.participant_canon_facts[0].subject_label == "沈砚"
     assert packet.tree_context_nodes[0].node_path == "/chapters/002/contract"
     assert len(packet.retrieval_chunks) == 1
@@ -391,8 +430,10 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("story_time_label", ["昨夜", ""])
 async def test_build_chapter_writer_context_includes_scene_plan_and_filters_future(
     monkeypatch: pytest.MonkeyPatch,
+    story_time_label: str,
 ) -> None:
     settings = build_settings()
     settings.generation.active_context_scenes = 2
@@ -453,7 +494,7 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
         scene_card_id=previous_scene.id,
         event_name="发现异常",
         event_type="reveal",
-        story_time_label="昨夜",
+        story_time_label=story_time_label,
         story_order=1.02,
         participant_ids=["沈砚"],
         consequences=["调查升级"],
@@ -586,7 +627,7 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
             [chapter1, chapter2],
             [previous_scene, current_scene_a, current_scene_b],
             [previous_summary],
-            [event],
+            [event, superseded_event(event)],
             [],
             [],
             [],
@@ -607,6 +648,8 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
     assert packet.chapter_scenes[0].summary == "沈砚重新登舰并接触旧搭档。"
     assert packet.previous_scene_summaries[0].summary == "沈砚发现第一处异常。"
     assert packet.recent_timeline_events[0].event_name == "发现异常"
+    assert packet.recent_timeline_events[0].story_time_label == story_time_label
+    assert len(packet.recent_timeline_events) == 1
     assert packet.tree_context_nodes[0].node_path == "/chapters/002"
     assert len(packet.retrieval_chunks) == 1
     assert packet.retrieval_chunks[0].chunk_text == "本章之前的关键线索"

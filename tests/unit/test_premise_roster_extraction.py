@@ -170,7 +170,8 @@ def test_enforce_premise_locked_cast_preserves_existing() -> None:
 def test_premise_locked_cast_has_gender_and_pronouns() -> None:
     """瓶颈#4: enforced premise-locked entries must carry gender + zh/en pronouns
     so the foundation_identity_contract passes at materialization (they skip the
-    LLM identity gates). 孤女→female; cue-less default→male."""
+    LLM identity gates). 孤女→female; 执事→male; cue-less entries stay unknown
+    so the identity gate can fail closed instead of manufacturing a male identity."""
     from bestseller.services.planner import _enforce_premise_locked_cast
 
     premise = (
@@ -182,9 +183,15 @@ def test_premise_locked_cast_has_gender_and_pronouns() -> None:
     by_name = {c["name"]: c for c in out["supporting_cast"]}
     for n in ("宋拾", "关铎", "裴萤", "白杪"):
         assert n in by_name, f"{n} not enforced"
-        assert (by_name[n].get("gender") or "").lower() in ("male", "female")
-        assert by_name[n].get("pronoun_set_zh")
-        assert by_name[n].get("pronoun_set_en")
+        assert (by_name[n].get("gender") or "").lower() in ("male", "female", "unknown")
+        if by_name[n]["gender"] == "unknown":
+            assert by_name[n].get("pronoun_set_zh") is None
+            assert by_name[n].get("pronoun_set_en") is None
+        else:
+            assert by_name[n].get("pronoun_set_zh")
+            assert by_name[n].get("pronoun_set_en")
     # 孤女 → female; 萤 (feminine name char) → female
     assert by_name["宋拾"]["gender"] == "female"
+    assert by_name["关铎"]["gender"] == "male"
     assert by_name["裴萤"]["gender"] == "female"
+    assert by_name["白杪"]["gender"] == "unknown"

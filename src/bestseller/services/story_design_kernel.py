@@ -1096,13 +1096,26 @@ def render_story_design_kernel_prompt_block(
     *,
     max_plot_lines: int = 8,
     max_beat_items: int = 8,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Render the kernel as a compact prompt block for downstream planners."""
 
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
     if kernel is None:
         return ""
+    raw_ideology = (
+        kernel.get("ideology_kernel") if isinstance(kernel, dict) else kernel.ideology_kernel
+    )
+    if not planning_capability_selected(metadata, "story_design_kernel"):
+        return render_ideology_kernel_prompt_block(raw_ideology or {}, metadata=metadata)
     if isinstance(kernel, dict):
-        kernel = story_design_kernel_from_dict(kernel)
+        from bestseller.services.ideology_methodology import project_ideology_kernel
+
+        kernel = story_design_kernel_from_dict({
+            **kernel,
+            "ideology_kernel": project_ideology_kernel(raw_ideology, metadata),
+        })
 
     lines = [
         "## Story Design Kernel",
@@ -1113,10 +1126,9 @@ def render_story_design_kernel_prompt_block(
             f"{kernel.shape.outline_depth}"
         ),
     ]
-    ideology_block = render_ideology_kernel_prompt_block(kernel.ideology_kernel)
+    ideology_block = render_ideology_kernel_prompt_block(raw_ideology or {}, metadata=metadata)
     if ideology_block:
-        # The ideology kernel is the thematic spine — surface it first so every
-        # downstream contract (worldview, plot tree, beats) is read as serving it.
+        # Surface only current author clauses, within their stated scope.
         lines.append(ideology_block)
     lines += [
         f"- Primary duties: {', '.join(kernel.shape.primary_duties)}",

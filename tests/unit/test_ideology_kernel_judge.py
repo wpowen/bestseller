@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+
 """Unit tests for ideology kernel derivation, coherence gate, and advisory judge.
 
 All pure (no LLM / no DB): we exercise the deterministic fallback, the prompt
@@ -7,10 +9,13 @@ builders, the parser merge logic, the structural gate, and the scoring path.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from bestseller.domain.ideology import LAYER_KEYS, ideology_kernel_from_dict
+from bestseller.domain.ideology import ideology_kernel_from_dict
+from bestseller.services.creation_intent_contract import build_creation_intent_contract
+from bestseller.services.genre_intent_contract import contract_from_selection
 from bestseller.services.ideology_coherence_gate import (
     audit_ideology_outline_grounding,
     evaluate_ideology_kernel_coherence,
@@ -33,6 +38,23 @@ from bestseller.services.ideology_kernel import (
 pytestmark = pytest.mark.unit
 
 
+def _legacy_kernel() -> dict:
+    fixture = Path(__file__).parents[1] / "fixtures" / "legacy_ideology_kernel.json"
+    return json.loads(fixture.read_text())
+
+
+def _author_metadata(fields=None, *, layers=()) -> dict:
+    contract = build_creation_intent_contract(
+        contract_from_selection({"genre": "urban"}),
+        hook_spec={"ideology_contract": {
+            "version": "ideology-author-contract.v1", "fields": fields or {},
+            "required_layers": list(layers),
+        }},
+        field_sources={"hook_spec": "explicit"},
+    )
+    return {"creation_intent_contract": contract.model_dump(mode="json")}
+
+
 # --- fallback kernel --------------------------------------------------------
 
 
@@ -46,123 +68,88 @@ pytestmark = pytest.mark.unit
         "",
     ],
 )
-def test_fallback_kernel_is_always_valid_and_four_layered(premise: str) -> None:
-    payload = fallback_ideology_kernel(premise=premise, volumes=8)
-    kernel = ideology_kernel_from_dict(payload)  # must not raise
-    assert kernel.covered_layers() == set(LAYER_KEYS)
-    assert kernel.secondary_roles() == {"action", "suspense"}
-    assert kernel.hidden_endgame_motif is not None
-    assert len(kernel.cost_system) >= 2
-    assert kernel.forbidden_resolutions
-    assert kernel.per_volume_thesis_pressure
-    assert kernel.sub_themes  # 主主题 + 子题 model
+def test_fallback_kernel_is_valid_without_unselected_layers(premise: str) -> None:
+    kernel = ideology_kernel_from_dict(fallback_ideology_kernel(premise=premise, volumes=8))
+    assert kernel.covered_layers() == set()
+    assert kernel.primary_motif is None and kernel.belief_arc is None
+    assert kernel.thesis_statement == kernel.cosmic_premise == ""
+    assert kernel.cost_system == []
 
 
-def test_fallback_same_genre_different_premises_get_different_themes() -> None:
-    """HARD REQUIREMENT proof at the kernel level: genre is NOT in the seed, so
-    same-genre books with different premises get different theses/spines."""
-
-    xianxia_premises = [
-        "边城百年被天罚清洗，少年拜入仙门追查真相。",
-        "废弟子捡到一缕剑魂，被迫替死人完成复仇。",
-        "守山人世代镇着一口古井，直到井里开始说话。",
-        "她继承了一座没有香火的山神庙，神位上空无一物。",
-    ]
-    theses = set()
-    spines = set()
-    for p in xianxia_premises:
-        # Same genre label passed, but it must NOT collapse them to one theme.
-        k = ideology_kernel_from_dict(fallback_ideology_kernel(premise=p, genre="仙侠", volumes=8))
-        theses.add(k.thesis_statement)
-        spines.add(tuple(b.motif_key for b in k.all_motifs()))
-    assert len(theses) >= 3, f"same-genre theses too homogeneous: {theses}"
-    assert len(spines) >= 2, f"same-genre spines too homogeneous: {spines}"
+def test_fallback_does_not_choose_themes_from_premise_or_genre() -> None:
+    for premise in ("边城遭天罚", "港口共同修钟", "山神庙没有神位"):
+        kernel = ideology_kernel_from_dict(fallback_ideology_kernel(premise=premise, genre="仙侠"))
+        assert kernel.thesis_statement == "" and not kernel.all_motifs()
 
 
-def test_fallback_multi_volume_sets_hidden_reveal_slot() -> None:
+def test_multiple_volumes_do_not_authorize_hidden_endgame() -> None:
     kernel = ideology_kernel_from_dict(fallback_ideology_kernel(genre="仙侠", volumes=10))
-    assert kernel.hidden_endgame_motif is not None
-    assert kernel.hidden_endgame_motif.reveal_after_volume is not None
-    assert 1 <= kernel.hidden_endgame_motif.reveal_after_volume <= 10
+    assert kernel.hidden_endgame_motif is None
 
 
-def test_health_summary_shape() -> None:
+def test_health_summary_reports_actual_empty_structure() -> None:
     kernel = ideology_kernel_from_dict(fallback_ideology_kernel(genre="玄幻", volumes=5))
     summary = ideology_kernel_health_summary(kernel)
-    assert summary["layer_count"] == 4
-    assert set(summary["secondary_roles"]) == {"action", "suspense"}
+    assert summary["layer_count"] == 0 and summary["secondary_roles"] == []
+    assert summary["primary_motif"] is None and summary["cost_laws"] == 0
 
 
 # --- prompt builders --------------------------------------------------------
 
 
-def test_derivation_prompts_are_nonempty_and_mention_layers() -> None:
+def test_derivation_prompts_keep_absent_author_fields_empty() -> None:
     sys_p = build_ideology_system_prompt(language="zh")
-    usr_p = build_ideology_user_prompt(premise="一座边城百年被天罚清洗。", genre="仙侠", volumes=6)
-    assert "IdeologyKernel" in sys_p
-    assert "宇宙秩序" in usr_p
-    assert "fallback" in usr_p.lower() or "最低结构" in usr_p
+    usr_p = build_ideology_user_prompt(premise="港口共同修钟。", genre="都市", volumes=6)
+    assert sys_p and usr_p
+    assert '"effective_fields": {}' in usr_p
+    assert '"required_layers": []' in usr_p
 
 
 # --- parser merge -----------------------------------------------------------
 
 
-def test_parse_kernel_merges_partial_llm_output_with_fallback() -> None:
-    partial = json.dumps(
-        {
-            "thesis_statement": "边城的天罚只是收割，没有谁是无辜的。",
-            "core_question": "若天罚只是收割，人还该不该护这座城？",
-        }
+def test_parser_keeps_author_fields_without_model_backfill() -> None:
+    fields = {"thesis_statement": "共同修钟让分歧可以讨论。"}
+    kernel = parse_ideology_kernel(
+        json.dumps({"thesis_statement": "AI replacement", "cosmic_premise": "AI premise"}),
+        metadata=_author_metadata(fields),
     )
-    kernel = parse_ideology_kernel(partial, genre="仙侠", volumes=6)
-    # LLM fields kept...
-    assert kernel.thesis_statement == "边城的天罚只是收割，没有谁是无辜的。"
-    # ...missing required structure backfilled from the fallback (still valid).
-    assert kernel.covered_layers() == set(LAYER_KEYS)
+    assert kernel.thesis_statement == fields["thesis_statement"]
+    assert kernel.cosmic_premise == "" and not kernel.covered_layers()
 
 
-def test_parse_kernel_falls_back_on_garbage() -> None:
+def test_parse_garbage_keeps_unknown_methodology_empty() -> None:
     kernel = parse_ideology_kernel("not json at all", genre="悬疑", volumes=3)
-    assert kernel.covered_layers() == set(LAYER_KEYS)
+    assert not kernel.covered_layers() and kernel.primary_motif is None
 
 
 # --- coherence gate ---------------------------------------------------------
 
 
-def test_coherence_gate_passes_on_complete_fallback() -> None:
-    kernel = ideology_kernel_from_dict(fallback_ideology_kernel(genre="仙侠", volumes=8))
-    verdict = evaluate_ideology_kernel_coherence(kernel, volumes=8)
-    assert verdict.verdict == "pass"
-    assert verdict.coverage == 1.0
-    assert verdict.critical_count == 0
+def test_complete_legacy_kernel_does_not_prove_author_methodology() -> None:
+    verdict = evaluate_ideology_kernel_coherence(_legacy_kernel(), volumes=8)
+    assert verdict.verdict == "not_run" and not verdict.passed
+    assert verdict.coverage == 0 and verdict.metrics["checks_total"] == 0
 
 
-def test_coherence_gate_is_advisory_not_blocking_on_missing_layer() -> None:
-    # Strip to a single-layer kernel: only the primary remains.
-    payload = fallback_ideology_kernel(genre="仙侠", volumes=4)
-    payload["secondary_motifs"] = []
-    payload["hidden_endgame_motif"] = None
-    payload["layer_coverage"] = {}
-    kernel = ideology_kernel_from_dict(payload)
-    verdict = evaluate_ideology_kernel_coherence(kernel, volumes=4)
-    # Advisory by default: warns, never blocks, even with a critical missing layer.
-    assert verdict.verdict == "warn_only"
-    assert verdict.required is False
-    assert any(f.code == "ideology_missing_layer" for f in verdict.findings)
+def test_coherence_gate_ignores_unselected_missing_layers() -> None:
+    verdict = evaluate_ideology_kernel_coherence({}, volumes=4)
+    assert verdict.verdict == "not_run" and verdict.findings == ()
 
 
-def test_coherence_gate_can_hard_block_when_required() -> None:
-    payload = fallback_ideology_kernel(genre="仙侠", volumes=4)
-    payload["secondary_motifs"] = []
-    payload["hidden_endgame_motif"] = None
-    payload["layer_coverage"] = {}
-    kernel = ideology_kernel_from_dict(payload)
-    verdict = evaluate_ideology_kernel_coherence(kernel, volumes=4, required=True)
+def test_coherence_gate_blocks_missing_explicit_layer_when_required() -> None:
+    verdict = evaluate_ideology_kernel_coherence(
+        {}, volumes=4, required=True, metadata=_author_metadata(layers=["subject_choice"]),
+    )
     assert verdict.verdict == "blocked"
+    assert {finding.code for finding in verdict.findings} == {"ideology_missing_layer"}
 
 
-def test_coherence_gate_handles_invalid_payload() -> None:
-    verdict = evaluate_ideology_kernel_coherence({"garbage": 1}, volumes=2)
+def test_coherence_gate_reports_invalid_supplied_author_kernel() -> None:
+    verdict = evaluate_ideology_kernel_coherence(
+        {"primary_motif": "invalid"}, volumes=2,
+        metadata=_author_metadata({"thesis_statement": "共同修钟。"}),
+    )
     assert verdict.verdict == "warn_only"
     assert any(f.code == "ideology_kernel_invalid" for f in verdict.findings)
 
@@ -171,7 +158,8 @@ def test_coherence_gate_handles_invalid_payload() -> None:
 
 
 def test_grounding_audit_detects_present_symbols_and_thesis() -> None:
-    kernel = ideology_kernel_from_dict(fallback_ideology_kernel(genre="仙侠", volumes=4))
+    payload = _legacy_kernel()
+    kernel = ideology_kernel_from_dict(payload)
     # Ground several of the kernel's concrete symbols so coverage is real, not 1/12.
     symbols = list(kernel.primary_motif.concrete_symbols)
     for b in kernel.secondary_motifs:
@@ -182,7 +170,10 @@ def test_grounding_audit_detects_present_symbols_and_thesis() -> None:
         f"第一卷：村庄祭天，{grounded}。主角相信庇佑，却目睹覆灭。"
         f"主题：{thesis} 主角每救一人都要付出代价、折寿偿还。"
     )
-    g = audit_ideology_outline_grounding(kernel, outline)
+    fields = {key: payload[key] for key in (
+        "primary_motif", "secondary_motifs", "thesis_statement", "belief_arc",
+    )}
+    g = audit_ideology_outline_grounding(kernel, outline, metadata=_author_metadata(fields))
     assert g.symbol_hits >= 3
     assert g.thesis_keyword_hits > 0
     assert g.cost_language_present is True
@@ -190,9 +181,14 @@ def test_grounding_audit_detects_present_symbols_and_thesis() -> None:
 
 
 def test_grounding_audit_flags_empty_outline() -> None:
-    kernel = ideology_kernel_from_dict(fallback_ideology_kernel(genre="仙侠", volumes=4))
-    g = audit_ideology_outline_grounding(kernel, "主角升级打怪，一路碾压，无需多言。")
-    assert "no_cost_language" in g.flagged
+    payload = _legacy_kernel()
+    kernel = ideology_kernel_from_dict(payload)
+    g = audit_ideology_outline_grounding(
+        kernel, "主角升级打怪，一路碾压，无需多言。",
+        metadata=_author_metadata({"thesis_statement": payload["thesis_statement"]}),
+    )
+    assert "no_cost_language" not in g.flagged  # no author source authorizes a price
+    assert "thesis_absent_from_outline" in g.flagged
 
 
 # --- judge scoring path -----------------------------------------------------
@@ -318,7 +314,8 @@ def test_story_design_kernel_carries_and_renders_ideology() -> None:
     k = story_design_kernel_from_dict(with_id)
     assert k.ideology_kernel is not None
     block = render_story_design_kernel_prompt_block(k)
-    assert "核心理念内核" in block and "主主题" in block
+    assert with_id["ideology_kernel"].get("thesis_statement", "") == ""
+    assert "核心理念内核" not in block
 
     # Without ideology: still valid, no ideology block (backward compatible).
     k2 = story_design_kernel_from_dict(base)
@@ -326,49 +323,30 @@ def test_story_design_kernel_carries_and_renders_ideology() -> None:
     assert "核心理念内核" not in render_story_design_kernel_prompt_block(k2)
 
 
-def test_parse_backfills_partial_llm_structure() -> None:
-    """Pilot-found logic gap: the LLM returned 1 secondary + no hidden. The parser
-    must backfill the action+suspense pair + hidden from the fallback, not let the
-    partial output degrade the spine."""
-
-    partial = json.dumps(
-        {
-            "thesis_statement": "真相是分期账单，每看清一层就欠下一笔命。",
-            "core_question": "你真的想把账单看到底吗？",
-            "primary_motif": {
-                "motif_key": "daijia", "display_name": "代价", "layer": "subject_choice",
-                "book_thesis": "看真相要折寿", "book_core_question": "愿用寿命换真相吗",
-            },
-            "secondary_motifs": [
-                {"motif_key": "zhenxiang", "display_name": "真相", "layer": "cognitive_crisis",
-                 "book_thesis": "天罚是收割", "book_core_question": "真相是什么", "role": "suspense"},
-            ],
-            # NO hidden_endgame_motif, only 1 secondary (missing action role)
-        }
-    )
-    kernel = parse_ideology_kernel(partial, premise="边城天罚追真相", volumes=8)
-    assert kernel.thesis_statement.startswith("真相是分期账单")  # LLM content kept
-    assert kernel.secondary_roles() == {"action", "suspense"}, "must backfill the missing action role"
-    assert kernel.hidden_endgame_motif is not None, "must backfill the missing hidden motif"
-    assert len(kernel.secondary_motifs) >= 2
+def test_parser_does_not_backfill_unselected_motifs_or_belief() -> None:
+    partial = json.dumps({"thesis_statement": "AI proposed thesis", "secondary_motifs": []})
+    kernel = parse_ideology_kernel(partial, premise="边城追真相", volumes=8)
+    assert kernel.thesis_statement == ""
+    assert kernel.secondary_motifs == [] and kernel.hidden_endgame_motif is None
+    assert kernel.belief_arc is None
 
 
-def test_compact_ideology_block_carries_spine() -> None:
+def test_compact_block_only_carries_exact_author_fields() -> None:
     from bestseller.domain.ideology import render_ideology_compact_block
 
-    kernel = ideology_kernel_from_dict(fallback_ideology_kernel(premise="边城天罚", volumes=8))
-    block = render_ideology_compact_block(kernel)
-    assert "核心理念(必须贯彻)" in block
-    assert "主主题" in block and "信念弧" in block and "代价" in block
-    assert kernel.thesis_statement in block  # the actual thesis text is present
+    kernel = _legacy_kernel()
+    assert render_ideology_compact_block(kernel) == ""
+    fields = {"thesis_statement": kernel["thesis_statement"]}
+    block = render_ideology_compact_block(kernel, metadata=_author_metadata(fields))
+    assert kernel["thesis_statement"] in block
+    assert kernel["cosmic_premise"] not in block
     assert render_ideology_compact_block(None) == ""
 
 
-def test_gate_credits_cosmic_premise_for_noncosmic_primary() -> None:
-    """Pilot-found over-flagging: a valid 代价/真相-led spine (primary not cosmic)
-    covers cosmic via its cosmic_premise text — the gate must not flag it missing."""
+def test_unselected_legacy_cosmic_premise_cannot_authorize_a_layer() -> None:
+    """A populated legacy premise does not authorize a structural requirement."""
 
-    payload = fallback_ideology_kernel(premise="边城天罚", volumes=8)
+    payload = _legacy_kernel()
     # Force a subject-layer primary (代价) + cognitive suspense + ethical hidden so
     # the motif bindings span subject/cognitive/ethical = 3 (no cosmic binding).
     payload["primary_motif"] = {
@@ -382,17 +360,16 @@ def test_gate_credits_cosmic_premise_for_noncosmic_primary() -> None:
          "book_thesis": "天罚是收割", "book_core_question": "真相为何", "role": "suspense"},
     ]
     payload["hidden_endgame_motif"] = {
-        "motif_key": "changsheng_zhouzhou", "display_name": "长生是诅咒", "layer": "ethical_reversal",
+        "motif_key": "changsheng_zhouzhou", "display_name": "长生是诅咒",
+        "layer": "ethical_reversal",
         "book_thesis": "长生是刑罚", "book_core_question": "为何还活", "reveal_after_volume": 5,
     }
-    payload["cosmic_premise"] = "灵脉可被收割，收割之地百年一劫，天罚只是周期工程。"
+    payload["cosmic_premise"] = "旧版宇宙设定只是历史资料。"
     payload["layer_coverage"] = {}
     kernel = ideology_kernel_from_dict(payload)
     assert "cosmic_order" not in kernel.covered_layers()  # no cosmic MOTIF binding
     verdict = evaluate_ideology_kernel_coherence(kernel, volumes=8)
-    assert not any(f.code == "ideology_missing_layer" for f in verdict.findings), (
-        "substantive cosmic_premise should satisfy the cosmic layer"
-    )
+    assert verdict.verdict == "not_run" and not verdict.findings
 
 
 def test_repair_directives_from_revision_priority() -> None:

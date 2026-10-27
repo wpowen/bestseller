@@ -237,7 +237,9 @@ def test_whole_book_quality_gate_flags_flat_chain_and_cost_free_win() -> None:
         },
     ]
 
-    report = evaluate_whole_book_quality(chapters, emotion_driven_kernel=kernel)
+    report = evaluate_whole_book_quality(
+        chapters, emotion_driven_kernel=kernel, cost_style="standard",
+    )
     codes = {finding.code for finding in report.findings}
 
     assert report.passed is False

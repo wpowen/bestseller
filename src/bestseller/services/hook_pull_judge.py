@@ -135,12 +135,14 @@ def build_hook_pull_messages(
         "goal_quote（必须是原文连续片段，一个字都不许改写；摘不出就留空）。"
         "『活下去』『变强』『誓要…』『只想…』这类字样都是目标——即使前面"
         "带着『无奈之下』『被迫』的语气，写出来了就是写出来了，不许注销。"
-        "然后答出读者点进去想看主角【赢什么/翻什么身/兑现什么优势/清算什么账/"
-        "怎么活下来】。**书名和一句话是读者同时看到的一个整体，书名常常就是"
+        "然后答出读者点进去想看主角【赢什么/完成什么明确目标或阅读承诺】。"
+        "翻身、力量或地位增长只是部分题材的目标；关系修复、履行承诺、守护生活、"
+        "寻找答案与告别也可以构成具体目标，但必须在原文有行动、选择或关系证据，"
+        "不得凭题材偏好虚构欲望或加分。**书名和一句话是读者同时看到的一个整体，书名常常就是"
         "钩子本体**（书名里明写的身份反差/目标/能力都算数）。铁律一：craving "
         "必须由 goal_quote 支撑——goal_quote 为空则 craving 必须留空；"
-        "「被逼着做X」里的X是别人的要求，不算目标。铁律二：craving 必须落在"
-        "上面五类之内——求死、维持现状、保住生计、被迫承受不算。"
+        "若只有别人的要求而没有主角自己的行动或目标，不算目标；"
+        "不得仅因目标没有逆袭、权力或强对抗就注销原文已明确的阅读承诺。"
         "craving 为空 → 总分不得超过 4。"
         "例外：具体的谜或具体的怕**落在主角自己身上**（他自己是谜团/他自己"
         "被威胁且文本给出当场证据）也算 craving，此时 goal_quote 摘那段"
@@ -301,6 +303,7 @@ async def evaluate_hook_pull(
     """多采样取中位。fail-open：判官不可用返回 None，绝不伪造分数。"""
 
     from bestseller.services.llm import LLMCompletionRequest, complete_text
+    from bestseller.services.budget import ExecutionBudgetError
 
     system, user = build_hook_pull_messages(
         title=title, hook=hook, genre=genre, channel=channel
@@ -314,8 +317,10 @@ async def evaluate_hook_pull(
                     logical_role="critic", model_tier="strong",
                     system_prompt=system, user_prompt=user,
                     fallback_response="{}",
-                    prompt_template="hook_pull_judge", prompt_version="v1",
-                    max_tokens_override=300,
+                    prompt_template="hook_pull_judge", prompt_version="v2",
+                    # Mandatory thinking shares completion tokens on M3.1.
+                    # 300 was exhausted before the JSON answer could begin.
+                    max_tokens_override=4096,
                 ),
             )
             parsed = parse_hook_pull_verdict(
@@ -323,7 +328,7 @@ async def evaluate_hook_pull(
             )
             if parsed is not None:
                 results.append(parsed)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ExecutionBudgetError):
             raise
         except Exception:
             logger.warning("hook pull judge sample failed", exc_info=True)
@@ -346,8 +351,8 @@ async def evaluate_hook_pull(
                     logical_role="critic", model_tier="strong",
                     system_prompt=defect_system, user_prompt=defect_user,
                     fallback_response='{"hits":[]}',
-                    prompt_template="hook_defect_judge", prompt_version="v1",
-                    max_tokens_override=300,
+                    prompt_template="hook_defect_judge", prompt_version="v2",
+                    max_tokens_override=4096,
                 ),
             )
             vote = parse_hook_defect_verdict(
@@ -355,7 +360,7 @@ async def evaluate_hook_pull(
             )
             if vote is not None:
                 defect_votes.append(vote)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ExecutionBudgetError):
             raise
         except Exception:
             logger.warning("hook defect judge sample failed", exc_info=True)

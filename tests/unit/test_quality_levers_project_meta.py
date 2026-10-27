@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from planning_capability_test_helpers import explicit_planning_metadata
 
 from bestseller.services.quality_levers.project_meta import (
     extract_quality_levers_meta,
@@ -120,7 +121,9 @@ def test_extract_emotion_driven_kernel_when_mapping() -> None:
         "reader_emotion_promise": "让读者等待身份揭开。",
         "empathy_contracts": [],
     }
-    meta = extract_quality_levers_meta({"emotion_driven_kernel": payload})
+    meta = extract_quality_levers_meta(explicit_planning_metadata(
+        "emotion_driven_kernel", metadata={"emotion_driven_kernel": payload},
+    ))
     assert meta.emotion_driven_kernel == payload
 
 
@@ -148,7 +151,9 @@ def test_extract_public_emotion_kernel_when_mapping() -> None:
             }
         ],
     }
-    meta = extract_quality_levers_meta({"public_emotion_kernel": payload})
+    meta = extract_quality_levers_meta(explicit_planning_metadata(
+        "public_emotion_kernel", metadata={"public_emotion_kernel": payload},
+    ))
     assert meta.public_emotion_kernel == payload
 
 

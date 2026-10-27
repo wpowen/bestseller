@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from bestseller.domain.enums import ArtifactType, ProjectType
 from bestseller.domain.project import ProjectStructureRead
@@ -22,6 +23,7 @@ from bestseller.services.inspection import (
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipeline_flow_schema import (
     PIPELINE_FLOW_SCHEMA_VERSION,
+    PipelineFlowAdoptionStats,
     PipelineFlowChapterRuntime,
     PipelineFlowEdgeDef,
     PipelineFlowIssue,
@@ -87,6 +89,7 @@ def _infer_node_status(
     narrative_counts: dict[str, int],
     project_metadata: dict[str, Any],
     blocked_chapters: int,
+    adoption: PipelineFlowAdoptionStats | None,
 ) -> tuple[NodeStatus, dict[str, Any], list[dict[str, Any]]]:
     if not node_applies(defn, active_path):
         return "not_applicable", {}, []
@@ -135,6 +138,23 @@ def _infer_node_status(
                     }
                 )
 
+    # A completed workflow or old chapter status does not prove adopted prose.
+    if defn.id == "chapter_loop":
+        metrics["blocked_chapters"] = blocked_chapters
+        metrics["adopted_chapters"] = adoption.adopted_chapters if adoption else None
+        statuses = [str(ref.get("status") or "") for ref in workflow_refs]
+        if blocked_chapters or metrics.get("blocked"):
+            return "blocked", metrics, node_issues
+        if any(s == "failed" for s in statuses):
+            return "failed", metrics, node_issues
+        if any(s in {"running", "in_progress"} for s in statuses):
+            return "running", metrics, node_issues
+        if (adoption is not None and structure.target_chapters > 0
+                and set(range(1, structure.target_chapters + 1))
+                <= set(adoption.adopted_chapter_numbers)):
+            return "completed", metrics, node_issues
+        return "pending", metrics, node_issues
+
     # Status resolution
     if workflow_refs:
         statuses = [str(ref.get("status") or "") for ref in workflow_refs]
@@ -165,23 +185,6 @@ def _infer_node_status(
 
     if defn.id == "project_create":
         return "completed", metrics, node_issues
-
-    if defn.id == "chapter_loop" and structure.total_chapters > 0:
-        metrics["blocked_chapters"] = blocked_chapters
-        if blocked_chapters > 0:
-            return "blocked", metrics, node_issues
-        approved = sum(
-            1
-            for vol in structure.volumes
-            for ch in vol.chapters
-            if str(ch.status) in {"approved", "complete", "completed"}
-        )
-        metrics["chapters_with_draft"] = approved
-        if approved >= structure.total_chapters:
-            return "completed", metrics, node_issues
-        if approved > 0:
-            return "running", metrics, node_issues
-        return "pending", metrics, node_issues
 
     if defn.phase == "config":
         return "completed", metrics, node_issues
@@ -282,6 +285,7 @@ async def build_pipeline_flow_overview(
     *,
     settings: AppSettings | None = None,
     task_timeline: list[dict[str, Any]] | None = None,
+    adoption_progress: dict[str, Any] | None = None,
 ) -> PipelineFlowOverview:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -289,9 +293,16 @@ async def build_pipeline_flow_overview(
 
     active_path = resolve_pipeline_path(project, settings=settings)
     node_defs, edges = build_pipeline_flow_schema()
+    adoption = (
+        PipelineFlowAdoptionStats.model_validate(adoption_progress)
+        if adoption_progress is not None else None
+    )
+    adopted_by_number = {
+        row["number"]: row for row in (adoption_progress or {}).get("chapters", [])
+    }
 
     structure = await build_project_structure(session, project_slug)
-    workflow = await build_project_workflow_overview(session, project_slug)
+    workflow = await build_project_workflow_overview(session, project_slug, include_details=False)
     story_bible = await build_story_bible_overview(session, project_slug)
     narrative = await build_narrative_overview(session, project_slug)
 
@@ -303,6 +314,11 @@ async def build_pipeline_flow_overview(
                 PlanningArtifactVersionModel.artifact_type.asc(),
                 PlanningArtifactVersionModel.version_no.desc(),
             )
+            .options(load_only(
+                PlanningArtifactVersionModel.id, PlanningArtifactVersionModel.artifact_type,
+                PlanningArtifactVersionModel.version_no, PlanningArtifactVersionModel.status,
+                PlanningArtifactVersionModel.created_at, raiseload=True,
+            ))
         )
     )
     artifact_map = _artifact_presence(artifact_rows)
@@ -347,6 +363,7 @@ async def build_pipeline_flow_overview(
             narrative_counts=narrative_counts,
             project_metadata=project_metadata,
             blocked_chapters=blocked_chapters,
+            adoption=adoption,
         )
         refs: list[dict[str, Any]] = []
         for wf_type in defn.workflow_types:
@@ -375,32 +392,42 @@ async def build_pipeline_flow_overview(
             )
         )
 
-    chapter_meta_result = await session.execute(
-        select(ChapterModel.chapter_number, ChapterModel.metadata_json).where(
+    chapter_rows = list(await session.scalars(
+        select(ChapterModel).where(
             ChapterModel.project_id == project.id
-        )
-    )
-    chapter_meta_by_number: dict[int, dict[str, Any]] = {}
-    for row in chapter_meta_result:
-        ch_no, meta = row[0], row[1]
-        chapter_meta_by_number[int(ch_no)] = dict(meta or {})
+        ).order_by(ChapterModel.chapter_number).execution_options(
+            populate_existing=True, autoflush=False,
+        ).options(load_only(
+            ChapterModel.id, ChapterModel.chapter_number, ChapterModel.title,
+            ChapterModel.status, ChapterModel.production_state, ChapterModel.metadata_json,
+            raiseload=True,
+        ))
+    ))
+    chapter_meta_by_number = {
+        row.chapter_number: dict(row.metadata_json or {}) for row in chapter_rows
+    }
+    scene_counts = {
+        ch.chapter_number: len(ch.scenes) for vol in structure.volumes for ch in vol.chapters
+    }
 
     chapters_runtime: list[PipelineFlowChapterRuntime] = []
-    for vol in structure.volumes:
-        for ch in vol.chapters:
-            ch_meta = chapter_meta_by_number.get(ch.chapter_number, {})
-            ch_gates = [key for key in registered_block_metadata_keys() if ch_meta.get(key)]
-            chapters_runtime.append(
-                PipelineFlowChapterRuntime(
-                    chapter_number=ch.chapter_number,
-                    title=ch.title,
-                    status=str(ch.status),
-                    production_state=ch.production_state,
-                    scene_count=len(ch.scenes),
-                    word_count=ch.current_word_count,
-                    gates=ch_gates,
-                )
+    for ch in chapter_rows:
+        ch_meta = chapter_meta_by_number[ch.chapter_number]
+        adopted = adopted_by_number.get(ch.chapter_number)
+        chapters_runtime.append(
+            PipelineFlowChapterRuntime(
+                chapter_number=ch.chapter_number,
+                title=ch.title,
+                status=str(ch.status),
+                production_state=ch.production_state,
+                scene_count=scene_counts.get(ch.chapter_number, 0),
+                word_count=adopted["word_count"] if adopted else 0,
+                adoption_state=(adopted["acceptance"] if adopted else
+                                "unadopted" if adoption is not None else "unknown"),
+                source_chapter_draft_version_id=adopted["draft_id"] if adopted else None,
+                gates=[key for key in registered_block_metadata_keys() if ch_meta.get(key)],
             )
+        )
 
     issues = _build_global_issues(
         structure=structure,
@@ -415,6 +442,8 @@ async def build_pipeline_flow_overview(
         generated_at=datetime.now(UTC).isoformat(),
         active_path=active_path,
         project={
+            "id": str(project.id),
+            "source": "db",
             "slug": project.slug,
             "title": project.title,
             "genre": project.genre,
@@ -426,6 +455,7 @@ async def build_pipeline_flow_overview(
             "prompt_pack_key": metadata.get("prompt_pack_key") or metadata.get("prompt_pack_name"),
             "premise": metadata.get("premise", ""),
         },
+        adoption=adoption,
         node_defs=[d for d in node_defs if node_applies(d, active_path) or d.phase == "gate"],
         edges=[e for e in edges if any(
             n.id == e.from_id for n in node_defs if node_applies(n, active_path)

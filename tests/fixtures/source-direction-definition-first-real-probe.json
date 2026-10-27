@@ -1,0 +1,225 @@
+{
+  "probe_task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+  "cases": [
+    {
+      "id": "source",
+      "origin": "source",
+      "text": "收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次；仙门屠城后，他借验尸发现，死者最后的动作竟都在为一个孩子让路，追兵命他焚尸灭证，他却烧掉自己的收尸铺作掩护，带孩子沿死者留下的路逃出城门。",
+      "expected": "causes_target_action",
+      "prompt": {
+        "system": "你是小说设定事实抽取员。只读取给定文本，不改写故事。只输出JSON。",
+        "user": "从下面文本找出明确写出的主角核心能力，摘录说明能力实际作用的连续原文。\n只抽核心能力如何起作用，不把施法代价、背景设定或普通剧情行动另算能力。\n能力在一次剧情中被使用，仍然是能力；不能因使用次数少而判not_applicable。\n输出：{\"applicability\":\"applicable|not_applicable|unknown\",\"applicability_reason\":\"理由\",\"mechanism_quote\":\"一处完整连续原文\",\"causal_mode\":\"枚举\"}\ncausal_mode只选实际作用方向：\n- causes_target_action：使目标执行或完成一个动作；\n- perceives_information：主角看到、听到或感知信息；\n- changes_target_state：直接改变目标的状态或物质；\n- communicates_information：向目标传递信息；\n- other：明确能力但不属于以上方向；\n- unknown：无法判断。\n同一能力在多个字段重复描述只取一处最清楚的原文，不拼接不同字段。\n只返回核心能力最主要的一个作用方向和一处原文，不枚举重复描述或普通剧情行动。\n这只是主能力方向检查，不承担内部多步骤顺序或完整保真审查。\n只有完全没有明确能力/特殊机制的普通现实叙事才not_applicable，并说明理由。\n不要添加文本没写的能力，不评价小说质量。\n\n能力证据选择规则：\n先找明确说明核心能力如何起作用的定义或实际使用句，优先选同时说明作用目标和直接结果的连续原文。\n区分能力的直接作用与使用后的调查发现：通过能力获得线索、作出判断或看到后果，不自动等于能力本身是感知信息。\n不能用普通调查、观察、判断句替代文中已经明确写出的能力定义；不得因某段剧情写得更长就选它。\n若同一核心能力在不同字段有互不相容的明确作用定义，返回 applicability=unknown、causal_mode=unknown 并说明冲突；不要只挑一处正确定义掩盖其他定义。\n没有特殊机制的普通现实叙事仍返回not_applicable；明确存在特殊机制但直接作用无法判断则unknown。\napplicability字段严格区分：能力定义互相矛盾时必须unknown，不能标not_applicable；只有普通现实叙事完全没有特殊机制才not_applicable。\n当applicability为unknown或not_applicable时，mechanism_quote必须是空字符串，causal_mode必须unknown，理由写入applicability_reason。\n输入来源：source\n原文：\n收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次；仙门屠城后，他借验尸发现，死者最后的动作竟都在为一个孩子让路，追兵命他焚尸灭证，他却烧掉自己的收尸铺作掩护，带孩子沿死者留下的路逃出城门。"
+      },
+      "raw": {
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角核心能力：能让死者完成临死时被打断的一个动作，每具只能触发一次。",
+        "mechanism_quote": "收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次",
+        "causal_mode": "causes_target_action"
+      },
+      "contract": {
+        "contract_id": "1a970fec-cba0-4359-a072-180cc3726081",
+        "llm_run_id": "da393235-fad7-4ce6-97a6-7e550c7fec0d",
+        "origin": "source",
+        "text_hash": "1d8f3d76a1a9639866036c85c776baec53c3d0b96b7d1b1108fc84129619083f",
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角核心能力：能让死者完成临死时被打断的一个动作，每具只能触发一次。",
+        "mechanism_quote": "收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次",
+        "causal_mode": "causes_target_action",
+        "known": true,
+        "operations": [
+          {
+            "mechanism_quote": "收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次",
+            "causal_mode": "causes_target_action",
+            "evidence_complete": true
+          }
+        ]
+      },
+      "passed": true,
+      "llm_run_ids": [
+        "da393235-fad7-4ce6-97a6-7e550c7fec0d"
+      ]
+    },
+    {
+      "id": "real-faithful-fullasset",
+      "origin": "candidate",
+      "text": "{\"premise\": \"收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次；仙门屠城后，他借验尸发现，死者最后的动作竟都在为一个孩子让路，追兵命他焚尸灭证，他却烧掉自己的收尸铺作掩护，带孩子沿死者留下的路逃出城门。\", \"story_spine\": {\"主角\": \"纪白，边城收尸人，异能是触碰死者可令其完成临死时被打断的最后一个动作，每具仅一次\", \"代价\": \"烧掉自己的收尸铺，失去安身之所，从此被仙门追杀\", \"因果链\": \"屠城→验尸发现死者让路→追兵命焚尸→纪白烧铺掩护→带孩子沿让路标记出城→身后追兵，前路未知\", \"时限\": \"追兵发现焚尸是假之前，一夜之间\", \"核心冲突\": \"仙门追兵要求焚尸灭证，纪白选择烧铺掩护，带孩子沿死者让路标记逃出城门\", \"核心机制\": \"死者最后的动作是临死前被打断的动作，只能触发一次，不可重复\", \"目标\": \"带孩子逃出被屠的城门\"}, \"synopsis\": \"纪白是边城一名收尸人，天生异能：触碰死者，可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次。仙门以‘涤秽’为名屠城，满城横尸。纪白受命验尸，却发现每一具尸体的最后动作惊人一致——侧身、收手、避让，仿佛在为一个孩子让出一条路。追兵统领察觉异样，命他焚尸灭证。纪白假意点火，却烧了自己的收尸铺，火光冲天中抱起那个被所有人让路的孩子，沿死者用身体标记出的路径，穿过尸横遍野的街巷，逃出城门。身后是追兵，身前是未知，而每一具尸体留下的‘让路’动作，都是指向生门的唯一线索。\", \"tags\": [\"东方玄幻\", \"收尸人\", \"仙门屠城\", \"逃生\", \"异能\", \"人性抉择\"], \"title\": \"让路\", \"world_model\": {\"世界观基调\": \"东方玄幻，仙门高高在上，凡人命如草芥，边城是仙门涤秽的牺牲品\", \"势力格局\": \"仙门掌生杀，追兵为仙门执行层；收尸人属凡间贱业，地位低微\", \"核心规则\": \"收尸人异能仅对死者生效，每具尸体只能触发一次最后动作，动作内容固定为临死时被打断的那个\", \"环境特征\": \"屠城后尸横遍野，街巷以尸体为标记，城门是唯一生路\", \"社会关系\": \"纪白独居收尸铺，与城中死者有职业性关联，与孩子无血缘，但死者让路指向孩子为关键人物\"}, \"writing_profile\": {\"对话\": \"极少，多为追兵命令与孩子只言片语\", \"氛围\": \"尸城死寂，火光明灭，紧张压抑中透出一线生机\", \"节奏\": \"前段验尸铺陈，中段焚铺转折，后段连续逃亡，每章以一处‘让路’动作推进\", \"视角\": \"第三人称限知，紧贴纪白行动与判断\", \"风格\": \"冷峻克制，白描动作与尸体细节，情感隐于行为之下\"}}",
+      "expected": "causes_target_action",
+      "prompt": {
+        "system": "你是小说设定事实抽取员。只读取给定文本，不改写故事。只输出JSON。",
+        "user": "从下面文本找出明确写出的主角核心能力，摘录说明能力实际作用的连续原文。\n只抽核心能力如何起作用，不把施法代价、背景设定或普通剧情行动另算能力。\n能力在一次剧情中被使用，仍然是能力；不能因使用次数少而判not_applicable。\n输出：{\"applicability\":\"applicable|not_applicable|unknown\",\"applicability_reason\":\"理由\",\"mechanism_quote\":\"一处完整连续原文\",\"causal_mode\":\"枚举\"}\ncausal_mode只选实际作用方向：\n- causes_target_action：使目标执行或完成一个动作；\n- perceives_information：主角看到、听到或感知信息；\n- changes_target_state：直接改变目标的状态或物质；\n- communicates_information：向目标传递信息；\n- other：明确能力但不属于以上方向；\n- unknown：无法判断。\n同一能力在多个字段重复描述只取一处最清楚的原文，不拼接不同字段。\n只返回核心能力最主要的一个作用方向和一处原文，不枚举重复描述或普通剧情行动。\n这只是主能力方向检查，不承担内部多步骤顺序或完整保真审查。\n只有完全没有明确能力/特殊机制的普通现实叙事才not_applicable，并说明理由。\n不要添加文本没写的能力，不评价小说质量。\n\n能力证据选择规则：\n先找明确说明核心能力如何起作用的定义或实际使用句，优先选同时说明作用目标和直接结果的连续原文。\n区分能力的直接作用与使用后的调查发现：通过能力获得线索、作出判断或看到后果，不自动等于能力本身是感知信息。\n不能用普通调查、观察、判断句替代文中已经明确写出的能力定义；不得因某段剧情写得更长就选它。\n若同一核心能力在不同字段有互不相容的明确作用定义，返回 applicability=unknown、causal_mode=unknown 并说明冲突；不要只挑一处正确定义掩盖其他定义。\n没有特殊机制的普通现实叙事仍返回not_applicable；明确存在特殊机制但直接作用无法判断则unknown。\napplicability字段严格区分：能力定义互相矛盾时必须unknown，不能标not_applicable；只有普通现实叙事完全没有特殊机制才not_applicable。\n当applicability为unknown或not_applicable时，mechanism_quote必须是空字符串，causal_mode必须unknown，理由写入applicability_reason。\n输入来源：candidate\n原文：\n{\"premise\": \"收尸人纪白能让死者完成临死时被打断的一个动作，每具只能触发一次；仙门屠城后，他借验尸发现，死者最后的动作竟都在为一个孩子让路，追兵命他焚尸灭证，他却烧掉自己的收尸铺作掩护，带孩子沿死者留下的路逃出城门。\", \"story_spine\": {\"主角\": \"纪白，边城收尸人，异能是触碰死者可令其完成临死时被打断的最后一个动作，每具仅一次\", \"代价\": \"烧掉自己的收尸铺，失去安身之所，从此被仙门追杀\", \"因果链\": \"屠城→验尸发现死者让路→追兵命焚尸→纪白烧铺掩护→带孩子沿让路标记出城→身后追兵，前路未知\", \"时限\": \"追兵发现焚尸是假之前，一夜之间\", \"核心冲突\": \"仙门追兵要求焚尸灭证，纪白选择烧铺掩护，带孩子沿死者让路标记逃出城门\", \"核心机制\": \"死者最后的动作是临死前被打断的动作，只能触发一次，不可重复\", \"目标\": \"带孩子逃出被屠的城门\"}, \"synopsis\": \"纪白是边城一名收尸人，天生异能：触碰死者，可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次。仙门以‘涤秽’为名屠城，满城横尸。纪白受命验尸，却发现每一具尸体的最后动作惊人一致——侧身、收手、避让，仿佛在为一个孩子让出一条路。追兵统领察觉异样，命他焚尸灭证。纪白假意点火，却烧了自己的收尸铺，火光冲天中抱起那个被所有人让路的孩子，沿死者用身体标记出的路径，穿过尸横遍野的街巷，逃出城门。身后是追兵，身前是未知，而每一具尸体留下的‘让路’动作，都是指向生门的唯一线索。\", \"tags\": [\"东方玄幻\", \"收尸人\", \"仙门屠城\", \"逃生\", \"异能\", \"人性抉择\"], \"title\": \"让路\", \"world_model\": {\"世界观基调\": \"东方玄幻，仙门高高在上，凡人命如草芥，边城是仙门涤秽的牺牲品\", \"势力格局\": \"仙门掌生杀，追兵为仙门执行层；收尸人属凡间贱业，地位低微\", \"核心规则\": \"收尸人异能仅对死者生效，每具尸体只能触发一次最后动作，动作内容固定为临死时被打断的那个\", \"环境特征\": \"屠城后尸横遍野，街巷以尸体为标记，城门是唯一生路\", \"社会关系\": \"纪白独居收尸铺，与城中死者有职业性关联，与孩子无血缘，但死者让路指向孩子为关键人物\"}, \"writing_profile\": {\"对话\": \"极少，多为追兵命令与孩子只言片语\", \"氛围\": \"尸城死寂，火光明灭，紧张压抑中透出一线生机\", \"节奏\": \"前段验尸铺陈，中段焚铺转折，后段连续逃亡，每章以一处‘让路’动作推进\", \"视角\": \"第三人称限知，紧贴纪白行动与判断\", \"风格\": \"冷峻克制，白描动作与尸体细节，情感隐于行为之下\"}}"
+      },
+      "raw": {
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角纪白拥有特殊异能：触碰死者可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次。该能力在剧情中实际作用于死者，使其执行一个动作（如侧身、收手、避让），属于改变目标状态或使目标执行动作的特殊机制，非普通现实叙事。",
+        "mechanism_quote": "触碰死者，可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次",
+        "causal_mode": "causes_target_action"
+      },
+      "contract": {
+        "contract_id": "b3107fe4-ca79-42ef-a0db-1618ad018070",
+        "llm_run_id": "af2f28d3-5849-4ffd-b7e5-a1b668d58f64",
+        "origin": "candidate",
+        "text_hash": "38fc67b72c991b68cb170d26048c303d2d227c305aa1bb4ed8bb85b0da244d49",
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角纪白拥有特殊异能：触碰死者可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次。该能力在剧情中实际作用于死者，使其执行一个动作（如侧身、收手、避让），属于改变目标状态或使目标执行动作的特殊机制，非普通现实叙事。",
+        "mechanism_quote": "触碰死者，可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次",
+        "causal_mode": "causes_target_action",
+        "known": true,
+        "operations": [
+          {
+            "mechanism_quote": "触碰死者，可令其完成临死前被打断的最后一个动作，每具尸体仅能触发一次",
+            "causal_mode": "causes_target_action",
+            "evidence_complete": true
+          }
+        ]
+      },
+      "passed": true,
+      "llm_run_ids": [
+        "af2f28d3-5849-4ffd-b7e5-a1b668d58f64"
+      ]
+    },
+    {
+      "id": "memory-drift",
+      "origin": "candidate",
+      "text": "{\"premise\": \"纪白触碰死者读取完整记忆，尸体本身不会执行动作。\", \"writing_profile\": {\"golden_finger\": {\"mechanism\": \"主角看见死者的临终记忆，获得凶手线索。\"}}}",
+      "expected": "perceives_information",
+      "prompt": {
+        "system": "你是小说设定事实抽取员。只读取给定文本，不改写故事。只输出JSON。",
+        "user": "从下面文本找出明确写出的主角核心能力，摘录说明能力实际作用的连续原文。\n只抽核心能力如何起作用，不把施法代价、背景设定或普通剧情行动另算能力。\n能力在一次剧情中被使用，仍然是能力；不能因使用次数少而判not_applicable。\n输出：{\"applicability\":\"applicable|not_applicable|unknown\",\"applicability_reason\":\"理由\",\"mechanism_quote\":\"一处完整连续原文\",\"causal_mode\":\"枚举\"}\ncausal_mode只选实际作用方向：\n- causes_target_action：使目标执行或完成一个动作；\n- perceives_information：主角看到、听到或感知信息；\n- changes_target_state：直接改变目标的状态或物质；\n- communicates_information：向目标传递信息；\n- other：明确能力但不属于以上方向；\n- unknown：无法判断。\n同一能力在多个字段重复描述只取一处最清楚的原文，不拼接不同字段。\n只返回核心能力最主要的一个作用方向和一处原文，不枚举重复描述或普通剧情行动。\n这只是主能力方向检查，不承担内部多步骤顺序或完整保真审查。\n只有完全没有明确能力/特殊机制的普通现实叙事才not_applicable，并说明理由。\n不要添加文本没写的能力，不评价小说质量。\n\n能力证据选择规则：\n先找明确说明核心能力如何起作用的定义或实际使用句，优先选同时说明作用目标和直接结果的连续原文。\n区分能力的直接作用与使用后的调查发现：通过能力获得线索、作出判断或看到后果，不自动等于能力本身是感知信息。\n不能用普通调查、观察、判断句替代文中已经明确写出的能力定义；不得因某段剧情写得更长就选它。\n若同一核心能力在不同字段有互不相容的明确作用定义，返回 applicability=unknown、causal_mode=unknown 并说明冲突；不要只挑一处正确定义掩盖其他定义。\n没有特殊机制的普通现实叙事仍返回not_applicable；明确存在特殊机制但直接作用无法判断则unknown。\napplicability字段严格区分：能力定义互相矛盾时必须unknown，不能标not_applicable；只有普通现实叙事完全没有特殊机制才not_applicable。\n当applicability为unknown或not_applicable时，mechanism_quote必须是空字符串，causal_mode必须unknown，理由写入applicability_reason。\n输入来源：candidate\n原文：\n{\"premise\": \"纪白触碰死者读取完整记忆，尸体本身不会执行动作。\", \"writing_profile\": {\"golden_finger\": {\"mechanism\": \"主角看见死者的临终记忆，获得凶手线索。\"}}}"
+      },
+      "raw": {
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角通过触碰死者读取完整记忆这一特殊能力，并以此获得凶手线索。",
+        "mechanism_quote": "主角看见死者的临终记忆，获得凶手线索。",
+        "causal_mode": "perceives_information"
+      },
+      "contract": {
+        "contract_id": "ee7d1fa7-31bb-4588-8a73-c67b6a13db44",
+        "llm_run_id": "e7c8ea16-82fd-47e6-b9b8-bd0947863df1",
+        "origin": "candidate",
+        "text_hash": "5f486c671293a05411dc88155786084348df19e19c715b138161662ce9b364cb",
+        "applicability": "applicable",
+        "applicability_reason": "文本明确写出主角通过触碰死者读取完整记忆这一特殊能力，并以此获得凶手线索。",
+        "mechanism_quote": "主角看见死者的临终记忆，获得凶手线索。",
+        "causal_mode": "perceives_information",
+        "known": true,
+        "operations": [
+          {
+            "mechanism_quote": "主角看见死者的临终记忆，获得凶手线索。",
+            "causal_mode": "perceives_information",
+            "evidence_complete": true
+          }
+        ]
+      },
+      "passed": true,
+      "llm_run_ids": [
+        "e7c8ea16-82fd-47e6-b9b8-bd0947863df1"
+      ]
+    },
+    {
+      "id": "contradictory-fields",
+      "origin": "candidate",
+      "text": "{\"premise\": \"纪白触碰死者令其完成被打断动作，每具一次。\", \"story_spine\": {\"core_mechanism\": \"纪白只能看见死者记忆，不能让死者完成任何动作。\"}, \"world_model\": {\"laws\": [\"所有尸体只提供视觉残影，触发不会使尸体动作。\"]}}",
+      "expected": "unknown",
+      "prompt": {
+        "system": "你是小说设定事实抽取员。只读取给定文本，不改写故事。只输出JSON。",
+        "user": "从下面文本找出明确写出的主角核心能力，摘录说明能力实际作用的连续原文。\n只抽核心能力如何起作用，不把施法代价、背景设定或普通剧情行动另算能力。\n能力在一次剧情中被使用，仍然是能力；不能因使用次数少而判not_applicable。\n输出：{\"applicability\":\"applicable|not_applicable|unknown\",\"applicability_reason\":\"理由\",\"mechanism_quote\":\"一处完整连续原文\",\"causal_mode\":\"枚举\"}\ncausal_mode只选实际作用方向：\n- causes_target_action：使目标执行或完成一个动作；\n- perceives_information：主角看到、听到或感知信息；\n- changes_target_state：直接改变目标的状态或物质；\n- communicates_information：向目标传递信息；\n- other：明确能力但不属于以上方向；\n- unknown：无法判断。\n同一能力在多个字段重复描述只取一处最清楚的原文，不拼接不同字段。\n只返回核心能力最主要的一个作用方向和一处原文，不枚举重复描述或普通剧情行动。\n这只是主能力方向检查，不承担内部多步骤顺序或完整保真审查。\n只有完全没有明确能力/特殊机制的普通现实叙事才not_applicable，并说明理由。\n不要添加文本没写的能力，不评价小说质量。\n\n能力证据选择规则：\n先找明确说明核心能力如何起作用的定义或实际使用句，优先选同时说明作用目标和直接结果的连续原文。\n区分能力的直接作用与使用后的调查发现：通过能力获得线索、作出判断或看到后果，不自动等于能力本身是感知信息。\n不能用普通调查、观察、判断句替代文中已经明确写出的能力定义；不得因某段剧情写得更长就选它。\n若同一核心能力在不同字段有互不相容的明确作用定义，返回 applicability=unknown、causal_mode=unknown 并说明冲突；不要只挑一处正确定义掩盖其他定义。\n没有特殊机制的普通现实叙事仍返回not_applicable；明确存在特殊机制但直接作用无法判断则unknown。\napplicability字段严格区分：能力定义互相矛盾时必须unknown，不能标not_applicable；只有普通现实叙事完全没有特殊机制才not_applicable。\n当applicability为unknown或not_applicable时，mechanism_quote必须是空字符串，causal_mode必须unknown，理由写入applicability_reason。\n输入来源：candidate\n原文：\n{\"premise\": \"纪白触碰死者令其完成被打断动作，每具一次。\", \"story_spine\": {\"core_mechanism\": \"纪白只能看见死者记忆，不能让死者完成任何动作。\"}, \"world_model\": {\"laws\": [\"所有尸体只提供视觉残影，触发不会使尸体动作。\"]}}"
+      },
+      "raw": {
+        "applicability": "unknown",
+        "applicability_reason": "premise明确写纪白触碰死者令其完成被打断动作，而story_spine和world_model明确写纪白只能看见死者记忆、不能让死者动作，两处定义互不相容。",
+        "mechanism_quote": "",
+        "causal_mode": "unknown"
+      },
+      "contract": {
+        "contract_id": "3d42961b-c128-44b9-bf96-af411082c1cd",
+        "llm_run_id": "1a3081fa-1022-438a-9f1a-2460fcbabcc5",
+        "origin": "candidate",
+        "text_hash": "fae595e67c15ad3953f8e2610a92ed836ec16b2525d361354220d92e8515d8bb",
+        "applicability": "unknown",
+        "applicability_reason": "premise明确写纪白触碰死者令其完成被打断动作，而story_spine和world_model明确写纪白只能看见死者记忆、不能让死者动作，两处定义互不相容。",
+        "mechanism_quote": "",
+        "causal_mode": "unknown",
+        "known": false,
+        "operations": []
+      },
+      "passed": true,
+      "llm_run_ids": [
+        "1a3081fa-1022-438a-9f1a-2460fcbabcc5"
+      ]
+    },
+    {
+      "id": "ordinary-realism",
+      "origin": "candidate",
+      "text": "仵作纪白依照伤口、泥痕和证人记录还原死者生前最后的动作，没有任何超自然机制。",
+      "expected": "not_applicable",
+      "prompt": {
+        "system": "你是小说设定事实抽取员。只读取给定文本，不改写故事。只输出JSON。",
+        "user": "从下面文本找出明确写出的主角核心能力，摘录说明能力实际作用的连续原文。\n只抽核心能力如何起作用，不把施法代价、背景设定或普通剧情行动另算能力。\n能力在一次剧情中被使用，仍然是能力；不能因使用次数少而判not_applicable。\n输出：{\"applicability\":\"applicable|not_applicable|unknown\",\"applicability_reason\":\"理由\",\"mechanism_quote\":\"一处完整连续原文\",\"causal_mode\":\"枚举\"}\ncausal_mode只选实际作用方向：\n- causes_target_action：使目标执行或完成一个动作；\n- perceives_information：主角看到、听到或感知信息；\n- changes_target_state：直接改变目标的状态或物质；\n- communicates_information：向目标传递信息；\n- other：明确能力但不属于以上方向；\n- unknown：无法判断。\n同一能力在多个字段重复描述只取一处最清楚的原文，不拼接不同字段。\n只返回核心能力最主要的一个作用方向和一处原文，不枚举重复描述或普通剧情行动。\n这只是主能力方向检查，不承担内部多步骤顺序或完整保真审查。\n只有完全没有明确能力/特殊机制的普通现实叙事才not_applicable，并说明理由。\n不要添加文本没写的能力，不评价小说质量。\n\n能力证据选择规则：\n先找明确说明核心能力如何起作用的定义或实际使用句，优先选同时说明作用目标和直接结果的连续原文。\n区分能力的直接作用与使用后的调查发现：通过能力获得线索、作出判断或看到后果，不自动等于能力本身是感知信息。\n不能用普通调查、观察、判断句替代文中已经明确写出的能力定义；不得因某段剧情写得更长就选它。\n若同一核心能力在不同字段有互不相容的明确作用定义，返回 applicability=unknown、causal_mode=unknown 并说明冲突；不要只挑一处正确定义掩盖其他定义。\n没有特殊机制的普通现实叙事仍返回not_applicable；明确存在特殊机制但直接作用无法判断则unknown。\napplicability字段严格区分：能力定义互相矛盾时必须unknown，不能标not_applicable；只有普通现实叙事完全没有特殊机制才not_applicable。\n当applicability为unknown或not_applicable时，mechanism_quote必须是空字符串，causal_mode必须unknown，理由写入applicability_reason。\n输入来源：candidate\n原文：\n仵作纪白依照伤口、泥痕和证人记录还原死者生前最后的动作，没有任何超自然机制。"
+      },
+      "raw": {
+        "applicability": "not_applicable",
+        "applicability_reason": "文本描述的是普通职业调查过程，没有任何超自然或特殊机制的能力定义。",
+        "mechanism_quote": "",
+        "causal_mode": "unknown"
+      },
+      "contract": {
+        "contract_id": "4682a319-84bb-4536-8869-f5796891827f",
+        "llm_run_id": "c71bd7a7-1268-40dc-9b60-91ee87dd0470",
+        "origin": "candidate",
+        "text_hash": "cf7aaa27849f44ac5adbb0e4de4effe71a58e7367f3c54fa78dcaece7d12e3f8",
+        "applicability": "not_applicable",
+        "applicability_reason": "文本描述的是普通职业调查过程，没有任何超自然或特殊机制的能力定义。",
+        "mechanism_quote": "",
+        "causal_mode": "unknown",
+        "known": true,
+        "operations": []
+      },
+      "passed": true,
+      "llm_run_ids": [
+        "c71bd7a7-1268-40dc-9b60-91ee87dd0470"
+      ]
+    }
+  ],
+  "db_receipts": [
+    {
+      "id": "1a3081fa-1022-438a-9f1a-2460fcbabcc5",
+      "task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-v4-flash",
+      "input_tokens": 591,
+      "output_tokens": 67
+    },
+    {
+      "id": "af2f28d3-5849-4ffd-b7e5-a1b668d58f64",
+      "task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-v4-flash",
+      "input_tokens": 1277,
+      "output_tokens": 125
+    },
+    {
+      "id": "c71bd7a7-1268-40dc-9b60-91ee87dd0470",
+      "task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-v4-flash",
+      "input_tokens": 543,
+      "output_tokens": 44
+    },
+    {
+      "id": "da393235-fad7-4ce6-97a6-7e550c7fec0d",
+      "task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-v4-flash",
+      "input_tokens": 590,
+      "output_tokens": 73
+    },
+    {
+      "id": "e7c8ea16-82fd-47e6-b9b8-bd0947863df1",
+      "task_id": "af9abcf3-5d8a-4f48-a497-5bcec6c3ff8f",
+      "provider": "deepseek",
+      "model": "deepseek/deepseek-v4-flash",
+      "input_tokens": 567,
+      "output_tokens": 60
+    }
+  ]
+}

@@ -26,6 +26,7 @@ _INPUT_TO_RECEIPT_KEY = {
     "challenger_blocked": "quality_gate_rejected_current_promotion",
     "incumbent_gate_outcome": "preserved_current_quality_gate_outcome",
     "incumbent_audit_failed": "preserved_current_deterministic_audit_failed",
+    "incumbent_structurally_worse": "takeover_incumbent_structurally_worse",
     "has_duplicate_findings": "takeover_had_duplicate_findings",
     "violation_codes": "takeover_violation_codes",
     "deterministic_audit_failed": "deterministic_audit",
@@ -40,9 +41,7 @@ def test_every_decision_input_has_a_receipt_field() -> None:
 
 def test_the_rewrite_path_actually_writes_those_fields() -> None:
     source = inspect.getsource(review_services.rewrite_chapter_from_task)
-    absent = sorted(
-        key for key in _INPUT_TO_RECEIPT_KEY.values() if f'"{key}"' not in source
-    )
+    absent = sorted(key for key in _INPUT_TO_RECEIPT_KEY.values() if f'"{key}"' not in source)
     assert not absent, f"这些回执字段没有被写入：{absent}"
 
 

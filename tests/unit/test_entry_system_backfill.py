@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
+from planning_capability_test_helpers import explicit_planning_metadata
 import pytest
 
 from bestseller.infra.db.models import ProjectModel
@@ -46,7 +47,7 @@ def _project(metadata: dict[str, object] | None = None) -> ProjectModel:
         target_word_count=300000,
         target_chapters=80,
         status="writing",
-        metadata_json=metadata or {},
+        metadata_json=explicit_planning_metadata("entry_system_kernel", metadata=metadata),
     )
     project.id = uuid4()
     return project

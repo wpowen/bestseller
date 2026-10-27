@@ -90,7 +90,7 @@ class TestComputeHealProgressState:
         )
         assert meta["self_heal_no_progress_attempts"] == 1
 
-    def test_first_fingerprint_establishes_new_repair_baseline(self) -> None:
+    def test_first_fingerprint_without_delivery_keeps_exhausted_baseline(self) -> None:
         meta = {
             "self_heal_last_chapters_total": 0,
             "self_heal_no_progress_attempts": 4,
@@ -102,8 +102,8 @@ class TestComputeHealProgressState:
             progress_fingerprint="outline_replan:commercial-score-062",
         )
 
-        assert abandoned is False
-        assert meta["self_heal_no_progress_attempts"] == 0
+        assert abandoned is True
+        assert meta["self_heal_no_progress_attempts"] == 5
         assert (
             meta["self_heal_last_progress_fingerprint"]
             == "outline_replan:commercial-score-062"
@@ -112,10 +112,16 @@ class TestComputeHealProgressState:
         meta, abandoned = _compute_heal_progress_state(
             meta, chapters_total=50, progress_fingerprint="repair:40"
         )
-
-        assert abandoned is False
-        assert meta["self_heal_no_progress_attempts"] == 0
-        assert meta["self_heal_last_progress_fingerprint"] == "repair:40"
+        # Once terminal, observed changes cannot silently restart the task.
+        assert abandoned is True
+        assert meta["self_heal_no_progress_attempts"] == 5
+        # Measured delivery still resets a live, non-terminal stall baseline.
+        progressed, abandoned = _compute_heal_progress_state(
+            {"self_heal_last_chapters_total": 0, "self_heal_no_progress_attempts": 4},
+            chapters_total=50, progress_fingerprint="repair:40",
+        )
+        assert abandoned is False and progressed["self_heal_no_progress_attempts"] == 0
+        assert progressed["self_heal_last_progress_fingerprint"] == "repair:40"
 
     def test_same_rank_with_renamed_blockers_is_not_progress(self) -> None:
         meta, _ = _compute_heal_progress_state(
@@ -145,7 +151,7 @@ class TestComputeHealProgressState:
         assert meta["self_heal_no_progress_attempts"] == 1
         assert meta["self_heal_last_progress_rank"] == [6200, -4, -1, 0]
 
-    def test_strictly_better_rank_resets_counter(self) -> None:
+    def test_strictly_better_unbound_rank_is_diagnostic_only(self) -> None:
         meta, _ = _compute_heal_progress_state(
             {}, chapters_total=0, progress_rank=(5200, -8, -1, 0)
         )
@@ -159,7 +165,7 @@ class TestComputeHealProgressState:
         )
 
         assert abandoned is False
-        assert meta["self_heal_no_progress_attempts"] == 0
+        assert meta["self_heal_no_progress_attempts"] == 2
         assert meta["self_heal_last_progress_rank"] == [6200, -4, -1, 0]
 
     def test_does_not_mutate_input_metadata(self) -> None:
@@ -183,7 +189,7 @@ class TestComputeHealProgressState:
     def test_corrupt_last_total_tolerated(self) -> None:
         meta = {"self_heal_last_chapters_total": "bad"}
         out, abandoned = _compute_heal_progress_state(meta, chapters_total=0)
-        # bad last → treated as None → progressed → reset
+        # No existing counter: initialize the observer baseline.
         assert abandoned is False
         assert out["self_heal_no_progress_attempts"] == 0
 

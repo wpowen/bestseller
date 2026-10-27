@@ -8,6 +8,13 @@
 from __future__ import annotations
 
 import pytest
+from test_intent_alignment_submission_boundary import (  # noqa: F401
+    AfterIntentBoundary,
+    AfterIntentFailure,
+    intent_boundary,
+    no_external_intent_io,
+    reports,
+)
 
 from bestseller.services.intent_alignment import (
     audit_and_rebuild_tagline,
@@ -103,18 +110,38 @@ def test_contract_tag_extraction_priority():
             "default_tags": ["x"],
         }
     }
-    assert intent_tags_from_contract(contract) == _INTENT
+    # Split contracts keep defaults as classification metadata, not user intent.
+    assert intent_tags_from_contract(contract) == []
 
 
-def test_finalize_wires_intent_alignment():
-    import inspect
+@pytest.mark.asyncio
+async def test_finalize_wires_intent_alignment(intent_boundary):  # noqa: F811 - imported pytest fixture
+    from bestseller.services import intent_review_submission as submission
 
-    from bestseller.services import conception
-
-    src = inspect.getsource(conception.run_conception_pipeline)
-    assert "intent_alignment" in src
-    assert "audit_and_rebuild_tagline" in src
-    assert "conception_intent_alignment" in src, "判官调用必须有独立模板名可查"
+    f = intent_boundary
+    with pytest.raises(AfterIntentBoundary):
+        await f.run()
+    assert len(f.requests) == 2
+    first, second = f.requests
+    assert [row["request"].sample_slot for row in f.requests] == [0, 1]
+    assert all(row["request"].prompt_template == "conception_intent_alignment"
+               and row["request"].logical_role == "critic"
+               and row["request"].prompt_version == submission.INTENT_REVIEW_PROMPT_VERSION
+               and row["request"].tool_choice == "required" for row in f.requests)
+    assert first["source"] == second["source"]
+    assert first["effective_input"] == second["effective_input"]
+    assert first["effective_hash"] == second["effective_hash"]
+    assert first["namespace"] == second["namespace"]
+    assert first["root"] != second["root"] and first["run_id"] != second["run_id"]
+    assert first["source"]["cost_style"] == "minimal"
+    assert (
+        first["source"]["user_controls"]["creation_intent_contract"]
+        == f.state["ctx"]["creation_intent_contract"]
+    )
+    after = f.stopped[0]
+    assert "升级流" in after["tags"] and "默认分类" not in after["tags"]
+    assert "慢热" not in after["synopsis"].splitlines()[0]
+    assert after["premise"] == f.state["premise"] and not f.editor_calls
 
 
 # ── 从 warn-only 升级为定向修复（2026-08-19 用户第二次定罪）──────────────
@@ -127,25 +154,44 @@ def test_missing_user_tags_are_backfilled_deterministically():
 
     from bestseller.services import conception
 
-    src = inspect.getsource(conception.run_conception_pipeline)
+    src = (inspect.getsource(conception.run_conception_pipeline)
+           + inspect.getsource(conception._review_conception_candidate))
     assert "tags = [*(tags or []), *_ia_missing]" in src, "用户勾的标签缺失必须确定性补回"
     # default_tags 不许硬塞（跨书同质化，2026-08-01 裁决）
     assert "_ia_missing" in src
 
 
-def test_intent_repair_is_wired_with_recheck():
-    import inspect
-
-    from bestseller.services import conception
-
-    src = inspect.getsource(conception.run_conception_pipeline)
-    assert "conception_intent_repair" in src, "定罪必须挣到一次定向重生成"
-    assert "intent_alignment_recheck" in src, "重生成后必须复核"
-    assert "recheck_no_improvement" in src, "复核没改善不得采纳"
-    # 修复只动三件套，不许另起炉灶
-    assert "保持故事身份、主角、核心机制与世界观不变" in src
-    # 结构守卫：长度同量级 + spine 字段不缩水
-    assert "len(premise) * 0.5" in src
+@pytest.mark.asyncio
+async def test_intent_repair_is_wired_with_recheck(intent_boundary):  # noqa: F811 - imported pytest fixture
+    f = intent_boundary
+    f.initial, f.recheck = ["fail", "fail"], "fail"
+    # Two distinct recheck citations keep the actual burden >= initial; the
+    # separate one-counter regression below preserves the diagnostic bug.
+    f.recheck_counter_count = 2
+    with pytest.raises(AfterIntentFailure, match="CONCEPTION_INTENT_REPAIR_UNRESOLVED") as caught:
+        await f.run()
+    assert len(f.editor_calls) == 1 and len(f.requests) == 3
+    assert f.editor_calls[0]["template"] == "conception_intent_repair"
+    assert "保持故事身份、主角、核心机制与世界观不变" in f.editor_calls[0]["user_prompt"]
+    initial, _, recheck = f.requests
+    assert [row["source"]["phase"] for row in f.requests] == [
+        "initial", "initial", "recheck",
+    ]
+    assert recheck["request"].sample_slot == 0
+    assert recheck["source"]["candidate"] == f.fixed
+    assert recheck["source"]["user_controls"] == initial["source"]["user_controls"]
+    assert recheck["source"]["cost_style"] == initial["source"]["cost_style"] == "minimal"
+    assert recheck["request"].prompt_template == initial["request"].prompt_template
+    assert recheck["effective_hash"] != initial["effective_hash"]
+    assert recheck["namespace"] != initial["namespace"] and recheck["root"] != initial["root"]
+    assert all(row["status"] == "verified" for row in reports(caught.value))
+    failure = next(
+        row for row in caught.value.conception_log if row.get("agent") == "intent_repair"
+    )
+    assert failure["adopted"] is False and failure["reason"] == "recheck_no_improvement"
+    assert not f.joint_calls and not f.stopped
+    assert len(f.structure_calls) == 1 and f.structure_calls[0]["scope"] == "story"
+    assert f.structure_calls[0]["report"]["candidate"]["premise"] == f.state["premise"]
 
 
 def test_pollution_gate_block_persists_conception_log():
@@ -155,7 +201,8 @@ def test_pollution_gate_block_persists_conception_log():
     from bestseller.services import conception
     from bestseller.web import server
 
-    src = inspect.getsource(conception.run_conception_pipeline)
+    src = (inspect.getsource(conception.run_conception_pipeline)
+           + inspect.getsource(conception._review_conception_candidate))
     assert "_cc_exc.conception_log" in src, "拦截异常必须携带构思日志带出 async 帧"
 
     web_src = inspect.getsource(server.WebTaskManager._run_autowrite_worker)
@@ -214,6 +261,7 @@ def test_conception_passes_cost_style_to_judge():
 
     from bestseller.services import conception
 
-    src = inspect.getsource(conception.run_conception_pipeline)
+    src = (inspect.getsource(conception.run_conception_pipeline)
+           + inspect.getsource(conception._review_conception_candidate))
     assert src.count("cost_style=_ia_cost_style") == 2, "主判与复核都必须带代价档"
     assert 'explicit_enhancers' in src

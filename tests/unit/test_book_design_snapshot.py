@@ -64,6 +64,30 @@ def test_snapshot_hash_ignores_input_mapping_order_and_legacy_payload_parses() -
     assert second.protagonist.name == "林渊"
 
 
+def test_empty_approved_projection_is_omitted_from_legacy_serialization() -> None:
+    snapshot = build_book_design_snapshot(
+        creation_intent=_intent(), protagonist="林渊", target_words=130_000, chapter_count=55
+    )
+
+    assert "approved_story_design" not in snapshot.model_dump(mode="json")
+    assert "approved_story_design" not in snapshot.model_dump_json()
+
+
+def test_nonempty_approved_projection_is_serialized() -> None:
+    snapshot = build_book_design_snapshot(
+        creation_intent=_intent(),
+        protagonist="林渊",
+        approved_story_design={
+            "source_contract_hash": "a" * 64,
+            "hook_card": {"one_liner": "钩子"},
+        },
+    )
+
+    assert snapshot.model_dump(mode="json")["approved_story_design"]["hook_card"] == {
+        "one_liner": "钩子"
+    }
+
+
 def test_legacy_top_level_entities_are_not_discarded_without_registry_wrapper() -> None:
     snapshot = BookDesignSnapshot.from_mapping(
         {

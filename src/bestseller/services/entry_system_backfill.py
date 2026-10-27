@@ -29,6 +29,7 @@ from bestseller.services.entry_system_kernel import (
     entry_system_kernel_from_dict,
     entry_system_kernel_to_dict,
 )
+from bestseller.services.planning_capability_selection import planning_capability_selected
 from bestseller.services.projects import import_planning_artifact
 from bestseller.services.workflows import get_latest_planning_artifact
 
@@ -51,7 +52,7 @@ class EntrySystemBackfillResult:
 
     @property
     def changed(self) -> bool:
-        return self.status not in {"existing", "skipped"}
+        return self.status not in {"existing", "skipped", "not_applicable"}
 
 
 @dataclass(frozen=True)
@@ -163,10 +164,20 @@ async def ensure_project_entry_system_compat(
 ) -> EntrySystemBackfillResult:
     """Ensure a project has a valid entry kernel and registry in metadata.
 
-    Existing valid packages are preserved. Missing or invalid legacy metadata is
+    Author selection is required even for force and existing caches.
+    Existing valid selected packages are preserved. Missing or invalid legacy metadata is
     repaired from the latest artifact when possible, otherwise from deterministic
     project/story-design fallbacks. Callers own transaction commit boundaries.
     """
+
+    if not planning_capability_selected(project, "entry_system_kernel"):
+        return EntrySystemBackfillResult(
+            status="not_applicable",
+            kernel=None,
+            registry=None,
+            source="author_selection",
+            skipped_reason="planning_capability_not_selected",
+        )
 
     metadata = dict(getattr(project, "metadata_json", None) or {})
     existing_kernel = _existing_kernel(metadata.get("entry_system_kernel"))
@@ -198,16 +209,19 @@ async def ensure_project_entry_system_compat(
             kernel_payload = artifact_payload
             source = "artifact"
 
+    story_design_kernel: dict[str, object] = {}
     if kernel_payload is None:
-        story_design_kernel = _mapping(metadata.get("story_design_kernel"))
+        story_design_selected = planning_capability_selected(project, "story_design_kernel")
         used_story_design_artifact = False
-        if not story_design_kernel:
-            story_design_kernel = await _latest_artifact_content(
-                session,
-                project_id=project_id,
-                artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
-            )
-            used_story_design_artifact = bool(story_design_kernel)
+        if story_design_selected:
+            story_design_kernel = _mapping(metadata.get("story_design_kernel"))
+            if not story_design_kernel:
+                story_design_kernel = await _latest_artifact_content(
+                    session,
+                    project_id=project_id,
+                    artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
+                )
+                used_story_design_artifact = bool(story_design_kernel)
         kernel_payload = entry_system_kernel_to_dict(
             build_fallback_entry_system_kernel(
                 project,
@@ -239,7 +253,8 @@ async def ensure_project_entry_system_compat(
         "created_at": datetime.now(UTC).isoformat(),
         "registry_entry_count": len(registry_payload.get("entries") or []),
         "used_metadata": {
-            "story_design_kernel": bool(_mapping(metadata.get("story_design_kernel"))),
+            "story_design_kernel": bool(story_design_kernel)
+            and bool(_mapping(metadata.get("story_design_kernel"))),
             "world_spec": bool(_mapping(metadata.get("world_spec"))),
             "book_spec": bool(_mapping(metadata.get("book_spec"))),
             "power_system": bool(_mapping(metadata.get("power_system"))),
@@ -332,7 +347,7 @@ async def ensure_active_projects_entry_system_compat(
     return EntrySystemActiveBackfillSummary(
         scanned=len(projects),
         changed=sum(1 for item in backfill_results if item.changed),
-        skipped=sum(1 for item in backfill_results if item.status == "skipped"),
+        skipped=sum(1 for item in backfill_results if item.status in {"skipped", "not_applicable"}),
         failed=failed,
         results=tuple(backfill_results),
     )

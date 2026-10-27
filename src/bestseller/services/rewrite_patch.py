@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import math
 
 
 def text_hash(text: str) -> str:
@@ -48,6 +49,15 @@ class RewritePatchResult:
 
 
 def apply_rewrite_patch(parent_text: str, patch: RewritePatch) -> RewritePatchResult:
+    if text_hash(parent_text) != patch.parent_hash:
+        return _rejected(parent_text, "parent_hash_mismatch")
+    if not math.isfinite(float(patch.max_changed_ratio)):
+        return _rejected(parent_text, "invalid_changed_ratio_limit")
+    if any(
+        protected.start < 0 or protected.end > len(parent_text) or protected.start >= protected.end
+        for protected in patch.protected_spans
+    ):
+        return _rejected(parent_text, "invalid_protected_bounds")
     ordered_edits = sorted(patch.edits, key=lambda item: (item.start, item.end))
     if not ordered_edits:
         return _rejected(parent_text, "empty_patch")
@@ -70,16 +80,12 @@ def apply_rewrite_patch(parent_text: str, patch: RewritePatch) -> RewritePatchRe
     ):
         return _rejected(parent_text, "protected_span_touched")
     if any(
-        text_hash(parent_text[protected.start : protected.end])
-        != protected.content_hash
+        text_hash(parent_text[protected.start : protected.end]) != protected.content_hash
         for protected in patch.protected_spans
     ):
         return _rejected(parent_text, "protected_span_mismatch")
-    if text_hash(parent_text) != patch.parent_hash:
-        return _rejected(parent_text, "parent_hash_mismatch")
     if any(
-        text_hash(parent_text[edit.start : edit.end]) != edit.target_hash
-        for edit in patch.edits
+        text_hash(parent_text[edit.start : edit.end]) != edit.target_hash for edit in patch.edits
     ):
         return _rejected(parent_text, "target_hash_mismatch")
     if any(not _anchors_match(parent_text, edit) for edit in patch.edits):

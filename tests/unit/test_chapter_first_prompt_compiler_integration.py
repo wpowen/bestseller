@@ -75,7 +75,7 @@ def _inputs(language: str, chapter_number: int):
     long_context = "持续变化的现场证据 " * 2_000
     packet = SimpleNamespace(
         chapter_contract={"closing_hook": "门锁从里面转动", "core_conflict": "倒计时"},
-        hard_fact_snapshot={"facts": [long_context]},
+        hard_fact_snapshot={"facts": [{"name": "门锁状态", "value": "已经封锁"}]},
         chapter_length_block="正文必须在1800到3500字。",
         timeline_canon_block="只允许使用今晚十一点这个时间锚点。",
         character_role_block="林砚不能预知门后的人。",
@@ -125,6 +125,52 @@ def _creative_core(chapter_number: int) -> dict[str, object]:
         "expected_post_state_hash": "post-hash",
         "can_drive_generation": True,
     }
+
+
+@pytest.mark.parametrize("mode", ["legacy", "compiled"])
+@pytest.mark.parametrize("profile", ["lean", "full"])
+def test_writer_preserves_late_facts_contract_and_current_state(mode, profile):
+    project, chapter, scene, packet = _inputs("zh-CN", 2)
+    packet.hard_fact_snapshot = {"facts": [
+        {"name": f"馆藏状态{i}", "value": f"编号{i}已交还托管人"}
+        for i in range(32)
+    ]}
+    packet.recent_timeline_events = [{"summary": f"已完成交接{i}"} for i in range(13)]
+    packet.chapter_contract = {
+        "closing_hook": "交接凭证尚待核实", "known_facts": ["只承认来源已确认的交接"],
+        "reference_facts": [f"只有编号{i}的归还手续已完成，领用手续仍待确认" for i in range(90)],
+        "final_boundary": "合同末项不得用计划中的领用替代已发生的归还",
+    }
+    packet.story_bible = {
+        "world_rules": [{"name": "借阅边界", "description": "原件不得带出阅览室"}],
+        "participants": [{"name": "叶舟", "alive_status": "alive",
+                          "knowledge_state": {"信封": "未拆阅"}}],
+    }
+    prepared = build_chapter_first_draft_prompts(
+        project, chapter, [scene], None, packet,
+        target_word_count=2600, prompt_mode=mode, prose_prompt_profile=profile,
+    )
+    user = prepared.user
+    assert "编号31已交还托管人" in user
+    assert "已完成交接12" in user
+    assert "原件不得带出阅览室" in user and "未拆阅" in user
+    assert "交接凭证尚待核实" in user
+    assert "合同末项不得用计划中的领用替代已发生的归还" in user
+    assert "已截断" not in user.split("【时间线与硬事实快照】", 1)[1].split("\n\n", 1)[0]
+    assert prepared.report.source_integrity_complete is True
+    assert not set(prepared.report.source_integrity_blocks).intersection(
+        (*prepared.report.dropped, *prepared.report.truncated)
+    )
+
+
+@pytest.mark.parametrize("mode", ["legacy", "compiled"])
+def test_writer_oversized_hard_fact_fails_before_dispatch(mode):
+    from bestseller.services.prompt_compiler import PromptBudgetError
+    project, chapter, scene, packet = _inputs("en", 4)
+    packet.hard_fact_snapshot = {"facts": [{"value": "irreducible approved observation " * 3000}]}
+    with pytest.raises(PromptBudgetError, match="timeline_context"):
+        build_chapter_first_draft_prompts(project, chapter, [scene], None, packet,
+            target_word_count=2600, prompt_mode=mode)
 
 
 @pytest.mark.parametrize("prose_prompt_profile", ["full", "lean"])
@@ -182,7 +228,7 @@ def test_compiled_chapter_first_matrix_stays_complete_unique_and_within_budget(
         assert blacklist not in compiled.user
 
 
-def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:
+def test_unapproved_methodology_does_not_become_writer_decision_obligation() -> None:
     project, chapter, scene, packet = _inputs("zh-CN", 1)
     chapter.metadata_json = {
         "methodology_contract": {
@@ -211,12 +257,12 @@ def test_chapter_writer_receives_explicit_protagonist_decision_block() -> None:
         target_word_count=2_600,
     )
 
-    assert "【主角决策落地·不得把本清单写进正文】" in user
-    assert "显然更安全的选项：立刻撤离并等待支援" in user
-    assert "止损/退路/后手：周禾在楼梯口拉保险绳" in user
+    assert "【主角决策落地·不得把本清单写进正文】" not in user
+    assert "显然更安全的选项：立刻撤离并等待支援" not in user
+    assert "止损/退路/后手：周禾在楼梯口拉保险绳" not in user
 
 
-def test_compiled_chapter_prompt_keeps_story_engine_creative_core_as_required() -> None:
+def test_compiled_chapter_prompt_preserves_creative_core_without_rendered_authority() -> None:
     project, chapter, scene, packet = _inputs("zh-CN", 4)
     payload = _creative_core(chapter.chapter_number)
     packet.creative_core = SimpleNamespace(model_dump=lambda mode: payload)
@@ -233,12 +279,14 @@ def test_compiled_chapter_prompt_keeps_story_engine_creative_core_as_required() 
     )
 
     assert isinstance(compiled, CompiledPrompt)
-    assert (
-        "chapter_first.section.creative_core_line"
-        in compiled.report.required_blocks_kept
-    )
+    key = "chapter_first.section.creative_core_line"
+    assert key in compiled.report.kept
+    assert key not in compiled.report.required_blocks_kept
+    assert key not in (*compiled.report.dropped, *compiled.report.truncated)
+    assert compiled.report.block_source_hashes[key]
     assert compiled.user.count("【StoryEngine 本章创意核心") == 1
     assert "立即公开并保护证人" in compiled.user
+    assert "立即公开并保护证人" not in compiled.system
 
 
 def test_chapter_writer_gets_one_weak_scene_map_without_scene_prose_duplication() -> None:

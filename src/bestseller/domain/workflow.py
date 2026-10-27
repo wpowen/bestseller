@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from typing import Any
 from uuid import UUID
 
@@ -280,9 +281,10 @@ class SceneOutlineInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     scene_number: int = Field(gt=0)
-    # Default to "development" — LLMs sometimes omit this field entirely.
+    # Preserve the legacy omitted-field parser; producers encode Unknown as "".
     scene_type: str = Field(
         default="development",
+        strict=True,
         max_length=4000,
         validation_alias=AliasChoices("scene_type", "type"),
     )
@@ -381,6 +383,7 @@ class SceneOutlineInput(BaseModel):
         """Map non-standard LLM field names to expected schema fields."""
         if not isinstance(data, dict):
             return data
+        data = deepcopy(data)
 
         # ── Coerce list-typed fields that LLMs frequently emit as a single
         # string (an arrow/comma-separated sequence, or a placeholder like '无').
@@ -721,6 +724,7 @@ class ChapterOutlineInput(BaseModel):
         """Normalize common LLM aliases before schema validation."""
         if not isinstance(data, dict):
             return data
+        data = deepcopy(data)
 
         # Robustness: every list[str] field below may be emitted by the LLM as
         # a single prose string or as structured reference objects. Normalize

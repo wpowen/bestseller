@@ -9,6 +9,8 @@ SAVEPOINT.  A failed gate therefore cannot advance canonical story state.
 
 from __future__ import annotations
 
+import hashlib
+
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -706,6 +708,7 @@ async def promote_chapter_draft_with_story_engine_receipt(
     judge_key: str,
     workflow_run_id: UUID,
     review: StoryEngineReceiptReview,
+    expected_body_sha256: str | None = None,
 ) -> StoryEnginePromotionResult:
     """Atomically persist receipt, fold state, and promote the exact draft."""
 
@@ -715,6 +718,12 @@ async def promote_chapter_draft_with_story_engine_receipt(
             review=review,
         )
     content = review.content
+    body_sha256 = hashlib.sha256((draft.content_md or "").encode()).hexdigest()
+    if expected_body_sha256 is not None and body_sha256 != expected_body_sha256:
+        raise StoryEngineReceiptRejected(
+            "story engine promotion body changed after admission",
+            blocking_codes=("STORY_ENGINE_RECEIPT_BODY_MISMATCH",),
+        )
     _validate_receipt_content(content)
     meta = cast(Mapping[str, Any], content["_meta"])
     identity = {
@@ -785,6 +794,8 @@ async def promote_chapter_draft_with_story_engine_receipt(
                 chapter_id=chapter_id,
                 judge_key=judge_key,
                 workflow_run_id=workflow_run_id,
+                expected_draft_id=draft.id,
+                expected_body_sha256=body_sha256,
             )
         else:
             outcome = PromotionOutcome(

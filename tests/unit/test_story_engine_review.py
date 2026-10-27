@@ -274,6 +274,7 @@ async def test_invalid_review_never_enters_canonical_transaction() -> None:
     draft = SimpleNamespace(
         id=UUID(review.content["draft_version_id"]),
         promotion_state="candidate",
+        content_md="林澈当众公开档案。",
         promotion_metadata={},
     )
 
@@ -501,6 +502,7 @@ async def test_failed_promotion_rolls_back_receipt_and_snapshot(
     draft = SimpleNamespace(
         id=draft_id,
         promotion_state="candidate",
+        content_md="林澈当众公开档案。",
         promotion_metadata={},
     )
 
@@ -589,6 +591,7 @@ async def test_successful_promotion_keeps_one_workflow_lineage(
     draft = SimpleNamespace(
         id=UUID(review.content["draft_version_id"]),
         promotion_state="candidate",
+        content_md="林澈当众公开档案。",
         promotion_metadata={},
     )
     artifact = SimpleNamespace(id=uuid4(), content=review.content, source_run_id=workflow_run_id)

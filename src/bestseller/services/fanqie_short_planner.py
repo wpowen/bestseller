@@ -19,7 +19,6 @@ from bestseller.domain.fanqie_short import (
     segment_target_words,
 )
 from bestseller.domain.ideology import (
-    ideology_kernel_from_dict,
     render_ideology_compact_block,
 )
 from bestseller.domain.planning import PlanningArtifactCreate
@@ -37,6 +36,7 @@ from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.planner import _extract_json_payload, _mapping
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
 from bestseller.services.prompt_packs import render_prompt_pack_fragment, resolve_prompt_pack
+from bestseller.services.story_enhancers import resolve_cost_style
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -371,49 +371,27 @@ def _fallback_beat_sheet(project: ProjectModel, premise: str) -> FanqieShortBeat
     )
 
 
-def build_short_ideology_compact(kernel: Any) -> dict[str, Any]:
-    """Extract the load-bearing ideology spine for a short story (serializable).
+def build_short_ideology_compact(
+    kernel: Any, *, metadata: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """Project current author fields; a stored short compact is not authority."""
 
-    Keeps only what a single short can actually carry — 主主题/核心问题/信念弧/
-    一强母题/1-2 条代价/禁用解法 — and drops 长篇-only fields (副母题、隐藏终局、
-    per-volume 压力). Returns ``{}`` on any failure so callers stay non-blocking.
-    """
+    from bestseller.services.ideology_methodology import resolve_ideology_methodology_source
 
     if kernel is None:
         return {}
-    if isinstance(kernel, Mapping):
-        try:
-            kernel = ideology_kernel_from_dict(dict(kernel))
-        except Exception:
-            logger.warning("build_short_ideology_compact: invalid kernel dict", exc_info=True)
-            return {}
-    try:
-        belief = kernel.belief_arc
-        primary = kernel.primary_motif
-        return {
-            "thesis_statement": kernel.thesis_statement,
-            "core_question": kernel.core_question,
-            "belief_arc": {
-                "initial": belief.initial_belief,
-                "shatter": belief.midpoint_shatter,
-                "reconstruction": belief.final_reconstruction,
-            },
-            "primary_motif": {
-                "key": primary.motif_key,
-                "display_name": primary.display_name,
-                "thesis": primary.book_thesis,
-                "symbols": list(primary.concrete_symbols)[:4],
-            },
-            "sub_themes": [t.proposition for t in kernel.sub_themes[:2]],
-            "cost_laws": [
-                {"acquires": law.acquires, "costs": law.costs}
-                for law in kernel.cost_system[:2]
-            ],
-            "forbidden": list(kernel.forbidden_resolutions)[:2],
-        }
-    except Exception:
-        logger.warning("build_short_ideology_compact failed", exc_info=True)
+    source = resolve_ideology_methodology_source(kernel, metadata)
+    fields = source["effective_fields"]
+    if not fields and not resolve_cost_style(metadata):
         return {}
+    arc = _mapping(fields.get("belief_arc"))
+    return {
+        "author_fields": fields,
+        "methodology_source": source,
+        "thesis_statement": fields.get("thesis_statement", ""),
+        "core_question": fields.get("core_question", ""),
+        "belief_arc": {"initial": arc.get("initial_belief", ""), "shatter": arc.get("midpoint_shatter", ""), "reconstruction": arc.get("final_reconstruction", "")},
+    }
 
 
 def derive_short_thesis_vectors(
@@ -427,7 +405,7 @@ def derive_short_thesis_vectors(
     thematic move instead of only delivering platform 爽点. Deterministic.
     """
 
-    if not ideology_compact:
+    if not ideology_compact or not _mapping(ideology_compact.get("author_fields")).get("belief_arc"):
         return {}
     arc = _mapping(ideology_compact.get("belief_arc"))
     initial = str(arc.get("initial") or "").strip()
@@ -450,7 +428,7 @@ def derive_short_thesis_vectors(
         elif seg < midpoint:
             vectors[seg] = "信念受压：旧信念在压力下出现裂缝"
         else:
-            vectors[seg] = "代价显形：碎裂后付出代价并摸索新解"
+            vectors[seg] = "信念探索：碎裂后尝试行动并摸索新解"
     return vectors
 
 
@@ -458,37 +436,18 @@ def render_short_ideology_scene_block(
     ideology_compact: Mapping[str, Any] | None,
     *,
     thesis_vector: str = "",
+    metadata: Mapping[str, Any] | None = None,
 ) -> str:
     """Compact per-scene ideology prompt block for the PROSE_SCENE writer."""
 
-    if not ideology_compact:
-        return ""
-    lines = ["【本篇内核(在剧情里兑现,严禁说教/口号)】"]
-    thesis = str(ideology_compact.get("thesis_statement") or "").strip()
-    if thesis:
-        lines.append(f"主主题：{thesis}")
-    core_question = str(ideology_compact.get("core_question") or "").strip()
-    if core_question:
-        lines.append(f"核心问题：{core_question}")
-    motif = _mapping(ideology_compact.get("primary_motif"))
-    motif_name = str(motif.get("display_name") or "").strip()
-    motif_thesis = str(motif.get("thesis") or "").strip()
-    if motif_name or motif_thesis:
-        joined = "——".join(part for part in (motif_name, motif_thesis) if part)
-        lines.append(f"母题：{joined}")
-    cost_laws = ideology_compact.get("cost_laws") or []
-    if cost_laws:
-        law = _mapping(cost_laws[0])
-        acquires = str(law.get("acquires") or "").strip()
-        costs = str(law.get("costs") or "").strip()
-        if acquires and costs:
-            lines.append(f"代价律：获得「{acquires}」必付「{costs}」，禁止无代价开挂")
-    forbidden = ideology_compact.get("forbidden") or []
-    if forbidden:
-        lines.append(f"禁用廉价解法：{forbidden[0]}")
-    if thesis_vector:
-        lines.append(f"本段信念位置：{thesis_vector}")
-    return "\n".join(lines)
+    # Ignore stored thesis/forbidden/transition fields entirely at the final
+    # boundary. The current author contract is the only methodology authority.
+    current = _mapping((metadata or {}).get("story_design_kernel")).get("ideology_kernel")
+    if current is None:
+        current = (metadata or {}).get("ideology_kernel")
+    from bestseller.domain.ideology import render_ideology_kernel_prompt_block
+
+    return render_ideology_kernel_prompt_block(current if current is not None else {}, metadata=dict(metadata or {}))
 
 
 async def generate_fanqie_beat_sheet(
@@ -501,107 +460,17 @@ async def generate_fanqie_beat_sheet(
     cast_spec: dict[str, Any] | None = None,
     ideology_kernel: Any | None = None,
     requested_by: str = "system",
-) -> FanqieShortBeatSheet:
-    project = await get_project_by_slug(session, project_slug)
-    if project is None:
-        raise ValueError(f"Project '{project_slug}' not found.")
+    return_selection: bool = False,
+) -> Any:
+    """Source-exact producer/cache; legacy provenance requires explicit recovery."""
+    from bestseller.services.fanqie_beat_recovery import ensure_beat_sheet
 
-    pack = resolve_prompt_pack(
-        "fanqie_short",
-        genre=project.genre,
-        sub_genre=project.sub_genre,
+    selection = await ensure_beat_sheet(
+        session, settings, project_slug=project_slug, premise=premise,
+        book_spec=book_spec, cast_spec=cast_spec, ideology_kernel=ideology_kernel,
+        requested_by=requested_by,
     )
-    fragment = render_prompt_pack_fragment(pack, "planner_beat_sheet") if pack else ""
-    emotion_stack = select_emotion_stack(
-        premise=premise,
-        genre=f"{project.genre} {project.sub_genre or ''}",
-    )
-    emotion_block = render_emotion_stack_prompt_block(emotion_stack)
-    resource_cards = adapt_long_form_resources_for_short(
-        book_spec=book_spec,
-        cast_spec=cast_spec,
-        premise=premise,
-    )
-    resource_block = render_short_resource_prompt_block(resource_cards)
-    ideology_compact = build_short_ideology_compact(ideology_kernel)
-    ideology_block = render_ideology_compact_block(ideology_kernel) if ideology_kernel else ""
-    ideology_prompt = f"{ideology_block}\n" if ideology_block else ""
-    user_prompt = (
-        f"书名：{project.title}\n"
-        f"类型：{project.genre} / {project.sub_genre or ''}\n"
-        f"梗概：{premise}\n"
-        f"段数：{project.target_chapters}\n"
-        f"目标全文：{project.target_word_count} 字\n"
-        f"{emotion_block}\n"
-        f"{ideology_prompt}"
-        f"{resource_block}\n"
-        "内核要求：每段的 emotional_turn 必须推进上面的信念弧（建立→受压→碎裂→重建），"
-        "母题与代价律在剧情冲突里兑现，严禁说教或口号；末段完成信念重建。\n"
-        "榜单级硬要求：第1段前50字主角进入压迫现场，若有金手指/异能必须立刻可见并生效；"
-        "前100字主角成为视角焦点并出现明确污名/威胁/损失；前200字必须给一次可见小反馈；"
-        "前300字出现当前冲突/威胁/代价和第一次小爽点结果，前800字出现第一次动作反应或能力使用；"
-        "前30%必须完成压迫-行动-小爆点；末段必须单篇完结，禁止连载式悬念；"
-        "能力必须有来源、限制、代价、成长触发和剧情用途。\n"
-        "请输出 JSON："
-        '{"title","logline","pov","unlock_milestone_segment","beats":[{"segment_number",'
-        '"beat_role","purpose","payoff","emotional_turn","opening_contract",'
-        '"unlock_contract","ability_cost_contract","payoff_contract","closure_contract",'
-        '"continuity_contract"}]}'
-        "其中所有 *_contract 字段必须输出为 JSON object，例如 {\"summary\":\"...\"}，禁止直接输出字符串。"
-    )
-    fallback_sheet = _fallback_beat_sheet(project, premise)
-    fallback_response = json.dumps(
-        fallback_sheet.model_dump(mode="json"),
-        ensure_ascii=False,
-    )
-    try:
-        response = await complete_text(
-            session,
-            settings,
-            LLMCompletionRequest(
-                logical_role="planner",
-                system_prompt=fragment or "你是番茄短故事策划，输出紧凑 beat sheet JSON。",
-                user_prompt=user_prompt,
-                fallback_response=fallback_response,
-                project_id=project.id,
-                metadata={"task": "fanqie_beat_sheet"},
-            ),
-        )
-        raw = (response.content or "").strip()
-        if raw.startswith("```"):
-            raw = raw.split("```", 2)[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        payload = _normalize_beat_sheet_payload(_extract_json_payload(raw))
-        sheet = FanqieShortBeatSheet.model_validate(payload)
-    except Exception:
-        logger.warning("Fanqie beat sheet LLM failed; using fallback", exc_info=True)
-        sheet = fallback_sheet
-
-    if ideology_compact:
-        segment_count = len(sheet.beats) or max(project.target_chapters, 1)
-        vectors = derive_short_thesis_vectors(
-            segment_count, sheet.unlock_milestone_segment, ideology_compact
-        )
-        new_beats = [
-            beat.model_copy(
-                update={"thesis_vector": vectors.get(beat.segment_number, beat.thesis_vector)}
-            )
-            for beat in sheet.beats
-        ]
-        sheet = sheet.model_copy(
-            update={"ideology_compact": ideology_compact, "beats": new_beats}
-        )
-
-    await import_planning_artifact(
-        session,
-        project_slug,
-        PlanningArtifactCreate(
-            artifact_type=ArtifactType.FANQIE_BEAT_SHEET,
-            content=sheet.model_dump(mode="json"),
-        ),
-    )
-    return sheet
+    return selection if return_selection else selection.sheet
 
 
 def build_fanqie_segment_outline_batch(
@@ -611,295 +480,12 @@ def build_fanqie_segment_outline_batch(
     book_spec: dict[str, Any] | None = None,
     cast_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """由 beat sheet 生成每段 1 scene 的大纲 batch。"""
-    cast_payload = _mapping(cast_spec or {})
-    protagonist = _mapping(cast_payload.get("protagonist"))
-    protagonist_name = str(protagonist.get("name") or "我").strip() or "我"
-    per_segment_words = segment_target_words(
-        project.target_word_count, max(project.target_chapters, 1)
+    """Project supplied candidate values; missing story facts stay unknown."""
+    from bestseller.services.fanqie_segment_projection import project_segment_outline
+
+    return project_segment_outline(
+        project, beat_sheet, book_spec=book_spec, cast_spec=cast_spec,
     )
-
-    def _contract_lines(beat: FanqieShortBeat | None) -> list[str]:
-        if beat is None:
-            return []
-        defaults = _default_contracts(
-            segment_number=beat.segment_number,
-            segment_count=max(project.target_chapters, 1),
-            unlock_segment=beat_sheet.unlock_milestone_segment,
-            protagonist_name=protagonist_name,
-        )
-        continuity_contract = {
-            **defaults["continuity_contract"],
-            **(beat.continuity_contract or {}),
-            "protagonist_name": protagonist_name,
-        }
-        sections = [
-            ("开篇合同", beat.opening_contract or defaults["opening_contract"]),
-            ("30%解锁合同", beat.unlock_contract or defaults["unlock_contract"]),
-            (
-                "能力代价合同",
-                beat.ability_cost_contract or defaults["ability_cost_contract"],
-            ),
-            ("爽点合同", beat.payoff_contract or defaults["payoff_contract"]),
-            ("收束合同", beat.closure_contract or defaults["closure_contract"]),
-            ("连续性合同", continuity_contract),
-        ]
-        lines: list[str] = []
-        for label, payload in sections:
-            if not payload:
-                continue
-            compact = "；".join(f"{key}: {value}" for key, value in payload.items() if value)
-            if compact:
-                lines.append(f"{label}：{compact}")
-        return lines
-
-    def _story_goal(beat: FanqieShortBeat | None, fallback: str) -> str:
-        if beat is None:
-            return fallback
-        return fallback or beat.purpose
-
-    def _non_empty_text(value: Any) -> str:
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        return ""
-
-    def _supporting_names() -> list[str]:
-        names: list[str] = []
-        for key in ("supporting_cast", "allies", "rivals"):
-            for item in cast_payload.get(key) or []:
-                item_map = _mapping(item)
-                name = _non_empty_text(item_map.get("name") or item_map.get("character_ref"))
-                if name and name != protagonist_name and name not in names:
-                    names.append(name)
-        antagonist = _mapping(cast_payload.get("antagonist"))
-        antagonist_name = _non_empty_text(antagonist.get("name"))
-        if antagonist_name and antagonist_name not in names:
-            names.append(antagonist_name)
-        for item in cast_payload.get("antagonist_forces") or []:
-            item_map = _mapping(item)
-            name = _non_empty_text(item_map.get("character_ref") or item_map.get("name"))
-            if name and name != protagonist_name and name not in names:
-                names.append(name)
-        return names[:4]
-
-    def _book_contract_lines() -> list[str]:
-        spec = _mapping(book_spec or {})
-        if not spec:
-            return []
-        lines: list[str] = []
-        for key, label in (
-            ("premise", "本书前提"),
-            ("core_promise", "读者承诺"),
-            ("reader_promise", "读者承诺"),
-            ("main_thread", "主线"),
-        ):
-            value = _non_empty_text(spec.get(key))
-            if value:
-                lines.append(f"{label}：{value}")
-        series_engine = _mapping(spec.get("series_engine") or spec.get("serialization"))
-        for key, label in (
-            ("chapter_arc", "短篇段落弧"),
-            ("payoff_rhythm", "爽点节奏"),
-            ("first_three_chapter_goal", "前段目标"),
-        ):
-            value = _non_empty_text(series_engine.get(key))
-            if value:
-                lines.append(f"{label}：{value}")
-        return lines
-
-    def _arc_items() -> list[str]:
-        lines = _book_contract_lines()
-        for line in lines:
-            if line.startswith("短篇段落弧："):
-                raw = line.split("：", 1)[1]
-                for sep in ("→", "->", "=>"):
-                    raw = raw.replace(sep, "\n")
-                return [item.strip() for item in raw.splitlines() if item.strip()]
-        return []
-
-    support_names = _supporting_names()
-    book_contract_lines = _book_contract_lines()
-    arc_items = _arc_items()
-    beat_by_number = {beat.segment_number: beat for beat in beat_sheet.beats}
-    emotion_stack = select_emotion_stack(
-        premise=beat_sheet.logline or getattr(project, "title", ""),
-        genre=str(getattr(project, "genre", "") or ""),
-    )
-    emotion_contract_line = (
-        "短篇社会情绪栈："
-        f"主情绪={emotion_stack.primary.category}/{emotion_stack.primary.emotion}；"
-        f"开局压力={emotion_stack.primary.opening_pressure}；"
-        f"爽点兑现={emotion_stack.payoff_point or emotion_stack.primary.payoff}"
-    )
-
-    ideology_compact = dict(beat_sheet.ideology_compact or {})
-    chapters: list[dict[str, Any]] = []
-    segment_count = max(project.target_chapters, len(beat_sheet.beats), 1)
-    for segment_number in range(1, segment_count + 1):
-        beat = beat_by_number.get(segment_number)
-        if beat is None:
-            beat = FanqieShortBeat(
-                segment_number=segment_number,
-                beat_role=_BEAT_ROLES[min(segment_number - 1, len(_BEAT_ROLES) - 1)],
-                purpose=f"推进短篇主线并兑现第{segment_number}段的明确回报。",
-            )
-        arc_item = arc_items[segment_number - 1] if segment_number <= len(arc_items) else ""
-        visible_goal = _visible_goal_from_beat(beat, protagonist_name=protagonist_name)
-        story_goal = _story_goal(beat, visible_goal)
-        participants = [protagonist_name, *support_names]
-        segment_conflict = arc_item or visible_goal
-        scene_title = arc_item or f"{beat.beat_role}-{segment_number}"
-        hook_description = _hook_from_beat(
-            beat,
-            final_segment=segment_number == segment_count,
-            protagonist_name=protagonist_name,
-        )
-        defaults = _default_contracts(
-            segment_number=segment_number,
-            segment_count=segment_count,
-            unlock_segment=beat_sheet.unlock_milestone_segment,
-            protagonist_name=protagonist_name,
-        )
-        continuity_contract = {
-            **defaults["continuity_contract"],
-            **(beat.continuity_contract or {}),
-            "protagonist_name": protagonist_name,
-        }
-        fanqie_contract = {
-            "opening_contract": beat.opening_contract or defaults["opening_contract"],
-            "unlock_contract": beat.unlock_contract or defaults["unlock_contract"],
-            "ability_cost_contract": (
-                beat.ability_cost_contract or defaults["ability_cost_contract"]
-            ),
-            "payoff_contract": beat.payoff_contract or defaults["payoff_contract"],
-            "closure_contract": beat.closure_contract or defaults["closure_contract"],
-            "continuity_contract": continuity_contract,
-            "emotion_contract": emotion_contract_line
-            if segment_number <= max(1, beat_sheet.unlock_milestone_segment)
-            else "",
-            "book_contract_lines": book_contract_lines if segment_number == 1 else [],
-        }
-        opening_situation = (
-            _visible_contract_text(
-                beat.opening_contract,
-                protagonist_name=protagonist_name,
-            )
-            or visible_goal
-        )
-        visible_action = (
-            _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
-            or visible_goal
-            or segment_conflict
-        )
-        protagonist_flaw = (
-            f"{protagonist_name}在污名和追责面前急于自证，容易被对手牵着节奏走。"
-        )
-        scene_stakes = (
-            f"如果{protagonist_name}不能用可见证据推进局面，当前嫌疑会继续压到{protagonist_name}身上。"
-        )
-        information_control = "只释放当前段能验证的证据，把最终真凶动机留到后续反转。"
-        signature_image = (
-            opening_situation[:80]
-            if opening_situation
-            else f"{protagonist_name}在现场盯住一处异常证据。"
-        )
-        cut_point = hook_description if hook_description != protagonist_name else visible_action
-        scene_ideology = render_short_ideology_scene_block(
-            ideology_compact, thesis_vector=beat.thesis_vector
-        )
-        causal_contract = {
-            "chapter_function": beat.beat_role,
-            "thesis_vector": beat.thesis_vector,
-            "pressure": segment_conflict,
-            "protagonist_choice": visible_goal,
-            "visible_action_or_reaction": visible_action,
-            "resistance": (
-                _visible_contract_text(
-                    beat.closure_contract,
-                    protagonist_name=protagonist_name,
-                )
-                or f"对手与规则阻止{protagonist_name}继续追查。"
-            ),
-            "cost_or_tradeoff": (
-                _visible_contract_text(
-                    beat.ability_cost_contract,
-                    protagonist_name=protagonist_name,
-                )
-                or f"{protagonist_name}每次使用能力都会暴露自身并付出代价。"
-            ),
-            "gain_or_reveal": (
-                _visible_contract_text(
-                    beat.payoff_contract,
-                    protagonist_name=protagonist_name,
-                )
-                or _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
-                or hook_description
-            ),
-            "state_change": (
-                f"{protagonist_name}从上一轮压力中拿到新线索，局面转向："
-                f"{hook_description}"
-            ),
-            "next_reader_desire": hook_description,
-            "fanqie_short_v2": fanqie_contract,
-        }
-        time_label = f"第{segment_number}段现场：{opening_situation[:32]}"
-        chapters.append(
-            {
-                "chapter_number": beat.segment_number,
-                "title": f"第{beat.segment_number}段",
-                "chapter_goal": story_goal,
-                "opening_situation": opening_situation,
-                "main_conflict": segment_conflict,
-                "hook_description": hook_description,
-                "protagonist_flaw": protagonist_flaw,
-                "visible_action_or_reaction": visible_action,
-                "payoff": _visible_story_text(beat.payoff, protagonist_name=protagonist_name)
-                or hook_description,
-                "tail_hook": hook_description,
-                "causal_contract": causal_contract,
-                "methodology_contract": {
-                    "fanqie_short_visible_goal": visible_goal,
-                    "fanqie_short_payoff": beat.payoff,
-                    "fanqie_short_emotional_turn": beat.emotional_turn,
-                    "fanqie_short_contract_lines": _contract_lines(beat),
-                    "fanqie_short_v2": fanqie_contract,
-                    "fanqie_short_ideology": scene_ideology,
-                    "thesis_vector": beat.thesis_vector,
-                },
-                "target_word_count": per_segment_words,
-                "volume_number": 1,
-                "scenes": [
-                    {
-                        "scene_number": 1,
-                        "scene_type": "conflict",
-                        "title": scene_title,
-                        "time_label": time_label,
-                        "participants": participants,
-                        "purpose": {
-                            "story": story_goal,
-                            "emotion": beat.emotional_turn or beat.payoff,
-                        },
-                        "conflict_stakes": scene_stakes,
-                        "information_control": information_control,
-                        "signature_image": signature_image,
-                        "cut_point": cut_point,
-                        "methodology_contract": {
-                            "fanqie_short_v2": fanqie_contract,
-                            "conflict_stakes": scene_stakes,
-                            "information_control": information_control,
-                            "signature_image": signature_image,
-                            "cut_point": cut_point,
-                            "fanqie_short_ideology": scene_ideology,
-                            "thesis_vector": beat.thesis_vector,
-                        },
-                        "entry_state": {"pressure": segment_conflict},
-                        "exit_state": {"hook": hook_description},
-                        "target_word_count": per_segment_words,
-                    }
-                ],
-            }
-        )
-    return {"batch_name": "fanqie-short-segments", "chapters": chapters}
 
 
 async def persist_fanqie_chapter_outline(
@@ -908,12 +494,21 @@ async def persist_fanqie_chapter_outline(
     outline_payload: dict[str, Any],
 ) -> UUID:
     batch = ChapterOutlineBatchInput.model_validate(outline_payload)
+    content = batch.model_dump(mode="json")
+    # Pydantic validates the planning body but does not declare custody metadata.
+    # Keep the exact producer receipts alongside that body through normal import.
+    if "_meta" in outline_payload:
+        from copy import deepcopy
+
+        if not isinstance(outline_payload["_meta"], dict):
+            raise ValueError("fanqie_outline_metadata_must_be_object")
+        content["_meta"] = deepcopy(outline_payload["_meta"])
     artifact = await import_planning_artifact(
         session,
         project_slug,
         PlanningArtifactCreate(
             artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
-            content=batch.model_dump(mode="json"),
+            content=content,
         ),
     )
     return artifact.id

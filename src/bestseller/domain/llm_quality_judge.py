@@ -120,6 +120,7 @@ class LLMRewritePlan(BaseModel):
 JUDGE_INFRASTRUCTURE_FAILURE_CODES: frozenset[str] = frozenset(
     {
         "CHAPTER_JUDGE_UNAVAILABLE",
+        "OUTLINE_JUDGE_UNAVAILABLE",
         "JUDGE_UNAVAILABLE",
         "JUDGE_TIMEOUT",
         "JUDGE_PARSE_FAILED",

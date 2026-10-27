@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from uuid import uuid4
 
 import pytest
@@ -39,6 +40,7 @@ class FakeSession:
     ) -> None:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
+        self.no_autoflush = nullcontext()
         self.added: list[object] = []
         self.executed: list[object] = []
 
@@ -303,10 +305,11 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
     session = FakeSession(
         scalar_results=[world_backbone],
         scalars_results=[
+            [world_rule],
+            [],  # Existing tree rows: the new ownership check precedes generation.
             [volume],
             [chapter],
             [scene],
-            [world_rule],
             [frontier],
             [deferred_reveal],
             [expansion_gate],
@@ -385,7 +388,7 @@ async def test_resolve_and_search_narrative_tree_respect_visibility(
     )
     future_node.id = uuid4()
 
-    async def fake_ensure(session, project_obj):
+    async def fake_ensure(session, project_obj, *, settings=None):
         return 0
 
     monkeypatch.setattr(narrative_tree_services, "ensure_project_narrative_tree", fake_ensure)
@@ -440,7 +443,7 @@ async def test_get_narrative_tree_node_by_path_returns_node(
     async def fake_get_project_by_slug(session, slug: str):
         return project
 
-    async def fake_ensure(session, project_obj):
+    async def fake_ensure(session, project_obj, *, settings=None):
         return 0
 
     monkeypatch.setattr(narrative_tree_services, "get_project_by_slug", fake_get_project_by_slug)

@@ -14,7 +14,7 @@ import json
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, model_serializer
 
 from bestseller.domain.concept_lab import ConceptLabBundle
 from bestseller.domain.enums import (
@@ -26,6 +26,7 @@ from bestseller.domain.enums import (
 )
 from bestseller.services.genre_intent_contract import GenreIntentContract
 from bestseller.services.story_enhancers import StoryEnhancerSelection
+from bestseller.services.creation_configuration import CreationConfiguration
 
 
 class _FrozenSourceMap(dict[str, IntentFieldSource]):
@@ -54,7 +55,8 @@ class CreationIntentContract(BaseModel, frozen=True):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["creation-intent.v1"] = "creation-intent.v1"
+    schema_version: Literal["creation-intent.v1", "creation-intent.v2"] = "creation-intent.v1"
+    configuration: CreationConfiguration | None = None
     genre_intent: GenreIntentContract
     audience_orientation: str | None = Field(default=None, max_length=120)
     narrative_scale: str | None = Field(default=None, max_length=120)
@@ -77,7 +79,14 @@ class CreationIntentContract(BaseModel, frozen=True):
 
     @model_validator(mode="after")
     def _normalise_sources(self) -> CreationIntentContract:
+        if self.configuration is not None:
+            if self.schema_version != "creation-intent.v2" or self.chapter_count != self.configuration.book.total_chapters:
+                raise ValueError("configuration requires creation-intent.v2 and matching whole-book chapter count")
+        elif self.schema_version == "creation-intent.v2":
+            raise ValueError("creation-intent.v2 requires configuration")
         known = set(type(self).model_fields) - {"schema_version", "field_sources"}
+        if self.schema_version == "creation-intent.v1":
+            known.discard("configuration")
         sources = dict(self.field_sources)
         unknown = set(sources) - known
         if unknown:
@@ -95,6 +104,13 @@ class CreationIntentContract(BaseModel, frozen=True):
             sources.setdefault(name, IntentFieldSource.DEFAULT)
         object.__setattr__(self, "field_sources", _FrozenSourceMap(sources))
         return self
+
+    @model_serializer(mode="wrap")
+    def _preserve_legacy_wire(self, handler):
+        result = handler(self)
+        if self.schema_version == "creation-intent.v1":
+            result.pop("configuration", None)
+        return result
 
     def contract_hash(self) -> str:
         """Return a stable hash independent of dict insertion order."""

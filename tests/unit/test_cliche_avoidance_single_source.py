@@ -1,15 +1,7 @@
-"""Guard: the cliché ban list must reach the generator, not only the judge.
+"""Default cliché references grant neither prompt nor elimination authority.
 
-Root cause (2026-07-22, book creation blocked): the judge eliminates any
-candidate matching ``cliche_seeds`` *before* scoring, but the production
-``engine_first`` generators never received that list — ``_build_native_candidate
-_messages`` ``del``s it, and the kernel/hook builders were never given it. On a
-cold start with no premise the model regressed to the genre's most worn openings
-(师父坟前 / 遗物 / 借尸还魂 / 替死人还债), which is exactly what the seed list
-bans, so every candidate was KO'd and the tournament produced no champion. The
-blurb then scored below the appeal bar and the whole conception failed.
-
-Same 生成端↔判官端不同源 shape as plain_language and the anti-AI discipline.
+The legacy builder arguments remain compatible, while the inventory is kept
+for post-generation audit. Actual user constraints use their existing inputs.
 """
 
 from __future__ import annotations
@@ -35,13 +27,14 @@ class TestAvoidanceBlock:
     def test_never_quotes_the_ban_corpus(self) -> None:
         block = ct.render_cliche_avoidance_block(_banned())
         assert all(item not in block for item in _banned())
-        assert "禁用文本不进入" in block
+        assert block == ""
 
-    def test_frames_as_substitution_not_bare_enumeration(self) -> None:
-        """Bare prohibitions prime what they forbid; the block must redirect."""
+    def test_reference_library_does_not_impose_a_substitute_opening(self) -> None:
+        """Removing a ban must not replace it with a fixed living-protagonist rule."""
 
         block = ct.render_cliche_avoidance_block(_banned())
-        assert "在世主角" in block
+        assert "在世主角" not in block and "原创开局约束" not in block
+        assert block == ""
 
     def test_stays_compact(self) -> None:
         """Dumping 20+ phrases would itself become a death-motif menu."""
@@ -51,24 +44,34 @@ class TestAvoidanceBlock:
 
 
 class TestReachesBothGenerators:
-    def test_kernel_generator_carries_the_avoidance(self) -> None:
-        _system, user = ct._build_engine_kernel_messages(
+    def test_kernel_generator_is_unchanged_by_default_references(self) -> None:
+        observed = ct._build_engine_kernel_messages(
             genre="玄幻",
             sub_genre="玄幻",
             lane="action-progression",
             chapter_count=100,
             banned=_banned(),
         )
-        assert "原创开局约束" in user
+        baseline = ct._build_engine_kernel_messages(
+            genre="玄幻", sub_genre="玄幻", lane="action-progression", chapter_count=100,
+            banned=(),
+        )
+        assert observed == baseline
+        assert "原创开局约束" not in observed[1]
 
-    def test_hook_generator_carries_the_avoidance(self) -> None:
-        _system, user = ct._build_hook_from_engine_messages(
+    def test_hook_generator_is_unchanged_by_default_references(self) -> None:
+        observed = ct._build_hook_from_engine_messages(
             genre="玄幻",
             sub_genre="玄幻",
             kernel={"protagonist_identity": "少年"},
             banned=_banned(),
         )
-        assert "原创开局约束" in user
+        baseline = ct._build_hook_from_engine_messages(
+            genre="玄幻", sub_genre="玄幻", kernel={"protagonist_identity": "少年"},
+            banned=(),
+        )
+        assert observed == baseline
+        assert "原创开局约束" not in observed[1]
 
     def test_generators_omit_it_without_a_ban_list(self) -> None:
         """No-op guard: a caller that passes no ban list gets no block."""
@@ -84,16 +87,15 @@ class TestReachesBothGenerators:
 
 
 class TestProductionCallSitesPassBanned:
-    """A generator that accepts a ban list nobody passes is the same bug."""
+    """Legacy call compatibility remains; the renderer itself grants no authority."""
 
     def test_kernel_and_hook_call_sites_thread_banned(self) -> None:
         source = inspect.getsource(ct.run_concept_tournament)
-        # Both engine-first generator invocations must forward the resolved list.
+        # Existing builder signatures/call sites stay compatible with the audit inventory.
         assert source.count("banned=banned,") >= 3
 
     def test_ban_list_is_the_same_one_the_judge_uses(self) -> None:
-        """The generator and judge must share one resolved list, or the block
-        drifts from what actually eliminates candidates."""
+        """Audit matching still resolves the original inventory from a single source."""
 
         source = inspect.getsource(ct.run_concept_tournament)
         assert "banned = resolve_banned_cliches" in source

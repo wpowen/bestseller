@@ -73,6 +73,18 @@ class CanonFactExtraction(BaseModel):
     predicate: str
     value: str
     fact_type: str = "extracted"
+    evidence: str = ""
+    confidence: float = Field(default=0.8, ge=0, le=1)
+
+
+class TimelineEventExtraction(BaseModel):
+    """An observed chapter-local event, with a verbatim prose citation."""
+
+    event_name: str
+    event_type: str = "chapter_event"
+    story_time_label: str = ""
+    consequences: list[str] = Field(default_factory=list)
+    evidence: str = ""
 
 
 class PromiseMadeExtraction(BaseModel):
@@ -84,7 +96,7 @@ class PromiseMadeExtraction(BaseModel):
 
     promisor: str  # name of the character making the promise
     promisee: str  # name of the character receiving the promise
-    content: str   # what exactly was promised (one sentence)
+    content: str  # what exactly was promised (one sentence)
     kind: str | None = None  # revenge|protection|message|fealty|debt|quest|deathbed
     due_chapter: int | None = None  # planned resolution chapter, if the prose mentions one
 
@@ -99,6 +111,8 @@ class ChapterFeedbackPayload(BaseModel):
     world_details: list[WorldDetailExtraction] = Field(default_factory=list)
     canon_facts: list[CanonFactExtraction] = Field(default_factory=list)
     promises_made: list[PromiseMadeExtraction] = Field(default_factory=list)
+    timeline_events: list[TimelineEventExtraction] = Field(default_factory=list)
+    validation_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ChapterFeedbackResult(BaseModel):
@@ -114,5 +128,8 @@ class ChapterFeedbackResult(BaseModel):
     world_details_enriched: int = 0
     canon_facts_created: int = 0
     promises_created: int = 0
+    timeline_events_created: int = 0
+    candidate_canon_facts: list[dict[str, Any]] = Field(default_factory=list)
+    source_lineage: dict[str, Any] = Field(default_factory=dict)
     extraction_status: str = "ok"  # ok | empty | parse_error | llm_error
     llm_run_id: UUID | None = None

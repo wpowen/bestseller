@@ -710,9 +710,10 @@ def build_hype_constraints(
                 )
             if recipe.cadence_hint:
                 lines.append(f"  节奏提示：{recipe.cadence_hint}")
-        if band.min_count_per_chapter >= 2 or is_golden_three:
+        opening_peak_count = max(1, int(invariants.hype_scheme.golden_three_peak_count))
+        if opening_peak_count >= 2 and (band.min_count_per_chapter >= 2 or is_golden_three):
             lines.append(
-                "- 黄金三章特别约束：本章必须至少 2 个爽点峰值，"
+                f"- 黄金三章特别约束：本章必须至少 {opening_peak_count} 个爽点峰值，"
                 "第 1 个在前 1000 字内。"
             )
         lines.append(
@@ -753,9 +754,10 @@ def build_hype_constraints(
                 )
             if recipe.cadence_hint:
                 lines.append(f"  Cadence: {recipe.cadence_hint}")
-        if band.min_count_per_chapter >= 2 or is_golden_three:
+        opening_peak_count = max(1, int(invariants.hype_scheme.golden_three_peak_count))
+        if opening_peak_count >= 2 and (band.min_count_per_chapter >= 2 or is_golden_three):
             lines.append(
-                "- Golden-three-chapters rule: at least 2 hype peaks in this "
+                f"- Golden-three-chapters rule: at least {opening_peak_count} hype peaks in this "
                 "chapter, the first within the first 1000 characters."
             )
         lines.append(
@@ -858,37 +860,23 @@ def build_prior_chapter_tail(
 
 
 def render_solo_line_ceiling_rule(language: str) -> str:
-    """Syntactic-rhythm ceiling for the writer prompt — the anti-staccato rule.
+    """Generic rhythm advice, never a project-independent paragraph quota.
 
-    Activates the previously-dormant ``config/rhythm_engineering.yaml::
-    solo_line_ceiling`` rule (authored but never injected into any writer
-    prompt — the prose-layer instance of "方法论写了但没跑"). Falls back to a
-    baked rule if config is missing. This is the *prevention* lever that pairs
-    with the staccato detector → deslop repair safety net.
+    Historical callers use this name, but a global methodology asset is not
+    an explicit delivery contract. Numeric layout requirements belong in the
+    current task contract, which the writer renders separately.
     """
 
     if not language.lower().startswith("zh"):
         return (
-            "- Rhythm: vary sentence AND paragraph length. A single-sentence "
-            "paragraph is a rare hammer, not the default — keep them under ~25% "
-            "of narration, never 3+ in a row. Fold beats (action+reaction+"
-            "setting) into flowing paragraphs."
+            "- Rhythm advice: paragraph length follows the event and the chosen "
+            "voice. An explicit current delivery contract takes precedence; "
+            "there is no universal paragraph count or single-line quota."
         )
-    fallback = (
-        "默认把动作+反应+环境揉进有起伏的叙述段；单句独段是稀缺重锤，只在真要顿挫时用。"
-        "硬上限：单句独段全章占叙述段≤25%、连续不超过2段、禁连续≥3句同主语开头。"
-        "一个戏剧拍点≠一个独立短段——把“他坐起来。”“数字跳了一格。”“他愣了一拍。”这类拍点并回上下文段落。"
+    return (
+        "- 节奏建议：段落长短服从事件与已选择的文风；"
+        "当前明确的交付合同优先，不设通用段数或单句独段配额。"
     )
-    try:
-        from bestseller.services.quality_levers.rhythm_engineering import (
-            load_rhythm_engineering,
-        )
-
-        rule = (getattr(load_rhythm_engineering(), "solo_line_ceiling_rule", "") or "").strip()
-        rule = rule.replace("\\n", " ").replace("\n", " ")
-    except Exception:
-        rule = ""
-    return "- 句法节奏（硬规则）：" + (rule or fallback)
 
 
 def build_anti_slop_footer(language: str) -> str:
@@ -982,13 +970,14 @@ def build_chapter_prompt(
     """
 
     policy = cliffhanger_policy or invariants.cliffhanger_policy
+    selected_pool = invariants.opening_archetype_pool if opening_pool is None else opening_pool
     opening = choose_opening_archetype(
         diversity_budget,
-        pool=opening_pool or invariants.opening_archetype_pool,
+        pool=selected_pool,
         preassigned=preassigned_opening,
         no_repeat_within=no_repeat_within_openings,
-    )
-    cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy)
+    ) if selected_pool or preassigned_opening is not None else None
+    cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy) if policy.allowed_types else None
 
     # Hype engine — no-op when scheme is empty.
     hype_type: HypeType | None = None
@@ -998,7 +987,8 @@ def build_chapter_prompt(
     if not invariants.hype_scheme.is_empty and chapter_no is not None:
         total = total_chapters or max(chapter_no, 1)
         band = target_hype_for_chapter(
-            chapter_no, total, pacing_profile=pacing_profile
+            chapter_no, total, pacing_profile=pacing_profile,
+            hype_scheme=invariants.hype_scheme,
         )
         hype_type, recipe, intensity_target = pick_hype_for_chapter(
             band,
@@ -1194,7 +1184,8 @@ def build_chapter_hype_blocks(
 
     total = max(total_chapters, chapter_no, 1)
     band = target_hype_for_chapter(
-        chapter_no, total, pacing_profile=pacing_profile
+        chapter_no, total, pacing_profile=pacing_profile,
+        hype_scheme=scheme,
     )
     hype_type, recipe, intensity_target = pick_hype_for_chapter(
         band,
@@ -1331,13 +1322,14 @@ def build_chapter_l3_blocks(
     """
 
     policy = cliffhanger_policy or invariants.cliffhanger_policy
+    selected_pool = invariants.opening_archetype_pool if opening_pool is None else opening_pool
     opening = choose_opening_archetype(
         diversity_budget,
-        pool=opening_pool or invariants.opening_archetype_pool,
+        pool=selected_pool,
         preassigned=preassigned_opening,
         no_repeat_within=no_repeat_within_openings,
-    )
-    cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy)
+    ) if selected_pool or preassigned_opening is not None else None
+    cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy) if policy.allowed_types else None
 
     ledger_section = ledger_delta_block
     if not ledger_section:

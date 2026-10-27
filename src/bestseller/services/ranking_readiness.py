@@ -151,6 +151,19 @@ class RankingReadinessReport:
     productization_plan: Mapping[str, Any]
     marketing_assets: Mapping[str, Any]
     ip_readiness: Mapping[str, Any]
+    prelaunch_tier: Tier
+    prelaunch_passed: bool
+    diagnostic_only: bool = True
+    evidence_level: str = "PRELAUNCH_DIAGNOSTIC"
+    missing_layers: tuple[str, ...] = (
+        "live_production",
+        "independent_text_parity",
+        "human_reader",
+        "serial_depth",
+        "platform_cohort",
+        "rank_receipt",
+    )
+    claims_allowed: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +180,12 @@ class RankingReadinessReport:
             "productization_plan": dict(self.productization_plan),
             "marketing_assets": dict(self.marketing_assets),
             "ip_readiness": dict(self.ip_readiness),
+            "prelaunch_tier": self.prelaunch_tier,
+            "prelaunch_passed": self.prelaunch_passed,
+            "diagnostic_only": self.diagnostic_only,
+            "evidence_level": self.evidence_level,
+            "missing_layers": list(self.missing_layers),
+            "claims_allowed": list(self.claims_allowed),
         }
 
 
@@ -621,7 +640,17 @@ def evaluate_ranking_readiness(
         maturity_score = min(maturity_score, 69.0)
     elif "high" in gate_severities:
         maturity_score = min(maturity_score, 77.0)
-    tier = maturity_tier(maturity_score)
+    prelaunch_tier = maturity_tier(maturity_score)
+    # This module is deliberately a prelaunch diagnostic.  A text-only report
+    # cannot call itself ``flagship`` because that legacy label was repeatedly
+    # mistaken for verified ranking or commercial-release evidence.  Even when
+    # callers pass behavior-shaped numbers, this function cannot authenticate
+    # their collector, participants, platform denominator, or provenance.
+    tier: Tier = (
+        "strong_project"
+        if scoring_basis == "text_only" and prelaunch_tier == "flagship"
+        else prelaunch_tier
+    )
     findings = [*text.findings, *behavior.findings, *external_findings]
     if tier == "immature":
         findings.append(
@@ -648,6 +677,8 @@ def evaluate_ranking_readiness(
         productization_plan=_build_productization_plan(text, behavior, tier),
         marketing_assets=marketing_assets or {},
         ip_readiness=ip_readiness or {},
+        prelaunch_tier=tier,
+        prelaunch_passed=tier != "immature" and "critical" not in gate_severities,
     )
 
 
@@ -676,14 +707,9 @@ def build_listing_marketing_asset_pack(
     rule_text = " / ".join(rules[:3]) if is_en else "、".join(rules[:3])
 
     if is_en:
-        concept_script = (
-            logline
-            or f"{first_character} enters a high-pressure {tag_text} story."
-        )
+        concept_script = logline or f"{first_character} enters a high-pressure {tag_text} story."
         world_script = (
-            rule_text
-            or tag_text
-            or "the world forces visible consequences for every decision"
+            rule_text or tag_text or "the world forces visible consequences for every decision"
         )
         scripts = [
             {
@@ -703,8 +729,7 @@ def build_listing_marketing_asset_pack(
                 "duration_seconds": 90,
                 "angle": "world_or_issue",
                 "script": (
-                    f"Explain the rule system or social question behind {title}: "
-                    f"{world_script}."
+                    f"Explain the rule system or social question behind {title}: {world_script}."
                 ),
             },
         ]
@@ -770,10 +795,7 @@ def build_listing_ip_readiness(
     locations = _story_location_names(story_bible)
     rules = _story_rule_names(story_bible)
     visual_motifs = _dedupe_texts(
-        _string_list(profile.get("visual_motifs"))
-        + locations[:4]
-        + rules[:4]
-        + tags[:4]
+        _string_list(profile.get("visual_motifs")) + locations[:4] + rules[:4] + tags[:4]
     )
     checks = [
         {
@@ -900,8 +922,7 @@ def _project_scorecard_findings(
                 severity="critical",
                 scope="scorecard.completion",
                 message=(
-                    f"长篇目标 {target_chapters} 章，当前约 {actual} 章，"
-                    f"缺 {missing_chapters} 章。"
+                    f"长篇目标 {target_chapters} 章，当前约 {actual} 章，缺 {missing_chapters} 章。"
                 ),
                 suggestion="不要把试写/阶段稿标为旗舰可上架；先完成目标体量或降级项目目标。",
                 evidence={
@@ -1239,16 +1260,8 @@ def _build_productization_plan(
     behavior: ReaderBehaviorAssessment,
     tier: Tier,
 ) -> dict[str, Any]:
-    weak_dimensions = [
-        item.key
-        for item in text.dimensions
-        if item.raw_score < 3.5
-    ]
-    missing_behavior_modules = [
-        item.key
-        for item in behavior.modules
-        if item.score is None
-    ]
+    weak_dimensions = [item.key for item in text.dimensions if item.raw_score < 3.5]
+    missing_behavior_modules = [item.key for item in behavior.modules if item.score is None]
     return {
         "tier_action": _TIER_ACTIONS[tier],
         "立项看板": [

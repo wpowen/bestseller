@@ -14,6 +14,7 @@ from bestseller.domain.entry_system import (
     EntryTypeDefinition,
 )
 from bestseller.services.entry_blueprint_library import EntryBlueprint
+from bestseller.services.story_enhancers import resolve_cost_style
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,38 +145,49 @@ def _genre_profile(project_like: object) -> str:
 
 
 def _requested_cost_style(project_like: object) -> str:
-    """Resolve the user's cost preference from creation-time truth.
+    """Only the canonical author entry can authorize a cost policy."""
+    for key in ("metadata_json", "metadata"):
+        metadata = _get(project_like, key)
+        if isinstance(metadata, Mapping):
+            return resolve_cost_style(metadata)
+    return resolve_cost_style(
+        {"creation_intent_contract": _get(project_like, "creation_intent_contract")}
+    )
 
-    Entry-system defaults used to infer costs from genre alone, so a Xuanhuan
-    book explicitly created with ``cost_style=minimal`` still received injury,
-    backlash, and compulsory-debt vocabulary.  Read the creation contract
-    before applying genre defaults; explicit user intent outranks category
-    heuristics.
-    """
 
-    candidates: list[object] = [project_like]
-    metadata = _as_mapping(_get(project_like, "metadata"))
-    if metadata:
-        candidates.append(metadata)
-    for container in candidates:
-        direct = _text(_get(container, "cost_style"))
-        if direct:
-            return direct.lower()
-        enhancers = _as_mapping(_get(container, "story_enhancers"))
-        direct = _text(enhancers.get("cost_style"))
-        if direct:
-            return direct.lower()
-        creation = _as_mapping(_get(container, "creation_intent_contract"))
-        direct = _text(_as_mapping(creation.get("story_enhancers")).get("cost_style"))
-        if direct:
-            return direct.lower()
-        genre_intent = _as_mapping(_get(container, "genre_intent_contract"))
-        direct = _text(
-            _as_mapping(genre_intent.get("explicit_enhancers")).get("cost_style")
+def _entry_cost_rule(style: str) -> str:
+    if style == "standard":
+        return (
+            "任何改变战力、权限、真相、资源或局势的词条效果,"
+            "都必须支付读者可见的代价或制造后续压力。"
         )
-        if direct:
-            return direct.lower()
-    return "standard"
+    if style == "external":
+        return "作者明确选择外置代价:由世界、对手或资源承担,主角不承担能力使用造成的自损。"
+    if style == "minimal":
+        return "作者明确选择极简代价:只允许轻量、即时、可选择的压力,能力使用不强制削弱主角。"
+    return "代价来源未确认:候选词条机制不得新增代价、豁免或改写既有事实。"
+
+
+def _source_cost_taxonomy(
+    taxonomy: Sequence[EntryTypeDefinition], style: str
+) -> tuple[EntryTypeDefinition, ...]:
+    if style == "standard":
+        return tuple(taxonomy)
+    return tuple(
+        item.model_copy(
+            update={
+                "required_fields": tuple(
+                    field for field in item.required_fields if "cost" not in field.lower()
+                ),
+                "forbidden_patterns": tuple(
+                    pattern for pattern in item.forbidden_patterns if pattern != "无代价万能"
+                ),
+            }
+        )
+        for item in (
+            _minimal_cost_taxonomy(taxonomy) if style in {"minimal", "external"} else taxonomy
+        )
+    )
 
 
 def _taxonomy_for_profile(profile: str) -> tuple[EntryTypeDefinition, ...]:
@@ -420,6 +432,8 @@ def _minimal_cost_taxonomy(
 
 def _grade_ladders_for_taxonomy(
     taxonomy: Sequence[EntryTypeDefinition],
+    *,
+    cost_style: str = "",
 ) -> tuple[EntryGradeLadder, ...]:
     types = {item.type for item in taxonomy}
     ladders: list[EntryGradeLadder] = []
@@ -440,7 +454,11 @@ def _grade_ladders_for_taxonomy(
                     EntryGradeLevel(
                         key="usable",
                         name="可用",
-                        capability_ceiling="可解决局部问题但必须付出代价",
+                        capability_ceiling=(
+                            "可解决局部问题但必须付出代价"
+                            if cost_style == "standard"
+                            else "可解决局部问题"
+                        ),
                     ),
                     EntryGradeLevel(
                         key="recognized",
@@ -455,7 +473,7 @@ def _grade_ladders_for_taxonomy(
                 ),
                 promotion_rule=(
                     "升级必须由公开使用、资源投入、见证承认、危机触发或关系绑定之一造成,"
-                    "并支付可见代价。"
+                    + ("并支付可见代价。" if cost_style == "standard" else "并产生可见状态变化。")
                 ),
             )
         )
@@ -479,7 +497,11 @@ def _grade_ladders_for_taxonomy(
                     EntryGradeLevel(
                         key="bottleneck",
                         name="临瓶颈",
-                        capability_ceiling="可触及越级效果但代价上升",
+                        capability_ceiling=(
+                            "可触及越级效果但代价上升"
+                            if cost_style == "standard"
+                            else "可触及越级效果"
+                        ),
                     ),
                     EntryGradeLevel(
                         key="integrated",
@@ -548,8 +570,12 @@ def _default_cost_types(
     profile: str,
     blueprints: Sequence[EntryBlueprint],
     *,
-    cost_style: str = "standard",
+    cost_style: str = "",
 ) -> tuple[str, ...]:
+    if not cost_style:
+        return ()
+    if cost_style == "external":
+        return ("world_change", "opponent_response", "resource_spend")
     if cost_style == "minimal":
         # Minimal-cost is a creation contract, not a cosmetic hint.  Do not
         # let genre packs or distilled blueprints reintroduce severe physical,
@@ -647,9 +673,7 @@ def build_fallback_entry_system_kernel(
     story_design = _as_mapping(story_design_kernel)
     profile = _genre_profile(project_like)
     cost_style = _requested_cost_style(project_like)
-    taxonomy = _taxonomy_for_profile(profile)
-    if cost_style == "minimal":
-        taxonomy = _minimal_cost_taxonomy(taxonomy)
+    taxonomy = _source_cost_taxonomy(_taxonomy_for_profile(profile), cost_style)
     target_chapters_raw = _get(project_like, "target_chapters", 60)
     try:
         target_chapters = int(target_chapters_raw or 60)
@@ -659,16 +683,18 @@ def build_fallback_entry_system_kernel(
     change_vectors = _story_design_keywords(story_design)
     blueprint_summaries = [bp.mechanism_summary for bp in blueprints[:3]]
     default_promise = (
-        "本书词条服务剧情推进和状态变化，能力收益只附带轻量、即时、可选择的压力。"
+        "本书词条服务剧情推进和状态变化,能力收益只附带轻量、即时、可选择的压力。"
         if cost_style == "minimal"
         else "本书词条必须服务剧情推进、状态变化和可见代价。"
+        if cost_style == "standard"
+        else "本书词条服务剧情推进和状态变化。"
     )
     # Free-form story/blueprint prose may carry a generic genre cost model.
     # For a minimal-cost book the explicit creation contract owns this layer,
     # so the entry kernel remains structural and does not echo those phrases.
     system_promise_parts = (
         [default_promise]
-        if cost_style == "minimal"
+        if cost_style != "standard"
         else [reader_promise or default_promise, *change_vectors[:2], *blueprint_summaries]
     )
     anti_copy_rules = [
@@ -684,7 +710,7 @@ def build_fallback_entry_system_kernel(
         genre_profile=profile or None,
         system_promise=";".join(part for part in system_promise_parts if part)[:4000],
         taxonomy=taxonomy,
-        grade_ladders=_grade_ladders_for_taxonomy(taxonomy),
+        grade_ladders=_grade_ladders_for_taxonomy(taxonomy, cost_style=cost_style),
         capability_axes=_capability_axes(taxonomy, blueprints),
         cost_model=EntryCostModel(
             default_cost_types=_default_cost_types(
@@ -692,14 +718,7 @@ def build_fallback_entry_system_kernel(
                 blueprints,
                 cost_style=cost_style,
             ),
-            hard_rule=(
-                "任何改变战力、权限、真相、资源或局势的词条效果,"
-                + (
-                    "只允许形成轻量、即时、可选择的资源取舍、暴露风险、时间窗口或对手关注。"
-                    if cost_style == "minimal"
-                    else "都必须支付读者可见的代价或制造后续压力。"
-                )
-            ),
+            hard_rule=_entry_cost_rule(cost_style),
         ),
         acquisition_model=EntryAcquisitionModel(
             valid_sources=(
@@ -718,13 +737,13 @@ def build_fallback_entry_system_kernel(
         uniqueness_rules=(
             "同一卷内不得出现两个承担相同 narrative_role 的支柱词条。",
             (
-                "支柱词条必须有未来兑现或升级路径，不能追加新的强制负担。"
-                if cost_style == "minimal"
+                "支柱词条必须有未来兑现或升级路径,不能追加新的强制负担。"
+                if cost_style != "standard"
                 else "支柱词条必须有未来兑现、反噬或升级路径。"
             ),
             (
                 "章节奖励必须指向具体词条、具体状态变化或具体资源变化。"
-                if cost_style == "minimal"
+                if cost_style != "standard"
                 else "章节奖励必须指向具体词条、具体状态变化或具体资源账。"
             ),
         ),
@@ -747,22 +766,30 @@ def render_entry_system_kernel_prompt_block(
     max_types: int = 8,
     max_ladders: int = 5,
     max_axes: int = 6,
+    metadata: Mapping[str, object] | None = None,
 ) -> str:
     """Render a compact Chinese prompt block for planners and drafters."""
 
+    from bestseller.services.planning_capability_selection import planning_capability_selected
+
+    if not planning_capability_selected(metadata, "entry_system_kernel"):
+        return ""
     if kernel is None:
         return ""
     if isinstance(kernel, dict):
         kernel = entry_system_kernel_from_dict(kernel)
+    style = resolve_cost_style(metadata)
+    taxonomy = _source_cost_taxonomy(kernel.taxonomy, style)
     lines = [
         "【词条体系约束】",
-        f"- 体系承诺: {kernel.system_promise}",
-        f"- 硬规则: {kernel.cost_model.hard_rule}",
+        "- 体系承诺: 词条服务剧情推进和状态变化;既有事实与状态保持有效。",
+        f"- 硬规则: {_entry_cost_rule(style)}",
     ]
-    if kernel.cost_model.default_cost_types:
-        lines.append("- 默认代价: " + "、".join(kernel.cost_model.default_cost_types[:8]))
+    cost_types = _default_cost_types("", (), cost_style=style)
+    if cost_types:
+        lines.append("- 默认代价: " + "、".join(cost_types[:8]))
     lines.append("- 允许词条类型:")
-    for item in kernel.taxonomy[:max_types]:
+    for item in taxonomy[:max_types]:
         required = "、".join(item.required_fields[:5]) if item.required_fields else "按本章功能补足"
         roles = "、".join(item.allowed_roles[:5]) if item.allowed_roles else "剧情资产"
         lines.append(f"  - {item.type}/{item.label}: roles={roles}; required={required}")
@@ -770,14 +797,14 @@ def render_entry_system_kernel_prompt_block(
         lines.append("- 等级线:")
         for ladder in kernel.grade_ladders[:max_ladders]:
             levels = " -> ".join(level.name for level in ladder.levels)
-            lines.append(f"  - {ladder.label}: {levels}; 升级规则: {ladder.promotion_rule}")
+            lines.append(f"  - {ladder.label}: {levels}")
     if kernel.capability_axes:
         axis_labels = (
             f"{axis.axis}/{axis.label}" for axis in kernel.capability_axes[:max_axes]
         )
         lines.append("- 能力轴: " + "、".join(axis_labels))
     if kernel.uniqueness_rules:
-        lines.append("- 唯一性规则: " + ";".join(kernel.uniqueness_rules[:3]))
+        lines.append("- 唯一性规则: 避免同功能重复,词条奖励对应具体状态变化。")
     if kernel.anti_copy_rules:
         lines.append("- 反抄袭边界: " + ";".join(kernel.anti_copy_rules[:3]))
     return "\n".join(lines)

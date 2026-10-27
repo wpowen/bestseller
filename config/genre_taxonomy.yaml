@@ -419,13 +419,13 @@ genres:
     channel: [general]
     heat: 60
     category_default: urban-contemporary
-    pack_default: urban-power-reversal
+    pack_default: realistic-life
     aliases: [现实题材, 行业, 家庭, 创业]
     sub_genres:
-      - { key: slice-realistic, label: 现实百态, category: urban-contemporary, pack: urban-power-reversal, default_tags: [现实, 成长] }
-      - { key: industry-workplace, label: 行业职场, category: urban-contemporary, pack: urban-power-reversal, default_tags: [职场, 商战] }
-      - { key: family-saga, label: 家庭伦理, category: relationship-driven, pack: romance-tension-growth, default_tags: [家庭, 年代文] }
-      - { key: startup-business, label: 创业商战, category: base-building, pack: urban-power-reversal, default_tags: [创业, 重生, 商战] }
+      - { key: slice-realistic, label: 现实百态, category: urban-contemporary, pack: realistic-life, default_tags: [现实, 成长] }
+      - { key: industry-workplace, label: 行业职场, category: urban-contemporary, pack: realistic-life, default_tags: [职场, 商战] }
+      - { key: family-saga, label: 家庭伦理, category: urban-contemporary, pack: realistic-life, default_tags: [家庭, 年代文] }
+      - { key: startup-business, label: 创业商战, category: urban-contemporary, pack: realistic-life, default_tags: [创业, 商战] }
 
   # ── English-market genres ────────────────────────────────────────────────
   # 24 of the 62 preset cards are `language: en` and the UI renders them

@@ -10,14 +10,21 @@
 llm:
   mock: false
   # Final Prompt Compiler budget covers the complete system + user input.
-  writer_total_input_budget_tokens: 8000
+  # Complete current sources take priority; whole-request cost guard stays unchanged.
+  # Baseline combined writer input budget. A verified complete chapter source
+  # may receive only its minimum additional space after whole-request capacity
+  # admission; this never changes output reserves, financial limits or authority.
+  writer_total_input_budget_tokens: 14800
   writer_prompt_safety_margin: 0.10
   planner_prompt_budget_tokens: 16000
+  # Full-source rolling outlines try the preferred budget and lossless transport
+  # first. Their separate ceiling still requires whole request/output admission.
+  planner_source_complete_input_budget_tokens: 32768
   planner_prompt_safety_margin: 0.10
   # Cross-model blind judge remains shadow/advisory until G4 human calibration.
   # Kept cross-family by design (it never gates production); when its configured
   # models are unavailable the shadow calls fail harmlessly. The generating and
-  # gating models are standardized on MiniMax-M3 elsewhere.
+  # gating defaults use the current formal MiniMax M3.1 Flash.
   independent_judge_mode: shadow
   independent_judge_primary_model_key: deepseek-v4-flash
   independent_judge_secondary_model_key: nim-mistral-large-3
@@ -25,14 +32,18 @@ llm:
   independent_judge_low_margin: 0.12
 
   planner:
-    model: "anthropic/claude-opus-4-5"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
     temperature: 0.82
     max_tokens: 16384
     timeout_seconds: 120
     n_candidates: 1
 
   writer:
-    model: "anthropic/claude-sonnet-4-5"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
     model_override: null
     temperature: 0.85
     # Chinese scene drafts of ~1600-2200 words can span 6-9K tokens when
@@ -45,7 +56,9 @@ llm:
     stream: true
 
   critic:
-    model: "anthropic/claude-haiku-4-5"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
     temperature: 0.25
     # Chapter/scene review prompts now include commercial-quality gates,
     # continuity checks, and rewrite instructions.  2048 tokens caused live
@@ -57,13 +70,17 @@ llm:
     timeout_seconds: 60
 
   summarizer:
-    model: "anthropic/claude-haiku-4-5"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
     temperature: 0.2
     max_tokens: 1536
     timeout_seconds: 45
 
   editor:
-    model: "anthropic/claude-sonnet-4-5"
+    model: "openai/MiniMax-M3.1-Flash"
+    api_base: "https://api.minimaxi.com/v1"
+    api_key_env: MINIMAX_API_KEY
     temperature: 0.4
     max_tokens: 8192
     timeout_seconds: 180
@@ -273,6 +290,8 @@ hook_engine:
 # Pipeline
 # -----------------------------------------------------------------------------
 pipeline:
+  # Only independent raw-pool/ranking batches; does not relax quality gates.
+  concept_tournament_batch_concurrency: 2
   # Writer prompt dose profile. lean = story material + short discipline
   # (dose-response winner); full = historical 31-block over-constrained path.
   # Per-book override: ProjectModel.metadata["prose_prompt_profile"].
@@ -302,6 +321,8 @@ pipeline:
   planning_artifact_reuse_enabled: true
   planning_artifact_reuse_allow_legacy: true
   chapter_outline_batch_size: 10
+  commercial_strict_prewrite_chapter_outline_batch_size: 3
+  commercial_strict_prewrite_outline_batch_shrink_size: 2
   # Detailed prose planning is bounded to one integrity-checked rolling window.
   # Missing, stale, or tampered plans pause the book for replan instead of
   # silently feeding every future chapter to the writer.
@@ -426,6 +447,7 @@ pipeline:
     - OPENING_PRESSURE_THIN
     - ENDING_HOOK_MISSING
     - PARAGRAPH_DUPLICATE_PARAPHRASE
+    - STORY_EFFECT_REALIZATION_UNREALIZED
     - CALLBACK_OBLIGATION_MISSING
     - LENGTH_OUT_OF_BAND
     - GOLDEN_THREE_WEAK
@@ -464,6 +486,12 @@ pipeline:
   story_engine_canary_genres: []
   story_engine_require_reader_validation_for_cutover: true
   story_engine_rolling_window_size: 10
+  # New ranking evidence is shadowed by default. Commercial publishing remains
+  # fail-closed in every mode and can only read canonical claims.
+  ranking_evidence_mode: shadow
+  ranking_evidence_canary_project_ids: []
+  ranking_evidence_canary_genres: []
+  ranking_evidence_required_for_commercial_release: true
   story_design_kernel_candidate_count: 3
   enable_emotion_driven_kernel: true
   enable_emotion_kernel_backfill: true

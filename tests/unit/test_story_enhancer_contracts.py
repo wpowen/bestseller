@@ -75,8 +75,9 @@ def test_render_book_contract_routes_effects_without_stacking_every_chapter() ->
     )
     block = render_story_enhancer_contract_block(sel, language="zh-CN")
     assert block
-    assert "1 个 primary + 1 个 secondary" in block
-    assert "严禁把全部效果硬塞进每一章" in block
+    assert "不自动规定章节频率、阶段顺序" in block
+    assert "每 2–3 章" not in block
+    assert "每章必须" not in block
     # Each selected skill's contract is present.
     assert "comedy_engine" in block
     assert "twist_reversal_engine" in block

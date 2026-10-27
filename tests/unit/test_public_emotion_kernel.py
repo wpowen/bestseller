@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from planning_capability_test_helpers import explicit_planning_metadata
+
 import pytest
 
 from bestseller.services.compliance_boundary_kernel import (
@@ -69,7 +71,7 @@ def test_public_emotion_kernel_warns_when_only_generic_topic_exists() -> None:
 
 
 def test_public_emotion_prompt_block_renders_project_local_bridge() -> None:
-    block = render_public_emotion_prompt_block(_valid_public_emotion_kernel())
+    block = render_public_emotion_prompt_block(_valid_public_emotion_kernel(), metadata=explicit_planning_metadata("public_emotion_kernel"))
 
     assert "本书专属公共情绪桥" in block
     assert "旧榜错判我" in block

@@ -316,4 +316,4 @@ def test_grade_chapter_feedback_feeds_next_prep(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert "读者画像反馈" in result.output
+    assert "读者画像模拟诊断" in result.output

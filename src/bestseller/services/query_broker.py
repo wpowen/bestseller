@@ -14,13 +14,13 @@ from bestseller.infra.db.models import (
     ProjectModel,
     RelationshipEventModel,
     TimelineEventModel,
-    WorldRuleModel,
 )
 from bestseller.services.llm import LLMCompletionRequest
 from bestseller.services.llm_tool_runtime import ToolRegistry, ToolSpec, run_tool_loop
 from bestseller.services.project_health import build_project_health_report
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.revealed_ledger import build_revealed_ledger
+from bestseller.services.world_rule_current import current_world_rules
 from bestseller.settings import AppSettings
 
 
@@ -287,12 +287,9 @@ def build_story_query_registry(
     async def query_world_rule(arguments: dict[str, Any]) -> dict[str, Any]:
         rule_codes = _normalize_name_list(arguments.get("rule_codes"))
         query = str(arguments.get("query") or "").strip().lower()
-        rules = list(
-            await session.scalars(
-                select(WorldRuleModel)
-                .where(WorldRuleModel.project_id == project.id)
-                .order_by(WorldRuleModel.rule_code.asc())
-            )
+        rules = sorted(
+            await current_world_rules(session, project_id=project.id),
+            key=lambda item: item.rule_code,
         )
         filtered = []
         for item in rules:

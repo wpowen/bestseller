@@ -11,6 +11,11 @@
 # ---------------------------------------------------------------------------
 
 enabled: true
+# Commercial appeal scores remain available for ranking and P1 repair
+# evidence. Source fidelity, explicit user intent, genre fidelity, card
+# completeness, and executable story architecture remain hard gates.
+# Callers with no explicit mode retain the historical strict behavior.
+commercial_gate_mode: advisory
 # 生产默认只走题材原生的故事发动机。旧的 current 模式会把全局异质维度池
 # （法医/殡葬/器官移植等）强制注入每一本书，造成跨题材污染；它只保留在
 # 测试配置中，不得作为新书生产默认值。
@@ -22,11 +27,11 @@ raw_idea_prompt_arm: author_pitch
 # 多次把 4500-8000 token 消耗在隐藏推理并返回空正文（决赛判官因此偶发全候选空判
 # → 误伤淘汰）。其他 catalog 条目分别遇到余额/权限/认证错误。生成、初筛、项目卡初审
 # 与最终决赛统一固定 M3；跨家族独立裁判待有可用的异家族强模型再恢复。
-generation_model_key: minimax-m3
-judge_model_key: minimax-m3
-raw_idea_judge_model_key: minimax-m3
-premise_judge_model_key: minimax-m3
-finalist_judge_model_key: minimax-m3
+generation_model_key: minimax-m3.1-flash
+judge_model_key: minimax-m3.1-flash
+raw_idea_judge_model_key: minimax-m3.1-flash
+premise_judge_model_key: minimax-m3.1-flash
+finalist_judge_model_key: minimax-m3.1-flash
 # 某些独立裁判模型会先消耗隐藏推理 token；450 会 finish_reason=length 且正文为空。
 judge_max_tokens: 1800
 seriality_judge_max_tokens: 1800
@@ -41,6 +46,38 @@ seriality_finalist_count: 3
 # 收紧概念层阈值 → 淘汰赛干涸 → 回落保底概念（比任何被拒候选都差）的教训。
 seriality_min_chapters: 200           # ≥ 此值 且 下面那条为 true 时：判官带杀权
 seriality_advisory_min_chapters: 8    # ≥ 此值：只跑判官留痕，不发否决
+# Advisory does not mean "erase every possible failure". Keep one narrow,
+# high-precision veto when at least one load-bearing axis has collapsed and at
+# least three axes agree. This caught the live Docker canary that scored
+# 4/5/6/6/3/5 yet was promoted as a 30-chapter book.
+seriality_severe_collapse:
+  enabled: true
+  renewability_max: 4.0
+  # 2026-09-03 live run custom-xuanhuan-1788370080 scored
+  # 4/7/7/5/4/5 and explicitly admitted that later units only changed skins.
+  # Requiring promise_survival <=3 let that known-thin architecture escape the
+  # advisory branch.  A simultaneous 4/4 failure plus three corroborating low
+  # axes remains a narrow multi-signal veto; one noisy score still cannot kill.
+  promise_survival_max: 4.0
+  # 2026-09-04 live run f46eedef scored 4/5/7/7/5/4 and the judge explicitly
+  # concluded that every unit was the same pricing contest in a new skin.  The
+  # core promise had not collapsed yet, but the engine could not produce enough
+  # distinct story units. Treat density as a load-bearing axis; at least three
+  # axes must still corroborate, so a single noisy density score cannot veto.
+  unit_density_max: 4.0
+  # 2026-09-04 live run 04ed483f scored 6/7/7/6/4/5. Its judge explicitly
+  # found that the core promise dies early and the middle can only repeat the
+  # same lane-pricing loop. Promise survival <=4 plus unit density <=5 is a
+  # self-corroborating two-axis failure for a long serial even when the other
+  # axes are healthy. A lone promise score of 4 still remains advisory.
+  exhausted_promise_unit_density_max: 5.0
+  # 2026-09-04 live run f0db1e06 attempt 2 scored 5/5/6/7/4/5 and explicitly
+  # said the opening exhausted the promise, leaving only repeated pricing and
+  # bookkeeping. Requiring renewability <=4 missed this different collapse
+  # shape. Any one load-bearing axis may now anchor the veto, but four axes in
+  # this verdict corroborate it; an isolated 4 still remains advisory.
+  low_axis_floor: 6.0
+  min_low_axes: 3
 # 2026-08-28 杀权收回。scripts/seriality_judge_validation.py 两轮独立实测：
 # 拿真榜单书走生产展开 + 生产连载性判官打分，强侧（≥500 章且 ≥30 万在读，
 # 确实写下去了）对弱侧（<120 章且 <2 万在读，确实没写下去），
@@ -195,11 +232,10 @@ judge_weights:
   # 可以完全自洽、完全没意思)。**刻意不设硬地板**——只改排序不改淘汰,避免干涸。
   protagonist_agency: 0.1  # 推进来自主角取舍,还是外部压力施加、他只做反应
 
-# 确定性筛模式(基线=eliminate 命中即出局;wild_mode 覆盖为 penalize 罚分不淘汰)。
-# 基线不设这些键 → tournament 读默认 "eliminate" → 与现状逐字节一致。
-cliche_mode: eliminate   # eliminate|penalize:俗套命中→出局 / 罚分
+# 默认俗套库没有作者禁项权威：只保留参考审计，不淘汰、不罚分、不改变排序。
+# 旧部署的 cliche_mode=eliminate/penalize 同样不能授权默认库阻断用户选择。
+cliche_mode: advisory
 audit_mode: eliminate    # eliminate|penalize:最小故事种子审计失败→出局 / 罚分
-cliche_penalty: 1.5      # penalize 模式下俗套命中从 composite 扣的分
 audit_penalty: 1.0       # penalize 模式下审计失败从 composite 扣的分
 
 # 脑洞全开模式:story_enhancers.wild_concept=true 时由 conception 深合并覆盖基线。
@@ -208,9 +244,8 @@ audit_penalty: 1.0       # penalize 模式下审计失败从 composite 扣的分
 wild_mode:
   n_candidates: 8        # 8路题材原生发动机，扩大搜索面但不放松质量门槛
   winner_min: 5.5
-  cliche_mode: penalize
+  cliche_mode: advisory
   audit_mode: penalize
-  cliche_penalty: 1.5
   audit_penalty: 1.0
   judge_weights:
     freshness: 0.25      # 更奖新颖
@@ -249,14 +284,10 @@ dimension_pool:
   - 医院分诊与器官移植排序
   - 戏班科班与角儿传承
 
-# 反俗套禁用清单：按 canonical 题材键(genre_taxonomy.canonicalize)取,
-# generic 永远合并进来。命中任何一条关键词的候选直接出局(确定性筛),
-# ⚠️ 这份清单**只**用于生成后的确定性筛（关键词命中即出局）。
-# 绝不可把词条写进 prompt：否定式指令点名母题词就是种词（2026-08-06 立的
-# 铁律，实证：prompt 里禁「半寸」→ 模型改用「一寸」；枚举全部单位→违规翻倍）。
-# render_cliche_avoidance_block() 因此只给类别与正向方向，并明写
-# 「具体禁用文本不进入本轮提示词」。这条注释此前写反了（说整份清单会进
-# prompt），会诱导后来人把种词行为加回来，2026-08-16 更正。
+# 默认俗套参考库存（保留历史键 cliche_seeds）：generic 与 canonical 题材合并。
+# authority=default_reference，仅生成后留痕；不是用户 avoid，不进入生成提示词，
+# 不得淘汰、罚分或迫使题材原生母题改道。用户明确选择及既有硬约束照常优先。
+# 当前创建合同没有结构化 cliché avoid 入参；不要把 AI ctx/旧书指纹当用户禁项。
 cliche_seeds:
   generic:
     - 废材觉醒逆袭

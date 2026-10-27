@@ -286,6 +286,7 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     # eastern-aesthetic
     "eastern-aesthetic-fantasy": "eastern-aesthetic",
     # urban-contemporary
+    "realistic-life": "realistic-life",
     "urban-career": "urban-contemporary",
     "entertainment-industry": "urban-contemporary",
     "workplace-realistic": "urban-contemporary",
@@ -563,169 +564,147 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "4. Power-level annotation for every major character (using the tier system)"
             ),
             "volume_plan_system_zh": (
-                "你是升级流网文的卷级规划师。每一卷必须围绕一个核心升级阶段设计，"
-                "包含该阶段的目标境界、核心对手、关键战斗和升级成果。"
-                "卷与卷之间的难度和规模必须有清晰的阶梯递进感。"
+                "你是成长与行动题材的分卷规划师。按作者明确选择和已采用故事合同组织长期目标、人物选择与后果；成长可以通过能力、认识、关系或处境变化体现，具体"
+                "形式由本书决定。"
             ),
             "volume_plan_system_en": (
-                "You are a volume-level planner for action-progression fiction. "
-                "Each volume must be designed around a core upgrade phase, "
-                "including the target tier, core antagonist, key battles, and upgrade payoff. "
-                "Difficulty and scale must escalate clearly from volume to volume."
+                "You plan volumes for action and progression fiction. Organize goals, choices "
+                "and consequences around explicit author choices and the adopted story "
+                "contract. Growth may involve abilities, understanding, relationships or "
+                "circumstances as appropriate to this book."
             ),
             "volume_plan_instruction_zh": (
-                "每卷规划必须明确：\n"
-                "1. 本卷的升级目标（主角要突破到什么境界/等级）\n"
-                "2. 本卷核心对手和势力冲突（是谁在阻挡主角升级？压力来源是什么？）\n"
-                "3. 关键战斗节点（至少 2-3 场有阶段意义的战斗/对碰）\n"
-                "4. 升级回报（突破后获得什么新能力、新地位、新资源）\n"
-                "5. 本卷末尾的钩子（指向下一卷更大的威胁或更高的升级诱惑）"
+                "围绕已采用的卷目标安排因果推进和阶段结果。合同已选择修炼、战斗或对手时，说明其规则与后续影响；没有这些选择时不补造。事件数量、胜负节奏和卷末"
+                "形式由明确合同及故事进展决定，不按类型附加战斗配额、突破周期或下一威胁。"
             ),
             "volume_plan_instruction_en": (
-                "Each volume plan must define:\n"
-                "1. Upgrade target (what tier/level the protagonist aims to reach)\n"
-                "2. Core antagonist and faction conflict (who blocks the upgrade? what is the pressure source?)\n"
-                "3. Key battle nodes (at least 2-3 phase-significant fights)\n"
-                "4. Upgrade payoff (new abilities, status, resources after breakthrough)\n"
-                "5. Volume-end hook (pointing to a larger threat or higher upgrade lure in the next volume)"
+                "Develop causal progression and phase outcomes from the adopted volume goals. "
+                "Where the contract selects cultivation, combat or opponents, explain their "
+                "rules and consequences; otherwise do not invent them. Let the explicit "
+                "contract and story determine event counts, victory pacing and the volume "
+                "ending; impose no genre-based combat quota, breakthrough cycle or next "
+                "threat."
             ),
             "outline_system_zh": (
-                "你是升级流网文的章节大纲师。你的工作是把卷级规划拆解成具体的章节序列，"
-                "确保每一章都有明确的战斗推进或升级进展，避免出现连续两章以上的纯铺垫或信息交代。"
+                "你是成长与行动题材的章节大纲师。把已采用卷计划落实为连贯的章节目标、人物行动与后果。按本章实际任务安排节奏，准备、调查、关系、日常与收束均可"
+                "成立，不要求每章战斗或升级。"
             ),
             "outline_system_en": (
-                "You are a chapter outliner for action-progression fiction. "
-                "Your job is to break volume plans into a concrete chapter sequence, "
-                "ensuring every chapter has clear combat advancement or upgrade progress. "
-                "Avoid two or more consecutive chapters of pure setup or exposition."
+                "You outline chapters for action and progression fiction. Turn the adopted "
+                "volume plan into coherent chapter goals, character actions and consequences. "
+                "Pace each chapter for its actual purpose; preparation, investigation, "
+                "relationships, daily life and resolution are valid without combat or an "
+                "upgrade."
             ),
             "outline_instruction_zh": (
-                "章节大纲必须遵守：\n"
-                "1. 每章至少包含一个冲突升级节点或升级进展事件\n"
-                "2. 战斗章节和准备/恢复章节交替出现，节奏不能连续平缓\n"
-                "3. 每章结尾必须有硬钩子（新威胁、异变、升级契机）\n"
-                "4. 每 3-5 章必须出现一个可感知的升级回报或阶段胜利\n"
-                "5. Boss 战必须有铺垫-试探-正面交锋-逆转/突破的完整结构"
+                "依据当前明确合同与已采用计划展开章节，保留人物动机、事实连续性和可理解的因果。已选择的战斗或成长节点应兑现其具体承诺；未选择时不新增。章节长"
+                "短与节奏服从本章任务，不设逐章冲突升级、战斗交替或固定间隔回报配额。结尾承接已发生的变化，允许自然收束，不强制新威胁、异变、升级线索或固定战"
+                "斗结构。"
             ),
             "outline_instruction_en": (
-                "The chapter outline must follow:\n"
-                "1. Every chapter has at least one conflict escalation node or upgrade progress event\n"
-                "2. Battle and preparation/recovery chapters alternate; pacing cannot flatten for consecutive chapters\n"
-                "3. Every chapter ending must have a hard hook (new threat, mutation, upgrade opportunity)\n"
-                "4. Every 3-5 chapters must deliver a perceivable upgrade payoff or phase victory\n"
-                "5. Boss fights must have a complete structure: buildup - probing - direct clash - reversal/breakthrough"
+                "Develop chapters from the current explicit contract and adopted plan, "
+                "preserving motivations, continuity and intelligible causality. Deliver "
+                "selected combat or growth commitments without inventing unselected events. "
+                "Pace for the chapter purpose, without per-chapter escalation, alternating "
+                "battles or fixed-interval payoff quotas. End in keeping with established "
+                "changes; natural resolution is valid without a new threat, mutation, upgrade "
+                "clue or prescribed battle structure."
             ),
         },
         "judge_prompts": {
             "scene_review_system_zh": (
-                "你是升级流网文的场景审稿专家。评估前必须先判定本场景的类型：战斗、升级、"
-                "悬疑/调查、对峙/谈判、情感/关系、日常/铺垫等。务必按场景的真实类型评估——"
-                "战斗与升级场景看力量碰撞和兑现感；非战斗场景（悬疑、调查、对峙、情感）则看"
-                "信息控制、张力递进、人物处境与代价、尾钩牵引力。"
-                "严禁因为一个非战斗场景里没有打斗、没有力量差距、没有战利品而判定其失败——"
-                "那不是缺陷，而是该场景类型的正常形态。"
+                "你是成长与行动题材的场景审稿专家。依据当前明确合同与实际场景任务评估目标、因果、人物选择和阅读体验。类型只提供理解视角，不授予新增事件的权威"
+                "；非战斗场景不因缺少战斗、升级或危险而失败。"
             ),
             "scene_review_system_en": (
-                "You are a scene review specialist for action-progression fiction. "
-                "First classify this scene's type: combat, upgrade, mystery/investigation, "
-                "confrontation/negotiation, emotional/relational, or setup/daily. "
-                "Evaluate by the scene's ACTUAL type — combat/upgrade scenes by power-collision "
-                "and payoff; non-combat scenes (mystery, investigation, confrontation, emotion) by "
-                "information control, rising tension, the protagonist's stakes and cost, and hook pull. "
-                "NEVER fail a non-combat scene merely for lacking a fight, a power gap, or loot — "
-                "their absence is normal for that scene type, not a defect."
+                "You review scenes in action and progression fiction against the current "
+                "explicit contract and actual scene purpose: goals, causality, choices and "
+                "reading experience. Genre supplies context, not authority to invent events. "
+                "Do not fail a non-combat scene for lacking combat, an upgrade or danger."
             ),
             "scene_review_instruction_zh": (
-                "评估当前场景时，先判定场景类型，再按对应标准评估：\n"
-                "1. 战斗场景：对碰是否有阶段感？双方底牌和力量差距是否清晰？是否有反转或压力峰值？\n"
-                "2. 升级场景：升级过程是否有阻碍和突破的戏剧性？获得的能力是否被具象展示？\n"
-                "3. 悬疑/调查场景：信息是否一层层受控释放？读者的疑问与主角的处境是否同步收紧？\n"
-                "4. 对峙/情感场景：双方意图与筹码是否清晰？情绪与关系是否发生可感知的位移？代价是否真实？\n"
-                "5. 任意类型：尾钩是否指向更大的威胁、更深的谜题或更高的诱惑？\n"
-                "只对与本场景类型相符的维度提出问题；不要要求一个非战斗场景去补战斗、力量差距或战利品。"
+                "先核对场景合同及正文证据，再判断承诺是否兑现。战斗、修炼或成长仅在本场景已选择这些内容时检查其规则、过程与结果；其他场景按实际任务评价。结尾"
+                "可以自然收束，不因缺少更大威胁、谜题、升级线索或强制代价而判错。问题须引用当前文本，并限定修订范围，不以类型偏好添加故事事实。"
             ),
             "scene_review_instruction_en": (
-                "Classify the scene type first, then evaluate by the matching criteria:\n"
-                "1. Combat: Do clashes have phased structure? Are both sides' cards and power gap clear? Is there a reversal or pressure peak?\n"
-                "2. Upgrade: Does the process have dramatic obstacles and breakthroughs? Are acquired abilities concretely shown?\n"
-                "3. Mystery/investigation: Is information released in controlled layers? Do the reader's questions and the protagonist's situation tighten together?\n"
-                "4. Confrontation/emotion: Are both sides' intents and leverage clear? Do emotion and relationship shift perceptibly? Is the cost real?\n"
-                "5. Any type: Does the ending hook point to a bigger threat, deeper mystery, or higher lure?\n"
-                "Raise issues only on dimensions that fit THIS scene's type; never ask a non-combat scene to add a fight, power gap, or loot."
+                "Check the scene contract and textual evidence before assessing delivery. "
+                "Evaluate combat, cultivation or growth rules, process and outcomes only "
+                "where selected for this scene; assess other scenes by their actual purpose. "
+                "Natural resolution is valid: missing a bigger threat, mystery, upgrade clue "
+                "or compulsory cost is not a defect. Cite current text and bound each repair; "
+                "genre preferences cannot add story facts."
             ),
             "chapter_review_system_zh": (
-                "你是升级流网文的章节审稿专家。章节级评估关注一章之内主线节奏的完整性、"
-                "场景之间的推进逻辑，以及章末钩子对下一章追读欲望的牵引力。"
-                "升级流也包含大量非战斗章节（悬疑、调查、布局、情感）——请按本章的真实重心评估，"
-                "不要因为一章没有战斗或升级就判定它不合格。"
+                "你是成长与行动题材的章节审稿专家。依据当前明确合同、已采用计划与本章实际重心评估人物行动、事件因果、场景衔接及阅读体验。章节可以准备、调查、"
+                "日常、关系或收束为主，不因没有战斗、升级或悬崖结尾而不合格。"
             ),
             "chapter_review_system_en": (
-                "You are a chapter review specialist for action-progression fiction. "
-                "Chapter-level evaluation focuses on main-line rhythm completeness within a chapter, "
-                "scene-to-scene progression logic, and chapter-ending hook pull toward the next chapter. "
-                "Action-progression books include many non-combat chapters (mystery, investigation, "
-                "setup, emotion) — judge by the chapter's actual focus; do not fail a chapter merely "
-                "because it contains no combat or upgrade."
+                "You review action and progression chapters against the current explicit "
+                "contract, adopted plan and actual focus: character actions, causality, "
+                "transitions and reading experience. Preparation, investigation, daily life, "
+                "relationships and resolution are valid chapter purposes without combat, "
+                "upgrades or cliffhangers."
             ),
             "chapter_review_instruction_zh": (
-                "评估当前章节时请关注：\n"
-                "1. 本章是否围绕一个清晰的主线阶段展开（可以是升级/战斗，也可以是悬疑推进、布局或情感转折）？\n"
-                "2. 场景之间的衔接是否有逻辑推力（因果、压力升级、新信息触发）？\n"
-                "3. 章节末尾是否留下了让读者无法停下来的悬念、威胁或期待？\n"
-                "4. 如果本章包含战斗，战斗的阶段完整性如何（铺垫-交锋-结果-后果）？非战斗章节不要套用此条。"
+                "核对本章具体目标、人物选择和已承诺结果是否清楚，场景是否因果连贯。战斗或突破只在当前合同已安排时评价，不要求完整套用某种战斗阶段。根据本章任"
+                "务评价结尾是否恰当，允许收束、余韵或平静承接，不强制悬念、威胁、危险或固定频率的升级回报。保留作者明确选择，问题绑定当前正文证据。"
             ),
             "chapter_review_instruction_en": (
-                "When evaluating this chapter, focus on:\n"
-                "1. Does the chapter revolve around a clear main-line phase (upgrade/combat, OR mystery progression, setup, or emotional turn)?\n"
-                "2. Are scene transitions driven by causal logic (cause-effect, pressure escalation, new info triggers)?\n"
-                "3. Does the chapter ending leave a cliffhanger, threat, or anticipation that compels continued reading?\n"
-                "4. If the chapter contains combat, how complete is the battle arc (setup - clash - outcome - aftermath)? Do not apply this to non-combat chapters."
+                "Assess the chapter goals, character choices, committed outcomes and causal "
+                "transitions. Evaluate combat or breakthroughs only where the current "
+                "contract schedules them, without imposing a fixed battle arc. Judge the "
+                "ending for its purpose: resolution, resonance and quiet continuity are valid "
+                "without compulsory suspense, threats, danger or fixed-frequency upgrade "
+                "payoffs. Preserve explicit author choices and ground findings in the current "
+                "text."
             ),
             "scene_rewrite_system_zh": (
-                "你是升级流网文的场景重写专家。重写时必须强化战斗碰撞的力量感、"
-                "升级节奏的紧凑性和尾钩的硬度。不要削弱冲突力度去追求文学性。"
+                "你是成长与行动题材的场景重写专家。只处理当前有效修订任务指出的问题，保留明确合同、已成立的事实与未涉及段落；题材不授权添加战斗、升级、死亡、"
+                "危险或固定结尾。"
             ),
             "scene_rewrite_system_en": (
-                "You are a scene rewrite specialist for action-progression fiction. "
-                "Rewrites must strengthen power-collision impact, upgrade-pacing tightness, and hook hardness. "
-                "Do not sacrifice conflict intensity for literary refinement."
+                "You rewrite action and progression scenes. Address only the current valid "
+                "repair task, preserving the explicit contract, established facts and "
+                "unaffected passages. Genre does not authorize adding combat, upgrades, "
+                "death, danger or a prescribed ending."
             ),
             "scene_rewrite_instruction_zh": (
-                "重写时优先补强：\n"
-                "1. 战斗的力量碰撞感（动作具象化、招式有反馈、伤害可感知）\n"
-                "2. 升级的兑现感（突破后的新能力立刻在场景内被演示或对比）\n"
-                "3. 尾钩的硬度（用更大的威胁、更高的悬念或更诱人的升级线索收尾）\n"
-                "4. 删除冗余的力量体系解说，改为通过对战动作间接展示。"
+                "只依据当前有效修订任务与明确场景合同定点修复，保留事件顺序、人物动机和已通过约束。若合同已选择战斗或能力成长，可修清其动作、规则和后果；否则"
+                "不补入此类事件。衔接与结尾按本场景任务处理，允许自然收束，不为增加密度而补战斗，不强制威胁、代价或升级线索。未点名的问题和段落保持原样。"
             ),
             "scene_rewrite_instruction_en": (
-                "When rewriting, prioritize:\n"
-                "1. Power-collision impact (concrete combat actions, move feedback, perceivable damage)\n"
-                "2. Upgrade payoff (new abilities demonstrated or contrasted immediately in-scene)\n"
-                "3. Hook hardness (close with a larger threat, higher suspense, or more enticing upgrade clue)\n"
-                "4. Remove redundant power-system exposition; show through combat actions instead."
+                "Make targeted repairs from the current valid task and explicit scene "
+                "contract, preserving event order, motivations and satisfied constraints. If "
+                "combat or ability growth is selected, clarify its actions, rules and "
+                "consequences; otherwise add no such event. Handle transitions and the ending "
+                "for the scene purpose, allowing natural resolution without adding fights for "
+                "density or compulsory threats, costs or upgrade clues. Keep unlisted issues "
+                "and passages unchanged."
             ),
             "chapter_rewrite_system_zh": (
-                "你是升级流网文的章节重写专家。重写时确保章节的升级阶段完整、"
-                "场景衔接紧凑、结尾钩子足够硬。保持战斗场景的密度和爽感。"
+                "你是成长与行动题材的章节重写专家。只修当前有效任务指出的问题，保留明确合同、正文事实、人物选择和未涉及段落。题材名称不授权逐章安排战斗、升级"
+                "或下一威胁，也不授权改动结尾形式。"
             ),
             "chapter_rewrite_system_en": (
-                "You are a chapter rewrite specialist for action-progression fiction. "
-                "Ensure the chapter's upgrade phase is complete, scene transitions are tight, "
-                "and the ending hook is hard enough. Maintain combat scene density and satisfaction."
+                "You rewrite action and progression chapters. Repair only issues in the "
+                "current valid task, preserving the explicit contract, story facts, character "
+                "choices and unaffected passages. A genre label does not authorize combat, "
+                "upgrades or a next threat in every chapter, nor changing the ending form."
             ),
             "chapter_rewrite_instruction_zh": (
-                "重写时优先补强：\n"
-                "1. 确保本章的核心战斗/升级事件完整落地（有铺垫、有高潮、有结果）\n"
-                "2. 修复场景之间的断裂感（补充因果衔接或压力传递）\n"
-                "3. 强化章末钩子（必须让读者对下一章的威胁或升级充满期待）\n"
-                "4. 如果战斗密度不足，考虑在准备场景中加入小规模冲突或试探战。"
+                "只依据当前有效修订任务与明确章节合同定点修复，保留核心事件顺序、已通过约束和未涉及段落。合同确已安排战斗或能力成长时，修清其因果与结果；没有"
+                "这些安排时不新增。修复已指出的场景衔接问题，不以战斗密度或升级频率设配额。结尾依本章任务与作者选择处理，允许自然收束；除非有效任务明确要求，"
+                "不改开头和结尾，不补下一威胁、死亡、危险或升级诱饵。"
             ),
             "chapter_rewrite_instruction_en": (
-                "When rewriting, prioritize:\n"
-                "1. Ensure the chapter's core battle/upgrade event lands completely (setup, climax, outcome)\n"
-                "2. Fix scene-transition gaps (add causal links or pressure transfer)\n"
-                "3. Strengthen the chapter-end hook (readers must anticipate the next chapter's threat or upgrade)\n"
-                "4. If combat density is low, add small-scale skirmishes or probing fights in preparation scenes."
+                "Make targeted repairs from the current valid task and explicit chapter "
+                "contract, preserving core event order, satisfied constraints and unaffected "
+                "passages. Clarify combat or ability-growth causality and outcomes only where "
+                "scheduled by that contract; otherwise add neither. Repair identified "
+                "transition problems without combat-density or upgrade-frequency quotas. "
+                "Respect the chapter purpose and author-selected ending, including natural "
+                "resolution. Unless the valid task explicitly requires it, leave the opening "
+                "and ending unchanged and add no next threat, death, danger or upgrade lure."
             ),
         },
     },
@@ -736,7 +715,7 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
         "name": "异界跨体系 / Otherworld Cross-System",
         "description": (
             "以异界规则、穿越身份、系统约束或跨体系知识差为核心引擎的类型。"
-            "重点不是万能外挂，而是主角如何理解陌生规则、利用规则差、承担暴露代价和身份债务。"
+            "重点不是万能外挂，而是主角如何理解陌生规则、利用规则差、承担暴露代价和身份责任。"
         ),
         "scene_weights": {
             "conflict_clarity": 1.35,
@@ -755,11 +734,11 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
         },
         "signal_keywords": {
             "conflict_terms_zh": [
-                "误读", "暴露", "审查", "身份债", "规则差",
+                "误读", "暴露", "审查", "身份责任", "规则差",
                 "套利", "反噬", "宿主", "本地规则", "异常",
             ],
             "conflict_terms_en": [
-                "misread", "exposure", "audit", "identity debt", "rule gap",
+                "misread", "exposure", "audit", "identity obligation", "rule gap",
                 "arbitrage", "backlash", "host identity", "local rule", "anomaly",
             ],
             "emotion_terms_zh": [
@@ -768,14 +747,14 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
             ],
             "emotion_terms_en": [
                 "alienation", "guarded", "guilty", "isolated", "testing",
-                "pressure", "debt", "watched", "does not belong",
+                "pressure", "obligation", "watched", "does not belong",
             ],
             "hook_terms_zh": [
-                "异常痕迹", "新规则", "系统任务", "身份债",
+                "异常痕迹", "新规则", "系统任务", "身份后果",
                 "高阶注视", "本地解释", "规则漏洞",
             ],
             "hook_terms_en": [
-                "anomaly trace", "new rule", "system task", "identity debt",
+                "anomaly trace", "new rule", "system task", "identity consequence",
                 "higher attention", "local explanation", "rule loophole",
             ],
             "info_terms_zh": [
@@ -788,11 +767,11 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
         },
         "finding_messages": {
             "conflict_low_zh": (
-                "跨体系冲突还不够具体。需要让旧经验、本地规则、系统限制或身份债务在场景内正面碰撞。"
+                "跨体系冲突还不够具体。需要让旧经验、本地规则、系统限制或身份责任在场景内正面碰撞。"
             ),
             "conflict_low_en": (
                 "Cross-system conflict is not concrete enough. Old assumptions, local rules, "
-                "system limits, or identity debt need to collide inside the scene."
+                "system limits, or identity obligations need to collide inside the scene."
             ),
             "conflict_clarity_low_zh": (
                 "读者还看不清主角正在利用哪条规则差、暴露风险是什么、失败会付出什么代价。"
@@ -809,10 +788,10 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "or rule insight gained."
             ),
             "hook_low_zh": (
-                "尾钩没有把异常痕迹、身份债务或更高阶审查推到下一章，追读牵引不足。"
+                "尾钩没有把异常痕迹、身份后果或更高阶审查推到下一章，追读牵引不足。"
             ),
             "hook_low_en": (
-                "The ending hook does not push anomaly traces, identity debt, or higher audit into the next chapter."
+                "The ending hook does not push anomaly traces, identity consequences, or higher audit into the next chapter."
             ),
             "contract_low_zh": (
                 "当前场景没有兑现跨体系 scene contract：规则差、暴露代价和身份压力至少要落地一项。"
@@ -825,7 +804,7 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
         "plan_rubric": {
             "required_checks": [
                 "cross_system_mapping",
-                "identity_debt_tracking",
+                "identity_obligation_tracking",
                 "exposure_cost_model",
             ],
             "min_antagonist_forces": 2,
@@ -836,11 +815,12 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
             "min_key_reveals_per_volume": 2,
             "require_foreshadowing": True,
             "llm_evaluation_prompt_zh": (
-                "请检查规划是否定义了跨体系映射规则、身份债务账本和异常暴露代价。"
+                "请检查规划是否定义了跨体系映射规则、身份责任/关系后果和异常暴露代价。"
+                "身份责任不是金钱债务；用户未写债务时，不得凭空制造欠条、欠款或遗产债。"
                 "如果主角的旧知识或系统能力可以无边界解决问题, 判为不合格并给出修复建议。"
             ),
             "llm_evaluation_prompt_en": (
-                "Check whether the plan defines cross-system mapping rules, identity-debt tracking, "
+                "Check whether the plan defines cross-system mapping rules, identity-obligation tracking, "
                 "and exposure cost. If old knowledge or system ability solves problems without boundary, "
                 "mark it as failing and suggest repairs."
             ),
@@ -856,11 +836,12 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
             "book_spec_instruction_zh": (
                 "书籍规格必须定义: 1. 旧世界知识/系统能力与本地规则的映射边界; "
                 "2. 主角借用身份带来的关系亏欠、阵营把柄或历史包袱; 3. 每次套利后的暴露成本; "
-                "4. 至少两组会追查异常的本地力量。"
+                "4. 至少两组会追查异常的本地力量。第2项是身份责任，不是金钱债务；"
+                "原始创意未写债务时不得新增欠款、欠条、催收或遗产债。"
             ),
             "book_spec_instruction_en": (
                 "The book spec must define: mapping boundaries between old-world/system knowledge and local rules; "
-                "identity debts carried by the borrowed role; exposure cost after each exploit; "
+                "identity obligations carried by the borrowed role (not invented monetary debt); exposure cost after each exploit; "
                 "and at least two local forces that investigate anomalies."
             ),
             "world_spec_system_zh": (
@@ -878,31 +859,31 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "and plausible local explanations."
             ),
             "cast_spec_system_zh": (
-                "你负责角色和身份债务。每个关键本地人都要证明主角不能只拿身份便利, 也必须承担身份后果。"
+                "你负责角色和身份责任。每个关键本地人都要证明主角不能只拿身份便利, 也必须承担身份后果。"
             ),
             "cast_spec_system_en": (
-                "Own cast and identity debt. Key locals must prove the protagonist cannot take identity benefits "
+                "Own cast and identity obligations. Key locals must prove the protagonist cannot take identity benefits "
                 "without bearing consequences."
             ),
             "cast_spec_instruction_zh": (
-                "角色表必须标注: 谁识别异常, 谁提供本地解释, 谁握有宿主旧账, 谁会因身份真相受伤。"
+                "角色表必须标注: 谁识别异常, 谁提供本地解释, 谁与该身份存在既有关系或责任, 谁会因身份真相受伤。"
             ),
             "cast_spec_instruction_en": (
-                "Tag who notices anomalies, who provides local explanations, who holds old debts, "
+                "Tag who notices anomalies, who provides local explanations, who is tied to existing identity obligations, "
                 "and who would be hurt by the identity truth."
             ),
             "volume_plan_system_zh": (
-                "你是异界跨体系卷级规划师。每卷必须围绕一条规则差或身份债务展开, 并在卷末提高审查强度。"
+                "你是异界跨体系卷级规划师。每卷必须围绕一条规则差或身份责任展开, 并在卷末提高审查强度。"
             ),
             "volume_plan_system_en": (
                 "You are a volume planner for otherworld cross-system fiction. Each volume centers on a rule gap "
-                "or identity debt and raises audit pressure by the end."
+                "or identity obligation and raises audit pressure by the end."
             ),
             "volume_plan_instruction_zh": (
-                "每卷规划必须明确本卷规则套利目标、身份债务兑现、暴露成本升级和下一卷更高阶注视。"
+                "每卷规划必须明确本卷规则套利目标、身份责任兑现、暴露成本升级和下一卷更高阶注视。"
             ),
             "volume_plan_instruction_en": (
-                "Each volume must define the rule-arbitrage goal, identity-debt payoff, exposure-cost escalation, "
+                "Each volume must define the rule-arbitrage goal, identity-obligation payoff, exposure-cost escalation, "
                 "and the higher attention that points to the next volume."
             ),
             "outline_system_zh": (
@@ -928,11 +909,11 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "bounded system/old knowledge, and movement in identity or exposure cost."
             ),
             "scene_review_instruction_zh": (
-                "评估场景时请关注: 主角是否验证了本地规则? 套利是否有代价? 身份债是否被推进? 尾钩是否暴露新的异常痕迹?"
+                "评估场景时请关注: 主角是否验证了本地规则? 套利是否有代价? 身份责任是否被推进? 尾钩是否暴露新的异常痕迹?"
             ),
             "scene_review_instruction_en": (
                 "Evaluate: did the protagonist test local rules? did the exploit cost something? "
-                "did identity debt advance? does the hook expose a new anomaly trace?"
+                "did an identity obligation advance? does the hook expose a new anomaly trace?"
             ),
             "chapter_review_system_zh": (
                 "你是异界跨体系小说的章节审稿专家。章节必须形成规则发现、错误代价、收益兑现和风险升级的闭环。"
@@ -942,18 +923,18 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "rule discovery, error cost, payoff, and risk escalation."
             ),
             "chapter_review_instruction_zh": (
-                "检查本章是否有明确的跨体系状态更新: 规则映射、身份债、暴露痕迹、系统限制或本地权力反应。"
+                "检查本章是否有明确的跨体系状态更新: 规则映射、身份责任、暴露痕迹、系统限制或本地权力反应。"
             ),
             "chapter_review_instruction_en": (
-                "Check for a clear cross-system state update: rule mapping, identity debt, anomaly trace, "
+                "Check for a clear cross-system state update: rule mapping, identity obligation, anomaly trace, "
                 "system constraint, or local-power reaction."
             ),
             "scene_rewrite_system_zh": (
-                "你是异界跨体系小说的场景重写专家。重写时优先补规则边界、暴露代价和身份债务, 不要强化万能外挂。"
+                "你是异界跨体系小说的场景重写专家。重写时优先补规则边界、暴露代价和身份责任, 不要强化万能外挂。"
             ),
             "scene_rewrite_system_en": (
                 "You are a scene rewrite specialist for otherworld cross-system fiction. Prioritize rule boundaries, "
-                "exposure cost, and identity debt; do not strengthen all-powerful cheats."
+                "exposure cost, and identity obligation; do not strengthen all-powerful cheats."
             ),
             "scene_rewrite_instruction_zh": (
                 "重写时把抽象设定改成具体试错, 给每次系统/旧知识收益加上痕迹、代价或本地解释压力。"
@@ -3228,6 +3209,61 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
 
 
 _GENRE_REVIEW_PROFILE_EXTENSIONS: dict[str, dict[str, Any]] = {
+    "realistic-life": {
+        "name": "现实生活选择 / Realistic Life",
+        "description": (
+            "以人物选择、关系变化、工作与生活代价为核心驱动力的现实题材；"
+            "不要求能力升级或职业晋升，要求选择造成可验证的后果。"
+        ),
+        "scene_weights": {
+            "conflict_clarity": 1.2,
+            "dialogue": 1.2,
+            "voice_consistency": 1.2,
+            "emotional_movement": 1.15,
+            "contract_alignment": 1.2,
+        },
+        "chapter_weights": {
+            "continuity": 1.2,
+            "character_voice_distinction": 1.15,
+            "thematic_resonance": 1.15,
+            "contract_alignment": 1.2,
+        },
+        "signal_keywords": {
+            "conflict_terms_zh": ["选择", "边界", "账单", "合同", "照护", "拒绝", "离开"],
+            "emotion_terms_zh": ["压力", "犹豫", "亏欠", "体面", "愤怒", "失望", "松动"],
+            "hook_terms_zh": ["证据", "表态", "关系裂缝", "工作后果", "无法两全", "截止时间"],
+            "info_terms_zh": ["收入", "住房", "家庭", "工作", "责任", "名誉", "关系"],
+        },
+        "finding_messages": {
+            "conflict_low_zh": "现实冲突缺少具体选择和代价，人物仍停留在概述压力。",
+            "contract_low_zh": "本章没有兑现关系、工作或生活状态的可验证变化。",
+            "payoff_low_zh": "本章缺少真实的情绪、认知或选择回报，不能用强行打脸替代。",
+            "voice_low_zh": "叙事缺少现实生活体感，人物关系和制度/工作细节仍偏概念化。",
+        },
+        "plan_rubric": {
+            "required_checks": ["choice_consequence_loop", "relationship_state_ledger", "realistic_constraint_map"],
+            "min_antagonist_forces": 1,
+            "require_power_system_tiers": False,
+            "require_relationship_milestones": True,
+            "require_clue_chain": False,
+            "require_theme_per_volume": True,
+            "min_key_reveals_per_volume": 1,
+            "require_foreshadowing": True,
+            "llm_evaluation_prompt_zh": (
+                "检查规划是否有具体生活约束、人物必须承担的选择、关系/工作状态变化和后果回流。"
+                "不得凭空加入超能力、系统、隐藏身份或无成本贵人救场。"
+            ),
+        },
+        "planner_prompts": {
+            "book_spec_instruction_zh": "书籍规格必须定义核心主题、生活约束、人物选择边界和选择后的长期后果。",
+            "world_spec_instruction_zh": "世界设定应落在家庭、工作、社区、制度和经济现实，不要虚构能力体系。",
+            "outline_instruction_zh": "每章至少完成一次压力、选择、关系/工作后果或认知位移；允许安静章节，但不得无变化。",
+        },
+        "judge_prompts": {
+            "chapter_review_instruction_zh": "评估本章是否推进人物选择、关系状态、工作/生活约束或主题，而不是是否完成打脸或升级。",
+            "chapter_rewrite_instruction_zh": "重写时补强具体行动、对话潜台词、选择代价和现实后果；不得添加外挂式解决方案。",
+        },
+    },
     "urban-contemporary": {
         "name": "都市职业现实 / Urban Contemporary",
         "description": (

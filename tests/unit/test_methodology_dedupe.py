@@ -39,7 +39,8 @@ def test_baseline_craft_rules_gate_drops_only_paraphrase_restatements() -> None:
     assert "【画面感规则】" not in without_baseline
     assert "【对话规则】" not in without_baseline
     # … but keeps the context-specific opening rule (unique to the bridge)
-    assert "黄金三章" in without_baseline
+    assert "开篇参考" in without_baseline
+    assert "第2章兑现" not in without_baseline
 
 
 def test_exact_duplicate_sections_are_dropped() -> None:

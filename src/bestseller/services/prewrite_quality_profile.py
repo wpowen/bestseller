@@ -79,6 +79,8 @@ def _english_mechanism_leak(value: str) -> bool:
     if not _ENGLISH_MECHANISM_RE.search(text):
         return False
     return not _is_bare_taxonomy_slug(text)
+
+
 _TRUNCATED_FRAGMENT_RE = re.compile(r"^[\u4e00-\u9fffA-Za-z0-9？?！!。.,，、：:；;]{1,2}$")
 _FALLBACK_SOURCE_RE = re.compile(
     r"complete-extraction-failure|zero[-_ ]?confidence|fallback(?:[_ -]?progress|[_ -]?source|[_ -]?distillation)?",
@@ -120,8 +122,10 @@ def sanitize_distilled_leak(value: Any) -> Any:
             if isinstance(key, str) and has_kernel_leak(key):
                 continue
             sanitized = sanitize_distilled_leak(item)
-            if isinstance(item, str) and item.strip() and (
-                not isinstance(sanitized, str) or not sanitized.strip()
+            if (
+                isinstance(item, str)
+                and item.strip()
+                and (not isinstance(sanitized, str) or not sanitized.strip())
             ):
                 continue  # entry fully emptied by sanitization → drop it
             cleaned[key] = sanitized
@@ -140,6 +144,8 @@ def sanitize_distilled_leak(value: Any) -> Any:
             cleaned_list.append(sanitized)
         return cleaned_list
     return value
+
+
 _AWKWARD_TITLE_PATTERNS = (
     "构思中",
     "/",
@@ -192,6 +198,9 @@ _REPAIR_TARGETS = {
     "decision_policy_missing": "cast_spec_function_repair",
     # Long-form seriality mapping is repaired by regenerating the volume plan.
     "seriality_volume_mapping_invalid": "volume_plan_repair",
+    # Capacity failure must return to conception; leaving it as machine_blocked
+    # strands the project even though the planning kernel supplies a repair action.
+    "story_capacity_insufficient": "conception_story_capacity_rebuild",
 }
 
 
@@ -237,7 +246,10 @@ def strict_blocks(project: Any, settings: Any, key: str) -> bool:
 def strict_methodology_mode(project: Any, settings: Any) -> str:
     if is_strict_prewrite_project(project):
         return "strict"
-    return str(getattr(getattr(settings, "pipeline", settings), "methodology_contract_mode", "warn") or "warn")
+    return str(
+        getattr(getattr(settings, "pipeline", settings), "methodology_contract_mode", "warn")
+        or "warn"
+    )
 
 
 def strict_outline_batch_size(project: Any, settings: Any) -> int | None:
@@ -262,12 +274,14 @@ def strict_outline_shrink_size(project: Any, settings: Any) -> int:
         2,
         min(
             3,
-            int(getattr(pipeline, "commercial_strict_prewrite_outline_batch_shrink_size", 3) or 3),
+            int(getattr(pipeline, "commercial_strict_prewrite_outline_batch_shrink_size", 2) or 2),
         ),
     )
 
 
-def planning_artifact_meta(project: Any, *, gate_reports: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def planning_artifact_meta(
+    project: Any, *, gate_reports: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     from bestseller.services.genre_skill_profiles import genre_skill_profile_from_metadata
     from bestseller.services.book_design import planning_snapshot_lineage
 
@@ -321,7 +335,9 @@ def evaluate_concept_quality(
     is_en = _is_english_language(language)
     title_text = str(title or "").strip()
     if not title_text:
-        findings.append(_finding("title_uncommercial", "critical", "title", "Concept title is empty."))
+        findings.append(
+            _finding("title_uncommercial", "critical", "title", "Concept title is empty.")
+        )
     if not is_en and any(pattern in title_text for pattern in _AWKWARD_TITLE_PATTERNS):
         findings.append(
             _finding(
@@ -365,7 +381,9 @@ def evaluate_book_spec_quality(
     findings: list[PrewriteQualityFinding] = []
     payload = _mapping(book_spec)
     if not payload:
-        findings.append(_finding("book_spec_missing", "critical", "book_spec", "BookSpec is missing."))
+        findings.append(
+            _finding("book_spec_missing", "critical", "book_spec", "BookSpec is missing.")
+        )
         return _report("book_spec_quality_gate", findings)
     if not _is_english_language(language):
         for path, value in _walk_strings(payload):
@@ -383,7 +401,9 @@ def evaluate_book_spec_quality(
                 )
                 break
     for path, value in _walk_strings(payload):
-        if path.endswith(("theme", "themes", "reader_promise", "dramatic_question")) and _TRUNCATED_FRAGMENT_RE.match(value):
+        if path.endswith(
+            ("theme", "themes", "reader_promise", "dramatic_question")
+        ) and _TRUNCATED_FRAGMENT_RE.match(value):
             findings.append(
                 _finding(
                     "field_truncated",
@@ -407,7 +427,9 @@ def evaluate_book_spec_quality(
     return _report("book_spec_quality_gate", findings)
 
 
-def evaluate_world_spec_source_quality(world_spec: Mapping[str, Any] | None) -> PrewriteQualityReport:
+def evaluate_world_spec_source_quality(
+    world_spec: Mapping[str, Any] | None,
+) -> PrewriteQualityReport:
     findings: list[PrewriteQualityFinding] = []
     payload = _mapping(world_spec)
     for path, value in _walk_strings(payload):
@@ -433,7 +455,10 @@ def evaluate_world_spec_source_quality(world_spec: Mapping[str, Any] | None) -> 
         )
     rules = _mapping_list(payload.get("rules") or payload.get("world_rules"))
     for index, rule in enumerate(rules[:12]):
-        if not any(_text(rule.get(key)) for key in ("story_consequence", "visible_consequence", "chapter_usage_examples")):
+        if not any(
+            _text(rule.get(key))
+            for key in ("story_consequence", "visible_consequence", "chapter_usage_examples")
+        ):
             findings.append(
                 _finding(
                     "world_rule_consequence_missing",
@@ -446,13 +471,24 @@ def evaluate_world_spec_source_quality(world_spec: Mapping[str, Any] | None) -> 
     return _report("world_spec_source_gate", findings)
 
 
-def evaluate_cast_spec_function_quality(cast_spec: Mapping[str, Any] | None) -> PrewriteQualityReport:
+def evaluate_cast_spec_function_quality(
+    cast_spec: Mapping[str, Any] | None,
+) -> PrewriteQualityReport:
     findings: list[PrewriteQualityFinding] = []
     payload = _mapping(cast_spec)
     protagonist = _mapping(payload.get("protagonist"))
     if not protagonist:
-        findings.append(_finding("cast_function_missing", "critical", "cast_spec.protagonist", "Protagonist is missing."))
-    elif not any(_text(protagonist.get(key)) for key in ("external_goal", "goal", "core_drive", "desire")):
+        findings.append(
+            _finding(
+                "cast_function_missing",
+                "critical",
+                "cast_spec.protagonist",
+                "Protagonist is missing.",
+            )
+        )
+    elif not any(
+        _text(protagonist.get(key)) for key in ("external_goal", "goal", "core_drive", "desire")
+    ):
         findings.append(
             _finding(
                 "cast_function_missing",
@@ -482,7 +518,14 @@ def evaluate_story_design_kernel_quality(
     findings: list[PrewriteQualityFinding] = []
     payload = _mapping(kernel)
     if not payload:
-        findings.append(_finding("story_design_kernel_missing", "critical", "story_design_kernel", "StoryDesignKernel is missing."))
+        findings.append(
+            _finding(
+                "story_design_kernel_missing",
+                "critical",
+                "story_design_kernel",
+                "StoryDesignKernel is missing.",
+            )
+        )
         return _report("story_design_kernel_gate", findings)
     quality_text = _quality_stringify(payload)
     if _OFF_GENRE_STATE_RE.search(quality_text) or _FALLBACK_SOURCE_RE.search(quality_text):
@@ -502,7 +545,10 @@ def evaluate_story_design_kernel_quality(
                 "critical",
                 "story_design_kernel.beat_schedule",
                 "Beat schedule only covers the opening and cannot support the target chapter count.",
-                evidence={"target_chapters": target_chapters, "max_covered_chapter": max_beat_chapter},
+                evidence={
+                    "target_chapters": target_chapters,
+                    "max_covered_chapter": max_beat_chapter,
+                },
             )
         )
     return _report("story_design_kernel_gate", findings)
@@ -515,8 +561,16 @@ def evaluate_volume_plan_quality(
 ) -> PrewriteQualityReport:
     entries = _volume_entries(volume_plan)
     findings: list[PrewriteQualityFinding] = []
-    phases = {_text(entry.get("conflict_phase")) for entry in entries if _text(entry.get("conflict_phase"))}
-    forces = {_text(entry.get("primary_force_name") or entry.get("primary_force")) for entry in entries if _text(entry.get("primary_force_name") or entry.get("primary_force"))}
+    phases = {
+        _text(entry.get("conflict_phase"))
+        for entry in entries
+        if _text(entry.get("conflict_phase"))
+    }
+    forces = {
+        _text(entry.get("primary_force_name") or entry.get("primary_force"))
+        for entry in entries
+        if _text(entry.get("primary_force_name") or entry.get("primary_force"))
+    }
     primary_force_count = len(forces)
     phase_count = len(phases)
     # Pressure/phase variety is measured ACROSS volumes. A short book that maps
@@ -526,18 +580,17 @@ def evaluate_volume_plan_quality(
     # the framework's own single-volume plan. Only enforce variety for multi-volume
     # plans; single-volume thinness is still caught by the climax/turn/payoff check.
     multi_volume = len(entries) >= 2
-    if (
-        target_chapters >= 20
-        and multi_volume
-        and (primary_force_count <= 1 or phase_count <= 1)
-    ):
+    if target_chapters >= 20 and multi_volume and (primary_force_count <= 1 or phase_count <= 1):
         findings.append(
             _finding(
                 "volume_plan_thin",
                 "critical",
                 "volume_plan",
                 "Multi-volume 20+ chapter plan collapses to a single pressure owner or conflict phase.",
-                evidence={"unique_primary_force_count": primary_force_count, "unique_conflict_phase_count": phase_count},
+                evidence={
+                    "unique_primary_force_count": primary_force_count,
+                    "unique_conflict_phase_count": phase_count,
+                },
             )
         )
     text = _stringify(entries)
@@ -575,7 +628,10 @@ def _finding(
 def _report(stage: str, findings: Sequence[PrewriteQualityFinding]) -> PrewriteQualityReport:
     blocking = tuple(f for f in findings if f.severity in {"critical", "high"})
     audit = tuple(f for f in findings if f.severity not in {"critical", "high"})
-    penalty = sum(0.25 if f.severity == "critical" else 0.15 if f.severity == "high" else 0.05 for f in findings)
+    penalty = sum(
+        0.25 if f.severity == "critical" else 0.15 if f.severity == "high" else 0.05
+        for f in findings
+    )
     return PrewriteQualityReport(
         stage=stage,
         passed=not blocking,
@@ -748,7 +804,11 @@ def _contains_zero_confidence(value: Any) -> bool:
     if isinstance(value, Mapping):
         for key, raw in value.items():
             key_text = str(key).lower()
-            if key_text in {"confidence", "confidence_score", "source_confidence"} or key_text.endswith("_confidence"):
+            if key_text in {
+                "confidence",
+                "confidence_score",
+                "source_confidence",
+            } or key_text.endswith("_confidence"):
                 try:
                     if float(raw) <= 0:
                         return True
@@ -764,7 +824,9 @@ def _contains_zero_confidence(value: Any) -> bool:
 def _max_covered_chapter(payload: Mapping[str, Any]) -> int:
     max_chapter = 0
     for _path, text in _walk_strings(payload):
-        for match in re.finditer(r"(?:chapter|ch|第)\s*(\d{1,4})(?:\s*[-至到]\s*(\d{1,4}))?", text, re.IGNORECASE):
+        for match in re.finditer(
+            r"(?:chapter|ch|第)\s*(\d{1,4})(?:\s*[-至到]\s*(\d{1,4}))?", text, re.IGNORECASE
+        ):
             max_chapter = max(max_chapter, int(match.group(2) or match.group(1)))
     for key in ("beat_schedule", "beats", "beat_sheet"):
         for beat in _mapping_list(payload.get(key)):
@@ -777,7 +839,9 @@ def _max_covered_chapter(payload: Mapping[str, Any]) -> int:
             if isinstance(raw_range, str):
                 for match in re.finditer(r"(\d{1,4})(?:\s*[-至到]\s*(\d{1,4}))?", raw_range):
                     max_chapter = max(max_chapter, int(match.group(2) or match.group(1)))
-            if isinstance(raw_range, Sequence) and not isinstance(raw_range, (str, bytes, bytearray)):
+            if isinstance(raw_range, Sequence) and not isinstance(
+                raw_range, (str, bytes, bytearray)
+            ):
                 for item in raw_range:
                     try:
                         max_chapter = max(max_chapter, int(item))

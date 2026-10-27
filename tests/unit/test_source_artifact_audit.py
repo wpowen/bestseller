@@ -79,6 +79,36 @@ def test_audit_source_artifacts_ignores_plain_copy_flow_and_host_nerves(
     assert report.findings == ()
 
 
+def test_audit_ignores_forbidden_term_in_source_metadata_header(tmp_path: Path) -> None:
+    book = _book_dir(tmp_path)
+    (book / "story-bible.md").write_text(
+        "# 修复源资料：非系统面板纪事\n\n"
+        "正文设定：主角靠观察和选择推进案件。\n"
+        "- 书名：非系统面板纪事\n",
+        encoding="utf-8",
+    )
+
+    report = audit_source_artifacts("book-a", output_dir=tmp_path)
+
+    assert report.passed is True
+    assert report.findings == ()
+
+
+def test_audit_still_blocks_forbidden_term_in_source_body(tmp_path: Path) -> None:
+    book = _book_dir(tmp_path)
+    (book / "story-bible.md").write_text(
+        "# 修复源资料：干净标题\n\n"
+        "正文设定：系统面板会在第一章直接发布任务。\n"
+        "- 书名：干净标题\n",
+        encoding="utf-8",
+    )
+
+    report = audit_source_artifacts("book-a", output_dir=tmp_path)
+
+    assert report.passed is False
+    assert report.blocking_findings[0].evidence["term_counts"]["系统面板"] == 1
+
+
 def test_discover_source_artifacts_skips_project_manuscript_export(
     tmp_path: Path,
 ) -> None:

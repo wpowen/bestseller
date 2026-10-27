@@ -19,7 +19,9 @@ cherry-pick 回收后，``_persona_click_advisory``/``run_persona_click_judge`` 
 
 from __future__ import annotations
 
+import ast
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -117,10 +119,32 @@ def test_finalize_wires_persona_advisory_at_initial_and_terminal_eval() -> None:
     source = inspect.getsource(conception_services.run_conception_pipeline)
 
     call_count = source.count("_persona_click_advisory(")
-    assert call_count == 2, (
-        f"expected exactly 2 call sites (initial + in-loop re-eval), found {call_count}"
+    assert call_count == 3, (
+        "expected exactly 3 call sites (initial + in-loop re-eval + dedicated "
+        f"persona-only packaging rescue), found {call_count}"
     )
     assert 'story_appeal_report["persona_judge"] = _persona_report' in source
+
+
+@pytest.mark.unit
+def test_every_conception_persona_gate_receives_authoritative_channel() -> None:
+    """No hard-gate call may silently fall back to overlapping tag inference."""
+
+    source = Path(conception_services.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_persona_click_advisory"
+    ]
+
+    assert calls
+    assert all(any(keyword.arg == "channel" for keyword in call.keywords) for call in calls)
+    assert "channel=_conception_persona_channel(genre_intent_contract, ctx)" in inspect.getsource(
+        conception_services.run_conception_pipeline
+    )
 
 
 @pytest.mark.unit

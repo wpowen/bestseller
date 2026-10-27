@@ -184,7 +184,7 @@ def test_pollution_retry_is_clean_room_not_a_replay_of_intermediate_drafts() -> 
     assert "不继承任何被拒中间稿" in prompt
 
 
-def test_pollution_retry_keeps_automatic_seed_when_no_seed_or_champion() -> None:
+def test_pollution_retry_does_not_reinstate_automatic_seed_as_authority() -> None:
     prompt = conception._pollution_retry_finalize_prompt(
         {
             "genre": "仙侠",
@@ -199,9 +199,10 @@ def test_pollution_retry_keeps_automatic_seed_when_no_seed_or_champion() -> None
         is_en=False,
     )
 
-    assert "守山杂役误触残碑后，能听见护山阵法正在求救" in prompt
+    assert "守山杂役误触残碑后，能听见护山阵法正在求救" not in prompt
+    assert "系统自动故事种子" not in prompt
     assert "已过筛冠军：{}" in prompt
-    assert prompt.index("守山杂役误触残碑后") < prompt.index("【隔离后的权威故事事实】")
+    assert "【隔离后的权威故事事实】" in prompt
 
 
 def test_retry_adoption_is_fail_closed_for_any_retry_pollution_class() -> None:

@@ -5,9 +5,26 @@ from bestseller.services.drafts import (
 )
 from bestseller.services.story_effect_realization import (
     audit_story_effect_realization,
+    build_comedy_contract_from_observation,
     compare_effect_contracts,
 )
+from bestseller.services.reviews import challenger_takes_current
 
+
+_STRICT_CONTRACT = {
+    "comedy_engine": {
+        "source": "author",
+        "required_stages": [
+            "setup",
+            "reversal_or_misalignment",
+            "character_reaction",
+            "situation_change",
+        ],
+    }
+}
+
+
+_STRICT_CREATION = {"field_sources": {"hook_spec": "explicit", "story_enhancers": "explicit"}, "hook_spec": {"effect_realization_contracts": _STRICT_CONTRACT}, "story_enhancers": {"effect_skills": ["comedy_engine"]}}
 
 class _Record:
     def __init__(self, **values):
@@ -17,6 +34,8 @@ class _Record:
 def _chapter(**overrides):
     chapter = {
         "chapter_number": 1,
+        "creation_intent_contract": _STRICT_CREATION,
+        "story_enhancers": {"effect_skills": ["comedy_engine"]},
         "selected_effect_skills": {"primary": "comedy_engine"},
         "prose": "商队进城, 主角照章办事。",
     }
@@ -66,11 +85,62 @@ def test_comedy_contract_passes_without_keyword_matching():
     assert result["issues"] == []
 
 
+def test_post_write_comedy_observation_requires_ordered_verbatim_evidence() -> None:
+    prose = (
+        "裴淮安把三十年草案推到沈渡面前。"
+        "沈渡却把草案逐页折成扇面，边折边念官样条款。"
+        "门边守卒先憋红了脸，随后笑出了声。"
+        "沈渡借着笑声封住二十银的日租价，裴淮安只能当厅念价。"
+    )
+    observation = {
+        "setup": {
+            "description": "特使递交长期包销草案",
+            "quote": "裴淮安把三十年草案推到沈渡面前。",
+        },
+        "reversal_or_misalignment": {
+            "description": "主角把正式草案当扇子折",
+            "quote": "沈渡却把草案逐页折成扇面，边折边念官样条款。",
+        },
+        "character_reaction": {
+            "description": "守卒被错位动作逗笑",
+            "quote": "门边守卒先憋红了脸，随后笑出了声。",
+        },
+        "situation_change": {
+            "description": "笑声成为改价筹码并改变交易",
+            "quote": "沈渡借着笑声封住二十银的日租价，裴淮安只能当厅念价。",
+        },
+    }
+
+    contract = build_comedy_contract_from_observation(
+        observation,
+        prose,
+        planned_contract={"concrete_beat": "折草案成扇并借笑声改价"},
+    )
+
+    assert contract is not None
+    assert contract["concrete_beat"] == "折草案成扇并借笑声改价"
+    assert contract["evidence_spans"]["situation_change"] in prose
+
+
+def test_post_write_comedy_observation_rejects_invented_or_out_of_order_quotes() -> None:
+    prose = "先改变了交易。后来众人才笑。"
+    observation = {
+        "setup": {"description": "建立场面", "quote": "后来众人才笑。"},
+        "reversal_or_misalignment": {"description": "发生错位", "quote": "先改变了交易。"},
+        "character_reaction": {"description": "人物发笑", "quote": "并不存在的原句"},
+        "situation_change": {"description": "交易改变", "quote": "先改变了交易。"},
+    }
+
+    assert build_comedy_contract_from_observation(observation, prose) is None
+
+
 def test_metadata_or_route_without_a_cashed_beat_is_unrealized():
     result = audit_story_effect_realization(
         {
             "chapter_number": 2,
+            "creation_intent_contract": _STRICT_CREATION,
             "story_effect_skill_selection": {"effect_skills": ["comedy_engine"]},
+            "story_enhancers": {"effect_skills": ["comedy_engine"]},
             "prose": "双方完成谈判, 局势保持原样。",
         }
     )
@@ -106,6 +176,20 @@ def test_rewrite_cannot_delete_an_already_realized_effect():
     assert result["passed"] is False
     assert result["issues"] == ["protected_effect_deleted"]
     assert result["deleted_effects"] == ["comedy_engine"]
+
+
+def test_unrealized_effect_rewrite_is_never_allowed_to_take_current() -> None:
+    assert (
+        challenger_takes_current(
+            challenger_blocked=True,
+            incumbent_gate_outcome="blocked",
+            has_duplicate_findings=False,
+            deterministic_audit_failed=False,
+            violation_codes=("STORY_EFFECT_REALIZATION_UNREALIZED",),
+            incumbent_audit_failed=True,
+        )
+        is False
+    )
 
 
 def test_rewrite_is_blocked_when_contract_remains_but_prose_evidence_is_deleted():
@@ -159,7 +243,12 @@ def test_unrelated_contract_changes_are_not_treated_as_effect_deletion():
 
 
 def test_persisted_chapter_selection_without_prose_evidence_blocks_promotion():
-    project = _Record(metadata_json={})
+    project = _Record(
+        metadata_json={
+            "story_enhancers": {"effect_skills": ["comedy_engine"]},
+            "creation_intent_contract": _STRICT_CREATION,
+        }
+    )
     chapter = _Record(
         metadata_json={
             "selected_effect_skills": {"primary": "comedy_engine"},
@@ -212,7 +301,12 @@ def test_scene_only_effect_contract_is_pinned_for_later_promotion_audit():
             "situation_change": "交易条件改变",
         },
     }
-    project = _Record(metadata_json={})
+    project = _Record(
+        metadata_json={
+            "story_enhancers": {"effect_skills": ["comedy_engine"]},
+            "creation_intent_contract": _STRICT_CREATION,
+        }
+    )
     chapter = _Record(metadata_json={})
     scene = _Record(
         id="scene-1",
@@ -224,9 +318,7 @@ def test_scene_only_effect_contract_is_pinned_for_later_promotion_audit():
 
     _persist_effect_contract_context(project, chapter, scenes=[scene])
 
-    assert chapter.metadata_json["selected_effect_skills"] == {
-        "primary": "comedy_engine"
-    }
+    assert chapter.metadata_json["selected_effect_skills"] == {"primary": "comedy_engine"}
     assert chapter.metadata_json["comedy_contract"] == contract
     report = audit_persisted_story_effect_realization(
         project,

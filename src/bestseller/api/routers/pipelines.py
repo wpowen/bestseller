@@ -233,6 +233,13 @@ async def start_autowrite(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> TaskEnqueuedResponse:
     project = await _get_project_or_404(slug, session)
+    if body.autonomous_book:
+        from bestseller.services.draft_continuity import draft_mode_enabled
+        if await draft_mode_enabled(session,project_id=project.id,project=project):
+            from bestseller.services.book_run import submit
+            result=await submit(session,settings,redis,project=project,requested_model=body.requested_model)
+            return TaskEnqueuedResponse(task_id=result.get('job_id') or result['book_run_id'],status=result.get('state','queued'),message='Persistent book objective recorded; physical dispatch requires finite explicit authority.')
+
     if not body.force:
         await _assert_no_active_pipeline(session, project)
     token = await _reserve_pipeline_start(redis, project.id)
@@ -240,7 +247,7 @@ async def start_autowrite(
         return await _enqueue(
             settings,
             "run_autowrite_task",
-            {"project_slug": slug, "premise": body.premise},
+            {"project_slug": slug, "premise": body.premise, "autonomous_book": body.autonomous_book, "requested_model": body.requested_model},
             idempotency_key=idempotency_key,
         )
     except Exception:

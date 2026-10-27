@@ -22,6 +22,7 @@ from bestseller.domain.project import (
 )
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services import projects as project_services
+from bestseller.services.concept_contract import build_concept_contract
 from bestseller.services.genre_skill_profiles import (
     GENRE_SKILL_PROFILE_METADATA_KEY,
     GENRE_SKILL_PROFILE_VERSION,
@@ -55,6 +56,16 @@ class FakeSession:
         return self.scalar_results.pop(0)
 
 
+class _PackagingSession(FakeSession):
+    async def scalars(self, stmt: object):
+        class _Result:
+            @staticmethod
+            def all() -> list[object]:
+                return []
+
+        return _Result()
+
+
 def build_settings() -> object:
     return load_settings(
         config_path=Path("config/default.yaml"),
@@ -83,6 +94,104 @@ async def test_create_project_persists_genre_skill_profile_snapshot() -> None:
     assert profile["prompt_pack_key"] == "suspense-mystery"
     assert "suspense-mystery" in profile["research_skill_keys"]
     assert profile["activation"]["gate_mode"] == "audit_only"
+
+
+@pytest.mark.asyncio
+async def test_create_project_promotes_conception_approved_packaging_contract() -> None:
+    settings = build_settings()
+    session = _PackagingSession()
+    winner = {
+        "concept": "他接手一座破城，却发现每个过路者都必须先付账。",
+        "mechanism": "他把收费站经验变成异界城防与交易规则。",
+        "hook_question": "当商路联盟学会绕过新规时，他还能守住公平通行吗？",
+        "protagonist_identity": "商洛，前高速收费站班组长。",
+        "protagonist_private_desire": "让废城居民不再靠逃亡活命。",
+        "protagonist_flaw": "习惯把人和风险都当成可调度数字。",
+        "core_abnormality": "旧界碑会显示每条路线的真实交易代价。",
+        "opening_crisis": "商队拒绝进城，外部据点准备彻底封死废城。",
+        "opponent_system": "商路联盟、旧贵族与会学习新规的关务机构。",
+        "decision_proof": "强抢会失去合法性，退让会断粮，只能公开验证规则。",
+        "emotional_promise": "严肃流程被异界权力误读，并反过来改变局势。",
+        "repeatable_story_unit": "规则验证、利益选择、对手学习、城池状态改写。",
+        "unit_families": ["通行验证", "资源争夺", "联盟谈判"],
+        "unit_frequency": "每2-4章完成一次选择与反制",
+        "unit_count_estimate": 8,
+        "renewal_sources": ["新商路冲突", "对手学习并改写规则"],
+        "accumulation_tracks": ["城池设施", "联盟信任"],
+        "phase_transitions": ["守住城门", "争夺区域商路", "建立跨族秩序"],
+        "opposing_ecology": ["商路联盟", "旧贵族关务机构"],
+        "endgame_direction": "废城成为万族必经的贸易关口。",
+    }
+    concept_contract = build_concept_contract(
+        winner=winner,
+        story_spine={
+            "who": winner["protagonist_identity"],
+            "wants": winner["protagonist_private_desire"],
+            "why_now": winner["opening_crisis"],
+            "against": winner["opponent_system"],
+            "stakes": winner["emotional_promise"],
+            "question": winner["hook_question"],
+            "terminal_state": winner["endgame_direction"],
+        },
+        target_chapters=30,
+        genre="异世界经营",
+        sub_genre="领主经营",
+    )
+    payload = ProjectCreate(
+        slug="approved-package-book",
+        title="荒城通关簿",
+        genre="异世界经营",
+        target_word_count=120000,
+        target_chapters=30,
+        metadata={
+            "concept_contract_version": "2",
+            "concept_contract": concept_contract,
+            "genre_intent_contract": {
+                "explicit_enhancers": {"effect_skills": ["comedy_engine"]}
+            },
+            "platform_target": "fanqie",
+            "conception_artifacts": {
+                "story_appeal": {
+                    "final_packaging_promotion": {
+                        "passed": True,
+                    }
+                }
+            },
+            "synopsis": "废城的第一笔过路费，决定商洛能不能活过今夜。",
+        },
+    )
+
+    project = await project_services.create_project(session, payload, settings)
+
+    assert project.metadata_json["active_packaging_contract_id"]
+    assert project.metadata_json["active_packaging_listing_payloads"]["fanqie:long-form"][
+        "logline"
+    ] == "他接手一座破城，却发现每个过路者都必须先付账。"
+    active = project.metadata_json["active_packaging_listing_payloads"]["fanqie:long-form"]
+    assert active["title"] == "荒城通关簿"
+    assert active["effect_skills"] == ["comedy_engine"]
+    assert active["architecture_refs"] == [f"concept:{concept_contract['champion_id']}"]
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_invalid_v2_contract_before_materialization() -> None:
+    session = _PackagingSession()
+    payload = ProjectCreate(
+        slug="invalid-v2-package-book",
+        title="无效候选",
+        genre="异世界经营",
+        target_word_count=120000,
+        target_chapters=30,
+        metadata={
+            "concept_contract_version": "2",
+            "concept_contract": {"seriality_proof": {"unit_count_estimate": 1}},
+        },
+    )
+
+    with pytest.raises(Exception, match="Concept contract invalid"):
+        await project_services.create_project(session, payload, build_settings())
+
+    assert session.added == []
 
 
 def test_project_delete_tombstone_round_trip(tmp_path: Path) -> None:
@@ -955,6 +1064,73 @@ async def test_import_planning_artifact_still_reuses_when_only_meta_differs(
 
     assert artifact is reusable
     assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_does_not_reuse_stale_source_bound_review_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A review-state transition is substantive even when story fields are unchanged."""
+
+    project = ProjectModel(
+        slug="source-bound-review-story",
+        title="Source Bound Review Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    old_content = {
+        "logline": "Same derived world.",
+        "_meta": {
+            "input_hash": "same-input",
+            "source_bound_expansion": "derived_pending_review",
+            "source_bound_expansion_review": "independent_semantic_review_required",
+        },
+    }
+    reusable = project_services.PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.WORLD_SPEC.value,
+        version_no=3,
+        status="approved",
+        schema_version="1.0",
+        content=old_content,
+    )
+    reusable.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[reusable, None, 3])
+    reviewed_content = {
+        "logline": "Same derived world.",
+        "_meta": {
+            "input_hash": "same-input",
+            "source_bound_expansion": "reviewed",
+            "source_bound_expansion_review": "passed",
+            "source_bound_expansion_review_receipt": {
+                "candidate_hash": "candidate-v2",
+                "llm_run_id": str(uuid4()),
+            },
+        },
+    }
+
+    artifact = await project_services.import_planning_artifact(
+        session,
+        "source-bound-review-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.WORLD_SPEC,
+            content=reviewed_content,
+        ),
+    )
+
+    assert artifact is not reusable
+    assert artifact.version_no == 4
+    assert artifact.content["_meta"]["source_bound_expansion"] == "reviewed"
+    assert reusable.content == old_content
+    assert artifact in session.added
 
 
 def test_load_json_file_reads_payload(tmp_path: Path) -> None:

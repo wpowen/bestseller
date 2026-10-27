@@ -11,6 +11,8 @@ docs/prompt-methodology-fusion-audit-2026-06.md and judge_genre_context.py.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from bestseller.services import chapter_llm_quality_judge as J
@@ -23,8 +25,30 @@ from bestseller.services.judge_genre_context import (
     resolve_reference_corpus_key,
 )
 from bestseller.services.judge_rubrics import get_judge_rubric
+from bestseller.services.llm import LLMCompletionResult
+from bestseller.settings import load_settings
 
 _DETECTIVE_LEAK_TERMS = ("青囊", "罗盘", "铜钱", "认账", "镜债", "账线", "阴阳眼", "困魂镜")
+
+
+@pytest.mark.parametrize("renderer,rubric_name", [
+    (O._render_outline_commercial_system_prompt, "outline_commercial"),
+    (O._render_planning_readiness_system_prompt, "commercial_planning"),
+])
+def test_absent_genre_context_does_not_restore_legacy_commission_template(renderer, rubric_name):
+    prompt = renderer(rubric=get_judge_rubric(rubric_name), methodology_reference="", genre_context=None)
+    assert "为什么找主角而不是 110" not in prompt
+    assert "委托人会主动找主角，而非 110/120/物业" not in prompt
+    assert "家学传承 / 师承 / 前案口碑 / 熟人引介 / 行业身份 之一" not in prompt
+
+
+def test_outline_review_does_not_treat_blueprint_form_or_author_knowledge_as_prose_leak():
+    prompt = O._render_outline_commercial_system_prompt(
+        rubric=get_judge_rubric("outline_commercial"), methodology_reference="")
+    assert "当前产物是写作规划，不是正文" in prompt
+    assert "作者知道的信息自动归给当前视角角色" in prompt
+    assert "表现形式本身，不构成违规" in prompt
+    assert "黄金三章若只靠电话 / 短信 / 语音开局" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -101,39 +125,82 @@ def test_corpus_loader_returns_dedicated_corpus_when_available():
 # ---------------------------------------------------------------------------
 
 
-def test_chapter_judge_prompt_has_no_detective_leak_for_other_genre():
+async def _capture_chapter_judge_request(monkeypatch, **kwargs):
+    captured = []
+
+    async def fake_complete_text(session, settings, request):
+        captured.append(request)
+        return LLMCompletionResult(
+            content=json.dumps({
+                "pass": False, "overall_score": 0.0, "dimension_scores": {},
+                "blocking_issues": [], "rewrite_plan": {"scope": "chapter"},
+            }),
+            provider="mock", model_name="mock-critic",
+        )
+
+    monkeypatch.setattr(J, "complete_text", fake_complete_text)
+    await J.judge_chapter_commercial_quality(
+        object(), load_settings(env={}), chapter_number=1,
+        content_md="主角核对记载后决定暂缓出发。", **kwargs,
+    )
+    assert len(captured) == 1
+    return captured[0]
+
+
+@pytest.mark.asyncio
+async def test_chapter_judge_prompt_has_no_detective_leak_for_other_genre(monkeypatch):
+    bible = {"power_system": {"terms": ["真元", "噬灵诀"]}}
     ctx = resolve_judge_genre_context(
         genre="玄幻", sub_genre="升级流",
-        story_bible={"power_system": {"terms": ["真元", "噬灵诀"]}},
+        story_bible=bible,
     )
-    sp = J._render_chapter_judge_system_prompt(
-        rubric=get_judge_rubric("chapter_commercial"),
-        reference_block="", checklist_block="", calibration_block="",
+    request = await _capture_chapter_judge_request(
+        monkeypatch,
         genre_context=ctx,
+        generation_input={"schema_version": "chapter-generation-input.v2", "story_bible": bible},
     )
     for leak in _DETECTIVE_LEAK_TERMS:
-        assert leak not in sp, f"detective term leaked into chapter judge: {leak}"
-    assert "真元" in sp  # this book's own term IS present
+        assert leak not in request.system_prompt + request.user_prompt
+    # Book facts remain visible as source data, not system-level instructions.
+    assert "真元" not in request.system_prompt
+    assert "真元" in request.user_prompt
+    assert "噬灵诀" in request.user_prompt
+    assert "SOURCE AUTHORITY" in request.system_prompt
 
 
-def test_chapter_judge_runs_first_person_decision_intelligence_audit():
+@pytest.mark.asyncio
+async def test_chapter_judge_retains_source_grounded_decision_dimension_and_floor(monkeypatch):
     ctx = resolve_judge_genre_context(genre="仙侠", sub_genre="职业流")
-    sp = J._render_chapter_judge_system_prompt(
-        rubric=get_judge_rubric("chapter_commercial"),
-        reference_block="",
-        checklist_block="",
-        calibration_block="",
-        genre_context=ctx,
+    request = await _capture_chapter_judge_request(
+        monkeypatch, genre_context=ctx,
     )
 
-    assert "decision_intelligence" in sp
-    assert "正常人基线" in sp
-    assert "角色基线" in sp
-    assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in sp
+    assert "decision_intelligence" in request.user_prompt
+    sent_dimensions = json.loads(request.user_prompt.split("关键维度：", 1)[1].splitlines()[0])
+    _, expected_dimensions = J.chapter_commercial_thresholds(
+        1, J._load_reference_corpus(ctx.corpus_key), request.metadata["writer_model"],
+    )
+    assert sent_dimensions["decision_intelligence"] == expected_dimensions["decision_intelligence"]
+    assert sent_dimensions["decision_intelligence"] >= 0.84
+    assert "人物动机、事件因果" in request.system_prompt
+    assert "来源和正文证据" in request.system_prompt
     _, hard_dimensions = J.chapter_commercial_thresholds(1, None, None)
     assert hard_dimensions["decision_intelligence"] == 0.84
     _, later_dimensions = J.chapter_commercial_thresholds(80, None, None)
     assert later_dimensions["decision_intelligence"] == 0.84
+
+
+@pytest.mark.asyncio
+async def test_chapter_judge_runs_first_person_decision_intelligence_audit(monkeypatch):
+    # Preserve the original semantic contract until its owner explicitly retires
+    # it. A dimension name/floor alone does not prove the baseline audit survives.
+    ctx = resolve_judge_genre_context(genre="仙侠", sub_genre="职业流")
+    request = await _capture_chapter_judge_request(monkeypatch, genre_context=ctx)
+    prompt = request.system_prompt + "\n" + request.user_prompt
+    assert "decision_intelligence" in prompt
+    assert "正常人基线" in prompt
+    assert "角色基线" in prompt
+    assert "PROTAGONIST_PLOT_SERVING_STUPIDITY" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -166,13 +233,13 @@ def test_planning_judge_neutral_for_romance():
     assert "关系张力" in sp
 
 
-def test_render_functions_backward_compatible_without_context():
-    # Legacy callers that pass no genre_context keep the original commission block.
+def test_render_functions_without_context_use_neutral_fallback():
+    # Legacy callers must not silently restore one genre's commission contract.
     rub = get_judge_rubric("outline_commercial")
     legacy = O._render_outline_commercial_system_prompt(
         rubric=rub, methodology_reference=""
     )
-    assert "委托人选择动机" in legacy
+    assert "委托人选择动机" not in legacy
 
 
 # ---------------------------------------------------------------------------

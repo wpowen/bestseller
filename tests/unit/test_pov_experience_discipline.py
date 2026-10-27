@@ -98,6 +98,14 @@ class TestChapterPositionBlock:
         assert "开篇炸点律" in block
         assert "去AI腔铁律" in block
 
+    def test_scene_fusion_uses_information_density_not_adverb_prohibition(self) -> None:
+        block = render_prose_prompt_fusion_block(position="opening")
+        assert "修饰语不按词类一刀切" in block
+        assert "目标不是副词归零" in block
+        assert "过场、位移、时间跳跃" in block
+        assert "允许平实概括" in block
+        assert "通用身体反应、感官枚举、精确数字或陈词比喻补位" in block
+
 
 class TestCompactorProtectsLoadBearingRules:
     """A 10k cap that strips these is a silent quality regression: the prompt

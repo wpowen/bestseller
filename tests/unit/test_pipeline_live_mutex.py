@@ -50,6 +50,19 @@ class FakeRedis:
             return True
         return False
 
+    async def eval(self, script, numkeys, key, owner, *args):
+        # Compatibility for these lifecycle tests. Actual Lua execution and
+        # interleavings are covered by test_pipeline_live_lock_atomicity.py.
+        assert numkeys == 1
+        if self.store.get(key) != owner:
+            return 0
+        if "'DEL'" in script:
+            await self.delete(key)
+            return 1
+        if "'EXPIRE'" in script:
+            return int(await self.expire(key, int(args[0])))
+        raise NotImplementedError(script)
+
 
 class ExplodingRedis:
     def __getattr__(self, name):
@@ -147,6 +160,7 @@ def test_both_worker_entries_consult_the_mutex() -> None:
             async def emit(self, *a, **k): ...
 
         with (
+            mock.patch.object(worker_tasks, "get_server_session", _isolated_worker_session),
             mock.patch.object(worker_tasks, "_acquire_pipeline_live", _held),
             mock.patch.object(worker_tasks, "RedisProgressReporter", _Reporter),
             mock.patch.object(worker_tasks, "set_ambient", lambda *_: None),
@@ -183,3 +197,38 @@ def test_both_worker_entries_consult_the_mutex() -> None:
         result = asyncio.run(run(entry))
         assert result["status"] == "skipped_duplicate_pipeline", entry.__name__
     assert calls == ["book-a", "book-a"]
+
+
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _isolated_worker_session():
+    """Native preflight tables instead of bypassing the decorated worker guard."""
+    from datetime import datetime,timedelta,timezone
+    from uuid import uuid4
+    from sqlalchemy import JSON,MetaData
+    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
+    from sqlalchemy.schema import CreateTable
+    from bestseller.infra.db.models import ProjectModel,BookProductionControlModel,ExecutionBudgetModel
+    engine=create_async_engine('sqlite+aiosqlite:///:memory:')
+    def ddl(c):
+        for model in (ProjectModel,BookProductionControlModel,ExecutionBudgetModel):
+            table=model.__table__.to_metadata(MetaData())
+            for col in table.c:
+                if isinstance(col.type,JSONB):col.type=JSON()
+                if col.server_default and '::jsonb' in str(col.server_default.arg):col.server_default=None
+            c.execute(CreateTable(table,include_foreign_key_constraints=[]))
+    try:
+        async with engine.begin() as c:await c.run_sync(ddl)
+        factory=async_sessionmaker(engine,expire_on_commit=False)
+        async with factory() as s:
+            p=ProjectModel(id=uuid4(),slug='book-a',title='test',genre='test',target_chapters=4,target_word_count=8000,metadata_json={})
+            s.add_all([p,BookProductionControlModel(project_id=p.id,desired_state='run',command_serial=1),
+                ExecutionBudgetModel(scope_id=f'project:{p.id}',status='active',max_calls=20,max_tokens=10000,
+                    calls_used=0,tokens_charged=0,deadline_at=datetime.now(timezone.utc)+timedelta(days=1),metadata_json={})])
+            await s.commit()
+            yield s
+            await s.commit()
+    finally:await engine.dispose()

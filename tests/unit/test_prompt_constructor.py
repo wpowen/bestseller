@@ -325,10 +325,13 @@ class TestBuildChapterPrompt:
             scene_spec="【本章任务】主角初入宗门。",
             prior_chapter_text="他闭上双眼，深吸一口气。",
             preassigned_opening=OpeningArchetype.CRISIS,
+            cliffhanger_policy=CliffhangerPolicy(
+                allowed_types=(CliffhangerType.DECISION,)
+            ),
         )
         assert isinstance(plan, PromptPlan)
         assert plan.assigned_opening == OpeningArchetype.CRISIS
-        assert plan.assigned_cliffhanger is not None
+        assert plan.assigned_cliffhanger == CliffhangerType.DECISION
         rendered = plan.render()
         # Golden-three opening directive is promoted ahead of the role charter.
         assert rendered.startswith(
@@ -532,9 +535,10 @@ class TestBuildChapterPrompt:
         )
 
         rendered = plan.render()
-        assert "读者画像反馈" in rendered
-        assert "读者画像反馈" in plan.render_user()
-        assert "读者画像反馈" not in plan.render_system()
+        # W4-1：注入的是「模拟诊断」块（供参考），不再冒充读者判决。
+        assert "读者画像模拟诊断" in rendered
+        assert "读者画像模拟诊断" in plan.render_user()
+        assert "读者画像模拟诊断" not in plan.render_system()
 
     def test_audit_report_block_is_sanitized_before_prompt_injection(self) -> None:
         budget = DiversityBudget(project_id=uuid4())

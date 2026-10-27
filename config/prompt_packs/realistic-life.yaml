@@ -1,0 +1,69 @@
+key: realistic-life
+name: 现实生活选择流
+version: '1.0'
+description: 以人物选择、关系变化、工作与生活代价为核心的现实题材方法包，不预设超能力或固定逆袭模板。
+genres:
+- 现实
+- 都市现实
+- 现实题材
+tags:
+- 现实
+- 关系选择
+- 工作压力
+- 生活代价
+source_notes:
+- Framework-level realistic fiction route
+anti_patterns:
+- 超能力、系统、隐藏身份或天降贵人作为无成本解法
+- 每章强行打脸、地位跃升或黄金手指揭示
+- 把职业和家庭冲突改写成统一的商业逆袭
+- 用作者总结替代人物在关系和现实压力中的选择
+writing_profile_overrides:
+  market:
+    prompt_pack_key: realistic-life
+    platform_target: 番茄小说
+    reader_promise: 让读者看见具体生活压力、关系牵引和选择代价，并在每章获得真实的情绪或认知回报。
+    selling_points:
+    - 现实代入
+    - 关系张力
+    - 选择代价
+    - 工作与生活压力
+    hook_keywords:
+    - 无法两全的选择
+    - 关系破裂的证据
+    - 工作后果
+    - 被迫表态
+  character:
+    protagonist_archetype: 在现实压力中争取主动权的普通人
+    protagonist_core_drive: 守住重要关系或生活边界，同时承担自己的选择
+  methodology:
+    visual_writing_mode: result_over_process
+    dialogue_subtext_ratio: 0.6
+    hook_min_active: 2
+    hook_max_active: 4
+    hook_max_age_chapters: 8
+    safety_net_mode: none
+  hype:
+    min_hype_per_chapter: 1
+    golden_three_peak_count: 1
+    comedic_beat_density_target: 0.12
+    payoff_window_chapters: 4
+fragments:
+  global_rules: |
+    现实题材的推进来自人物做出有代价的选择，以及选择改变关系、工作、金钱、名誉或生活安排。
+    不得凭空加入超能力、系统、隐藏身份、天降贵人或不符合现实的资源跃迁。
+  scene_writer: |
+    每场戏必须让人物面对具体的现实阻力，做出可观察的选择，并留下关系、工作或生活状态的变化。
+    用行动、对话和后果呈现压力，不用策划说明解释主题。
+  chapter_review: |
+    检查本章是否有清晰的现实困境、人物选择和选择后的可验证后果；安静章节可以用关系位移或认知变化兑现阅读回报。
+  conflict_stakes: |
+    现实筹码可以是工作、收入、住房、照护责任、亲密关系、名誉或个人边界；冲突不要求赢家碾压输家，必须呈现选择代价。
+  hook_design: |
+    章末留下下一步必须处理的现实问题、关系裂缝、证据、截止时间或无法撤回的决定，不用能力暴露和升级作为默认钩子。
+  core_loop: |
+    困境出现 → 人物权衡并选择 → 关系/工作/生活产生后果 → 新信息迫使人物重新选择。
+  dialogue_rules: |
+    对话要体现人物的利益、顾虑和未说出口的关系变化；避免所有角色都用总结句解释自己的立场。
+  pacing_guidance: |
+    现实题材允许呼吸段，但每章必须完成一次压力、选择、后果或认知位移，避免没有变化的流水账。

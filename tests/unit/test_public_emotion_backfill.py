@@ -3,12 +3,17 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid4
 
+from planning_capability_test_helpers import explicit_planning_metadata
 import pytest
 
 from bestseller.infra.db.models import ProjectModel
 from bestseller.services.compliance_boundary_kernel import compliance_boundary_kernel_from_dict
 from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
-from bestseller.services.public_emotion_kernel import public_emotion_kernel_from_dict
+from bestseller.services.public_emotion_kernel import (
+    build_public_emotion_kernel_seed,
+    public_emotion_kernel_from_dict,
+    public_emotion_kernel_to_dict,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -36,6 +41,17 @@ def _project(metadata: dict[str, object] | None = None) -> ProjectModel:
         metadata_json=metadata or {},
     )
     project.id = uuid4()
+    selected_metadata = explicit_planning_metadata("public_emotion_kernel", metadata=metadata)
+    seed = build_public_emotion_kernel_seed(
+        book_spec=selected_metadata.get("book_spec") or {
+            "title": project.title, "genre": project.genre, "premise": project.title,
+        },
+        project_metadata=selected_metadata,
+    )
+    selected_metadata["public_emotion_kernel"] = public_emotion_kernel_to_dict(
+        public_emotion_kernel_from_dict(seed)
+    )
+    project.metadata_json = selected_metadata
     return project
 
 
@@ -59,7 +75,7 @@ async def test_public_emotion_backfill_creates_metadata_kernels() -> None:
         requested_by="unit-test",
     )
 
-    assert result.status == "created"
+    assert result.status == "repaired_invalid"
     assert result.changed is True
     assert project.metadata_json["public_emotion_kernel_backfill"]["source"] == (
         "legacy_backfill"
@@ -86,7 +102,7 @@ async def test_public_emotion_backfill_preserves_existing_valid_kernels() -> Non
 
     existing = await ensure_project_public_emotion_kernels(FakeSession(), project)
 
-    assert created.status == "created"
+    assert created.status == "repaired_invalid"
     assert existing.status == "existing"
     assert existing.changed is False
     assert project.metadata_json["public_emotion_kernel_backfill"]["status"] == (
@@ -112,6 +128,7 @@ async def test_public_emotion_backfill_can_read_latest_planning_artifacts() -> N
     result = await ensure_project_public_emotion_kernels(
         FakeSession(artifacts),
         project,
+        force=True,
     )
 
     public_kernel = public_emotion_kernel_from_dict(result.public_emotion_kernel)

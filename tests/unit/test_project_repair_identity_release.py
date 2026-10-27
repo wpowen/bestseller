@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from bestseller.services.identity_guard import CharacterIdentity
+from bestseller.services.quality_report_claim import graded_text_fingerprint
 from bestseller.services.repair import (
     _heal_chapter_gate_state_before_repair,
     _release_resolved_identity_write_safety_block,
@@ -21,6 +22,9 @@ class FakeSession:
 
     async def scalar(self, stmt: object) -> object | None:
         return self.scalar_result
+
+    async def scalars(self, stmt: object) -> list[object]:
+        return [self.scalar_result] if self.scalar_result is not None else []
 
 
 def test_release_resolved_identity_write_safety_block_clears_stale_pronoun_block() -> None:
@@ -91,7 +95,7 @@ def test_release_resolved_identity_write_safety_block_keeps_active_pronoun_viola
 
 
 @pytest.mark.asyncio
-async def test_heal_chapter_gate_state_releases_stale_nonblocking_quality_block() -> None:
+async def test_heal_chapter_gate_state_keeps_unclaimed_nonblocking_quality_block() -> None:
     chapter = SimpleNamespace(
         id="chapter-441",
         chapter_number=441,
@@ -111,12 +115,9 @@ async def test_heal_chapter_gate_state_releases_stale_nonblocking_quality_block(
         language="en",
     )
 
-    assert still_blocked is False
-    assert chapter.production_state == "ok"
-    assert "auto_repair_last_block_codes" not in chapter.metadata_json
-    assert chapter.metadata_json["resolved_quality_gate_block"]["resolved_by"] == (
-        "nonblocking_quality_report_revalidation"
-    )
+    assert still_blocked is True
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["auto_repair_last_block_codes"] == ["CHAPTER_LENGTH_BLOCK_LOW"]
 
 
 @pytest.mark.asyncio
@@ -206,3 +207,190 @@ async def test_heal_chapter_gate_state_normalizes_legacy_length_aliases() -> Non
     assert chapter.production_state == "blocked"
     assert chapter.metadata_json["production_block_code"] == "CHAPTER_LENGTH_BLOCK_HIGH"
     assert chapter.metadata_json["quality_gate_block_code"] == "CHAPTER_LENGTH_BLOCK_HIGH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metadata_codes", "report_codes"),
+    [
+        (["TIMELINE_INCONSISTENT"], ["TIMELINE_INCONSISTENT"]),
+        (["TIMELINE_INCONSISTENT"], []),
+        ([], ["TIMELINE_INCONSISTENT"]),
+        (["TIMELINE_INCONSISTENT"], ["pronoun_mismatch"]),
+        (["TIMELINE_INCONSISTENT"], ["pronoun_mismatch", "CAST_VIOLATION"]),
+    ],
+)
+async def test_identity_release_keeps_outstanding_timeline_quality_block(
+    metadata_codes: list[str], report_codes: list[str],
+) -> None:
+    current_text = "Kade Mercer opened the file. He read the page."
+    chapter = SimpleNamespace(
+        id="chapter-2",
+        chapter_number=2,
+        production_state="blocked",
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "pronoun_mismatch",
+            "auto_repair_last_block_codes": ["pronoun_mismatch", *metadata_codes],
+        },
+    )
+    report = SimpleNamespace(
+        blocks_write=bool(report_codes),
+        report_json={"blocking_codes": report_codes, "graded": graded_text_fingerprint(current_text)},
+    )
+    still_blocked = await _heal_chapter_gate_state_before_repair(
+        FakeSession(report), chapter,
+        SimpleNamespace(content_md=current_text),
+        project=SimpleNamespace(id="project-1"), settings=load_settings(env={}),
+        identity_registry=[
+            CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
+        ],
+        language="en",
+    )
+    assert still_blocked is True
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["write_safety_block_code"] == "TIMELINE_INCONSISTENT"
+    if metadata_codes:
+        assert chapter.metadata_json["auto_repair_last_block_codes"] == metadata_codes
+    assert "pronoun_mismatch" not in chapter.metadata_json["quality_gate_block_codes"]
+    assert set(chapter.metadata_json["quality_gate_block_codes"]) == (
+        set(metadata_codes) | set(report_codes)
+    ) - {"pronoun_mismatch"}
+
+
+def test_identity_release_preserves_independent_duplicate_gate() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=2, production_state="blocked",
+        metadata_json={
+            "write_safety_block_code": "pronoun_mismatch",
+            "post_assembly_duplicate_gate": True,
+        },
+    )
+    _release_resolved_identity_write_safety_block(
+        chapter, SimpleNamespace(content_md="Kade Mercer read the page."),
+        identity_registry=[CharacterIdentity(name="Kade Mercer", gender="male")],
+        language="en",
+    )
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["post_assembly_duplicate_gate"] is True
+
+
+def test_identity_release_requires_nonempty_registry() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=2, production_state="blocked",
+        metadata_json={"write_safety_block_code": "pronoun_mismatch"},
+    )
+    assert _release_resolved_identity_write_safety_block(
+        chapter, SimpleNamespace(content_md="Kade Mercer read the page."),
+        identity_registry=[], language="en",
+    ) is False
+    assert chapter.production_state == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_identity_release_does_not_reblock_on_resolved_report_code() -> None:
+    current_text = "Kade Mercer read the page."
+    chapter = SimpleNamespace(
+        id="chapter-2", chapter_number=2, production_state="blocked",
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "pronoun_mismatch",
+        },
+    )
+    still_blocked = await _heal_chapter_gate_state_before_repair(
+        FakeSession(SimpleNamespace(
+            blocks_write=True, report_json={
+                "blocking_codes": ["pronoun_mismatch"],
+                "graded": graded_text_fingerprint(current_text),
+            },
+        )),
+        chapter, SimpleNamespace(content_md=current_text),
+        project=SimpleNamespace(id="project-1"), settings=load_settings(env={}),
+        identity_registry=[CharacterIdentity(name="Kade Mercer", gender="male")],
+        language="en",
+    )
+    assert still_blocked is False
+    assert chapter.production_state == "ok"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("current_blocked", [False, True])
+@pytest.mark.parametrize("current_text", ["这是当前已经选中的正文。", "He left the room."])
+async def test_repair_uses_report_for_current_draft_not_newest_candidate(
+    current_blocked: bool, current_text: str,
+) -> None:
+    from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+    current_report = SimpleNamespace(
+        blocks_write=current_blocked,
+        report_json={
+            "graded": graded_text_fingerprint(current_text),
+            "blocking_codes": ["TIMELINE_INCONSISTENT"] if current_blocked else [],
+        },
+    )
+    newest_report = SimpleNamespace(
+        blocks_write=not current_blocked,
+        report_json={
+            "graded": graded_text_fingerprint("这是没有采用的另一份候选。"),
+            "blocking_codes": [] if current_blocked else ["TIMELINE_INCONSISTENT"],
+        },
+    )
+    class ReportSession(FakeSession):
+        async def scalars(self, stmt: object) -> list[object]:
+            return [newest_report, current_report]
+
+    chapter = SimpleNamespace(
+        id="chapter-2", chapter_number=2, production_state="blocked",
+        metadata_json={"auto_repair_last_block_codes": ["TIMELINE_INCONSISTENT"]},
+    )
+    blocked = await _heal_chapter_gate_state_before_repair(
+        ReportSession(newest_report), chapter,
+        SimpleNamespace(content_md=current_text, word_count=2300),
+        project=SimpleNamespace(id="p"), settings=load_settings(env={}),
+        identity_registry=[], language="zh-CN",
+    )
+    assert blocked is current_blocked
+    assert chapter.production_state == ("blocked" if current_blocked else "ok")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["no_claim", "legacy", "legacy_english", "ambiguous"])
+async def test_unavailable_or_ambiguous_report_cannot_unlock_current_draft(case: str) -> None:
+    from bestseller.services.quality_report_claim import graded_text_fingerprint
+
+    current_text = "这是当前稿的正文。" if case != "legacy_english" else "He left the room."
+    payload: dict[str, object] = {"blocking_codes": []}
+    if case != "legacy":
+        payload["graded"] = graded_text_fingerprint(
+            "这是另一稿的正文。" if case == "no_claim" else current_text
+        )
+    if case == "legacy_english":
+        payload["graded"] = {"chars": 0, "sha1": "da39a3ee5e6b4b0d"}
+    clean = SimpleNamespace(blocks_write=False, report_json=payload)
+    rows = [clean]
+    if case == "ambiguous":
+        rows.append(SimpleNamespace(
+            blocks_write=True,
+            report_json={
+                "graded": graded_text_fingerprint(current_text),
+                "blocking_codes": ["TIMELINE_INCONSISTENT"],
+            },
+        ))
+
+    class ReportSession(FakeSession):
+        async def scalars(self, stmt: object) -> list[object]:
+            return rows
+
+    chapter = SimpleNamespace(
+        id="chapter-2", chapter_number=2, production_state="blocked",
+        metadata_json={"auto_repair_last_block_codes": ["TIMELINE_INCONSISTENT"]},
+    )
+    blocked = await _heal_chapter_gate_state_before_repair(
+        ReportSession(clean), chapter,
+        SimpleNamespace(content_md=current_text, word_count=2300),
+        project=SimpleNamespace(id="p"), settings=load_settings(env={}),
+        identity_registry=[], language="zh-CN",
+    )
+    assert blocked is True
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["auto_repair_last_block_codes"] == ["TIMELINE_INCONSISTENT"]

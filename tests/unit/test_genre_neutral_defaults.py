@@ -28,7 +28,7 @@ def test_market_defaults_are_platform_neutral() -> None:
     assert market.platform_target == "未指定平台"
     assert market.content_mode == "长篇小说"
     assert market.pacing_profile == "medium"
-    assert "不强制" in market.payoff_rhythm
+    assert market.payoff_rhythm == "未指定"
     assert "番茄" not in market.opening_strategy
     assert "打脸" not in market.opening_strategy
 
@@ -79,7 +79,7 @@ def test_persist_qimao_skips_without_signing_platform() -> None:
     assert "qimao_opening_contract" not in (project.metadata_json or {})
 
 
-def test_shuangwen_fusion_defaults_off_and_auto_enables_loop_packs() -> None:
+def test_shuangwen_fusion_requires_explicit_configuration_even_for_loop_packs() -> None:
     assert PipelineSettings().enable_shuangwen_fusion is False
     assert pack_uses_shuangwen_loop("xianxia-upgrade-core") is True
     assert pack_uses_shuangwen_loop("romance-tension-growth") is False
@@ -87,7 +87,7 @@ def test_shuangwen_fusion_defaults_off_and_auto_enables_loop_packs() -> None:
     assert resolve_shuangwen_fusion(enabled_flag=False, pack_key="cozy-fantasy") is False
     assert resolve_shuangwen_fusion(
         enabled_flag=False, pack_key="xianxia-upgrade-core"
-    ) is True
+    ) is False
     assert resolve_shuangwen_fusion(enabled_flag=True, pack_key="cozy-fantasy") is True
 
 

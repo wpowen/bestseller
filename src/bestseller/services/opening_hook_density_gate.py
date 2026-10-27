@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 import re
 from typing import Any
 
@@ -63,14 +64,39 @@ def check_opening_hook_density(
     flashback_max: int = 2,
     first_sentence_max_cjk: int = 25,
     first_paragraph_max_cjk: int = 50,
+    approved_opening_contract: Mapping[str, Any] | None = None,
 ) -> list[OpeningHookFinding]:
-    """Return golden-three opening findings. Empty list means no finding."""
+    """Report reference heuristics; only a supplied approved clause can veto.
 
-    if chapter_number > 3 or not chapter_text:
+    approved_opening_contract is caller-verified CURRENT authority, not raw
+    settings, taxonomy or prior review output. It must contain a nonempty
+    source_requirement and explicit integer limits. Legacy numeric kwargs are
+    reference knobs only; passing a number does not establish creator approval.
+    """
+
+    contract = approved_opening_contract or {}
+    requirement = contract.get("source_requirement")
+    limits = {
+        key: value for key, value in contract.items()
+        if key in {"first_sentence_max_cjk", "first_paragraph_max_cjk", "flashback_max"}
+        and type(value) is int and value >= (0 if key == "flashback_max" else 1)
+        and isinstance(requirement, str) and requirement.strip()
+    }
+    first_sentence_max_cjk = limits.get("first_sentence_max_cjk", first_sentence_max_cjk)
+    first_paragraph_max_cjk = limits.get("first_paragraph_max_cjk", first_paragraph_max_cjk)
+    flashback_max = limits.get("flashback_max", flashback_max)
+
+    def authority(key: str) -> dict[str, Any]:
+        return {
+            "applicability": "approved_contract" if key in limits else "reference_only",
+            "source_requirement": requirement if key in limits else None,
+        }
+
+    if (chapter_number > 3 and not limits) or not chapter_text:
         return []
 
     cjk_chars = _CJK_RE.findall(chapter_text)
-    if len(cjk_chars) < 100:
+    if len(cjk_chars) < 100 and not limits:
         return []
 
     findings: list[OpeningHookFinding] = []
@@ -88,9 +114,12 @@ def check_opening_hook_density(
             findings.append(
                 OpeningHookFinding(
                     code="OPENING_FIRST_SENTENCE_TOO_LONG",
-                    severity="high",
-                    detail=f"第一句 {first_sentence_len} 字，超 {first_sentence_max_cjk} 字硬上限",
-                    evidence={"first_sentence": first_sentence[:120]},
+                    severity="high" if "first_sentence_max_cjk" in limits else "medium",
+                    detail=(f"第一句 {first_sentence_len} 字，超过 {first_sentence_max_cjk} 字"
+                            + ("已批准上限" if "first_sentence_max_cjk" in limits
+                               else "参考值；未获授权为硬限制")),
+                    evidence={"first_sentence": first_sentence[:120],
+                              **authority("first_sentence_max_cjk")},
                 )
             )
 
@@ -99,9 +128,11 @@ def check_opening_hook_density(
             findings.append(
                 OpeningHookFinding(
                     code="OPENING_FIRST_PARAGRAPH_TOO_LONG",
-                    severity="medium",
-                    detail=f"第一段 {first_para_len} 字，超 {first_paragraph_max_cjk} 字软上限",
-                    evidence={"first_paragraph": first_line[:200]},
+                    severity="high" if "first_paragraph_max_cjk" in limits else "medium",
+                    detail=(f"第一段 {first_para_len} 字，超过 {first_paragraph_max_cjk} 字"
+                            + ("已批准上限" if "first_paragraph_max_cjk" in limits else "参考值")),
+                    evidence={"first_paragraph": first_line[:200],
+                              **authority("first_paragraph_max_cjk")},
                 )
             )
 
@@ -135,9 +166,12 @@ def check_opening_hook_density(
         findings.append(
             OpeningHookFinding(
                 code="OPENING_FLASHBACK_OVERUSE",
-                severity="critical",
-                detail=f"前 500 字含 {flashback_hits} 个倒叙信号，节奏破坏",
-                evidence={"first_500_head": first_500[:300], "hits": flashback_hits},
+                severity="high" if "flashback_max" in limits else "medium",
+                detail=(f"前 500 字含 {flashback_hits} 个倒叙信号词；"
+                        + ("超过已批准的信号词次数上限" if "flashback_max" in limits
+                           else "仅供节奏复核，词频不能证实节奏缺陷")),
+                evidence={"first_500_head": first_500[:300], "hits": flashback_hits,
+                          **authority("flashback_max")},
             )
         )
 

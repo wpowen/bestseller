@@ -11,7 +11,7 @@ required_contracts:
 - source_world_profession
 - target_world_dominant_rule_system
 - cross_system_mapping_limits
-- host_identity_debt
+- host_identity_obligation
 - exposure_cost_model
 state_variables:
 - cross_system_understanding
@@ -19,13 +19,13 @@ state_variables:
 - local_power_misread
 - bound_assets
 - political_entanglement
-- identity_debt
+- identity_obligation
 - higher_authority_attention
 chapter_change_vectors:
 - learn_local_rule
 - exploit_rule_gap
 - convert_enemy_or_resource
-- pay_identity_debt
+- fulfill_host_obligation
 - reveal_higher_authority
 - increase_exposure_cost
 reader_rewards:
@@ -48,3 +48,4 @@ forbidden_defaults:
 - copy_named_artifact_or_technique
 - effortless_asset_collection
 - objectification_as_core_reward
+- invent_literal_debt_without_user_seed

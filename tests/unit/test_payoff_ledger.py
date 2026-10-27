@@ -97,7 +97,7 @@ def test_setup_distance_audit_flags_current_short_payoff() -> None:
         source_clues=[FakeClue("c1", "clue-1", planted_in_chapter_number=4)],
     )
 
-    findings = audit_setup_distance(view, current_chapter=5)
+    findings = audit_setup_distance(view, current_chapter=5, min_setup_distance=2)
 
     assert len(findings) == 1
     assert findings[0].code == "PAYOFF_SETUP_TOO_SHORT"

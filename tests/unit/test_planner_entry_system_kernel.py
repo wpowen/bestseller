@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+from planning_capability_test_helpers import explicit_planning_metadata
+
 from bestseller.domain.enums import ArtifactType
 from bestseller.infra.db.models import ProjectModel
 from bestseller.services import planner as planner_services
@@ -14,7 +16,7 @@ def _project() -> ProjectModel:
         target_word_count=300000,
         target_chapters=80,
         audience="web-serial",
-        metadata_json={},
+        metadata_json=explicit_planning_metadata("entry_system_kernel"),
     )
     project.id = uuid4()
     return project
@@ -40,12 +42,14 @@ def test_fallback_entry_system_kernel_persists_to_metadata() -> None:
 
 def test_planner_entry_kernel_receives_minimal_cost_creation_option() -> None:
     project = _project()
-    project.metadata_json = {
+    project.metadata_json = explicit_planning_metadata("entry_system_kernel", metadata={
         "story_enhancers": {"cost_style": "minimal"},
         "creation_intent_contract": {
             "story_enhancers": {"cost_style": "minimal"},
+            "field_sources": {"story_enhancers": "explicit"},
+            "hook_spec": {"_story_enhancer_input_sources": {"cost_style": "explicit"}},
         },
-    }
+    })
 
     payload = planner_services._persist_entry_system_kernel_metadata(project)
     block = planner_services._entry_system_kernel_prompt_block(project)

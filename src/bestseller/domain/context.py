@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from bestseller.domain.narrative import (
     AntagonistPlanRead,
@@ -42,6 +42,14 @@ class RecentSceneSummary(BaseModel):
     # summaries are lossy and often omit specific quotes; this raw text is the
     # reliable anti-repetition signal.
     extended_tail: str | None = None
+    source_reference: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_reference(self, handler: Any) -> dict[str, Any]:
+        result = handler(self)
+        if self.source_reference is None:
+            result.pop("source_reference", None)
+        return result
 
 
 class TimelineEventContext(BaseModel):
@@ -49,7 +57,9 @@ class TimelineEventContext(BaseModel):
     scene_number: int | None = Field(default=None, ge=0)
     event_name: str = Field(min_length=1)
     event_type: str = Field(min_length=1)
-    story_time_label: str = Field(min_length=1)
+    # An observed event need not establish a calendar/time label. Keep unknown
+    # time empty rather than inventing one or rejecting valid prior knowledge.
+    story_time_label: str = ""
     consequences: list[str] = Field(default_factory=list)
     summary: str | None = None
 
@@ -76,6 +86,8 @@ class HardFactContext(BaseModel):
     subject: str | None = None
     notes: str | None = None
     source_quote: str | None = None
+    epistemic_disposition: str | None = None
+    source_observation: dict[str, Any] | None = None
 
 
 class ChapterStateSnapshotContext(BaseModel):
@@ -83,6 +95,10 @@ class ChapterStateSnapshotContext(BaseModel):
 
     chapter_number: int = Field(ge=1)
     facts: list[HardFactContext] = Field(default_factory=list)
+    reported_observations: list[dict[str, Any]] = Field(default_factory=list)
+    epistemic_view_sha256: str | None = None
+    epistemic_application_sha256: str | None = None
+    epistemic_policy: str | None = None
 
     # Phase D2 — optional time anchor & span for per-chapter timeline
     # bookkeeping. When present the continuity layer can run the
@@ -357,7 +373,7 @@ class SceneWriterContextPacket(BaseModel):
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)
     title: str | None = None
-    scene_type: str = Field(min_length=1)
+    scene_type: str = Field(strict=True)  # Empty string represents Unknown.
     status: str = Field(min_length=1)
     participants: list[str] = Field(default_factory=list)
     story_purpose: str | None = None

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
+import logging
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +27,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     DraftPromotionDecisionModel,
     QualityScoreModel,
+    ReviewReportModel,
     SceneCardModel,
     SceneDraftVersionModel,
 )
@@ -34,6 +37,108 @@ logger = logging.getLogger(__name__)
 DraftKind = Literal["scene", "chapter"]
 DraftModel = type[SceneDraftVersionModel] | type[ChapterDraftVersionModel]
 DraftInstance = SceneDraftVersionModel | ChapterDraftVersionModel
+
+
+class DraftQualityIneligibleError(ValueError):
+    """Exact score refused promotion; callers must separately verify debt scope."""
+
+    def __init__(self, draft_id: UUID, quality_score_id: UUID) -> None:
+        super().__init__("Draft quality evidence is not promotion eligible")
+        self.draft_id = draft_id
+        self.quality_score_id = quality_score_id
+
+
+def numeric_promotion_debt_receipt(
+    draft: ChapterDraftVersionModel | None,
+    score: QualityScoreModel | None,
+    report: ReviewReportModel | None,
+    *,
+    min_overall: float = 0.85,
+    min_core: float = 0.80,
+) -> dict[str, object] | None:
+    """Return current-body evidence for numeric-only debt, never promotion approval."""
+    from collections.abc import Mapping
+    from math import isfinite
+
+    from bestseller.services.reviews import chapter_review_body_fingerprint
+
+    if not all((draft, score, report)):
+        return None
+    if (
+        getattr(draft, "is_current", None) is not True
+        or not str(getattr(draft, "content_md", "") or "").strip()
+        or getattr(score, "is_current", None) is not True
+        or score.chapter_draft_version_id != draft.id
+        or not str(score.judge_key or "").strip()
+        or score.review_report_id != report.id
+    ):
+        return None
+    payload = getattr(report, "structured_output", None)
+    fingerprint = chapter_review_body_fingerprint(draft.content_md)
+    if (
+        not isinstance(payload, Mapping)
+        or str(payload.get("draft_id") or "") != str(draft.id)
+        or payload.get("reviewed_body_fingerprint") != fingerprint
+    ):
+        return None
+    evidence = score.evidence_summary
+    from bestseller.services.chapter_verified_fact_disposition import decide_verified_fact_disposition
+
+    if decide_verified_fact_disposition(
+        content_md=draft.content_md or "", evidence=evidence or {},
+    )["status"] in {"blocked", "unknown"}:
+        return None
+    if (
+        not isinstance(evidence, Mapping)
+        or evidence.get("hard_gates_passed") is not True
+        or _blocking_codes(dict(evidence))
+        or evidence.get("blockers")
+    ):
+        return None
+    if any(payload.get(key) for key in ("blocking_codes", "blockers", "blocking_issues")):
+        return None
+    findings = payload.get("findings", [])
+    if not isinstance(findings, list):
+        return None
+    for finding in findings:
+        if (
+            not isinstance(finding, Mapping)
+            or finding.get("blocks_write")
+            or finding.get("blocking")
+            or str(finding.get("severity", "")).lower() in {"critical", "block", "blocker"}
+        ):
+            return None
+    axes = ("score_goal", "score_conflict", "score_emotion", "score_style")
+    values = [getattr(score, axis, None) for axis in axes]
+    if any(
+        value is None or not isfinite(float(value)) or not 0 <= float(value) <= 1
+        for value in values
+    ):
+        return None
+    values = list(map(float, values))
+    overall = sum(values) / len(values)
+    below = [axis for axis, value in zip(axes, values, strict=True) if value < min_core]
+    reasons = (["CORE_OVERALL_BELOW_THRESHOLD"] if overall < min_overall else []) + (
+        ["CORE_AXIS_BELOW_THRESHOLD"] if below else []
+    )
+    if not reasons:
+        return None
+    return {
+        "schema": "numeric_promotion_debt_v1",
+        "draft_id": str(draft.id),
+        "quality_score_id": str(score.id),
+        "review_report_id": str(report.id),
+        "judge_key": score.judge_key,
+        "reviewed_body_fingerprint": fingerprint,
+        "hard_gates_passed": True,
+        "blocking_codes": [],
+        "core_overall": overall,
+        "core_scores": dict(zip(axes, values, strict=True)),
+        "min_overall": min_overall,
+        "min_core": min_core,
+        "below_core_axes": below,
+        "reason_codes": reasons,
+    }
 
 
 @dataclass(frozen=True)
@@ -199,6 +304,13 @@ def _eligible_row(
         else score.chapter_draft_version_id
     )
     evidence_json = dict(score.evidence_summary or {})
+    if isinstance(draft, ChapterDraftVersionModel):
+        from bestseller.services.chapter_verified_fact_disposition import decide_verified_fact_disposition
+
+        if decide_verified_fact_disposition(
+            content_md=draft.content_md or "", evidence=evidence_json,
+        )["status"] in {"blocked", "unknown"}:
+            return None
     core_scores = _core_scores(score)
     evidence = PromotionEvidence(
         draft_id=draft.id,
@@ -374,7 +486,7 @@ async def mark_draft_eligible(
         min_core=min_core,
     )
     if eligible is None:
-        raise ValueError("Draft quality evidence is not promotion eligible")
+        raise DraftQualityIneligibleError(draft.id, score.id)
     return await transition_draft_state(
         session,
         project_id=project_id,
@@ -459,6 +571,13 @@ async def _advance_to_promoted(
     score: QualityScoreModel,
     workflow_run_id: UUID | None,
 ) -> None:
+    if isinstance(draft, ChapterDraftVersionModel):
+        from bestseller.services.chapter_verified_fact_disposition import decide_verified_fact_disposition
+
+        if decide_verified_fact_disposition(
+            content_md=draft.content_md or "", evidence=score.evidence_summary or {},
+        )["status"] in {"blocked", "unknown"}:
+            raise DraftQualityIneligibleError(draft.id, score.id)
     current = DraftPromotionState(draft.promotion_state)
     path: list[DraftPromotionState]
     if current in {DraftPromotionState.LEGACY_UNVERIFIED, DraftPromotionState.CANDIDATE}:
@@ -511,6 +630,71 @@ async def _advance_to_promoted(
     draft.promotion_metadata = metadata
 
 
+async def _validate_exact_chapter_admission(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+) -> None:
+    """Recheck the paid preview and its gate receipt while adoption rows are locked.
+
+    This is DB-only validation: never extract or commit inside promotion.
+    The caller's successful gate must bind the preview bytes and dependencies,
+    not merely the chapter's last ``passed`` flag.
+    """
+    from bestseller.services import continuity
+    from bestseller.services.adopted_chapter_source import (
+        continuity_admissions_by_source,
+        continuity_source_key,
+    )
+    from bestseller.services.chapter_continuity_admission import reusable_preview
+    from bestseller.services.feedback import KNOWLEDGE_LINEAGE_SCHEMA
+    from bestseller.services.quality_gates_config import get_quality_gates_config
+    from bestseller.services.reviews import chapter_review_body_fingerprint
+
+    if not get_quality_gates_config().phase_d.enabled:
+        return
+    identity = {
+        "draft_id": str(draft.id),
+        "body_sha256": chapter_review_body_fingerprint(draft.content_md)["digest"],
+    }
+    source_key = continuity_source_key(identity)
+    assert source_key is not None
+    receipt = continuity_admissions_by_source(chapter.metadata_json or {}).get(source_key)
+    if (
+        not isinstance(receipt, Mapping)
+        or receipt.get("passed") is not True
+        or any(receipt.get(key) != value for key, value in identity.items())
+    ):
+        raise ValueError("chapter_promotion_continuity_receipt_invalid")
+    previous = await continuity._current_snapshot_input(
+        session, project_id=chapter.project_id,
+        chapter_number=chapter.chapter_number - 1, include_source=True,
+    )
+    dependencies = continuity._snapshot_dependencies(chapter.chapter_number, previous)
+    source = {
+        "schema": KNOWLEDGE_LINEAGE_SCHEMA,
+        "project_id": str(chapter.project_id), "chapter_id": str(chapter.id),
+        "source_chapter_draft_version_id": str(draft.id),
+        "source_version_no": draft.version_no,
+        "source_body_sha256": hashlib.sha256(draft.content_md.encode("utf-8")).hexdigest(),
+    }
+    prompt = continuity._build_extraction_user_prompt(
+        chapter=chapter, chapter_md=draft.content_md, previous_snapshot=previous.context,
+    )
+    preview = reusable_preview(
+        draft, source, dependencies,
+        prompt_sha256=hashlib.sha256(
+            (continuity._EXTRACTION_SYSTEM_PROMPT + "\n" + prompt).encode("utf-8")
+        ).hexdigest(),
+    )
+    if (
+        preview is None
+        or receipt.get("snapshot_dependencies") != dependencies
+        or receipt.get("preview_raw_sha256") != preview["raw_sha256"]
+    ):
+        raise ValueError("chapter_promotion_continuity_receipt_stale")
+
+
 async def promote_best_draft(
     session: AsyncSession,
     *,
@@ -521,24 +705,51 @@ async def promote_best_draft(
     min_overall: float = 0.85,
     min_core: float = 0.80,
     workflow_run_id: UUID | None = None,
+    expected_draft_id: UUID | None = None,
+    expected_body_sha256: str | None = None,
 ) -> PromotionOutcome:
     """Promote the best exact-version eligible draft under a parent row lock.
 
     The caller owns the outer transaction. This service flushes but never
     commits; the savepoint makes a partial-index race safe for that transaction.
+    Exact callers supply both expected fields (SHA-256 of raw UTF-8 text).
+    Only that candidate may be adopted, after refreshing its locked body and
+    continuity receipt. Without them, the historical best-of-N policy applies.
     """
+    if (expected_draft_id is None) != (expected_body_sha256 is None):
+        raise ValueError("exact_promotion_requires_draft_and_body")
+    exact = expected_draft_id is not None
     parent_model, draft_model, parent_column, score_draft_column = _models_for_kind(
         draft_kind
     )
     if not judge_key.strip():
         raise ValueError("judge_key is required for deterministic promotion")
-    parent = (
-        await session.execute(
-            select(parent_model).where(parent_model.id == parent_id).with_for_update()
-        )
-    ).scalar_one_or_none()
+    parent_query = select(parent_model).where(parent_model.id == parent_id).with_for_update()
+    if exact:
+        # Preserve pending caller receipts before bypassing the identity map.
+        await session.flush()
+        parent_query = parent_query.execution_options(populate_existing=True)
+    parent = (await session.execute(parent_query)).scalar_one_or_none()
     if parent is None or parent.project_id != project_id:
         raise ValueError("Promotion parent not found in project")
+    if exact:
+        expected = await session.scalar(
+            select(draft_model).where(
+                draft_model.id == expected_draft_id,
+                draft_model.project_id == project_id,
+                parent_column == parent_id,
+            ).with_for_update().execution_options(populate_existing=True)
+        )
+        if expected is None or not expected.is_current:
+            raise ValueError("exact_promotion_source_changed")
+        if (
+            not (expected.content_md or "").strip()
+            or hashlib.sha256(expected.content_md.encode("utf-8")).hexdigest()
+            != expected_body_sha256
+        ):
+            raise ValueError("exact_promotion_body_changed")
+        if draft_kind == "chapter":
+            await _validate_exact_chapter_admission(session, parent, expected)
 
     incumbent = (
         await session.execute(
@@ -549,16 +760,35 @@ async def promote_best_draft(
         )
     ).scalar_one_or_none()
 
-    rows = (
-        await session.execute(
-            select(draft_model, QualityScoreModel)
-            .join(QualityScoreModel, score_draft_column == draft_model.id)
-            .where(
-                parent_column == parent_id,
-                QualityScoreModel.judge_key == judge_key,
-            )
+    def _rejected_incumbent_source() -> dict[str, object] | None:
+        """Only an owned, exact boolean rejection can waive the incumbent veto."""
+        if (
+            draft_kind != "chapter"
+            or incumbent is None
+        ):
+            return None
+        from bestseller.services.adopted_chapter_source import explicit_continuity_source_rejection
+
+        return explicit_continuity_source_rejection(chapter=parent, draft=incumbent)
+
+    incumbent_rejection = _rejected_incumbent_source()
+
+    rows_query = (
+        select(draft_model, QualityScoreModel)
+        .join(QualityScoreModel, score_draft_column == draft_model.id)
+        .where(
+            parent_column == parent_id,
+            QualityScoreModel.judge_key == judge_key,
         )
-    ).all()
+    )
+    if exact:
+        # Keep the incumbent's ranking for the existing replacement policy,
+        # but never let an unchecked challenger compete with the exact source.
+        rows_query = rows_query.where(or_(
+            draft_model.id == expected_draft_id,
+            draft_model.promotion_state == DraftPromotionState.PROMOTED.value,
+        )).execution_options(populate_existing=True)
+    rows = (await session.execute(rows_query)).all()
 
     latest_score_by_draft: dict[UUID, tuple[DraftInstance, QualityScoreModel]] = {}
     for draft, score in rows:
@@ -594,7 +824,17 @@ async def promote_best_draft(
             DraftPromotionState.UNDER_REVIEW.value,
             DraftPromotionState.ELIGIBLE.value,
         }
+        and (not exact or ranked.draft.id == expected_draft_id)
     ]
+    if draft_kind == "chapter":
+        from bestseller.services.adopted_chapter_source import _continuity_source_blocked
+
+        # Match canonical reads, including unknown verdicts on an exact receipt.
+        # This excludes challengers without changing the physical incumbent.
+        candidates = [
+            ranked for ranked in candidates
+            if not _continuity_source_blocked(parent, ranked.draft)
+        ]
     if not candidates:
         return PromotionOutcome(
             changed=False,
@@ -605,9 +845,11 @@ async def promote_best_draft(
     selected = select_best_eligible_draft(candidates)
     assert selected is not None
     if incumbent is not None:
-        if incumbent_ranked is None or promotion_rank_key(
-            selected.candidate
-        ) <= promotion_rank_key(incumbent_ranked.candidate):
+        if incumbent_rejection is None and (
+            incumbent_ranked is None
+            or promotion_rank_key(selected.candidate)
+            <= promotion_rank_key(incumbent_ranked.candidate)
+        ):
             return PromotionOutcome(
                 changed=False,
                 reason="incumbent_is_better_or_unscored",
@@ -618,7 +860,11 @@ async def promote_best_draft(
     try:
         async with session.begin_nested():
             if incumbent is not None:
-                replacement_evidence = {"replacement_draft_id": str(selected.draft.id)}
+                replacement_evidence: dict[str, object] = {
+                    "replacement_draft_id": str(selected.draft.id),
+                }
+                if incumbent_rejection is not None:
+                    replacement_evidence["incumbent_source_rejected"] = incumbent_rejection
                 validate_promotion_transition(
                     DraftPromotionState.PROMOTED,
                     DraftPromotionState.SUPERSEDED,
@@ -638,7 +884,10 @@ async def promote_best_draft(
                         from_state=DraftPromotionState.PROMOTED,
                         to_state=DraftPromotionState.SUPERSEDED,
                         decision_source="replacement",
-                        reason_codes=["better_candidate"],
+                        reason_codes=[
+                            "incumbent_source_rejected"
+                            if incumbent_rejection is not None else "better_candidate"
+                        ],
                         promotion_score=(
                             incumbent_ranked.candidate.score_overall
                             if incumbent_ranked
@@ -787,6 +1036,8 @@ async def promote_chapter_draft(
     min_overall: float = 0.85,
     min_core: float = 0.80,
     workflow_run_id: UUID | None = None,
+    expected_draft_id: UUID | None = None,
+    expected_body_sha256: str | None = None,
 ) -> PromotionOutcome:
     return await promote_best_draft(
         session,
@@ -797,4 +1048,6 @@ async def promote_chapter_draft(
         min_overall=min_overall,
         min_core=min_core,
         workflow_run_id=workflow_run_id,
+        expected_draft_id=expected_draft_id,
+        expected_body_sha256=expected_body_sha256,
     )

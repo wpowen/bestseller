@@ -119,7 +119,7 @@ def test_resolve_otherworld_cross_system_by_preset() -> None:
         genre_preset_key="portal-fantasy",
     )
     assert profile.category_key == "otherworld-cross-system"
-    assert "identity_debt_tracking" in profile.plan_rubric.required_checks
+    assert "identity_obligation_tracking" in profile.plan_rubric.required_checks
 
 
 def test_rule_survival_meta_resolves_to_suspense_mystery_before_progression() -> None:

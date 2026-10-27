@@ -27,6 +27,8 @@ class TaskEnqueuedResponse(BaseModel):
 
 
 class AutowriteRequest(BaseModel):
+    autonomous_book: bool = False  # explicit full-book continuation control, not story data
+    requested_model: str | None = None
     premise: str | None = None  # overrides project premise if provided
     force: bool = False  # rerun even if a pipeline is already active
 

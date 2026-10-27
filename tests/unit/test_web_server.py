@@ -9,8 +9,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from support.recovery_entry_seams import offline_review_resume, offline_web_owner  # noqa: F401
 
 from bestseller.services.pipelines import ProjectRepairPauseError
+from bestseller.services.progress_context import emit_activity
 from bestseller.web import server as web_server
 
 pytestmark = pytest.mark.unit
@@ -109,16 +111,10 @@ def test_build_preview_payload_includes_html_and_stats() -> None:
 
 
 def test_methodology_course_document_has_24_complete_lessons() -> None:
-    doc_path = (
-        Path(__file__).resolve().parents[2]
-        / "docs"
-        / "novel-writing-methodology-course.md"
-    )
+    doc_path = Path(__file__).resolve().parents[2] / "docs" / "novel-writing-methodology-course.md"
     content = doc_path.read_text(encoding="utf-8")
 
-    lesson_matches = list(
-        re.finditer(r"^## 第\s*\d{2}\s*章[：:].+$", content, re.MULTILINE)
-    )
+    lesson_matches = list(re.finditer(r"^## 第\s*\d{2}\s*章[：:].+$", content, re.MULTILINE))
 
     assert len(lesson_matches) == 24
     required_parts = [
@@ -142,9 +138,7 @@ def test_methodology_course_document_has_24_complete_lessons() -> None:
         "### 来源与框架映射",
     ]
     for idx, match in enumerate(lesson_matches):
-        end = lesson_matches[idx + 1].start() if idx + 1 < len(lesson_matches) else len(
-            content
-        )
+        end = lesson_matches[idx + 1].start() if idx + 1 < len(lesson_matches) else len(content)
         lesson_body = content[match.start() : end]
         assert len(lesson_body) >= 3000, f"{match.group(0)} too short"
         for required in required_parts:
@@ -442,10 +436,8 @@ def test_apply_project_titles_to_tasks_uses_database_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeSession:
-        # 2026-07-28: 该查询同时取 status，任务卡才能承认已完结的书
-        # （见 test_task_card_follows_project_completion.py）。
-        async def execute(self, _stmt: object) -> list[tuple[str, str, str]]:
-            return [("book-a", "青囊不语问阴阳", "writing")]
+        async def scalars(self, _stmt: object):
+            return [SimpleNamespace(slug="book-a", title="青囊不语问阴阳", status="writing")]
 
     class _SessionScope:
         async def __aenter__(self) -> _FakeSession:
@@ -571,7 +563,9 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _stuck_autowrite_task(slug: str, *, stage: str = "machine_repair_required") -> web_server.WebTaskState:
+def _stuck_autowrite_task(
+    slug: str, *, stage: str = "machine_repair_required"
+) -> web_server.WebTaskState:
     return web_server.WebTaskState(
         task_id=str(uuid4()),
         task_type="autowrite",
@@ -683,9 +677,7 @@ def test_set_pending_project_model_stashes_choice_on_active_task(
     task.payload = {"slug": "custom-xianxia-1782402246", "_run_conception": True}
     manager._tasks[task.task_id] = task
 
-    assert manager.set_pending_project_model(
-        "custom-xianxia-1782402246", "minimax-m3"
-    )
+    assert manager.set_pending_project_model("custom-xianxia-1782402246", "minimax-m3")
     assert manager._pending_project_model(task.task_id) == "minimax-m3"
     # Persisted to disk so a web restart mid-conception keeps the choice.
     assert "minimax-m3" in (tmp_path / "tasks.json").read_text(encoding="utf-8")
@@ -726,7 +718,7 @@ def test_dashboard_task_filter_keeps_only_executing_tasks() -> None:
     assert [task["task_id"] for task in visible] == ["queued", "running"]
 
 
-def test_library_book_state_marks_finished_content_as_closed() -> None:
+def test_library_book_state_marks_finished_content_as_delivery_pending() -> None:
     state = web_server._library_book_state(
         status="revising",
         completed_units=1,
@@ -734,11 +726,11 @@ def test_library_book_state_marks_finished_content_as_closed() -> None:
         has_content=True,
     )
 
-    assert state == "closed_complete"
-    assert web_server._library_book_state_label(state) == "已闭环"
+    assert state == "delivery_pending"
+    assert web_server._library_book_state_label(state) == "正文齐备，待交付"
 
 
-def test_library_book_state_manual_completed_overrides_repair_attention() -> None:
+def test_library_book_state_manual_completed_cannot_override_live_work_without_delivery() -> None:
     state = web_server._library_book_state(
         status="completed",
         completed_units=0,
@@ -748,7 +740,7 @@ def test_library_book_state_manual_completed_overrides_repair_attention() -> Non
         has_active_workflow=True,
     )
 
-    assert state == "closed_complete"
+    assert state == "in_progress"
 
 
 def test_library_book_state_archive_overrides_shelf_state() -> None:
@@ -772,6 +764,7 @@ def test_project_row_to_dashboard_task_preserves_closed_book_details() -> None:
             "title": "全员群把我挂成贪污犯后，我让老板当众自爆",
             "book_state": "closed_complete",
             "book_state_label": "已闭环",
+            "delivery_closure": {"status": "verified", "is_complete": True},
             "project_type": "fanqie_short",
             "content_mode": "fanqie_short_story",
             "unit_kind": "single_story",
@@ -1001,10 +994,10 @@ def test_project_identity_payload_overrides_fanqie_short_stale_chapter_fields(
     )
 
     assert payload["title"] == "全员群把我挂成贪污犯后，我让老板当众自爆"
-    assert payload["status"] == "completed"
+    assert payload["status"] == "revising"
     assert payload["target_chapters"] == 1
     assert payload["unit_label"] == "全文"
-    assert payload["book_state"] == "closed_complete"
+    assert payload["book_state"] == "delivery_pending"
     assert "陆寻" not in str(payload["synopsis"])
     assert "旧系统流" not in payload["tags"]
 
@@ -1021,7 +1014,11 @@ def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
     assert "window.startNewCreationFlow = function()" in html
-    assert "function resetWizardState()" in html
+    assert "function resetWizardState({clearConfigurationDraft = true} = {})" in html
+    assert "resetCreationConfiguration(clearConfigurationDraft);" in html
+    assert "resetWizardState({clearConfigurationDraft:false});" in html
+    new_flow = html.split("window.startNewCreationFlow = function()", 1)[1].split("};", 1)[0]
+    assert "resetWizardState();" in new_flow and "switchView('wizard');" in new_flow
     assert "onclick=\"switchView('wizard')\"" not in html
     assert html.count('onclick="startNewCreationFlow()"') >= 4
 
@@ -1198,8 +1195,7 @@ def test_quickstart_defaults_to_full_book_writing_after_conception() -> None:
 
     assert 'id="stopAfterConceptionToggle" checked' not in html
     assert (
-        "stop_after_conception: $('#stopAfterConceptionToggle').checked ? true : undefined"
-        in html
+        "stop_after_conception: $('#stopAfterConceptionToggle').checked ? true : undefined" in html
     )
     assert "不进入整本书规划与写作" in html
 
@@ -1219,7 +1215,10 @@ def test_public_writing_preset_catalog_payload_sanitizes_story_specific_override
         if item["key"] == "apocalypse-supply"
     )
 
-    assert platform_market.get("platform_target") == "番茄小说"
+    # Catalog labels describe an optional platform, not adopted profile content.
+    assert payload["platform_presets"][0]["key"] == "fanqie"
+    assert payload["platform_presets"][0]["name"] == "番茄小说"
+    assert "platform_target" not in platform_market
     assert "reader_promise" not in platform_market
     assert "selling_points" not in genre_market
     assert "trope_keywords" not in genre_market
@@ -1242,8 +1241,48 @@ def test_public_writing_preset_catalog_exposes_genre_dimensions() -> None:
     assert "情绪关系" in romantasy["narrative_drives"]
 
 
-def test_public_writing_preset_catalog_exposes_genre_creativity() -> None:
-    payload = web_server._public_writing_preset_catalog_payload()
+def test_public_writing_preset_catalog_exposes_genre_creativity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public catalog contract is tested with an isolated valid card.
+
+    The production distillation gate may legitimately have no active verified
+    card on a developer machine. This test verifies the web projection when a
+    valid source is available without weakening that gate or depending on the
+    current local artifact inventory.
+    """
+    from bestseller.services.distilled_strategy_compiler import (
+        DistilledStrategyCard,
+        SelectedMechanism,
+    )
+    import bestseller.services.genre_creativity as genre_creativity
+
+    card = DistilledStrategyCard(
+        aggregate_key="otherworld-cross-system",
+        maturity_score=0.82,
+        maturity_status="verified",
+        source_count=12,
+        provenance_status="verified",
+        privacy_status="verified",
+        selected_mechanisms=[
+            SelectedMechanism(
+                mechanism_id="test-mechanism",
+                source_confidence=0.9,
+                design_role="series_engine",
+                adaptation_instruction="bind to project-specific rules",
+                required_project_specific_binding="bind to selected genre",
+                failure_mode="generic reuse",
+            )
+        ],
+        reader_reward_mix=["knowledge_arbitrage"],
+        craft_controls=["concrete choices"],
+    )
+    monkeypatch.setattr(genre_creativity, "compile_distilled_strategy_card", lambda **_: card)
+    genre_creativity.get_genre_creativity_catalog_payload.cache_clear()
+    try:
+        payload = web_server._public_writing_preset_catalog_payload()
+    finally:
+        genre_creativity.get_genre_creativity_catalog_payload.cache_clear()
 
     creativity = payload["genre_creativity"]
     creativity_json = json.dumps(creativity, ensure_ascii=False)
@@ -1442,7 +1481,10 @@ def test_quickstart_response_contains_frozen_input_receipt(
     assert receipt["concept_seed_hash"] == web_server._quickstart_seed_hash(seed)
     assert receipt["tone_preference"] == "light"
     assert receipt["effect_skills"] == ["comedy_engine"]
-    assert receipt["contract_hash"] == task["quickstart_meta"]["creation_input_receipt"]["contract_hash"]
+    assert (
+        receipt["contract_hash"]
+        == task["quickstart_meta"]["creation_input_receipt"]["contract_hash"]
+    )
 
 
 def test_autowrite_task_persists_creation_envelope_before_worker_start(
@@ -1467,6 +1509,27 @@ def test_autowrite_task_persists_creation_envelope_before_worker_start(
 
     reloaded = web_server.WebTaskManager(persist_path=persist_path)
     assert reloaded.get_task(task_id)["payload"] == payload
+
+
+def test_failed_conception_placeholder_is_relabelled_terminally(tmp_path: Path) -> None:
+    manager = web_server.WebTaskManager(persist_path=tmp_path / "web-tasks.json")
+    task = web_server.WebTaskState(
+        task_id="failed-conception",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-09-04T01:21:00+00:00",
+        updated_at="2026-09-04T01:21:00+00:00",
+        title="异世大陆·构思中 09-04 09:21",
+        current_stage="conception",
+    )
+    manager._tasks[task.task_id] = task
+
+    manager._mark_failed(task.task_id, "CONCEPT_TOURNAMENT_NO_QUALIFIED_WINNER")
+
+    failed = manager.get_task(task.task_id)
+    assert failed is not None
+    assert failed["title"] == "异世大陆·构思失败 09-04 09:21"
+    assert failed["status"] == "failed"
 
 
 def test_quickstart_client_schema_rejects_missing_or_stale_versions() -> None:
@@ -1562,6 +1625,38 @@ def test_quickstart_task_passes_selected_creative_direction(
     assert payload["creative_brief"]["key"] == "cross-genre-friction"
     assert hints["creative_direction"] == "奇幻/玄幻/异世界 × 言情/女性向"
     assert "固定套路" in hints["usage_rule"]
+
+
+def test_quickstart_custom_taxonomy_direction_keeps_exact_subgenre_grammar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "otherworld-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    manager.create_quickstart_task(
+        {
+            "selection": {
+                "channel": "male",
+                "genre": "xuanhuan",
+                "sub_genre": "otherworld-continent",
+                "tags": ["异世大陆", "穿越", "升级流", "金手指", "经营"],
+            },
+            "creative_key": "distilled-mechanism-remix",
+            "chapter_count": 60,
+        }
+    )
+
+    brief = captured["payload"]["creative_brief"]
+    assert "剧情语法库:otherworld-cross-system" in brief["source_mix"]
+    assert "悬疑/惊悚/犯罪" not in brief["genre_lenses"]
 
 
 def test_quickstart_task_without_explicit_selection_skips_autobake(
@@ -1710,13 +1805,9 @@ def test_every_long_serial_creation_input_reaches_its_runtime_owner(
 
     manager = web_server.WebTaskManager()
     captured: dict[str, object] = {}
-    bundle = web_server.build_concept_lab_catalog(
-        "apocalypse-supply", count=1
-    ).bundles[0]
+    bundle = web_server.build_concept_lab_catalog("apocalypse-supply", count=1).bundles[0]
 
-    def fake_create_autowrite_task(
-        self: object, payload: dict[str, object]
-    ) -> dict[str, object]:
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
         captured["payload"] = payload
         return {"task_id": "all-inputs-task"}
 
@@ -1783,13 +1874,12 @@ def test_every_long_serial_creation_input_reaches_its_runtime_owner(
     assert intent["llm_model_id"] == "test/model"
     assert intent["concept_seed"].startswith("用户明确要求")
     assert intent["concept_lab"]["bundle_id"] == bundle.bundle_id
-    assert intent["story_enhancers"]["effect_skills"] == [
-        "suspense_reveal_engine"
-    ]
+    assert intent["story_enhancers"]["effect_skills"] == ["suspense_reveal_engine"]
 
     conception_block = _creation_intent_prompt_block(
         {
             "genre_intent_contract": payload["genre_intent_contract"],
+            "creation_intent_contract": payload["creation_intent_contract"],
             "language": payload["language"],
         }
     )
@@ -1804,6 +1894,7 @@ def test_every_long_serial_creation_input_reaches_its_runtime_owner(
         sub_genre=payload["sub_genre"],
         audience=payload["audience"],
         metadata_json={
+            "creation_intent_contract": payload["creation_intent_contract"],
             "genre_intent_contract": payload["genre_intent_contract"],
             "story_enhancers": payload["story_enhancers"],
             "concept_lab": payload["concept_lab_bundle"],
@@ -1823,9 +1914,7 @@ def test_fanqie_length_and_pov_override_structure_and_writer_contract(
     manager = web_server.WebTaskManager()
     captured: dict[str, object] = {}
 
-    def fake_create_autowrite_task(
-        self: object, payload: dict[str, object]
-    ) -> dict[str, object]:
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
         captured["payload"] = payload
         return {"task_id": "fanqie-inputs-task"}
 
@@ -1998,10 +2087,16 @@ def test_reader_chapter_state_separates_blocked_queued_and_active_repair() -> No
         chapter_status="revision",
         production_state="ok",
         availability="available",
-    ) == ("formal", "正式版")
+    ) == ("formal", "已保存稿")
     assert web_server._reader_chapter_state(
         chapter_status="revision",
         production_state="blocked",
+        availability="repair_in_progress",
+        pending_rewrite_task_count=2,
+    ) == ("blocked", "阻塞待修")
+    assert web_server._reader_chapter_state(
+        chapter_status="revision",
+        production_state="repairing",
         availability="repair_in_progress",
         pending_rewrite_task_count=2,
     ) == ("queued_repair", "排队修复")
@@ -2010,6 +2105,7 @@ def test_reader_chapter_state_separates_blocked_queued_and_active_repair() -> No
         production_state="blocked",
         availability="repair_in_progress",
         auto_repair_in_progress=True,
+        pending_rewrite_task_count=2,
     ) == ("active_repair", "正在修复")
     assert web_server._reader_chapter_state(
         chapter_status="revision",
@@ -2234,11 +2330,7 @@ def test_dashboard_requests_inactive_tasks_so_failures_stay_visible() -> None:
     from pathlib import Path
 
     html = (
-        Path(__file__).resolve().parents[2]
-        / "src"
-        / "bestseller"
-        / "web"
-        / "novel_quickstart.html"
+        Path(__file__).resolve().parents[2] / "src" / "bestseller" / "web" / "novel_quickstart.html"
     ).read_text(encoding="utf-8")
 
     idx = html.index("/api/tasks?summary=1")
@@ -2255,11 +2347,7 @@ def test_dashboard_boot_state_does_not_claim_there_are_zero_tasks() -> None:
     from pathlib import Path
 
     html = (
-        Path(__file__).resolve().parents[2]
-        / "src"
-        / "bestseller"
-        / "web"
-        / "novel_quickstart.html"
+        Path(__file__).resolve().parents[2] / "src" / "bestseller" / "web" / "novel_quickstart.html"
     ).read_text(encoding="utf-8")
 
     assert 'id="navTaskCount">--</span>' in html
@@ -2386,9 +2474,7 @@ def test_cancel_db_repair_task_unknown_project_is_not_found(
     monkeypatch.setattr(web_server, "get_project_by_slug", fake_get_project_by_slug)
 
     settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
-    outcome = asyncio.run(
-        web_server._cancel_db_repair_task_async(settings, "db-repair:ghost-book")
-    )
+    outcome = asyncio.run(web_server._cancel_db_repair_task_async(settings, "db-repair:ghost-book"))
 
     assert outcome == "not_found"
 
@@ -2513,7 +2599,7 @@ def test_worker_heal_progress_snapshot_reads_redis_progress(
     assert snapshot["current_stage"] == "project_repair_chapter_started"
     assert snapshot["progress_events"] == [
         {
-            "timestamp": 1779083333.4,
+            "timestamp": datetime.fromtimestamp(1779083333.4, UTC).isoformat(),
             "stage": "project_repair_chapter_started",
             "payload": {"project_slug": "novel-a", "chapter_number": 22},
         }
@@ -2625,6 +2711,137 @@ def test_load_worker_task_summary_surfaces_redis_owned_autowrite_job(
     assert summary["synthetic_worker_task"] is True
 
 
+def test_load_worker_task_summary_projects_terminal_worker_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        web_server,
+        "_load_worker_heal_progress_snapshot",
+        lambda redis_url, job_id: {
+            "status": "incomplete",
+            "current_stage": "outline_replan_completed_downstream_retry_pending",
+            "progress_events": [
+                {
+                    "timestamp": 1_757_000_000.0,
+                    "stage": "outline_replan_completed_downstream_retry_pending",
+                    "payload": {"error": "newer approved outline"},
+                }
+            ],
+            "latest_payload": {"error": "newer approved outline"},
+        },
+    )
+
+    summary = web_server._load_worker_task_summary(
+        SimpleNamespace(redis=SimpleNamespace(url="redis://stub")),
+        "outline-replan:heal:novel-a",
+    )
+
+    assert summary is not None
+    assert summary["status"] == "incomplete"
+    assert summary["error"] == "newer approved outline"
+    assert summary["updated_at"] == datetime.fromtimestamp(1_757_000_000.0, UTC).isoformat()
+
+
+def test_worker_progress_event_timestamps_are_browser_safe_iso() -> None:
+    events, stage, payload = web_server._normalise_worker_progress_events(
+        [
+            '{"ts":1757000000.0,"message":"chapter_pipeline_started","data":{"chapter_number":1}}',
+            '{"ts":"1757000001.0","message":"chapter_pipeline_completed","data":{}}',
+        ]
+    )
+
+    assert stage == "chapter_pipeline_completed"
+    assert payload == {}
+    assert [event["timestamp"] for event in events] == [
+        datetime.fromtimestamp(1_757_000_000.0, UTC).isoformat(),
+        datetime.fromtimestamp(1_757_000_001.0, UTC).isoformat(),
+    ]
+
+
+def test_load_worker_task_summaries_keeps_only_newest_receipt_per_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        web_server,
+        "_fetch_heal_owned_slugs_by_kind",
+        lambda redis_url, kind: {"novel-a"} if kind == "autowrite" else set(),
+    )
+    monkeypatch.setattr(
+        web_server,
+        "_fetch_heal_result_slugs_by_kind",
+        lambda redis_url, kind: {"novel-a"} if kind == "outline_replan" else set(),
+    )
+
+    def fake_summary(settings, task_id):
+        kind = task_id.split(":", 1)[0]
+        timestamp = 2.0 if kind == "outline-replan" else 1.0
+        return {
+            "task_id": task_id,
+            "task_type": "outline_replan" if kind == "outline-replan" else "autowrite",
+            "project_slug": "novel-a",
+            "updated_at": timestamp,
+            "status": "incomplete" if kind == "outline-replan" else "failed",
+        }
+
+    monkeypatch.setattr(web_server, "_load_worker_task_summary", fake_summary)
+
+    summaries = web_server._load_worker_task_summaries(
+        SimpleNamespace(redis=SimpleNamespace(url="redis://stub")),
+    )
+
+    assert len(summaries) == 1
+    assert summaries[0]["task_id"] == "outline-replan:heal:novel-a"
+
+
+def test_resolve_worker_task_resume_target_requires_matching_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(redis=SimpleNamespace(url="redis://stub"))
+    monkeypatch.setattr(
+        web_server,
+        "_load_worker_task_summary",
+        lambda _settings, task_id: {
+            "task_id": task_id,
+            "project_slug": "novel-a",
+            "task_type": "outline_replan",
+        },
+    )
+
+    assert web_server._resolve_worker_task_resume_target(
+        settings,
+        "outline-replan:heal:novel-a",
+    ) == ("outline_replan", "novel-a")
+    # A syntactically plausible id cannot resume another project without a
+    # matching worker receipt whose project slug agrees with the suffix.
+    assert web_server._resolve_worker_task_resume_target(
+        settings,
+        "outline-replan:heal:novel-b",
+    ) is None
+
+
+def test_worker_resume_uses_ordinary_autowrite_after_prose_exists() -> None:
+    assert web_server._worker_resume_enqueue_kind(
+        "outline_replan",
+        outline_replan_available=False,
+    ) == "autowrite"
+    assert web_server._worker_resume_enqueue_kind(
+        "outline_replan",
+        outline_replan_available=True,
+    ) == "outline_replan"
+    assert web_server._worker_resume_enqueue_kind(
+        "repair",
+        outline_replan_available=False,
+    ) == "repair"
+    assert not web_server._worker_resume_requires_autowrite_block(
+        "outline_replan",
+        outline_replan_available=True,
+    )
+    assert web_server._worker_resume_requires_autowrite_block(
+        "outline_replan",
+        outline_replan_available=False,
+    )
+
+
 def test_reader_chapter_availability_uses_production_gate() -> None:
     assert web_server._reader_chapter_availability("ok", 2100) == "available"
     assert web_server._reader_chapter_availability("blocked", 2100) == "repair_in_progress"
@@ -2665,9 +2882,12 @@ def test_autowrite_worker_marks_structural_repair_pause_without_traceback(
             current_stage="queued",
         )
 
+    async def _no_existing_project(_statement):
+        return None
+
     class _SessionScope:
         async def __aenter__(self) -> object:
-            return object()
+            return SimpleNamespace(scalar=_no_existing_project)
 
         async def __aexit__(self, *_args: object) -> None:
             return None
@@ -2702,6 +2922,77 @@ def test_autowrite_worker_marks_structural_repair_pause_without_traceback(
     assert task["current_stage"] == "blocked_structural_repair"
     assert "paused for structural repair" in str(task["error"])
     assert "Traceback" not in str(task["error"])
+
+
+def test_autowrite_worker_cancellation_stops_ambient_pipeline_before_next_paid_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancellation observed by ambient progress reaches the worker terminal state."""
+
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "ambient-cancel-task"
+    with manager._lock:
+        manager._tasks[task_id] = web_server.WebTaskState(
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="ambient-cancel-book",
+            title="Ambient cancel",
+            current_stage="queued",
+            cancel_requested=False,
+        )
+
+    async def _no_existing_project(_statement):
+        return None
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return SimpleNamespace(scalar=_no_existing_project)
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+
+    async def _fake_pipeline(**kwargs: object) -> object:
+        calls.append("first_paid_call")
+        progress = kwargs["progress"]
+        assert callable(progress)
+        assert manager.request_cancel(task_id)
+        emit_activity("between_paid_calls")
+        calls.append("second_paid_call")
+        raise AssertionError("the cancelled pipeline reached its second paid call")
+
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _fake_pipeline)
+
+    manager._run_autowrite_worker(
+        task_id,
+        {
+            "_run_conception": False,
+            "slug": "ambient-cancel-book",
+            "title": "Ambient cancel",
+            "genre": "玄幻",
+            "target_words": 6000,
+            "target_chapters": 3,
+            "premise": "取消控制流回归。",
+            "writing_profile": {},
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "cancelled"
+    assert calls == ["first_paid_call"]
 
 
 def test_quickstart_concept_lab_reaches_worker_project_payload(
@@ -2746,8 +3037,7 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     )
     autowrite_payload = captured["autowrite_payload"]
     assert (
-        quickstart_task["quickstart_meta"]["concept_lab_summary"]["bundle_id"]
-        == bundle.bundle_id
+        quickstart_task["quickstart_meta"]["concept_lab_summary"]["bundle_id"] == bundle.bundle_id
     )
     assert autowrite_payload["user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert autowrite_payload["user_hints"]["concept_seed"] == explicit_seed
@@ -2765,6 +3055,9 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
             current_stage="queued",
         )
 
+    async def _no_existing_project(*_args):
+        return None
+
     class _SessionScope:
         async def __aenter__(self) -> object:
             return object()
@@ -2772,9 +3065,7 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
         async def __aexit__(self, *_args: object) -> None:
             return None
 
-    class _PipelineResult:
-        def model_dump(self, *, mode: str = "json") -> dict[str, object]:
-            return {"project_slug": "concept-worker", "mode": mode}
+    from bestseller.domain.planning import AutowriteResult
 
     async def _fake_architect_story_facets(
         _session: object,
@@ -2810,16 +3101,19 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
 
     async def _fake_run_autowrite_pipeline(**kwargs: object) -> object:
         captured["pipeline_kwargs"] = kwargs
-        return _PipelineResult()
+        return AutowriteResult(project_id=uuid4(), project_slug=kwargs["project_payload"].slug,
+            planning_workflow_run_id=uuid4(), project_workflow_run_id=uuid4(), chapter_count=0)
 
     from bestseller.services import conception as conception_services
     from bestseller.services import story_architect as story_architect_services
 
     monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(web_server, "get_project_by_slug", _no_existing_project)
     monkeypatch.setattr(
         web_server,
         "load_settings",
-        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False),
+                                output=SimpleNamespace(base_dir=str(tmp_path))),
     )
     monkeypatch.setattr(
         story_architect_services,
@@ -2838,6 +3132,9 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     task = manager.get_task(task_id)
     assert task is not None
     assert task["status"] == "completed"
+    assert task["result"]["project_id"]
+    assert task["result"]["chapter_count"] == 0
+    assert task["result"]["export_status"] == "not_exported"
     assert captured["architect_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert captured["conception_user_hints"]["concept_lab"]["bundle_id"] == bundle.bundle_id
     assert captured["architect_user_hints"]["concept_seed"] == explicit_seed
@@ -2847,7 +3144,8 @@ def test_quickstart_concept_lab_reaches_worker_project_payload(
     assert project_payload.metadata["hook_spec"]["one_liner"] == bundle.hook_spec["one_liner"]
     assert project_payload.metadata["concept_seed"] == explicit_seed
     assert "story_facets" not in project_payload.metadata
-    assert "conception_artifacts" not in project_payload.metadata
+    assert "conception_artifacts" in project_payload.metadata
+    assert "story_architect_proposal" in project_payload.metadata["conception_artifacts"]
     assert project_payload.writing_profile.market.reader_promise == bundle.reader_promise
 
 
@@ -2975,8 +3273,21 @@ def test_creation_intent_contract_is_persisted_to_project_metadata() -> None:
     assert '"concept_seed_present": bool(' in tail
 
 
-def test_appeal_block_closes_the_conception_workflow_row() -> None:
-    """A blocked conception must not leak its workflow row as ``running``.
+def test_verified_conception_artifacts_override_stale_request_metadata() -> None:
+    """The packaging receipt must reach create_project after extra metadata merge."""
+
+    import inspect
+
+    source = inspect.getsource(web_server.WebTaskManager._run_autowrite_worker)
+    merge_idx = source.index("project_metadata.update(extra_meta)")
+    create_idx = source.index("project_create = ProjectCreate(", merge_idx)
+    region = source[merge_idx:create_idx]
+
+    assert 'project_metadata["conception_artifacts"] = conception_artifacts' in region
+
+
+def test_any_conception_exception_closes_the_conception_workflow_row() -> None:
+    """A failed or cancelled conception must not leak a ``running`` row.
 
     The success path sets the ``conception_initial`` row to COMPLETED, but the
     AppealBarNotMetError path unwinds the inner ``session_scope`` (which rolls
@@ -3001,20 +3312,19 @@ def test_appeal_block_closes_the_conception_workflow_row() -> None:
     call_idx = source.index("run_conception_pipeline(")
     region = source[call_idx : call_idx + 3800]
 
-    assert "except (AppealBarNotMetError, ConceptContractError)" in region, (
-        "the conception call must catch BOTH deliberate-block exception types "
-        "to close the workflow row — ConceptContractError is raised by the "
-        "dry-tournament fail-fast from the same spot, and leaking it would "
-        "re-introduce the stuck-running row for that path"
+    assert "except Exception as exc" in region, (
+        "the conception call must close its workflow row for quality blocks, "
+        "user cancellation, and unexpected ordinary exceptions"
     )
-    assert "conception_workflow_run" in region, (
-        "must reference the workflow row id"
-    )
+    assert "conception_workflow_run" in region, "must reference the workflow row id"
     assert "session_scope(" in region, (
         "row must be closed in a FRESH session — the outer one rolled back"
     )
     assert "WorkflowStatus.FAILED" in region, (
         "the leaked row must be marked failed, not left running"
+    )
+    assert "WorkflowStatus.CANCELLED" in region, (
+        "a user cancellation must preserve its terminal meaning"
     )
     assert "raise" in region, "must re-raise so the sync handler still fails the task"
 
@@ -3047,23 +3357,29 @@ def test_stop_after_conception_persists_contract_without_entering_planning(
         async def __aexit__(self, *_args: object) -> None:
             return None
 
-    contract = {
-        "hook_card": {"one_liner": "殡仪馆接线员能接到死者明天才会拨出的电话。"},
-        "seriality_proof": {"target_chapters": 500, "unit_count_estimate": 60},
-        "story_spine": {"reader_promise": "每通电话都迫使他改变一场将发生的死亡。"},
-    }
+    # Reuse a genuinely validated long-form architecture fixture. This test
+    # checks the conception-only handoff, not synthetic 500-chapter capacity.
+    from test_story_architecture_contract import _concept_contract
+
+    from bestseller.services.concept_contract import require_conception_contract_for_target
+
+    contract = _concept_contract()
+    target_chapters = int(contract["target_chapters"])
+    assert require_conception_contract_for_target(
+        contract, target_chapters=target_chapters
+    ) == contract
 
     async def _fake_conception(*_args: object, **_kwargs: object) -> object:
         return SimpleNamespace(
-            premise="死者来电迫使接线员介入尚未发生的死亡。",
-            title="明日来电",
+            premise=contract["hook_card"]["one_liner"],
+            title="边城通行规则",
             writing_profile={},
             commercial_brief={},
             conception_log=[],
             hook_spec={},
             concept_contract=contract,
-            synopsis="接线员追查明日来电背后的死亡网络。",
-            tags=["都市异能", "悬疑"],
+            synopsis=contract["hook_card"]["one_liner"],
+            tags=["异世界", "经营"],
             story_spine=contract["story_spine"],
             world_model={},
             concept_methodology=None,
@@ -3117,13 +3433,19 @@ def test_stop_after_conception_persists_contract_without_entering_planning(
             "stop_after_conception": True,
             "slug": "concept-review-book",
             "title": "待裁决",
-            "genre": "都市异能",
-            "sub_genre": "黑科技创业",
+            "genre": "异世界",
+            "sub_genre": "经营升级",
             "language": "zh-CN",
-            "target_words": 1_300_000,
-            "target_chapters": 500,
+            "target_words": target_chapters * 2600,
+            "target_chapters": target_chapters,
             "project_type": "linear",
             "premise": "待构思。",
+            "metadata": {
+                "premise": "过期预览前提。",
+                "synopsis": "过期预览简介。",
+                "tags": ["过期标签"],
+                "story_spine": {"core_abnormality": "过期预览脊柱。"},
+            },
         },
     )
 
@@ -3133,11 +3455,12 @@ def test_stop_after_conception_persists_contract_without_entering_planning(
     assert task["result"]["mode"] == "conception_only"
     project_payload = captured["project_payload"]
     assert project_payload.metadata["concept_contract"] == contract
+    assert project_payload.metadata["premise"] == contract["hook_card"]["one_liner"]
+    assert project_payload.metadata["synopsis"] == contract["hook_card"]["one_liner"]
+    assert project_payload.metadata["tags"] == ["异世界", "经营"]
+    assert project_payload.metadata["story_spine"] == contract["story_spine"]
     assert project_payload.metadata["planning_status"] == "awaiting_concept_approval"
-    assert any(
-        event["stage"] == "conception_only_complete"
-        for event in task["progress_events"]
-    )
+    assert any(event["stage"] == "conception_only_complete" for event in task["progress_events"])
 
 
 def test_concept_contract_failure_is_user_facing_and_stops_before_planning(
@@ -3199,8 +3522,7 @@ def test_concept_contract_failure_is_user_facing_and_stops_before_planning(
     assert "未创建书籍、未进入规划" in task["error"]
     assert "Traceback" not in task["error"]
     assert any(
-        event["stage"] == "one_sentence_outline_blocked"
-        for event in task["progress_events"]
+        event["stage"] == "one_sentence_outline_blocked" for event in task["progress_events"]
     )
 
 
@@ -3296,7 +3618,8 @@ def test_pipeline_flow_html_contains_expected_mount_points() -> None:
     html = web_server._read_pipeline_flow_html()
 
     assert "流水线数据流" in html
-    assert "/api/projects/${encodeURIComponent(slug)}/pipeline-flow" in html
+    assert "/api/projects/${encodeURIComponent(slug)}/${endpoint}" in html
+    assert "fetchData('pipeline-flow')" in html
     assert "phaseContainer" in html
     assert "issuesPanel" in html
 
@@ -3390,9 +3713,7 @@ def test_load_from_disk_never_resumes_persisted_cancel_request(tmp_path: Path) -
     assert task["current_stage"] == "cancelled"
     assert task["cancel_requested"] is False
     assert manager._pending_auto_resume_ids == []
-    assert [event["stage"] for event in task["progress_events"]] == [
-        "cancelled_after_restart"
-    ]
+    assert [event["stage"] for event in task["progress_events"]] == ["cancelled_after_restart"]
 
 
 def test_load_from_disk_dedupes_active_same_slug_zombies(tmp_path: Path) -> None:
@@ -5129,9 +5450,7 @@ def test_advisory_outline_verdict_is_not_reported_as_the_cause(
         "load_settings",
         lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
     )
-    monkeypatch.setattr(
-        conception_services, "run_conception_pipeline", _blocked_by_blurb
-    )
+    monkeypatch.setattr(conception_services, "run_conception_pipeline", _blocked_by_blurb)
     monkeypatch.setattr(web_server, "run_autowrite_pipeline", _must_not_enter_planning)
 
     manager._run_autowrite_worker(

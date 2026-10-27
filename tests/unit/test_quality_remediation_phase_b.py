@@ -68,6 +68,7 @@ def test_final_gate_blocks_low_voice_when_enforced(monkeypatch) -> None:
             prose_quality=SimpleNamespace(
                 anti_meta_enabled=False,
                 anti_meta_severity="block",
+                in_scene_ending_enabled=False,
                 in_scene_ending_severity="block",
                 show_dont_tell_enabled=False,
                 show_dont_tell_severity="warn",
@@ -102,6 +103,7 @@ def test_final_gate_voice_debt_is_soft(monkeypatch) -> None:
             prose_quality=SimpleNamespace(
                 anti_meta_enabled=False,
                 anti_meta_severity="block",
+                in_scene_ending_enabled=False,
                 in_scene_ending_severity="block",
                 show_dont_tell_enabled=False,
                 show_dont_tell_severity="warn",

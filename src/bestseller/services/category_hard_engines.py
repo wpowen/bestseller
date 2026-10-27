@@ -74,6 +74,14 @@ class CategoryHardEngineReport:
 
 
 _CONTRACTS: dict[str, CategoryHardEngineContract] = {
+    "realistic-life": CategoryHardEngineContract(
+        category_key="realistic-life",
+        display_name="现实生活 / Realistic Life",
+        state_ledger_keys=("relationship_state",),
+        hard_gate_keys=("premium_state_ledger_report",),
+        chapter_update_keys=("relationship_events",),
+        benchmark_focus=("人物主动选择", "生活关系变化有后果", "事件与权威快照一致"),
+    ),
     "action-progression": CategoryHardEngineContract(
         category_key="action-progression",
         display_name="升级流 / Action Progression",
@@ -445,6 +453,21 @@ def evaluate_category_hard_engine(
     *,
     category_key: str,
 ) -> CategoryHardEngineReport:
+    projection_invalid = False
+    if 'premium_state_source_projection' in metadata:
+        from bestseller.services.story_bible_projection import validated_premium_projection
+        from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+
+        try:
+            view = validated_premium_projection(metadata)
+            if view is None:
+                raise ValueError('premium_state_source_projection_missing')
+        except ValueError:
+            projection_invalid = True
+        else:
+            metadata = {**metadata, 'premium_state_ledger': view['active_ledger'],
+                'premium_state_snapshot': view['snapshot'],
+                'premium_state_ledger_report': validate_premium_state_ledger(view['active_ledger']).to_dict()}
     contract = get_category_hard_engine_contract(category_key)
     if contract is None:
         return CategoryHardEngineReport(
@@ -463,10 +486,65 @@ def evaluate_category_hard_engine(
             ),
         )
 
+    # The realistic contract consumes the existing event producer and validator;
+    # it must not require romance-only ledgers or invent nominal gate receipts.
+    realistic_findings: list[CategoryHardEngineFinding] = []
+    if projection_invalid:
+        realistic_findings.append(CategoryHardEngineFinding(
+            code='category_source_projection_invalid', severity='critical',
+            message='Current state projection does not match its retained source ledger.',
+            path='premium_state_source_projection',
+        ))
+    if category_key == "realistic-life":
+        from bestseller.services.material_density import premium_ledger_is_category_template
+        from bestseller.services.premium_state_ledger import (
+            materialize_premium_state_snapshot,
+            validate_premium_state_ledger,
+        )
+
+        ledger = _as_mapping(metadata.get("premium_state_ledger"))
+        metadata = {**metadata, "relationship_events": ledger.get("relationship_events")}
+        ledger_report = validate_premium_state_ledger(ledger)
+        stored_report = _as_mapping(metadata.get("premium_state_ledger_report"))
+        folded = materialize_premium_state_snapshot(ledger)
+        snapshot = _as_mapping(metadata.get("premium_state_snapshot"))
+        if (
+            not ledger
+            or premium_ledger_is_category_template(ledger, metadata.get("premium_capability_pack"))
+            or not ledger_report.passed
+            or stored_report.get("passed") is not True
+            or _as_mapping(metadata.get("premium_state_ledger_provenance")).get("status")
+            == "needs_replan"
+        ):
+            realistic_findings.append(
+                CategoryHardEngineFinding(
+                    code="category_hard_gate_missing",
+                    severity="high",
+                    missing_keys=("premium_state_ledger_report",),
+                    message=(
+                        "Realistic-life state events have not passed "
+                        "the existing state ledger gate."
+                    ),
+                    path="premium_state_ledger_report",
+                )
+            )
+        if snapshot.get("relationship_state") != folded.get("relationship_state"):
+            realistic_findings.append(
+                CategoryHardEngineFinding(
+                    code="category_state_ledger_missing",
+                    severity="critical",
+                    missing_keys=("relationship_state",),
+                    message=(
+                        "Realistic-life relationship snapshot does not match its event history."
+                    ),
+                    path="premium_state_snapshot.relationship_state",
+                )
+            )
+
     present_state = _present_keys(metadata, contract.state_ledger_keys)
     present_gates = _present_keys(metadata, contract.hard_gate_keys)
     present_updates = _present_keys(metadata, contract.chapter_update_keys)
-    findings: list[CategoryHardEngineFinding] = []
+    findings: list[CategoryHardEngineFinding] = list(realistic_findings)
     missing_state = _missing_keys(contract.state_ledger_keys, present_state)
     missing_gates = _missing_keys(contract.hard_gate_keys, present_gates)
     missing_updates = _missing_keys(contract.chapter_update_keys, present_updates)
@@ -516,10 +594,16 @@ def resolve_category_hard_engine_key(
     genre: str | None = None,
     sub_genre: str | None = None,
 ) -> str | None:
+    # Creation-time intent outranks inferred category metadata from older planners.
+    intent = _as_mapping(metadata.get("genre_intent_contract"))
+    if intent.get("genre_key") == "realistic" and intent.get("prompt_pack_key") == "realistic-life":
+        return "realistic-life"
     for key in ("canonical_category", "category_key", "category"):
         value = _text(metadata.get(key))
         if value in _CONTRACTS:
             return value
+    if not intent and _text(genre) in {"realistic", "现实", "现实百态", "现实题材"}:
+        return "realistic-life"
     haystack = " ".join(
         part
         for part in (
@@ -587,17 +671,36 @@ def build_category_engine_fixture(
     }
     if not good:
         return metadata
+    if category_key == "realistic-life":
+        from bestseller.services.premium_state_ledger import (
+            materialize_premium_state_snapshot,
+            validate_premium_state_ledger,
+        )
+
+        ledger = {
+            "relationship_events": [
+                {
+                    "character_a": "甲",
+                    "character_b": "乙",
+                    "axis": "trust",
+                    "active_choice": "甲拒绝替乙隐瞒失误，主动向乙说明缘由。",
+                    "after": "乙停止将共同事务交给甲处理。",
+                }
+            ]
+        }
+        metadata["premium_state_ledger"] = ledger
+        metadata["premium_state_ledger_report"] = validate_premium_state_ledger(ledger).to_dict()
+        metadata["premium_state_snapshot"] = materialize_premium_state_snapshot(ledger)
+        return metadata
     snapshot = _as_mapping(metadata["premium_state_snapshot"])
     for key in contract.state_ledger_keys:
         snapshot[key] = [{"status": "fixture-present", "key": key}]
     metadata["premium_state_snapshot"] = snapshot
     metadata["category_hard_gates"] = {
-        key: {"status": "active", "fixture": True}
-        for key in contract.hard_gate_keys
+        key: {"status": "active", "fixture": True} for key in contract.hard_gate_keys
     }
     metadata["chapter_state_updates"] = {
-        key: {"status": "required", "fixture": True}
-        for key in contract.chapter_update_keys
+        key: {"status": "required", "fixture": True} for key in contract.chapter_update_keys
     }
     return metadata
 
@@ -621,9 +724,7 @@ def run_category_engine_fixture_benchmark(
                 "category_key": category_key,
                 "good_fixture_passed": good_report.passed,
                 "bad_fixture_blocked": not bad_report.passed,
-                "bad_fixture_codes": [
-                    finding.code for finding in bad_report.findings
-                ],
+                "bad_fixture_codes": [finding.code for finding in bad_report.findings],
             }
         )
     return rows

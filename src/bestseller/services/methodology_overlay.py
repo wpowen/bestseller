@@ -147,26 +147,36 @@ def resolve_methodology_contract_mode(
     *,
     settings: Any | None = None,
 ) -> str:
-    """Resolve off/warn/strict with project metadata taking precedence."""
+    """Require explicit content selection AND execution policy for the overlay.
+
+    Raw metadata/settings remain untouched, but cannot grant author authority.
+    This mode controls the whole chapter/scene methodology suite, so a partial
+    goal or effect palette cannot opt into it. The explicit canonical hook must
+    literally select require_methodology_overlay=True and its execution mode.
+    Off is intentional: warn also makes consumers construct overlay checks.
+    Independent identity, capability, fact and causal gates are unaffected.
+    """
+    from bestseller.services.creation_contract_authority import select_creation_contracts
 
     metadata = as_mapping(getattr(project, "metadata_json", None))
-    if metadata.get("methodology_contract_strict") is True:
+    approved = select_creation_contracts(metadata, source_bound=False)
+    creation = as_mapping(approved.get("creation_intent_contract"))
+    hook = as_mapping(creation.get("hook_spec"))
+    if hook.get("require_methodology_overlay") is not True:
+        return "off"
+    if hook.get("methodology_contract_strict") is True:
         return "strict"
-    if metadata.get("methodology_contract_warn_only") is True:
+    if hook.get("methodology_contract_warn_only") is True:
         return "warn"
     for key in (
         "methodology_contract_mode",
         "methodology_overlay_mode",
         "methodology_gate_mode",
     ):
-        if key in metadata:
-            return normalize_methodology_contract_mode(metadata.get(key))
-    pipeline = getattr(settings, "pipeline", None)
-    if pipeline is not None and hasattr(pipeline, "methodology_contract_mode"):
-        return normalize_methodology_contract_mode(
-            getattr(pipeline, "methodology_contract_mode")
-        )
-    return "warn"
+        if key in hook:
+            mode = str(hook.get(key) or "").strip().lower()
+            return mode if mode in METHODOLOGY_CONTRACT_MODES else "off"
+    return "off"
 
 
 def methodology_contract_requires_checks(mode: str | None) -> bool:

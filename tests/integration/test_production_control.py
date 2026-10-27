@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bestseller.infra.db.models import BookProductionControlModel, ProjectModel
@@ -75,9 +76,7 @@ async def project_id(
         await session.commit()
     yield new_id
     async with session_factory() as session:
-        await session.execute(
-            text("DELETE FROM projects WHERE id = :pid"), {"pid": new_id}
-        )
+        await session.execute(text("DELETE FROM projects WHERE id = :pid"), {"pid": new_id})
         await session.commit()
 
 
@@ -222,23 +221,25 @@ async def test_pause_halts_auto_recovery_and_run_restores_it(
 async def test_unknown_desired_state_fails_closed(
     session_factory: async_sessionmaker[AsyncSession], project_id: UUID
 ) -> None:
-    """A typo or a future enum value must not authorise auto-resume."""
+    """The database must reject an unknown state before it can authorise work."""
 
     async with session_factory() as session:
         await request_run(session, project_id, actor="web")
         await session.commit()
     async with session_factory() as session:
-        await session.execute(
-            text(
-                "UPDATE book_production_control SET desired_state = 'quiesced' "
-                "WHERE project_id = :pid"
-            ),
-            {"pid": project_id},
-        )
-        await session.commit()
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                text(
+                    "UPDATE book_production_control SET desired_state = 'quiesced' "
+                    "WHERE project_id = :pid"
+                ),
+                {"pid": project_id},
+            )
+            await session.commit()
+        await session.rollback()
 
     async with session_factory() as session:
         state = await load_control_state(session, project_id)
 
-    assert state.intent is ProductionIntent.STOP
-    assert not auto_recovery_is_permitted(state)
+    assert state.intent is ProductionIntent.RUN
+    assert auto_recovery_is_permitted(state)

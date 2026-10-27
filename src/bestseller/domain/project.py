@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from bestseller.domain.enums import (
     ChapterStatus,
@@ -77,18 +77,18 @@ class MarketPositioningConfig(BaseModel):
     hook_keywords: list[str] = Field(default_factory=list)
     opening_contract: str | None = Field(default=None, max_length=4000)
     opening_strategy: str = Field(
-        default="开篇尽快让读者看见主角、当前处境，以及本章要解决的具体问题。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     chapter_hook_strategy: str = Field(
-        default="章末留下未完成的问题、变化或新信息，使读者想看下一章。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     hook_deadline_words: int = Field(default=1500, ge=200, le=20000)
     pacing_profile: str = Field(default="medium", min_length=1, max_length=4000)
-    payoff_rhythm: str = Field(default="按题材节奏兑现承诺，不强制短回报密度", min_length=1, max_length=4000)
+    payoff_rhythm: str = Field(default="未指定", min_length=1, max_length=4000)
     update_strategy: str = Field(default="按项目规划推进", min_length=1, max_length=4000)
 
     @field_validator(
@@ -124,15 +124,16 @@ class CharacterEngineConfig(BaseModel):
     protagonist_archetype: str | None = Field(default=None, max_length=4000)
     protagonist_core_drive: str | None = Field(default=None, max_length=4000)
     golden_finger: str | None = Field(default=None, max_length=4000)
-    growth_curve: str = Field(default="阶段升级，持续抬高代价与成就感", min_length=1, max_length=4000)
-    romance_mode: str = Field(default="弱感情线", min_length=1, max_length=4000)
+    # Creative choices require a project contract; absence is not a genre vote.
+    growth_curve: str = Field(default="未指定", min_length=1, max_length=4000)
+    romance_mode: str = Field(default="未指定", min_length=1, max_length=4000)
     relationship_tension: str = Field(
-        default="合作与猜疑并行，关系在利益绑定和真心靠近之间摆动。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
-    antagonist_mode: str = Field(default="层级递进的系统性对手", min_length=1, max_length=4000)
-    ensemble_mode: str = Field(default="配角围绕主角选择形成镜像与反差", min_length=1, max_length=4000)
+    antagonist_mode: str = Field(default="未指定", min_length=1, max_length=4000)
+    ensemble_mode: str = Field(default="未指定", min_length=1, max_length=4000)
     # 构思**已经产出并被判官审过**的冲突势力表（2026-08-24）。此前不在字段表
     # 里，pydantic 默认 extra="ignore" 把它整个吃掉：真机书9 的
     # conception_snapshot 里有 7 条（杂役班借力成风同辈／内门借力网段缁衣／
@@ -188,11 +189,11 @@ class CharacterEngineConfig(BaseModel):
 class WorldDesignConfig(BaseModel):
     worldbuilding_density: str = Field(default="medium", min_length=1, max_length=4000)
     info_reveal_strategy: str = Field(
-        default="先冲突后解释，背景信息嵌入行动、交易、对抗和后果里释放。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
-    rule_hardness: str = Field(default="hard", min_length=1, max_length=4000)
+    rule_hardness: str = Field(default="未指定", min_length=1, max_length=4000)
     power_system_style: str | None = Field(default=None, max_length=4000)
     mystery_density: str = Field(default="medium", min_length=1, max_length=4000)
     setting_tags: list[str] = Field(default_factory=list)
@@ -224,7 +225,7 @@ class StylePreferenceConfig(BaseModel):
     pov_type: str = Field(default="third-limited", min_length=1, max_length=4000)
     tense: str = Field(default="present", min_length=1, max_length=4000)
     tone_keywords: list[str] = Field(default_factory=list)
-    prose_style: str = Field(default="commercial-web-serial", min_length=1, max_length=4000)
+    prose_style: str = Field(default="unspecified", min_length=1, max_length=4000)
     sentence_style: str = Field(default="mixed", min_length=1, max_length=4000)
     info_density: str = Field(default="medium", min_length=1, max_length=4000)
     dialogue_ratio: float = Field(default=0.4, ge=0.0, le=1.0)
@@ -271,32 +272,32 @@ class StylePreferenceConfig(BaseModel):
 
 class SerializationStrategyConfig(BaseModel):
     opening_mandate: str = Field(
-        default="开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     first_three_chapter_goal: str = Field(
-        default="前三章完成主角卖点、世界异常、短期目标、第一轮反压和追读钩子。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     scene_drive_rule: str = Field(
-        default="每场都要有目标、阻碍、升级、信息变化和尾钩，避免纯设定说明。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     exposition_rule: str = Field(
-        default="背景设定轻解释，优先通过动作、结果、交易与冲突呈现。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     chapter_ending_rule: str = Field(
-        default="每章结尾至少留下一个未解决问题、反转或更大的危险。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
     free_chapter_strategy: str = Field(
-        default="免费期强调高密度钩子、爽点和连续升级，尽量避免长时间铺垫。",
+        default="未指定",
         min_length=1,
         max_length=4000,
     )
@@ -343,13 +344,13 @@ class InteractiveFictionConfig(BaseModel):
     enabled: bool = False
 
     # Concept 参数（对应 story-factory concept.json 字段）
-    if_genre: str = Field(default="修仙升级", max_length=20)
+    if_genre: str = Field(default="", max_length=64)
     target_chapters: int = Field(default=100, ge=10, le=2000)
     free_chapters: int = Field(default=20, ge=5, le=100)
     premise: str = Field(default="", max_length=4000)
     protagonist: str = Field(default="", max_length=4000)
     core_conflict: str = Field(default="", max_length=4000)
-    tone: str = Field(default="爽快、热血、有悬念", max_length=4000)
+    tone: str = Field(default="", max_length=4000)
     arc_structure: list[str] = Field(default_factory=list)
     key_characters: list[IFCharacterDraft] = Field(default_factory=list)
     initial_stats: IFStatConfig = Field(default_factory=IFStatConfig)
@@ -383,12 +384,24 @@ class InteractiveFictionConfig(BaseModel):
     @field_validator("if_genre")
     @classmethod
     def validate_genre(cls, v: str) -> str:
-        if v not in _IF_ALL_VALID_GENRES:
+        if v and v not in _IF_ALL_VALID_GENRES:
             raise ValueError(f"if_genre must be one of {_IF_ALL_VALID_GENRES}")
         return v
 
+    @model_validator(mode="after")
+    def require_selected_genre_when_enabled(self) -> "InteractiveFictionConfig":
+        if self.enabled and not self.if_genre:
+            raise ValueError("Select if_genre explicitly before enabling interactive fiction")
+        return self
+
 
 class WritingProfile(BaseModel):
+    # Code-side resolution receipt; never accepted from JSON/LLM input.
+    _content_origins: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _runtime_source_receipt: dict[str, Any] = PrivateAttr(default_factory=dict)
+    # Persist the selected conception advice through profile normalization.
+    # The planner validates/renders it separately; it is not a world contract.
+    concept_methodology: dict[str, Any] = Field(default_factory=dict)
     market: MarketPositioningConfig = Field(default_factory=MarketPositioningConfig)
     character: CharacterEngineConfig = Field(default_factory=CharacterEngineConfig)
     world: WorldDesignConfig = Field(default_factory=WorldDesignConfig)
@@ -561,7 +574,7 @@ class ChapterCreate(BaseModel):
 
 class SceneCardCreate(BaseModel):
     scene_number: int = Field(gt=0)
-    scene_type: str = Field(min_length=1, max_length=4000)
+    scene_type: str = Field(strict=True, max_length=4000)  # Empty string represents Unknown.
     title: str | None = Field(default=None, max_length=4000)
     time_label: str | None = None
     participants: list[str] = Field(default_factory=list)
@@ -581,7 +594,7 @@ class SceneStructureRead(BaseModel):
     id: UUID
     scene_number: int = Field(gt=0)
     title: str | None = None
-    scene_type: str = Field(min_length=1)
+    scene_type: str = Field(strict=True)  # Empty string represents Unknown.
     status: SceneStatus
     participants: list[str] = Field(default_factory=list)
     target_word_count: int = Field(ge=0)

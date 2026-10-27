@@ -81,18 +81,22 @@ def test_no_hardcoded_book_specific_vocabulary():
 
 
 def test_world_spec_anchors_on_the_real_place():
-    import inspect
-
+    from copy import deepcopy
+    from test_source_bound_planning_content import _project
     from bestseller.services import planner
-
-    src = inspect.getsource(planner._compile_source_bound_world_spec)
-    assert "extract_place_names" in src, "source-bound 世界必须锚到构思里的真地名"
+    authored={"world_name":"通灵百家巷","locations":[{"name":"通灵百家巷","story_role":"已选定的当下场景","unknown_authored_field":"保留原文"}]}
+    project=_project({"world_spec":deepcopy(authored)})
+    result=planner._compile_source_bound_world_spec(project,_LOGLINE,{})
+    assert result['world_name']==authored['world_name']
+    assert result['locations']==authored['locations']
 
 
 def test_world_name_never_falls_back_to_the_genre_label():
-    import inspect
-
+    from test_source_bound_planning_content import _project
     from bestseller.services import planner
-
-    src = inspect.getsource(planner._compile_source_bound_world_spec)
-    assert "_source_bound_world_name" in src
+    project=_project();project.genre='玄幻'
+    result=planner._compile_source_bound_world_spec(project,_LOGLINE,{})
+    # Premise text is not silently promoted into named canonical entities.
+    # The normal model proposal and independent semantic review complete gaps.
+    assert result['world_name']=='' and result['world_name']!=project.genre
+    assert result['world_premise']==_LOGLINE

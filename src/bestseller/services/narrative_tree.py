@@ -41,6 +41,7 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import tokenize_text
+from bestseller.settings import AppSettings
 
 # ---------------------------------------------------------------------------
 # Bilingual label dictionaries
@@ -100,6 +101,24 @@ def tree_segment(value: str | None, fallback: str) -> str:
         return fallback
     normalized = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "-", value.strip().lower()).strip("-")
     return normalized or fallback
+
+
+def _world_rule_paths(world_rules: list[WorldRuleModel]) -> dict[UUID, str]:
+    """Allocate paths for the complete current group before staging any node.
+
+    Preserve unambiguous normal slugs. Empty slugs and every member sharing
+    a legacy path use row identity in a reserved namespace that tree_segment
+    cannot emit. Include the old 'rule' fallback in collision detection so
+    an ambiguous legacy path cannot silently select a literal 'rule' code.
+    """
+    segments = {rule.id: tree_segment(rule.rule_code, "") for rule in world_rules}
+    legacy_counts = Counter(segment or "rule" for segment in segments.values())
+    return {
+        row_id: f"/world/rules/{segment}"
+        if segment and legacy_counts[segment] == 1
+        else f"/world/rules/@{row_id.hex}"
+        for row_id, segment in segments.items()
+    }
 
 
 def chapter_path(chapter_number: int) -> str:
@@ -269,11 +288,173 @@ def _is_visible_before_position(
     return node_scene <= current_scene
 
 
+_NATIVE_TREE_MARKER = "deterministic_audit_narrative_tree_native"
+_NATIVE_TREE_PATHS = {
+    "world_rule": r"/world/rules/[^/]+",
+    "character": r"/characters/[^/]+",
+    "volume": r"/volumes/[0-9]+",
+    "location": r"/world/locations/[^/]+",
+    "faction": r"/world/factions/[^/]+",
+    "world_backbone": r"/world/backbone",
+    "volume_frontier": r"/world/frontiers/volume-[0-9]+",
+    "deferred_reveal": r"/world/deferred-reveals/[^/]+",
+    "expansion_gate": r"/world/expansion-gates/[^/]+",
+    "plot_arc": r"/arcs/[^/]+",
+    "emotion_track": r"/emotion-tracks/[^/]+",
+    "antagonist_plan": r"/antagonists/[^/]+",
+    "clue": r"/ledgers/clues/[^/]+",
+    "payoff": r"/ledgers/payoffs/[^/]+",
+    "chapter": r"/chapters/[0-9]+",
+    "chapter_contract": r"/chapters/[0-9]+/contract",
+    "scene": r"/scenes/[0-9]+-[0-9]+",
+    "scene_contract": r"/scenes/[0-9]+-[0-9]+/contract",
+}
+_BIBLE_TREE_ROOTS = {
+    "/book": ("container", "book_root"),
+    "/book/premise": ("project", "premise"),
+    "/book/book-spec": ("planning_artifact", "book_spec"),
+    "/world": ("container", "world_root"),
+    "/world/rules": ("container", "world_rules_root"),
+    "/characters": ("container", "characters_root"),
+    "/volumes": ("container", "volumes_root"),
+}
+
+
+def _native_bible_tree_node(node: NarrativeTreeNodeModel) -> bool:
+    """Scope classification never grants ownership to custom source types."""
+    if (node.source_type, node.node_type) == _BIBLE_TREE_ROOTS.get(node.node_path):
+        return True
+    return (
+        node.source_type in {"world_rule", "character", "volume"}
+        and node.node_type == node.source_type
+        and re.fullmatch(_NATIVE_TREE_PATHS[node.source_type], node.node_path) is not None
+    )
+
+
+def _native_tree_stamp(node: NarrativeTreeNodeModel) -> dict[str, str | None]:
+    return {
+        "schema": "native-tree.v1",
+        "project_id": str(node.project_id),
+        "path": node.node_path,
+        "node_type": node.node_type,
+        "source_type": node.source_type,
+        "source_ref_id": str(node.source_ref_id) if node.source_ref_id is not None else None,
+    }
+
+
+def _native_tree_owned(
+    node: NarrativeTreeNodeModel,
+    generated: dict[str, NarrativeTreeNodeModel],
+    source_ids: dict[str, set[UUID]],
+) -> bool:
+    """Recognize bound native stamps or conservative legacy source identities.
+
+    A prefix alone is never authority. Unknown/manual/custom/extension source
+    types remain unowned even if they carry a copied native marker.
+    """
+    if node.source_type in {"container", "project", "planning_artifact"}:
+        expected = generated.get(node.node_path)
+        shape = expected is not None and (
+            node.node_type,
+            node.source_type,
+            node.source_ref_id,
+        ) == (expected.node_type, expected.source_type, expected.source_ref_id)
+        return bool(shape)
+    pattern = _NATIVE_TREE_PATHS.get(node.source_type)
+    if not (
+        pattern
+        and node.node_type == node.source_type
+        and node.source_ref_id is not None
+        and re.fullmatch(pattern, node.node_path)
+    ):
+        return False
+    stamped = (node.metadata_json or {}).get(_NATIVE_TREE_MARKER) == _native_tree_stamp(node)
+    return stamped or node.source_ref_id in source_ids.get(node.source_type, set())
+
+
+async def _persist_native_tree_projection(
+    session: AsyncSession,
+    *,
+    generated: list[NarrativeTreeNodeModel],
+    existing: list[NarrativeTreeNodeModel],
+    source_ids: dict[str, set[UUID]],
+    bible_only: bool,
+) -> dict[str, Any]:
+    by_path = {node.node_path: node for node in generated}
+    # Empty-tree bootstrap retains the native context skeleton. Later Bible
+    # refreshes never claim freshness or ownership of planning/extension nodes.
+    selected = [
+        node
+        for node in generated
+        if not bible_only or not existing or _native_bible_tree_node(node)
+    ]
+    owned = {
+        node.node_path: node
+        for node in existing
+        if _native_tree_owned(node, by_path, source_ids)
+        and (not bible_only or _native_bible_tree_node(node))
+    }
+    existing_by_path = {node.node_path: node for node in existing}
+    for node in selected:
+        if node.node_path in existing_by_path and node.node_path not in owned:
+            raise ValueError(f"narrative_tree_unowned_path_conflict:{node.node_path}")
+    selected_paths = {node.node_path for node in selected}
+    stale_ids = [node.id for path, node in owned.items() if path not in selected_paths]
+    if stale_ids:
+        await session.execute(
+            delete(NarrativeTreeNodeModel).where(
+                NarrativeTreeNodeModel.id.in_(stale_ids),
+            )
+        )
+    fields = (
+        "parent_path",
+        "depth",
+        "node_type",
+        "title",
+        "summary",
+        "body_md",
+        "source_type",
+        "source_ref_id",
+        "scope_level",
+        "scope_volume_number",
+        "scope_chapter_number",
+        "scope_scene_number",
+        "lexical_document",
+        "metadata_json",
+    )
+    counts: Counter[str] = Counter()
+    for node in selected:
+        node.metadata_json = {**node.metadata_json, _NATIVE_TREE_MARKER: _native_tree_stamp(node)}
+        target = owned.get(node.node_path)
+        if target is None:
+            session.add(node)
+        else:
+            # Updating in place preserves IDs and any references to live nodes.
+            for field in fields:
+                value = getattr(node, field)
+                if field == "metadata_json":
+                    # Native fields are refreshed; unrelated annotations keep
+                    # their ownership even on a native entity node.
+                    value = {**(target.metadata_json or {}), **value}
+                if getattr(target, field) != value:
+                    setattr(target, field, value)
+        counts[node.node_type] += 1
+    await session.flush()
+    return {"node_count": sum(counts.values()), "node_type_counts": dict(counts)}
+
+
 async def rebuild_narrative_tree(
     session: AsyncSession,
     *,
     project: ProjectModel,
+    bible_only: bool = False,
 ) -> dict[str, Any]:
+    """Project native payloads, preserving nodes outside proven ownership.
+
+    Bible scope updates only Bible entities and roots after an empty-tree
+    bootstrap. Unowned canonical-path occupants fail before any tree writes;
+    the caller owns the transaction, including atomicity with other views.
+    """
     is_en = not (project.language or "").startswith("zh")
     sl = _safe_line  # local alias for brevity
     join_sep = ", " if is_en else "、"
@@ -290,8 +471,15 @@ async def rebuild_narrative_tree(
         {"pid": str(project.id)},
     )
 
-    await session.execute(
-        delete(NarrativeTreeNodeModel).where(NarrativeTreeNodeModel.project_id == project.id)
+    from bestseller.services.world_rule_current import current_world_rules
+
+    world_rules = await current_world_rules(session, project_id=project.id)
+    existing = list(
+        await session.scalars(
+            select(NarrativeTreeNodeModel)
+            .where(NarrativeTreeNodeModel.project_id == project.id)
+            .execution_options(populate_existing=True)
+        )
     )
 
     volumes = list(
@@ -314,9 +502,6 @@ async def rebuild_narrative_tree(
             .where(SceneCardModel.project_id == project.id)
             .order_by(SceneCardModel.chapter_id.asc(), SceneCardModel.scene_number.asc())
         )
-    )
-    world_rules = list(
-        await session.scalars(select(WorldRuleModel).where(WorldRuleModel.project_id == project.id))
     )
     world_backbone = await session.scalar(
         select(WorldBackboneModel).where(WorldBackboneModel.project_id == project.id)
@@ -384,7 +569,25 @@ async def rebuild_narrative_tree(
     chapter_contract_by_number = {item.chapter_number: item for item in chapter_contracts}
     scene_contract_by_position = {(item.chapter_number, item.scene_number): item for item in scene_contracts}
 
-    node_type_counts: Counter[str] = Counter()
+    generated_nodes: list[NarrativeTreeNodeModel] = []
+    # Retired rules still have retained source identities. Include those raw
+    # identities solely to recognize legacy native ownership, never to render.
+    raw_world_ids = set(await session.scalars(
+        select(WorldRuleModel.id).where(WorldRuleModel.project_id == project.id)
+    ))
+    source_ids = {
+        kind: {row.id for row in rows}
+        for kind, rows in (
+            ("volume", volumes), ("chapter", chapters), ("scene", scenes),
+            ("world_backbone", [world_backbone] if world_backbone is not None else []),
+            ("volume_frontier", volume_frontiers), ("deferred_reveal", deferred_reveals),
+            ("expansion_gate", expansion_gates), ("location", locations), ("faction", factions),
+            ("character", characters), ("plot_arc", plot_arcs), ("emotion_track", emotion_tracks),
+            ("antagonist_plan", antagonist_plans), ("clue", clues), ("payoff", payoffs),
+            ("chapter_contract", chapter_contracts), ("scene_contract", scene_contracts),
+        )
+    }
+    source_ids["world_rule"] = raw_world_ids
     # Track every node_path we have already staged on this session. Upstream
     # canonical data occasionally contains entities whose slugified name
     # collides (e.g. "Sophie (Absorbed Consciousness)" and
@@ -454,8 +657,7 @@ async def rebuild_narrative_tree(
             lexical_document=lexical_document,
             metadata_json=metadata or {},
         )
-        session.add(node)
-        node_type_counts[node_type] += 1
+        generated_nodes.append(node)
 
     add_node(
         node_path="/book",
@@ -672,9 +874,10 @@ async def rebuild_narrative_tree(
             metadata={"gate_type": gate.gate_type},
         )
 
+    world_rule_paths = _world_rule_paths(world_rules)
     for world_rule in world_rules:
         add_node(
-            node_path=f"/world/rules/{tree_segment(world_rule.rule_code, 'rule')}",
+            node_path=world_rule_paths[world_rule.id],
             node_type="world_rule",
             title=world_rule.name,
             summary=world_rule.description,
@@ -1052,38 +1255,71 @@ async def rebuild_narrative_tree(
                 },
             )
 
-    await session.flush()
-    return {
-        "node_count": sum(node_type_counts.values()),
-        "node_type_counts": dict(node_type_counts),
-    }
+    return await _persist_native_tree_projection(
+        session,
+        generated=generated_nodes,
+        existing=existing,
+        source_ids=source_ids,
+        bible_only=bible_only,
+    )
 
 
 async def ensure_project_narrative_tree(
     session: AsyncSession,
     project: ProjectModel,
+    *,
+    settings: AppSettings | None = None,
 ) -> int:
-    existing = list(
-        await session.scalars(
-            select(NarrativeTreeNodeModel)
-            .where(NarrativeTreeNodeModel.project_id == project.id)
-            .limit(1)
+    from bestseller.services.story_bible_read_views import ensure_story_bible_read_views
+
+    if settings is None:
+        # Unconfigured retained-tree inspection is visibility-only. It does
+        # not certify source freshness or guess an embedding configuration.
+        existing = await session.scalar(
+            select(NarrativeTreeNodeModel.id)
+            .where(NarrativeTreeNodeModel.project_id == project.id).limit(1)
         )
-    )
-    if existing:
-        return 0
-    counts = await rebuild_narrative_tree(session, project=project)
-    return int(counts["node_count"])
+        if existing is not None:
+            return 0
+        counts = await rebuild_narrative_tree(session, project=project)
+        return int(counts["node_count"])
+    result = await ensure_story_bible_read_views(session, settings, project=project)
+    return int(result["tree_node_count"]) if result["refreshed"] else 0
+
+
+async def _current_world_rule_nodes(
+    session: AsyncSession,
+    project_id: UUID,
+    nodes: list[NarrativeTreeNodeModel],
+) -> list[NarrativeTreeNodeModel]:
+    """Validate retained world-rule nodes against current source identities.
+
+    Tree materialization may predate withdrawal. Never infer current status
+    from cached prose or a path/code that another retained identity can reuse.
+    Other node categories keep their existing read behavior.
+    """
+    if not any(node.source_type == "world_rule" for node in nodes):
+        return nodes
+    from bestseller.services.world_rule_current import current_world_rules
+
+    rules = await current_world_rules(session, project_id=project_id)
+    current_ids = {rule.id for rule in rules}
+    return [
+        node for node in nodes
+        if node.source_type != "world_rule" or node.source_ref_id in current_ids
+    ]
 
 
 async def build_narrative_tree_overview(
     session: AsyncSession,
     project_slug: str,
+    *,
+    settings: AppSettings | None = None,
 ) -> NarrativeTreeOverview:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
-    await ensure_project_narrative_tree(session, project)
+    await ensure_project_narrative_tree(session, project, settings=settings)
     nodes = list(
         await session.scalars(
             select(NarrativeTreeNodeModel)
@@ -1091,6 +1327,7 @@ async def build_narrative_tree_overview(
             .order_by(NarrativeTreeNodeModel.node_path.asc())
         )
     )
+    nodes = await _current_world_rule_nodes(session, project.id, nodes)
     return NarrativeTreeOverview(
         project_id=project.id,
         project_slug=project.slug,
@@ -1103,18 +1340,23 @@ async def get_narrative_tree_node_by_path(
     session: AsyncSession,
     project_slug: str,
     node_path: str,
+    *,
+    settings: AppSettings | None = None,
 ) -> NarrativeTreeNodeRead | None:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
-    await ensure_project_narrative_tree(session, project)
+    await ensure_project_narrative_tree(session, project, settings=settings)
     node = await session.scalar(
         select(NarrativeTreeNodeModel).where(
             NarrativeTreeNodeModel.project_id == project.id,
             NarrativeTreeNodeModel.node_path == node_path,
         )
     )
-    return _node_read(node) if isinstance(node, NarrativeTreeNodeModel) else None
+    if not isinstance(node, NarrativeTreeNodeModel):
+        return None
+    nodes = await _current_world_rule_nodes(session, project.id, [node])
+    return _node_read(nodes[0]) if nodes else None
 
 
 async def resolve_narrative_tree_paths_for_project(
@@ -1122,12 +1364,13 @@ async def resolve_narrative_tree_paths_for_project(
     project: ProjectModel,
     paths: list[str],
     *,
+    settings: AppSettings | None = None,
     current_chapter_number: int | None = None,
     current_scene_number: int | None = None,
 ) -> list[NarrativeTreeNodeRead]:
     if not paths:
         return []
-    await ensure_project_narrative_tree(session, project)
+    await ensure_project_narrative_tree(session, project, settings=settings)
     normalized_paths = list(dict.fromkeys(path for path in paths if path))
     nodes = list(
         await session.scalars(
@@ -1137,6 +1380,7 @@ async def resolve_narrative_tree_paths_for_project(
             )
         )
     )
+    nodes = await _current_world_rule_nodes(session, project.id, nodes)
     node_map = {
         item.node_path: item
         for item in nodes
@@ -1154,18 +1398,20 @@ async def search_narrative_tree_for_project(
     project: ProjectModel,
     query_text: str,
     *,
+    settings: AppSettings | None = None,
     preferred_paths: list[str] | None = None,
     current_chapter_number: int | None = None,
     current_scene_number: int | None = None,
     top_k: int = 6,
 ) -> NarrativeTreeSearchResult:
-    await ensure_project_narrative_tree(session, project)
+    await ensure_project_narrative_tree(session, project, settings=settings)
     preferred = list(dict.fromkeys(preferred_paths or []))
     nodes = list(
         await session.scalars(
             select(NarrativeTreeNodeModel).where(NarrativeTreeNodeModel.project_id == project.id)
         )
     )
+    nodes = await _current_world_rule_nodes(session, project.id, nodes)
     query_tokens = set(tokenize_text(query_text))
     normalized_query = query_text.strip().lower()
     hits: list[NarrativeTreeSearchHit] = []

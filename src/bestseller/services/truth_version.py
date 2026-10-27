@@ -71,6 +71,11 @@ class TruthVersionStaleError(ValueError):
         self.stale_components = stale_components
 
 
+class TruthMaterializationRevisionRequired(ValueError):
+    terminal = True
+    code = "truth_source_revision_required"
+
+
 def initialize_truth_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
     payload = dict(metadata or {})
     payload.setdefault("truth_version", 1)
@@ -270,6 +275,10 @@ async def get_truth_materialization_statuses(
                     "Materialization predates the latest truth change and has no "
                     "recorded truth_version metadata."
                 )
+
+        if metadata.get("legacy_truth_acceptance"):
+            is_stale = True
+            detail = "Legacy compatibility acceptance is not a rematerialization receipt."
 
         statuses.append(
             TruthMaterializationStatus(

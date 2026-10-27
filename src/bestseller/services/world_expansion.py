@@ -224,6 +224,8 @@ async def refresh_world_expansion_boundaries(
             .order_by(WorldRuleModel.rule_code.asc(), WorldRuleModel.name.asc())
         )
     )
+    from bestseller.services.world_rule_current import current_world_rules
+    world_rules = await current_world_rules(session, project_id=project.id, world_rules=world_rules)
     locations = list(
         await _scalars_list(
             session,

@@ -26,11 +26,6 @@ from bestseller.infra.db.models import (
     RewriteTaskModel,
 )
 from bestseller.services.drafts import count_words, sanitize_novel_markdown_content
-from bestseller.services.fanqie_short_export import (
-    export_fanqie_short_markdown,
-    export_fanqie_short_rejected_draft,
-)
-from bestseller.services.fanqie_short_finalizer import finalize_fanqie_short_for_upload
 from bestseller.services.fanqie_short_gate_v2 import (
     build_fanqie_short_v2_rewrite_instructions,
     build_fanqie_short_v2_rewrite_routes,
@@ -47,6 +42,10 @@ from bestseller.services.fanqie_short_ranking_gate import (
     build_fanqie_ranking_rewrite_instructions,
 )
 from bestseller.services.ideology_kernel import derive_ideology_kernel
+from bestseller.services.production_prompt_audit import (
+    bind_resolved_project_prompt_audit,
+    project_prompt_audit_scope,
+)
 from bestseller.services.judge_genre_context import resolve_judge_genre_context
 from bestseller.services.story_enhancers import resolve_cost_style
 from bestseller.services.litstyle_prose_judge import judge_chapter_litstyle_stable
@@ -157,6 +156,87 @@ async def _persist_fanqie_ranking_gate_failure(
 
     created = 0
     segment_total = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+    source_bindings = {}
+    source_metadata = {}
+    numbers = {
+        number
+        for finding in critical_findings
+        for number in _ranking_finding_chapter_numbers(
+            finding,
+            segment_total=segment_total,
+            unlock_segment=unlock_segment,
+        )
+    }
+    # Lock all target chapters before any drafts. Validate every marked source
+    # before the first task is staged; never refresh/rebind an old task.
+    with session.no_autoflush:
+        if any(
+            isinstance(row, ChapterModel)
+            and row.project_id == project.id
+            and row.chapter_number in numbers
+            and "outline_source_admission" in (row.metadata_json or {})
+            for row in session.new
+        ):
+            raise ValueError("fanqie_ranking_rewrite_source_unflushed")
+        sources = (
+            await session.execute(
+                select(
+                    ChapterModel.id,
+                    ChapterModel.project_id,
+                    ChapterModel.chapter_number,
+                    ChapterModel.metadata_json,
+                )
+                .where(
+                    ChapterModel.project_id == project.id, ChapterModel.chapter_number.in_(numbers)
+                )
+                .order_by(ChapterModel.chapter_number, ChapterModel.id)
+                .with_for_update()
+            )
+        ).all()
+        for source in sources:
+            marked = "outline_source_admission" in (source.metadata_json or {})
+            cached_marked = any(
+                isinstance(row, ChapterModel)
+                and row.id == source.id
+                and "outline_source_admission" in (row.__dict__.get("metadata_json") or {})
+                for row in session.identity_map.values()
+            )
+            if not marked and not cached_marked:
+                continue
+            if any(
+                (isinstance(row, ChapterModel) and row.id == source.id)
+                or (isinstance(row, ChapterDraftVersionModel) and row.chapter_id == source.id)
+                for row in (*session.dirty, *session.new, *session.deleted)
+            ):
+                raise ValueError("fanqie_ranking_rewrite_source_unflushed")
+            source_metadata[source.id] = source.metadata_json
+            if not marked:
+                continue  # A stale ORM cache cannot restore a removed source marker.
+            drafts = (
+                await session.execute(
+                    select(
+                        ChapterDraftVersionModel.id,
+                        ChapterDraftVersionModel.project_id,
+                        ChapterDraftVersionModel.chapter_id,
+                        ChapterDraftVersionModel.content_md,
+                    )
+                    .where(
+                        ChapterDraftVersionModel.chapter_id == source.id,
+                        ChapterDraftVersionModel.is_current.is_(True),
+                    )
+                    .order_by(ChapterDraftVersionModel.id)
+                    .with_for_update()
+                )
+            ).all()
+            if (
+                len(drafts) != 1
+                or not isinstance(drafts[0].content_md, str)
+                or not drafts[0].content_md.strip()
+            ):
+                raise ValueError("fanqie_ranking_rewrite_current_source_required")
+            from bestseller.services.reviews import rewrite_source_binding
+
+            source_bindings[source.id] = rewrite_source_binding(drafts[0], chapter=source)
     for finding in critical_findings:
         for chapter_number in _ranking_finding_chapter_numbers(
             finding,
@@ -187,6 +267,7 @@ async def _persist_fanqie_ranking_gate_failure(
                 ),
                 context_required=["chapter_draft", "fanqie_short_ranking_contract"],
                 metadata_json={
+                    **source_bindings.get(chapter.id, {}),
                     "chapter_id": str(chapter.id),
                     "chapter_number": chapter.chapter_number,
                     "finding": finding.to_dict(),
@@ -197,7 +278,7 @@ async def _persist_fanqie_ranking_gate_failure(
             chapter.status = "revision"
             chapter.production_state = "blocked"
             chapter.metadata_json = {
-                **(chapter.metadata_json or {}),
+                **source_metadata.get(chapter.id, chapter.metadata_json or {}),
                 "blocked_by_fanqie_ranking_gate": True,
                 "fanqie_ranking_gate_code": finding.code,
                 "fanqie_ranking_gate_message": finding.message,
@@ -219,9 +300,7 @@ async def _persist_fanqie_short_v2_gate_failure(
     route_by_code = {route.finding_code: route for route in routes}
     meta = dict(project.metadata_json or {})
     meta["fanqie_short_v2_gate_report"] = report.to_dict()
-    meta["fanqie_short_v2_rewrite_routes"] = [
-        route.model_dump(mode="json") for route in routes
-    ]
+    meta["fanqie_short_v2_rewrite_routes"] = [route.model_dump(mode="json") for route in routes]
     if not report.passed:
         meta["fanqie_short_ready_for_upload"] = False
     project.metadata_json = meta
@@ -234,6 +313,85 @@ async def _persist_fanqie_short_v2_gate_failure(
 
     created = 0
     segment_total = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+    source_bindings = {}
+    source_metadata = {}
+    numbers = {
+        number
+        for finding in critical_findings
+        for number in _short_v2_finding_chapter_numbers(
+            finding,
+            segment_total=segment_total,
+            unlock_segment=unlock_segment,
+        )
+    }
+    with session.no_autoflush:
+        if any(
+            isinstance(row, ChapterModel)
+            and row.project_id == project.id
+            and row.chapter_number in numbers
+            and "outline_source_admission" in (row.metadata_json or {})
+            for row in session.new
+        ):
+            raise ValueError("fanqie_ranking_rewrite_source_unflushed")
+        sources = (
+            await session.execute(
+                select(
+                    ChapterModel.id,
+                    ChapterModel.project_id,
+                    ChapterModel.chapter_number,
+                    ChapterModel.metadata_json,
+                )
+                .where(
+                    ChapterModel.project_id == project.id, ChapterModel.chapter_number.in_(numbers)
+                )
+                .order_by(ChapterModel.chapter_number, ChapterModel.id)
+                .with_for_update()
+            )
+        ).all()
+        for source in sources:
+            marked = "outline_source_admission" in (source.metadata_json or {})
+            cached_marked = any(
+                isinstance(row, ChapterModel)
+                and row.id == source.id
+                and "outline_source_admission" in (row.__dict__.get("metadata_json") or {})
+                for row in session.identity_map.values()
+            )
+            if not marked and not cached_marked:
+                continue
+            if any(
+                (isinstance(row, ChapterModel) and row.id == source.id)
+                or (isinstance(row, ChapterDraftVersionModel) and row.chapter_id == source.id)
+                for row in (*session.dirty, *session.new, *session.deleted)
+            ):
+                raise ValueError("fanqie_ranking_rewrite_source_unflushed")
+            source_metadata[source.id] = source.metadata_json
+            if not marked:
+                continue
+            drafts = (
+                await session.execute(
+                    select(
+                        ChapterDraftVersionModel.id,
+                        ChapterDraftVersionModel.project_id,
+                        ChapterDraftVersionModel.chapter_id,
+                        ChapterDraftVersionModel.content_md,
+                    )
+                    .where(
+                        ChapterDraftVersionModel.chapter_id == source.id,
+                        ChapterDraftVersionModel.is_current.is_(True),
+                    )
+                    .order_by(ChapterDraftVersionModel.id)
+                    .with_for_update()
+                )
+            ).all()
+            if (
+                len(drafts) != 1
+                or not isinstance(drafts[0].content_md, str)
+                or not drafts[0].content_md.strip()
+            ):
+                raise ValueError("fanqie_ranking_rewrite_current_source_required")
+            from bestseller.services.reviews import rewrite_source_binding
+
+            source_bindings[source.id] = rewrite_source_binding(drafts[0], chapter=source)
     for finding in critical_findings:
         route = route_by_code.get(finding.code)
         route_payload = route.model_dump(mode="json") if route is not None else None
@@ -271,6 +429,7 @@ async def _persist_fanqie_short_v2_gate_failure(
                     "fanqie_short_worker_route",
                 ],
                 metadata_json={
+                    **source_bindings.get(chapter.id, {}),
                     "chapter_id": str(chapter.id),
                     "chapter_number": chapter.chapter_number,
                     "finding": finding.to_dict(),
@@ -284,7 +443,7 @@ async def _persist_fanqie_short_v2_gate_failure(
             chapter.status = "revision"
             chapter.production_state = "blocked"
             chapter.metadata_json = {
-                **(chapter.metadata_json or {}),
+                **source_metadata.get(chapter.id, chapter.metadata_json or {}),
                 "blocked_by_fanqie_short_v2_gate": True,
                 "fanqie_short_v2_gate_code": finding.code,
                 "fanqie_short_v2_gate_message": finding.message,
@@ -301,6 +460,9 @@ async def _load_chapter_drafts(
     session: AsyncSession,
     project_id: UUID,
 ) -> list[tuple[ChapterModel, ChapterDraftVersionModel]]:
+    from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+    from bestseller.services.adopted_knowledge_resume import read_adopted_knowledge
+
     chapters = list(
         await session.scalars(
             select(ChapterModel)
@@ -308,19 +470,137 @@ async def _load_chapter_drafts(
             .order_by(ChapterModel.chapter_number.asc())
         )
     )
+    project = await session.get(ProjectModel, project_id, populate_existing=True)
+    if project is None or {row.chapter_number for row in chapters} != set(
+        range(1, project.target_chapters + 1)
+    ):
+        raise ValueError('fanqie_segments_incomplete')
     payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] = []
     for chapter in chapters:
-        draft = await session.scalar(
-            select(ChapterDraftVersionModel)
-            .where(
-                ChapterDraftVersionModel.chapter_id == chapter.id,
-                ChapterDraftVersionModel.is_current.is_(True),
-            )
-            .order_by(ChapterDraftVersionModel.version_no.desc())
+        await session.refresh(chapter)
+        draft, _ = await select_adopted_chapter_source(session, chapter=chapter, lock=False)
+        if draft is None:
+            raise ValueError(f"fanqie_segment_not_adopted:{chapter.chapter_number}")
+        _, knowledge = await read_adopted_knowledge(
+            session, project_id=project_id, chapter_id=chapter.id,
+            source_chapter_draft_version_id=draft.id, chapter_md=draft.content_md,
+            require_bible=True,
         )
-        if draft is not None and (draft.content_md or "").strip():
-            payloads.append((chapter, draft))
+        if not knowledge['closed']:
+            raise ValueError(f"fanqie_segment_knowledge_not_closed:{chapter.chapter_number}")
+        payloads.append((chapter, draft))
     return payloads
+
+
+async def _require_fanqie_production_running(
+    session: AsyncSession, *, project_id: UUID, slug: str,
+    segment_number: int, progress: ProgressCallback | None,
+) -> None:
+    from bestseller.services.production_control import (
+        ProductionControlHaltedError, load_control_state,
+    )
+
+    # No exception fallback: an unavailable control read cannot authorize work.
+    control = await load_control_state(session, project_id)
+    if control.halted:
+        _emit_progress(progress, "fanqie_halted_by_operator", {
+            "project_slug": slug, "next_segment_number": segment_number,
+            **control.to_payload(),
+        })
+        raise ProductionControlHaltedError(control)
+
+
+async def _run_fanqie_segments(
+    session: AsyncSession, settings: AppSettings, project: ProjectModel, *,
+    requested_by: str, progress: ProgressCallback | None = None,
+) -> None:
+    """Reuse adopted segments and stop at the first unclosed real source."""
+    from bestseller.services.adopted_chapter_source import select_adopted_chapter_source
+    from bestseller.services.adopted_knowledge_resume import (
+        read_adopted_knowledge,
+        resume_adopted_knowledge,
+    )
+
+    project_id, slug, segment_count = project.id, project.slug, project.target_chapters
+
+    async def adopted_source(
+        number: int,
+    ) -> tuple[ChapterModel | None, ChapterDraftVersionModel | None]:
+        chapter = await session.scalar(select(ChapterModel).where(
+            ChapterModel.project_id == project_id, ChapterModel.chapter_number == number,
+        ).execution_options(populate_existing=True))
+        if chapter is None:
+            return None, None
+        draft, _ = await select_adopted_chapter_source(session, chapter=chapter, lock=False)
+        return chapter, draft
+
+    for chapter_no in range(1, segment_count + 1):
+        await _require_fanqie_production_running(
+            session, project_id=project_id, slug=slug,
+            segment_number=chapter_no, progress=progress,
+        )
+        _emit_progress(progress, "fanqie_segment_writing_started", {
+            "project_slug": slug, "segment_number": chapter_no, "segment_total": segment_count,
+        })
+        chapter, draft = await adopted_source(chapter_no)
+        if draft is None:
+            review_only = {}
+            if chapter is not None:
+                pending = await session.scalar(select(ChapterDraftVersionModel).where(
+                    ChapterDraftVersionModel.project_id == project_id,
+                    ChapterDraftVersionModel.chapter_id == chapter.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                ).execution_options(populate_existing=True))
+                if pending is not None:
+                    from bestseller.services.adopted_source_correction import read_adopted_source_correction_context
+
+                    correction = await read_adopted_source_correction_context(
+                        session, project_id=project_id, chapter_id=chapter.id,
+                        content_md=pending.content_md,
+                    )
+                    if correction is not None:
+                        # An approved exact edit needs its own real review, not
+                        # another writer/style transform before that review.
+                        review_only = {
+                            "chapter_first": True, "resume_existing_draft_only": True,
+                            "supersede_pending_rewrites": False,
+                            "review_source_binding": {
+                                "draft_id": str(pending.id),
+                                "body_hash": correction["candidate_body_sha256"],
+                            },
+                        }
+            await run_chapter_pipeline(
+                session, settings, slug, chapter_no, requested_by=requested_by,
+                export_markdown=False, progress=progress, **review_only,
+            )
+            # A candidate, rewrite task or a returned result is not adoption.
+            await _checkpoint_commit(session)
+            chapter, draft = await adopted_source(chapter_no)
+            if draft is None:
+                raise ValueError(f"fanqie_segment_not_adopted:{chapter_no}")
+            _, knowledge = await read_adopted_knowledge(
+                session, project_id=project_id, chapter_id=chapter.id,
+                source_chapter_draft_version_id=draft.id, chapter_md=draft.content_md,
+                require_bible=True,
+            )
+            if not knowledge['closed']:
+                raise ValueError(f"fanqie_segment_knowledge_not_closed:{chapter_no}")
+        else:
+            await resume_adopted_knowledge(
+                session, settings, project=project, chapter=chapter, draft=draft,
+                workflow_type='fanqie_segment_knowledge_resume',
+                require_bible=True,
+            )
+        _emit_progress(progress, "fanqie_segment_writing_completed", {
+            "project_slug": slug, "segment_number": chapter_no,
+        })
+        # Preserve a completed chapter/knowledge return before observing pause.
+        # The final boundary also prevents falling through to whole-book export.
+        await _checkpoint_commit(session)
+        await _require_fanqie_production_running(
+            session, project_id=project_id, slug=slug,
+            segment_number=chapter_no + 1, progress=progress,
+        )
 
 
 def _write_fanqie_source_artifacts(
@@ -407,6 +687,8 @@ async def _deslop_whole_short_story(
     *,
     project: Any,
     progress: ProgressCallback | None = None,
+    workflow_run_id: UUID | None = None,
+    observe_candidate: Any = None,
 ) -> str:
     """Whole-piece 去AI味 pass for a finished short story.
 
@@ -414,8 +696,8 @@ async def _deslop_whole_short_story(
     piece: detect → if it carries the discourse tells the span patcher can't fix
     (or blocks) → one bounded ``revise_prose_deslop``. The unlock line is added
     later by the exporter from a word ratio (not embedded in the prose), so a
-    sentence-level rewrite never disturbs it. Soft: any failure keeps the
-    original text and never blocks publication.
+    sentence-level rewrite never disturbs it. Failures keep the original text.
+    The returned candidate grants no adoption or publication authority.
     """
 
     if not full_text or not full_text.strip():
@@ -447,15 +729,18 @@ async def _deslop_whole_short_story(
             "fanqie_deslop_started",
             {"project_slug": project.slug, "before_score": outcome.before_score},
         )
-        cleaned = await revise_prose_deslop(
-            session,
-            settings,
-            content=full_text,
-            language=lang,
-            project_id=project.id,
-            target_chars=count_words(full_text),
-            rounds=3,
-        )
+        from bestseller.services import llm
+
+        retained_settings = settings.model_copy(deep=True)
+        retained_settings.artifact_store.retain_prompt_payloads = True
+        with llm.bind_project_prompt_audit(
+            project.id, reason="Whole-story candidate; adoption required",
+        ):
+            cleaned = await revise_prose_deslop(
+                session, retained_settings, content=full_text, language=lang,
+                project_id=project.id, workflow_run_id=workflow_run_id,
+                target_chars=count_words(full_text), rounds=3, observe_candidate=observe_candidate,
+            )
         _emit_progress(
             progress,
             "fanqie_deslop_completed",
@@ -471,6 +756,7 @@ async def _deslop_whole_short_story(
         return full_text
 
 
+@project_prompt_audit_scope
 async def run_fanqie_short_pipeline(
     session: AsyncSession,
     settings: AppSettings,
@@ -500,7 +786,26 @@ async def run_fanqie_short_pipeline(
         if not is_fanqie_short_project(project):
             raise ValueError(f"Project {slug} is not a fanqie short story project")
 
-    await _ensure_project_invariants(session, project, settings)
+    bind_resolved_project_prompt_audit(
+        project.id, reason="Short-story autowrite project request and paid-return custody",
+    )
+    from bestseller.services.fanqie_short_plan_resume import (
+        ReusedFanqieAutowriteResult,
+        require_or_read_existing_complete_fanqie_plan,
+    )
+
+    retained_plan = await require_or_read_existing_complete_fanqie_plan(
+        session, settings, project=project,
+    )
+    from bestseller.services.fanqie_foundation_stage_resume import SCHEMA as FOUNDATION_STAGE
+
+    retained_foundation = (
+        retained_plan if retained_plan and retained_plan.get("schema") == FOUNDATION_STAGE else None
+    )
+    if retained_foundation is not None:
+        retained_plan = None
+    if retained_plan is None:
+        await _ensure_project_invariants(session, project, settings)
 
     meta = dict(project.metadata_json or {})
     unlock_ratio = float(meta.get("unlock_line_ratio") or DEFAULT_UNLOCK_LINE_RATIO)
@@ -508,177 +813,258 @@ async def run_fanqie_short_pipeline(
     protagonist_name = "我" if pov == "first_person" else None
     output_dir = (Path(settings.output.base_dir) / slug).resolve()
 
-    _emit_progress(progress, "fanqie_foundation_plan_started", {"project_slug": slug})
-    planning_result = await generate_foundation_plan(
-        session,
-        settings,
-        slug,
-        premise,
-        requested_by=requested_by,
-        progress=progress,
-    )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "fanqie_foundation_plan_completed",
-        {
-            "project_slug": slug,
-            "workflow_run_id": str(planning_result.workflow_run_id),
-        },
-    )
+    if retained_plan is None:
+        _emit_progress(progress, "fanqie_foundation_plan_started", {"project_slug": slug})
+        if retained_foundation is None:
+            planning_result = await generate_foundation_plan(
+                session,
+                settings,
+                slug,
+                premise,
+                requested_by=requested_by,
+                progress=progress,
+            )
+        else:
+            from types import SimpleNamespace
 
-    book_artifact = await get_latest_planning_artifact(
-        session, project_id=project.id, artifact_type=ArtifactType.BOOK_SPEC
-    )
-    cast_artifact = await get_latest_planning_artifact(
-        session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC
-    )
-    book_spec = book_artifact.content if book_artifact else {}
-    cast_spec = cast_artifact.content if cast_artifact else {}
-
-    # 母题/故事内核（精简版，volumes=1）。advisory：失败一律降级为 None，绝不阻断成书。
-    ideology_kernel = None
-    _emit_progress(progress, "fanqie_ideology_kernel_started", {"project_slug": slug})
-    try:
-        ideology_kernel = await derive_ideology_kernel(
-            session,
-            settings,
-            premise=premise,
-            genre=project.genre,
-            book_spec=book_spec if isinstance(book_spec, dict) else None,
-            volumes=1,
-            title=project.title or "",
-            language="zh",
-            cost_style=resolve_cost_style(getattr(project, "metadata_json", None) or {}),
-            project_id=project.id,
-            workflow_run_id=planning_result.workflow_run_id,
-        )
+            planning_result = SimpleNamespace(
+                workflow_run_id=UUID(retained_foundation["planning_workflow_run_id"]),
+            )
+            _emit_progress(progress, "fanqie_selected_foundation_reused", {
+                "project_slug": slug,
+                "workflow_run_id": str(planning_result.workflow_run_id),
+                "foundation_artifact_ids": retained_foundation["foundation_artifact_ids"],
+                "materialization_reused": False,
+            })
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
-            "fanqie_ideology_kernel_completed",
+            "fanqie_foundation_plan_completed",
             {
                 "project_slug": slug,
-                "primary_motif": getattr(
-                    getattr(ideology_kernel, "primary_motif", None), "motif_key", ""
-                ),
-                "thesis_statement": getattr(ideology_kernel, "thesis_statement", ""),
+                "workflow_run_id": str(planning_result.workflow_run_id),
             },
         )
-    except Exception:
-        logger.warning(
-            "Fanqie ideology kernel derivation failed for %s; continuing without it",
-            slug,
-            exc_info=True,
-        )
-        _emit_progress(
-            progress, "fanqie_ideology_kernel_skipped", {"project_slug": slug}
-        )
 
-    _emit_progress(progress, "fanqie_beat_sheet_started", {"project_slug": slug})
-    beat_sheet = await generate_fanqie_beat_sheet(
-        session,
-        settings,
-        slug,
-        premise,
-        book_spec=book_spec if isinstance(book_spec, dict) else None,
-        cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
-        ideology_kernel=ideology_kernel,
-        requested_by=requested_by,
-    )
-    outline_payload = build_fanqie_segment_outline_batch(
-        project,
-        beat_sheet,
-        book_spec=book_spec if isinstance(book_spec, dict) else None,
-        cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
-    )
-    source_paths = _write_fanqie_source_artifacts(
-        output_dir,
-        project=project,
-        premise=premise,
-        beat_sheet=beat_sheet,
-        outline_payload=outline_payload,
-        book_spec=book_spec if isinstance(book_spec, dict) else None,
-        cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
-    )
-    await persist_fanqie_chapter_outline(session, slug, outline_payload)
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "fanqie_beat_sheet_completed",
-        {
-            "project_slug": slug,
-            "segment_count": len(beat_sheet.beats),
-            "unlock_milestone_segment": beat_sheet.unlock_milestone_segment,
-            "source_paths": source_paths,
-        },
-    )
+        if retained_foundation is None:
+            book_artifact = await get_latest_planning_artifact(
+                session, project_id=project.id, artifact_type=ArtifactType.BOOK_SPEC
+            )
+            cast_artifact = await get_latest_planning_artifact(
+                session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC
+            )
+            book_spec = book_artifact.content if book_artifact else {}
+            cast_spec = cast_artifact.content if cast_artifact else {}
+        else:
+            book_spec = retained_foundation["foundation_contents"]["book_spec"]
+            cast_spec = retained_foundation["foundation_contents"]["cast_spec"]
 
-    _emit_progress(progress, "fanqie_materialization_started", {"project_slug": slug})
-    bible_result = await materialize_latest_story_bible(
-        session, slug, requested_by=requested_by
-    )
-    outline_result = await materialize_latest_chapter_outline_batch(
-        session, slug, requested_by=requested_by
-    )
-    _emit_progress(progress, "narrative_graph_materialization_started", {"project_slug": slug})
-    narrative_graph_result = await materialize_latest_narrative_graph(
-        session, slug, requested_by=requested_by
-    )
-    await _checkpoint_commit(session)
-    _emit_progress(
-        progress,
-        "narrative_graph_materialization_completed",
-        {
-            "project_slug": slug,
-            "workflow_run_id": str(narrative_graph_result.workflow_run_id),
-            "plot_arc_count": narrative_graph_result.plot_arc_count,
-            "clue_count": narrative_graph_result.clue_count,
-        },
-    )
-    _emit_progress(
-        progress,
-        "fanqie_materialization_completed",
-        {
-            "project_slug": slug,
-            "segments_created": outline_result.chapters_created,
-            "chapters_created": outline_result.chapters_created,
-            "scenes_created": outline_result.scenes_created,
-        },
-    )
+        # 母题/故事内核（精简版，volumes=1）。advisory：失败一律降级为 None，绝不阻断成书。
+        ideology_kernel = None
+        _emit_progress(progress, "fanqie_ideology_kernel_started", {"project_slug": slug})
+        try:
+            ideology_kernel = await derive_ideology_kernel(
+                session,
+                settings,
+                premise=premise,
+                genre=project.genre,
+                book_spec=book_spec if isinstance(book_spec, dict) else None,
+                volumes=1,
+                title=project.title or "",
+                language="zh",
+                cost_style=resolve_cost_style(getattr(project, "metadata_json", None) or {}),
+                project_id=project.id,
+                workflow_run_id=planning_result.workflow_run_id,
+                metadata=getattr(project, "metadata_json", None) or {},
+            )
+            _emit_progress(
+                progress,
+                "fanqie_ideology_kernel_completed",
+                {
+                    "project_slug": slug,
+                    "primary_motif": getattr(
+                        getattr(ideology_kernel, "primary_motif", None), "motif_key", ""
+                    ),
+                    "thesis_statement": getattr(ideology_kernel, "thesis_statement", ""),
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Fanqie ideology kernel derivation failed for %s; continuing without it",
+                slug,
+                exc_info=True,
+            )
+            _emit_progress(
+                progress, "fanqie_ideology_kernel_skipped", {"project_slug": slug}
+            )
 
-    segment_count = project.target_chapters
-    for chapter_no in range(1, segment_count + 1):
-        _emit_progress(
-            progress,
-            "fanqie_segment_writing_started",
-            {"project_slug": slug, "segment_number": chapter_no, "segment_total": segment_count},
-        )
-        await run_chapter_pipeline(
+        _emit_progress(progress, "fanqie_beat_sheet_started", {"project_slug": slug})
+        beat_sheet = await generate_fanqie_beat_sheet(
             session,
             settings,
             slug,
-            chapter_no,
+            premise,
+            book_spec=book_spec if isinstance(book_spec, dict) else None,
+            cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
+            ideology_kernel=ideology_kernel,
             requested_by=requested_by,
-            export_markdown=False,
-            progress=progress,
+        )
+        # The paid Beat and its producer outcome survive a later projection
+        # failure. A failed consumer must not roll back the durable paid stage.
+        await _checkpoint_commit(session)
+        outline_payload = build_fanqie_segment_outline_batch(
+            project,
+            beat_sheet,
+            book_spec=book_spec if isinstance(book_spec, dict) else None,
+            cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
+        )
+        from bestseller.services.fanqie_outline_contract_completion import (
+            complete_missing_outline_contract,
+        )
+
+        outline_payload = await complete_missing_outline_contract(
+            session, settings, project_id=project.id, outline_payload=outline_payload,
+            requested_by=requested_by,
+        )
+        source_paths = _write_fanqie_source_artifacts(
+            output_dir,
+            project=project,
+            premise=premise,
+            beat_sheet=beat_sheet,
+            outline_payload=outline_payload,
+            book_spec=book_spec if isinstance(book_spec, dict) else None,
+            cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
+        )
+        await persist_fanqie_chapter_outline(session, slug, outline_payload)
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "fanqie_beat_sheet_completed",
+            {
+                "project_slug": slug,
+                "segment_count": len(beat_sheet.beats),
+                "unlock_milestone_segment": beat_sheet.unlock_milestone_segment,
+                "source_paths": source_paths,
+            },
+        )
+
+        _emit_progress(progress, "fanqie_materialization_started", {"project_slug": slug})
+        bible_result = await materialize_latest_story_bible(
+            session, slug, requested_by=requested_by
+        )
+        outline_result = await materialize_latest_chapter_outline_batch(
+            session, slug, requested_by=requested_by
+        )
+        await _checkpoint_commit(session)
+        from bestseller.services.fanqie_outline_source_selection import (
+            admit_and_select_outline_source,
+        )
+
+        await admit_and_select_outline_source(
+            session, settings, project_id=project.id,
+            artifact_id=outline_result.source_artifact_id,
+            materialization_workflow_id=outline_result.workflow_run_id,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "narrative_graph_materialization_started", {"project_slug": slug})
+        narrative_graph_result = await materialize_latest_narrative_graph(
+            session, slug, requested_by=requested_by
         )
         await _checkpoint_commit(session)
         _emit_progress(
             progress,
-            "fanqie_segment_writing_completed",
-            {"project_slug": slug, "segment_number": chapter_no},
+            "narrative_graph_materialization_completed",
+            {
+                "project_slug": slug,
+                "workflow_run_id": str(narrative_graph_result.workflow_run_id),
+                "plot_arc_count": narrative_graph_result.plot_arc_count,
+                "clue_count": narrative_graph_result.clue_count,
+            },
+        )
+        _emit_progress(
+            progress,
+            "fanqie_materialization_completed",
+            {
+                "project_slug": slug,
+                "segments_created": outline_result.chapters_created,
+                "chapters_created": outline_result.chapters_created,
+                "scenes_created": outline_result.scenes_created,
+            },
         )
 
-    chapter_payloads = await _load_chapter_drafts(session, project.id)
-    full_text = assemble_fanqie_whole_story(project, chapter_payloads)
+    else:
+        from types import SimpleNamespace
 
-    # 去 AI 味·整篇兜底：每段已在 run_chapter_pipeline 过了 cinematic_pov + gate +
-    # deslop，但拼成整篇后才看得见的跨段车轱辘（同一身体感觉/动作/潜台词反复换皮）
-    # 和句号变体「不是X。是Y」等残留，须在整篇层再清一遍。与长篇 gate 同款触发
-    # （block 或话语腔类别），soft、绝不阻断成书。
-    full_text = await _deslop_whole_short_story(
-        session, settings, full_text, project=project, progress=progress
+        planning_result = SimpleNamespace(
+            workflow_run_id=retained_plan["planning_workflow_run_id"],
+        )
+        outline_result = SimpleNamespace(
+            workflow_run_id=retained_plan["outline_workflow_run_id"],
+            chapters_created=0, scenes_created=0,
+        )
+        bible_result = SimpleNamespace(
+            workflow_run_id=retained_plan["story_bible_workflow_run_id"],
+        )
+        narrative_graph_result = SimpleNamespace(
+            workflow_run_id=retained_plan["narrative_graph_workflow_run_id"],
+        )
+        beat_sheet = SimpleNamespace(unlock_milestone_segment=retained_plan["unlock_segment"])
+        _emit_progress(
+            progress, "fanqie_materialized_plan_reused",
+            {"project_slug": slug, **{
+                key: str(value) if isinstance(value, UUID) else value
+                for key, value in retained_plan.items()
+            }},
+        )
+        _emit_progress(
+            progress, "fanqie_materialization_completed",
+            {"project_slug": slug, "planning_reused": True, "materialization_reused": True,
+             "segments_created": 0, "chapters_created": 0, "scenes_created": 0,
+             "workflow_run_id": str(outline_result.workflow_run_id)},
+        )
+
+    from bestseller.services.fanqie_short_source_export import (
+        checkpoint_writing,
+        preserve_whole_candidate,
+        publish_adopted_assembly,
+        read_adopted_assembly,
     )
+    await checkpoint_writing(session, project.id)
+    await _run_fanqie_segments(
+        session, settings, project, requested_by=requested_by, progress=progress,
+    )
+
+    adopted = await read_adopted_assembly(session, project.id)
+    full_text = adopted.full_text
+    # End the read transaction before any advisory model request.
+    await _checkpoint_commit(session)
+
+    async def observe_whole_candidate(observation: dict[str, Any]) -> None:
+        preserve_whole_candidate(
+            output_dir, producer="deslop_round", body=observation["content"],
+            source_manifest=adopted.manifest,
+            evidence={
+                "llm_run_id": (
+                    str(observation["llm_run_id"]) if observation.get("llm_run_id") else None
+                ),
+                "round": observation.get("round"),
+                "parent_content": observation.get("parent_content"),
+                "information_preservation": observation.get("information_preservation"),
+                "physical_proof_asserted": False,
+            },
+        )
+
+    candidate_text = await _deslop_whole_short_story(
+        session, settings, full_text, project=project, progress=progress,
+        workflow_run_id=planning_result.workflow_run_id, observe_candidate=observe_whole_candidate,
+    )
+    if candidate_text != full_text:
+        preserve_whole_candidate(
+            output_dir, producer="deslop_selected", body=str(candidate_text),
+            source_manifest=adopted.manifest,
+        )
+    # Only the adopted assembly is reviewed and offered to the official exporter.
     total_words = count_words(full_text)
 
     _emit_progress(progress, "fanqie_whole_review_started", {"project_slug": slug})
@@ -695,6 +1081,10 @@ async def run_fanqie_short_pipeline(
     )
 
     # 文采 advisory：评全文文采分，仅记录/上报，绝不影响 passed 或阻断成书。
+    await _require_fanqie_production_running(
+        session, project_id=project.id, slug=slug,
+        segment_number=project.target_chapters + 1, progress=progress,
+    )
     _emit_progress(progress, "fanqie_litstyle_advisory_started", {"project_slug": slug})
     try:
         litstyle_result = await judge_chapter_litstyle_stable(
@@ -728,140 +1118,29 @@ async def run_fanqie_short_pipeline(
             progress, "fanqie_litstyle_advisory_skipped", {"project_slug": slug}
         )
 
-    ranking_rewrite_task_count = 0
-    if not whole_review.passed and whole_review.ranking_report is not None:
-        try:
-            ranking_rewrite_task_count = await _persist_fanqie_ranking_gate_failure(
-                session,
-                project,
-                report=whole_review.ranking_report,
-                unlock_segment=beat_sheet.unlock_milestone_segment,
-            )
-            await _checkpoint_commit(session)
-            _emit_progress(
-                progress,
-                "fanqie_ranking_gate_rewrite_tasks_created",
-                {
-                    "project_slug": slug,
-                    "rewrite_task_count": ranking_rewrite_task_count,
-                    "ranking_gate_passed": whole_review.ranking_report.passed,
-                    "critical_codes": [
-                        finding.code
-                        for finding in whole_review.ranking_report.findings
-                        if finding.severity == "critical"
-                    ],
-                },
-            )
-        except Exception:
-            logger.warning(
-                "Persisting fanqie ranking gate failure failed for %s",
-                slug,
-                exc_info=True,
-            )
-
-    short_v2_rewrite_task_count = 0
-    if not whole_review.short_v2_passed and whole_review.short_v2_report is not None:
-        try:
-            short_v2_rewrite_task_count = await _persist_fanqie_short_v2_gate_failure(
-                session,
-                project,
-                report=whole_review.short_v2_report,
-                unlock_segment=beat_sheet.unlock_milestone_segment,
-            )
-            await _checkpoint_commit(session)
-            routes = build_fanqie_short_v2_rewrite_routes(whole_review.short_v2_report)
-            _emit_progress(
-                progress,
-                "fanqie_short_v2_gate_rewrite_tasks_created",
-                {
-                    "project_slug": slug,
-                    "rewrite_task_count": short_v2_rewrite_task_count,
-                    "short_v2_gate_passed": whole_review.short_v2_report.passed,
-                    "critical_codes": [
-                        finding.code
-                        for finding in whole_review.short_v2_report.findings
-                        if finding.severity == "critical"
-                    ],
-                    "worker_routes": [
-                        route.model_dump(mode="json") for route in routes
-                    ],
-                },
-            )
-        except Exception:
-            logger.warning(
-                "Persisting fanqie short v2 gate failure failed for %s",
-                slug,
-                exc_info=True,
-            )
-
-    export_paths: dict[str, str] = {}
-    rejected_paths: dict[str, str] = {}
-    if export_markdown and full_text.strip() and whole_review.passed:
-        export_paths = export_fanqie_short_markdown(
-            output_dir,
-            title=project.title,
-            genre=project.genre,
-            full_text=full_text,
-            unlock_line_ratio=unlock_ratio,
-            protagonist_name=protagonist_name,
-            target_word_count=project.target_word_count,
-        )
-        _emit_progress(
-            progress,
-            "fanqie_export_completed",
-            {"project_slug": slug, **export_paths, "total_words": total_words},
-        )
-    elif export_markdown and full_text.strip():
-        finalization = finalize_fanqie_short_for_upload(
-            output_dir,
-            title=project.title,
-            genre=project.genre,
-            full_text=full_text,
-            unlock_line_ratio=unlock_ratio,
-            protagonist_name=protagonist_name,
-            target_word_count=project.target_word_count,
-        )
-        full_text = finalization.full_text
-        total_words = count_words(full_text)
-        whole_review = finalization.review
-        if finalization.ready_for_upload:
-            export_paths = finalization.export_paths
-            _emit_progress(
-                progress,
-                "fanqie_finalizer_export_completed",
-                {
-                    "project_slug": slug,
-                    **export_paths,
-                    "total_words": total_words,
-                    "final_title": finalization.title,
-                    "finalization_actions": list(finalization.actions),
-                    "finalization_report_path": finalization.report_path,
-                },
-            )
-        else:
-            rejected_paths = finalization.export_paths or export_fanqie_short_rejected_draft(
-                output_dir,
-                title=project.title,
-                genre=project.genre,
-                full_text=full_text,
-                review_report=whole_review.to_dict(),
-                unlock_line_ratio=unlock_ratio,
-                protagonist_name=protagonist_name,
-                target_word_count=project.target_word_count,
-            )
-            _emit_progress(
-                progress,
-                "fanqie_export_skipped",
-                {
-                    "project_slug": slug,
-                    "reason": "whole_review_failed_after_finalizer",
-                    "total_words": total_words,
-                    "review_notes": whole_review.notes,
-                    "rejected_paths": rejected_paths,
-                    "finalization_actions": list(finalization.actions),
-                    "finalization_report_path": finalization.report_path,
-                },
-            )
+    await _require_fanqie_production_running(
+        session, project_id=project.id, slug=slug,
+        segment_number=project.target_chapters + 1, progress=progress,
+    )
+    outcome = await publish_adopted_assembly(
+        session, project_id=project.id, output_dir=output_dir, expected=adopted,
+        unlock_line_ratio=unlock_ratio, protagonist_name=protagonist_name,
+        export_markdown=export_markdown,
+        unlock_segment=beat_sheet.unlock_milestone_segment,
+        settings=settings,
+    )
+    full_text, whole_review = outcome["full_text"], outcome["review"]
+    effective_passed = outcome.get("effective_passed", whole_review.passed)
+    semantic_gates = outcome.get("current_semantic") or {}
+    total_words = count_words(full_text)
+    export_paths, rejected_paths = outcome["export_paths"], outcome["rejected_paths"]
+    ranking_rewrite_task_count = outcome["revision_task_counts"]["ranking"]
+    short_v2_rewrite_task_count = outcome["revision_task_counts"]["short_v2"]
+    _emit_progress(
+        progress, "fanqie_export_completed" if export_paths else "fanqie_export_skipped",
+        {"project_slug": slug, "status": outcome["status"], "total_words": total_words,
+         "candidate_paths": outcome["candidate_paths"], **export_paths, **rejected_paths},
+    )
 
     _emit_progress(
         progress,
@@ -869,15 +1148,23 @@ async def run_fanqie_short_pipeline(
         {
             "project_slug": slug,
             "total_words": total_words,
-            "whole_review_passed": whole_review.passed,
-            "ranking_gate_passed": whole_review.ranking_passed,
-            "short_v2_gate_passed": whole_review.short_v2_passed,
+            "whole_review_passed": effective_passed,
+            "heuristic_whole_review_passed": whole_review.passed,
+            "current_semantic": outcome.get("current_semantic"),
+            "ranking_gate_passed": semantic_gates.get(
+                "ranking_gate_passed", whole_review.ranking_passed,
+            ),
+            "short_v2_gate_passed": semantic_gates.get(
+                "short_v2_gate_passed", whole_review.short_v2_passed,
+            ),
             "ranking_rewrite_task_count": ranking_rewrite_task_count,
             "short_v2_rewrite_task_count": short_v2_rewrite_task_count,
         },
     )
 
-    return AutowriteResult(
+    result_type = ReusedFanqieAutowriteResult if retained_plan else AutowriteResult
+    reuse_fields = {"plan_reuse_receipt": retained_plan} if retained_plan else {}
+    return result_type(
         project_id=project.id,
         project_slug=slug,
         planning_workflow_run_id=planning_result.workflow_run_id,
@@ -885,7 +1172,8 @@ async def run_fanqie_short_pipeline(
         outline_workflow_run_id=outline_result.workflow_run_id,
         narrative_graph_workflow_run_id=narrative_graph_result.workflow_run_id,
         project_workflow_run_id=planning_result.workflow_run_id,
-        chapter_count=len(chapter_payloads),
+        chapter_count=len(adopted.manifest["sources"]),
+        whole_book_complete=outcome["whole_book_complete"],
         export_status=(
             "exported"
             if export_paths
@@ -898,6 +1186,7 @@ async def run_fanqie_short_pipeline(
         output_files=(
             list(export_paths.values()) if export_paths else list(rejected_paths.values())
         ),
-        final_verdict="pass" if whole_review.passed else "needs_attention",
-        requires_human_review=not whole_review.passed,
+        final_verdict="pass" if effective_passed else "needs_revision",
+        requires_human_review=not effective_passed,
+        **reuse_fields,
     )

@@ -12,8 +12,26 @@ from bestseller.services.golden_rules import render_golden_three_rules
 from bestseller.settings import load_settings
 
 
+def _review_completion(**kwargs):
+    # A provider tool response carries the unchanged report as JSON arguments.
+    raw = kwargs.get("content", "")
+    try:
+        report = json.loads(raw)
+    except (TypeError, ValueError):
+        report = {}
+    if isinstance(report, dict) and "wire_version" in report:
+        kwargs["tool_calls"] = [{"id": "submission-test", "type": "function",
+                                 "function": {"name": "submit_chapter_review", "arguments": raw}}]
+    return LLMCompletionResult(**kwargs)
+
+
+
 class FakeSession:
-    pass
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
 
 
 @pytest.mark.asyncio
@@ -21,9 +39,11 @@ async def test_chapter_llm_quality_judge_applies_golden_three_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_complete_text(session, settings, request):
-        return LLMCompletionResult(
+        return _review_completion(
             content=json.dumps(
                 {
+                    "wire_version": "commercial-review-wire.v2",
+                    
                     "pass": True,
                     "overall_score": 0.85,
                     "dimension_scores": {
@@ -31,7 +51,7 @@ async def test_chapter_llm_quality_judge_applies_golden_three_threshold(
                         "commercial_pull": 0.90,
                         "readability": 0.90,
                     },
-                    "blocking_issues": [],
+                    "issues": [],
                     # Actionable rewrite plan lets the framework override
                     # the LLM's pass verdict when numeric thresholds fail.
                     # Without an actionable plan we don't fabricate
@@ -68,16 +88,18 @@ async def test_chapter_llm_quality_judge_passes_front_ten(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_complete_text(session, settings, request):
-        return LLMCompletionResult(
+        return _review_completion(
             content=json.dumps(
                 {
+                    "wire_version": "commercial-review-wire.v2",
+                    
                     "pass": True,
                     "overall_score": 0.83,
                     "dimension_scores": {
                         "hook_strength": 0.82,
                         "continuity": 0.83,
                     },
-                    "blocking_issues": [],
+                    "issues": [],
                     "rewrite_plan": {"scope": "chapter"},
                 },
                 ensure_ascii=False,
@@ -99,13 +121,15 @@ async def test_chapter_llm_quality_judge_passes_front_ten(
 
 
 def _scored_completion(overall: float) -> LLMCompletionResult:
-    return LLMCompletionResult(
+    return _review_completion(
         content=json.dumps(
             {
+                "wire_version": "commercial-review-wire.v2",
+                
                 "pass": True,
                 "overall_score": overall,
                 "dimension_scores": {"opening_pull": overall, "readability": overall},
-                "blocking_issues": [],
+                "issues": [],
                 "rewrite_plan": {"scope": "chapter"},
             },
             ensure_ascii=False,
@@ -378,16 +402,17 @@ def test_chapter_window_judge_keeps_forbidden_signal_with_content_evidence() -> 
 
 
 @pytest.mark.asyncio
-async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
+async def test_chapter_judge_prompt_does_not_promote_default_recipes_to_obligations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str] = {}
 
     async def fake_complete_text(session, settings, request):
         captured["user"] = request.user_prompt
-        return LLMCompletionResult(
+        return _review_completion(
             content=json.dumps(
                 {
+                    "wire_version": "commercial-review-wire.v2",
                     "pass": True,
                     "overall_score": 0.92,
                     "dimension_scores": {
@@ -395,8 +420,8 @@ async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
                         "commercial_pull": 0.92,
                         "readability": 0.92,
                     },
-                    "blocking_issues": [],
-                    "audit_issues": [],
+                    "issues": [],
+                    
                     "rewrite_plan": {"scope": "chapter"},
                 },
                 ensure_ascii=False,
@@ -415,10 +440,9 @@ async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
         pack=get_prompt_pack("suspense-mystery"),
     )
 
-    assert "评估时必须参照的方法论标准" in captured["user"]
-    assert "【opening_rules】" in captured["user"]
-    assert render_golden_three_rules(1, "zh-CN", path_mode="judge") in captured["user"]
-    # 弹簧法(压抑-打脸)是爽文向方法，悬疑判官不再被兜底注入，防题材固化。
+    assert "SOURCE AUTHORITY" in captured["user"]
+    assert "【opening_rules】" not in captured["user"]
+    assert render_golden_three_rules(1, "zh-CN", path_mode="judge") not in captured["user"]
     assert "【spring_model】" not in captured["user"]
 
     await chapter_llm_quality_judge.judge_chapter_commercial_quality(
@@ -428,7 +452,8 @@ async def test_chapter_judge_prompt_includes_methodology_for_golden_three(
         content_md="林渊走进楼道。",
         pack=get_prompt_pack("xianxia-upgrade-core"),
     )
-    assert "【spring_model】" in captured["user"]
+    assert "【spring_model】" not in captured["user"]
+    assert "SOURCE AUTHORITY" in captured["user"]
 
 
 @pytest.mark.asyncio
@@ -439,14 +464,15 @@ async def test_chapter_judge_prompt_excludes_opening_rules_for_chapter_11(
 
     async def fake_complete_text(session, settings, request):
         captured["user"] = request.user_prompt
-        return LLMCompletionResult(
+        return _review_completion(
             content=json.dumps(
                 {
+                    "wire_version": "commercial-review-wire.v2",
                     "pass": True,
                     "overall_score": 0.86,
                     "dimension_scores": {},
-                    "blocking_issues": [],
-                    "audit_issues": [],
+                    "issues": [],
+                    
                     "rewrite_plan": {"scope": "chapter"},
                 },
                 ensure_ascii=False,

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 # ruff: noqa: ANN401
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from typing import Any
 
 from bestseller.domain.chapter_generation_input import ChapterGenerationInputBundle
 from bestseller.services.chapter_llm_quality_judge import chapter_commercial_thresholds
-from bestseller.services.methodology_application_gate import build_methodology_application_contract
+from bestseller.services.creation_contract_authority import select_creation_contracts
+from bestseller.services.methodology_overlay import resolve_methodology_contract_mode
 
 _METHODOLOGY_BLOCK_ATTRS: tuple[str, ...] = (
     "reader_contract_block",
@@ -19,6 +21,7 @@ _METHODOLOGY_BLOCK_ATTRS: tuple[str, ...] = (
     "hook_echo_block",
     "exposition_density_block",
     "canon_guardrails_block",
+    "identity_constraint_block",
     "timeline_canon_block",
     "scene_coherence_block",
     "character_role_block",
@@ -30,7 +33,6 @@ _REQUIRED_CONTEXT_KEYS: tuple[str, ...] = (
     "scenes",
     "scenes.purpose",
     "scenes.entry_exit",
-    "scenes.methodology_contract",
     "story_bible",
     "chapter_acceptance_contract",
     "continuity.previous_scene_summaries",
@@ -46,7 +48,83 @@ _TRANSIENT_CHAPTER_METADATA_KEYS: frozenset[str] = frozenset(
         "chapter_outline_readiness_report",
         "write_safety_gate_report",
         "quality_gate_report",
+        "write_safety_hint",
     }
+)
+
+_CHAPTER_RUNTIME_EVIDENCE_KEYS: frozenset[str] = frozenset(
+    {
+        "quality_bundle",
+        "quality_contract_version",
+        "quality_findings",
+        "quality_bundle_passed",
+        "quality_bundle_blocking_codes",
+        "production_block_code",
+        "quality_closure",
+        "reader_judge",
+        "reader_judge_voice_failures",
+        "reader_judge_voice_rewrite_count",
+        "reader_judge_voice_stalled",
+        "reader_judge_voice_debt",
+        "persona_gate_evidence",
+        "retention_gate_last_findings",
+        "retention_gate_passed",
+        "retention_retry_count",
+        "retention_retry_last_block_codes",
+        "rewrite_attempts_by_kind",
+        "rewrite_escalation",
+        "common_sense_dismissed_codes",
+        "common_sense_adjudication",
+        "gate_adjudication",
+        "review_result",
+        "review_evidence",
+        "chapter_scene_contract_materialization",
+        "commercial_component_cohorts",
+        "active_foundation_selection",
+        "current_body_review_status",
+        "current_body_draft_id",
+        "current_body_fingerprint",
+        "superseded_body_review_history",
+        "chapter_critic_cycles",
+        "stalled_selection_recoveries_v1",
+        "source_correction_review",
+        "source_correction_projection_withdrawals",
+        "chapter_review_active_cycle",
+        "chapter_review_recovery_cycles",
+        "chapter_review_attempts_active",
+        "chapter_first_resume_existing_draft_id",
+        "chapter_review_evidence_status",
+        "chapter_review_evidence_report_id",
+        "outline_source_admission",
+        "outline_source_admission_history",
+        "outline_materialization_history",
+        "outline_prefix_readiness",
+        "outline_prefix_readiness_history",
+        "knowledge_feedback_receipts",
+        "story_bible_update_receipts",
+        "continuity_admission",
+        "continuity_admission_history",
+        "continuity_admission_by_source",
+        "continuity_adoption_block",
+        "resolved_continuity_adoption_block",
+        "blocked_by_phase_d_time_gate",
+        "execution_window",
+        "execution_window_hash",
+    }
+)
+
+_CHAPTER_RUNTIME_EVIDENCE_PREFIXES: tuple[str, ...] = (
+    "deterministic_audit_",
+    "contract_receipt_",
+    "chapter_continuity_",
+    "auto_repair_",
+    "common_sense_",
+    "reader_judge_",
+    "write_safety_",
+    "post_assembly_",
+    "scene_contract_materialized_",
+    "chapter_contract_materialized_",
+    "chapter_scene_contract_materialized_",
 )
 
 _TRANSIENT_SCENE_METADATA_KEYS: frozenset[str] = frozenset(
@@ -76,6 +154,8 @@ _TRANSIENT_SCENE_METADATA_KEYS: frozenset[str] = frozenset(
     }
 )
 
+_PLANNING_METADATA_KEYS = frozenset({"causal_contract", "methodology_contract", "whole_chapter_logic_contract"})
+
 
 def build_chapter_generation_input_bundle(
     *,
@@ -85,12 +165,20 @@ def build_chapter_generation_input_bundle(
     context_packet: Any,
     target_word_count: int,
 ) -> ChapterGenerationInputBundle:
+    methodology_mode = resolve_methodology_contract_mode(project)
+    required_context_keys = _REQUIRED_CONTEXT_KEYS + (
+        ("scenes.methodology_contract",) if methodology_mode == "strict" else ()
+    )
     methodology_blocks = {
         attr: str(getattr(context_packet, attr, "") or "").strip()
         for attr in _METHODOLOGY_BLOCK_ATTRS
         if str(getattr(context_packet, attr, "") or "").strip()
     }
-    scene_payloads = _scene_payloads(scenes)
+    # Only source/identity guards and operational length belong in this channel.
+    advisory_blocks = {key: value for key, value in methodology_blocks.items()
+        if key not in {"canon_guardrails_block", "identity_constraint_block", "timeline_canon_block", "character_role_block", "chapter_length_block"}}
+    methodology_blocks = {key: value for key, value in methodology_blocks.items() if key not in advisory_blocks}
+    scene_payloads = _scene_payloads(scenes, methodology_contract_mode=methodology_mode)
     continuity = {
         "previous_scene_summaries": _dump_context_items(
             getattr(context_packet, "previous_scene_summaries", None) or []
@@ -112,15 +200,14 @@ def build_chapter_generation_input_bundle(
         ),
     }
     story_bible = _mapping_or_empty(getattr(context_packet, "story_bible", None))
-    chapter_contract = _chapter_contract_payload(context_packet, chapter=chapter)
+    chapter_contract = _chapter_contract_payload(
+        context_packet, chapter=chapter, include_methodology=methodology_mode == "strict",
+    )
     quality_targets = {
         "target_word_count": target_word_count,
         "chapter_number": int(getattr(chapter, "chapter_number", 0) or 0),
         "golden_three": int(getattr(chapter, "chapter_number", 0) or 0) <= 3,
         "front_ten": int(getattr(chapter, "chapter_number", 0) or 0) <= 10,
-        "assigned_hype_type": getattr(context_packet, "assigned_hype_type", None),
-        "assigned_hype_recipe_key": getattr(context_packet, "assigned_hype_recipe_key", None),
-        "assigned_hype_intensity": getattr(context_packet, "assigned_hype_intensity", None),
     }
     acceptance_contract = _acceptance_contract(
         chapter=chapter,
@@ -129,6 +216,57 @@ def build_chapter_generation_input_bundle(
         quality_targets=quality_targets,
         story_bible=story_bible,
     )
+    from bestseller.services.planner import _source_bound_cast_enabled
+
+    explicit_contracts = select_creation_contracts(
+        _mapping_or_empty(getattr(project, "metadata_json", None)),
+        source_bound=_source_bound_cast_enabled(project),
+    )
+    # Retain real canonical provenance for the fields the shared selector
+    # accepted. Never reconstruct it from cache/source=user or a mode label.
+    selected_creation = explicit_contracts.get("creation_intent_contract")
+    raw_creation = _mapping_or_empty(
+        _mapping_or_empty(getattr(project, "metadata_json", None)).get("creation_intent_contract")
+    )
+    raw_sources = _mapping_or_empty(raw_creation.get("field_sources"))
+    if isinstance(selected_creation, dict):
+        selected_creation["field_sources"] = {
+            key: raw_sources[key] for key in selected_creation
+            if raw_sources.get(key) == "explicit"
+        }
+    acceptance_contract["methodology_contract_mode"] = methodology_mode
+    fact_sources = {
+        "recent_timeline_events": continuity["recent_timeline_events"],
+        "participant_canon_facts": _dump_context_items(getattr(context_packet, "participant_canon_facts", None) or []),
+        "hard_fact_snapshots": _dump_context_items([context_packet.hard_fact_snapshot])
+            if getattr(context_packet, "hard_fact_snapshot", None) is not None else [],
+    }
+    acceptance_contract["source_authority_channels"] = {
+        "explicit_creator_requirements": explicit_contracts,
+        "established_facts": {key: [item for item in records
+            if _has_guarded_adopted_source(item, project_id=getattr(project, "id", None))]
+            for key, records in fact_sources.items()},
+        "prior_prose_reference": {
+            "previous_scene_summaries": continuity["previous_scene_summaries"],
+            **{key: [item for item in records
+                if not _has_guarded_adopted_source(item, project_id=getattr(project, "id", None))]
+                for key, records in fact_sources.items()},
+        },
+        "long_term_planning": {key: continuity[key] for key in ("active_plot_arcs", "active_arc_beats", "unresolved_clues", "planned_payoffs")},
+        "ai_proposals": {"methodology_blocks": advisory_blocks,
+            "chapter_contract": _chapter_contract_payload(context_packet, chapter=chapter),
+            "scene_methodology_contracts": [{
+                "scene_number": getattr(scene, "scene_number", None),
+                "methodology_contract": deepcopy(
+                    _mapping_or_empty(_scene_metadata_payload(scene).get("methodology_contract"))
+                ),
+            } for scene in scenes],
+            "assigned_hype": {key: getattr(context_packet, key, None) for key in (
+                "assigned_hype_type", "assigned_hype_recipe_key", "assigned_hype_intensity")},
+            "chapter_metadata": {key: _without_runtime_evidence(value) for key, value in
+                _mapping_or_empty(getattr(chapter, "metadata_json", None)).items() if key in _PLANNING_METADATA_KEYS}},
+        "policy": "Only explicit applicable creator requirements and source-verified occurred facts bind content. Summaries and timeline entries without guarded adopted-source lineage are prior prose references, not facts. Planning and AI proposals are not occurred events or mandatory prose; diagnostics are excluded. Scores are operational gates, not authority to invent content.",
+    }
     missing = _missing_context_keys(
         chapter=chapter,
         scene_payloads=scene_payloads,
@@ -136,9 +274,12 @@ def build_chapter_generation_input_bundle(
         acceptance_contract=acceptance_contract,
         continuity=continuity,
         quality_targets=quality_targets,
+        methodology_contract_mode=methodology_mode,
     )
     return ChapterGenerationInputBundle(
+        schema_version="chapter-generation-input.v2",
         project={
+            "id": str(project.id) if getattr(project, "id", None) else None,
             "slug": getattr(project, "slug", None),
             "title": getattr(project, "title", None),
             "genre": getattr(project, "genre", None),
@@ -159,10 +300,10 @@ def build_chapter_generation_input_bundle(
         methodology_blocks=methodology_blocks,
         continuity=continuity,
         story_bible=story_bible,
-        chapter_contract=chapter_contract,
+        chapter_contract={"authority": "planning_intent_not_hard", "planning_intent": chapter_contract},
         acceptance_contract=acceptance_contract,
         quality_targets=quality_targets,
-        required_context_keys=_REQUIRED_CONTEXT_KEYS,
+        required_context_keys=required_context_keys,
         missing_context_keys=tuple(missing),
     )
 
@@ -202,26 +343,86 @@ def build_chapter_generation_input_stamp(
 def _chapter_metadata_payload(chapter: Any) -> dict[str, Any]:
     metadata = _mapping_or_empty(getattr(chapter, "metadata_json", None))
     return {
-        key: value
+        key: _without_runtime_evidence(value)
         for key, value in metadata.items()
-        if key not in _TRANSIENT_CHAPTER_METADATA_KEYS
+        if not _is_chapter_runtime_evidence_key(key) and key not in _PLANNING_METADATA_KEYS
     }
+
+
+def _has_guarded_adopted_source(item: Mapping[str, Any], *, project_id: Any) -> bool:
+    """Require the upstream adoption guard's usable lineage, never a historical label.
+
+    This pure projection does not revalidate database adoption. Context records
+    that dropped the guard receipt remain references until the source supplies it.
+    """
+    source = _mapping_or_empty(item.get("adopted_source"))
+    return bool(project_id and source.get("schema") == "adopted-knowledge.v1"
+        and source.get("is_usable") is True
+        and str(source.get("project_id")) == str(project_id)
+        and source.get("chapter_id") and source.get("source_chapter_draft_version_id")
+        and source.get("adoption_state") in {"promoted", "accepted_with_debt"}
+        and isinstance(source.get("source_body_sha256"), str)
+        and len(source["source_body_sha256"]) == 64
+        and all(char in "0123456789abcdef" for char in source["source_body_sha256"])
+        and not source.get("rejection_reason")
+        and item.get("knowledge_lineage_status") != "superseded")
+
+
+def _without_runtime_evidence(value: Any) -> Any:
+    """Project prompt data without mutating stored audit history or authored fields."""
+    if isinstance(value, Mapping):
+        return {key: _without_runtime_evidence(item) for key, item in value.items()
+            if not _is_chapter_runtime_evidence_key(key)}
+    if isinstance(value, (list, tuple)):
+        return [_without_runtime_evidence(item) for item in value]
+    return value
+
+
+def _is_chapter_runtime_evidence_key(key: Any) -> bool:
+    """Keep authored chapter facts/contracts out of the prior-run evidence channel.
+
+    Chapter metadata is also used as a persistence area for audits, quality reports,
+    reader judgments, and repair receipts. Those results describe an earlier draft
+    and must be re-derived by the current review path rather than becoming writing
+    material on the next generation pass. Only known runtime keys and declared
+    runtime families are excluded; authored contracts and unknown facts survive.
+    """
+    if not isinstance(key, str):
+        return False
+    normalized = key.strip().lower().replace("-", "_")
+    if normalized in _TRANSIENT_CHAPTER_METADATA_KEYS:
+        return True
+    if normalized in _CHAPTER_RUNTIME_EVIDENCE_KEYS:
+        return True
+    if normalized.startswith((
+        "scene_contract_materialized_", "chapter_contract_materialized_",
+        "chapter_scene_contract_materialized_",
+    )):
+        return True
+    if normalized.endswith("_contract"):
+        return False
+    return normalized.startswith(_CHAPTER_RUNTIME_EVIDENCE_PREFIXES)
 
 
 def _scene_metadata_payload(scene: Any) -> dict[str, Any]:
     metadata = _mapping_or_empty(getattr(scene, "metadata_json", None))
     return {
-        key: value
+        key: _without_runtime_evidence(value)
         for key, value in metadata.items()
-        if key not in _TRANSIENT_SCENE_METADATA_KEYS
+        if key not in _TRANSIENT_SCENE_METADATA_KEYS and not _is_chapter_runtime_evidence_key(key)
     }
 
 
-def _scene_payloads(scenes: Sequence[Any]) -> tuple[dict[str, Any], ...]:
+def _scene_payloads(
+    scenes: Sequence[Any], *, methodology_contract_mode: str = "off",
+) -> tuple[dict[str, Any], ...]:
     payloads: list[dict[str, Any]] = []
     previous_exit_state: Mapping[str, Any] | None = None
     for scene in scenes:
-        payload = _scene_payload(scene, previous_exit_state=previous_exit_state)
+        payload = _scene_payload(
+            scene, previous_exit_state=previous_exit_state,
+            methodology_contract_mode=methodology_contract_mode,
+        )
         payloads.append(payload)
         previous_exit_state = _mapping_or_empty(getattr(scene, "exit_state", None))
     return tuple(payloads)
@@ -231,10 +432,14 @@ def _scene_payload(
     scene: Any,
     *,
     previous_exit_state: Mapping[str, Any] | None = None,
+    methodology_contract_mode: str = "off",
 ) -> dict[str, Any]:
     metadata = _scene_metadata_payload(scene)
     purpose = _mapping_or_empty(getattr(scene, "purpose", None))
-    methodology_contract = _mapping_or_empty(metadata.get("methodology_contract"))
+    methodology_contract = (
+        _mapping_or_empty(metadata.get("methodology_contract"))
+        if methodology_contract_mode == "strict" else {}
+    )
     scene_contract = _mapping_or_empty(metadata.get("scene_contract"))
     hook_payload = (
         getattr(scene, "hook_requirement", None)
@@ -290,20 +495,16 @@ def _scene_payload(
             methodology_contract.get("information_control_mode")
             or methodology_contract.get("reveal_mode")
         ),
-        "gate_function": (
-            methodology_contract.get("gate_function")
-            or _default_scene_gate_function(
-                scene_number=int(getattr(scene, "scene_number", 0) or 0),
-                scene_type=str(getattr(scene, "scene_type", "") or ""),
-            )
-        ),
+        "gate_function": methodology_contract.get("gate_function"),
         "reader_payoff": reader_payoff,
         "visible_progress": visible_progress,
         "ending_hook_payload": hook_payload,
     }
 
 
-def _chapter_contract_payload(context_packet: Any, *, chapter: Any | None = None) -> dict[str, Any]:
+def _chapter_contract_payload(
+    context_packet: Any, *, chapter: Any | None = None, include_methodology: bool = True,
+) -> dict[str, Any]:
     chapter_contract = getattr(context_packet, "chapter_contract", None)
     if chapter_contract is None:
         payload: dict[str, Any] = {}
@@ -312,20 +513,25 @@ def _chapter_contract_payload(context_packet: Any, *, chapter: Any | None = None
         payload = dict(payload) if isinstance(payload, Mapping) else {}
     else:
         payload = _mapping_or_empty(chapter_contract)
-    return _merge_chapter_metadata_contract(payload, chapter=chapter)
+    return _without_runtime_evidence(_merge_chapter_metadata_contract(
+        payload, chapter=chapter, include_methodology=include_methodology,
+    ))
 
 
 def _merge_chapter_metadata_contract(
     chapter_contract: Mapping[str, Any],
     *,
     chapter: Any | None,
+    include_methodology: bool = True,
 ) -> dict[str, Any]:
     merged = dict(chapter_contract)
     if chapter is None:
         return merged
 
     metadata = _mapping_or_empty(getattr(chapter, "metadata_json", None))
-    methodology_contract = _mapping_or_empty(metadata.get("methodology_contract"))
+    methodology_contract = (
+        _mapping_or_empty(metadata.get("methodology_contract")) if include_methodology else {}
+    )
     for key, value in methodology_contract.items():
         if not _has_value(value):
             continue
@@ -408,16 +614,9 @@ def _acceptance_contract(
         }
         for scene in scenes
     ]
-    knowledge_boundary_contract = _knowledge_boundary_contract(story_bible, scenes=scenes)
-    object_signal_contract = _object_signal_contract(chapter)
-    methodology_application_contract = build_methodology_application_contract(
-        chapter_number=chapter_number,
-        chapter_title=str(getattr(chapter, "title", "") or "").strip(),
-        chapter_contract=chapter_contract,
-        scene_cards=scenes,
-    )
+    metadata = _chapter_metadata_payload(chapter)
     return {
-        "schema_version": "chapter-acceptance-contract.v1",
+        "schema_version": "chapter-acceptance-contract.v2",
         "chapter_number": chapter_number,
         "target_word_count": quality_targets.get("target_word_count"),
         "rule_gate_thresholds": {
@@ -431,36 +630,17 @@ def _acceptance_contract(
             "overall": llm_min_overall,
             "dimensions": dict(llm_min_dimensions),
         },
-        "front_position_rules": {
-            "golden_three": bool(quality_targets.get("golden_three")),
-            "front_ten": bool(quality_targets.get("front_ten")),
-            "opening_must_start_with_pressure": chapter_number <= 3,
-            "ending_hook_must_add_new_information": chapter_number <= 10,
-            "ending_must_land_on_completed_scene_frame": True,
-            "non_expert_rule_knowledge_must_be_limited": chapter_number <= 10,
-            "real_world_evidence_must_be_plausible_or_marked_impossible": chapter_number <= 10,
-            "object_signal_meaning_must_be_stable": chapter_number <= 10,
-        },
-        "ending_frame_contract": {
-            "rule": "最后一句必须落在具体场景内的完成画面帧、人物动作、物件变化或选择点。",
-            "forbidden": [
-                "只停在抽象设定句",
-                "只停在未落地的对白",
-                "只停在正在进行的动作",
-                "用总结/说明/作者口吻收束",
-            ],
-            "required_if_dialogue_hook": (
-                "如果章末钩子是对白，必须在对白后追加一个现场动作或物件变化作为最后画面。"
-            ),
-        },
-        "must_deliver": [item for item in must_deliver if item["value"]],
+        "front_position_rules": _mapping_or_empty(metadata.get("front_position_rules")),
+        "ending_frame_contract": _mapping_or_empty(metadata.get("ending_frame_contract")),
+        "must_deliver": [],
+        "planning_intent": [item for item in must_deliver if item["value"]],
         "scene_gate_targets": scene_gate_targets,
-        "knowledge_boundary_contract": knowledge_boundary_contract,
-        "object_signal_contract": object_signal_contract,
-        "methodology_application_contract": methodology_application_contract,
+        "knowledge_boundary_contract": _mapping_or_empty(metadata.get("knowledge_boundary_contract")),
+        "object_signal_contract": _mapping_or_empty(metadata.get("object_signal_contract")),
+        "methodology_application_contract": {},
         "pass_condition": (
             "正文必须让 rule_gate_thresholds 与 llm_gate_thresholds 均可通过；"
-            "如果篇幅不足，优先保留 must_deliver 与 scene_gate_targets。"
+            "阈值不授权新增创作义务；规划和 AI 方法论只是待核对的编辑意图。"
         ),
     }
 
@@ -604,6 +784,7 @@ def _missing_context_keys(
     acceptance_contract: Mapping[str, Any],
     continuity: Mapping[str, Any],
     quality_targets: Mapping[str, Any],
+    methodology_contract_mode: str = "off",
 ) -> list[str]:
     missing: list[str] = []
     if not str(getattr(chapter, "chapter_goal", "") or "").strip():
@@ -617,11 +798,13 @@ def _missing_context_keys(
         for scene in scene_payloads
     ):
         missing.append("scenes.entry_exit")
-    if scene_payloads and any(not scene.get("methodology_contract") for scene in scene_payloads):
+    if methodology_contract_mode == "strict" and scene_payloads and any(
+        not scene.get("methodology_contract") for scene in scene_payloads
+    ):
         missing.append("scenes.methodology_contract")
     if not story_bible:
         missing.append("story_bible")
-    if not acceptance_contract.get("must_deliver") or not acceptance_contract.get(
+    if not (acceptance_contract.get("must_deliver") or acceptance_contract.get("planning_intent")) or not acceptance_contract.get(
         "scene_gate_targets"
     ):
         missing.append("chapter_acceptance_contract")

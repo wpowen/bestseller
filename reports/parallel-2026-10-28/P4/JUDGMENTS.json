@@ -1,0 +1,101 @@
+{
+  "authority": "agent_editorial_not_human",
+  "human_acceptance": "not_performed",
+  "fa14": {
+    "chapters": 4,
+    "facts": 157,
+    "alerts": 0,
+    "false_positives": 0,
+    "precision": null,
+    "false_positive_rate": null,
+    "note": "告警集合为空，逐条复核为0项；没有阴性金标分母，不报告0%误报率。",
+    "negative_sanity_checks": [
+      "867-237=630旧欠",
+      "400-30=370零件款",
+      "35-12=23增量车费",
+      "20:30至21:30=60分钟试机",
+      "21:45至22:25=40分钟会面"
+    ]
+  },
+  "known_issue_coverage": {
+    "historical_candidate_only": true,
+    "category_alerted": "4/4",
+    "confirmed_unique": "3/4",
+    "time_dependency": "unknown",
+    "not_a_held_out_benchmark": true
+  },
+  "findings": [
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_5228a5346afe1281",
+      "type": "quantity_mismatch",
+      "location": "ch1:p2@61:63 ↔ ch1:p4@232:236",
+      "judgment": "confirmed",
+      "reason": "同一宴席10桌变52桌，未写增桌。"
+    },
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_37679bbc9476410a",
+      "type": "quantity_mismatch",
+      "location": "ch1:p10@470:473 ↔ ch1:p25@1434:1437",
+      "judgment": "false_positive",
+      "reason": "十三斤是库存，十二斤是追加采购；并非同一存量断言。"
+    },
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_a13505ba25dab6d6",
+      "type": "quantity_mismatch",
+      "location": "ch1:p4@232:236 ↔ ch1:p47@2191:2193",
+      "judgment": "duplicate",
+      "reason": "52桌恢复10桌，与首条同一席数错误；不重复计召回。"
+    },
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_da8ff6322f556d3c",
+      "type": "arithmetic_mismatch",
+      "location": "ch1:p4@159 ↔ ch1:p21@1232 ↔ ch1:p21@1240",
+      "judgment": "confirmed",
+      "reason": "总上限3600减总成本3550为50，原句写5；不同于每桌余5。"
+    },
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_0d30916727f69edc",
+      "type": "time_dependency",
+      "location": "ch1:p32@1724 ↔ ch1:p53@2565",
+      "judgment": "unknown",
+      "reason": "60分钟补货与8分钟首轮存在时限张力，但现货也存在；不能确定首轮依赖新货。"
+    },
+    {
+      "dataset": "historical_candidate_v2",
+      "id": "QP_b84a900a319628a6",
+      "type": "round_category_mismatch",
+      "location": "ch1:p48@2307",
+      "judgment": "confirmed",
+      "reason": "声明四轮热荤，最后列素菜与汤；应调整分类表述。"
+    },
+    {
+      "dataset": "original_exports",
+      "id": "QP_a341bc3862008c78",
+      "type": "quantity_mismatch",
+      "location": "ch1:p12@413:416 ↔ ch1:p29@1253:1256",
+      "judgment": "false_positive",
+      "reason": "库存13斤与追加采购12斤，比较对象不同。"
+    },
+    {
+      "dataset": "original_exports",
+      "id": "QP_3fbc1712d8ada6c8",
+      "type": "time_dependency",
+      "location": "ch1:p36@1543 ↔ ch1:p55@2263",
+      "judgment": "unknown",
+      "reason": "首轮能否用现货成立需上下文确认；不能判定为不可能。"
+    },
+    {
+      "dataset": "original_exports",
+      "id": "QP_78b7953388041732",
+      "type": "round_category_mismatch",
+      "location": "ch1:p50@2005",
+      "judgment": "confirmed",
+      "reason": "四轮热荤的末轮实际是素菜和汤。"
+    }
+  ]
+}

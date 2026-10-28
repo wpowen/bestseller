@@ -1,0 +1,29 @@
+{
+  "original_exports": {
+    "chapters": 3,
+    "facts": 205,
+    "finding_count": 3,
+    "by_type": {
+      "quantity_mismatch": 1,
+      "time_dependency": 1,
+      "round_category_mismatch": 1
+    }
+  },
+  "fa14_adopted_formal": {
+    "chapters": 4,
+    "facts": 157,
+    "finding_count": 0,
+    "by_type": {}
+  },
+  "historical_candidate_v2": {
+    "chapters": 1,
+    "facts": 102,
+    "finding_count": 6,
+    "by_type": {
+      "quantity_mismatch": 3,
+      "arithmetic_mismatch": 1,
+      "time_dependency": 1,
+      "round_category_mismatch": 1
+    }
+  }
+}

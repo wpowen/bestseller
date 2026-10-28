@@ -1,0 +1,17 @@
+﻿维度,格式或平台,状态,已证实路径,缺口及证据边界,证据路径或行号
+格式,Markdown 通用,已接通且有测试,CLI/API/MCP→采用源加载→门禁→ExportArtifact,测试为本地/fixture；fa14 根 project.md 仅770 bytes，不是正式正文,services/exports.py:1960; api/routers/exports.py:26; tests-formats.log
+格式,Markdown 番茄正式整篇,已接通且有测试,正式文件正文 SHA 与采用清单一致,DB采用源/知识闭合/完整delivery回执本次未回读；ready=false,services/fanqie_short_source_export.py:606; source-consistency.json
+格式,DOCX,已接通且有测试,fa14 离线生成；ZIP/XML/336条输入行保留通过,标题重复2次；未作Word渲染验收；未执行DB导出入口,"services/exports.py:699,2145; offline-formats.json; tests-formats.log"
+格式,EPUB,已接通且有测试,fa14 离线生成且ZIP CRC通过,nav.xhtml unbound prefix；缺modified元数据；不可视为合格上传包,"services/exports.py:803,876,2227; offline-formats.json; tests-formats.log"
+格式,PDF,已接通且有测试,fa14 离线生成16页；中文序列完整；1/8/16页抽检可读,Poppler字体映射缺失；PDFium可读；需reportlab；未作完整排版/平台验收,"services/exports.py:915,2309; pdf-extraction.json; tests-formats.log"
+阅读,Web 整篇阅读,已接通且有测试,/read/slug→/api/reader/slug/toc与chapter/1；单篇优先正式MD,只按文件存在判断；不重验正式回执/readiness；无文件可退到当前草稿,"web/server.py:12511,14846,14949; web/novel_reader.html:897; tests-reading.log"
+下载,Web artifact,已接通且有测试,/api/projects/slug/artifact?name=exports/fanqie-short.md；路径检查有测试,inline；没有来源/ready校验；未调用Web接口,"web/server.py:1773,14079,14667; tests-reading.log"
+下载,API 生成至 artifact_id 下载闭环,有代码但未接通,GET /api/v1/projects/slug/exports/artifact_id/download；已挂路由,接口本身接通；生成响应不返artifact_id；短篇正式导出不登记该artifact；未找到该下载函数测试,api/routers/exports.py:89; api/app.py:82; services/fanqie_short_source_export.py:606
+下载,阅读器四格式按钮,有代码但未接通,后端格式/文件下载函数存在,书库和阅读器未找到生成/下载四格式按钮；需CLI/API调用,web/novel_library.html:944; web/novel_reader.html; api/routers/exports.py:26
+平台,番茄 连载章节,已接通且有测试,HTTP鉴权/投稿/查审；API调度→scheduler→adapter,HTTP/DB均mock；内部端点实时可用性/真实投稿Unknown,"services/publishing/adapters/fanqie.py:34,87; scheduler/jobs.py:90; tests-publishing.log"
+平台,番茄短故事 正式整篇投稿,有代码但未接通,本地publish_adopted_assembly导出链有测试；章节HTTP适配存在,两条链未连接：调度读取is_current章节，不消费正式整篇包/readiness,services/fanqie_short_source_export.py:606; scheduler/jobs.py:171-190
+平台,起点,已接通且有测试,HTTP鉴权/投稿/查审；注册表与调度已接,仅mock测试；真实端点/账号/书籍映射/发布回读Unknown,services/publishing/adapters/qidian.py:78; services/publishing/registry.py:32; tests-publishing.log
+平台,七猫,已接通且有测试,HTTP鉴权/投稿/查审；注册表与调度已接,仅mock测试；真实端点/账号/书籍映射/发布回读Unknown,services/publishing/adapters/qimao.py:77; services/publishing/registry.py:32; tests-publishing.log
+平台,Amazon KDP 资料包+人工上传,已接通且有测试,CLI validate/package→EPUB/DOCX/metadata/封面/清单,包装测试mock DB；EPUB复用缺陷builder；上传及税务收款定价手动完成,"services/publishing/amazon_kdp.py:471,633; cli/main.py:4130; tests-kdp.log"
+平台,Amazon KDP 自动发布适配器,只有文档,README将KDP列在发布平台能力,无注册适配器/API枚举；实现只承诺manual_actions；无自动发布测试,"README.md:189,1031; services/publishing/registry.py:32; api/schemas/publishing.py:11"
+调度,运行时新计划热加载,有代码但未接通,Redis监听器和启动加载存在,create_schedule仅flush/refresh/return，无事件发送；推断新建不热加载,"api/routers/publishing.py:102-129; scheduler/main.py:268,385"

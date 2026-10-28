@@ -154,10 +154,35 @@ async def read_current_title_sources(session, settings, *, project_id, owner_wor
         binding = plan_receipt["source_binding"]
         _need(binding["source_artifact_id"] == str(artifact.id)
               and binding["source_content_sha256"] == op.fingerprint(artifact.content), "native_plan_changed")
+        # The normal producer legitimately stores source_run_id=None. Keep it
+        # literal; independent materialization/admission custody is re-read,
+        # never copied into the producer-run field or manufactured as a grade.
+        materializer = await session.scalar(select(db.WorkflowRunModel).where(
+            db.WorkflowRunModel.id == UUID(str(plan_receipt["outline_workflow_run_id"])),
+            db.WorkflowRunModel.project_id == project_id,
+        ).execution_options(populate_existing=True))
+        admission = await session.scalar(select(db.WorkflowRunModel).where(
+            db.WorkflowRunModel.id == UUID(str(plan_receipt["hard_admission_workflow_run_id"])),
+            db.WorkflowRunModel.project_id == project_id,
+        ).execution_options(populate_existing=True))
+        _need(materializer is not None and admission is not None, "native_plan_workflow_sources_required")
+        def workflow_export(row):
+            return {"id": str(row.id), "project_id": str(row.project_id), "workflow_type": row.workflow_type,
+                "status": row.status, "scope_type": row.scope_type,
+                "scope_id": str(row.scope_id) if row.scope_id is not None else None,
+                "metadata_json": deepcopy(row.metadata_json or {})}
+
+        receipt_export = deepcopy(plan_receipt)
+        for key in ("planning_workflow_run_id", "outline_workflow_run_id", "hard_admission_workflow_run_id",
+                    "story_bible_workflow_run_id", "narrative_graph_workflow_run_id"):
+            if receipt_export.get(key) is not None:
+                receipt_export[key] = str(receipt_export[key])
         native_plan = {"id": str(artifact.id), "project_id": str(artifact.project_id),
             "artifact_type": artifact.artifact_type, "status": artifact.status,
             "source_run_id": str(artifact.source_run_id) if artifact.source_run_id is not None else None,
-            "content": deepcopy(artifact.content), "source_binding": deepcopy(binding)}
+            "content": deepcopy(artifact.content), "source_binding": deepcopy(binding),
+            "complete_plan_receipt": receipt_export, "materialization_workflow": workflow_export(materializer),
+            "admission_workflow": workflow_export(admission)}
         assembly = await read_adopted_assembly(session, project_id, lock=False)
         canonical = await session.scalar(select(db.PlanningArtifactVersionModel).where(
             db.PlanningArtifactVersionModel.id == UUID(meta["creation_canonical_snapshot_id"]),

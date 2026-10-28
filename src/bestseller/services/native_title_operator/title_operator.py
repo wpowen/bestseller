@@ -443,6 +443,53 @@ def _current_uuid(value):
     return text
 
 
+def _current_plan_readback(native_plan, project_id, plan_id, content):
+    """Check independent native custody without inventing a producer run.
+
+    These are identity/dependency checks, never an admission grade. Production
+    callers obtain the receipt from read_existing_complete_fanqie_plan and the
+    workflow exports from fresh native rows before calling this pure checker.
+    """
+    from uuid import UUID
+
+    from bestseller.services.materialized_outline_source_recovery import SCHEMA as admission_schema
+    from bestseller.services.materialized_outline_source_recovery import admission_workflow_id
+
+    receipt = _source_field(native_plan, "complete_plan_receipt")
+    binding = _source_field(native_plan, "source_binding")
+    materializer = _source_field(native_plan, "materialization_workflow")
+    admission = _source_field(native_plan, "admission_workflow")
+    need(isinstance(receipt, dict) and receipt.get("schema") == "fanqie-materialized-plan-reuse.v1"
+         and isinstance(binding, dict) and isinstance(materializer, dict) and isinstance(admission, dict),
+         "current_native_plan_readback_required")
+    need(receipt.get("source_artifact_id") == binding.get("source_artifact_id") == plan_id
+         and binding.get("source_content_sha256") == fingerprint(content)
+         and wire(receipt.get("source_binding")) == wire(binding), "current_native_plan_readback_binding")
+    materializer_id = _current_uuid(receipt.get("outline_workflow_run_id"))
+    admission_id = str(admission_workflow_id(UUID(project_id), UUID(plan_id)))
+    need(_current_uuid(binding.get("materialization_workflow_run_id")) == materializer_id
+         and _current_uuid(materializer.get("id")) == materializer_id
+         and _current_uuid(receipt.get("hard_admission_workflow_run_id")) == admission_id
+         and _current_uuid(admission.get("id")) == admission_id, "current_native_plan_workflow_identity")
+    need(materializer.get("project_id") == project_id
+         and materializer.get("workflow_type") == "materialize_chapter_outline_batch"
+         and materializer.get("status") == "completed"
+         and materializer.get("scope_type") == "planning_artifact"
+         and materializer.get("scope_id") == plan_id
+         and isinstance(materializer.get("metadata_json"), dict)
+         and materializer["metadata_json"].get("source_artifact_id") == plan_id,
+         "current_native_materialization_binding")
+    need(admission.get("project_id") == project_id
+         and admission.get("workflow_type") == "materialized_outline_source_admission"
+         and admission.get("status") == "completed"
+         and admission.get("scope_type") == "planning_artifact" and admission.get("scope_id") == plan_id
+         and isinstance(admission.get("metadata_json"), dict)
+         and admission["metadata_json"].get("schema") == admission_schema,
+         "current_native_admission_binding")
+    need(all(wire(admission["metadata_json"].get(key)) == wire(value) for key, value in binding.items()),
+         "current_native_admission_dependency_changed")
+
+
 def _current_project_plan(actual_project, native_plan):
     """Check fresh native exports, not a caller-supplied segment count or grant.
 
@@ -462,9 +509,15 @@ def _current_project_plan(actual_project, native_plan):
     need(str(_source_field(native_plan, "project_id")) == project_id
          and _source_field(native_plan, "artifact_type") == "chapter_outline_batch"
          and _source_field(native_plan, "status") == "approved", "current_native_plan_owner")
-    _current_uuid(_source_field(native_plan, "source_run_id"))
     content = _source_field(native_plan, "content")
     need(isinstance(content, dict), "current_native_plan_content")
+    producer_id = _source_field(native_plan, "source_run_id")
+    if producer_id is not None:
+        _current_uuid(producer_id)  # Malformed non-null identities never fall back.
+    if producer_id is None or any(_source_field(native_plan, key) is not None for key in (
+        "complete_plan_receipt", "materialization_workflow", "admission_workflow"
+    )):
+        _current_plan_readback(native_plan, project_id, plan_id, content)
     chapters = content.get("chapters")
     need(isinstance(chapters, list) and len(chapters) == count
          and all(isinstance(c, dict) and type(c.get("chapter_number")) is int for c in chapters)

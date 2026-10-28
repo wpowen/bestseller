@@ -1,0 +1,37 @@
+{
+  "source_sha256": "5ae9a96c10c963a0c770902fe494b2c674a5b7acef5156ff39045a3c3331c1c9",
+  "source_matches_p6_sha256": true,
+  "epub": {
+    "sha256": "71e8f5e18c63d7d552b2dc866f27dd5b45f2b90d3114326c09f82b86085e4cf6",
+    "xml_members_parsed": 4,
+    "ncx_count": 0,
+    "xml_errors": 0,
+    "modified_valid_utc": true,
+    "nav_namespace_valid": true,
+    "manifest_targets_exist": true
+  },
+  "docx": {
+    "sha256": "2b0df2dab6817a269368bab171586601f085b269c8ac05c38cd9a5f2a282c7ff",
+    "xml_errors": 0,
+    "title_occurrences": 1,
+    "nonempty_input_lines_preserved": true
+  },
+  "kdp_epub": {
+    "sha256": "9c1d1dc924f1f87ad254e30b10bac562cda542ad93cb2cd5f275f84493885955",
+    "xml_members_parsed": 4,
+    "ncx_count": 0,
+    "xml_errors": 0,
+    "modified_valid_utc": true,
+    "nav_namespace_valid": true,
+    "manifest_targets_exist": true
+  },
+  "kdp_docx": {
+    "sha256": "2b0df2dab6817a269368bab171586601f085b269c8ac05c38cd9a5f2a282c7ff",
+    "xml_errors": 0,
+    "title_occurrences": 1,
+    "nonempty_input_lines_preserved": true
+  },
+  "kdp_scope": "Offline format validation with fake persistence and strict=False; no upload eligibility or platform acceptance claimed.",
+  "source_unchanged": true,
+  "epubcheck": "Not found on PATH or checked standard install directories; no download attempted."
+}

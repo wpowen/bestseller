@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import UTC, datetime
 import hashlib
 from html import escape, unescape
 import io
@@ -668,7 +669,9 @@ def markdown_to_plain_text(content_md: str) -> str:
     return "\n".join(lines).strip()
 
 
-def markdown_to_html(content_md: str, *, language: str | None = None) -> str:
+def markdown_to_html(
+    content_md: str, *, language: str | None = None, output_format: str = "html5"
+) -> str:
     rendered = markdown_lib.markdown(
         sanitize_novel_markdown_content(content_md, language=language),
         extensions=[
@@ -676,7 +679,7 @@ def markdown_to_html(content_md: str, *, language: str | None = None) -> str:
             "sane_lists",
             "nl2br",
         ],
-        output_format="html5",
+        output_format=output_format,
     )
     return rendered.strip()
 
@@ -698,6 +701,10 @@ def build_markdown_reading_stats(content_md: str) -> dict[str, int]:
 
 def build_docx_bytes(title: str, content_md: str, *, author: str | None = None) -> bytes:
     lines = [line for line in content_md.splitlines() if line.strip()]
+    # The generated title page already represents a leading manuscript title.
+    # Preserve all other headings and any occurrences within the body.
+    if title and lines and _parse_markdown_line(lines[0]) == ("h1", title.strip()):
+        lines = lines[1:]
     paragraph_xml: list[str] = []
     if title:
         paragraph_xml.append(
@@ -821,6 +828,8 @@ def build_epub_bytes(
 
     nav_title = "Table of Contents" if language.lower().startswith("en") else "目录"
     escaped_author = escape(author) if author else None
+    # Record this export's UTC modification time, to seconds as required by EPUB3.
+    modified = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Split content into chapters by h1 headings
     chapter_splits: list[tuple[str, str]] = []
@@ -850,10 +859,18 @@ def build_epub_bytes(
 
     for idx, (heading, md_content) in enumerate(chapter_splits):
         filename = f"chapter-{idx + 1:04d}.xhtml"
-        html_body = markdown_to_html(md_content, language=language)
+        html_body = markdown_to_html(md_content, language=language, output_format="xhtml")
+        # XML only predefines five named entities; Markdown can retain HTML ones.
+        html_body = re.sub(
+            r"&[A-Za-z][A-Za-z0-9]+;",
+            lambda match: escape(unescape(match.group())),
+            html_body,
+        )
         xhtml = (
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-            f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\" "
+            "xmlns:epub=\"http://www.idpf.org/2007/ops\" "
+            f"xml:lang=\"{escape(language)}\">"
             f"<head><title>{escape(heading)}</title><meta charset=\"utf-8\"/></head>"
             f"<body>{html_body}</body></html>"
         )
@@ -871,7 +888,9 @@ def build_epub_bytes(
     )
     nav_xhtml = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-        f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
+        "<html xmlns=\"http://www.w3.org/1999/xhtml\" "
+        "xmlns:epub=\"http://www.idpf.org/2007/ops\" "
+        f"xml:lang=\"{escape(language)}\">"
         f"<head><title>{escape(title)} {escape(nav_title)}</title></head>"
         "<body><nav epub:type=\"toc\" id=\"toc\">"
         f"<h1>{escape(nav_title)}</h1><ol>{nav_entries}</ol>"
@@ -881,11 +900,13 @@ def build_epub_bytes(
     content_opf = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"bookid\" version=\"3.0\">"
-        "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+        "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+        "xmlns:dcterms=\"http://purl.org/dc/terms/\">"
         f"<dc:identifier id=\"bookid\">{escape(identifier)}</dc:identifier>"
         f"<dc:title>{escape(title)}</dc:title>"
         f"{f'<dc:creator>{escaped_author}</dc:creator>' if escaped_author else ''}"
         f"<dc:language>{escape(language)}</dc:language>"
+        f"<meta property=\"dcterms:modified\">{modified}</meta>"
         "</metadata>"
         "<manifest>"
         "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>"

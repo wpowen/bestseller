@@ -1,0 +1,338 @@
+.FFFFFFFFFFFFFFFFFFFFFF.                                                 [100%]
+=================================== FAILURES ===================================
+______ test_every_segment_pointer_is_completed_and_physically_replayed[5] ______
+tests/unit/test_fanqie_outline_contract_completion_segments.py:76: in test_every_segment_pointer_is_completed_and_physically_replayed
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+______ test_every_segment_pointer_is_completed_and_physically_replayed[6] ______
+tests/unit/test_fanqie_outline_contract_completion_segments.py:76: in test_every_segment_pointer_is_completed_and_physically_replayed
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+______ test_every_segment_pointer_is_completed_and_physically_replayed[7] ______
+tests/unit/test_fanqie_outline_contract_completion_segments.py:76: in test_every_segment_pointer_is_completed_and_physically_replayed
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+______ test_every_segment_pointer_is_completed_and_physically_replayed[8] ______
+tests/unit/test_fanqie_outline_contract_completion_segments.py:76: in test_every_segment_pointer_is_completed_and_physically_replayed
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+____________ test_parts_bound_is_exactly_twice_the_trusted_count[6] ____________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:109: in test_parts_bound_is_exactly_twice_the_trusted_count
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+____________ test_parts_bound_is_exactly_twice_the_trusted_count[8] ____________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:109: in test_parts_bound_is_exactly_twice_the_trusted_count
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+___________ test_invalid_target_rejected_before_noop_or_dispatch[3] ____________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:136: in test_invalid_target_rejected_before_noop_or_dispatch
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=c.base)
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:135: in test_invalid_target_rejected_before_noop_or_dispatch
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment_count"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment_count'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+___________ test_invalid_target_rejected_before_noop_or_dispatch[9] ____________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:136: in test_invalid_target_rejected_before_noop_or_dispatch
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=c.base)
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:135: in test_invalid_target_rejected_before_noop_or_dispatch
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment_count"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment_count'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+__________ test_invalid_target_rejected_before_noop_or_dispatch[True] __________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:136: in test_invalid_target_rejected_before_noop_or_dispatch
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=c.base)
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:135: in test_invalid_target_rejected_before_noop_or_dispatch
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment_count"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment_count'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+__________ test_invalid_target_rejected_before_noop_or_dispatch[6.0] ___________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:136: in test_invalid_target_rejected_before_noop_or_dispatch
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=c.base)
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:135: in test_invalid_target_rejected_before_noop_or_dispatch
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment_count"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment_count'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_count] _
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_order] _
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:797: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:591: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_bool] __
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:797: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:591: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+___ test_scope_requires_continuous_numbers_and_agreeing_sources[beat_order] ____
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:797: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:591: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+___ test_scope_requires_continuous_numbers_and_agreeing_sources[beat_count] ____
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:797: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:591: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[manifest_target] _
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:797: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:591: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count] __
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:786: in complete_missing_outline_contract
+    _need(not session.new and not session.dirty and not session.deleted, "clean_session_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:clean_session_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:clean_session_required'
+__ test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool] __
+tests/unit/test_fanqie_outline_contract_completion_segments.py:164: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+src/bestseller/services/fanqie_outline_contract_completion.py:786: in complete_missing_outline_contract
+    _need(not session.new and not session.dirty and not session.deleted, "clean_session_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:clean_session_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:163: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:clean_session_required'
+________ test_v2_receipt_cannot_self_authorize_count_order_or_schema[6] ________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:171: in test_v2_receipt_cannot_self_authorize_count_order_or_schema
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+________ test_v2_receipt_cannot_self_authorize_count_order_or_schema[8] ________
+tests/unit/test_fanqie_outline_contract_completion_segments.py:171: in test_v2_receipt_cannot_self_authorize_count_order_or_schema
+    result = await complete(c)
+             ^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+_ test_context_capacity_blocks_before_reservation_and_preserves_full_source[6] _
+tests/unit/test_fanqie_outline_contract_completion_segments.py:191: in test_context_capacity_blocks_before_reservation_and_preserves_full_source
+    await complete(c)
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:190: in test_context_capacity_blocks_before_reservation_and_preserves_full_source
+    with pytest.raises(completion.OutlineContractCompletionError, match="capacity_blocked") as error:
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'capacity_blocked'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+_ test_context_capacity_blocks_before_reservation_and_preserves_full_source[8] _
+tests/unit/test_fanqie_outline_contract_completion_segments.py:191: in test_context_capacity_blocks_before_reservation_and_preserves_full_source
+    await complete(c)
+tests/unit/test_fanqie_outline_contract_completion.py:367: in complete
+    return await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:793: in complete_missing_outline_contract
+    _need(
+src/bestseller/services/fanqie_outline_contract_completion.py:62: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:four_chapter_scope_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:190: in test_context_capacity_blocks_before_reservation_and_preserves_full_source
+    with pytest.raises(completion.OutlineContractCompletionError, match="capacity_blocked") as error:
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'capacity_blocked'
+E     Actual message: 'outline_contract_completion:four_chapter_scope_required'
+=========================== short test summary info ============================
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[5]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[6]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[7]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[8]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_parts_bound_is_exactly_twice_the_trusted_count[6]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_parts_bound_is_exactly_twice_the_trusted_count[8]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[3]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[9]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[True]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[6.0]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_count]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_order]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_bool]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[beat_order]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[beat_count]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[manifest_target]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_v2_receipt_cannot_self_authorize_count_order_or_schema[6]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_v2_receipt_cannot_self_authorize_count_order_or_schema[8]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_context_capacity_blocks_before_reservation_and_preserves_full_source[6]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_context_capacity_blocks_before_reservation_and_preserves_full_source[8]
+22 failed, 2 passed in 8.42s

@@ -1,0 +1,640 @@
+warning: The following rules have been removed and ignoring them has no effect:
+    - ANN101
+    - ANN102
+
+E501 Line too long (103 > 100)
+   --> src/bestseller/services/fanqie_outline_contract_completion.py:814:101
+    |
+812 |         request.metadata["outline_completion_output_budget"] = allowance
+813 |         _need(
+814 |             settings.artifact_store.mode == "local" and settings.artifact_store.retain_prompt_payloads,
+    |                                                                                                     ^^^
+815 |             "full_physical_retention_required",
+816 |         )
+    |
+
+E501 Line too long (104 > 100)
+   --> src/bestseller/services/fanqie_outline_contract_completion.py:818:101
+    |
+816 |         )
+817 |         with llm.bind_project_prompt_audit(project.id, reason=SCHEMA_V2):
+818 |             limit = retention_limit(settings, request, audit=llm._project_prompt_audit.get(), role=role)
+    |                                                                                                     ^^^^
+819 |         _need(
+820 |             max(len(request.system_prompt), len(request.user_prompt)) <= limit,
+    |
+
+E501 Line too long (105 > 100)
+   --> src/bestseller/services/fanqie_outline_contract_completion.py:830:101
+    |
+828 |             raise OutlineContractCompletionError(
+829 |                 "full_source_capacity_blocked:context_window",
+830 |                 diagnostics=[{"code": "OUTLINE_COMPLETION_CAPACITY_BLOCKED", "capacity": error.receipt}],
+    |                                                                                                     ^^^^^
+831 |             ) from error
+832 |     allowance = output_budget_for_request(request, role, answer_tokens=2000)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:2:1
+   |
+ 1 |   """P9: bounded segment expansion, physical replay and immutable v1 compatibility."""
+ 2 | / from copy import deepcopy
+ 3 | | import importlib.util
+ 4 | | import json
+ 5 | | from pathlib import Path
+ 6 | | import subprocess
+ 7 | | import sys
+ 8 | | from types import SimpleNamespace
+ 9 | | from uuid import UUID
+10 | |
+11 | | import pytest
+12 | | from test_fanqie_outline_contract_completion import (
+13 | |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+14 | | )
+15 | |
+16 | | from bestseller.infra.db.models import WorkflowRunModel
+17 | | from bestseller.services import fanqie_beat_recovery as beat
+18 | | from bestseller.services import fanqie_outline_contract_completion as completion
+19 | | from bestseller.services.finite_book_budget import bind_run
+20 | | from bestseller.services.lossless_source_encoding import decode_lossless_source
+21 | | from bestseller.services.retained_planning_generation import _Reader
+   | |____________________________________________________________________^
+22 |
+23 |   pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
+   |
+help: Organize imports
+
+F401 [*] `test_fanqie_outline_contract_completion.authored_fields` imported but unused
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:13:15
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |               ^^^^^^^^^^^^^^^
+14 | )
+   |
+help: Remove unused import
+
+F401 [*] `test_fanqie_outline_contract_completion.case` imported but unused
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:13:32
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |                                ^^^^
+14 | )
+   |
+help: Remove unused import
+
+F401 [*] `test_fanqie_outline_contract_completion.outline_case` imported but unused
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |                                                ^^^^^^^^^^^^
+14 | )
+   |
+help: Remove unused import
+
+F401 [*] `test_fanqie_outline_contract_completion.store` imported but unused
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:13:78
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |                                                                              ^^^^^
+14 | )
+   |
+help: Remove unused import
+
+E501 Line too long (107 > 100)
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:31:101
+   |
+29 |     if name not in sys.modules:
+30 |         source = subprocess.check_output([
+31 |             "git", "show", "refs/tags/e2e17:src/bestseller/services/fanqie_outline_contract_completion.py",
+   |                                                                                                     ^^^^^^^
+32 |         ], text=True)
+33 |         spec = importlib.util.spec_from_loader(name, loader=None)
+   |
+
+E501 Line too long (111 > 100)
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:36:101
+   |
+34 |         module = importlib.util.module_from_spec(spec)
+35 |         sys.modules[name] = module
+36 |         exec(compile(source, "refs/tags/e2e17:fanqie_outline_contract_completion.py", "exec"), module.__dict__)
+   |                                                                                                     ^^^^^^^^^^^
+37 |     return sys.modules[name]
+   |
+
+E501 Line too long (120 > 100)
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:41:101
+   |
+40 | def document(request):
+41 |     return decode_lossless_source(json.loads(request.user_prompt[request.user_prompt.index("{"):])["planning_document"])
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+   |
+
+F811 Redefinition of unused `outline_case` from line 13
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:44:73
+   |
+44 | async def test_v1_native_requests_receipt_and_hashes_are_baseline_bytes(outline_case):
+   |                                                                         ^^^^^^^^^^^^ `outline_case` redefined here
+45 |     c = outline_case
+46 |     baseline = baseline_module()
+   |
+  ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |                                                ------------ previous definition of `outline_case` here
+14 | )
+   |
+help: Remove definition: `outline_case`
+
+E501 Line too long (104 > 100)
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:67:101
+   |
+65 |         assert beat._sha(source) == beat._sha(old_source)
+66 |         receipt = original["_meta"]["outline_contract_completion"]
+67 |         replayed = await completion._verified_candidate(c.session, c.settings, project, source, receipt)
+   |                                                                                                     ^^^^
+68 |         old_replayed = await baseline._verified_candidate(c.session, c.settings, old_project, old_source, receipt)
+69 |         assert beat._json(replayed).encode() == beat._json(old_replayed).encode()
+   |
+
+E501 Line too long (114 > 100)
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:68:101
+   |
+66 |         receipt = original["_meta"]["outline_contract_completion"]
+67 |         replayed = await completion._verified_candidate(c.session, c.settings, project, source, receipt)
+68 |         old_replayed = await baseline._verified_candidate(c.session, c.settings, old_project, old_source, receipt)
+   |                                                                                                     ^^^^^^^^^^^^^^
+69 |         assert beat._json(replayed).encode() == beat._json(old_replayed).encode()
+   |
+
+F811 Redefinition of unused `outline_case` from line 13
+  --> tests/unit/test_fanqie_outline_contract_completion_segments.py:73:75
+   |
+72 | @pytest.mark.parametrize("outline_case", [5, 6, 7, 8], indirect=True)
+73 | async def test_every_segment_pointer_is_completed_and_physically_replayed(outline_case):
+   |                                                                           ^^^^^^^^^^^^ `outline_case` redefined here
+74 |     c = outline_case
+75 |     original = deepcopy(c.base)
+   |
+  ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+   |
+11 | import pytest
+12 | from test_fanqie_outline_contract_completion import (
+13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+   |                                                ------------ previous definition of `outline_case` here
+14 | )
+   |
+help: Remove definition: `outline_case`
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:99:101
+    |
+ 97 |     async with acquired(c):
+ 98 |         project, source = await completion._sources(c.session, c.settings, c.project.id)
+ 99 |         replay = await completion._verified_candidate(c.session, c.settings, project, source, receipt)
+    |                                                                                                     ^^
+100 |     assert beat._json(replay) == beat._json(result)
+101 |     assert beat._json(await complete(c)) == beat._json(result)
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:106:63
+    |
+105 | @pytest.mark.parametrize("outline_case", [6, 8], indirect=True)
+106 | async def test_parts_bound_is_exactly_twice_the_trusted_count(outline_case):
+    |                                                               ^^^^^^^^^^^^ `outline_case` redefined here
+107 |     c = outline_case
+108 |     c.transform = lambda req, patch: "{}" if req.metadata["outline_completion_attempt"] == 0 else beat._json(patch)
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (115 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:108:101
+    |
+106 | async def test_parts_bound_is_exactly_twice_the_trusted_count(outline_case):
+107 |     c = outline_case
+108 |     c.transform = lambda req, patch: "{}" if req.metadata["outline_completion_attempt"] == 0 else beat._json(patch)
+    |                                                                                                     ^^^^^^^^^^^^^^^
+109 |     result = await complete(c)
+110 |     await c.session.commit()
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:115:101
+    |
+113 |     async with acquired(c):
+114 |         project, source = await completion._sources(c.session, c.settings, c.project.id)
+115 |         assert await completion._verified_candidate(c.session, c.settings, project, source, receipt) == result
+    |                                                                                                     ^^^^^^^^^^
+116 |         bad = deepcopy(receipt)
+117 |         bad["parts"].append(deepcopy(bad["parts"][-1]))
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:121:101
+    |
+119 |         workflow.metadata_json = {**workflow.metadata_json, "outline_contract_completion": bad}
+120 |         await c.session.commit()
+121 |         with pytest.raises(completion.OutlineContractCompletionError, match="derived_outline_parts"):
+    |                                                                                                     ^
+122 |             await completion._verified_candidate(c.session, c.settings, project, source, bad)
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:126:64
+    |
+125 | @pytest.mark.parametrize("n", [3, 9, True, 6.0])
+126 | async def test_invalid_target_rejected_before_noop_or_dispatch(outline_case, n):
+    |                                                                ^^^^^^^^^^^^ `outline_case` redefined here
+127 |     c = outline_case
+128 |     c.project.target_chapters = n
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (134 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:136:101
+    |
+134 |     with patch.object(completion, "_sources", sources):
+135 |         with pytest.raises(completion.OutlineContractCompletionError, match="segment_count"):
+136 |             await completion.complete_missing_outline_contract(c.session, c.settings, project_id=c.project.id, outline_payload=c.base)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+137 |     assert not c.requests
+    |
+
+E501 Line too long (174 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:140:101
+    |
+140 | …", "candidate_bool", "beat_order", "beat_count", "manifest_target", "creation_count", "creation_bool"])
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 | …utline_case, monkeypatch, change):
+142 | …
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:141:71
+    |
+140 | @pytest.mark.parametrize("change", ["candidate_count", "candidate_order", "candidate_bool", "beat_order", "beat_count", "manifest_tar…
+141 | async def test_scope_requires_continuous_numbers_and_agreeing_sources(outline_case, monkeypatch, change):
+    |                                                                       ^^^^^^^^^^^^ `outline_case` redefined here
+142 |     c = outline_case
+143 |     async with acquired(c):
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (105 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:141:101
+    |
+140 | @pytest.mark.parametrize("change", ["candidate_count", "candidate_order", "candidate_bool", "beat_order", "beat_count", "manifest_tar…
+141 | async def test_scope_requires_continuous_numbers_and_agreeing_sources(outline_case, monkeypatch, change):
+    |                                                                                                     ^^^^^
+142 |     c = outline_case
+143 |     async with acquired(c):
+    |
+
+E501 Line too long (120 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:159:101
+    |
+157 |         source["selected_source"]["project_inputs"]["target_chapters"] = 6
+158 |     else:
+159 |         c.project.metadata_json = {**c.project.metadata_json, "segment_count": True if change == "creation_bool" else 6}
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+160 |     async def sources(*args):
+161 |         return project, source
+    |
+
+E501 Line too long (146 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:164:101
+    |
+162 | …
+163 | …onError, match="segment"):
+164 | …t(c.session, c.settings, project_id=c.project.id, outline_payload=source["base_outline"])
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+165 | …
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:169:71
+    |
+168 | @pytest.mark.parametrize("outline_case", [6, 8], indirect=True)
+169 | async def test_v2_receipt_cannot_self_authorize_count_order_or_schema(outline_case):
+    |                                                                       ^^^^^^^^^^^^ `outline_case` redefined here
+170 |     c = outline_case
+171 |     result = await complete(c)
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (246 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:177:101
+    |
+175 | …
+176 | …
+177 | …ers", 4), ("target_chapters", float(c.project.target_chapters)), ("ordered_chapter_numbers", list(reversed(range(1, c.project.target_chapters + 1))))]:
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+178 | …
+179 | …bad}
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:181:101
+    |
+179 |             workflow.metadata_json = {**workflow.metadata_json, "outline_contract_completion": bad}
+180 |             await c.session.commit()
+181 |             with pytest.raises(completion.OutlineContractCompletionError, match="derived_outline_receipt_changed"):
+    |                                                                                                     ^^^^^^^^^^^^^^^
+182 |                 await completion._verified_candidate(c.session, c.settings, project, source, bad)
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:186:85
+    |
+185 | @pytest.mark.parametrize("outline_case", [6, 8], indirect=True)
+186 | async def test_context_capacity_blocks_before_reservation_and_preserves_full_source(outline_case):
+    |                                                                                     ^^^^^^^^^^^^ `outline_case` redefined here
+187 |     c = outline_case
+188 |     before = deepcopy(c.base)
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (105 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:190:101
+    |
+188 |     before = deepcopy(c.base)
+189 |     with bind_run("p9-test", project_id=c.project.id, stage="planning", capacity_limit=100):
+190 |         with pytest.raises(completion.OutlineContractCompletionError, match="capacity_blocked") as error:
+    |                                                                                                     ^^^^^
+191 |             await complete(c)
+192 |     assert error.value.candidate == before
+    |
+
+E501 Line too long (123 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:194:101
+    |
+192 |     assert error.value.candidate == before
+193 |     assert not c.requests
+194 |     workflows = await _Reader(c.session).rows(WorkflowRunModel, WorkflowRunModel.workflow_type == completion.WORKFLOW_TYPE)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+195 |     assert len(workflows) == 1 and not workflows[0].metadata_json.get("dispatches")
+    |
+
+F811 Redefinition of unused `outline_case` from line 13
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:198:70
+    |
+198 | async def test_capacity_counts_all_segments_and_checks_every_request(outline_case):
+    |                                                                      ^^^^^^^^^^^^ `outline_case` redefined here
+199 |     c = outline_case
+200 |     async with acquired(c):
+    |
+   ::: tests/unit/test_fanqie_outline_contract_completion_segments.py:13:48
+    |
+ 11 | import pytest
+ 12 | from test_fanqie_outline_contract_completion import (
+ 13 |     acquired, authored_fields, case, complete, outline_case, protected_rows, store,
+    |                                                ------------ previous definition of `outline_case` here
+ 14 | )
+    |
+help: Remove definition: `outline_case`
+
+E501 Line too long (115 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:216:101
+    |
+214 | …         expanded["original_beat"]["raw"]["beats"].append(item)
+215 | …     if n != 4:
+216 | …         expanded["segment_contract"] = {"target_chapters": n, "ordered_chapter_numbers": list(range(1, n + 1))}
+    |                                                                                                   ^^^^^^^^^^^^^^^
+217 | …     diagnostics = completion._diagnose(expanded["base_outline"], project, c.settings, c.assets["cast_spec"].content)
+218 | …     req = completion._request(project, expanded, expanded["base_outline"], diagnostics, completion._targets(expanded["base_outline"…
+    |
+
+E501 Line too long (120 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:217:101
+    |
+215 | …     if n != 4:
+216 | …         expanded["segment_contract"] = {"target_chapters": n, "ordered_chapter_numbers": list(range(1, n + 1))}
+217 | …     diagnostics = completion._diagnose(expanded["base_outline"], project, c.settings, c.assets["cast_spec"].content)
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^
+218 | …     req = completion._request(project, expanded, expanded["base_outline"], diagnostics, completion._targets(expanded["base_outline"…
+219 | …     capacity = completion._prepare_capacity(req, c.settings, project)
+    |
+
+E501 Line too long (180 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:218:101
+    |
+216 | …_chapter_numbers": list(range(1, n + 1))}
+217 | …ct, c.settings, c.assets["cast_spec"].content)
+218 | …e"], diagnostics, completion._targets(expanded["base_outline"], diagnostics, 0), UUID(int=44), 0, 0, None)
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+219 | …
+220 | …
+    |
+
+E501 Line too long (120 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:231:101
+    |
+229 |     base = {"chapters": [{"chapter_number": i, "title": ""} for i in range(1, 5)]}
+230 |     source = {
+231 |         "selected_source": {"project_inputs": {"target_chapters": 4}, "complete_foundation_content": {"cast_spec": {}}},
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+232 |         "original_beat": {"raw": {"beats": [{"segment_number": i} for i in range(1, 5)]}, "receipt": {"llm_run_id": str(UUID(int=2))}…
+233 |         "base_outline": base,
+    |
+
+E501 Line too long (135 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:232:101
+    |
+230 | …
+231 | …et_chapters": 4}, "complete_foundation_content": {"cast_spec": {}}},
+232 | …t_number": i} for i in range(1, 5)]}, "receipt": {"llm_run_id": str(UUID(int=2))}},
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+233 | …
+234 | …
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:240:101
+    |
+238 |         diagnostics = fixed_diagnostics(candidate)
+239 |         targets = old._targets(candidate, diagnostics, index)
+240 |         req = old._request(project, source, candidate, diagnostics, targets, workflow_id, index, 0, None)
+    |                                                                                                     ^^^^^
+241 |         requests.append(req.model_dump(mode="json"))
+242 |         patch = {f"/chapters/{index}/title": f"Lens {index + 1}"}
+    |
+
+E501 Line too long (145 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:245:101
+    |
+243 | …
+244 | …patches[-1])
+245 | …proof": {"llm_run_id": str(UUID(int=10 + index))}, "capacity": {"budget_passed": True}})
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+246 | …
+247 | …flow_id), "source_sha256": beat._sha(source),
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:247:101
+    |
+245 |         parts.append({"part": index, "attempt": 0, "paid_proof": {"llm_run_id": str(UUID(int=10 + index))}, "capacity": {"budget_pass…
+246 |     receipt = {
+247 |         "schema": old.SCHEMA, "workflow_run_id": str(workflow_id), "source_sha256": beat._sha(source),
+    |                                                                                                     ^^
+248 |         "base_outline_sha256": beat._sha(base), "candidate_payload_sha256": beat._sha(candidate),
+249 |         "original_beat": source["original_beat"]["receipt"], "parts": parts, "native_blocking_diagnostics": [],
+    |
+
+E501 Line too long (111 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:249:101
+    |
+247 |         "schema": old.SCHEMA, "workflow_run_id": str(workflow_id), "source_sha256": beat._sha(source),
+248 |         "base_outline_sha256": beat._sha(base), "candidate_payload_sha256": beat._sha(candidate),
+249 |         "original_beat": source["original_beat"]["receipt"], "parts": parts, "native_blocking_diagnostics": [],
+    |                                                                                                     ^^^^^^^^^^^
+250 |         "generation_method": "original_paid_beat_plus_model_missing_plan_fields",
+251 |         "generation_llm_run_ids": [str(UUID(int=2)), *[p["paid_proof"]["llm_run_id"] for p in parts]],
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:251:101
+    |
+249 |         "original_beat": source["original_beat"]["receipt"], "parts": parts, "native_blocking_diagnostics": [],
+250 |         "generation_method": "original_paid_beat_plus_model_missing_plan_fields",
+251 |         "generation_llm_run_ids": [str(UUID(int=2)), *[p["paid_proof"]["llm_run_id"] for p in parts]],
+    |                                                                                                     ^^
+252 |         "single_provider_payload_claimed": False, "grade_asserted": False, "adoption_granted": False, "credit_granted": False,
+253 |     }
+    |
+
+E501 Line too long (126 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:252:101
+    |
+250 |         "generation_method": "original_paid_beat_plus_model_missing_plan_fields",
+251 |         "generation_llm_run_ids": [str(UUID(int=2)), *[p["paid_proof"]["llm_run_id"] for p in parts]],
+252 |         "single_provider_payload_claimed": False, "grade_asserted": False, "adoption_granted": False, "credit_granted": False,
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+253 |     }
+254 |     candidate["_meta"] = {"outline_contract_completion": receipt}
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:255:101
+    |
+253 |     }
+254 |     candidate["_meta"] = {"outline_contract_completion": receipt}
+255 |     return {"source": source, "requests": requests, "patches": patches, "receipt": receipt, "candidate": candidate}
+    |                                                                                                     ^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (118 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:259:101
+    |
+258 | def fixed_diagnostics(payload, *_):
+259 |     return [{"code": "TITLE_MISSING", "chapter_number": row["chapter_number"], "location": f"chapters[{index}].title"}
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+260 |             for index, row in enumerate(payload["chapters"]) if not row["title"]]
+    |
+
+E501 Line too long (116 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:265:101
+    |
+263 | async def test_fixed_v1_receipt_and_request_bytes_match_frozen_baseline(monkeypatch):
+264 |     fixture = json.loads((FIXTURES / "v1-fixed-receipt.json").read_text())
+265 |     assert beat._json(fixed_v1_bundle()).encode() == (FIXTURES / "v1-fixed-receipt.json").read_bytes().rstrip(b"\n")
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+266 |     from bestseller.services import llm
+267 |     project = SimpleNamespace(id=UUID(int=1), target_chapters=4, metadata_json={})
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:269:101
+    |
+267 |     project = SimpleNamespace(id=UUID(int=1), target_chapters=4, metadata_json={})
+268 |     receipt = fixture["receipt"]
+269 |     workflow = SimpleNamespace(id=UUID(int=3), status="completed", workflow_type=completion.WORKFLOW_TYPE,
+    |                                                                                                     ^^^^^^
+270 |                                project_id=project.id, scope_type="project", scope_id=project.id,
+271 |                                metadata_json={"outline_contract_completion": receipt})
+    |
+
+E501 Line too long (123 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:279:101
+    |
+277 |     async def paid(session, settings, project, run_id):
+278 |         index = int(UUID(str(run_id))) - 10
+279 |         return (SimpleNamespace(id=UUID(str(run_id))), llm.LLMCompletionRequest.model_validate(fixture["requests"][index]),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+280 |                 SimpleNamespace(content=fixture["patches"][index], fallback_used=False, tool_calls=None, finish_reason="stop"),
+281 |                 receipt["parts"][index]["paid_proof"])
+    |
+
+E501 Line too long (127 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:280:101
+    |
+278 |         index = int(UUID(str(run_id))) - 10
+279 |         return (SimpleNamespace(id=UUID(str(run_id))), llm.LLMCompletionRequest.model_validate(fixture["requests"][index]),
+280 |                 SimpleNamespace(content=fixture["patches"][index], fallback_used=False, tool_calls=None, finish_reason="stop"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+281 |                 receipt["parts"][index]["paid_proof"])
+282 |     monkeypatch.setattr(beat, "_native_owner", lambda *args: None)
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/unit/test_fanqie_outline_contract_completion_segments.py:290:101
+    |
+288 |         replay = await module._verified_candidate(None, None, project, fixture["source"], receipt)
+289 |         assert beat._json(replay).encode() == beat._json(fixture["candidate"]).encode()
+290 |         assert beat._json(replay["_meta"]["outline_contract_completion"]).encode() == beat._json(receipt).encode()
+    |                                                                                                     ^^^^^^^^^^^^^^
+    |
+
+Found 52 errors.
+[*] 5 fixable with the `--fix` option.

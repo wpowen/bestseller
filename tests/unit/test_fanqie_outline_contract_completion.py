@@ -88,7 +88,7 @@ def authored_fields(index):
     }
 
 
-def raw_sheet(*, complete=False):
+def raw_sheet(*, complete=False, segments=4):
     raw = {
         "title": "The observatory lenses",
         "logline": "Mira repairs four damaged lenses before dawn.",
@@ -97,7 +97,7 @@ def raw_sheet(*, complete=False):
         "opaque_source": {"literal": "§0 $ref", "unset": None, "boolean": False},
         "beats": [],
     }
-    for index in range(4):
+    for index in range(segments):
         fields = authored_fields(index)
         item = {
             "segment_number": index + 1,
@@ -170,6 +170,12 @@ def physical_files(c):
 @pytest.fixture
 async def outline_case(case, monkeypatch, request):  # noqa: F811
     c = case
+    options = getattr(request, "param", None)
+    segments = (
+        options
+        if type(options) is int
+        else (options.get("segments", 4) if type(options) is dict else 4)
+    )
     assert c.session.bind.dialect.name == "sqlite"
     assert "test" in Path(c.session.bind.url.database).name
     for model in (ChapterModel, CharacterModel):
@@ -185,7 +191,9 @@ async def outline_case(case, monkeypatch, request):  # noqa: F811
         async with c.session.bind.begin() as connection:
             await connection.run_sync(table.create)
     foundation_id = c.project.metadata_json[foundation_selection.POINTER]["workflow_id"]
-    c.project.target_chapters, c.project.target_word_count = 4, 8000
+    c.project.target_chapters, c.project.target_word_count = segments, segments * 2000
+    if segments != 4:
+        c.project.metadata_json = {**c.project.metadata_json, "segment_count": segments}
     c.project.status = "planning"
     c.project.project_type = "fanqie_short"
     c.settings.pipeline.require_chapter_plan_contract = True
@@ -214,8 +222,8 @@ async def outline_case(case, monkeypatch, request):  # noqa: F811
     detached = SimpleNamespace(
         id=c.project.id,
         language=c.project.language,
-        target_chapters=4,
-        target_word_count=8000,
+        target_chapters=segments,
+        target_word_count=segments * 2000,
         metadata_json=deepcopy(c.project.metadata_json),
     )
     detached._source_bound_planning_canonical = {
@@ -244,7 +252,11 @@ async def outline_case(case, monkeypatch, request):  # noqa: F811
     await c.session.commit()
     c.redis = LeaseIO()
     monkeypatch.setattr("redis.asyncio.Redis.from_url", lambda *a, **kw: c.redis)
-    c.raw = raw_sheet(complete=getattr(request, "param", None) == "complete")
+    c.raw = raw_sheet(
+        complete=options == "complete"
+        or (type(options) is dict and options.get("complete", False)),
+        segments=segments,
+    )
     c.requests, c.runs = [], []
     persist = llm._persist_prompt_payloads
 
@@ -303,7 +315,11 @@ async def outline_case(case, monkeypatch, request):  # noqa: F811
         assert req.project_id == c.project.id and req.workflow_run_id
         assert req.logical_role == "planner"
         assert req.prompt_template == "planner_structured_field_correction"
-        assert req.prompt_version == "fanqie-plan-fields-v1" and len(req.prompt_version) <= 32
+        assert (
+            req.prompt_version
+            == ("fanqie-plan-fields-v1" if segments == 4 else "fanqie-plan-fields-v2")
+            and len(req.prompt_version) <= 32
+        )
         c.requests.append(req.model_copy(deep=True))
         # Decode the transmitted document through the actual lossless decoder.
         outer = json.loads(req.user_prompt[req.user_prompt.index("{") :])

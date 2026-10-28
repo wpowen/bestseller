@@ -1,0 +1,40 @@
+..........................................................FF...........  [100%]
+=================================== FAILURES ===================================
+_ test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count] __
+tests/unit/test_fanqie_outline_contract_completion_segments.py:235: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:894: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:657: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:64: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:234: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+__ test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool] __
+tests/unit/test_fanqie_outline_contract_completion_segments.py:235: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    await completion.complete_missing_outline_contract(
+src/bestseller/services/fanqie_outline_contract_completion.py:894: in complete_missing_outline_contract
+    await _guard(session, settings, project_id, source)
+src/bestseller/services/fanqie_outline_contract_completion.py:657: in _guard
+    _need(owner is not None and owner[0] == project.slug, "acquired_native_owner_required")
+src/bestseller/services/fanqie_outline_contract_completion.py:64: in _need
+    raise OutlineContractCompletionError(code)
+E   bestseller.services.fanqie_outline_contract_completion.OutlineContractCompletionError: outline_contract_completion:acquired_native_owner_required
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_fanqie_outline_contract_completion_segments.py:234: in test_scope_requires_continuous_numbers_and_agreeing_sources
+    with pytest.raises(completion.OutlineContractCompletionError, match="segment"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: 'segment'
+E     Actual message: 'outline_contract_completion:acquired_native_owner_required'
+=========================== short test summary info ============================
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count]
+FAILED tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool]
+2 failed, 69 passed in 52.18s

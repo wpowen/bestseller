@@ -7,6 +7,7 @@ from bestseller.services.invariants import project_invariants_from_row
 from bestseller.services.draft_promotion import draft_supersession_codes
 
 from collections.abc import Iterable, Mapping, Sequence
+from copy import copy
 from datetime import UTC, datetime
 from hashlib import sha256
 import json
@@ -36,6 +37,7 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     StyleGuideModel,
 )
+from bestseller.services import full_flow_length
 from bestseller.services.ai_slop_blacklist import render_slop_blacklist_block
 from bestseller.services.anti_ai_voice_discipline import (
     render_anti_ai_voice_discipline,
@@ -9620,6 +9622,7 @@ def build_chapter_first_draft_prompts(
     context_packet: ChapterWriterContextPacket,
     *,
     target_word_count: int,
+    length_request: Mapping[str, Any] | None = None,
     character_safety_block: str | None = None,
     prior_draft_body: str | None = None,
     context_budget_tokens: int = 6000,
@@ -9632,6 +9635,19 @@ def build_chapter_first_draft_prompts(
 ) -> tuple[str, str] | CompiledPrompt:
     if prompt_mode not in {"legacy", "compiled"}:
         raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
+    length_request = full_flow_length.require_feasible_request(length_request)
+    length_contract_block = full_flow_length.prompt_contract(length_request)
+    if length_request is not None:
+        target_word_count = length_request["window"]["target_words"]
+        # Keep the caller's context/plan intact while replacing stale length
+        # advice in both the acceptance bundle and the visible constraints.
+        if callable(getattr(context_packet, "model_copy", None)):
+            context_packet = context_packet.model_copy(
+                update={"chapter_length_block": length_contract_block}
+            )
+        else:
+            context_packet = copy(context_packet)
+            context_packet.chapter_length_block = length_contract_block
     from bestseller.services.prose_prompt_profile import resolve_prose_prompt_profile
 
     prose_prompt_profile = resolve_prose_prompt_profile(
@@ -9986,10 +10002,16 @@ def build_chapter_first_draft_prompts(
         )
         if block
     ]
-    hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
-        project,
-        target_word_count,
-    )
+    if length_request is not None:
+        window = length_request["window"]
+        hard_min_words = window["min_words"]
+        hard_target_words = window["target_words"]
+        hard_max_words = window["max_words"]
+    else:
+        hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
+            project,
+            target_word_count,
+        )
     scene_count = len(scenes)
     # --- Output rules split into focused blocks (was one ~20-rule blob) ---
     output_word_count_rules = (
@@ -10020,6 +10042,11 @@ def build_chapter_first_draft_prompts(
             f"目标约 {hard_target_words} 字。"
         )
     )
+    if length_contract_block:
+        # word_count_rules is protected by the compiler in both profiles and
+        # both return modes; the receipt must survive prompt compaction.
+        output_word_count_rules += "\n" + length_contract_block
+        lean_word_band_rule += "\n" + length_contract_block
     try:
         has_chapter_word_target = int(target_word_count or 0) > 0
     except (TypeError, ValueError):
@@ -10748,6 +10775,11 @@ async def generate_chapter_draft_once(
         raise ValueError(f"Chapter {chapter_number} does not have any scene cards.")
 
     effective_settings = settings or load_settings()
+    await session.flush()
+    length_request = await full_flow_length.freeze_request(
+        session, effective_settings, project=project, chapter=chapter,
+    )
+    length_request = full_flow_length.require_feasible_request(length_request)
     style_guide = await session.get(StyleGuideModel, project.id)
     if context_packet is None:
         context_packet = await build_chapter_writer_context(
@@ -10771,7 +10803,11 @@ async def generate_chapter_draft_once(
     )
     if read_configuration(project) is not None:
         target_word_count = read_configuration(project).book.chapter_target
-    writer_target_word_count = _chapter_first_writer_aim(project, target_word_count)
+    writer_target_word_count = (
+        length_request["window"]["target_words"]
+        if length_request is not None
+        else _chapter_first_writer_aim(project, target_word_count)
+    )
     # 2026-09-10 (W3)：整章重生成路径同样要给出**有出处的**爽点锚点。
     # 首次生成时章下无在架稿 → None → 不注入锚点（避免空喊）；
     # 重生成时把上一稿正文交给保全块，写手能引用到「上一稿写的是哪一句」。
@@ -10790,7 +10826,12 @@ async def generate_chapter_draft_once(
     from bestseller.services.writer_source_capacity import prepare_writer_source_capacity
 
     _writer_model_tier = "strong" if chapter.chapter_number <= 3 else "standard"
-    _, _, capacity_hard_max_words = _chapter_length_contract_band(project, writer_target_word_count)
+    if length_request is not None:
+        capacity_hard_max_words = length_request["window"]["max_words"]
+    else:
+        _, _, capacity_hard_max_words = _chapter_length_contract_band(
+            project, writer_target_word_count,
+        )
     writer_max_tokens_override = chapter_first_runaway_max_tokens(
         effective_settings, target_word_count=writer_target_word_count,
         language=_project_language(project), hard_max_word_count=capacity_hard_max_words,
@@ -10810,6 +10851,7 @@ async def generate_chapter_draft_once(
         style_guide,
         context_packet,
         target_word_count=writer_target_word_count,
+        length_request=length_request,
         character_safety_block=character_safety_block,
         prior_draft_body=prior_draft_body,
         compiler_additional_blocks=approved_delivery_blocks,
@@ -10889,10 +10931,16 @@ async def generate_chapter_draft_once(
             (chapter.chapter_goal or "").strip(),
         ]
     ).strip()
-    hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
-        project,
-        writer_target_word_count,
-    )
+    if length_request is not None:
+        window = length_request["window"]
+        hard_min_words = window["min_words"]
+        hard_target_words = window["target_words"]
+        hard_max_words = window["max_words"]
+    else:
+        hard_min_words, hard_target_words, hard_max_words = _chapter_length_contract_band(
+            project,
+            writer_target_word_count,
+        )
     chapter_prompt_trace_path = _maybe_write_chapter_prompt_trace(
         effective_settings,
         project,
@@ -10949,6 +10997,7 @@ async def generate_chapter_draft_once(
                 },
                 "declared_chapter_target": target_word_count,
                 "writer_realization_aim": writer_target_word_count,
+                **({"book_length_control": length_request} if length_request is not None else {}),
                 "protected_contract_markers": {
                     "word_count": "字数与结构" in user_prompt
                     or "word count and structure" in user_prompt.casefold(),
@@ -10977,7 +11026,7 @@ async def generate_chapter_draft_once(
         language=_project_language(project),
     ) or fallback_content
     content_md = strip_scaffolding_echoes(content_md)
-    if has_meta_leak(content_md):
+    if length_request is None and has_meta_leak(content_md):
         content_md = await validate_and_clean_novel_content(
             session,
             effective_settings,
@@ -10996,6 +11045,37 @@ async def generate_chapter_draft_once(
         chapter_number=chapter_number,
         source="chapter_first",
     )
+    # Numerical misses are historical candidates, never a reason to spend on
+    # semantic cleanup/critics or to start another writer/length-repair round.
+    length_candidate = (
+        full_flow_length.evaluate_candidate(length_request, content_md)
+        if length_request is not None
+        else None
+    )
+    length_control_blocked = (
+        length_candidate is not None and length_candidate["length_passed"] is not True
+    )
+    if length_request is not None and not length_control_blocked and has_meta_leak(content_md):
+        content_md = await validate_and_clean_novel_content(
+            session,
+            effective_settings,
+            content_md,
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+        )
+        if not _has_leading_chapter_heading(content_md, chapter_number):
+            heading = format_chapter_heading(
+                chapter_number, chapter.title, language=_project_language(project),
+            )
+            content_md = f"{heading}\n\n{content_md}"
+        content_md, _ = _clean_generated_chapter_text(
+            content_md, chapter_number=chapter_number, source="chapter_first",
+        )
+        # The existing one-shot leak cleaner may change length. Persist only
+        # the verdict for its actual final body, bound to the same request.
+        length_candidate = full_flow_length.evaluate_candidate(length_request, content_md)
+        length_control_blocked = length_candidate["length_passed"] is not True
     if any(cleanup_stats.values()):
         logger.info(
             "chapter_first %d: cleanup stats=%s word_count=%d",
@@ -11063,7 +11143,9 @@ async def generate_chapter_draft_once(
     # Intra-chapter continuity is the one failure mode chapter-first loses on
     # (2026-07-20 A/B: the arm that weighed 低筋面粉 then kneaded 高筋面粉 lost
     # 4-0). Advisory only — findings steer the repair patch, never block a write.
-    if bool(getattr(effective_settings.pipeline, "chapter_continuity_critic_enabled", True)):
+    if not length_control_blocked and bool(
+        getattr(effective_settings.pipeline, "chapter_continuity_critic_enabled", True)
+    ):
         try:
             from bestseller.services.chapter_continuity_critic import (
                 audit_chapter_continuity,
@@ -11121,7 +11203,7 @@ async def generate_chapter_draft_once(
         >= int(effective_settings.pipeline.commercial_planning_min_target_chapters)
     )
     quality_bundle_report: ChapterQualityBundleReport | None = None
-    if commercial_quality_required:
+    if commercial_quality_required and not length_control_blocked:
         quality_bundle_report = run_chapter_quality_bundle(
             content_md,
             ChapterQualityBundleContext(
@@ -11138,12 +11220,14 @@ async def generate_chapter_draft_once(
         )
         _stamp_chapter_quality_bundle(chapter, quality_bundle_report)
 
-    quality_gate_outcome = await _evaluate_chapter_quality_gate(
-        session=session,
-        project=project,
-        chapter_number=chapter_number,
-        content=content_md,
-    )
+    quality_gate_outcome = "blocked"
+    if not length_control_blocked:
+        quality_gate_outcome = await _evaluate_chapter_quality_gate(
+            session=session,
+            project=project,
+            chapter_number=chapter_number,
+            content=content_md,
+        )
     from bestseller.services.deterministic_audit_actions import (
         effective_deterministic_audit_blockers,
     )
@@ -11158,16 +11242,17 @@ async def generate_chapter_draft_once(
         quality_gate_outcome = "blocked"
     _persist_effect_contract_context(project, chapter, scenes=scenes)
     try:
-        await _materialize_story_effect_evidence(
-            session,
-            effective_settings,
-            project=project,
-            chapter=chapter,
-            content=content_md,
-            workflow_run_id=workflow_run_id,
-            step_run_id=step_run_id,
-            scenes=scenes,
-        )
+        if not length_control_blocked:
+            await _materialize_story_effect_evidence(
+                session,
+                effective_settings,
+                project=project,
+                chapter=chapter,
+                content=content_md,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                scenes=scenes,
+            )
     except Exception:
         # Evidence extraction is not permission to bypass the gate.  A failed
         # observer leaves the structured proof absent, so the deterministic
@@ -11287,7 +11372,8 @@ async def generate_chapter_draft_once(
         )
         or 0
     ) + 1
-    if not _keeps_prior_draft:
+    take_current = not _keeps_prior_draft and not length_control_blocked
+    if take_current:
         await session.execute(
             update(ChapterDraftVersionModel)
             .where(
@@ -11303,16 +11389,27 @@ async def generate_chapter_draft_once(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=[f"chapter_first_scene:{scene.id}" for scene in scenes],
-        # current is a working pointer, not adoption. Even a blocked first
-        # candidate needs an exact repair parent; an incumbent stays protected.
-        is_current=not _keeps_prior_draft,
+        # current is a working pointer, not adoption. Out-of-band v1 bodies
+        # stay historical candidates, including when there is no incumbent.
+        is_current=take_current,
+        promotion_state="candidate",
+        promotion_metadata=(
+            {
+                "book_length_control": length_request,
+                "book_length_control_candidate": length_candidate,
+            }
+            if length_request is not None
+            else {}
+        ),
         promotion_reason_codes=draft_supersession_codes(
             origin="chapter_first",
-            took_current=not _keeps_prior_draft,
+            took_current=take_current,
             chars=len(content_md or ""),
             supersedes_version=next_version - 1 if next_version > 1 else None,
             hold_reason=(
-                "effect_realization_blocked"
+                "book_length_control_blocked"
+                if length_control_blocked
+                else "effect_realization_blocked"
                 if effect_realization_blocked
                 else "prior_draft_kept"
             ),
@@ -11324,7 +11421,7 @@ async def generate_chapter_draft_once(
     # the stub was rejected above, that is still the prior draft.
     chapter.current_word_count = (
         _prior_words
-        if _keeps_prior_draft
+        if not take_current
         else word_count
     )
     chapter.status = (
@@ -11332,9 +11429,9 @@ async def generate_chapter_draft_once(
         if previous_chapter_status == ChapterStatus.REVISION.value
         else ChapterStatus.DRAFTING.value
     )
-    if effect_realization_blocked:
+    if effect_realization_blocked or length_control_blocked:
         chapter.production_state = "blocked"
-    elif not _keeps_prior_draft:
+    elif take_current:
         chapter.production_state = quality_gate_outcome or "ok"
     if effect_realization_report.get("selected_effects"):
         chapter_draft.promotion_metadata = {
@@ -11373,7 +11470,7 @@ async def generate_chapter_draft_once(
     }
     await session.flush()
 
-    if settings is not None:
+    if settings is not None and not length_control_blocked:
         try:
             output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -13220,6 +13317,13 @@ async def assemble_chapter_draft(
     if chapter is None:
         raise ValueError(f"Chapter {chapter_number} was not found for '{project_slug}'.")
 
+    effective_settings = settings or load_settings()
+    await session.flush()
+    length_request = await full_flow_length.freeze_request(
+        session, effective_settings, project=project, chapter=chapter,
+    )
+    length_request = full_flow_length.require_feasible_request(length_request)
+
     scenes = list(
         await session.scalars(
             select(SceneCardModel)
@@ -13431,11 +13535,20 @@ async def assemble_chapter_draft(
     # before assembly, so cutting the assembled tail desynced the ledger from
     # the prose, and dropped the chapter-ending hook).
 
+    length_candidate = (
+        full_flow_length.evaluate_candidate(length_request, content_md)
+        if length_request is not None
+        else None
+    )
+    length_control_blocked = (
+        length_candidate is not None and length_candidate["length_passed"] is not True
+    )
+
     deterministic_audit_report = None
     try:
         from bestseller.services.deterministic_post_write_audit import audit_chapter_prose
 
-        effective_settings_for_audit = settings or load_settings()
+        effective_settings_for_audit = effective_settings
         hard_min_words, _hard_target_words, hard_max_words = _chapter_length_contract_band(
             project,
             int(chapter.target_word_count or effective_settings_for_audit.generation.words_per_chapter.target),
@@ -13503,19 +13616,20 @@ async def assemble_chapter_draft(
 
     _persist_effect_contract_context(project, chapter, scenes=scenes)
     try:
-        await _materialize_story_effect_evidence(
-            session,
-            settings or load_settings(),
-            project=project,
-            chapter=chapter,
-            content=content_md,
-            # Scene assembly currently has no workflow-run argument.  Preserve
-            # truthful provenance instead of referencing a non-existent local;
-            # project/chapter IDs still bind the LLM audit row.
-            workflow_run_id=None,
-            scenes=scenes,
-            scene_drafts=scene_drafts,
-        )
+        if not length_control_blocked:
+            await _materialize_story_effect_evidence(
+                session,
+                effective_settings,
+                project=project,
+                chapter=chapter,
+                content=content_md,
+                # Scene assembly currently has no workflow-run argument.  Preserve
+                # truthful provenance instead of referencing a non-existent local;
+                # project/chapter IDs still bind the LLM audit row.
+                workflow_run_id=None,
+                scenes=scenes,
+                scene_drafts=scene_drafts,
+            )
     except Exception:
         logger.warning(
             "Chapter %d: story-effect evidence extraction failed during scene "
@@ -13564,7 +13678,6 @@ async def assemble_chapter_draft(
     commercial_strict = True
     commercial_quality_required = int(project.target_chapters or 0) >= 50
     try:
-        effective_settings = settings or load_settings()
         generation_target_words = int(effective_settings.generation.words_per_chapter.target)
         commercial_strict = bool(effective_settings.pipeline.commercial_strict_quality_mode)
         commercial_quality_required = commercial_strict and (
@@ -13578,7 +13691,7 @@ async def assemble_chapter_draft(
             exc_info=True,
         )
     quality_bundle_report: ChapterQualityBundleReport | None = None
-    if commercial_quality_required:
+    if commercial_quality_required and not length_control_blocked:
         quality_bundle_report = run_chapter_quality_bundle(
             content_md,
             ChapterQualityBundleContext(
@@ -13608,40 +13721,42 @@ async def assemble_chapter_draft(
     # per-violation block/audit_only mode from config/quality_gates.yaml.
     # Phase 1 only blocks on the high-confidence codes; audit-only codes
     # still get logged for future precision tuning.
-    quality_gate_outcome = await _evaluate_chapter_quality_gate(
-        session=session,
-        project=project,
-        chapter_number=chapter_number,
-        content=content_md,
-        extra_blocking_codes=(
-            ((LLM_OUTPUT_TRUNCATED_BLOCK_CODE,) if truncated_scene_numbers else ())
-            + ((SCENE_COMPLETION_BLOCK_CODE,) if scene_completion_issues else ())
-        ),
-        extra_report_payload=(
-            {
-                **(
-                    {
-                        "llm_output_truncation": {
-                            "scene_numbers": truncated_scene_numbers,
+    quality_gate_outcome = "blocked"
+    if not length_control_blocked:
+        quality_gate_outcome = await _evaluate_chapter_quality_gate(
+            session=session,
+            project=project,
+            chapter_number=chapter_number,
+            content=content_md,
+            extra_blocking_codes=(
+                ((LLM_OUTPUT_TRUNCATED_BLOCK_CODE,) if truncated_scene_numbers else ())
+                + ((SCENE_COMPLETION_BLOCK_CODE,) if scene_completion_issues else ())
+            ),
+            extra_report_payload=(
+                {
+                    **(
+                        {
+                            "llm_output_truncation": {
+                                "scene_numbers": truncated_scene_numbers,
+                            }
                         }
-                    }
-                    if truncated_scene_numbers
-                    else {}
-                ),
-                **(
-                    {
-                        "scene_completion": {
-                            "issues": scene_completion_issues,
+                        if truncated_scene_numbers
+                        else {}
+                    ),
+                    **(
+                        {
+                            "scene_completion": {
+                                "issues": scene_completion_issues,
+                            }
                         }
-                    }
-                    if scene_completion_issues
-                    else {}
-                ),
-            }
-            if truncated_scene_numbers or scene_completion_issues
-            else None
-        ),
-    )
+                        if scene_completion_issues
+                        else {}
+                    ),
+                }
+                if truncated_scene_numbers or scene_completion_issues
+                else None
+            ),
+        )
     from bestseller.services.deterministic_audit_actions import (
         effective_deterministic_audit_blockers,
     )
@@ -13653,6 +13768,8 @@ async def assemble_chapter_draft(
         settings=get_quality_gates_config(),
         chapter_number=chapter_number,
     ):
+        quality_gate_outcome = "blocked"
+    if length_control_blocked:
         quality_gate_outcome = "blocked"
     if quality_gate_outcome == "ok":
         cleared_repair_residue = _clear_scene_auto_repair_residue_after_clean_assembly(
@@ -13688,7 +13805,8 @@ async def assemble_chapter_draft(
         )
         .limit(1)
     )
-    if not effect_realization_blocked:
+    take_current = not effect_realization_blocked and not length_control_blocked
+    if take_current:
         await session.execute(
             update(ChapterDraftVersionModel)
             .where(
@@ -13705,19 +13823,32 @@ async def assemble_chapter_draft(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=[str(scene_draft.id) for scene_draft in scene_drafts],
-        is_current=not effect_realization_blocked,
+        is_current=take_current,
+        promotion_state="candidate",
+        promotion_metadata=(
+            {
+                "book_length_control": length_request,
+                "book_length_control_candidate": length_candidate,
+            }
+            if length_request is not None
+            else {}
+        ),
         promotion_reason_codes=draft_supersession_codes(
             origin="scene_assembly",
-            took_current=not effect_realization_blocked,
+            took_current=take_current,
             chars=len(content_md or ""),
             supersedes_version=next_version - 1 if next_version > 1 else None,
-            hold_reason=("effect_realization_blocked" if effect_realization_blocked else None),
+            hold_reason=(
+                "book_length_control_blocked"
+                if length_control_blocked
+                else "effect_realization_blocked" if effect_realization_blocked else None
+            ),
         ),
     )
     session.add(chapter_draft)
     chapter.current_word_count = (
         int(getattr(prior_current_draft, "word_count", 0) or 0)
-        if effect_realization_blocked
+        if not take_current
         else word_count
     )
     chapter.status = ChapterStatus.DRAFTING.value
@@ -13734,22 +13865,23 @@ async def assemble_chapter_draft(
     # (chapter_first) 直接产出草稿、根本不经过 assemble_chapter_draft，
     # 于是三本真书 109 章 hype 三字段 100% NULL——连兜底分类器本可救回的
     # 14 章也没救到。能力存在，但长在我们的书不走的那条路上。
-    await stamp_chapter_hype(
-        session,
-        chapter=chapter,
-        chapter_number=chapter_number,
-        content_md=content_md,
-        project=project,
-        scene_drafts=scene_drafts,
-        # 已盖戳章重新装配 = 换稿，走 refresh：重算戳、不重复登记预算、
-        # 爽点丢失时清戳留痕（2026-08-17 幽灵戳定罪，详见函数 docstring）。
-        refresh=getattr(chapter, "hype_type", None) is not None,
-    )
+    if not length_control_blocked:
+        await stamp_chapter_hype(
+            session,
+            chapter=chapter,
+            chapter_number=chapter_number,
+            content_md=content_md,
+            project=project,
+            scene_drafts=scene_drafts,
+            # 已盖戳章重新装配 = 换稿，走 refresh：重算戳、不重复登记预算、
+            # 爽点丢失时清戳留痕（2026-08-17 幽灵戳定罪，详见函数 docstring）。
+            refresh=getattr(chapter, "hype_type", None) is not None,
+        )
 
     await session.flush()
 
     # ── Eagerly sync disk file so web UI always shows current content ──
-    if settings is not None:
+    if settings is not None and not length_control_blocked:
         try:
             output_path = (
                 Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"

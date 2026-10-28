@@ -428,6 +428,158 @@ def check_snapshot(snapshot, expected_manifest, *, paid=False):
          "paid_adoption_not_permitted" if paid else "execution_scope_not_open")
 
 
+def _source_field(row, key, default=None):
+    return row.get(key, default) if isinstance(row, dict) else getattr(row, key, default)
+
+
+def _current_uuid(value):
+    from uuid import UUID
+
+    try:
+        text = str(value)
+        need(str(UUID(text)) == text and UUID(text).int != 0, "current_source_identity")
+    except (ValueError, TypeError, AttributeError):
+        raise Stop("current_source_identity") from None
+    return text
+
+
+def _current_project_plan(actual_project, native_plan):
+    """Check fresh native exports, not a caller-supplied segment count or grant.
+
+    The caller owns fresh Project/selected-plan acquisition and hard-admission
+    verification. This check neither reads a DB nor replaces those boundaries.
+    """
+    need(actual_project is not None and native_plan is not None, "current_native_sources_required")
+    project_id = _current_uuid(_source_field(actual_project, "id"))
+    count = _source_field(actual_project, "target_chapters")
+    need(type(count) is int and 4 <= count <= 8, "current_segment_count")
+    meta = _source_field(actual_project, "metadata_json")
+    need(isinstance(meta, dict), "current_project_metadata")
+    scope = meta.get("execution_scope_id")
+    need(isinstance(scope, str) and bool(scope.strip()) and scope != SCOPE,
+         "current_scope_requires_independent_authorization")
+    plan_id = _current_uuid(_source_field(native_plan, "id"))
+    need(str(_source_field(native_plan, "project_id")) == project_id
+         and _source_field(native_plan, "artifact_type") == "chapter_outline_batch"
+         and _source_field(native_plan, "status") == "approved", "current_native_plan_owner")
+    _current_uuid(_source_field(native_plan, "source_run_id"))
+    content = _source_field(native_plan, "content")
+    need(isinstance(content, dict), "current_native_plan_content")
+    chapters = content.get("chapters")
+    need(isinstance(chapters, list) and len(chapters) == count
+         and all(isinstance(c, dict) and type(c.get("chapter_number")) is int for c in chapters)
+         and [c["chapter_number"] for c in chapters] == list(range(1, count + 1)),
+         "current_complete_native_plan_required")
+    for chapter in chapters:
+        scenes = chapter.get("scenes")
+        need(isinstance(scenes, list) and bool(scenes)
+             and all(isinstance(s, dict) and type(s.get("scene_number")) is int for s in scenes)
+             and [s["scene_number"] for s in scenes] == list(range(1, len(scenes) + 1)),
+             "current_complete_native_scenes_required")
+    return project_id, count, meta, scope, plan_id, fingerprint(content)
+
+
+def _check_current_manifest(manifest, *, actual_project, native_plan, full_text, canonical=None):
+    """Bind all adopted sources to one actual project and complete selected plan."""
+    project_id, count, meta, scope, plan_id, plan_hash = _current_project_plan(actual_project, native_plan)
+    need(isinstance(manifest, dict) and manifest.get("schema") == "fanqie-whole-source-export.v1"
+         and manifest.get("project_id") == project_id and manifest.get("execution_scope_id") == scope,
+         "current_manifest_identity")
+    fields = ("title", "genre", "language", "target_chapters", "target_word_count")
+    need(wire(manifest.get("project")) == wire({k: _source_field(actual_project, k) for k in fields}),
+         "current_manifest_project_projection")
+    need(isinstance(full_text, str) and bool(full_text.strip())
+         and manifest.get("assembly_sha256") == sha(full_text), "current_manifest_assembly")
+    need(manifest.get("canonical_id") == meta.get("creation_canonical_snapshot_id")
+         and manifest.get("canonical_hash") == meta.get("creation_canonical_snapshot_hash")
+         and re.fullmatch(r"[a-f0-9]{64}", str(manifest.get("canonical_hash", ""))),
+         "current_manifest_canonical")
+    _current_uuid(manifest.get("canonical_id"))
+    if canonical is not None:
+        need(isinstance(canonical, dict) and canonical.get("project_id") == project_id
+             and canonical.get("artifact_type") == "conception_snapshot"
+             and canonical.get("status") == "canonical"
+             and canonical.get("id") == manifest["canonical_id"]
+             and fingerprint(canonical.get("content")) == manifest["canonical_hash"],
+             "current_canonical_binding")
+    sources = manifest.get("sources")
+    need(isinstance(sources, list) and len(sources) == count
+         and all(isinstance(s, dict) and type(s.get("chapter_number")) is int for s in sources)
+         and [s["chapter_number"] for s in sources] == list(range(1, count + 1)),
+         "current_source_census")
+    draft_ids, chapter_ids = set(), set()
+    admission_id = str(uuid5(NAMESPACE_URL,
+        f"bestseller:materialized-outline-source-admission.v1:{project_id}:{plan_id}"))
+    from bestseller.services.rewrite_outline_binding import validate_source_plan_binding
+
+    selected_binding = _source_field(native_plan, "source_binding", {})
+    projections = selected_binding.get("chapter_projection_hashes", {}) if isinstance(selected_binding, dict) else {}
+    for source in sources:
+        chapter_id, draft_id = _current_uuid(source.get("chapter_id")), _current_uuid(source.get("draft_id"))
+        need(chapter_id not in chapter_ids and draft_id not in draft_ids, "current_duplicate_source")
+        chapter_ids.add(chapter_id)
+        draft_ids.add(draft_id)
+        lineage = source.get("lineage")
+        need(isinstance(lineage, dict) and lineage.get("project_id") == project_id
+             and lineage.get("chapter_id") == chapter_id
+             and lineage.get("source_chapter_draft_version_id") == draft_id
+             and lineage.get("source_body_sha256") == source.get("raw_body_sha256")
+             and re.fullmatch(r"[a-f0-9]{64}", str(source.get("raw_body_sha256", "")))
+             and lineage.get("adoption_state") in {"promoted", "accepted_with_debt"},
+             "current_adoption_binding")
+        marker = validate_source_plan_binding(lineage.get("source_plan_binding"))
+        need(marker["artifact_id"] == plan_id and marker["source_content_sha256"] == plan_hash
+             and marker["workflow_run_id"] == admission_id, "current_source_plan_binding")
+        if projections:
+            need(projections.get(chapter_id) == marker["projection_hash"], "current_plan_projection_changed")
+
+
+def check_current_snapshot(snapshot, expected_manifest, *, actual_project, native_plan, paid=False):
+    """General 4..8 source fence; v1 prepare/witness/paid authorization stay separate.
+
+    Passing is a source precondition, not permission to call the original-four
+    operator. A native current-title runtime must supply its own authorization.
+    """
+    need(snapshot.get("schema") == "title-operator-source.v2", "current_source_schema")
+    project_id, count, _meta, _scope, _plan_id, _plan_hash = _current_project_plan(actual_project, native_plan)
+    need(snapshot.get("project_id") == project_id
+         and snapshot.get("project_slug") == _source_field(actual_project, "slug"), "current_project_identity")
+    manifest = snapshot["manifest"]
+    need(wire(manifest) == wire(expected_manifest), "expected_manifest_changed")
+    _check_current_manifest(manifest, actual_project=actual_project, native_plan=native_plan,
+                            full_text=snapshot["full_text"], canonical=snapshot["canonical_snapshot"])
+    knowledge = snapshot.get("knowledge_closed")
+    need(isinstance(knowledge, list) and all(type(n) is int for n in knowledge)
+         and knowledge == list(range(1, count + 1)), "knowledge_not_closed")
+    chapters = snapshot.get("chapters")
+    need(isinstance(chapters, list) and len(chapters) == count
+         and [c.get("chapter_number") for c in chapters] == list(range(1, count + 1))
+         and [c.get("id") for c in chapters] == [s["chapter_id"] for s in manifest["sources"]],
+         "current_chapter_census")
+    drafts = snapshot.get("drafts")
+    need(isinstance(drafts, list) and len({d.get("id") for d in drafts}) == len(drafts), "current_draft_census")
+    for source, chapter in zip(manifest["sources"], chapters, strict=True):
+        need(str(chapter.get("project_id")) == project_id, "current_chapter_owner")
+        chapter_meta = chapter.get("metadata") or {}
+        markers = [chapter_meta[key] for key in ("fanqie_outline_source_selection", "outline_source_admission")
+                   if key in chapter_meta]
+        need(len(markers) == 1 and wire(markers[0]) == wire(source["lineage"]["source_plan_binding"]),
+             "current_chapter_selected_plan_changed")
+        draft = next((d for d in drafts if d.get("id") == source["draft_id"]), None)
+        need(draft is not None and draft.get("chapter_id") == source["chapter_id"]
+             and str(draft.get("project_id")) == project_id
+             and draft.get("version_no") == source["lineage"].get("source_version_no"), "current_draft_owner")
+        if "body_sha256" in draft:
+            need(draft["body_sha256"] == source["raw_body_sha256"], "current_draft_body_changed")
+    need(snapshot["packaging_rows"] == [] and not snapshot["active_packaging_contract_id"],
+         "packaging_changed_requires_separate_plan")
+    need(not open_review_reasons(snapshot), "new_review_not_closed")
+    need(snapshot["design_hash_verified"] is True, "design_not_verified")
+    need(snapshot["old_metadata"]["book_design_snapshot_status"] == "locked", "design_not_locked")
+    need(snapshot.get("adoption_admissible" if paid else "dispatch_admissible") is True,
+         "paid_adoption_not_permitted" if paid else "execution_scope_not_open")
+
+
 def fact_profile(snapshot):
     """Facts are checked against literal assembled text, never old hook defaults."""
     body = snapshot["full_text"]

@@ -94,16 +94,23 @@ def frozen_v5_validator():
     return module
 
 
-def audit_v5_rows(report, *, semantic=None):
+def audit_v5_rows(report, *, semantic=None, current=False):
     """Pure row consistency audit. Native custody is established separately.
 
     Batch failure is retained. Individually valid body verdicts/reasons and valid
     title refusals become immutable inputs, not a new accepted batch.
     """
-    semantic = semantic or frozen_v5_validator()
+    if current:
+        from bestseller.services import fanqie_short_semantic_review as current_semantic
+
+        need(semantic is current_semantic, "current_validator_dependency")
+        expected_sources = current_semantic.implementation_source_hashes()
+    else:
+        semantic = semantic or frozen_v5_validator()
+        expected_sources = V5_SOURCES
     p = report["request_payload"]
     need(report["schema"] == p["schema"] == "fanqie-short-semantic-stage.v5"
-         and p["implementation_source_hashes"] == V5_SOURCES
+         and p["implementation_source_hashes"] == expected_sources
          and report.get("called") is True and bool(report.get("error")), "original_failed_v5_required")
     binding = {k + "_sha256": consumer.digest(v) for k, v in p.items() if k not in {"binding", "binding_sha256"}}
     binding["system_prompt_sha256"] = consumer.sha(semantic.SYSTEM_PROMPT.encode())
@@ -146,13 +153,104 @@ def _body_manifest(manifest):
     return value
 
 
+def verify_current_parent_binding(context, *, current_inputs, actual_project, native_plan):
+    """Current native source fence, never historical-row or paid-call authority.
+
+    Fresh native acquisition belongs to load_selection_parent. Repeating this
+    check cannot replace _native's physical send/result proof or a row policy.
+    """
+    from bestseller.services import native_publication_title as publication
+    from bestseller.services.native_title_operator import title_operator as op
+
+    try:
+        project_id, _count, _meta, scope, _plan_id, _plan_hash = op._current_project_plan(actual_project, native_plan)
+        artifact, workflow, saved = (context[k] for k in ("parent_artifact", "parent_workflow", "parent_report"))
+        p = saved["request_payload"]
+        need(saved == artifact["content"] and artifact["status"] == "failed"
+             and artifact["artifact_type"] == native.ARTIFACT_TYPE
+             and workflow["status"] == "machine_blocked"
+             and workflow["workflow_type"] == "fanqie_whole_semantic_review"
+             and str(artifact["project_id"]) == str(workflow["project_id"]) == project_id
+             and str(p["project_id"]) == str(current_inputs["project_id"]) == project_id
+             and workflow["scope_type"] == "project" and str(workflow["scope_id"]) == project_id,
+             "current_parent_owner")
+        need(str(artifact["source_run_id"]) == str(workflow["id"]) == str(p["workflow_run_id"]),
+             "current_parent_run")
+        meta = workflow["metadata_json"]
+        need(meta["artifact_id"] == str(artifact["id"]) and meta["validation_error"] == saved["error"]
+             and bool(saved["error"]) and meta["source_manifest"] == p["manifest"]
+             and meta["semantic_binding_sha256"] == p["binding_sha256"]
+             and meta["execution_scope_id"] == p["execution_scope_id"] == current_inputs["execution_scope_id"] == scope,
+             "current_parent_workflow_binding")
+        need(current_inputs["full_text"] == p["full_text"]
+             and current_inputs["title"] != p["title"]
+             and p["manifest"]["project"]["title"] == p["title"], "current_parent_body_or_title")
+        canonical = (current_inputs.get("approved_contract", {}).get("approval_evidence", {})
+                     .get("canonical_snapshot"))
+        publication.validate_current_manifest(p["manifest"], current_inputs["manifest"],
+            title=current_inputs["title"], full_text=current_inputs["full_text"],
+            actual_project=actual_project, native_plan=native_plan, canonical=canonical)
+        bindings = {s["chapter_id"]: s["lineage"]["source_plan_binding"]
+                    for s in current_inputs["manifest"]["sources"]}
+        need(meta.get("source_plan_binding") == bindings, "current_parent_native_plan_binding")
+        for document in (p, current_inputs):
+            if "source_plan_binding" in document:
+                need(document["source_plan_binding"] == bindings, "current_parent_plan_binding_changed")
+    except (KeyError, TypeError, AttributeError, IndexError) as exc:
+        raise ValueError("semantic_selection:current_parent_" + type(exc).__name__) from None
+
+
+async def _read_current_parent_plan(session, settings, *, project):
+    """Use the existing full native readback; an artifact's claimed N is not authority."""
+    from bestseller.services.fanqie_short_plan_resume import read_existing_complete_fanqie_plan
+
+    receipt = await read_existing_complete_fanqie_plan(session, settings, project=project)
+    need(isinstance(receipt, dict) and receipt.get("schema") == "fanqie-materialized-plan-reuse.v1"
+         and receipt.get("planning_reused") is True and receipt.get("materialization_reused") is True,
+         "current_complete_native_plan_readback_required")
+    artifact = await native._one(session, native.PlanningArtifactVersionModel,
+        native.PlanningArtifactVersionModel.id == UUID(receipt["source_artifact_id"]))
+    need(str(artifact["project_id"]) == str(project.id)
+         and receipt["source_binding"]["source_artifact_id"] == str(artifact["id"])
+         and receipt["source_binding"]["source_content_sha256"] == consumer.digest(artifact["content"]),
+         "current_selected_native_plan_changed")
+    return {**native.json_safe(artifact), "source_binding": deepcopy(receipt["source_binding"])}
+
+
+async def _load_current_selection_parent(session, settings, *, project, assembly, parent, workflow):
+    # Re-read actual Project columns: never elevate the caller's N or cached ORM row.
+    stored = await native._one(session, native.ProjectModel, native.ProjectModel.id == project.id)
+    actual = native.ProjectModel(**stored)
+    need(actual.title == project.title == assembly.manifest["project"]["title"], "current_parent_project_changed")
+    plan = await _read_current_parent_plan(session, settings, project=actual)
+    saved = parent["content"]
+    inputs = {"project_id": str(actual.id), "title": actual.title, "full_text": assembly.full_text,
+              "manifest": assembly.manifest, "execution_scope_id": (actual.metadata_json or {}).get("execution_scope_id")}
+    context = {"parent_artifact": native.json_safe(parent), "parent_workflow": native.json_safe(workflow),
+               "parent_report": deepcopy(saved)}
+    verify_current_parent_binding(context, current_inputs=inputs, actual_project=actual, native_plan=plan)
+    from bestseller.services import fanqie_short_semantic_review as semantic
+
+    evidence, _ = await native._load_artifact_native(session, settings, parent, workflow, consumer)
+    p = saved["request_payload"]
+    need(p.get("implementation_source_hashes") == semantic.implementation_source_hashes(),
+         "current_parent_implementation_changed")
+    proof = consumer._native(p, evidence["completion"], evidence["native"],
+                             evidence["retained_payloads"], evidence["physical_files"], semantic)
+    # No historical row bank, v4 root or old authorization is synthesized here.
+    context.update(parent_evidence=evidence, parent_native_proof=proof,
+        actual_project=native.json_safe({k: getattr(actual, k) for k in (
+            "id", "slug", "title", "genre", "language", "target_chapters", "target_word_count", "metadata_json")}),
+        native_plan=plan, authority="source_evidence_only_no_dispatch")
+    return context
+
+
 async def load_selection_parent(session, settings, *, project, assembly, parent_artifact_id):
     """SELECT/files only; returns both original paid roots and immutable v5 rows.
 
     Does not authorize a tool call or create/consume a recovery. A changed title
     requires separate native current-title proof; only the body may be reused.
     """
-    semantic = frozen_v5_validator()
     with session.no_autoflush:
         parent = await native._one(session, native.PlanningArtifactVersionModel,
                                    native.PlanningArtifactVersionModel.id == UUID(str(parent_artifact_id)))
@@ -162,6 +260,10 @@ async def load_selection_parent(session, settings, *, project, assembly, parent_
         p = saved["request_payload"]
         need(p["full_text"] == assembly.full_text and _body_manifest(p["manifest"]) == _body_manifest(assembly.manifest), "body_source_changed")
         wf = await native._one(session, native.WorkflowRunModel, native.WorkflowRunModel.id == parent["source_run_id"])
+        if wf["workflow_type"] == "fanqie_whole_semantic_review":
+            return await _load_current_selection_parent(session, settings, project=project,
+                assembly=assembly, parent=parent, workflow=wf)
+        semantic = frozen_v5_validator()
         need(wf["project_id"] == project.id and wf["status"] == "machine_blocked"
              and wf["workflow_type"] == "original_four_whole_semantic_review"
              and wf["scope_type"] == "project" and wf["scope_id"] == project.id, "parent_workflow_owner")
@@ -373,6 +475,8 @@ def verify_once_census(evidence, *, descriptor, current_manifest, allow_failed_t
 
 def verify_parent_context(context, *, current_inputs):
     """Repeat historical native and physical proof, not cached proof/pass fields."""
+    if context["parent_workflow"]["workflow_type"] == "fanqie_whole_semantic_review":
+        return _verify_current_parent_context(context, current_inputs=current_inputs)
     semantic = frozen_v5_validator()
     artifact, wf = context["parent_artifact"], context["parent_workflow"]
     saved, evidence = context["parent_report"], context["parent_evidence"]
@@ -407,6 +511,33 @@ def verify_parent_context(context, *, current_inputs):
     need(saved["protocol_recovery"] == p["recovery_parent"] == meta["protocol_recovery"] == old_proof["descriptor"],
          "historical_v4_v5_pointer_changed")
     return audit, {"v4": old_proof, "v5": parent_proof}
+
+
+def _verify_current_parent_context(context, *, current_inputs):
+    """The native loader's current sources are rechecked before any row reuse."""
+    from bestseller.services import fanqie_short_semantic_review as semantic
+
+    verify_current_parent_binding(context, current_inputs=current_inputs,
+        actual_project=context.get("actual_project"), native_plan=context.get("native_plan"))
+    saved, evidence = context["parent_report"], context["parent_evidence"]
+    p = saved["request_payload"]
+    need(evidence["request_payload"] == p and evidence["completion"]["content"] == saved["raw_response"],
+         "current_parent_payload")
+    for key in ("protagonist", "current_scope", "execution_scope_id", "unlock_line_ratio", "methodology_contract_mode"):
+        need(current_inputs[key] == p[key], "body_contract_changed:" + key)
+    old_contract, current_contract = deepcopy(p["approved_contract"]), deepcopy(current_inputs["approved_contract"])
+    old_approval, current_approval = old_contract.pop("approval_evidence"), current_contract.pop("approval_evidence")
+    need(old_contract == current_contract, "current_locked_contract_changed")
+    for value in (old_approval, current_approval):
+        value.pop("native_publishing_title_evidence", None)
+        value.pop("title_revision_status", None)
+    need(old_approval == current_approval, "current_canonical_authority_changed")
+    need(not saved.get("protocol_recovery") and not p.get("recovery_parent"),
+         "current_parent_cannot_borrow_original_v4")
+    proof = consumer._native(p, evidence["completion"], evidence["native"],
+                             evidence["retained_payloads"], evidence["physical_files"], semantic)
+    audit = audit_v5_rows(saved, semantic=semantic, current=True)
+    return audit, {"v5": proof}
 
 
 async def load_current_selection_context(session, settings, *, project, assembly,

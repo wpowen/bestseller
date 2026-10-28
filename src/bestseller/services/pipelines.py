@@ -265,6 +265,7 @@ from bestseller.services.write_safety_gate import (
 )
 from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
+from bestseller.services import full_flow_length
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,7 @@ async def _select_deslop_candidate(
     selected_reason: str,
     selection_pool: Sequence[ChapterDraftVersionModel] = (),
     selection_origin: str | None = None,
+    settings: AppSettings | None = None,
 ) -> ChapterDraftVersionModel:
     """Make one already-persisted candidate current without promoting it.
 
@@ -300,7 +302,23 @@ async def _select_deslop_candidate(
     stale report from the new body's live namespace is not evidence of a pass.
     """
 
-    information = (candidate.promotion_metadata or {}).get("information_preservation")
+    candidate_metadata = candidate.promotion_metadata or {}
+    if "book_length_control" in candidate_metadata:
+        from bestseller.settings import load_settings
+        length_settings = settings or load_settings()
+        length_request = full_flow_length.require_feasible_request(
+            candidate_metadata["book_length_control"])
+        preview = full_flow_length.evaluate_candidate(length_request, candidate.content_md)
+        if not preview["length_passed"]:
+            raise full_flow_length.LengthControlError(preview["issue_code"])
+        project = await session.scalar(select(ProjectModel).where(ProjectModel.id == chapter.project_id))
+        if project is None:
+            raise full_flow_length.LengthControlError("LENGTH_CONTROL_PROJECT_UNKNOWN")
+        recheck = await full_flow_length.revalidate_request(
+            session, length_settings, project=project, chapter=chapter, receipt=length_request)
+        if not recheck["valid"]:
+            raise full_flow_length.LengthControlError(recheck["issue_code"])
+    information = candidate_metadata.get("information_preservation")
     if isinstance(information, Mapping) and information.get("automatic_selection_allowed") is False:
         raise ValueError("deslop_candidate_information_change_requires_review")
 
@@ -428,8 +446,14 @@ async def _persist_deslop_candidate(
     transformation: str = "deslop_rewrite",
     make_current: bool = False,
     information_preservation: dict | None = None,
+    length_request: Mapping[str, Any] | None = None,
+    settings: AppSettings | None = None,
 ) -> ChapterDraftVersionModel:
     """Persist a deslop result as a traceable candidate, without promoting it."""
+    if length_request is None and "book_length_control" in (getattr(parent_draft, "promotion_metadata", None) or {}):
+        raise full_flow_length.LengthControlError("LENGTH_CONTROL_REQUEST_REQUIRED")
+    length_preview = (full_flow_length.evaluate_candidate(length_request, content)
+                      if length_request is not None else None)
     next_version = int(
         await session.scalar(
             select(func.coalesce(func.max(ChapterDraftVersionModel.version_no), 0)).where(
@@ -454,6 +478,8 @@ async def _persist_deslop_candidate(
             hold_reason="deslop_candidate_not_selected",
         ),
         promotion_metadata={
+            **({"book_length_control": deepcopy(length_request),
+                "book_length_control_candidate": length_preview} if length_request is not None else {}),
             "origin": "ai_flavor_deslop",
             "parent_draft_id": str(parent_draft.id),
             "parent_version_no": int(parent_draft.version_no),
@@ -470,13 +496,14 @@ async def _persist_deslop_candidate(
     )
     session.add(candidate)
     await session.flush()
-    if make_current:
+    if make_current and (length_preview is None or length_preview["length_passed"]):
         return await _select_deslop_candidate(
             session,
             chapter=chapter,
             candidate=candidate,
             language=language,
             selected_reason=f"persisted_{transformation}_selected",
+            settings=settings,
         )
     return candidate
 
@@ -6234,6 +6261,22 @@ async def _persist_chapter_numeric_adoption(
         receipt = None
     if receipt:
         try:
+            length_request = (draft.promotion_metadata or {}).get("book_length_control")
+            if "book_length_control" in (draft.promotion_metadata or {}):
+                length_request = full_flow_length.require_feasible_request(length_request)
+                preview = full_flow_length.evaluate_candidate(length_request, draft.content_md)
+                if not preview["length_passed"]:
+                    raise full_flow_length.LengthControlError(preview["issue_code"])
+                length_project = await session.scalar(select(ProjectModel).where(
+                    ProjectModel.id == chapter.project_id))
+                if length_project is None:
+                    raise full_flow_length.LengthControlError("LENGTH_CONTROL_PROJECT_UNKNOWN")
+                await session.flush()
+                length_check = await full_flow_length.revalidate_request(
+                    session, settings, project=length_project, chapter=chapter,
+                    receipt=length_request)
+                if not length_check["valid"]:
+                    raise full_flow_length.LengthControlError(length_check["issue_code"])
             await _ensure_chapter_continuity_before_adoption(
                 session, settings, project_id=chapter.project_id, chapter=chapter,
                 draft=draft, workflow_run_id=workflow.id,
@@ -6254,6 +6297,9 @@ async def _persist_chapter_numeric_adoption(
         ),
     }
     await session.flush()
+    if receipt and length_request is not None:
+        await full_flow_length.refresh_after_adoption(
+            session, settings, project=length_project, chapter=chapter, receipt=length_request)
     return receipt
 
 
@@ -7027,6 +7073,7 @@ def chapter_review_recovery_source_hash() -> str:
             "adopted_chapter_source.py", "story_effect_realization.py",
             "story_enhancers.py", "ideology_coherence_gate.py", "ideology_judge.py",
             "ideology_kernel.py", "entry_system_kernel.py",
+            "full_flow_length/__init__.py", "fanqie_whole_repair.py", "full_flow_title_sources.py",
         )
     }
     policy_files.update((services / "quality_levers").rglob("*.py"))
@@ -8071,6 +8118,20 @@ async def _promote_reviewed_chapter_draft(
 ) -> tuple[bool, str]:
     """Promote an exact chapter version only after its source-mode contract."""
 
+    length_metadata = getattr(draft, "promotion_metadata", None) or {}
+    length_request = length_metadata.get("book_length_control")
+    if "book_length_control" in length_metadata:
+        length_request = full_flow_length.require_feasible_request(length_request)
+        length_preview = full_flow_length.evaluate_candidate(length_request, draft.content_md)
+        draft.promotion_metadata = {**(draft.promotion_metadata or {}),
+                                    "book_length_control_candidate": length_preview}
+        if not length_preview["length_passed"]:
+            return False, length_preview["issue_code"]
+        await session.flush()
+        length_check = await full_flow_length.revalidate_request(
+            session, settings, project=project, chapter=chapter, receipt=length_request)
+        if not length_check["valid"]:
+            return False, length_check["issue_code"]
     if not isinstance(quality, QualityScoreModel):
         return True, "test_stub"
     from bestseller.services.chapter_verified_fact_disposition import decide_verified_fact_disposition
@@ -8232,6 +8293,10 @@ async def _promote_reviewed_chapter_draft(
             review=receipt_review,
             expected_body_sha256=admission_body_sha256,
         )
+        if length_request is not None:
+            await session.flush()
+            await full_flow_length.refresh_after_adoption(
+                session, settings, project=project, chapter=chapter, receipt=length_request)
         draft.promotion_metadata = {
             **(draft.promotion_metadata or {}),
             "source_mode": source_mode,
@@ -11527,6 +11592,27 @@ async def run_chapter_pipeline(
                 session, project_slug, chapter_number, settings=settings
             )
         if chapter_draft is not None:
+            length_request = (chapter_draft.promotion_metadata or {}).get("book_length_control")
+            if "book_length_control" in (chapter_draft.promotion_metadata or {}):
+                length_preview = full_flow_length.evaluate_candidate(
+                    length_request, chapter_draft.content_md)
+                if not length_preview["length_passed"]:
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "book_length_control_blocked"
+                    workflow_run.error_message = length_preview["issue_code"]
+                    workflow_run.metadata_json = {**(workflow_run.metadata_json or {}),
+                        "book_length_control_candidate": length_preview,
+                        "chapter_draft_id": str(chapter_draft.id),
+                        "requires_human_review": True, "auto_accepted": False}
+                    await session.flush()
+                    return ChapterPipelineResult(
+                        workflow_run_id=workflow_run.id, project_id=project.id,
+                        chapter_id=chapter.id, chapter_number=chapter.chapter_number,
+                        scene_results=scene_results, chapter_draft_id=chapter_draft.id,
+                        chapter_draft_version_no=chapter_draft.version_no,
+                        requires_human_review=True)
             # 爽点落库的汇合点。整章生成(chapter_first)直接产出草稿、不经过
             # assemble_chapter_draft，而爽点盖戳逻辑原本只内联在后者里——
             # 2026-08-16 真机定罪：三本书 109 章 hype 三字段 100% NULL。
@@ -12996,6 +13082,11 @@ async def run_chapter_pipeline(
                         from bestseller.services.deslop_revise import revise_prose_deslop
 
                         _deslop_parent = chapter_draft
+                        await session.flush()
+                        _deslop_length_request = await full_flow_length.freeze_request(
+                            session, settings, project=project, chapter=chapter,
+                            stage="deslop", parent_draft=_deslop_parent)
+                        full_flow_length.require_feasible_request(_deslop_length_request)
                         _deslop_parent_by_content = {
                             chapter_draft.content_md: chapter_draft,
                         }
@@ -13017,6 +13108,8 @@ async def run_chapter_pipeline(
                                 round_no=int(cast(int, observation.get("round") or 0)),
                                 language=_af_lang,
                                 information_preservation=cast(dict | None, observation.get("information_preservation")),
+                                length_request=_deslop_length_request,
+                                settings=settings,
                             )
                             _deslop_candidates.append(candidate)
                             _deslop_parent_by_content[candidate.content_md] = candidate
@@ -13042,6 +13135,7 @@ async def run_chapter_pipeline(
                             rounds=2,
                             chapter_number=chapter_number,
                             observe_candidate=_observe_deslop_candidate,
+                            length_request=_deslop_length_request,
                             writing_voice_data=render_writer_voice_data(get_project_runtime_writing_profile(project)),
                             # 爽点保全：deslop 是主要修订通道之一，去 AI 味
                             # 时同样会把结算段删成转述（2026-08-19 真机：
@@ -13058,10 +13152,24 @@ async def run_chapter_pipeline(
                         )
                         _af_phase_observation = getattr(_revised, "phase_status", None)
                         _af_rounds_complete = await successful_style_rounds(
-                            session, candidates=_deslop_candidates,
+                            session,
+                            candidates=[
+                                candidate
+                                for candidate in _deslop_candidates
+                                if (candidate.promotion_metadata or {})
+                                .get("book_length_control_candidate", {})
+                                .get("length_passed", True)
+                            ],
                             workflow_run_id=workflow_run.id,
                             phase_result=_revised, input_content=_deslop_parent.content_md,
                         )
+                        if _deslop_length_request is not None:
+                            _af_rounds_complete = (
+                                _af_rounds_complete
+                                and full_flow_length.evaluate_candidate(
+                                    _deslop_length_request, str(_revised)
+                                )["length_passed"]
+                            )
                         _selected_deslop = next(
                             (
                                 candidate
@@ -13100,9 +13208,10 @@ async def run_chapter_pipeline(
                                     language=_af_lang,
                                     selected_reason="existing_deslop_quality_selection",
                                     selection_pool=_deslop_candidates,
+                                    settings=settings,
                                 )
                             else:
-                                chapter_draft = await _persist_deslop_candidate(
+                                _postcheck_candidate = await _persist_deslop_candidate(
                                     session,
                                     chapter=chapter,
                                     parent_draft=_selected_deslop or _deslop_parent,
@@ -13116,8 +13225,15 @@ async def run_chapter_pipeline(
                                     make_current=True,
                                     language=_af_lang,
                                     transformation="deslop_postcheck_patch",
+                                    length_request=_deslop_length_request,
+                                    settings=settings,
                                 )
-                            ai_flavor_outcome = _recheck
+                                if _postcheck_candidate.is_current:
+                                    chapter_draft = _postcheck_candidate
+                                else:
+                                    _af_rounds_complete = False
+                            if chapter_draft.content_md == _final_text:
+                                ai_flavor_outcome = _recheck
                             logger.info(
                                 "ai_flavor_gate ch%d: deslop revise %s (%.1f → %.1f)",
                                 chapter_number,
@@ -13128,7 +13244,7 @@ async def run_chapter_pipeline(
                                 _recheck.after_score,
                             )
                         _af_phase_complete = _af_rounds_complete and _recheck.decision != "block"
-                    except ExecutionBudgetError:
+                    except (ExecutionBudgetError, full_flow_length.LengthControlError):
                         raise
                     except (PendingRollbackError, DBAPIError, MissingGreenlet):
                         # Candidate persistence is the source receipt for the
@@ -13213,7 +13329,7 @@ async def run_chapter_pipeline(
                             raise
                         except Exception as exc:
                             raise StylePhaseReceiptError("style phase checkpoint failed") from exc
-        except ExecutionBudgetError:
+        except (ExecutionBudgetError, full_flow_length.LengthControlError):
             raise
         except (PendingRollbackError, DBAPIError, MissingGreenlet, StylePhaseReceiptError):
             raise

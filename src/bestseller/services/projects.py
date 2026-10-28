@@ -29,8 +29,10 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
     VolumeModel,
 )
+from bestseller.services.full_flow_length import LengthControlError
 from bestseller.services.generation_policy import apply_new_project_generation_policy
 from bestseller.services.truth_version import maybe_bump_project_truth_version
+from bestseller.services.word_targets import LENGTH_CONTROL_COUNT_UNIT_V1, LENGTH_CONTROL_V1
 from bestseller.services.writing_profile import (
     build_project_metadata,
     resolve_project_create_writing_profile,
@@ -445,6 +447,15 @@ async def create_project(
     payload: ProjectCreate,
     settings: AppSettings,
 ) -> ProjectModel:
+    payload_metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    if "book_length_control" in payload_metadata:
+        length_control = payload_metadata["book_length_control"]
+        if (
+            not isinstance(length_control, dict)
+            or length_control.get("protocol") != LENGTH_CONTROL_V1
+            or length_control.get("counting") != LENGTH_CONTROL_COUNT_UNIT_V1
+        ):
+            raise LengthControlError("LENGTH_CONTROL_PROTOCOL_INVALID")
     existing = await get_project_by_slug(session, payload.slug)
     if existing is not None:
         raise ValueError(f"Project slug '{payload.slug}' already exists.")
@@ -459,7 +470,6 @@ async def create_project(
             f"'{payload.title}' for genre '{payload.genre}' already exists as "
             f"'{duplicate.slug}'{archived}."
         )
-    payload_metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
     if (
         str(payload_metadata.get("concept_contract_version") or "") == "2"
         or payload_metadata.get("concept_contract_required")
@@ -490,6 +500,11 @@ async def create_project(
     writing_profile = resolve_project_create_writing_profile(payload)
     from bestseller.services.model_catalog import default_new_project_model_id
     project_metadata = apply_new_project_generation_policy(build_project_metadata(payload, writing_profile))
+    if payload.language.strip().lower().startswith("zh"):
+        project_metadata.setdefault(
+            "book_length_control",
+            {"protocol": LENGTH_CONTROL_V1, "counting": LENGTH_CONTROL_COUNT_UNIT_V1},
+        )
     if not project_metadata.get("llm_model_id"):
         default_model = default_new_project_model_id(settings)
         if default_model:

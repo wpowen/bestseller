@@ -114,7 +114,92 @@ def _manifest(before, current, *, title, full_text, project_id, canonical):
              and lineage["adoption_state"] in {"promoted", "accepted_with_debt"}, "manifest_source_lineage")
 
 
+def validate_current_manifest(before, current, *, title, full_text, actual_project, native_plan, canonical):
+    """Bind a title-only transition to fresh native sources for all 4..8 chapters.
+
+    This is not a title approval, semantic pass or replacement for paid custody.
+    The historical four-source _manifest remains an independent exact route.
+    """
+    try:
+        need(isinstance(title, str) and bool(title.strip())
+             and title == op._source_field(actual_project, "title"), "current_actual_title")
+        need(isinstance(before, dict) and isinstance(current, dict), "current_manifest_shape")
+        expected = deepcopy(before)
+        expected["project"]["title"] = title
+        need(same(current, expected), "manifest_changed_beyond_title")
+        op._check_current_manifest(current, actual_project=actual_project, native_plan=native_plan,
+                                   full_text=full_text, canonical=canonical)
+    except PublicationTitleError:
+        raise
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
+        raise PublicationTitleError("current_manifest_" + type(exc).__name__) from None
+
+
+def _frozen_title_consumer():
+    """Load only reviewed local bytes for an old paid identity, never dispatch.
+
+    Original function bodies are compiled unchanged. Runtime hash/bootstrap
+    assignments are supplied from the same pinned archive, not current files.
+    """
+    import ast
+    import sys
+    from types import ModuleType
+    from bestseller.services.fanqie_short_semantic_protocol_recovery import V4_SOURCES
+
+    root = HERE / "whole_semantic_history_v5"
+    names = ("native_publication_title.py", "native_title_operator/title_operator.py",
+             "native_title_operator/title_operator_native.py", "platform_title_workflow.py")
+    sources = {}
+    need(not root.is_symlink(), "historical_title_dependency_symlink")
+    for name in names:
+        path = root / name
+        need(not path.is_symlink() and not path.parent.is_symlink(), "historical_title_dependency_symlink")
+        raw = path.read_bytes()
+        need(hashlib.sha256(raw).hexdigest() == V4_SOURCES[name], "historical_title_dependency_changed")
+        sources[name] = raw
+    frozen_op = ModuleType("_frozen_native_title_operator")
+    frozen_op.__file__ = str(root / names[1])
+    exec(compile(sources[names[1]], frozen_op.__file__, "exec"), frozen_op.__dict__)
+    frozen_workflow = ModuleType("_frozen_platform_title_workflow_" + str(id(frozen_op)))
+    frozen_workflow.__file__ = str(root / names[3])
+    # dataclasses resolves future annotations through sys.modules at class
+    # creation. The unique temporary name does not replace any live dependency.
+    sys.modules[frozen_workflow.__name__] = frozen_workflow
+    try:
+        exec(compile(sources[names[3]], frozen_workflow.__file__, "exec"), frozen_workflow.__dict__)
+    finally:
+        sys.modules.pop(frozen_workflow.__name__, None)
+    module = ModuleType("_frozen_native_publication_title")
+    module.__file__ = str(root / names[0])
+    tree = ast.parse(sources[names[0]], filename=module.__file__)
+    excluded = {"bestseller.services.native_title_operator", "bestseller.services.platform_title_workflow"}
+    tree.body = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Import))
+                 or isinstance(node, ast.ImportFrom) and node.module not in excluded]
+    module.__dict__.update(op=frozen_op, SCHEMA=SCHEMA, TITLE_PATH=TITLE_PATH,
+        SOURCE_HASHES={name: V4_SOURCES[name] for name in names[1:]},
+        OPERATOR_CODE_HASH=op.fingerprint({Path(name).name: hashlib.sha256(sources[name]).hexdigest()
+                                          for name in names[1:3]}),
+        **{name: getattr(frozen_workflow, name) for name in (
+            "build_platform_title_workflow", "build_story_grounded_title_revision_messages", "finalize_revised_title")})
+    exec(compile(tree, module.__file__, "exec"), module.__dict__)
+    return module
+
+
+def _is_frozen_title_evidence(evidence):
+    from bestseller.services.fanqie_short_semantic_protocol_recovery import V4_SOURCES
+
+    if not isinstance(evidence, dict) or evidence.get("schema") != SCHEMA:
+        return False
+    binding = evidence.get("paid_return", {}).get("plan", {}).get("binding", {})
+    pinned = op.fingerprint({Path(name).name: V4_SOURCES[name] for name in (
+        "native_title_operator/title_operator.py", "native_title_operator/title_operator_native.py")})
+    return binding.get("operator_code_sha256") == pinned
+
+
 def _validate(e, *, project_id, title, full_text, manifest, approved_contract):
+    if _is_frozen_title_evidence(e):
+        return _frozen_title_consumer().validate(e, project_id=project_id, title=title,
+            full_text=full_text, manifest=manifest, approved_contract=approved_contract)
     need(type(e) is dict and set(e) == {
         "schema", "project", "workflow", "step", "llm_run", "paid_return", "ledger", "physical_files",
     } and e["schema"] == SCHEMA, "native_evidence_schema")

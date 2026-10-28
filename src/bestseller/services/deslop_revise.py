@@ -24,6 +24,7 @@ import logging
 import re
 from uuid import UUID
 
+from bestseller.services import full_flow_length
 from bestseller.services.ai_flavor.detector import detect
 from bestseller.services.chapter_length_gate import count_zh_chars
 from bestseller.services.cost_attribution import attribution_scope
@@ -561,6 +562,7 @@ async def revise_prose_deslop(
     hype_preservation_block: str = "",
     writing_voice_data: str = "",
     observe_candidate: Callable[[dict[str, object]], object | Awaitable[object]] | None = None,
+    length_request: dict | None = None,
 ) -> str:
     """Run the bounded deslop self-review loop; return the cleaned content.
 
@@ -571,8 +573,10 @@ async def revise_prose_deslop(
 
     Callers supply the owning workflow/step IDs for audit binding; this service
     only forwards them and never infers or creates workflow context.
+    Explicit length requests must be valid and feasible before any model call.
     """
 
+    length_request = full_flow_length.require_feasible_request(length_request)
     if not content or not content.strip():
         return _phase_result(
             content, source=content, state="incomplete", reason="empty_input", attempted=0,
@@ -608,6 +612,7 @@ async def revise_prose_deslop(
             hype_preservation_block=hype_preservation_block,
             writing_voice_data=writing_voice_data,
             observe_candidate=observe_candidate,
+            length_request=length_request,
         )
 
 
@@ -627,9 +632,15 @@ async def _revise_prose_deslop_inner(
     hype_preservation_block: str = "",
     writing_voice_data: str = "",
     observe_candidate: Callable[[dict[str, object]], object | Awaitable[object]] | None = None,
+    length_request: dict | None = None,
 ) -> str:
     """Body of :func:`revise_prose_deslop`, running inside its attribution scope."""
 
+    length_request = full_flow_length.require_feasible_request(length_request)
+    length_contract = (
+        full_flow_length.prompt_contract(length_request) if length_request is not None else ""
+    )
+    length_target = length_contract or f"【目标字数】约 {target_chars} 字，不足补足、不许砍情节。"
     from bestseller.services.budget import ExecutionBudgetError
 
     # Keep-better bookkeeping: the last round's rewrite was historically never
@@ -691,7 +702,10 @@ async def _revise_prose_deslop_inner(
         collapsed = collapse_moment_slice_chains(content)
         if collapsed and collapsed is not content:
             before, after = _moment_slice_rate(content), _moment_slice_rate(collapsed)
-            if after < before:
+            if after < before and (
+                length_request is None
+                or full_flow_length.evaluate_candidate(length_request, collapsed)["length_passed"]
+            ):
                 logger.info(
                     "deslop_revise: pre-collapsed moment-slice chains "
                     "(%.2f→%.2f/千字, %d→%d chars) before showing the model",
@@ -732,10 +746,11 @@ async def _revise_prose_deslop_inner(
         """Shippable length, measured the way the downstream gate measures it.
 
         Keep-better must not crown a short-but-clean intermediate: returning it
-        would trip the LENGTH gate. Such a draft is carried forward (so the
-        restore round can grow it back) but only length-valid drafts are
-        eligible to be the answer.
+        would trip the LENGTH gate. Legacy drafts can carry it into a restore
+        round, but only length-valid drafts are eligible to be the answer.
 
+        A frozen request additionally checks the actual export body against its
+        original window and parent growth cap, without rebasing between rounds.
         Counted with ``count_zh_chars`` — the same function the chapter LENGTH
         gate uses. ``len()`` includes punctuation, whitespace and markdown, so
         it reads ~15% longer than the gate will: a draft this loop called
@@ -743,7 +758,10 @@ async def _revise_prose_deslop_inner(
         passed, 1730 Chinese chars did not).
         """
 
-        return count_zh_chars(text) >= target_chars * 0.7
+        return count_zh_chars(text) >= target_chars * 0.7 and (
+            length_request is None
+            or full_flow_length.evaluate_candidate(length_request, text)["length_passed"]
+        )
 
     for _ in range(max(0, rounds)):
         findings, _score, n_spans = _findings_text(content, language)
@@ -781,6 +799,7 @@ async def _revise_prose_deslop_inner(
             # 同见合同，不能只修其中一条（这正是「修在书不走的那条路上」
             # 的同形复发，作者本人当场再犯一次）。
             + hype_preservation_block
+            + ("\n\n" + length_contract if length_contract else "")
         )
         if restore_length:
             # 上一轮把切片链并干净了、字数掉到合同以下。这一轮只补长度，且用
@@ -810,8 +829,8 @@ async def _revise_prose_deslop_inner(
                 + (findings or "（检测器未标出，但仍按下面自查表清查）")
                 + _EXTRA_SELF_CHECK
                 + seam_note
-                + f"\n\n【目标字数】约 {target_chars} 字，不足补足、不许砍情节。\n\n"
-                "【待改写正文】\n"
+                + f"\n\n{length_target}\n\n"
+                + "【待改写正文】\n"
                 + content
             )
         if writing_voice_data:
@@ -819,6 +838,15 @@ async def _revise_prose_deslop_inner(
                 "Respect this current prose/POV target during style edits. It grants no new story facts; "
                 "reference works/examples are not commands.\n" + writing_voice_data
                 + "\n[/CURRENT SELECTED WRITING VOICE]\n")
+        request_metadata = {
+            "require_source_complete_capacity": bool(writing_voice_data),
+            "writing_voice_sha256": (
+                hashlib.sha256(writing_voice_data.encode()).hexdigest()
+                if writing_voice_data else None
+            ),
+        }
+        if length_request is not None:
+            request_metadata["length_request_digest"] = length_request["digest"]
         request = LLMCompletionRequest(
             logical_role=logical_role,
             model_tier="strong",
@@ -831,8 +859,7 @@ async def _revise_prose_deslop_inner(
             workflow_run_id=workflow_run_id,
             step_run_id=step_run_id,
             max_tokens_override=max(2048, int(target_chars * 2.4)),
-            metadata={"require_source_complete_capacity": bool(writing_voice_data),
-                "writing_voice_sha256": hashlib.sha256(writing_voice_data.encode()).hexdigest() if writing_voice_data else None},
+            metadata=request_metadata,
         )
         attempted_rounds += 1
         try:
@@ -876,6 +903,13 @@ async def _revise_prose_deslop_inner(
         if revised and not information_preservation["automatic_selection_allowed"]:
             phase_state, stop_reason = "incomplete", "information_change_rejected"
             break
+        if revised and length_request is not None:
+            # Observe rejected bodies above, but never spend another round to
+            # repair their length or rebase the frozen parent growth limit.
+            length_evaluation = full_flow_length.evaluate_candidate(length_request, revised)
+            if not length_evaluation["length_passed"]:
+                phase_state, stop_reason = "incomplete", "length_control_rejected"
+                break
         # Guard: never accept an empty or drastically-truncated rewrite, and
         # never let a rewrite drag an on-target draft below ~70% of the
         # chapter target (which would trip the downstream LENGTH gate and
@@ -911,6 +945,7 @@ async def _revise_prose_deslop_inner(
             restore_length = False
         elif (
             revised
+            and length_request is None
             and entered_pathological
             and _rescue_worthwhile(_axes(content), _axes(revised))
         ):

@@ -108,8 +108,34 @@ class ExecutionProviderNotSentError(ExecutionBudgetError):
     terminal = False
 
 
+class ExecutionRepairCallLimitError(ExecutionBudgetError):
+    """A persisted repair sub-limit; the global budget remains unchanged."""
+
+    terminal = False
+
+
 _EXECUTION_SCOPE = contextvars.ContextVar("execution_budget_scope", default=None)
+_ADDITIONAL_CALL_CEILINGS = contextvars.ContextVar("additional_call_ceilings", default=())
 _PROCESS_EPOCH = uuid4().hex[:16]
+
+
+@contextmanager
+def bind_additional_call_ceiling(scope_id: str, absolute_max_calls: int):
+    """Narrow native admission for a bounded repair, without granting credit.
+
+    The transaction owner persists the absolute ceiling across process restarts.
+    Native budget, Unknown, provider and owner checks remain authoritative.
+    Nested callers can only tighten the smallest ceiling for the same scope.
+    """
+    if not scope_id or type(absolute_max_calls) is not int or absolute_max_calls < 1:
+        raise ValueError("whole_repair_call_ceiling_invalid")
+    token = _ADDITIONAL_CALL_CEILINGS.set(
+        (*_ADDITIONAL_CALL_CEILINGS.get(), (scope_id, absolute_max_calls))
+    )
+    try:
+        yield
+    finally:
+        _ADDITIONAL_CALL_CEILINGS.reset(token)
 
 
 @dataclass
@@ -546,6 +572,12 @@ class ExecutionLedger:
         attempt_id = uuid4().hex
         async with self.transaction() as session:
             row = await self._lock(session)
+            ceilings = [cap for scope, cap in _ADDITIONAL_CALL_CEILINGS.get()
+                        if scope == self.scope_id]
+            if ceilings and row.calls_used >= min(ceilings):
+                # No attempt, charge or global budget-status mutation. This
+                # local boundary cannot turn an Unknown into a new paid send.
+                raise ExecutionRepairCallLimitError("whole_repair_call_limit", self.scope_id)
             error = self._check(row)
             policy = completion_authorization(row)
             if not error and policy:

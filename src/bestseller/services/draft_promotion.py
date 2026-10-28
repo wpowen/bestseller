@@ -26,6 +26,7 @@ from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     DraftPromotionDecisionModel,
+    ProjectModel,
     QualityScoreModel,
     ReviewReportModel,
     SceneCardModel,
@@ -64,6 +65,17 @@ def numeric_promotion_debt_receipt(
 
     if not all((draft, score, report)):
         return None
+    length_metadata = getattr(draft, "promotion_metadata", None) or {}
+    if "book_length_control" in length_metadata:
+        from bestseller.services import full_flow_length
+        try:
+            length_request = full_flow_length.require_feasible_request(
+                length_metadata["book_length_control"])
+            if length_request is None or not full_flow_length.evaluate_candidate(
+                length_request, draft.content_md)["length_passed"]:
+                return None
+        except full_flow_length.LengthControlError:
+            return None
     if (
         getattr(draft, "is_current", None) is not True
         or not str(getattr(draft, "content_md", "") or "").strip()
@@ -391,6 +403,15 @@ async def transition_draft_state(
     from_state = DraftPromotionState(draft.promotion_state)
     if from_state is to_state:
         return False
+    if (
+        draft_kind == "chapter"
+        and to_state is DraftPromotionState.PROMOTED
+        and "book_length_control" in (metadata or {})
+        and metadata["book_length_control"]
+        != (draft.promotion_metadata or {}).get("book_length_control")
+    ):
+        from bestseller.services.full_flow_length import LengthControlError
+        raise LengthControlError("LENGTH_CONTROL_REQUEST_MUST_PRECEDE_ADOPTION")
     validate_promotion_transition(
         from_state,
         to_state,
@@ -399,6 +420,29 @@ async def transition_draft_state(
         reason=reason,
         evidence=evidence,
     )
+    length_request = None
+    if (draft_kind == "chapter" and to_state is DraftPromotionState.PROMOTED
+            and "book_length_control" in (draft.promotion_metadata or {})):
+        from bestseller.services import full_flow_length
+        from bestseller.services.creation_configuration import project_settings
+        from bestseller.settings import load_settings
+
+        length_request = full_flow_length.require_feasible_request(
+            draft.promotion_metadata["book_length_control"])
+        preview = full_flow_length.evaluate_candidate(length_request, draft.content_md)
+        if not preview["length_passed"]:
+            raise full_flow_length.LengthControlError(preview["issue_code"])
+        project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id))
+        chapter = await session.scalar(
+            select(ChapterModel).where(ChapterModel.id == draft.chapter_id)
+        )
+        if project is None or chapter is None:
+            raise full_flow_length.LengthControlError("LENGTH_CONTROL_SOURCE_UNKNOWN")
+        length_settings = project_settings(load_settings(), project)
+        check = await full_flow_length.revalidate_request(
+            session, length_settings, project=project, chapter=chapter, receipt=length_request)
+        if not check["valid"]:
+            raise full_flow_length.LengthControlError(check["issue_code"])
     async with session.begin_nested():
         draft.promotion_state = to_state.value
         draft.promotion_reason_codes = merge_promotion_reason_codes(
@@ -433,6 +477,9 @@ async def transition_draft_state(
             )
         )
         await session.flush()
+        if length_request is not None:
+            await full_flow_length.refresh_after_adoption(
+                session, length_settings, project=project, chapter=chapter, receipt=length_request)
     return True
 
 
@@ -859,6 +906,53 @@ async def promote_best_draft(
 
     try:
         async with session.begin_nested():
+            length_request = (selected.draft.promotion_metadata or {}).get("book_length_control")
+            if draft_kind == "chapter" and "book_length_control" in (
+                selected.draft.promotion_metadata or {}
+            ):
+                from bestseller.services import full_flow_length
+                from bestseller.services.creation_configuration import project_settings
+                from bestseller.settings import load_settings
+
+                source_hash = hashlib.sha256(selected.draft.content_md.encode("utf-8")).hexdigest()
+                locked_draft = await session.scalar(select(ChapterDraftVersionModel).where(
+                    ChapterDraftVersionModel.id == selected.draft.id,
+                    ChapterDraftVersionModel.project_id == project_id,
+                    ChapterDraftVersionModel.chapter_id == parent_id,
+                ).with_for_update().execution_options(populate_existing=True))
+                if (
+                    locked_draft is None
+                    or hashlib.sha256(locked_draft.content_md.encode("utf-8")).hexdigest()
+                    != source_hash
+                    or (locked_draft.promotion_metadata or {}).get("book_length_control")
+                    != length_request
+                ):
+                    raise full_flow_length.LengthControlError(
+                        "LENGTH_CONTROL_CANDIDATE_SOURCE_CHANGED"
+                    )
+                length_request = full_flow_length.require_feasible_request(length_request)
+                if length_request is None:
+                    raise full_flow_length.LengthControlError("LENGTH_CONTROL_RECEIPT_INVALID")
+                project = await session.scalar(
+                    select(ProjectModel).where(ProjectModel.id == project_id)
+                )
+                if project is None:
+                    raise full_flow_length.LengthControlError("LENGTH_CONTROL_PROJECT_UNKNOWN")
+                length_settings = project_settings(load_settings(), project)
+                length_preview = full_flow_length.evaluate_candidate(
+                    length_request, locked_draft.content_md
+                )
+                if not length_preview["length_passed"]:
+                    raise full_flow_length.LengthControlError(length_preview["issue_code"])
+                length_recheck = await full_flow_length.revalidate_request(
+                    session,
+                    length_settings,
+                    project=project,
+                    chapter=parent,
+                    receipt=length_request,
+                )
+                if not length_recheck["valid"]:
+                    raise full_flow_length.LengthControlError(length_recheck["issue_code"])
             if incumbent is not None:
                 replacement_evidence: dict[str, object] = {
                     "replacement_draft_id": str(selected.draft.id),
@@ -908,6 +1002,14 @@ async def promote_best_draft(
                 workflow_run_id=workflow_run_id,
             )
             await session.flush()
+            if draft_kind == "chapter" and length_request is not None:
+                await full_flow_length.refresh_after_adoption(
+                    session,
+                    length_settings,
+                    project=project,
+                    chapter=parent,
+                    receipt=length_request,
+                )
     except IntegrityError:
         conflict_incumbent = (
             await session.execute(

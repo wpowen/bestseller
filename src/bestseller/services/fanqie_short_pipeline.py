@@ -1035,6 +1035,17 @@ async def run_fanqie_short_pipeline(
         session, settings, project, requested_by=requested_by, progress=progress,
     )
 
+    # Finish the persisted active round before issuing a new whole review or
+    # new tasks. A restart must not fork tasks around a partially adopted round.
+    repair_state = (project.metadata_json or {}).get("fanqie_whole_repair") or {}
+    if repair_state.get("status") == "running":
+        from bestseller.services.fanqie_whole_repair import execute_round
+
+        await execute_round(
+            session, settings, project_id=project.id, requested_by=requested_by,
+            premise=premise, progress=progress,
+        )
+
     adopted = await read_adopted_assembly(session, project.id)
     full_text = adopted.full_text
     # End the read transaction before any advisory model request.
@@ -1130,6 +1141,27 @@ async def run_fanqie_short_pipeline(
         unlock_segment=beat_sheet.unlock_milestone_segment,
         settings=settings,
     )
+    # Normal autowrite closes issued whole-book work for both new and legacy
+    # projects. Each candidate retains its own length protocol, and every send
+    # still needs the original native financial and control admission.
+    if export_markdown:
+        from bestseller.services.fanqie_whole_repair import execute_round
+
+        while not outcome["effective_passed"]:
+            repaired = await execute_round(
+                session, settings, project_id=project.id, outcome=outcome,
+                requested_by=requested_by, premise=premise, progress=progress,
+            )
+            if not repaired:
+                break
+            adopted = await read_adopted_assembly(session, project.id)
+            await _checkpoint_commit(session)
+            outcome = await publish_adopted_assembly(
+                session, project_id=project.id, output_dir=output_dir, expected=adopted,
+                unlock_line_ratio=unlock_ratio, protagonist_name=protagonist_name,
+                export_markdown=export_markdown,
+                unlock_segment=beat_sheet.unlock_milestone_segment, settings=settings,
+            )
     full_text, whole_review = outcome["full_text"], outcome["review"]
     effective_passed = outcome.get("effective_passed", whole_review.passed)
     semantic_gates = outcome.get("current_semantic") or {}

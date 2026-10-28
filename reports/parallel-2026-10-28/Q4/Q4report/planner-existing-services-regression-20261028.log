@@ -1,0 +1,634 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "d2383c60de0cd754a72b842779f77c65dbb52f59d6495fd26726176c587e7d6e",
+  "original_bytes": 61962,
+  "summary": [
+    "WARNING  bestseller.services.planner:planner.py:10396 Cast personhood repair round 1 failed; retaining best baseline.",
+    "WARNING  bestseller.services.planner:planner.py:10396 Cast personhood repair round 2 failed; retaining best baseline.",
+    "FAILED tests/unit/test_planner_services.py::test_minimal_cost_reaches_world_prompt_as_pacing_not_an_allowlist",
+    "FAILED tests/unit/test_planner_services.py::test_minimal_light_book_fallback_does_not_seed_stock_loss_trauma",
+    "FAILED tests/unit/test_planner_services.py::test_minimal_cost_world_prompt_carries_no_allowlist_lock",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_generators_create_complete_chain",
+    "FAILED tests/unit/test_planner_services.py::test_distilled_design_reference_blocks_enter_planner_prompts",
+    "FAILED tests/unit/test_planner_services.py::test_concept_lab_contract_enters_core_planner_prompts",
+    "FAILED tests/unit/test_planner_services.py::test_distilled_design_reference_blocks_are_prompt_budgeted",
+    "FAILED tests/unit/test_planner_services.py::test_story_design_kernel_fallback_consumes_distilled_world_bindings",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_volume_plan_includes_worldview_progression_fields",
+    "FAILED tests/unit/test_planner_services.py::test_emotion_driven_kernel_fallback_validates_and_enters_planner_prompts",
+    "FAILED tests/unit/test_planner_services.py::test_short_complete_outline_prompt_uses_compact_scene_contract",
+    "FAILED tests/unit/test_planner_services.py::test_short_volume_outline_prompt_uses_compact_context",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_batch_tolerates_non_mapping_volume_items",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_titles_do_not_cycle",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_titles_are_concise_and_not_volume_goal_clips",
+    "FAILED tests/unit/test_planner_services.py::test_generated_volume_outline_repairs_scene_contract_fields_before_validation",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_rejects_unrouted_creation_effects",
+    "FAILED tests/unit/test_planner_services.py::test_story_enhancer_route_patch_adds_structured_route_and_concrete_scene_beat",
+    "FAILED tests/unit/test_planner_services.py::test_story_enhancer_route_retries_only_residual_and_uses_safe_placement",
+    "FAILED tests/unit/test_planner_services.py::test_story_enhancer_route_exhausted_residual_fails_closed_with_run_id",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_requires_selected_brainhole_contract_when_selected",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_repairs_purpose_character_into_participants",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_accepts_nested_brainhole_skill_selection",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_normalizes_brainhole_selection_from_complete_contract",
+    "FAILED tests/unit/test_planner_services.py::test_volume_outline_repair_loop_regenerates_with_contract_diagnostics",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_hook_strategy",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_scenes_have_no_chapter_number_prefix",
+    "FAILED tests/unit/test_planner_services.py::test_planner_prompts_switch_to_english_for_english_projects",
+    "FAILED tests/unit/test_planner_services.py::test_next_volume_outline_prompt_builds_character_drama_from_current_cast",
+    "FAILED tests/unit/test_planner_services.py::test_minimal_cost_cast_prompt_keeps_full_characterisation",
+    "FAILED tests/unit/test_planner_services.py::test_minimal_cast_is_compiled_only_from_approved_design",
+    "FAILED tests/unit/test_planner_services.py::test_source_bound_planning_spine_is_domain_neutral_and_snapshot_only",
+    "FAILED tests/unit/test_planner_services.py::test_generate_novel_plan_creates_all_artifacts_and_workflow_records",
+    "FAILED tests/unit/test_planner_services.py::test_repair_cast_personhood_regenerates_incomplete_character_bible",
+    "FAILED tests/unit/test_planner_services.py::test_personhood_repair_retries_from_current_cast_when_first_repair_regresses",
+    "FAILED tests/unit/test_planner_services.py::test_strict_outline_judge_failure_cannot_ship_as_quality_debt",
+    "FAILED tests/unit/test_planner_services.py::test_outline_commercial_repair_budget_skips_p1_rewrite_for_first_draft",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_chapter_outline_main_conflict_varies_across_volumes",
+    "FAILED tests/unit/test_planner_services.py::test_fallback_cast_spec_backward_compat_single_chapter",
+    "FAILED tests/unit/test_planner_services.py::test_character_decision_intelligence_enters_cast_and_story_design_prompts",
+    "40 failed, 92 passed in 13.88s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "f4c69aef343590b0b565f60230279193bac8b8f5d6cbd08cec1f330fe0b553cc",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "e50d9a9637d136a50b8e72a2bed4450b16e25a43e7108b4c0bee5450f3f719bd",
+      "codes": []
+    },
+    {
+      "detail_sha256": "afed8ca061e421043250429b0f0248012d03a5f95a68c6b73cda06987bedf7d5",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c79a52890a92ea32757ea3475e69d7445525f0160c625f7cb3524bd13c82645c",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "69bb9442444b2733f684d2787a9acbddadf186ffbd49736f90e5f283e5e7aad5",
+      "codes": [
+        "OutlineContractValidationError",
+        "PLAN_SCENE_UNKNOWN_PARTICIPANT"
+      ]
+    },
+    {
+      "detail_sha256": "61eccc14c171bf3facfff128be33eb193dd60a24f06cef73461ff678485c4174",
+      "codes": [
+        "StoryEnhancerCoverageError"
+      ]
+    },
+    {
+      "detail_sha256": "edb0558d57b6ba68bd1af8348d0cea48ceaae068b3ba3bb19f0075bc05ddb0e6",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "5955d88d82f5de21d725296bd20863a5b03c929f52c8f3005d21247beffb9e23",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "8b69801d1ecea37592d5d4231bb746cfa6b1f423ae0d36e907085e0784434034",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c5d9b0a5aab1dda92e3cb0265ffd1f9cbda4a18e5c7374cc9a3eb77c52e85bc8",
+      "codes": []
+    },
+    {
+      "detail_sha256": "61eccc14c171bf3facfff128be33eb193dd60a24f06cef73461ff678485c4174",
+      "codes": [
+        "StoryEnhancerCoverageError"
+      ]
+    },
+    {
+      "detail_sha256": "016952e953c8b7fd0b2d328855a5702242631016de38373551e7ab57f9b218b6",
+      "codes": [
+        "PlannerFallbackError"
+      ]
+    },
+    {
+      "detail_sha256": "b0ffeb70af2ac7d0c1096987bb5ab174388cfe50e8c1925b34e5b49e8a160878",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "386c1719fee011097352d554eb324a237d7a3c03cd352182be59c1b8af6bf360",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c5d9b0a5aab1dda92e3cb0265ffd1f9cbda4a18e5c7374cc9a3eb77c52e85bc8",
+      "codes": []
+    },
+    {
+      "detail_sha256": "18dbdeb5d1db7923b5de176e933d9094551ce23ec261a0311151678e1c7d964b",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "9e8ca8ebeb642e58454d3ab95b5d8f325e5cd14755de0a345d2f65f1c4982d40",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "90c76b913dc77d3dedab946ae9f36b2c1b4fd3c2dd8804aac79d85f8f775c87a",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "50ab5ced59ed58796545a4c911afb83e4d974e1ef2b1564480791e65a11370bc",
+      "codes": []
+    },
+    {
+      "detail_sha256": "022375b9aa09a3f5f2c963833223a6bca6aabc1574e4444d5695e6e173939d3d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9d91f4fa352e555005cdb64bcc28fe671a766ea8e4d4884c92828f8d59ca22c3",
+      "codes": [
+        "PlannerFallbackError"
+      ]
+    },
+    {
+      "detail_sha256": "4a1092015d5e2f91a71e75f123f3f2be286315b09bb0d79de8911f7eb71a4baf",
+      "codes": [
+        "ValueError"
+      ]
+    },
+    {
+      "detail_sha256": "b099a74982dad803b3e8061d5fcb822fc586b252867bef6842b186e247fd0a5a",
+      "codes": []
+    },
+    {
+      "detail_sha256": "943d6e5b11cbfce4a9cda7573d7bbc9731cf106ba0a4a489f686cb3565c5f9c6",
+      "codes": [
+        "CHARACTER_PERSONHOOD_INCOMPLETE",
+        "PlannerFallbackError"
+      ]
+    },
+    {
+      "detail_sha256": "dec4a88088dcfdfe9c5ac08041dae70cee6d21837372eb8e3e85a4f9ea58e8f6",
+      "codes": []
+    },
+    {
+      "detail_sha256": "0f9fa8b1187a2c100e93735e1713c729114159109a58db05bb53902a4049482c",
+      "codes": []
+    },
+    {
+      "detail_sha256": "0f1d0d52dccb378af07f9e8e48b4ecc613e6692fda15c69f70ebaf422ac26a08",
+      "codes": []
+    },
+    {
+      "detail_sha256": "498ca7a8da081b6c6769bbbd034984daa8e1628fd738926512b5451028430194",
+      "codes": [],
+      "numeric_difference": "E   assert 0 == 3"
+    },
+    {
+      "detail_sha256": "6778ee8527be352fd60ec4c1f78815209df143b92ea22f5f3b1675386914e690",
+      "codes": []
+    },
+    {
+      "detail_sha256": "123777c0ff5250d81ac6b95e4b0a046b0287c90d9622a9fd62ece251e0875c6c",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

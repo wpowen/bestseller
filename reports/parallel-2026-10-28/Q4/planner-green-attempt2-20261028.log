@@ -1,0 +1,18 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "9a899b29a7c8fb630790dc213b797b07e9fcee6d647e1e15d91fc8a56db5e673",
+  "original_bytes": 757,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_normal_outline_roles_survive_real_pydantic_and_native_patch",
+    "1 failed, 29 passed in 2.83s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "b6de5d826d59ed93e59a20ab547bd8701bc49db880e8c1bb6b18ca340908f368",
+      "codes": [
+        "KeyError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

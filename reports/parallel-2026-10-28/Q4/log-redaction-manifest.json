@@ -1,0 +1,385 @@
+{
+  "schema": "q4-log-redaction.v1",
+  "logs": [
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-existing-services-pinned-baseline-20261028.log",
+      "original_sha256": "ca7b19e9dcaea3b322eab6e67eb94b8f1e16c729a061ea6f7d83f03d4dd5be54",
+      "redacted_sha256": "53347b7e0b8e1cf38a2dab356c018d3d1405a2a3dd9e5a8b7a6563b145614907",
+      "summary_entries": 19,
+      "error_fingerprints": 35
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-existing-services-regression-20261028.log",
+      "original_sha256": "d2383c60de0cd754a72b842779f77c65dbb52f59d6495fd26726176c587e7d6e",
+      "redacted_sha256": "c51a0f465795fd24b4073180f428eca6626ad12fe626fbdb3a25ef17f9b2c6ec",
+      "summary_entries": 43,
+      "error_fingerprints": 126
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-existing-services-sqlite-empty-20261028.log",
+      "original_sha256": "100bad9ec0f6e3da49acf550d6dd148362686cd077f6fe8fbff338ce91ab4ecd",
+      "redacted_sha256": "389f08eca88803b38b7b6e2ba80016dd97b13383fc8192b8feca4a590937709a",
+      "summary_entries": 18,
+      "error_fingerprints": 34
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-green-final-20261028.log",
+      "original_sha256": "404da299676ccf3349269fced25621592cb49033e7454b8f7d9525b941335efe",
+      "redacted_sha256": "4ade71f45664fc4a2bb71dfed6a58b04a83e46edb3b1ff0ecd557fa9f946c690",
+      "summary_entries": 2,
+      "error_fingerprints": 1
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-green-verified-20261028.log",
+      "original_sha256": "e825f4a15868dba1a9e9579175e095ba47dca9b302bbfeea18825cca18aa5691",
+      "redacted_sha256": "9b61c9fcaaa0c14be6cd84c713c430e52aa195dc3c1d668df6f8aac147de7d37",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-review-findings-green-attempt1-20261028.log",
+      "original_sha256": "91744c547911147f573497c8c753176bec4863334637e16f0d6f47c4cbec361d",
+      "redacted_sha256": "5e9d4dd05079fde0e115e6a3d00ec2491f6f9172df341e244e2ca66b2e55b920",
+      "summary_entries": 3,
+      "error_fingerprints": 3
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-review-findings-green-attempt2-20261028.log",
+      "original_sha256": "7b775d9ae86049757e15f3d7f123fa9d3b3e7472912e846633f86403d4207e16",
+      "redacted_sha256": "bc2f6c1f2c75950406f241bbc3b7519a8c431fba7bccb6a1ccc6ed51b63abc5a",
+      "summary_entries": 3,
+      "error_fingerprints": 3
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-review-findings-green-attempt3-20261028.log",
+      "original_sha256": "d7b93b3a0fa35e55d04b312fc24e58c5cdf6eb6976a0013295b7cf508ac43bb2",
+      "redacted_sha256": "973e27befd8f80f98abe26bee1decb7f05f6976a47c06b550d4a5da956515dee",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-review-findings-red-20261028.log",
+      "original_sha256": "ba78a5bfaababa3acd8bab477c7cfbb9edead08625eded1481a29f1b7340697c",
+      "redacted_sha256": "16fc117d3a9733fe02dc455af7dd76ee16ed3e789fc81d9defa61142e54235d8",
+      "summary_entries": 3,
+      "error_fingerprints": 2
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-review-fixed-green-20261028.log",
+      "original_sha256": "fd5d5b6cd9e8a1d024faae9341b2e3f43c14dc36caa5e6c8da7376c6673c71a2",
+      "redacted_sha256": "175ae399e248500cf54eb8fd8cb9e2e31382be1595ed80c32de117d11ce96318",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/planner-targeted-regression-20261028.log",
+      "original_sha256": "eebfe48de8ad15378c39ae11d256703d8066b206e2d019f3aadaf36a8e81fd59",
+      "redacted_sha256": "d8548d0515fb912b7138a59d8a2bd9897bfc148203a7a8000630c2ef71402be9",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-delivery-green-20261028.log",
+      "original_sha256": "f597cf97d9806c67fd0027a2733803dc855d752ef542302c1a6e01f494618d71",
+      "redacted_sha256": "5f8756c1ea5b5a4f6f1f7979275fa7d8474885435c027a82819947972ba71db2",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-delivery-green-attempt1-20261028.log",
+      "original_sha256": "d078b785e243f4dd0f8c41a5e33330d2f9e36b27c4035d5e9c5cb1f052ba5dc0",
+      "redacted_sha256": "f84421fb2865fd667c2577718df54b90b09d87029a067ff3a860b4c5c531c84d",
+      "summary_entries": 5,
+      "error_fingerprints": 16
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-delivery-green-attempt2-20261028.log",
+      "original_sha256": "0b91f691f71931f106bbe1f4951ba24661d88fcb21c72667e7975fefa435d3f0",
+      "redacted_sha256": "fc720483e41237de89013a09c8a5ed867cb5c95cc75e3097b4dbc44e43dc97df",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-delivery-red-20261028.log",
+      "original_sha256": "207f4794fe2f689309e7c44388f32b53bab1f55a0868b72a4ff74a8e2e645937",
+      "redacted_sha256": "3a74c41d118869c9f7440ce0d23ba0e5ee1cddb79ba21136d792527d77610317",
+      "summary_entries": 33,
+      "error_fingerprints": 56
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-independent-review-byte-comparison-20261028.log",
+      "original_sha256": "2401169a3c9760d968684a115a73ec300de14dced9cf6728efeba22544d24512",
+      "redacted_sha256": "770b19646a08d9a03254fe28a19de9387df6f3d2e0c3a5abdc9b070d8871c2a1",
+      "summary_entries": 0,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-independent-review-final-green-20261028.log",
+      "original_sha256": "46ec28309ceebda045a61eca8f3847b623922db02c0b0e1c617d72002cf75865",
+      "redacted_sha256": "cabd57e028076be01689992490b4ef0f3fec28483fc3827611eacaa62c38fff5",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-independent-review-green-20261028.log",
+      "original_sha256": "d5b0ff798887204254cb2ac993798d1de227167ccd96757e50ef1564d0c4606e",
+      "redacted_sha256": "a79f5f019d0fe9dccb73b084cde0a722be8b68ee697d14ed0d06351a18d27e5c",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-independent-review-red-20261028.log",
+      "original_sha256": "388cbdcf6e0ae29b4ff46d12066a005a7ba4cee0958daebb327d72914bca7bc7",
+      "redacted_sha256": "b694718cf6acf9d5725d493f38690747ded358900d3ef44c8321805650a27d2b",
+      "summary_entries": 5,
+      "error_fingerprints": 6
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-legacy-byte-comparison-20261028.log",
+      "original_sha256": "e4adeb650f36d3a29bcc3841146714a8c1c314461436ec0f93ec96d9f310012b",
+      "redacted_sha256": "8a412a1ea12f3c5796e97574d99fc0f785155e0d7e908d7d1e9be1b821d295d2",
+      "summary_entries": 0,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-legacy-regression-20261028.log",
+      "original_sha256": "64a7011e447e7d4bc3d9c3a454b6ff9725dcec1f2a4d4df8af4050bdbdce9b52",
+      "redacted_sha256": "88c04d7f635bc4d405c9095b3e23f121269de4843a5953b8a25a5a1e374e4cf4",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-planner-seam-red-20261028.log",
+      "original_sha256": "641331992e0e37b5cd6e1227a7cfe418543f3ea12e74ed917e148544064059a9",
+      "redacted_sha256": "720415e261ad7bc751c831b3bd8d1bb4388e2dd7112ef53a8fad0fea5f919d82",
+      "summary_entries": 3,
+      "error_fingerprints": 2
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/Q4report/writer-pointer-red-20261028.log",
+      "original_sha256": "c4192e821bf3bfc9cbd1d5abd48497336ebce02422e3f14771a6ccd7ac64df70",
+      "redacted_sha256": "93415bdda2b68189b5241003a3b899f4d048c4d907facb1fcfcf4f0c16ac52e6",
+      "summary_entries": 3,
+      "error_fingerprints": 2
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-dispatch-red-20261028-01.log",
+      "original_sha256": "b5b4cfe52d5f3ea65c3e7fa1306d50562ad1802c2796a7dd7ab91c7d2ffd4dc9",
+      "redacted_sha256": "bd38845737ba39531bdaa79eab215c9496e47f382e429a59aa9ae8764c5d6bb0",
+      "summary_entries": 4,
+      "error_fingerprints": 3
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-final-gates-red-20261028-01.log",
+      "original_sha256": "8f3589780b69753cb270944922762e25adfca26de2bd32ef946dfd1eded7f326",
+      "redacted_sha256": "a092342478c35bebfa41a2a9b12b470e6370ebd6789677d21559bfc600cbd99e",
+      "summary_entries": 2,
+      "error_fingerprints": 2
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-final-green-20261028-01.log",
+      "original_sha256": "138e8f8be481497a5a3ba90f81f706fdf6eddb50b8967f1fb663444c8cd617c5",
+      "redacted_sha256": "f267948ba61783aced59615f46397ce8f82b2637f185c5139155fad2614b4fbd",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-final-green-20261028-02.log",
+      "original_sha256": "16785d5007cf9360380ce0aa2da3bec498174b956276b52fef12eee04858dc6e",
+      "redacted_sha256": "9f0056290e751861da3ec8b7343682e656446097d56056a17132a1266080fdab",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-final-green-20261028-03.log",
+      "original_sha256": "bae3359bb93e9b8e533efa19a0d6c6ad1f71264fd29ee6fc192ff6056f378a6e",
+      "redacted_sha256": "b434b45ce1bce580310f4dbd756937515404239bdcacac0195d701a75e51b81a",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-green-20261028-01.log",
+      "original_sha256": "fe2cf562165495a16c2fe77283cd4f69d85299e44d572f41b011b6f676f3a94b",
+      "redacted_sha256": "2caff8b76a8b7d11a45701f61a26479b0740a3174994d16ea15c77e081267184",
+      "summary_entries": 2,
+      "error_fingerprints": 3
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-green-20261028-02.log",
+      "original_sha256": "bfccee734df0deb4f0db4c5962214a5c87d67f30fb5c77e790193fcae3de8e9e",
+      "redacted_sha256": "a1f76059e58e6c18bc504ecc880709a7af570c6800526443a788bc22491ade8c",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-red-20261028-01.log",
+      "original_sha256": "cff417c46657e112c7bd91b5721a44350987764fcc2af437fe17088d43b38724",
+      "redacted_sha256": "a434a7f7ce416085191ed4923a7545f30d0cd2a705ce7e4ec51442cf41028e8e",
+      "summary_entries": 30,
+      "error_fingerprints": 50
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-regression-green-20261028-01.log",
+      "original_sha256": "9fa7ec4317805523312d97dce75d6be1940f8a2835f14459e039cd20353c69d8",
+      "redacted_sha256": "75a66e13e698df5a2e6e4a750f2651bba25ce7c9b3845e0fa3fdacfb66947ae9",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-repair-green-20261028-01.log",
+      "original_sha256": "d88381a8a4cfad30672ffde771d90a8185c9dc26ab545a150516a8c6bd95f669",
+      "redacted_sha256": "0a9f426f190752c0f470026357f318c2a7dd392a8571b0ac110823af4bba2d15",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-repair-red-20261028-01.log",
+      "original_sha256": "f6d0941900ea2c49a6eafe41c813e1437f9a2c3c4c47f1efbfb3bd49748f3c6f",
+      "redacted_sha256": "386bd19595dd10660f89eb2c4a91837da54908f491b114405342c8f141f683d5",
+      "summary_entries": 11,
+      "error_fingerprints": 17
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/conception-unknown-scores-red-20261028-01.log",
+      "original_sha256": "ca7bc042fde97979c2611ea302e6ec88e5b27f5faf9d9af1565750a49ab25da8",
+      "redacted_sha256": "a605db090722ef022cf3b93d40b220608b52d3897add59debee89789b870b6a5",
+      "summary_entries": 3,
+      "error_fingerprints": 4
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/experiment-readiness.log",
+      "original_sha256": "2348314f31df95c9ea8bba12bdba261b2a1132e5a973db047c034ae1e2a5a7ac",
+      "redacted_sha256": "0f75d1f8276a551aa0efcfdf1d62498620fd6fa901c07f3296780fb155badc39",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/implementation-final-tests.log",
+      "original_sha256": "ed72d55259e63fb1a31ec7293a2c935a63e6d460257a11eaeb13b4e6c81face2",
+      "redacted_sha256": "43b8c415e96d4fa660d4a5b79a84d22330e1dff672006d2521ee792ecb64a360",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-green-attempt1-20261028.log",
+      "original_sha256": "a8028b5c12f8838fffc8dec8c877d6a627aea14ece1bfb023d17dd9f8ee4abd1",
+      "redacted_sha256": "88d0abc1f619064b349e59f60e6f9ae2d137ae0961a204ded0073d4fe25cfcfc",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-green-attempt2-20261028.log",
+      "original_sha256": "9a899b29a7c8fb630790dc213b797b07e9fcee6d647e1e15d91fc8a56db5e673",
+      "redacted_sha256": "a9bef9962739c20af163d2b2d710db0d768e9550ca4f3b7d5816955e14a569e6",
+      "summary_entries": 2,
+      "error_fingerprints": 1
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-green-attempt3-20261028.log",
+      "original_sha256": "c1b70a09907198a222dec4c169cfb0d5deee4827ab93d1492eeffb590dfd9696",
+      "redacted_sha256": "0bb355afe2bf3d2026c246dc98b0eae29e56913512c6576b354fc89189d58f54",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-green-attempt4-20261028.log",
+      "original_sha256": "caaa904cecb3c18691e0a26ac5def0e0d37addcfa0d0daa0f1e53f9eae564161",
+      "redacted_sha256": "14a76ffab27517509d44079b4c7334ebcf80b85bdbca8f9f319143913ab31183",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-red-20261028.log",
+      "original_sha256": "01856d19ed6c4737d9f2ba163cada1c201ce8ceaec9e6dc4b2a04c9afaaaef81",
+      "redacted_sha256": "4b75cdc4ced6782d8feb9ac99c976281b6d38b7b96706f3c3c9dc3722385b57a",
+      "summary_entries": 5,
+      "error_fingerprints": 26
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-red-clean-20261028.log",
+      "original_sha256": "5aeeab5fd30202e2e63f11b4cbce5469fb1472a133c23eafa1fec2ef4a27740a",
+      "redacted_sha256": "93dbe574babd3d43e06c32f4cda5b154c4c949ebe99b0b8f5b91acb6a37cc746",
+      "summary_entries": 19,
+      "error_fingerprints": 24
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/planner-red-valid-20261028.log",
+      "original_sha256": "ff0a35af5302fe6525d805fdeceac154c4eccdb327a98cc5ad74acb2cfde574d",
+      "redacted_sha256": "5c4d570d45410d6a898b54f9929ce83ec0858f4e86a47b0e83d5c57a922e1e95",
+      "summary_entries": 19,
+      "error_fingerprints": 42
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-green.log",
+      "original_sha256": "21326f9afa0de598f626c77f483f8c4cc4132aaf3a74ec11b1d929e98e85bbc3",
+      "redacted_sha256": "397864ba36d15a56d882d4acb5e9d6bc6747e6ddfe1112506303089aef657efa",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-lint-final.log",
+      "original_sha256": "32726e5827acba4047a8629a156de77f7d383bdee7b25e3efbe26bcba4c180f3",
+      "redacted_sha256": "d2235e6df9c60a396106e4104e92f72aabeb646ec8f835ad97bc52b74d32409a",
+      "summary_entries": 1,
+      "error_fingerprints": 34
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-lint-fix.log",
+      "original_sha256": "f2451b093bf0bf250b08341c5ad028db6dbdda0abbbde0d15da25a5790bd9a87",
+      "redacted_sha256": "facc762930c28501ce6d9912c1651af6733511529d0c86387efa7a44f89aa084",
+      "summary_entries": 1,
+      "error_fingerprints": 44
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-lint-initial.log",
+      "original_sha256": "54eb8f438d179de4ef4fc9e5f72cb2bdf94ca81eb2dd7de215adeb2fa1da7605",
+      "redacted_sha256": "3e1bb31da6467a72384642035f67c26b5590567b6f802660b6c23daf42c08e7c",
+      "summary_entries": 1,
+      "error_fingerprints": 76
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-pause-green.log",
+      "original_sha256": "5a84374e2bf56ac6fe7000d91cc2e0abfa514170dff2262561fe2a60f4c4e4cb",
+      "redacted_sha256": "ba00205693f428da2341ff67822cd1313ecf4daaf6e61038df58935f0e93a1ba",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-pause-red.log",
+      "original_sha256": "90989260690fb0ccd574fc3052029ec30c017416263fd3c98eed044c4dab7b2f",
+      "redacted_sha256": "9a465ccfbea1c49c79e064909bb6593dd20c32138c5e3c39eafe3c2b15495d7f",
+      "summary_entries": 2,
+      "error_fingerprints": 1
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-pointer-green.log",
+      "original_sha256": "5eb0de6c1da44a2a1a4597abbdf967940cf6d6cf2d5a7792dc01c9b57b4de592",
+      "redacted_sha256": "85598967d0ba84e83a0290290e90f5552a95d6fa790671a0434c88081f8ca7b8",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-pointer-red.log",
+      "original_sha256": "bb6bab8e0463915f8d9bb4ceda3bbc65e097bff3d5e8e86140b5c22ac40e6de6",
+      "redacted_sha256": "ae59ba9b4e05c8afe29973e9c6d4f9aafde3c4c218186016072684358f99d843",
+      "summary_entries": 3,
+      "error_fingerprints": 8
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-red.log",
+      "original_sha256": "7b2fd3f73b4811047132ff105ad9aa0df9a9ad3ee48ac505480245eb9103e5be",
+      "redacted_sha256": "16cccfc183daf0dade8448509be2f872fa81d7611fa873323be2d43770d9ba3c",
+      "summary_entries": 17,
+      "error_fingerprints": 16
+    },
+    {
+      "path": "reports/parallel-2026-10-28/Q4/protocol-regression.log",
+      "original_sha256": "6d9b9302bb91b148d1f06d7d4721e137aa4ecd2f9247fac871666c9669ba99b3",
+      "redacted_sha256": "2dfb0714625e7cb17f0cb3a2736794d8815dbcb8a9e5988de8a95c31c26d1574",
+      "summary_entries": 1,
+      "error_fingerprints": 0
+    }
+  ],
+  "files_deleted": 0,
+  "private_sources_modified": false
+}

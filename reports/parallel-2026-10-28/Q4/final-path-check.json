@@ -1,0 +1,16 @@
+{
+  "schema": "q4-final-path-check.v1",
+  "refs": {
+    "int/full-flow": {
+      "sha": "a84258c29d1a0e2eb58266d8c412b6cfac97e3f3",
+      "allowed_paths_diff_empty": false,
+      "allowed_paths_log_empty": false
+    },
+    "fix/g2b": {
+      "sha": "ffb49f67a4e15d532fc3476bd5745774e59466c6",
+      "allowed_paths_diff_empty": true,
+      "allowed_paths_log_empty": true
+    }
+  },
+  "int_allowed_paths_uncommitted_empty": true
+}

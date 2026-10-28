@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/.venv/bin/python",
+    "-m",
+    "pytest",
+    "--no-cov",
+    "-q",
+    "tests/unit/test_q4_reader_first_protocol.py",
+    "tests/unit/test_q4_reader_first_conception.py",
+    "tests/unit/test_q4_reader_first_planner.py",
+    "tests/unit/test_q4_reader_first_delivery.py",
+    "tests/unit/test_source_bound_planning_content.py",
+    "tests/unit/test_source_bound_foundation_review.py"
+  ],
+  "exit_code": 0,
+  "database_target": "explicit SQLite in-memory: sqlite+aiosqlite://",
+  "paid_sends": 0
+}

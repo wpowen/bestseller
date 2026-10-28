@@ -5419,8 +5419,28 @@ def _render_contract_section(
     scene_contract: dict[str, Any] | None,
     *,
     language: str | None = None,
+    reader_first: dict[str, Any] | None = None,
 ) -> str:
     is_en = is_english_language(language)
+    if reader_first is not None:
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+        reader_first_binding({"reader_first_planning": reader_first})
+        if not chapter_contract and not scene_contract:
+            return ""
+        instruction = (
+            "Read with the approved narrative_task and continuity_reference pointers. "
+            "Preserve all source constraints, exact facts, amounts and ordered actions. "
+            "Unchanged custody, knowledge and audit states are not a spoken checklist; "
+            "enact changes that drive a character's choice. Conflicts require planning repair."
+            if is_en else
+            "按已批准的 narrative_task 与 continuity_reference 字段指针读取。"
+            "完整保留约束、精确事实、金额与行动顺序。持有、知情与审计状态未变时不逐条宣告；"
+            "真实改变人物选择的行动仍须演出；矛盾须先修规划。"
+        )
+        return instruction + "\n" + json.dumps(
+            {"chapter_contract": chapter_contract, "scene_contract": scene_contract},
+            ensure_ascii=False, separators=(",", ":"), default=str,
+        )
     sections: list[str] = []
     if chapter_contract:
         sections.append(
@@ -5509,10 +5529,25 @@ def _render_character_causal_contract_block(
     chapter_contract: Mapping[str, Any] | None,
     *,
     language: str | None = None,
+    reader_first: dict[str, Any] | None = None,
 ) -> str:
     if not chapter_contract:
         return ""
     is_en = is_english_language(language)
+    if reader_first is not None:
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+        reader_first_binding({"reader_first_planning": reader_first})
+        instruction = (
+            "Character desire, choice and relationship change drive this scene. All causal "
+            "fields remain source data; unchanged states are not a spoken checklist. "
+            "Preserve exact facts and the approved role pointers; never remove required actions."
+            if is_en else
+            "人物欲望、选择与关系变化驱动现场。因果字段完整保留为来源数据；"
+            "未变化状态不逐条宣告。精确事实与已批准字段角色不变，不得删除必要行动。"
+        )
+        return instruction + "\n" + json.dumps(
+            dict(chapter_contract), ensure_ascii=False, separators=(",", ":"), default=str,
+        )
     causal_contract = _mapping_from_contract(chapter_contract.get("causal_contract"))
     items: list[tuple[str, object]] = [
         (
@@ -6837,6 +6872,10 @@ def build_scene_draft_prompts(
         raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
     language = _project_language(project)
     is_en = is_english_language(language)
+    from bestseller.services.chapter_writer_delivery import reader_first_writer_blocks
+    reader_binding = reader_first_writer_blocks(
+        project, chapter, compiler_additional_blocks, language=language,
+    )
     _creative_core_line = render_story_engine_creative_core_block(
         creative_core,
         language=language,
@@ -7083,7 +7122,9 @@ def build_scene_draft_prompts(
     clue_section = _render_clue_section(unresolved_clues, planned_payoffs, language=language)
     emotion_track_section = _render_emotion_track_section(active_emotion_tracks, language=language)
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans, language=language)
-    contract_section = _render_contract_section(chapter_contract, scene_contract, language=language)
+    contract_section = _render_contract_section(
+        chapter_contract, scene_contract, language=language, reader_first=reader_binding,
+    )
     _scene_metadata, _scene_methodology_contract, _scene_controls = _scene_current_contract_controls(
         scene
     )
@@ -9632,6 +9673,10 @@ def build_chapter_first_draft_prompts(
 ) -> tuple[str, str] | CompiledPrompt:
     if prompt_mode not in {"legacy", "compiled"}:
         raise ValueError("prompt_mode must be 'legacy' or 'compiled'")
+    from bestseller.services.chapter_writer_delivery import reader_first_writer_blocks
+    reader_binding = reader_first_writer_blocks(
+        project, chapter, compiler_additional_blocks, language=_project_language(project),
+    )
     from bestseller.services.prose_prompt_profile import resolve_prose_prompt_profile
 
     prose_prompt_profile = resolve_prose_prompt_profile(
@@ -9937,18 +9982,33 @@ def build_chapter_first_draft_prompts(
         causal_items = _render_character_causal_contract_block(
             chapter_contract,
             language=language,
+            reader_first=reader_binding,
         )
         if causal_items:
             visible_items.append(causal_items)
         if visible_items:
-            contract_must_hit_block = (
-                "【必须显性兑现的章节契约】\n"
-                + "\n".join(visible_items)
-                + "\n这些不是参考资料，而是正文必须让读者直接看见的交付项。"
-                "其中出现的人名、物件、规则、危险和章末钩子不得省略、替换或只做隐晦暗示；"
-                "如果与场景卡有冲突，优先满足章节契约，并用一个自然动作或一句对白补入缺失信息。"
-                "收尾要求按当前合同的语义兑现；本框架不规定末段字数、引入媒介或最后一句的形式。"
-            )
+            if reader_binding is not None:
+                contract_must_hit_block = (
+                    ("[Chapter narrative task and continuity references]\n" if is_en
+                     else "【本章叙事任务与连续性参考】\n")
+                    + "\n".join(visible_items)
+                    + ("\nUse the reviewed narrative_task pointers for actions to enact; "
+                       "continuity_reference facts and constraints remain binding without repeated "
+                       "spoken confirmation. Preserve precise facts, amounts and required actions; "
+                       "conflicting sources require planning repair before writing."
+                       if is_en else
+                       "\n按已审 narrative_task 指针兑现现场行动；continuity_reference 中的事实与约束"
+                       "完整有效，未变化时不逐条宣告。保留精确事实、金额与必要行动；来源冲突须先修规划。")
+                )
+            else:
+                contract_must_hit_block = (
+                    "【必须显性兑现的章节契约】\n"
+                    + "\n".join(visible_items)
+                    + "\n这些不是参考资料，而是正文必须让读者直接看见的交付项。"
+                    "其中出现的人名、物件、规则、危险和章末钩子不得省略、替换或只做隐晦暗示；"
+                    "如果与场景卡有冲突，优先满足章节契约，并用一个自然动作或一句对白补入缺失信息。"
+                    "收尾要求按当前合同的语义兑现；本框架不规定末段字数、引入媒介或最后一句的形式。"
+                )
     must_keep_tail_blocks = _render_chapter_first_must_keep_tail_blocks(
         chapter_contract,
         language=language,

@@ -1,0 +1,87 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "d078b785e243f4dd0f8c41a5e33330d2f9e36b27c4035d5e9c5cb1f052ba5dc0",
+  "original_bytes": 5082,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_both_writer_callers_require_v3_and_keep_craft_and_source[scene-zh-CN]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_both_writer_callers_require_v3_and_keep_craft_and_source[scene-en]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_both_writer_callers_require_v3_and_keep_craft_and_source[chapter_first-zh-CN]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_both_writer_callers_require_v3_and_keep_craft_and_source[chapter_first-en]",
+    "4 failed, 30 passed in 2.52s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

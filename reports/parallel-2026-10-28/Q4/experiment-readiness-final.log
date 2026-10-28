@@ -1,0 +1,7 @@
+{
+  "schema": "q4-experiment-admission-stop.v1",
+  "exit_code": 2,
+  "stdout": "STOP paid: complete native scripted count is UNMEASURED; paid sends=0.",
+  "full_scripted_run_executed": false,
+  "paid_sends": 0
+}

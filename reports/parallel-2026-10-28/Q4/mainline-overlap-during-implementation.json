@@ -1,0 +1,24 @@
+{
+  "schema": "q4-mainline-during-implementation-overlap.v1",
+  "mainline_sha": "a84258c29d1a0e2eb58266d8c412b6cfac97e3f3",
+  "symbols": [
+    {
+      "file": "src/bestseller/services/drafts.py",
+      "mainline_changed_symbols": [
+        "assemble_chapter_draft",
+        "build_chapter_first_draft_prompts",
+        "generate_chapter_draft_once"
+      ],
+      "q4_changed_symbols": [
+        "_render_character_causal_contract_block",
+        "_render_contract_section",
+        "build_chapter_first_draft_prompts",
+        "build_scene_draft_prompts"
+      ],
+      "overlap": [
+        "build_chapter_first_draft_prompts"
+      ]
+    }
+  ],
+  "no_merge_or_rebase_performed": true
+}

@@ -1,0 +1,155 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "01856d19ed6c4737d9f2ba163cada1c201ce8ceaec9e6dc4b2a04c9afaaaef81",
+  "original_bytes": 14410,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_prompts_keep_user_source_and_add_only_bound_system_guidance[zh]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_prompts_keep_user_source_and_add_only_bound_system_guidance[en]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_bound_outline_derivation_copies_facts_and_never_invents_procedure",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_input_identity_is_versioned_without_changing_legacy_hash",
+    "4 failed, 14 errors in 2.12s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e077176e969005c08c498fba179034b7fb3095f3984ddea503dfedf39be8308a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "4d9188a11d2f7eedc44b6fdcdfebfd640969c48a982cc93d305021b1385ad13b",
+      "codes": [
+        "ValidationError"
+      ]
+    },
+    {
+      "detail_sha256": "39dd51ab56b4d68e1286106a8dd1aa4cecc5a77c2295505173f945cf53827e37",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9e3bbbfd29219eef46e00f6f453c6b8abbac1263363c41342502eba6d4a3430d",
+      "codes": []
+    },
+    {
+      "detail_sha256": "626e27ba7339d15c4878fa85c009d1d191d73e3aafed227019c63041ed8e21e1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c108b8fb27a5eea6e3ed1c32cbdadbd1b5fa0c1befa51b8d955046c649e792e3",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "9b147ad4420a1893eb3c14563dbf28c8ff2152ec7fe7d49dbd9d2e4d9a4a5822",
+      "codes": []
+    },
+    {
+      "detail_sha256": "0a331fd9cc0872f9cf30884947ea0e03574e09524e22752e89a6585c8143d596",
+      "codes": []
+    },
+    {
+      "detail_sha256": "130c1ec77b29520c2f4c74154da941b73c64b7702b44efc6cd51ece1f75f78c5",
+      "codes": [
+        "TypeError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

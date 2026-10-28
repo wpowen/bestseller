@@ -1,0 +1,47 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "388cbdcf6e0ae29b4ff46d12066a005a7ba4cee0958daebb327d72914bca7bc7",
+  "original_bytes": 4974,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_writer_reparses_retained_review_instead_of_trusting_rehashed_delivery[rehashed_goal]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_writer_reparses_retained_review_instead_of_trusting_rehashed_delivery[nonexistent_chapter_pointer]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_full_chapter_builder_uses_reader_first_causal_roles_and_outer_instruction[zh-CN]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_full_chapter_builder_uses_reader_first_causal_roles_and_outer_instruction[en]",
+    "4 failed, 50 deselected in 1.35s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "b3a252c1ae282eacf0d08502575f32c5f989dec42bffdbc9d1d3444b4df60bc8",
+      "codes": [
+        "ValueError"
+      ]
+    },
+    {
+      "detail_sha256": "b3a252c1ae282eacf0d08502575f32c5f989dec42bffdbc9d1d3444b4df60bc8",
+      "codes": [
+        "ValueError"
+      ]
+    },
+    {
+      "detail_sha256": "cf2dad417e869dbe5c670a0506da266b738d08437f242eb0c84c187600aaed39",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "eec1738089ad0210da2078370c6f80381307bf42b87fd89d1e2fb5dc94c584d5",
+      "codes": []
+    },
+    {
+      "detail_sha256": "badb249063d0279721d98753e4c388e5c84487ec3d10ea66049654e53ec6afdb",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "97ff7510a3fd97db2d6bdf71ef16e12723532703969c96b8d7cc8d45011e3072",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

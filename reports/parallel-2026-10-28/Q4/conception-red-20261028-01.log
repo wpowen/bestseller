@@ -1,0 +1,298 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "cff417c46657e112c7bd91b5721a44350987764fcc2af437fe17088d43b38724",
+  "original_bytes": 18114,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_new_binding_uses_exact_raw_input_and_can_disable_before_generation",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_resume_legacy_stays_unmarked_and_tagged_assets_cannot_downgrade",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_finalize_uses_shared_instruction_without_rewriting_legacy[zh-CN]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_finalize_uses_shared_instruction_without_rewriting_legacy[en]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_raw_idea_pool_messages-kwargs0]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_raw_idea_rank_messages-kwargs1]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_engine_kernel_messages-kwargs2]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_engine_judge_messages-kwargs3]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_engine_batch_judge_messages-kwargs4]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_story_layer_judge_messages-kwargs5]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_expansion_editor_messages-kwargs6]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[zh-_build_judge_messages-kwargs7]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_raw_idea_pool_messages-kwargs0]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_raw_idea_rank_messages-kwargs1]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_engine_kernel_messages-kwargs2]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_engine_judge_messages-kwargs3]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_engine_batch_judge_messages-kwargs4]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_story_layer_judge_messages-kwargs5]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_expansion_editor_messages-kwargs6]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_tournament_generator_and_judge_share_binding[en-_build_judge_messages-kwargs7]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_review_sees_full_final_candidate_ids_and_freshness",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[failed]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[fallback]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[transport]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[malformed]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[missing_ids]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[capacity]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_stop_is_structured_preserves_bundle_and_does_not_retry_on_resume[truncated]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_real_resume_runs_reader_gate_after_existing_final_repairs",
+    "29 failed in 1.71s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "2df038b1fdd99e1bc6c79ffa4caa5bab297bbc46449ab56ff19421d907c9b130",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "e4a52cb6e5a12a1661093afcf1aa5bd2f2c3e10e8c46a341712e8c5ca88a4e92",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "8abff9f918b6663daf0955cecf5896b2b56fbdaf59d47eb2e246df2050d31fe3",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "38f71144044eb186e4f38c29d2a2b1995a6dc9fdb023e3ac8741dde2bc686deb",
+      "codes": []
+    },
+    {
+      "detail_sha256": "2c765dac9bc9205f80618eaae40d942f7698f27f021682b50e621c55f147e889",
+      "codes": []
+    },
+    {
+      "detail_sha256": "a8c0adbee205e3286394e1760b15d8fb27c5b9fb9315c3bd0a9af52f11d76bdc",
+      "codes": []
+    },
+    {
+      "detail_sha256": "9b43ea340f979df10fb7ffd0ccdd8f1e9bccb7eb843d33fa48aeb213cbfe1533",
+      "codes": []
+    },
+    {
+      "detail_sha256": "5ebfe275e8b248bf3a9f44c4a09f98443b69c0a5c531186bde7f6ff54035d14c",
+      "codes": []
+    },
+    {
+      "detail_sha256": "d536f0bfe5ede9702cc997808bcdc0fd7de3bf29d4d4eac3bd4a235cd4d58132",
+      "codes": []
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "edd4f31b2f70e80f77d300dc4f9ab3109ff001b9180b73dddd49aaae72c4fa4c",
+      "codes": []
+    },
+    {
+      "detail_sha256": "b313c5036f614cd3808cea0cc5a4fa7318d1b78bd3e65bf209ad1d2280d26cc1",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "38f71144044eb186e4f38c29d2a2b1995a6dc9fdb023e3ac8741dde2bc686deb",
+      "codes": []
+    },
+    {
+      "detail_sha256": "2c765dac9bc9205f80618eaae40d942f7698f27f021682b50e621c55f147e889",
+      "codes": []
+    },
+    {
+      "detail_sha256": "d86b0d0400247383574eda41a6e88a2697418d418025f68c89456f43c80208e0",
+      "codes": []
+    },
+    {
+      "detail_sha256": "b4f21306bf658d11863003d8b56172c39baf2a30c0c86de610cc97a002da8071",
+      "codes": []
+    },
+    {
+      "detail_sha256": "2d51973b74167b8334975eaf1be21d9bfe67db239b3d1770a3fdbefdc8473bc8",
+      "codes": []
+    },
+    {
+      "detail_sha256": "8024943b21fb7146766845b130a5248a1b64fcbcba010ec0d60fc174b0bc69a1",
+      "codes": []
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "b214977a708acf79f87247768fe26453c7d67967fdb11339626e94f311b4dabc",
+      "codes": []
+    },
+    {
+      "detail_sha256": "0eb82fb537eb44fcccba36d645ec481221adeb00a62eddb3cc472f379134f436",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "1b7f18ee0794e73622e6ca9bc3c65e586fef17f7f26dcaa2ed58a16029c8dbed",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "ff65659bc7a1641a3efb8509d01812fce973681707b034bc6288e6c7a8b1068a",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "ee6137bcdf1096d8075768c3221ef4b158f6b949d7010e161b93f4f7a15e136a",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "060c0550344d166f25cfe0b6c2105e615f13eeed39ddf3ed204ec7f1ed980315",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "65dda524a64f17860b53df629a17799fc727df37fde82b83455e41195e66fab6",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "3b0d7978975b87e285adba5b6420c6267199434ec13cb9db4d54cbb194fe93e7",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "3e3b81a0ec83ab06ed91e1691c3820868f14a3daeff28faae4deb96aafae6526",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "0eb82fb537eb44fcccba36d645ec481221adeb00a62eddb3cc472f379134f436",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "1b7f18ee0794e73622e6ca9bc3c65e586fef17f7f26dcaa2ed58a16029c8dbed",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "ff65659bc7a1641a3efb8509d01812fce973681707b034bc6288e6c7a8b1068a",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "ee6137bcdf1096d8075768c3221ef4b158f6b949d7010e161b93f4f7a15e136a",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "060c0550344d166f25cfe0b6c2105e615f13eeed39ddf3ed204ec7f1ed980315",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "65dda524a64f17860b53df629a17799fc727df37fde82b83455e41195e66fab6",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "3b0d7978975b87e285adba5b6420c6267199434ec13cb9db4d54cbb194fe93e7",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "3e3b81a0ec83ab06ed91e1691c3820868f14a3daeff28faae4deb96aafae6526",
+      "codes": [
+        "TypeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "abc1aba6166359c0d250bbe87bc2b74b08ebb64c03935390a69fa118a56e25e0",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0975f5ddcf92b96e10f83b574e2089d91f14d58d5f837be07baef3670e6b6ea1",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "7fd714d4dcff5d799c08236a19002df6653f3b863d3708fd9fb13627d9e480ba",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c9654005f9e68ec49f511585023a89b6a2ef893a4ad43c594fc09d88190d6249",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c5d9b0a5aab1dda92e3cb0265ffd1f9cbda4a18e5c7374cc9a3eb77c52e85bc8",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

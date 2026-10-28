@@ -3087,6 +3087,10 @@ def _validate_generated_volume_outline_or_raise(
     from bestseller.domain.workflow import ChapterOutlineBatchInput
     from bestseller.services.narrative_contracts import validate_chapter_plan_contract
 
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    reader_binding = reader_first_binding(project)
+    reader_candidate = copy.deepcopy(payload) if reader_binding is not None else None
     source_bound = _source_bound_cast_enabled(project)
     source_candidate = source_receipt = source_view_before = None
     if source_bound:
@@ -3131,14 +3135,21 @@ def _validate_generated_volume_outline_or_raise(
             chapters=vol_chapters,
         )
         for idx, chapter in enumerate(vol_chapters):
-            chapter["volume_number"] = volume_number
-            chapter["chapter_number"] = chapter_number_offset + idx
+            if reader_binding is not None:
+                if (chapter.get("volume_number") != volume_number
+                        or chapter.get("chapter_number") != chapter_number_offset + idx):
+                    raise ValueError("reader_first_authored_outline_numbering_required")
+            else:
+                chapter["volume_number"] = volume_number
+                chapter["chapter_number"] = chapter_number_offset + idx
         _normalize_generated_outline_titles_or_fail(
             vol_chapters,
             logical_name=logical_name,
             existing_titles=existing_titles,
         )
 
+        if reader_binding is not None and vol_chapters != reader_candidate.get("chapters"):
+            raise ValueError("reader_first_explicit_title_repair_required")
         batch = ChapterOutlineBatchInput.model_validate(
             {
                 "batch_name": payload.get("batch_name") or f"volume-{volume_number}-outline",
@@ -3159,10 +3170,9 @@ def _validate_generated_volume_outline_or_raise(
         # 只有一个合法值（=所属卷的），先确定性推导再验收；并且必须**回写进
         # 章对象**——此前传给门的是 model_dump 一次性副本，规范化不落库等于
         # 没规范化（「回执不落库等于没检测」的镜像病）。
-        _canon_chapters = canonicalize_chapter_seriality_refs(
-            [chapter.model_dump(mode="json") for chapter in batch.chapters],
-            volume_entry,
-        )
+        _canon_chapters = [chapter.model_dump(mode="json") for chapter in batch.chapters]
+        if reader_binding is None:
+            _canon_chapters = canonicalize_chapter_seriality_refs(_canon_chapters, volume_entry)
         for _ch_obj, _ch_canon in zip(batch.chapters, _canon_chapters):
             try:
                 _ch_obj.seriality_contract = _ch_canon.get("seriality_contract")
@@ -3227,7 +3237,7 @@ def _validate_generated_volume_outline_or_raise(
             directives=enhancer_directives,
         )
 
-    stripped_goal_wrappers = 0 if source_bound else _strip_outline_goal_meta_prefixes(batch)
+    stripped_goal_wrappers = 0 if source_bound or reader_binding is not None else _strip_outline_goal_meta_prefixes(batch)
     if stripped_goal_wrappers:
         logger.info(
             "Removed %d planner-task goal wrapper(s) before validating %s.",
@@ -3251,7 +3261,7 @@ def _validate_generated_volume_outline_or_raise(
     )
 
     identity_manifest = _chapter_outline_identity_manifest(cast_spec)
-    if not source_bound:
+    if not source_bound and reader_binding is None:
         _cast_protagonist = (
             _mapping(cast_spec.get("protagonist")) if isinstance(cast_spec, dict) else {}
         )
@@ -3295,7 +3305,7 @@ def _validate_generated_volume_outline_or_raise(
         identity_manifest=identity_manifest,
         require_identity_registry=bool(identity_manifest),
     )
-    if not source_bound:
+    if not source_bound and reader_binding is None:
         report_repair_count = _repair_generated_volume_outline_contract_blocks(
             batch,
             report,
@@ -3349,7 +3359,7 @@ def _validate_generated_volume_outline_or_raise(
     # back to solo and hard-kill the whole volume outline (G8).
     golden_rescued = (
         0
-        if source_bound
+        if source_bound or reader_binding is not None
         else _rescue_golden_three_solo_scenes(batch, identity_manifest=identity_manifest)
     )
     if golden_rescued:
@@ -3360,7 +3370,7 @@ def _validate_generated_volume_outline_or_raise(
             logical_name,
             project.slug,
         )
-    if not source_bound:
+    if not source_bound and reader_binding is None:
         golden_fill = _soft_fill_golden_three_outline_fields(batch, project=project)
         if golden_fill:
             logger.info(
@@ -3396,7 +3406,8 @@ def _validate_generated_volume_outline_or_raise(
         phase="system enrichment and contract repair",
     )
     normalized_payload = (
-        source_candidate if source_bound else batch.model_dump(mode="json", by_alias=True)
+        source_candidate if source_bound else reader_candidate
+        if reader_binding is not None else batch.model_dump(mode="json", by_alias=True)
     )
     if _strict_degeneracy:
         from bestseller.services.outline_semantic_gate import (
@@ -5784,9 +5795,18 @@ async def _repair_outline_commercial_findings_surgically(
     validation_context: Mapping[str, Any] | None = None,
     source_report: Mapping[str, Any] | None = None,
     source_context: Mapping[str, Any] | None = None,
+    reader_first_source: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], UUID | None]:
     """Edit only judge-named fields on a strong historical outline."""
 
+    from bestseller.services.source_bound_planning_content import (
+        reader_first_binding, reader_first_instruction,
+    )
+    binding = reader_first_binding(project)
+    if binding is not None:
+        directives = [*directives, reader_first_instruction(
+            binding, language=_planner_language(project), stage="outline_repair",
+        )]
     if source_context is not None:
         from bestseller.services.planning_surgical_repair import repair
         return await repair(session, settings, project=project, workflow_run_id=workflow_run_id,
@@ -5857,6 +5877,9 @@ async def _repair_outline_commercial_findings_surgically(
         "你是小说章纲的定点修订编辑。只输出合法 JSON patch，不解释，禁止重写整份章纲。"
         + OUTLINE_SOURCE_AUTHORITY_RULES
     )
+    system_prompt, _ = _reader_first_planner_prompts(
+        project, system_prompt, "", stage="outline_repair",
+    )
     prompt_candidate = _without_planning_meta(dict(outline_payload))
     user_prompt = (
         f"本书：{project.title}；题材：{project.genre}/{project.sub_genre or '-'}。\n"
@@ -5890,10 +5913,20 @@ async def _repair_outline_commercial_findings_surgically(
         )
     from bestseller.services.budget import ExecutionBudgetError
 
-    enforce_candidate_contract = bool(validation_context)
+    if reader_first_source is not None:
+        user_prompt += (
+            "\nUse the exact field spelling already authored in the candidate (goal vs chapter_goal). "
+            "Do not add alias leaves or change authored role tables. Preserve every continuity_reference."
+            "\nCOMPLETE READER-FIRST SOURCE (immutable facts plus editable outline):\n"
+            + _json_dumps(reader_first_source)
+        )
+        from bestseller.services.prompt_compiler import estimate_prompt_tokens
+        if estimate_prompt_tokens(system_prompt + user_prompt) > 24000:
+            raise ValueError("reader_first_full_outline_repair_capacity_exceeded")
+    enforce_candidate_contract = bool(validation_context) or reader_first_source is not None
     repair_user_prompt = user_prompt
     protocol_attempts: list[dict[str, Any]] = []
-    for protocol_attempt in range(2 if enforce_candidate_contract else 1):
+    for protocol_attempt in range(2 if enforce_candidate_contract and reader_first_source is None else 1):
         completion = await complete_text(
             session,
             settings,
@@ -5903,7 +5936,7 @@ async def _repair_outline_commercial_findings_surgically(
                 user_prompt=repair_user_prompt,
                 fallback_response='{"patches":[]}',
                 prompt_template=f"planner_{logical_name}_commercial_surgical_repair",
-                prompt_version="3.4-window-complete-repair",
+                prompt_version="rf-outline-repair-v1" if binding is not None else "3.4-window-complete-repair",
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 max_tokens_override=min(12000, max(5000, _outline_patch_capacity(outline_payload) * 250)),
@@ -5911,6 +5944,9 @@ async def _repair_outline_commercial_findings_surgically(
                     "project_slug": project.slug,
                     "artifact": logical_name,
                     "repair_kind": "outline_commercial_surgical_repair",
+                    **({"reader_first_planning": binding,
+                        "source_sha256": _reader_first_source_hash(reader_first_source)}
+                       if reader_first_source is not None else {}),
                 },
             ),
         )
@@ -5940,7 +5976,12 @@ async def _repair_outline_commercial_findings_surgically(
                 _mapping_list(raw_patches),
                 strict=enforce_candidate_contract,
             )
-            if enforce_candidate_contract:
+            if reader_first_source is not None:
+                repaired = await _validate_reader_first_native_outline(
+                    session, project=project, logical_name=logical_name,
+                    source=reader_first_source, outline_payload=repaired,
+                )
+            elif validation_context:
                 context = _mapping(validation_context)
                 existing_titles = await _fetch_existing_chapter_titles(
                     session,
@@ -5966,7 +6007,7 @@ async def _repair_outline_commercial_findings_surgically(
         except (PlannerFallbackError, ValueError, TypeError) as exc:
             protocol_attempts.append({"attempt": protocol_attempt + 1,
                 "llm_run_id": str(completion.llm_run_id), "error": str(exc)[:1200]})
-            if not enforce_candidate_contract or protocol_attempt == 1:
+            if reader_first_source is not None or not enforce_candidate_contract or protocol_attempt == 1:
                 raise
             repair_user_prompt = (user_prompt + "\n上次补丁未被应用，原候选保持不变。"
                 "只纠正下面的协议/校验错误并重新返回整份补丁数组；不要改写整份章纲或来源设定。\n"
@@ -6630,15 +6671,17 @@ async def _generate_volume_outline_batched(
             )
             if batch_meta.get("reused"):
                 reused_batch_count += 1
-            await import_planning_artifact(
-                session,
-                project.slug,
-                PlanningArtifactCreate(
-                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
-                    content=batch_payload,
-                    source_run_id=llm_run_id,
-                ),
-            )
+            from bestseller.services.source_bound_planning_content import reader_first_binding
+            if reader_first_binding(project) is None:
+                await import_planning_artifact(
+                    session,
+                    project.slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                        content=batch_payload,
+                        source_run_id=llm_run_id,
+                    ),
+                )
             if batch_repair_history:
                 repair_history.append(
                     {
@@ -20762,6 +20805,351 @@ def _stash_distilled_strategy_card(
         logger.exception("Planner distilled strategy card failed — continuing without it")
 
 
+async def _validate_reader_first_native_outline(
+    session: AsyncSession, *, project: ProjectModel, logical_name: str,
+    source: Mapping[str, Any], outline_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Run the real source/cast/title/volume gates on the entire native edit."""
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    candidate = copy.deepcopy(dict(outline_payload))
+    _reader_first_outline_coverage({**dict(source), "outline": candidate}, project,
+                                  reader_first_binding(project))
+    volumes = source.get("volume_plan")
+    if not isinstance(volumes, list) or not volumes:
+        raise PlannerFallbackError("reader_first_native_volume_context_required")
+    chapters = candidate["chapters"]
+    offset = 1
+    seen_volumes: set[int] = set()
+    for volume in volumes:
+        if not isinstance(volume, Mapping):
+            raise PlannerFallbackError("reader_first_native_volume_context_invalid")
+        number = volume.get("volume_number")
+        count = volume.get("chapter_count_target")
+        if (type(number) is not int or number < 1 or number in seen_volumes
+                or type(count) is not int or count < 1):
+            raise PlannerFallbackError("reader_first_native_volume_range_invalid")
+        seen_volumes.add(number)
+        selected = [chapter for chapter in chapters if chapter.get("volume_number") == number]
+        titles = await _fetch_existing_chapter_titles(session, project.id, exclude_volume_number=number)
+        titles = [*titles, *[
+            (chapter.get("chapter_number"), str(chapter.get("title") or chapter.get("chapter_title") or ""))
+            for chapter in chapters if chapter.get("volume_number") != number
+        ]]
+        validation_payload = {**copy.deepcopy(candidate), "chapters": copy.deepcopy(selected)}
+        checked = _validate_generated_volume_outline_or_raise(
+            validation_payload, project=project, logical_name=logical_name,
+            volume_number=number, expected_count=count, chapter_number_offset=offset,
+            cast_spec=copy.deepcopy(dict(source.get("cast_spec") or {})),
+            volume_entry=copy.deepcopy(dict(volume)), existing_titles=titles,
+            strict_story_effects=True, strict_field_degeneracy=True,
+        )
+        if checked.get("chapters") != selected:
+            raise PlannerFallbackError("reader_first_native_validation_changed_authored_candidate")
+        offset += count
+    if offset != int(project.target_chapters) + 1 or any(
+            chapter.get("volume_number") not in seen_volumes for chapter in chapters):
+        raise PlannerFallbackError("reader_first_native_full_volume_coverage_required")
+    return candidate
+
+
+def _reader_first_leaf_values(value: Any, path: str = "") -> dict[str, Any]:
+    """Authored leaves, including empty/null values; metadata is not story text."""
+    if isinstance(value, Mapping) and value:
+        leaves: dict[str, Any] = {}
+        for key, child in value.items():
+            if key != "_meta":
+                pointer = str(key).replace("~", "~0").replace("/", "~1")
+                leaves.update(_reader_first_leaf_values(child, path + "/" + pointer))
+        return leaves
+    if isinstance(value, list) and value:
+        return {pointer: leaf for index, child in enumerate(value)
+                for pointer, leaf in _reader_first_leaf_values(child, path + f"/{index}").items()}
+    return {path: value}
+
+
+def _reader_first_outline_coverage(
+    source: Mapping[str, Any], project: ProjectModel, binding: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the full scope before sending anything; never take a prefix."""
+    chapters = source.get("outline", {}).get("chapters", [])
+    target = int(project.target_chapters or 0)
+    if (target < 1 or not isinstance(chapters, list)
+            or len(chapters) != target
+            or any(not isinstance(chapter, Mapping) for chapter in chapters)
+            or sorted(chapter.get("chapter_number", 0) for chapter in chapters)
+            != list(range(1, target + 1))):
+        raise ValueError("reader_first_complete_chapter_range_required")
+    coverage = []
+    for chapter in chapters:
+        scenes = chapter.get("scenes")
+        if (not isinstance(scenes, list) or not scenes
+                or any(not isinstance(scene, Mapping) for scene in scenes)
+                or sorted(scene.get("scene_number", 0) for scene in scenes)
+                != list(range(1, len(scenes) + 1))):
+            raise ValueError("reader_first_complete_scene_range_required")
+        meta = _mapping(chapter.get("_meta"))
+        roles = meta.get("reader_first_field_roles")
+        leaves = _reader_first_leaf_values(chapter)
+        if (meta.get("reader_first_planning") != binding
+                or meta.get("writer_delivery_schema") != "approved-current-chapter-delivery.v3-reader-first"
+                or not isinstance(roles, dict) or set(roles) != set(leaves)
+                or any(role not in {"narrative_task", "continuity_reference"} for role in roles.values())):
+            raise ValueError("reader_first_authored_field_roles_required")
+        coverage.append({"chapter_number": chapter["chapter_number"],
+                         "scene_numbers": [scene["scene_number"] for scene in scenes],
+                         "chapter_sha256": _reader_first_source_hash(chapter)})
+    return {"schema": "reader-first-outline-coverage.v1", "chapters": coverage,
+            "source_sha256": _reader_first_source_hash(source), "complete": True}
+
+
+def _reader_first_source_hash(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+async def _run_reader_first_outline_checkpoint(
+    session: AsyncSession, settings: AppSettings, *, project: ProjectModel,
+    workflow_run_id: UUID, source: dict[str, Any],
+    repair_candidate: Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+) -> dict[str, Any] | None:
+    """Full-source review, one native repair, one reevaluation, durable reservations.
+
+    Oversize books stop Unknown: batch dependency/coverage admission belongs to
+    the mainline. Neither chapter prefixes nor previous-body receipts can pass.
+    ``source['outline']`` is the exact artifact to persist, updated in place only
+    after a coherent native repair earns a fresh passing review.
+    """
+    from bestseller.services.source_bound_planning_content import (
+        READER_FIRST_DIMENSIONS, ReaderFirstDirectionRequired,
+        parse_reader_first_review, reader_first_binding, reader_first_review_prompts,
+    )
+
+    binding = reader_first_binding(project)
+    if binding is None:
+        return None
+    if project.id is None or workflow_run_id is None:
+        raise ValueError("reader_first_explicit_request_ids_required")
+    # Read the durable quota under a row lock without autoflushing an obsolete
+    # metadata snapshot from another workflow. Keep other pending project fields.
+    with session.no_autoflush:
+        persisted = await session.scalar(select(ProjectModel.metadata_json).where(
+            ProjectModel.id == project.id).with_for_update())
+    state = copy.deepcopy(_mapping(_mapping(persisted).get("reader_first_outline_checkpoint")))
+    state.setdefault("schema", "reader-first-outline-checkpoint.v1")
+    state.setdefault("review_dispatches", 0)
+    state.setdefault("repairs_used", 0)
+    state.setdefault("history", [])
+    expected_revision = int(state.get("revision", 0))
+    original_source = source
+    current = copy.deepcopy(source)
+    bounded_settings = settings.model_copy(deep=True)
+    bounded_settings.llm.retry.max_attempts = 1
+    bounded_settings.llm.retry.rate_limit_max_attempts = 1
+    bounded_settings.llm.retry.rate_limit_fallback_enabled = False
+    bounded_settings.llm.retry.max_attempts_per_class = {
+        key: 1 for key in {"default", "repair", *bounded_settings.llm.retry.max_attempts_per_class}}
+
+    async def save() -> None:
+        nonlocal expected_revision
+        # Every reservation/result is a short transaction. Never hold the row
+        # lock over network IO, and never flush stale JSON before locking it.
+        with session.no_autoflush:
+            freshest = await session.scalar(select(ProjectModel.metadata_json).where(
+                ProjectModel.id == project.id).with_for_update())
+        fresh_metadata = _mapping(freshest)
+        durable = _mapping(fresh_metadata.get("reader_first_outline_checkpoint"))
+        pending = durable.get("status") in {"review_reserved", "repair_reserved"}
+        if (not isinstance(freshest, Mapping)
+                or int(durable.get("revision", 0)) != expected_revision
+                or (pending and durable.get("lease_workflow_run_id") != str(workflow_run_id))
+                or int(durable.get("review_dispatches", 0)) > state["review_dispatches"]
+                or int(durable.get("repairs_used", 0)) > state["repairs_used"]):
+            raise ReaderFirstDirectionRequired(unknown("reader_first_checkpoint_concurrent_update"))
+        expected_revision += 1
+        state["revision"] = expected_revision
+        state["lease_workflow_run_id"] = str(workflow_run_id)
+        project.metadata_json = {**(project.metadata_json or {}), **fresh_metadata,
+                                 "reader_first_outline_checkpoint": copy.deepcopy(state)}
+        await session.commit()
+
+    def unknown(reason: str, raw: Any = None) -> dict[str, Any]:
+        result = parse_reader_first_review(raw or {}, source=current, binding=binding, checkpoint="outline")
+        result["status"], result["mean_score"] = "unknown", None
+        result["reasons"] = [*result["reasons"], {"code": reason}]
+        if raw is not None:
+            return result
+        result["options"] = [
+            f"保留《{project.title}》的人物关系，补齐全书范围或选择要修复的关系冲突。",
+            "保留原始输入与当前候选，由编辑确认完整来源和容量后再继续规划。",
+        ]
+        return result
+
+    async def stop(receipt: dict[str, Any]) -> None:
+        state["status"] = receipt["status"]
+        state["latest_receipt"] = receipt
+        await save()
+        raise ReaderFirstDirectionRequired(receipt)
+
+    if not isinstance(persisted, Mapping):
+        raise ReaderFirstDirectionRequired(unknown("reader_first_persistent_project_required"))
+    if state.get("status") in {"review_reserved", "repair_reserved"}:
+        # A crash or concurrent worker cannot turn an unconfirmed send into a
+        # fresh allowance. Preserve the durable pending evidence unchanged.
+        raise ReaderFirstDirectionRequired(unknown("reader_first_pending_dispatch_requires_recovery"))
+
+    while True:
+        source_hash = _reader_first_source_hash(current)
+        prior = state["history"][-1] if state["history"] else {}
+        resume_failed_receipt = None
+        if (prior.get("source_sha256") == source_hash and prior.get("binding") == binding):
+            retained = prior.get("receipt") or unknown("reader_first_interrupted_dispatch_unknown")
+            if retained["status"] == "passed":
+                # Verify the raw response again, not only a mutable cached grade.
+                parsed = parse_reader_first_review(prior.get("raw_review") or {}, source=current,
+                                                   binding=binding, checkpoint="outline")
+                if parsed == retained:
+                    original_source.clear()
+                    original_source.update(copy.deepcopy(current))
+                    await save()
+                    return copy.deepcopy(retained)
+                retained = unknown("reader_first_cached_receipt_invalid")
+            reparsed = parse_reader_first_review(prior.get("raw_review") or {}, source=current,
+                                                 binding=binding, checkpoint="outline")
+            if (retained["status"] == "failed" and reparsed == retained
+                    and prior.get("llm_run_id") and state["repairs_used"] == 0
+                    and state["review_dispatches"] < 2):
+                # Crash after failed-result commit, before repair reservation:
+                # reuse only the verified same-body failure, never resend it.
+                resume_failed_receipt = copy.deepcopy(retained)
+            else:
+                await stop(retained)
+        if resume_failed_receipt is not None:
+            receipt = resume_failed_receipt
+        else:
+            entry = {"source_sha256": source_hash, "binding": copy.deepcopy(binding),
+                     "workflow_run_id": str(workflow_run_id), "source": copy.deepcopy(current),
+                     "raw_review": None, "receipt": None}
+            state["history"].append(entry)
+            try:
+                entry["coverage"] = _reader_first_outline_coverage(current, project, binding)
+                system, user = reader_first_review_prompts(binding, source=current, checkpoint="outline")
+            except (ValueError, TypeError, KeyError) as error:
+                entry["receipt"] = unknown(str(error))
+                await stop(entry["receipt"])
+            if state["review_dispatches"] >= 2:
+                entry["receipt"] = unknown("reader_first_review_budget_exhausted")
+                await stop(entry["receipt"])
+            state["review_dispatches"] += 1
+            state["active_source_sha256"] = source_hash
+            state["active_binding"] = copy.deepcopy(binding)
+            state["latest_receipt"] = None
+            state["status"] = "review_reserved"
+            await save()  # Crashes and failed sends consume the reservation.
+            try:
+                completion = await complete_text(session, bounded_settings, LLMCompletionRequest(
+                    logical_role="critic", project_id=project.id, workflow_run_id=workflow_run_id,
+                    system_prompt=system, user_prompt=user, fallback_response="{}",
+                    prompt_template="planner_reader_first_outline_review", prompt_version="rf-outline-review-v1",
+                    max_tokens_override=4096, temperature_override=.2,
+                    metadata={"source_sha256": source_hash, "reader_first_planning": binding,
+                              "checkpoint": "outline", "coverage": entry["coverage"]},
+                ))
+                entry["llm_run_id"] = str(completion.llm_run_id) if completion.llm_run_id else None
+                entry["raw_review"] = completion.content
+                if (completion.llm_run_id is None or completion.fallback_used
+                        or str(completion.provider).lower() in {"", "mock", "fallback", "fixture", "placeholder", "test"}
+                        or completion.finish_reason == "length"):
+                    receipt = unknown("reader_first_provider_receipt_invalid", completion.content)
+                else:
+                    receipt = parse_reader_first_review(completion.content, source=current,
+                                                        binding=binding, checkpoint="outline")
+            except Exception as error:
+                from bestseller.services.budget import ExecutionBudgetError
+                if isinstance(error, ExecutionBudgetError):
+                    entry["receipt"] = unknown("reader_first_execution_budget_stopped")
+                    await save()
+                    raise
+                receipt = unknown("reader_first_review_call_failed:" + type(error).__name__)
+            entry["receipt"] = receipt
+            state["latest_receipt"] = receipt
+            state["status"] = receipt["status"]
+            await save()
+        if receipt["status"] == "passed":
+            original_source.clear()
+            original_source.update(copy.deepcopy(current))
+            return copy.deepcopy(receipt)
+        if receipt["status"] != "failed" or state["repairs_used"] >= 1 or state["review_dispatches"] >= 2:
+            await stop(receipt)
+        state["repairs_used"] = 1
+        state["repair_source_sha256"] = source_hash
+        state["status"] = "repair_reserved"
+        await save()  # Project quota is independent of workflow/source/config IDs.
+        try:
+            if repair_candidate is not None:
+                repaired = await repair_candidate(copy.deepcopy(current), copy.deepcopy(receipt))
+            else:
+                repaired_outline, repair_run_id = await _repair_outline_commercial_findings_surgically(
+                    session, bounded_settings, project=project, workflow_run_id=workflow_run_id,
+                    logical_name="reader_first_full_outline", outline_payload=current["outline"],
+                    directives=[json.dumps(reason, ensure_ascii=False) for reason in receipt["reasons"]],
+                    world_spec=current.get("world_spec"), reader_first_source=current,
+                )
+                state["repair_llm_run_id"] = str(repair_run_id) if repair_run_id else None
+                repaired = {**copy.deepcopy(current), "outline": repaired_outline}
+            state["repair_candidate"] = copy.deepcopy(repaired)
+            if _reader_first_source_hash(repaired) == source_hash:
+                raise ValueError("reader_first_repair_no_change")
+            if {k: v for k, v in repaired.items() if k != "outline"} != {
+                    k: v for k, v in current.items() if k != "outline"}:
+                raise ValueError("reader_first_repair_changed_source_facts")
+            _reader_first_outline_coverage(repaired, project, binding)
+            # Author-designated continuity references cannot be rewritten.
+            for before, after in zip(current["outline"]["chapters"], repaired["outline"]["chapters"], strict=True):
+                old = _reader_first_leaf_values(before)
+                new = _reader_first_leaf_values(after)
+                for pointer, role in before["_meta"]["reader_first_field_roles"].items():
+                    if role == "continuity_reference" and old[pointer] != new.get(pointer):
+                        raise ValueError("reader_first_repair_changed_continuity_reference")
+            current = repaired
+            await save()
+        except Exception as error:
+            from bestseller.services.budget import ExecutionBudgetError
+            state["repair_error"] = type(error).__name__ + ":" + str(error)
+            if isinstance(error, ExecutionBudgetError):
+                await save()
+                raise
+            receipt = {**receipt, "reasons": [*receipt["reasons"],
+                       {"code": "reader_first_native_repair_not_admitted", "detail": str(error)}]}
+            await stop(receipt)
+
+
+def _reader_first_planner_prompts(
+    project: ProjectModel, system: str, user: str, *, stage: str,
+) -> tuple[str, str]:
+    from bestseller.services.source_bound_planning_content import (
+        reader_first_binding, reader_first_instruction,
+    )
+
+    binding = reader_first_binding(project)
+    if binding is None:
+        return system, user
+    instruction = ("" if "[reader-first-planning.v1:" in system else
+                   reader_first_instruction(binding, language=_planner_language(project), stage=stage))
+    if "outline" in stage and "reader_first_field_roles" not in system:
+        instruction += (
+            "\nFor EVERY complete chapter, author _meta.reader_first_planning equal to this binding, "
+            "_meta.writer_delivery_schema='approved-current-chapter-delivery.v3-reader-first', and "
+            "_meta.reader_first_field_roles. The roles map must explicitly classify EVERY authored "
+            "non-_meta leaf JSON pointer relative to that chapter, including null/empty containers, "
+            "as narrative_task or continuity_reference. Choose roles by story meaning and author "
+            "authority, never keywords; custody/knowledge facts remain intact. Do this BEFORE review. "
+            "Keep original facts and precise times. Role metadata is not character dialogue.\n"
+            + json.dumps(binding, ensure_ascii=False, sort_keys=True)
+        )
+    return system + instruction, user
+
+
 def _book_spec_prompts(
     project: ProjectModel, premise: str, fallback: dict[str, Any]
 ) -> tuple[str, str]:
@@ -20960,7 +21348,7 @@ def _book_spec_prompts(
             exc_info=True,
         )
 
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="book_spec")
 
 
 _WORLD_SPEC_COUNTER_EXAMPLES_ZH: str = (
@@ -21173,7 +21561,7 @@ def _world_spec_prompts(
     # world came out reading like a logistics operation. A cost-style
     # preference may shape pacing; it may not dictate what the world is made of.
 
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="world_spec")
 
 
 def _locked_roster_prompt_block(locked_names: list[str], *, is_en: bool) -> str:
@@ -21582,7 +21970,7 @@ def _cast_spec_prompts(
     # Characters need histories, fears and secrets in every kind of story; a
     # 纯爽 pacing preference is not a licence to strip them.
 
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="cast_spec")
 
 
 def _volume_plan_prompts(
@@ -21864,7 +22252,7 @@ def _volume_plan_prompts(
             exc_info=True,
         )
 
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="volume_plan")
 
 
 def _outline_prompts(
@@ -22241,7 +22629,7 @@ def _outline_prompts(
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="outline")
 
 
 def _build_deceased_character_constraints(
@@ -22686,12 +23074,12 @@ def _volume_outline_prompts(
             project, metadata=_mapping(project.metadata_json), semantic_candidates=[],
             world_spec=world_spec,
         )
-        return build_source_bound_rolling_outline_prompt(
+        return _reader_first_planner_prompts(project, *build_source_bound_rolling_outline_prompt(
             project=project, book_spec=book_spec, world_spec=_mapping(world_spec),
             cast_spec=cast_spec, volume_plan=volume_plan, volume_entry=volume_entry,
             authority=authority, extra_constraints=extra_constraints or (),
             revealed_ledger_block=revealed_ledger_block, existing_titles=existing_titles or (),
-        )
+        ), stage="volume_outline")
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
     from bestseller.services.volume_fingerprint import (
         render_prior_volumes_summary_block,
@@ -23387,7 +23775,7 @@ def _volume_outline_prompts(
         if selected_constraints:
             constraint_lines = "\n".join(f"- {c}" for c in selected_constraints)
             user_prompt += f"\n\n{header}\n{constraint_lines}"
-    return system_prompt, user_prompt
+    return _reader_first_planner_prompts(project, system_prompt, user_prompt, stage="volume_outline")
 
 
 def _outline_constraint_headroom_chars(system_prompt: str, user_prompt: str) -> int:
@@ -24111,10 +24499,12 @@ async def _complete_source_bound_planning_content(
         VOLUME_NATIVE_POLICY, planning_submission_tool, parse_planning_submission,
     )
     submission_version = VOLUME_NATIVE_POLICY if kind == "volume_plan" else None
-    prompt_version = planning_prompt_version(kind)
+    prompt_version = planning_prompt_version(kind, project=project)
     output_tool = planning_submission_tool(kind, version=submission_version)
     retained_source_id = getattr(project, "_retained_planning_generation_source_runs", {}).get(kind)
-    if kind == "world_spec" and revision_context is None and book_spec is not None:
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+    if (kind == "world_spec" and revision_context is None and book_spec is not None
+            and reader_first_binding(project) is None):
         await _assert_bound_planning_canonical(session,project)
         from bestseller.services.rejected_world_restore import restore, reuse_approved
         rejected = await reuse_approved(session,project=project,book=book_spec,baseline=projection,workflow_run_id=workflow_run_id)
@@ -24310,7 +24700,21 @@ async def _generate_structured_artifact(
     # where two back-to-back MiniMax-M2.7 formatting glitches killed an
     # entire heal job.  Four attempts give non-deterministic LLM output a
     # reasonable chance to self-heal before the whole job bails.
-    strict_outline = prompt_version == "3.1-source-complete-strict-json"
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    reader_binding = reader_first_binding(project)
+    base_prompt_version = prompt_version.removesuffix(".reader-first-v1")
+    strict_outline = base_prompt_version == "3.1-source-complete-strict-json"
+    if reader_binding is not None:
+        # A short independent gateway version (max 32 chars), retaining the
+        # original protocol in the prompt and hence in its input hash.
+        system_prompt, user_prompt = _reader_first_planner_prompts(
+            project, system_prompt, user_prompt, stage=logical_name,
+        )
+        prompt_version = "rf1-" + hashlib.sha256(base_prompt_version.encode()).hexdigest()[:16]
+        allow_legacy_reuse = False
+        allow_retained_generation = False
+        retained_generation_source_run_id = None
     if strict_outline:
         from bestseller.services.source_complete_outline_json import (
             FORMAT_INSTRUCTION, POLICY as STRICT_OUTLINE_JSON_POLICY,
@@ -24383,7 +24787,7 @@ async def _generate_structured_artifact(
         effective_user_prompt += FORMAT_INSTRUCTION
     from bestseller.services.source_cast_output_allocation import allocation as cast_output_allocation, prompt_suffix as cast_output_suffix
     delivery_allocation = cast_output_allocation(kind=logical_name, project=project,
-        projection=fallback_payload, prompt_version=prompt_version)
+        projection=fallback_payload, prompt_version=base_prompt_version)
     delivery_output_tokens = delivery_allocation["initial_output_tokens"] if delivery_allocation else None
     if delivery_allocation:
         effective_user_prompt += cast_output_suffix(delivery_allocation)
@@ -24393,6 +24797,7 @@ async def _generate_structured_artifact(
         system_prompt=system_prompt,
         user_prompt=effective_user_prompt,
         fallback_payload=fallback_payload,
+        **({"reader_first": reader_binding} if reader_binding is not None else {}),
     )
     artifact_type = _planner_artifact_type_for_logical_name(logical_name)
     if (
@@ -24451,10 +24856,10 @@ async def _generate_structured_artifact(
         )
         max_tokens_override = (delivery_output_tokens if delivery_allocation else
             _planner_stage_max_tokens(logical_name, project=project))
-        source_bound_generation = prompt_version in {
+        source_bound_generation = base_prompt_version in {
             "source-bound-planning-content.v2", "v3-source-bound-kind-submit", "v4-volume-native",
         }
-        complete_outline = prompt_version in {
+        complete_outline = base_prompt_version in {
             "3.0-source-complete-outline", "3.1-source-complete-strict-json",
         }
         dispatch_transport = None
@@ -24526,7 +24931,7 @@ async def _generate_structured_artifact(
                 source_llm_run_id=retained_generation_source_run_id,
                 allow_cast_dependency_review_compatibility=(retained_generation_source_run_id is not None),
             )
-        if retained_generation is None and prompt_version in {
+        if retained_generation is None and base_prompt_version in {
             "source-bound-planning-content.v2", "v3-source-bound-kind-submit", "v4-volume-native",
         }:
             from bestseller.services.source_bound_planning_content import (
@@ -24898,6 +25303,7 @@ def _planner_artifact_input_hash(
     system_prompt: str,
     user_prompt: str,
     fallback_payload: Any,
+    reader_first: Mapping[str, Any] | None = None,
 ) -> str:
     payload = {
         "logical_name": logical_name,
@@ -24905,6 +25311,8 @@ def _planner_artifact_input_hash(
         "user_prompt": user_prompt,
         "fallback_payload": fallback_payload,
     }
+    if reader_first is not None:
+        payload["reader_first_planning"] = dict(reader_first)
     return hashlib.sha256(_json_dumps(payload).encode("utf-8")).hexdigest()
 
 
@@ -30816,6 +31224,9 @@ async def generate_novel_plan(
             normalized_vp,
             category_key=_category_key,
         )
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+        reader_binding = reader_first_binding(project)
+        pending_reader_volumes: list[dict[str, Any]] = []
         all_outline_chapters: list[dict[str, Any]] = []
         outline_llm_adjudications: list[dict[str, Any]] = []
         chapter_offset = 1
@@ -31143,52 +31554,59 @@ async def generate_novel_plan(
 
             current_step_name = f"generate_volume_{vol_num}_outline"
             workflow_run.current_step = current_step_name
-            # Save per-volume artifact
-            vol_outline_artifact = await import_planning_artifact(
-                session,
-                project_slug,
-                PlanningArtifactCreate(
-                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
-                    content=vol_outline_payload,
-                    source_run_id=outline_llm_run_ids[-1] if outline_llm_run_ids else None,
-                ),
-            )
-            artifact_records.append(
-                PlanningArtifactRecord(
-                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
-                    artifact_id=vol_outline_artifact.id,
-                    version_no=vol_outline_artifact.version_no,
+            if reader_binding is not None:
+                pending_reader_volumes.append({
+                    "volume_number": vol_num, "step_name": current_step_name,
+                    "step_order": step_order,
+                    "llm_run_ids": list(outline_llm_run_ids),
+                })
+            else:
+                # Save per-volume artifact
+                vol_outline_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                        content=vol_outline_payload,
+                        source_run_id=outline_llm_run_ids[-1] if outline_llm_run_ids else None,
+                    ),
                 )
-            )
-            await create_workflow_step_run(
-                session,
-                workflow_run_id=workflow_run.id,
-                step_name=current_step_name,
-                step_order=step_order,
-                status=WorkflowStatus.COMPLETED,
-                output_ref={
-                    "artifact_id": str(vol_outline_artifact.id),
-                    "llm_run_ids": [str(item) for item in outline_llm_run_ids],
-                    "reused": bool(
-                        _mapping(_mapping(vol_outline_payload).get("_meta")).get("reused")
-                    ),
-                    "batch_count": _mapping(_mapping(vol_outline_payload).get("_meta")).get(
-                        "batch_count"
-                    ),
-                },
-            )
-            _emit_planner_progress(
-                progress,
-                "planning_step_completed",
-                project=project,
-                workflow_run_id=workflow_run.id,
-                current_step=current_step_name,
-                artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
-                volume_number=vol_num,
-                generated_chapters=len(vol_chapters),
-                artifact_id=str(vol_outline_artifact.id),
-                llm_run_ids=[str(item) for item in outline_llm_run_ids],
-            )
+                artifact_records.append(
+                    PlanningArtifactRecord(
+                        artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                        artifact_id=vol_outline_artifact.id,
+                        version_no=vol_outline_artifact.version_no,
+                    )
+                )
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "artifact_id": str(vol_outline_artifact.id),
+                        "llm_run_ids": [str(item) for item in outline_llm_run_ids],
+                        "reused": bool(
+                            _mapping(_mapping(vol_outline_payload).get("_meta")).get("reused")
+                        ),
+                        "batch_count": _mapping(_mapping(vol_outline_payload).get("_meta")).get(
+                            "batch_count"
+                        ),
+                    },
+                )
+                _emit_planner_progress(
+                    progress,
+                    "planning_step_completed",
+                    project=project,
+                    workflow_run_id=workflow_run.id,
+                    current_step=current_step_name,
+                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                    volume_number=vol_num,
+                    generated_chapters=len(vol_chapters),
+                    artifact_id=str(vol_outline_artifact.id),
+                    llm_run_ids=[str(item) for item in outline_llm_run_ids],
+                )
             step_order += 1
             chapter_offset += vol_ch_count
 
@@ -31268,19 +31686,24 @@ async def generate_novel_plan(
         )
         for chapter in all_outline_chapters:
             chapter_number = int(chapter.get("chapter_number") or 0)
-            chapter["rolling_outline_status"] = (
-                "approved"
-                if rolling_plan.window_start <= chapter_number <= rolling_plan.window_end
-                else "macro_only"
-            )
-            chapter["source_snapshot_hash"] = design_snapshot.source_hash
-            chapter["macro_plan_hash"] = macro_plan.macro_plan_hash
-        project.metadata_json = {
-            **(project.metadata_json or {}),
+            runtime_status = {
+                "rolling_outline_status": (
+                    "approved" if rolling_plan.window_start <= chapter_number <= rolling_plan.window_end else "macro_only"
+                ), "source_snapshot_hash": design_snapshot.source_hash,
+                "macro_plan_hash": macro_plan.macro_plan_hash,
+            }
+            if reader_binding is None:
+                chapter.update(runtime_status)
+            # Reader-first runtime projections live in project metadata. They
+            # must be rebuilt from an accepted repair, not copied into authored
+            # chapter leaves or frozen into a stale artifact hash.
+        pending_reader_approval = {
             "macro_outline_plan": macro_plan.to_dict(),
             "rolling_outline_plan": rolling_plan.to_dict(),
             "rolling_outline_status": "approved",
         }
+        if reader_binding is None:
+            project.metadata_json = {**(project.metadata_json or {}), **pending_reader_approval}
         project_metadata = dict(project.metadata_json or {})
         writing_profile = project_metadata.get("writing_profile")
         profile = writing_profile if isinstance(writing_profile, Mapping) else {}
@@ -31398,6 +31821,64 @@ async def generate_novel_plan(
                 "rolling_window": [rolling_plan.window_start, rolling_plan.window_end],
             },
         }
+        if reader_binding is not None:
+            outline_payload["_meta"] = {
+                **planning_artifact_meta(project), "reader_first_planning": reader_binding,
+            }
+        current_step_name = "reader_first_complete_outline_checkpoint" if reader_binding else current_step_name
+        reader_source = {
+            "book_spec": copy.deepcopy(book_spec_payload),
+            "world_spec": copy.deepcopy(world_spec_payload),
+            "cast_spec": copy.deepcopy(cast_spec_payload),
+            "volume_plan": copy.deepcopy(normalized_vp),
+            "outline": copy.deepcopy(outline_payload),
+            "premise": premise,
+            "original_input_binding": copy.deepcopy(reader_binding),
+        }
+        await _run_reader_first_outline_checkpoint(
+            session, settings, project=project, workflow_run_id=workflow_run.id,
+            source=reader_source,
+        )
+        if reader_binding is not None:
+            outline_payload = reader_source["outline"]
+            all_outline_chapters = outline_payload["chapters"]
+            # Native reader repair can change a chapter anchor. Rebuild the
+            # materialized macro/rolling truth from that exact accepted body.
+            macro_plan = build_macro_plan([
+                {"chapter_number": int(chapter["chapter_number"]),
+                 "anchor": str(chapter.get("chapter_goal") or chapter.get("goal")
+                     or chapter.get("hook_description") or chapter.get("title")
+                     or f"chapter-{chapter['chapter_number']}").strip(),
+                 "metadata": {"title": chapter.get("title"),
+                              "volume_number": chapter.get("volume_number")}}
+                for chapter in all_outline_chapters
+            ])
+            rolling_plan = promote_rolling_outline(build_rolling_outline_plan(
+                macro_plan, current_state_snapshot={"current_chapter": 0, "facts": []},
+                next_macro_anchor=(macro_plan.slots[rolling_window_size].to_dict()
+                    if rolling_window_size < macro_plan.total_chapters else "book_complete"),
+                source_snapshot_hash=design_snapshot.source_hash, window_size=rolling_window_size,
+                batch_size=int(getattr(settings.pipeline, "rolling_outline_batch_size", 4) or 4),
+            ), "approved")
+            project.metadata_json = {**(project.metadata_json or {}),
+                "macro_outline_plan": macro_plan.to_dict(),
+                "rolling_outline_plan": rolling_plan.to_dict(), "rolling_outline_status": "approved"}
+            for pending in pending_reader_volumes:
+                volume_chapters = [chapter for chapter in all_outline_chapters
+                                   if int(chapter.get("volume_number") or 1) == pending["volume_number"]]
+                retained_volume = await import_planning_artifact(session, project_slug, PlanningArtifactCreate(
+                    artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                    content={"batch_name": pending["step_name"], "chapters": volume_chapters,
+                             "_meta": {"reader_first_planning": reader_binding,
+                                       "reader_first_review_scope": "combined_outline_artifact_required"}},
+                    source_run_id=pending["llm_run_ids"][-1] if pending["llm_run_ids"] else None,
+                ))
+                artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                    artifact_id=retained_volume.id, version_no=retained_volume.version_no))
+                await create_workflow_step_run(session, workflow_run_id=workflow_run.id,
+                    step_name=pending["step_name"], step_order=pending["step_order"],
+                    status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(retained_volume.id),
+                        "llm_run_ids": [str(item) for item in pending["llm_run_ids"]]})
         outline_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -33623,6 +34104,27 @@ async def generate_volume_plan(
                 + ", ".join(str(item.get("code") or "unknown") for item in blocking[:12])
             )
 
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+        if reader_first_binding(project) is not None and outline_commercial_report is not None:
+            vol_outline_payload = _attach_prewrite_quality_report(
+                vol_outline_payload, step_name=f"volume_{volume_number}_outline_commercial_judge",
+                report=outline_commercial_report, project=project,
+            )
+        reader_source = {
+            "book_spec": copy.deepcopy(book_spec),
+            "world_spec": copy.deepcopy(effective_world_spec),
+            "cast_spec": copy.deepcopy(effective_cast_spec),
+            "volume_plan": copy.deepcopy(volume_plan),
+            "outline": copy.deepcopy(vol_outline_payload),
+        }
+        reader_receipt = await _run_reader_first_outline_checkpoint(
+            session, settings, project=project, workflow_run_id=workflow_run.id,
+            source=reader_source,
+        )
+        if reader_receipt is not None:
+            vol_outline_payload = reader_source["outline"]
+            vol_chapters = vol_outline_payload["chapters"]
+
         semantic_report_payload = deterministic_report.to_dict()
         semantic_report_payload.update(
             {
@@ -33659,7 +34161,7 @@ async def generate_volume_plan(
                     "recorded_at": datetime.now(UTC).isoformat(),
                 },
             }
-        if outline_commercial_report is not None:
+        if outline_commercial_report is not None and reader_receipt is None:
             vol_outline_payload = _attach_prewrite_quality_report(
                 vol_outline_payload,
                 step_name=f"volume_{volume_number}_outline_commercial_judge",

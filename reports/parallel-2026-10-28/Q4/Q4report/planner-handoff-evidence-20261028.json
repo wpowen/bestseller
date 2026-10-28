@@ -1,0 +1,67 @@
+{
+  "schema": "q4-planner-handoff-evidence.v1",
+  "head_sha": "f7cc7dc380907669fa7afd8891c17e6927e365e5",
+  "owned_file_sha256": {
+    "src/bestseller/services/planner.py": "02fd040fbecf7557a41ea3ec11f650ad24e8ad822c6adbac7c141f7c7d112b9b",
+    "src/bestseller/services/workflows.py": "4d2126cc4af123be817324c136a1d9f9652a83c607038119ccc33b3de8aacd85",
+    "tests/unit/test_q4_reader_first_planner.py": "c3a418fc9a972faa24c413b1974c7a9f2859bfe717f2c0ad6e6acf9f7245805d"
+  },
+  "workflows_outside_owned_function_ast_unchanged": true,
+  "anchors": {
+    "_validate_reader_first_native_outline": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 20808
+    },
+    "_reader_first_leaf_values": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 20856
+    },
+    "_reader_first_outline_coverage": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 20871
+    },
+    "_reader_first_source_hash": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 20906
+    },
+    "_run_reader_first_outline_checkpoint": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 20911
+    },
+    "_reader_first_planner_prompts": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 21127
+    },
+    "generate_novel_plan": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 29443
+    },
+    "generate_volume_plan": {
+      "path": "src/bestseller/services/planner.py",
+      "line": 33162
+    },
+    "_repair_chapter_outline_contract_inputs": {
+      "path": "src/bestseller/services/workflows.py",
+      "line": 1303
+    }
+  },
+  "targeted_tests": {
+    "passed": 69,
+    "dedicated_planner": 36,
+    "legacy_targeted": 33,
+    "log": "planner-review-fixed-green-20261028.log"
+  },
+  "baseline_comparison": {
+    "current_failed": 17,
+    "pinned_failed": 18,
+    "new_failure_names": [],
+    "baseline_only_failure_names": [
+      "tests/unit/test_planner_services.py::test_foundation_plan_materializes_story_design_before_readiness"
+    ]
+  },
+  "real_model_calls": 0,
+  "database_connections": 0,
+  "docker_used": false,
+  "network_used": false,
+  "commit_created": false
+}

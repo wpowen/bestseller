@@ -1,0 +1,24 @@
+{
+  "baseline_ref": "refs/tags/e2e17",
+  "baseline_commit": "419181a41f29363263cee8a12d1694ace0bcef24",
+  "branch": "par/P9",
+  "fixture_sha256": "f9af93d74d701e72b2316defb0f00e72cb840355d512fdd6c07003b4256b92b6",
+  "fixed_receipt_sha256": "3290c6d0d746833f59a92946a8c084140de5ae10d0ae786d2f634d6cc324646a",
+  "v1_fixed_request_sha256": [
+    "08dc91ddaff8b3be63fee2e71ff734c49c0dd8894d4245735c3bdb6f545d3a40",
+    "0493d08d3d2e774c40f7635f1dadd7062e2573a8709421d38cfc37cfb1d2f2b6",
+    "601e52883122bf390c6ff0d9c5d8c370be29acd8e8db874e2f9317f64f0f7e13",
+    "4ca9c88f294fc065a2c3d27fbab792cd4144107f44756e334a14824a2805f9fc"
+  ],
+  "fixture_origin": "Synthetic fixed UUID/title-only physical replay bundle generated using refs/tags/e2e17, not production evidence.",
+  "database": "Existing isolated pytest SQLite fixtures only; no PostgreSQL/project DB/network/provider IO.",
+  "permitted_source_changes": [
+    "src/bestseller/services/fanqie_outline_contract_completion.py"
+  ],
+  "delivery_planning_modules": [
+    "tests/unit/test_normal_pipeline_prompt_audit_entry.py",
+    "tests/unit/test_commercial_truncated_source_receipt.py",
+    "tests/unit/test_task_projection_adoption_progress.py",
+    "tests/unit/test_execution_result_durability.py"
+  ]
+}

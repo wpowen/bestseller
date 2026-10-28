@@ -1,0 +1,724 @@
+EEEEEEEEEEEEEEEEEEEEEEEE                                                 [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_v1_native_requests_receipt_and_hashes_are_baseline_bytes _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_every_segment_pointer_is_completed_and_physically_replayed[5] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_every_segment_pointer_is_completed_and_physically_replayed[6] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_every_segment_pointer_is_completed_and_physically_replayed[7] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_every_segment_pointer_is_completed_and_physically_replayed[8] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+___ ERROR at setup of test_parts_bound_is_exactly_twice_the_trusted_count[6] ___
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+___ ERROR at setup of test_parts_bound_is_exactly_twice_the_trusted_count[8] ___
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+__ ERROR at setup of test_invalid_target_rejected_before_noop_or_dispatch[3] ___
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+__ ERROR at setup of test_invalid_target_rejected_before_noop_or_dispatch[9] ___
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_invalid_target_rejected_before_noop_or_dispatch[True] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_invalid_target_rejected_before_noop_or_dispatch[6.0] __
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_count] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_order] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_bool] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[beat_order] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[beat_count] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[manifest_target] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_v2_receipt_cannot_self_authorize_count_order_or_schema[6] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_v2_receipt_cannot_self_authorize_count_order_or_schema[8] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_context_capacity_blocks_before_reservation_and_preserves_full_source[6] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_context_capacity_blocks_before_reservation_and_preserves_full_source[8] _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+_ ERROR at setup of test_capacity_counts_all_segments_and_checks_every_request _
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:458: in setup
+    return super().setup()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:743: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:313: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/owen/.local/share/uv/python/cpython-3.11.14-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+../../../.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:309: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/unit/test_fanqie_beat_recovery.py:66: in case
+    settings = load_settings().model_copy(deep=True)
+               ^^^^^^^^^^^^^^^
+src/bestseller/settings.py:1241: in load_settings
+    return AppSettings.model_validate(merged)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AppSettings
+E   database.url
+E     Input should be a valid string [type=string_type, input_value={'sqlite+aiosqlite:///:memory': None}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.12/v/string_type
+=========================== short test summary info ============================
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_v1_native_requests_receipt_and_hashes_are_baseline_bytes
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[5]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[6]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[7]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_every_segment_pointer_is_completed_and_physically_replayed[8]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_parts_bound_is_exactly_twice_the_trusted_count[6]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_parts_bound_is_exactly_twice_the_trusted_count[8]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[3]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[9]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[True]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_invalid_target_rejected_before_noop_or_dispatch[6.0]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_count]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_order]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[candidate_bool]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[beat_order]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[beat_count]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[manifest_target]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_count]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_scope_requires_continuous_numbers_and_agreeing_sources[creation_bool]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_v2_receipt_cannot_self_authorize_count_order_or_schema[6]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_v2_receipt_cannot_self_authorize_count_order_or_schema[8]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_context_capacity_blocks_before_reservation_and_preserves_full_source[6]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_context_capacity_blocks_before_reservation_and_preserves_full_source[8]
+ERROR tests/unit/test_fanqie_outline_contract_completion_segments.py::test_capacity_counts_all_segments_and_checks_every_request
+24 errors in 4.87s

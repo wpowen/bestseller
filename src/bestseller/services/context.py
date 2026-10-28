@@ -96,6 +96,8 @@ from bestseller.services.story_bible import stable_character_id
 from bestseller.services.world_rule_current import load_scene_story_bible_context
 from bestseller.settings import AppSettings
 
+from bestseller.services.source_ordering import ordered_source_rows, source_row_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -1345,11 +1347,11 @@ async def build_scene_writer_context_from_models(
                         TimelineEventModel.project_id == project.id,
                         TimelineEventModel.story_order >= lookback_from_order,
                         TimelineEventModel.story_order < current_story_order,
-                    )
+                    ).order_by(TimelineEventModel.story_order.desc(), TimelineEventModel.id.desc())
                 )
                 if (event.metadata_json or {}).get("knowledge_lineage_status") != "superseded"
             ],
-            key=lambda event: float(event.story_order),
+            key=lambda event: (float(event.story_order), source_row_id(event)),
             reverse=True,
         )[: settings.generation.prompt_context_scenes]
     ]
@@ -1432,22 +1434,22 @@ async def build_scene_writer_context_from_models(
         )
     )
     arc_code_by_id = {item.id: item.arc_code for item in plot_arcs}
-    scene_beats = list(
+    scene_beats = ordered_source_rows(
         await session.scalars(
             select(ArcBeatModel).where(
                 ArcBeatModel.project_id == project.id,
                 ArcBeatModel.scope_chapter_number == chapter.chapter_number,
                 ArcBeatModel.scope_scene_number == scene.scene_number,
-            )
+            ).order_by(ArcBeatModel.id.asc())
         )
     )
-    chapter_beats = list(
+    chapter_beats = ordered_source_rows(
         await session.scalars(
             select(ArcBeatModel).where(
                 ArcBeatModel.project_id == project.id,
                 ArcBeatModel.scope_chapter_number == chapter.chapter_number,
                 ArcBeatModel.scope_scene_number.is_(None),
-            )
+            ).order_by(ArcBeatModel.id.asc())
         )
     )
     chapter_contract_row = await session.scalar(
@@ -1464,12 +1466,12 @@ async def build_scene_writer_context_from_models(
     )
     unresolved_clues = [
         _clue_read(item)
-        for item in await session.scalars(
+        for item in ordered_source_rows(await session.scalars(
             select(ClueModel).where(
                 ClueModel.project_id == project.id,
                 ClueModel.status.in_(("planted", "active")),
-            )
-        )
+            ).order_by(ClueModel.id.asc())
+        ))
         if (
             item.planted_in_chapter_number is None
             or _is_before_current_position(
@@ -1482,9 +1484,9 @@ async def build_scene_writer_context_from_models(
     ]
     planned_payoffs = [
         _payoff_read(item)
-        for item in await session.scalars(
-            select(PayoffModel).where(PayoffModel.project_id == project.id)
-        )
+        for item in ordered_source_rows(await session.scalars(
+            select(PayoffModel).where(PayoffModel.project_id == project.id).order_by(PayoffModel.id.asc())
+        ))
         if (
             item.target_chapter_number == chapter.chapter_number
             and (
@@ -2290,11 +2292,11 @@ async def build_chapter_writer_context(
                         TimelineEventModel.project_id == project.id,
                         TimelineEventModel.story_order >= ch_lookback_from_order,
                         TimelineEventModel.story_order < ch_current_story_order,
-                    )
+                    ).order_by(TimelineEventModel.story_order.desc(), TimelineEventModel.id.desc())
                 )
                 if (event.metadata_json or {}).get("knowledge_lineage_status") != "superseded"
             ],
-            key=lambda event: float(event.story_order),
+            key=lambda event: (float(event.story_order), source_row_id(event)),
             reverse=True,
         )[: max(4, settings.generation.prompt_context_scenes * 2)]
     ]
@@ -2339,29 +2341,29 @@ async def build_chapter_writer_context(
         )
     )
     arc_code_by_id = {item.id: item.arc_code for item in plot_arcs}
-    active_arc_beats = list(
+    active_arc_beats = ordered_source_rows(
         await session.scalars(
             select(ArcBeatModel).where(
                 ArcBeatModel.project_id == project.id,
                 ArcBeatModel.scope_chapter_number == chapter.chapter_number,
-            )
+            ).order_by(ArcBeatModel.id.asc())
         )
     )
     unresolved_clues = [
         _clue_read(item)
-        for item in await session.scalars(
+        for item in ordered_source_rows(await session.scalars(
             select(ClueModel).where(
                 ClueModel.project_id == project.id,
                 ClueModel.status.in_(("planted", "active")),
-            )
-        )
+            ).order_by(ClueModel.id.asc())
+        ))
         if item.planted_in_chapter_number is None or item.planted_in_chapter_number <= chapter.chapter_number
     ]
     planned_payoffs = [
         _payoff_read(item)
-        for item in await session.scalars(
-            select(PayoffModel).where(PayoffModel.project_id == project.id)
-        )
+        for item in ordered_source_rows(await session.scalars(
+            select(PayoffModel).where(PayoffModel.project_id == project.id).order_by(PayoffModel.id.asc())
+        ))
         if item.target_chapter_number is not None and item.target_chapter_number >= chapter.chapter_number
     ]
     chapter_contract_row = await session.scalar(

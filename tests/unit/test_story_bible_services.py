@@ -1002,6 +1002,7 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         metadata_json={},
     )
     next_gate = ExpansionGateModel(
+        id=uuid4(),
         project_id=project.id,
         volume_id=volume.id,
         gate_code="unlock-volume-02",
@@ -1015,13 +1016,14 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         metadata_json={},
     )
     session = FakeSession(
-        scalar_results=[backbone, frontier, 2, next_gate],
+        scalar_results=[backbone, frontier, 2],
         get_map={
             (VolumeModel, volume.id): volume,
             (CharacterModel, shen.id): shen,
             (CharacterModel, gu.id): gu,
         },
         scalars_results=[
+            [next_gate],
             [
                 WorldRuleModel(
                     project_id=project.id,
@@ -1039,6 +1041,7 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
             [],  # knowledge snapshots for 顾临
             [
                 RelationshipModel(
+                    id=uuid4(),
                     project_id=project.id,
                     character_a_id=shen.id,
                     character_b_id=gu.id,

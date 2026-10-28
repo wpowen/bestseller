@@ -61,6 +61,8 @@ if TYPE_CHECKING:
     from bestseller.settings import AppSettings
 
 
+from bestseller.services.source_ordering import ordered_source_rows
+
 logger = logging.getLogger(__name__)
 
 
@@ -2290,13 +2292,13 @@ async def load_scene_story_bible_context(
                 "public_face": item.public_face,
                 "private_reality": item.private_reality,
             }
-            for item in await session.scalars(
+            for item in ordered_source_rows(await session.scalars(
                 select(RelationshipModel).where(
                     RelationshipModel.project_id == project.id,
                     RelationshipModel.character_a_id.in_(participant_character_ids),
                     RelationshipModel.character_b_id.in_(participant_character_ids),
-                )
-            )
+                ).order_by(RelationshipModel.id.asc())
+            ))
         ]
 
     # Deceased roster — cap at recent 20 to avoid prompt bloat on long runs.
@@ -2313,7 +2315,7 @@ async def load_scene_story_bible_context(
                 CharacterModel.death_chapter_number < chapter.chapter_number,
             ),
         )
-        .order_by(CharacterModel.death_chapter_number.desc().nullslast())
+        .order_by(CharacterModel.death_chapter_number.desc().nullslast(), CharacterModel.id.asc())
         .limit(20)
     )
     from bestseller.services.character_lifecycle import (  # noqa: PLC0415
@@ -2326,7 +2328,10 @@ async def load_scene_story_bible_context(
             "death_chapter_number": dead.death_chapter_number,
             "role": dead.role,
         }
-        for dead in await session.scalars(deceased_stmt)
+        for dead in ordered_source_rows(
+            await session.scalars(deceased_stmt),
+            priority=lambda row: (row.death_chapter_number is None, -(row.death_chapter_number or 0)),
+        )
         if is_character_dead_at_chapter(
             death_chapter_number=dead.death_chapter_number,
             chapter_number=chapter.chapter_number,
@@ -2347,7 +2352,7 @@ async def load_scene_story_bible_context(
             CharacterModel.death_chapter_number.is_not(None),
             CharacterModel.death_chapter_number > chapter.chapter_number,
         )
-        .order_by(CharacterModel.death_chapter_number.asc())
+        .order_by(CharacterModel.death_chapter_number.asc(), CharacterModel.id.asc())
         .limit(20)
     )
     protected_characters = [
@@ -2356,7 +2361,9 @@ async def load_scene_story_bible_context(
             "death_chapter_number": prot.death_chapter_number,
             "role": prot.role,
         }
-        for prot in await session.scalars(protected_stmt)
+        for prot in ordered_source_rows(
+            await session.scalars(protected_stmt), priority=lambda row: (row.death_chapter_number,),
+        )
     ]
 
     # Offstage-but-not-dead roster — characters whose
@@ -2371,9 +2378,10 @@ async def load_scene_story_bible_context(
         effective_lifecycle_state,
     )
 
-    all_chars_stmt = select(CharacterModel).where(CharacterModel.project_id == project.id)
+    all_chars_stmt = (select(CharacterModel).where(CharacterModel.project_id == project.id)
+                      .order_by(CharacterModel.id.asc()))
     restricted_characters: list[dict[str, Any]] = []
-    for char_row in await session.scalars(all_chars_stmt):
+    for char_row in ordered_source_rows(await session.scalars(all_chars_stmt)):
         kind, payload = effective_lifecycle_state(
             alive_status=getattr(char_row, "alive_status", None),
             death_chapter_number=getattr(char_row, "death_chapter_number", None),

@@ -37,6 +37,8 @@ from bestseller.infra.db.models import (
     InterpersonalPromiseModel,
 )
 
+from bestseller.services.source_ordering import ordered_source_rows
+
 logger = logging.getLogger(__name__)
 
 
@@ -199,7 +201,7 @@ async def active_promises_for_chapter(
                     PROMISE_STATUS_ACTIVE,
                     PROMISE_STATUS_INHERITED,
                 )),
-            )
+            ).order_by(InterpersonalPromiseModel.id.asc())
         )
     )
     snapshots = [_to_snapshot(row, chapter_number=chapter_number) for row in rows]
@@ -222,7 +224,7 @@ async def active_promises_for_chapter(
             return (2, 0)
         return (1, s.chapters_until_due)
 
-    fresh.sort(key=_sort_key)
+    fresh = ordered_source_rows(fresh, priority=_sort_key)
     return fresh[: max(0, limit)]
 
 

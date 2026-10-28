@@ -7,6 +7,8 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.services.source_ordering import ordered_source_rows
+
 from bestseller.infra.db.models import (
     CharacterModel,
     ChapterModel,
@@ -588,7 +590,7 @@ async def load_world_expansion_context(
         )
         or fallback_hidden_reveal_count
     )
-    raw_next_gate = await session.scalar(
+    next_gate_rows = await session.scalars(
         select(ExpansionGateModel)
         .where(
             ExpansionGateModel.project_id == project.id,
@@ -597,10 +599,15 @@ async def load_world_expansion_context(
         .order_by(
             ExpansionGateModel.unlock_chapter_number.asc(),
             ExpansionGateModel.unlock_volume_number.asc(),
+            ExpansionGateModel.id.asc(),
         )
         .limit(1)
     )
-    next_gate = raw_next_gate if isinstance(raw_next_gate, ExpansionGateModel) else None
+    next_gates = ordered_source_rows(
+        next_gate_rows,
+        priority=lambda row: (row.unlock_chapter_number, row.unlock_volume_number),
+    )
+    next_gate = next_gates[0] if next_gates else None
 
     return {
         "world_backbone": (

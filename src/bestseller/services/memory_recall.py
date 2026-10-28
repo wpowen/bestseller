@@ -49,6 +49,8 @@ from bestseller.infra.db.models import (
     RelationshipModel,
 )
 
+from bestseller.services.source_ordering import ordered_source_rows, source_row_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,20 +123,20 @@ async def compute_memory_recall_cues(
     # 1. All deceased characters with a death chapter strictly less
     #    than the current chapter — they died at some point in the
     #    past and may be remembered now.
-    deceased_rows = list(
+    deceased_rows = ordered_source_rows(
         await session.scalars(
             select(CharacterModel).where(
                 CharacterModel.project_id == project_id,
                 CharacterModel.alive_status == "deceased",
                 CharacterModel.death_chapter_number.is_not(None),
                 CharacterModel.death_chapter_number < chapter_number,
-            )
+            ).order_by(CharacterModel.id.asc())
         )
     )
     if not deceased_rows:
         return []
 
-    cues: list[tuple[int, MemoryRecallCue]] = []
+    cues: list[tuple[int, MemoryRecallCue, int, int]] = []
 
     for deceased in deceased_rows:
         death_ch = getattr(deceased, "death_chapter_number", None)
@@ -146,7 +148,7 @@ async def compute_memory_recall_cues(
 
         # 2. For each deceased that lands on an anchor window, list
         #    their high-strength relationships.
-        rels = list(
+        rels = ordered_source_rows(
             await session.scalars(
                 select(RelationshipModel).where(
                     RelationshipModel.project_id == project_id,
@@ -154,7 +156,7 @@ async def compute_memory_recall_cues(
                         (RelationshipModel.character_a_id == deceased.id)
                         | (RelationshipModel.character_b_id == deceased.id)
                     ),
-                )
+                ).order_by(RelationshipModel.id.asc())
             )
         )
         for rel in rels:
@@ -193,11 +195,12 @@ async def compute_memory_recall_cues(
                     chapters_since_death=offset,
                     intensity=_intensity_for_offset(offset),
                 ),
+                source_row_id(deceased), source_row_id(rel),
             ))
 
     # Closest-to-anchor first; ties broken by stronger relationship.
-    cues.sort(key=lambda x: (x[0], -x[1].relationship_strength))
-    return [cue for _, cue in cues[:max(0, max_cues)]]
+    cues.sort(key=lambda x: (x[0], -x[1].relationship_strength, x[2], x[3]))
+    return [item[1] for item in cues[:max(0, max_cues)]]
 
 
 def render_memory_recall_block(

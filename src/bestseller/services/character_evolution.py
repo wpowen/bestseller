@@ -19,6 +19,8 @@ from bestseller.services.character_snapshot_sources import (
     read_character_snapshot_knowledge,
 )
 
+from bestseller.services.source_ordering import ordered_source_rows
+
 logger = logging.getLogger(__name__)
 
 _TRACKED_FIELDS = ("arc_state", "emotional_state", "physical_state", "power_tier")
@@ -110,9 +112,10 @@ async def detect_character_stagnation(
     For each character with at least two snapshots, the latest two are compared
     to identify which tracked fields are stagnant.
     """
-    char_stmt = select(CharacterModel).where(CharacterModel.project_id == project_id)
+    char_stmt = (select(CharacterModel).where(CharacterModel.project_id == project_id)
+                 .order_by(CharacterModel.id.asc()))
     char_result = await session.execute(char_stmt)
-    characters = char_result.scalars().all()
+    characters = ordered_source_rows(char_result.scalars().all())
 
     warnings: list[CharacterStagnationWarning] = []
 

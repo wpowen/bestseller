@@ -248,6 +248,7 @@ async def test_load_world_expansion_context_returns_boundary_payload() -> None:
         metadata_json={},
     )
     gate = ExpansionGateModel(
+        id=uuid4(),
         project_id=project.id,
         gate_code="unlock-volume-02",
         label="第2卷世界扩张闸门",
@@ -259,7 +260,7 @@ async def test_load_world_expansion_context_returns_boundary_payload() -> None:
         status="planned",
         metadata_json={},
     )
-    session = FakeSession(scalar_results=[backbone, frontier, 3, gate])
+    session = FakeSession(scalar_results=[backbone, frontier, 3], scalars_results=[[gate]])
 
     payload = await world_expansion_services.load_world_expansion_context(
         session,

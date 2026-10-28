@@ -46,6 +46,7 @@ class _Rel:
     character_b_id: UUID
     relationship_type: str
     strength: float
+    id: UUID = field(default_factory=uuid4)
 
 
 class _FakeSession:
@@ -70,9 +71,11 @@ class _FakeSession:
         #   2. relationships (per deceased) — table name "relationships"
         # We match on table name to route correctly.
         if "from relationships" in text:
-            if self._pending_rels:
-                return self._pending_rels.pop(0)
-            return []
+            # Route this IO fake by the native WHERE binding, not call order.
+            params = stmt.compile().params
+            key = params["character_a_id_1"]
+            assert key == params["character_b_id_1"]
+            return list(self.rels_by_deceased.get(key, []))
         if "from characters" in text:
             self._pending_rels = [
                 self.rels_by_deceased.get(d.id, [])

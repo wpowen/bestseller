@@ -494,3 +494,215 @@ def authoritative_book_word_targets(project: Any, settings: AppSettings) -> tupl
 
 allocate_whole_book_word_targets = allocate_book_word_targets
 allocate_chapter_word_targets = allocate_book_word_targets
+
+
+# Opt-in book length control. Keep legacy functions/source bytes above unchanged.
+LENGTH_CONTROL_V1 = "book-length-control-v1"
+LENGTH_CONTROL_COUNT_UNIT_V1 = "export-body-words-v1"
+
+
+@dataclass(frozen=True)
+class ControlledLengthBand:
+    min_words: int
+    target_words: int
+    max_words: int
+
+
+@dataclass(frozen=True)
+class RemainingWordBudget:
+    protocol: str
+    count_unit: str
+    book_min_words: int
+    book_max_words: int
+    adopted_words: int
+    remaining_chapters: int
+    feasible: bool
+    exact_target_feasible: bool
+    issue_code: str | None
+    targets: tuple[int, ...]
+    next_band: ControlledLengthBand | None
+
+
+def _length_control_int(value: int, name: str, *, minimum: int = 0) -> int:
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}")
+    return value
+
+
+def _length_control_enabled(protocol: str | None) -> bool:
+    if protocol is None:
+        return False
+    if protocol != LENGTH_CONTROL_V1:
+        raise ValueError("unsupported length control protocol")
+    return True
+
+
+def chapter_length_control_band(
+    target_words: int,
+    *,
+    protocol: str | None = None,
+    hard_min_words: int = 1800,
+    hard_max_words: int = 3500,
+) -> ControlledLengthBand | None:
+    """Intersect target +/-15% with absolute Chinese chapter walls.
+
+    Inputs use ``export-body-words-v1`` (sanitized, untitled body words).
+    ``None`` means this additional contract is disabled, NOT acceptance.
+    A caller must retain existing platform/quality constraints as well.
+    """
+    if not _length_control_enabled(protocol):
+        return None
+    from bestseller.services.length_stability_gate import CHINESE_CHAPTER_HARD_MAX_WORDS
+
+    target = _length_control_int(target_words, "target_words", minimum=1)
+    lower = max(
+        CHINESE_CHAPTER_HARD_MIN_WORDS,
+        _length_control_int(hard_min_words, "hard_min_words"),
+        (target * 85 + 99) // 100,
+    )
+    upper = min(
+        CHINESE_CHAPTER_HARD_MAX_WORDS,
+        _length_control_int(hard_max_words, "hard_max_words", minimum=1),
+        target * 115 // 100,
+    )
+    if lower > upper:
+        raise ValueError("target has no legal chapter length band")
+    return ControlledLengthBand(lower, min(max(target, lower), upper), upper)
+
+
+def _allocate_remaining_controlled_words(
+    total: int,
+    bands: tuple[ControlledLengthBand, ...],
+) -> tuple[int, ...]:
+    """Equal-share the remaining total, respecting each frozen chapter band."""
+    values = [band.min_words for band in bands]
+    left = total - sum(values)
+    while left:
+        active = [i for i, band in enumerate(bands) if values[i] < band.max_words]
+        if not active or left < 0:
+            raise ValueError("remaining allocation is infeasible")
+        share, _ = divmod(left, len(active))
+        for i in active:
+            delta = min(max(1, share), bands[i].max_words - values[i], left)
+            values[i] += delta
+            left -= delta
+            if not left:
+                break
+    return tuple(values)
+
+
+def plan_remaining_word_budget(
+    *,
+    total_words: int,
+    total_chapters: int,
+    adopted_word_counts: tuple[int, ...],
+    protocol: str | None = None,
+    planned_targets: tuple[int, ...] | None = None,
+    hard_min_words: int = 1800,
+    hard_max_words: int = 3500,
+) -> RemainingWordBudget | None:
+    """Plan an ordered adopted prefix's remainder without IO or model calls.
+
+    Freeze original targets (or exact equal shares) and their +/-15% bands.
+    Reallocate ``total_words - adopted_words`` inside the intersection of
+    future chapter capacity and the book's +/-15% contract. If the exact
+    target is unreachable but tolerance is feasible, expose that distinction.
+    The next band's upper/lower bounds reserve a feasible completion for all
+    later chapters; rolling-target bands only tighten the frozen windows.
+
+    Counts must come from verified adopted sources using the same count unit;
+    callers own chapter identity, source SHA, receipt and concurrency checks.
+    Infeasibility never supplies an executable target or silently disables v1.
+    """
+    if not _length_control_enabled(protocol):
+        return None
+    total = _length_control_int(total_words, "total_words", minimum=1)
+    count = _length_control_int(total_chapters, "total_chapters", minimum=1)
+    if not isinstance(adopted_word_counts, (tuple, list)) or len(adopted_word_counts) > count:
+        raise ValueError("adopted chapter census is invalid")
+    adopted = sum(
+        _length_control_int(n, "adopted_word_count", minimum=1) for n in adopted_word_counts
+    )
+    if planned_targets is None:
+        quotient, remainder = divmod(total, count)
+        originals = tuple(quotient + (i < remainder) for i in range(count))
+    else:
+        if not isinstance(planned_targets, (tuple, list)) or len(planned_targets) != count:
+            raise ValueError("planned chapter census is invalid")
+        originals = tuple(
+            _length_control_int(n, "planned_target", minimum=1) for n in planned_targets
+        )
+        if sum(originals) != total:
+            raise ValueError("planned targets must sum to total_words")
+    book_min, book_max = (total * 85 + 99) // 100, total * 115 // 100
+    remaining = count - len(adopted_word_counts)
+
+    def result(
+        feasible: bool,
+        exact: bool,
+        code: str | None = None,
+        targets: tuple[int, ...] = (),
+        band: ControlledLengthBand | None = None,
+    ) -> RemainingWordBudget:
+        return RemainingWordBudget(
+            protocol=LENGTH_CONTROL_V1,
+            count_unit=LENGTH_CONTROL_COUNT_UNIT_V1,
+            book_min_words=book_min,
+            book_max_words=book_max,
+            adopted_words=adopted,
+            remaining_chapters=remaining,
+            feasible=feasible,
+            exact_target_feasible=exact,
+            issue_code=code,
+            targets=targets,
+            next_band=band,
+        )
+
+    from bestseller.services.length_stability_gate import CHINESE_CHAPTER_HARD_MAX_WORDS
+
+    if any(
+        not CHINESE_CHAPTER_HARD_MIN_WORDS <= n <= CHINESE_CHAPTER_HARD_MAX_WORDS
+        for n in adopted_word_counts
+    ):
+        return result(False, False, "ADOPTED_CHAPTER_HARD_BOUNDARY")
+    if not remaining:
+        feasible = book_min <= adopted <= book_max
+        return result(feasible, adopted == total, None if feasible else "BOOK_LENGTH_OUT_OF_RANGE")
+    try:
+        bands = tuple(
+            chapter_length_control_band(
+                n,
+                protocol=protocol,
+                hard_min_words=hard_min_words,
+                hard_max_words=hard_max_words,
+            )
+            for n in originals[len(adopted_word_counts) :]
+        )
+    except ValueError as error:
+        if str(error) != "target has no legal chapter length band":
+            raise
+        return result(False, False, "BOOK_CHAPTER_BAND_INFEASIBLE")
+    minimum, maximum = sum(b.min_words for b in bands), sum(b.max_words for b in bands)
+    feasible_min = max(minimum, book_min - adopted)
+    feasible_max = min(maximum, book_max - adopted)
+    if feasible_min > feasible_max:
+        return result(False, False, "BOOK_LENGTH_BUDGET_INFEASIBLE")
+    requested = total - adopted
+    exact = feasible_min <= requested <= feasible_max
+    targets = _allocate_remaining_controlled_words(
+        min(max(requested, feasible_min), feasible_max),
+        bands,
+    )
+    aim = targets[0]
+    # The immutable window prevents compounding +/-15% around successive aims.
+    lower = max(
+        bands[0].min_words,
+        (aim * 85 + 99) // 100,
+        book_min - adopted - sum(b.max_words for b in bands[1:]),
+    )
+    upper = min(
+        bands[0].max_words,
+        aim * 115 // 100,
+        book_max - adopted - sum(b.min_words for b in bands[1:]),
+    )
+    return result(True, exact, targets=targets, band=ControlledLengthBand(lower, aim, upper))

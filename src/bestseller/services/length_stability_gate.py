@@ -331,3 +331,85 @@ def summarize_length_stability(reports: Iterable[LengthStabilityReport]) -> str:
         return "(no chapters)"
     parts = [f"{band}={n}" for band, n in sorted(counts.items())]
     return ", ".join(parts)
+
+
+# Additional versioned contract; legacy verdicts and warning semantics stay intact.
+@dataclass(frozen=True)
+class CandidateLengthDecision:
+    protocol: str
+    count_unit: str
+    stage: str
+    word_count: int
+    min_words: int
+    target_words: int
+    max_words: int
+    parent_growth_max_words: int | None
+    accepted: bool
+    issue_code: str | None
+
+
+def evaluate_length_control_candidate(
+    *,
+    word_count: int,
+    min_words: int,
+    target_words: int,
+    max_words: int,
+    protocol: str | None = None,
+    stage: str = "draft",
+    parent_word_count: int | None = None,
+) -> CandidateLengthDecision | None:
+    """Check one new candidate against a frozen v1 budget, without repair IO.
+
+    Disabled returns None, not a pass and not a replacement for the old gate.
+    Bounds are inclusive; v1 has no warning grace. Deslop may grow its verified
+    actual parent by at most 5%, and must also fit the chapter/book window.
+    This decision is necessary, never sufficient, for adoption/publication.
+    """
+    # Local import avoids the existing word_targets -> length_stability import cycle.
+    from bestseller.services.word_targets import (
+        LENGTH_CONTROL_COUNT_UNIT_V1,
+        LENGTH_CONTROL_V1,
+        _length_control_enabled,
+        _length_control_int,
+    )
+
+    if not _length_control_enabled(protocol):
+        return None
+    count = _length_control_int(word_count, "word_count")
+    lower = _length_control_int(min_words, "min_words", minimum=1)
+    target = _length_control_int(target_words, "target_words", minimum=1)
+    upper = _length_control_int(max_words, "max_words", minimum=1)
+    if (
+        not CHINESE_CHAPTER_HARD_MIN_WORDS
+        <= lower
+        <= target
+        <= upper
+        <= CHINESE_CHAPTER_HARD_MAX_WORDS
+    ):
+        raise ValueError("invalid controlled chapter band")
+    if stage not in {"draft", "rewrite", "deslop"}:
+        raise ValueError("invalid length control stage")
+    growth_max = None
+    if stage == "deslop":
+        parent = _length_control_int(parent_word_count, "parent_word_count", minimum=1)
+        growth_max = parent * 105 // 100
+    if count < lower:
+        code = "LENGTH_CONTROL_UNDER"
+    elif count > upper:
+        code = "LENGTH_CONTROL_OVER"
+    elif growth_max is not None and count > growth_max:
+        code = "LENGTH_CONTROL_DESLOP_GROWTH"
+    else:
+        code = None
+    return CandidateLengthDecision(
+        protocol=LENGTH_CONTROL_V1,
+        count_unit=LENGTH_CONTROL_COUNT_UNIT_V1,
+        stage=stage,
+        word_count=count,
+        min_words=lower,
+        target_words=target,
+        max_words=upper,
+        parent_growth_max_words=growth_max,
+        accepted=code is None,
+        issue_code=code,
+    )

@@ -27,4 +27,4 @@ historical-input-evidence.json记录Q1/Q2既有冻结来源。原意图39c7113c-
 - 条件接缝：短篇Beat/recovery、contract completion与最终大纲读者检查；入场及admission producer保存reader_first_source envelope；v3容量/来源证明消费者互认；scene运行调用方加载v3。缺任一项，新项目写作保持阻断，不借旧批准通过。
 - 主线接好真实短篇路径后，才可继续完整离线计数→≤120预检→140硬围栏验证→付费新方案→两份同尺评估与盲包。无需重跑历史旧方案。
 
-分支par/Q4；代码/测试提交SHA与最终核验在收尾时写入。正文、提示词与原始输出未进Git；报告只存统计、摘要和身份哈希。
+分支par/Q4；代码/测试与证据提交`27091a522edf430fc06da658bfe9cd79a3cbb98f`。最终207项通过，源码/测试SHA、能力边界和敏感检查见implementation-verification.json。正文、提示词与原始输出未进Git；报告只存统计、摘要和身份哈希。

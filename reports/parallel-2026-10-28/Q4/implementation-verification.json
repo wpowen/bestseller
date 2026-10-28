@@ -53,5 +53,7 @@
     "tests/unit/test_q4_reader_first_delivery.py": "2bf21c063706bd79db2d19aa8b06181c1bb104666bb2a5577f3d4734ee04ee6b",
     "tests/unit/test_q4_reader_first_planner.py": "c3a418fc9a972faa24c413b1974c7a9f2859bfe717f2c0ad6e6acf9f7245805d",
     "tests/unit/test_q4_reader_first_protocol.py": "410db20fe811a1c73d08808de435849eab655797f2d21b26e9eac4d3675fa789"
-  }
+  },
+  "implementation_commit": "27091a522edf430fc06da658bfe9cd79a3cbb98f",
+  "git_pre_commit_secret_scan": "passed"
 }

@@ -7073,7 +7073,7 @@ def chapter_review_recovery_source_hash() -> str:
             "adopted_chapter_source.py", "story_effect_realization.py",
             "story_enhancers.py", "ideology_coherence_gate.py", "ideology_judge.py",
             "ideology_kernel.py", "entry_system_kernel.py",
-            "full_flow_length/__init__.py", "fanqie_whole_repair.py", "full_flow_title_sources.py",
+            "full_flow_length/__init__.py", "fanqie_whole_repair.py", "full_flow_title_sources.py", "review_issuer_archive.py",
         )
     }
     policy_files.update((services / "quality_levers").rglob("*.py"))
@@ -7083,6 +7083,7 @@ def chapter_review_recovery_source_hash() -> str:
     policy_files.add(root / "src/bestseller/domain/ideology.py")
     policy_files.add(root / "config/quality_gates.yaml")
     policy_files.add(root / "config/model_catalog.yaml")
+    policy_files.add(root / "config/methodology_profiles/reader_first_planning_v1.yaml")
     policy_files.add(root / 'config/genre_profile_thresholds/action-progression.yaml')
     policy_files.add(root / 'config/genre_profile_thresholds/base-building.yaml')
     policy_files.add(root / 'config/genre_profile_thresholds/eastern-aesthetic.yaml')

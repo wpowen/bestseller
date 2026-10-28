@@ -96,6 +96,28 @@
       "location": "ch1:p50@2005",
       "judgment": "confirmed",
       "reason": "四轮热荤的末轮实际是素菜和汤。"
+    },
+    {
+      "dataset": "original_live_promoted",
+      "id": "QP_e33720bcddabb7aa",
+      "type": "quantity_mismatch",
+      "location": "ch1:p10@521:523 ↔ ch1:p32@1759:1761",
+      "judgment": "false_positive",
+      "reason": "娃娃菜7斤为现有库存，3斤为补货缺口，不能作为同一存量数值比较。"
     }
-  ]
+  ],
+  "live_promoted_original": {
+    "source_receipt": "promoted-readback-20261028T044052Z/sources.json",
+    "chapters": 3,
+    "facts": 238,
+    "alerts": 1,
+    "confirmed": 0,
+    "false_positives": 1,
+    "unknown": 0,
+    "versions": [
+      9,
+      3,
+      1
+    ]
+  }
 }

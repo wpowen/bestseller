@@ -11,3 +11,7 @@
 - 最终 64 passed（39 原型 + 25 CheckerReport 契约），日志 tests-final.log；无数据库连接、Docker 或 provider 调用。未产生 SQLite 文件。
 
 所有代码行为缺口均在各自 RED 后修复，单组最多两次实现测试；不把预期 RED 当作环境故障反复重试。
+
+## 补充采用来源回读
+
+首次直连被沙箱拒绝：PermissionError / errno=1，未发出数据库查询；第二次经环境授权成功。固定 localhost/bestseller，启动 default_transaction_read_only=on；事务 READ ONLY、statement_timeout=30s，三条显式 SELECT 后 rollback。实际采用 V9/V3/V1；前两章导出落后，旧候选状态不得当作实时状态。238 项事实仅 1 条库存7斤／补货缺口3斤误报。未保存正文或凭证，保留 sources.json 和 CheckerReport。

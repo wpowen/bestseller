@@ -1,0 +1,53 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/par-worktrees/Q3
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, Faker-40.11.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 4 items
+
+tests/unit/test_q3_generalization_sources.py EEEE                        [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_legacy_keeps_ordered_prose_and_dialogue_not_choices_or_hook _
+tests/unit/test_q3_generalization_sources.py:13: in helpers
+    return runpy.run_path(str(SCRIPT))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen runpy>:290: in run_path
+    ???
+<frozen runpy>:254: in _get_code_from_file
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/par-worktrees/Q3/reports/parallel-2026-10-28/Q3/complete_generalization.py'
+______ ERROR at setup of test_bad_legacy_text_is_rejected_not_stringified ______
+tests/unit/test_q3_generalization_sources.py:13: in helpers
+    return runpy.run_path(str(SCRIPT))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen runpy>:290: in run_path
+    ???
+<frozen runpy>:254: in _get_code_from_file
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/par-worktrees/Q3/reports/parallel-2026-10-28/Q3/complete_generalization.py'
+__ ERROR at setup of test_random_twenty_are_distinct_and_exclude_first_twenty __
+tests/unit/test_q3_generalization_sources.py:13: in helpers
+    return runpy.run_path(str(SCRIPT))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen runpy>:290: in run_path
+    ???
+<frozen runpy>:254: in _get_code_from_file
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/par-worktrees/Q3/reports/parallel-2026-10-28/Q3/complete_generalization.py'
+________ ERROR at setup of test_do_not_silently_shrink_requested_corpus ________
+tests/unit/test_q3_generalization_sources.py:13: in helpers
+    return runpy.run_path(str(SCRIPT))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen runpy>:290: in run_path
+    ???
+<frozen runpy>:254: in _get_code_from_file
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/par-worktrees/Q3/reports/parallel-2026-10-28/Q3/complete_generalization.py'
+=========================== short test summary info ============================
+ERROR tests/unit/test_q3_generalization_sources.py::test_legacy_keeps_ordered_prose_and_dialogue_not_choices_or_hook
+ERROR tests/unit/test_q3_generalization_sources.py::test_bad_legacy_text_is_rejected_not_stringified
+ERROR tests/unit/test_q3_generalization_sources.py::test_random_twenty_are_distinct_and_exclude_first_twenty
+ERROR tests/unit/test_q3_generalization_sources.py::test_do_not_silently_shrink_requested_corpus
+============================== 4 errors in 0.19s ===============================

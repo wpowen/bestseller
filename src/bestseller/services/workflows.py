@@ -1307,6 +1307,8 @@ def _repair_chapter_outline_contract_inputs(
 ) -> int:
     """Backfill deterministic scene contract fields before outline validation."""
 
+    import copy
+
     protagonist_name = _outline_default_protagonist(identity_manifest)
     repaired = 0
 
@@ -1761,6 +1763,39 @@ def _repair_chapter_outline_contract_inputs(
         return contract, 1 if repairs else 0
 
     for chapter in batch.chapters:
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+
+        chapter_meta = getattr(chapter, "_meta", {})
+        marker = (chapter_meta.get("reader_first_planning") if isinstance(chapter_meta, dict)
+                  else None) or getattr(chapter, "reader_first_planning", None)
+        if marker is not None:
+            reader_first_binding({"reader_first_planning": marker})
+            # Only project explicitly authored fields. Missing wants, costs,
+            # choices and relationship changes remain missing and fail the
+            # existing contract gate; no invented custody/debt obligations.
+            contract = dict(chapter.methodology_contract or {})
+            for field in ("required_payoff", "opening_pressure", "protagonist_flaw", "tail_hook",
+                          "pacing_mode", "emotion_phase", "is_climax", "chapter_function",
+                          "protagonist_choice", "visible_action", "cost", "state_change"):
+                if field in chapter.model_fields_set:
+                    value = getattr(chapter, field, None)
+                    if value is not None and field not in contract:
+                        contract[field] = copy.deepcopy(value)
+            if contract != chapter.methodology_contract:
+                chapter.methodology_contract = contract
+                repaired += 1
+            for scene in chapter.scenes:
+                contract = dict(scene.methodology_contract or {})
+                for field in ("signature_image", "cut_point", "information_control_mode",
+                              "conflict_stakes", "spotlight_character", "hook_type", "emotion_driver"):
+                    if field in scene.model_fields_set:
+                        value = getattr(scene, field, None)
+                        if value is not None and field not in contract:
+                            contract[field] = copy.deepcopy(value)
+                if contract != scene.methodology_contract:
+                    scene.methodology_contract = contract
+                    repaired += 1
+            continue
         # Story-semantic fields are not repaired here. If chapter goals,
         # openings, or hooks are missing/generic, the plan contract must fail
         # closed so the planner regenerates concrete events instead of

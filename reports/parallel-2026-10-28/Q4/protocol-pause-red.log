@@ -1,0 +1,16 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "90989260690fb0ccd574fc3052029ec30c017416263fd3c98eed044c4dab7b2f",
+  "original_bytes": 677,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_pause_preserves_each_valid_dimension_and_specific_model_reasons",
+    "1 failed, 19 deselected in 0.16s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "e527d9f7890c211c64daa4e7a0b4152001b83e6758f6c49d82fee44994584f5d",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

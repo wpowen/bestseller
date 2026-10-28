@@ -1,0 +1,26 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "b5b4cfe52d5f3ea65c3e7fa1306d50562ad1802c2796a7dd7ab91c7d2ffd4dc9",
+  "original_bytes": 1711,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_only_attributable_completed_review_can_pass[missing_run_id]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_only_attributable_completed_review_can_pass[nonfinal]",
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_only_attributable_completed_review_can_pass[tools]",
+    "3 failed, 46 passed in 1.48s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "cb01941f3e82d3526d6f8661ba13e397c79f1a4555a962c47818fb8310897e75",
+      "codes": []
+    },
+    {
+      "detail_sha256": "cb01941f3e82d3526d6f8661ba13e397c79f1a4555a962c47818fb8310897e75",
+      "codes": []
+    },
+    {
+      "detail_sha256": "cb01941f3e82d3526d6f8661ba13e397c79f1a4555a962c47818fb8310897e75",
+      "codes": []
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

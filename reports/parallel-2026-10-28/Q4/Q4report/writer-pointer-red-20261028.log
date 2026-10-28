@@ -1,0 +1,25 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "c4192e821bf3bfc9cbd1d5abd48497336ebce02422e3f14771a6ccd7ac64df70",
+  "original_bytes": 1116,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_writer_rejects_block_drift_after_verified_delivery[field_pointer]",
+    "FAILED tests/unit/test_q4_reader_first_delivery.py::test_writer_rejects_block_drift_after_verified_delivery[field_hash]",
+    "2 failed, 4 passed, 34 deselected in 0.27s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "b3a252c1ae282eacf0d08502575f32c5f989dec42bffdbc9d1d3444b4df60bc8",
+      "codes": [
+        "ValueError"
+      ]
+    },
+    {
+      "detail_sha256": "b3a252c1ae282eacf0d08502575f32c5f989dec42bffdbc9d1d3444b4df60bc8",
+      "codes": [
+        "ValueError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

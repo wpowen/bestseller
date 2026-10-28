@@ -1,0 +1,59 @@
+{
+  "src/bestseller/services/conception.py": {
+    "missing_original_symbols": [],
+    "changed_original_bodies": [
+      "_polish_story_spine",
+      "_complete_conception_candidate",
+      "run_conception_pipeline",
+      "_review_conception_candidate"
+    ],
+    "sha256": "60e3444338993ba1f3a31dd2a2a2d7a8331f9b1a46148244e8cf6499bb4832a8"
+  },
+  "src/bestseller/services/concept_tournament.py": {
+    "missing_original_symbols": [],
+    "changed_original_bodies": [
+      "_default_generator"
+    ],
+    "sha256": "579a00ef04d4abcd2871e1ca6c0f0cfae07eb837eca02e15bbe410dbcc5e8da9"
+  },
+  "pinned_precheck": {
+    "baseline": "419181a41f29363263cee8a12d1694ace0bcef24",
+    "branches": {
+      "fix/g2b": {
+        "sha": "ffb49f67a4e15d532fc3476bd5745774e59466c6",
+        "path_log": "",
+        "diff": "",
+        "overlap": false
+      },
+      "int/full-flow": {
+        "sha": "9bfde9a52cd70a147cbe9ead04a0763e01a7bb85",
+        "path_log": "",
+        "diff": "",
+        "overlap": false
+      }
+    },
+    "allowed_paths": [
+      "src/bestseller/services/conception.py",
+      "src/bestseller/services/concept_tournament.py",
+      "src/bestseller/services/planner.py",
+      "src/bestseller/services/source_bound_planning_content.py",
+      "src/bestseller/services/workflows.py",
+      "src/bestseller/services/drafts.py",
+      "src/bestseller/services/chapter_writer_delivery.py",
+      "config/methodology_profiles/",
+      "config/writing_methodology.yaml"
+    ],
+    "all_log_diff_empty": true
+  },
+  "working_tree_head": "f7cc7dc380907669fa7afd8891c17e6927e365e5",
+  "owned_test_sha256": "9f796a29242afc85902a2fbb71b8b9a24f252dd1d4f9ec2004651c68c9a195d8",
+  "final_validation": {
+    "total_passed": 273,
+    "new_q4_conception_tests": 55,
+    "log": "conception-final-green-20261028-03.log",
+    "database_selection": "sqlite:///:memory:",
+    "database_connections": 0,
+    "network_paid_calls": 0,
+    "git_commits_by_worker": 0
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "16785d5007cf9360380ce0aa2da3bec498174b956276b52fef12eee04858dc6e",
+  "original_bytes": 340,
+  "summary": [
+    "269 passed in 3.55s"
+  ],
+  "error_lines": [],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

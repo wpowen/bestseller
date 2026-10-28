@@ -1,0 +1,61 @@
+{
+  "planner-existing-services-sqlite-empty-20261028.log": {
+    "error_fingerprints": {
+      "f4c69aef343590b0b565f60230279193bac8b8f5d6cbd08cec1f330fe0b553cc": 1,
+      "6c4d549129421530ec12c95540c5551f8e6849a15d60e660c68155c4934749d1": 1,
+      "0008fdfebced85d89c0b9424eb6caa5638bf8c26e48e4ef8aba25a81b7d693db": 1,
+      "69bb9442444b2733f684d2787a9acbddadf186ffbd49736f90e5f283e5e7aad5": 1,
+      "61eccc14c171bf3facfff128be33eb193dd60a24f06cef73461ff678485c4174": 2,
+      "edb0558d57b6ba68bd1af8348d0cea48ceaae068b3ba3bb19f0075bc05ddb0e6": 1,
+      "5955d88d82f5de21d725296bd20863a5b03c929f52c8f3005d21247beffb9e23": 1,
+      "016952e953c8b7fd0b2d328855a5702242631016de38373551e7ab57f9b218b6": 1,
+      "b0ffeb70af2ac7d0c1096987bb5ab174388cfe50e8c1925b34e5b49e8a160878": 1,
+      "18dbdeb5d1db7923b5de176e933d9094551ce23ec261a0311151678e1c7d964b": 1,
+      "9e8ca8ebeb642e58454d3ab95b5d8f325e5cd14755de0a345d2f65f1c4982d40": 1,
+      "90c76b913dc77d3dedab946ae9f36b2c1b4fd3c2dd8804aac79d85f8f775c87a": 1,
+      "9d91f4fa352e555005cdb64bcc28fe671a766ea8e4d4884c92828f8d59ca22c3": 1,
+      "4a1092015d5e2f91a71e75f123f3f2be286315b09bb0d79de8911f7eb71a4baf": 1,
+      "dec4a88088dcfdfe9c5ac08041dae70cee6d21837372eb8e3e85a4f9ea58e8f6": 1,
+      "498ca7a8da081b6c6769bbbd034984daa8e1628fd738926512b5451028430194": 1
+    },
+    "exception_classes": [
+      "AssertionError",
+      "OutlineContractValidationError",
+      "PlannerFallbackError",
+      "StoryEnhancerCoverageError",
+      "ValueError"
+    ]
+  },
+  "planner-existing-services-pinned-baseline-20261028.log": {
+    "error_fingerprints": {
+      "f4c69aef343590b0b565f60230279193bac8b8f5d6cbd08cec1f330fe0b553cc": 1,
+      "da99375e03dabfbcdcd3002d883e1513fceddf4bbb22d8ae00ccbce1fe592087": 1,
+      "6c4d549129421530ec12c95540c5551f8e6849a15d60e660c68155c4934749d1": 1,
+      "0008fdfebced85d89c0b9424eb6caa5638bf8c26e48e4ef8aba25a81b7d693db": 1,
+      "69bb9442444b2733f684d2787a9acbddadf186ffbd49736f90e5f283e5e7aad5": 1,
+      "61eccc14c171bf3facfff128be33eb193dd60a24f06cef73461ff678485c4174": 2,
+      "edb0558d57b6ba68bd1af8348d0cea48ceaae068b3ba3bb19f0075bc05ddb0e6": 1,
+      "5955d88d82f5de21d725296bd20863a5b03c929f52c8f3005d21247beffb9e23": 1,
+      "016952e953c8b7fd0b2d328855a5702242631016de38373551e7ab57f9b218b6": 1,
+      "b0ffeb70af2ac7d0c1096987bb5ab174388cfe50e8c1925b34e5b49e8a160878": 1,
+      "18dbdeb5d1db7923b5de176e933d9094551ce23ec261a0311151678e1c7d964b": 1,
+      "9e8ca8ebeb642e58454d3ab95b5d8f325e5cd14755de0a345d2f65f1c4982d40": 1,
+      "90c76b913dc77d3dedab946ae9f36b2c1b4fd3c2dd8804aac79d85f8f775c87a": 1,
+      "9d91f4fa352e555005cdb64bcc28fe671a766ea8e4d4884c92828f8d59ca22c3": 1,
+      "4a1092015d5e2f91a71e75f123f3f2be286315b09bb0d79de8911f7eb71a4baf": 1,
+      "dec4a88088dcfdfe9c5ac08041dae70cee6d21837372eb8e3e85a4f9ea58e8f6": 1,
+      "498ca7a8da081b6c6769bbbd034984daa8e1628fd738926512b5451028430194": 1
+    },
+    "exception_classes": [
+      "AssertionError",
+      "OutlineContractValidationError",
+      "PlannerFallbackError",
+      "StoryEnhancerCoverageError",
+      "ValueError"
+    ]
+  },
+  "new_error_fingerprints": [],
+  "baseline_only_error_fingerprints": [
+    "da99375e03dabfbcdcd3002d883e1513fceddf4bbb22d8ae00ccbce1fe592087"
+  ]
+}

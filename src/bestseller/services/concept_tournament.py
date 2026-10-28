@@ -34,7 +34,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from functools import lru_cache
+from functools import lru_cache, wraps
 import hashlib
 import json
 import logging
@@ -100,6 +100,38 @@ _COMMERCIAL_HOOK_AXES = frozenset(
 _PROTECTED_HOOK_AXES = frozenset(
     {"character_logic", "mechanism_causality", "story_motion", "genre_fidelity"}
 )
+
+
+_reader_first_tournament_context: ContextVar[tuple[dict[str, Any] | None, str]] = ContextVar(
+    "reader_first_tournament_context", default=(None, "zh"),
+)
+
+
+def _reader_first_tournament_scope(operation):
+    @wraps(operation)
+    async def wrapped(*args, **kwargs):
+        from bestseller.services.source_bound_planning_content import reader_first_binding
+        binding = kwargs.get("reader_first_planning")
+        marker = reader_first_binding({"reader_first_planning": binding}) if binding is not None else None
+        token = _reader_first_tournament_context.set((marker, kwargs.get("language", "zh")))
+        try:
+            return await operation(*args, **kwargs)
+        finally:
+            _reader_first_tournament_context.reset(token)
+    return wrapped
+
+
+def _reader_first_tournament_messages(operation):
+    @wraps(operation)
+    def wrapped(*args, **kwargs):
+        from bestseller.services.source_bound_planning_content import reader_first_instruction
+        marker, language = _reader_first_tournament_context.get()
+        marker = kwargs.pop("reader_first_planning", marker)
+        language = kwargs.pop("language", language)
+        instruction = reader_first_instruction(marker, language=language, stage="concept_tournament")
+        system, user = operation(*args, **kwargs)
+        return instruction + system, user
+    return wrapped
 
 
 def is_commercial_gate_advisory(config: Mapping[str, Any] | None) -> bool:
@@ -887,6 +919,7 @@ def _seriality_audit(
     return None
 
 
+@_reader_first_tournament_messages
 def _build_candidate_messages(
     *,
     genre: str,
@@ -898,6 +931,8 @@ def _build_candidate_messages(
     seed_concept: str = "",
     retry_feedback: str = "",
     audience_orientation: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     system = (
         "你是顶级网文制作人，专出'榜单编辑看到会立刻加价买断'的高概念。"
@@ -1019,6 +1054,7 @@ def _build_candidate_messages(
     return system, user
 
 
+@_reader_first_tournament_messages
 def _build_lean_candidate_messages(
     *,
     genre: str,
@@ -1030,6 +1066,8 @@ def _build_lean_candidate_messages(
     seed_concept: str = "",
     retry_feedback: str = "",
     audience_orientation: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Build the experimental compact StoryPackage arm.
 
@@ -1097,6 +1135,7 @@ def _build_lean_candidate_messages(
     return system, user
 
 
+@_reader_first_tournament_messages
 def _build_native_candidate_messages(
     *,
     genre: str,
@@ -1108,6 +1147,8 @@ def _build_native_candidate_messages(
     seed_concept: str = "",
     retry_feedback: str = "",
     audience_orientation: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Minimal control arm that preserves the model's native story judgment."""
 
@@ -1517,6 +1558,7 @@ def constraint_ladder_tier_target(chapter_count: int) -> int:
     return max(3, min(8, 2 + int(chapter_count or 0) // 150))
 
 
+@_reader_first_tournament_messages
 def _build_engine_kernel_messages(
     *,
     genre: str,
@@ -1535,6 +1577,8 @@ def _build_engine_kernel_messages(
     retry_feedback: str = "",
     primary_effect_contract: Mapping[str, Any] | None = None,
     distilled_reference_block: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Build a minimal premise card before any marketing sentence."""
 
@@ -1899,6 +1943,7 @@ def _render_story_logic_gate_rules() -> str:
     return render_story_logic_writer_rules()
 
 
+@_reader_first_tournament_messages
 def _build_raw_idea_pool_messages(
     *,
     genre: str,
@@ -1915,6 +1960,8 @@ def _build_raw_idea_pool_messages(
     creation_intent_block: str = "",
     retry_feedback: str = "",
     distilled_reference_block: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Minimal baseline: concrete person plus abnormal situation, nothing else.
 
@@ -2277,6 +2324,7 @@ def _parse_raw_idea_pool(raw: str, *, limit: int) -> list[tuple[str, str]]:
     ]
 
 
+@_reader_first_tournament_messages
 def _build_raw_idea_rank_messages(
     *,
     genre: str,
@@ -2286,6 +2334,8 @@ def _build_raw_idea_rank_messages(
     pitch_by_seed: dict[str, dict[str, Any]] | None = None,
     authoritative_seed_concept: str = "",
     retry_feedback: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Rank raw ideas in one independent call before expensive card expansion.
 
@@ -2884,6 +2934,7 @@ def render_cliche_avoidance_block(banned: tuple[str, ...]) -> str:
     return ""
 
 
+@_reader_first_tournament_messages
 def _build_hook_from_engine_messages(
     *,
     genre: str,
@@ -2893,6 +2944,8 @@ def _build_hook_from_engine_messages(
     audience_orientation: str = "",
     retry_feedback: str = "",
     banned: tuple[str, ...] = (),
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Distill a human-facing story seed from an already designed engine."""
 
@@ -3087,6 +3140,7 @@ def _render_seriality_creation_intent(
     return "\n".join(lines) + "\n"
 
 
+@_reader_first_tournament_messages
 def _build_seriality_messages(
     *,
     candidate: ConceptCandidate,
@@ -3098,6 +3152,8 @@ def _build_seriality_messages(
     tone_preference: str = "",
     effect_skills: Sequence[str] = (),
     creation_intent_block: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Prove the current candidate without promoting an exploration seed.
 
@@ -3237,6 +3293,7 @@ def _build_seriality_messages(
     return system, user
 
 
+@_reader_first_tournament_messages
 def _build_seriality_judge_messages(
     *,
     candidate: ConceptCandidate,
@@ -3247,6 +3304,8 @@ def _build_seriality_judge_messages(
     tone_preference: str = "",
     effect_skills: Sequence[str] = (),
     creation_intent_block: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     short_horizon = chapter_count < 50
     system = (
@@ -3413,6 +3472,7 @@ def _render_engine_horizon_contract(chapter_count: int) -> str:
     )
 
 
+@_reader_first_tournament_messages
 def _build_engine_judge_messages(
     *,
     kernel: dict[str, Any],
@@ -3422,6 +3482,8 @@ def _build_engine_judge_messages(
     seed_concept: str,
     authoritative_seed_concept: str = "",
     intent_axes: tuple[tuple[str, str], ...] = (),
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Judge a premise card before hook copy can hide a weak project."""
 
@@ -3481,6 +3543,7 @@ def _build_engine_judge_messages(
     return system, user
 
 
+@_reader_first_tournament_messages
 def _build_engine_batch_judge_messages(
     *,
     cards: list[tuple[str, str, dict[str, Any]]],
@@ -3489,6 +3552,8 @@ def _build_engine_batch_judge_messages(
     chapter_count: int,
     authoritative_seed_concept: str = "",
     intent_axes: tuple[tuple[str, str], ...] = (),
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """Judge several premise cards in one independent call to avoid serial latency."""
 
@@ -3645,6 +3710,7 @@ _STORY_LAYER_AXES = (
 )
 
 
+@_reader_first_tournament_messages
 def _build_story_layer_judge_messages(
     card: dict[str, Any],
     *,
@@ -3654,6 +3720,8 @@ def _build_story_layer_judge_messages(
     authoritative_seed_concept: str = "",
     candidate_seed: str = "",
     target_chapters: int | None = None,
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """故事层判卡（P0，2026-08-18 接线）。
 
@@ -4592,6 +4660,7 @@ _EXPANSION_EDITOR_CONVICTION_AXES: frozenset[str] = frozenset(
 )
 
 
+@_reader_first_tournament_messages
 def _build_expansion_editor_messages(
     card: dict[str, Any],
     *,
@@ -4599,6 +4668,8 @@ def _build_expansion_editor_messages(
     sub_genre: str,
     authoritative_seed_concept: str = "",
     candidate_seed: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     """编辑视角设定质量判官——判据锚定真实榜单书（判官读例证≠写手读例证，
     例证只进判官 prompt、绝不进生成 prompt，不违种词铁律）。"""
@@ -5086,6 +5157,7 @@ def _protected_hook_floor_failures(
     )
 
 
+@_reader_first_tournament_messages
 def _build_judge_messages(
     *,
     candidate: ConceptCandidate,
@@ -5093,6 +5165,8 @@ def _build_judge_messages(
     sub_genre: str = "",
     references: list[dict[str, str]],
     audience_orientation: str = "",
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
 ) -> tuple[str, str]:
     ref_lines = (
         "\n".join(
@@ -5542,7 +5616,7 @@ async def _default_generator(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             fallback_response="{}",
-            prompt_template=template,
+            prompt_template=(template + "_reader_first_v1" if _reader_first_tournament_context.get()[0] else template),
             prompt_version=prompt_version_stamp(system_prompt, user_prompt),
             max_tokens_override=max_tokens,
             model_catalog_key=model_catalog_key,
@@ -5690,10 +5764,13 @@ async def _review_seriality_finalists_with_backups(
     return reviewed
 
 
+@_reader_first_tournament_scope
 async def run_concept_tournament(
     session: Any,
     settings: Any,
     *,
+    reader_first_planning: dict[str, Any] | None = None,
+    language: str = "zh",
     genre: str,
     sub_genre: str,
     chapter_count: int,

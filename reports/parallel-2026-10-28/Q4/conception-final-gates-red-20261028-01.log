@@ -1,0 +1,25 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "8f3589780b69753cb270944922762e25adfca26de2bd32ef946dfd1eded7f326",
+  "original_bytes": 1549,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_conception.py::test_native_failure_after_full_repair_cannot_launch_spine_only_repair",
+    "1 failed, 50 passed in 1.89s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "7ae801148c1231c78648780f2771d9efe91e4e7fed71a49dfba06a4fdeee755c",
+      "codes": [
+        "ConceptContractError",
+        "SYNTHETIC_NATIVE_FINAL_GATE_FAILED"
+      ]
+    },
+    {
+      "detail_sha256": "9e75ef95d2efb00ad7037a2b200113a3e568ca8ebc98dd291fbbcb289980d5af",
+      "codes": [
+        "AssertionError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

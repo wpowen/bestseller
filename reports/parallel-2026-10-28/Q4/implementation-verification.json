@@ -1,0 +1,59 @@
+{
+  "schema": "q4-implementation-verification.v1",
+  "branch": "par/Q4",
+  "baseline": "refs/tags/e2e17",
+  "baseline_sha": "419181a41f29363263cee8a12d1694ace0bcef24",
+  "tests": {
+    "combined_passed": 207,
+    "combined_exit_code": 0,
+    "dedicated_q4_tests": 169,
+    "source_bound_regression": 38,
+    "conception_separate_regression_passed": 273,
+    "writer_separate_regression_passed": 133,
+    "planner_targeted_passed": 69,
+    "broader_planner_current_failed": 17,
+    "broader_planner_pinned_failed": 18,
+    "new_failure_names": [],
+    "new_error_fingerprints": []
+  },
+  "quality_limits": {
+    "human_calibrated": false,
+    "real_model_quality_verified": false,
+    "full_scripted_flow_count": null,
+    "physical_140_fence_tested": false,
+    "full_file_ruff": "Intermediate full-file runs not green; retained logs. No final lint-pass claim."
+  },
+  "security": {
+    "new_credential_patterns": 0,
+    "raw_seed_in_delivery": false,
+    "historical_prose_in_reports": false,
+    "private_snapshot_sha256": "d7b43bd0e8838733a29b7749689936b2cf08e1008a2dbffe15455cc1ef27af89"
+  },
+  "scope": {
+    "allowed_files_only": true,
+    "workflows_outside_outline_repair_ast_unchanged": true,
+    "drafts_outside_four_writer_prompts_ast_unchanged": true,
+    "mainline_overlap_file": "mainline-overlap-during-implementation.json",
+    "merged": false,
+    "pushed": false,
+    "docker_used": false,
+    "production_db_accessed": false,
+    "paid_sends": 0
+  },
+  "code_and_test_sha256": {
+    "src/bestseller/services/chapter_writer_delivery.py": "f23848dd8fe8b08d6101e07715c450823e0303ad4a13d4222a71e8c8b65e25d9",
+    "src/bestseller/services/concept_tournament.py": "579a00ef04d4abcd2871e1ca6c0f0cfae07eb837eca02e15bbe410dbcc5e8da9",
+    "src/bestseller/services/conception.py": "60e3444338993ba1f3a31dd2a2a2d7a8331f9b1a46148244e8cf6499bb4832a8",
+    "src/bestseller/services/drafts.py": "420e31a6454f611530982e33a81d924aa2e9c8464bdbddfca22d525d657c5bc5",
+    "src/bestseller/services/planner.py": "02fd040fbecf7557a41ea3ec11f650ad24e8ad822c6adbac7c141f7c7d112b9b",
+    "src/bestseller/services/source_bound_planning_content.py": "df9212f897be8cfd7f10cf7f309eec056b95d370c47a31f03797c65191843480",
+    "src/bestseller/services/workflows.py": "4d2126cc4af123be817324c136a1d9f9652a83c607038119ccc33b3de8aacd85",
+    "config/methodology_profiles/reader_first_planning_v1.yaml": "70a0b7d70608ebef46de5d95e65d32e5cc3334c61f5a5f0fbb4104acc09d5396",
+    "tests/unit/test_q4_reader_first_conception.py": "9f796a29242afc85902a2fbb71b8b9a24f252dd1d4f9ec2004651c68c9a195d8",
+    "tests/unit/test_q4_reader_first_delivery.py": "2bf21c063706bd79db2d19aa8b06181c1bb104666bb2a5577f3d4734ee04ee6b",
+    "tests/unit/test_q4_reader_first_planner.py": "c3a418fc9a972faa24c413b1974c7a9f2859bfe717f2c0ad6e6acf9f7245805d",
+    "tests/unit/test_q4_reader_first_protocol.py": "410db20fe811a1c73d08808de435849eab655797f2d21b26e9eac4d3675fa789"
+  },
+  "implementation_commit": "27091a522edf430fc06da658bfe9cd79a3cbb98f",
+  "git_pre_commit_secret_scan": "passed"
+}

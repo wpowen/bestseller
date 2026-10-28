@@ -1,0 +1,123 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "7b2fd3f73b4811047132ff105ad9aa0df9a9ad3ee48ac505480245eb9103e5be",
+  "original_bytes": 8171,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_binding_freezes_config_and_input_and_preserves_legacy",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_bound_source_pass_and_freshness",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[missing]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[nan]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[bool]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[out_of_range]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[bad_quote]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[bad_pointer]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[fallback]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[missing_reason]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[wrong_config]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[wrong_checkpoint]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_unknown_never_passes[duplicate_json_key]",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_thresholds_are_conjunctive_and_high_severity_cannot_be_offset",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_input_capacity_is_checked_before_dispatch_without_truncation",
+    "FAILED tests/unit/test_q4_reader_first_protocol.py::test_source_prompt_version_requires_explicit_project_binding",
+    "16 failed in 0.24s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "539444d23912c6547677a2399021b226a74ba7494769902567c6cd8bea05642a",
+      "codes": [
+        "AttributeError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

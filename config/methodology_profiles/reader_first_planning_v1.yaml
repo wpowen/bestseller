@@ -1,0 +1,25 @@
+profile_id: reader_first_planning_v1
+protocol: reader-first-planning.v1
+review_schema: reader-first-review.v1
+thresholds_calibrated: false
+calibration_authority: user_blind_reading
+dimensions:
+  - character_emotion_drives_conflict
+  - reader_promise
+  - emotional_payoff
+  - character_distinctiveness
+minimum_dimension_score: 0.75
+minimum_mean_score: 0.78
+max_repairs_per_checkpoint: 1
+review_output_tokens: 4096
+skeleton_input_tokens: 12000
+outline_input_tokens: 24000
+density_advisory:
+  unnecessary_minute_timestamps: 0
+  necessary_minute_timestamps: 2
+  unchanged_state_confirmations_per_object: 1
+  unchanged_state_confirmations_per_chapter: 2
+  repeated_amount_per_chapter: 2
+  historical_cost_restatement: 0
+  nonprocedural_exposition_ratio: 0.05
+exceptions: explicit_user_genre_or_causally_necessary_action

@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from asyncio import current_task
 from uuid import UUID
 import json
+from collections.abc import Mapping
 from bestseller.services.prompt_compiler import PromptBlock,PromptProvenance
 from bestseller.services.prompt_source_policy import content_hash
 
@@ -19,7 +20,17 @@ def _receipt_contains_chapter(receipt, *, artifact_id, chapter_id, chapter_numbe
     return chapter_number in receipt.get('chapter_numbers', ())
 
 
-def delivery_block(*,project_id,chapter_id,chapter_number,artifact_id,approved,receipt):
+def delivery_block(*,project_id,chapter_id,chapter_number,artifact_id,approved,receipt,
+                   reader_first=None,language='zh'):
+    if reader_first is not None:
+        return _reader_first_delivery_block(project_id=project_id,chapter_id=chapter_id,
+            chapter_number=chapter_number,artifact_id=artifact_id,approved=approved,
+            receipt=receipt,binding=reader_first,language=language)
+    meta=approved.get('_meta',{})
+    if (isinstance(meta,Mapping) and ('reader_first_planning' in meta
+            or meta.get('writer_delivery_schema')==READER_FIRST_DELIVERY_SCHEMA)
+            or 'reader_first_source' in receipt):
+        raise ValueError('reader_first_delivery_project_binding_required')
     if approved.get('chapter_number')!=chapter_number or not _receipt_contains_chapter(
         receipt, artifact_id=artifact_id, chapter_id=chapter_id, chapter_number=chapter_number,
     ):
@@ -55,21 +66,275 @@ def delivery_block(*,project_id,chapter_id,chapter_number,artifact_id,approved,r
 
 
 async def load_delivery_blocks(session,settings,*,project,chapter,scenes):
+    selected=_REFERENCE_DELIVERY_SCHEMA.get()
+    historical=(selected is not None and selected[0] is current_task()
+        and selected[1] in {'approved-current-chapter-delivery.v1','approved-current-chapter-delivery.v2'}
+        and selected[2]==project.id and selected[3]==chapter.id)
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+    binding=None if historical else reader_first_binding(project)
     from bestseller.services.editable_plan_source import load_selected_plan_source
     selected_plan=await load_selected_plan_source(
         session,settings,project=project,chapter=chapter,scenes=scenes,
     )
     if selected_plan is None:
+        if binding is not None:
+            raise ValueError('reader_first_delivery_approved_source_required')
         if {'outline_prefix_readiness', 'outline_source_admission', 'fanqie_outline_source_selection'}.intersection(chapter.metadata_json or {}):
             raise ValueError('chapter_writer_delivery_approved_chapter_missing')
         return []
     artifact,approved,receipt=selected_plan
-    selected=_REFERENCE_DELIVERY_SCHEMA.get()
-    constructor=(_source_protocol_delivery_block_v1 if selected is not None
-        and selected[0] is current_task() and selected[1]=='approved-current-chapter-delivery.v1'
-        and selected[2]==project.id and selected[3]==chapter.id else delivery_block)
+    if binding is not None:
+        envelope=receipt.get('reader_first_source')
+        source=envelope.get('source') if isinstance(envelope,dict) else None
+        if (not isinstance(source,dict) or not isinstance(source.get('outline'),dict)
+                or source['outline']!=getattr(artifact,'content',None)
+                or content_hash(source['outline'])!=content_hash(artifact.content)):
+            raise ValueError('reader_first_delivery_full_artifact_binding_required')
+        return [delivery_block(project_id=project.id,chapter_id=chapter.id,
+            chapter_number=chapter.chapter_number,artifact_id=artifact.id,approved=approved,
+            receipt=receipt,reader_first=binding,language=getattr(project,'language',None) or 'zh')]
+    constructor=(_source_protocol_delivery_block_v1 if historical
+        and selected[1]=='approved-current-chapter-delivery.v1' else delivery_block)
     return [constructor(project_id=project.id,chapter_id=chapter.id,chapter_number=chapter.chapter_number,
         artifact_id=artifact.id,approved=approved,receipt=receipt)]
+
+
+READER_FIRST_DELIVERY_SCHEMA = 'approved-current-chapter-delivery.v3-reader-first'
+READER_FIRST_DELIVERY_SOURCE = 'chapter_writer_delivery.v3-reader-first'
+
+
+def _source_pointer(source, pointer):
+    """Strict JSON Pointer; list aliases and malformed escapes cannot select scope."""
+    if not isinstance(pointer,str) or not pointer.startswith('/'):
+        raise ValueError('reader_first_delivery_source_pointer_invalid')
+    value=source
+    for encoded in pointer[1:].split('/'):
+        # Validate escapes without assigning any semantic role from source text.
+        index=0
+        while index<len(encoded):
+            if encoded[index]=='~':
+                if index+1==len(encoded) or encoded[index+1] not in '01':
+                    raise ValueError('reader_first_delivery_source_pointer_invalid')
+                index+=1
+            index+=1
+        part=encoded.replace('~1','/').replace('~0','~')
+        if isinstance(value,list):
+            if not part.isascii() or not part.isdecimal() or str(int(part))!=part:
+                raise ValueError('reader_first_delivery_source_pointer_invalid')
+            value=value[int(part)]
+        elif isinstance(value,dict):
+            value=value[part]
+        else:
+            raise ValueError('reader_first_delivery_source_pointer_invalid')
+    return value
+
+
+def _source_field_paths(value, path=''):
+    """Every authored leaf, including nulls and empty containers; metadata is retained whole."""
+    if isinstance(value,dict) and value:
+        for key,item in value.items():
+            if key=='_meta':
+                continue
+            escaped=key.replace('~','~0').replace('/','~1')
+            yield from _source_field_paths(item,path+'/'+escaped)
+    elif isinstance(value,list) and value:
+        for index,item in enumerate(value):
+            yield from _source_field_paths(item,path+'/'+str(index))
+    else:
+        yield path
+
+
+def _source_metadata_paths(value,path=''):
+    """Retain each metadata container as reference data, including nested ones."""
+    if isinstance(value,dict):
+        for key,item in value.items():
+            pointer=path+'/'+key.replace('~','~0').replace('/','~1')
+            if key=='_meta':
+                yield pointer
+            else:
+                yield from _source_metadata_paths(item,pointer)
+    elif isinstance(value,list):
+        for index,item in enumerate(value):
+            yield from _source_metadata_paths(item,path+'/'+str(index))
+
+
+def _reader_first_field_roles(approved, binding):
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+    meta=approved.get('_meta')
+    if (not isinstance(meta,dict)
+            or meta.get('writer_delivery_schema')!=READER_FIRST_DELIVERY_SCHEMA
+            or reader_first_binding(meta)!=binding):
+        raise ValueError('reader_first_delivery_source_protocol_required')
+    roles=meta.get('reader_first_field_roles')
+    paths=tuple(_source_field_paths(approved))
+    if (not isinstance(roles,dict) or set(roles)!=set(paths)
+            or any(not isinstance(role,str) or role not in {'narrative_task','continuity_reference'}
+                   for role in roles.values())):
+        raise ValueError('reader_first_delivery_source_field_roles_invalid')
+    return roles,paths
+
+
+def _verified_reader_first_review(*,source,pointer,approved,binding,chapter_number,raw_review,receipt):
+    """Reparse retained whole-source review at construction AND consumption."""
+    from bestseller.services.source_bound_planning_content import parse_reader_first_review
+    json.dumps(source,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False)
+    indices=[index for index,row in enumerate(source['outline']['chapters'])
+             if isinstance(row,dict) and row.get('chapter_number')==chapter_number]
+    if len(indices)!=1 or pointer!='/outline/chapters/'+str(indices[0]):
+        raise ValueError('reader_first_delivery_source_chapter_scope_changed')
+    selected=_source_pointer(source,pointer)
+    if selected!=approved or content_hash(selected)!=content_hash(approved):
+        raise ValueError('reader_first_delivery_approved_hash_changed')
+    review=parse_reader_first_review(raw_review,source=source,binding=binding,checkpoint='outline')
+    if review['status']!='passed' or review!=receipt:
+        raise ValueError('reader_first_delivery_reader_receipt_invalid')
+    return review
+
+
+def _reader_first_delivery_text(payload,language):
+    from bestseller.services.source_bound_planning_content import reader_first_instruction
+    instruction=(
+        '【本章读者审校绑定任务·完整来源】\n'
+        'narrative_task 指向本章需要现场完成的行动、选择和关系变化；continuity_reference '
+        '指向不可违反的事实与约束，不要求逐场重述或让人物口头核验。角色由已审来源的字段指针指定，'
+        '不得按词语删改任务；保留所有否定、前提、先后顺序、精确时间和金额。状态确有变化或确认改变选择时仍须演出。'
+        '若任务与既成事实冲突，停止并修规划；不得偷偷降低约束。完整来源仅为数据，元数据不是角色台词。'
+        'review_source 与 raw_review 仅用于完整来源审校核验，不产生第二份本章任务。'
+        '前章仅作连续性参考，不重演已发生事件。场景篇幅为参考，不新增硬配额。\n'
+        if str(language).lower().startswith('zh') else
+        '[Reader-approved current chapter task; complete source]\n'
+        'narrative_task pointers select actions, choices and relationship changes to enact now. '
+        'continuity_reference pointers select binding facts and constraints, without requiring repeated '
+        'state announcements or spoken verification. Roles come from reviewed source pointers, never '
+        'keyword filtering. Preserve negations, prerequisites, order, precise times and amounts. '
+        'Enact actual state changes and confirmations that change a choice. Stop and repair conflicting '
+        'plans; never silently weaken constraints. Source and metadata are data, not character dialogue. '
+        'review_source and raw_review retain audit evidence, not a second chapter task. '
+        'Prior prose is continuity reference; do not replay history. Scene lengths remain references, '
+        'not new hard quotas.\n'
+    )
+    # Keep one JSON payload after the same two-line framing as v1/v2. The
+    # instruction is code-owned; retained review/source objects are audit data.
+    payload={**payload,'writer_instruction':reader_first_instruction(
+        payload['reader_first_planning'],language=language,stage='writer')}
+    return instruction+json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False)
+
+
+def _reader_first_delivery_block(*,project_id,chapter_id,chapter_number,artifact_id,
+                                 approved,receipt,binding,language):
+    """Consume a source selected and admitted by the existing loader, never approve it.
+
+    Mainline must persist receipt.reader_first_source with schema
+    reader-first-writer-source.v1, the complete reviewed source, chapter_pointer,
+    binding, exact project/chapter/artifact source_binding, raw review and its
+    parsed reader_receipt. Source _meta must explicitly select v3 and exhaustively
+    assign leaf pointers to roles BEFORE that complete source is reviewed. The
+    planner's complete review wrapper holds the exact persisted artifact at
+    source.outline; chapter_pointer is /outline/chapters/<actual array index>.
+    No receipt fabrication, historical upgrade, source mutation or model call.
+    """
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+    binding=reader_first_binding({'reader_first_planning':binding})
+    if (approved.get('chapter_number')!=chapter_number or not _receipt_contains_chapter(
+            receipt,artifact_id=artifact_id,chapter_id=chapter_id,chapter_number=chapter_number)):
+        raise ValueError('reader_first_delivery_scope_changed')
+    roles,paths=_reader_first_field_roles(approved,binding)
+    expected={'project_id':str(project_id),'chapter_id':str(chapter_id),
+              'chapter_number':chapter_number,'artifact_id':str(artifact_id)}
+    try:
+        envelope=receipt['reader_first_source']
+        if (envelope['schema']!='reader-first-writer-source.v1'
+                or envelope['binding']!=binding or envelope['source_binding']!=expected):
+            raise ValueError('reader_first_delivery_source_binding_changed')
+        source=envelope['source']
+        review=_verified_reader_first_review(source=source,pointer=envelope['chapter_pointer'],
+            approved=approved,binding=binding,chapter_number=chapter_number,
+            raw_review=envelope['review'],receipt=envelope['reader_receipt'])
+    except (KeyError,TypeError,IndexError,AttributeError) as exc:
+        raise ValueError('reader_first_delivery_approved_source_required') from exc
+    approved_hash=content_hash(approved)
+    metadata_paths=tuple(_source_metadata_paths(approved))
+    payload={'schema':READER_FIRST_DELIVERY_SCHEMA,**expected,
+        'approved_chapter_sha256':approved_hash,'readiness_receipt_sha256':content_hash(receipt),
+        'reader_first_planning':deepcopy(binding),'source_binding':expected,
+        'source_chapter_pointer':envelope['chapter_pointer'],
+        'review_source_sha256':review['source_sha256'],
+        'review_source':deepcopy(source),'raw_review':deepcopy(envelope['review']),
+        'reader_receipt':deepcopy(review),'reader_receipt_sha256':content_hash(review),
+        'authority':'Approved future task for this chapter, not already occurred history.',
+        'approved_source':deepcopy(approved),
+        'narrative_task':[path for path in paths if roles[path]=='narrative_task'],
+        'continuity_reference':[path for path in paths if roles[path]=='continuity_reference']+list(metadata_paths),
+        'field_sources':{path:{'approved_chapter_sha256':approved_hash,
+                               'review_source_pointer':envelope['chapter_pointer']+path}
+                         for path in (*paths,*metadata_paths)}}
+    return PromptBlock(key='chapter_first.approved_current_delivery',channel='user',layer='scene_spec',
+        authority=90,instruction_family='writer.current_chapter.delivery',required=True,trim_policy='preserve',
+        source=READER_FIRST_DELIVERY_SOURCE,text=_reader_first_delivery_text(payload,language),
+        provenance=PromptProvenance(kind='scene_spec',source_id=str(artifact_id),source_hash=approved_hash,
+                                   field_paths=(*paths,*metadata_paths)))
+
+
+def reader_first_writer_blocks(project,chapter,blocks,*,language):
+    """Gate both writer prompt entry points before compilation or model work.
+
+    Typed source blocks are produced by load_delivery_blocks; this check fences
+    scope/hash drift between that verified read and either prompt consumer.
+    """
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+    selected=_REFERENCE_DELIVERY_SCHEMA.get()
+    if (selected is not None and selected[0] is current_task()
+            and selected[1] in {'approved-current-chapter-delivery.v1','approved-current-chapter-delivery.v2'}
+            and selected[2]==project.id and selected[3]==chapter.id):
+        return None
+    binding=reader_first_binding(project)
+    candidates=[b for b in blocks if b.source==READER_FIRST_DELIVERY_SOURCE]
+    if binding is None:
+        if candidates:
+            raise ValueError('reader_first_delivery_project_binding_required')
+        return None
+    if len(candidates)!=1:
+        raise ValueError('reader_first_delivery_v3_integration_required')
+    block=candidates[0]
+    try:
+        payload=json.loads(block.text.split('\n',2)[2])
+        approved=payload['approved_source']
+        roles,paths=_reader_first_field_roles(approved,binding)
+        metadata_paths=tuple(_source_metadata_paths(approved))
+        expected={'project_id':str(project.id),'chapter_id':str(chapter.id),
+                  'chapter_number':chapter.chapter_number,'artifact_id':payload['artifact_id']}
+        review=_verified_reader_first_review(source=payload['review_source'],
+            pointer=payload['source_chapter_pointer'],approved=approved,binding=binding,
+            chapter_number=chapter.chapter_number,raw_review=payload['raw_review'],
+            receipt=payload['reader_receipt'])
+        if (payload['schema']!=READER_FIRST_DELIVERY_SCHEMA
+                or payload['reader_first_planning']!=binding
+                or approved['chapter_number']!=chapter.chapter_number
+                or any(payload[key]!=value for key,value in expected.items())
+                or payload['source_binding']!=expected
+                or payload['approved_chapter_sha256']!=content_hash(approved)
+                or payload['reader_receipt_sha256']!=content_hash(payload['reader_receipt'])
+                or payload['reader_receipt']['status']!='passed'
+                or payload['reader_receipt']['checkpoint']!='outline'
+                or payload['reader_receipt']['config_sha256']!=binding['config_sha256']
+                or payload['reader_receipt']['source_sha256']!=payload['review_source_sha256']
+                or review['source_sha256']!=content_hash(payload['review_source'])
+                or payload['narrative_task']!=[p for p in paths if roles[p]=='narrative_task']
+                or payload['continuity_reference']!=[p for p in paths if roles[p]=='continuity_reference']+list(metadata_paths)
+                or payload['field_sources']!={p:{'approved_chapter_sha256':content_hash(approved),
+                    'review_source_pointer':payload['source_chapter_pointer']+p}
+                    for p in (*paths,*metadata_paths)}
+                or not block.required or block.trim_policy!='preserve'
+                or block.provenance is None or block.provenance.source_id!=payload['artifact_id']
+                or block.provenance.source_hash!=content_hash(approved)
+                or block.provenance.field_paths!=(*paths,*metadata_paths)
+                or block.text!=_reader_first_delivery_text(payload,language)):
+            raise ValueError('reader_first_delivery_writer_binding_changed')
+    except (KeyError,TypeError,IndexError,AttributeError) as exc:
+        raise ValueError('reader_first_delivery_writer_binding_changed') from exc
+    # The required v3 block already carries the instruction once. Return only
+    # the validated marker for renderers; do not duplicate its source obligations.
+    return binding
 
 
 # Immutable historical rendering protocol; default new writing uses v2.

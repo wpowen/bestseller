@@ -1,0 +1,48 @@
+{
+  "schema": "q4-design-verification.v1",
+  "markdown_documents": 4,
+  "local_links_checked": [
+    {
+      "file": "REPORT.md",
+      "target": "design-reader-first-planning.md"
+    },
+    {
+      "file": "REPORT.md",
+      "target": "design-for-mainline.md"
+    },
+    {
+      "file": "REPORT.md",
+      "target": "experiment-budget.md"
+    },
+    {
+      "file": "REPORT.md",
+      "target": "evidence.json"
+    }
+  ],
+  "service_function_references_checked": 10,
+  "source_ast_parse": "passed",
+  "trailing_whitespace": "none",
+  "tracked_code_changes": false,
+  "private_directory_modes": {
+    ".": "0o700",
+    "blind": "0o700",
+    "prompts": "0o700",
+    "experiment": "0o700"
+  },
+  "private_materials_generated": false,
+  "pytest_run": false,
+  "database_connections": 0,
+  "paid_experiment_calls": 0,
+  "review_items_resolved": [
+    "marked_project_no_legacy_downgrade",
+    "source_manifest_revalidation_dependency",
+    "whole_outline_batch_coverage_and_shared_repair_quota",
+    "budget_attachment_present"
+  ],
+  "documents": {
+    "REPORT.md": "f32d3692ddf29a11bcf26e91adc9568f94370e3d30e8ed00431ea58d9dce296a",
+    "design-for-mainline.md": "b01e3860cd9eb107382f8ffb6d9d1c836188a9506e0c0355a3f29519cb7103fe",
+    "design-reader-first-planning.md": "76a3d484c6ca48b384cc0a5bd4b966a3b4f91ff7db7f18dde83f81b3282c7c69",
+    "experiment-budget.md": "437a73015d205b81648db0139aa08a252713e2ca65e08c0331835a1a014a59cd"
+  }
+}

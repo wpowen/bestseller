@@ -1,0 +1,161 @@
+{
+  "schema": "q4-public-test-log-summary.v1",
+  "original_log_sha256": "5aeeab5fd30202e2e63f11b4cbce5469fb1472a133c23eafa1fec2ef4a27740a",
+  "original_bytes": 14451,
+  "summary": [
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_complete_range_pass_is_bound_and_old_pass_cannot_survive_edit",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[failed]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[missing_dimension]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[bad_quote]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[nan]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[truncated]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[fallback]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_failure_is_retained_and_resume_cannot_dispatch_again[error]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_no_partial_or_truncated_outline_review[missing_chapter]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_no_partial_or_truncated_outline_review[duplicate]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_no_partial_or_truncated_outline_review[scene_missing]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_no_partial_or_truncated_outline_review[capacity]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_repair_quota_precedes_callback_and_survives_changed_source",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_legacy_checkpoint_never_calls_transport_or_persistence",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_prompts_keep_user_source_and_add_only_bound_system_guidance[zh]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_prompts_keep_user_source_and_add_only_bound_system_guidance[en]",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_bound_outline_derivation_copies_facts_and_never_invents_procedure",
+    "FAILED tests/unit/test_q4_reader_first_planner.py::test_input_identity_is_versioned_without_changing_legacy_hash",
+    "18 failed in 1.44s"
+  ],
+  "error_lines": [
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "0bfbd00ee05fdb0799dec97dd3b33515c04de72f4d9f193fea8268d7cce1146e",
+      "codes": [
+        "AttributeError"
+      ]
+    },
+    {
+      "detail_sha256": "3c2d348f583c0278ae93c5a8e99df0a0024215c1ef708fb4c22f6a9bbe3168c0",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "790b76fda5ce3101aa0f8ad8d37db5e05172439f13a3b5b1ea0eb68bdc8708e2",
+      "codes": []
+    },
+    {
+      "detail_sha256": "5fbd0ba6428281cc62f07e0ea518a5b9751abe2f37d4223de3c986edd4660926",
+      "codes": []
+    },
+    {
+      "detail_sha256": "3c2d348f583c0278ae93c5a8e99df0a0024215c1ef708fb4c22f6a9bbe3168c0",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "790b76fda5ce3101aa0f8ad8d37db5e05172439f13a3b5b1ea0eb68bdc8708e2",
+      "codes": []
+    },
+    {
+      "detail_sha256": "5fbd0ba6428281cc62f07e0ea518a5b9751abe2f37d4223de3c986edd4660926",
+      "codes": []
+    },
+    {
+      "detail_sha256": "c108b8fb27a5eea6e3ed1c32cbdadbd1b5fa0c1befa51b8d955046c649e792e3",
+      "codes": [
+        "AssertionError"
+      ]
+    },
+    {
+      "detail_sha256": "1258b8631e2eda01f550b62c82e15e15773bf1e4e9bd3843a1c5785b4d7b5c65",
+      "codes": []
+    },
+    {
+      "detail_sha256": "1f6ac9488404871d0271c53ed3ee672f4c4480f10d5d6ae0f1c121bd7befdc2a",
+      "codes": []
+    },
+    {
+      "detail_sha256": "130c1ec77b29520c2f4c74154da941b73c64b7702b44efc6cd51ece1f75f78c5",
+      "codes": [
+        "TypeError"
+      ]
+    }
+  ],
+  "redaction": "source snippets, full assertion strings and rendered prompts omitted; reproduction remains in tests"
+}

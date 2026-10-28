@@ -33,6 +33,8 @@ from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
 
+from bestseller.services.source_ordering import ordered_source_rows
+
 logger = logging.getLogger(__name__)
 
 KNOWLEDGE_LINEAGE_SCHEMA = "adopted-knowledge.v1"
@@ -423,6 +425,91 @@ async def _store_feedback_receipt(
 # ---------------------------------------------------------------------------
 
 
+async def load_feedback_prompt_context(session: AsyncSession, *, project_id: UUID, chapter: Any) -> dict[str, Any]:
+    """Read extraction inputs; this grants no adoption or execution authority.
+
+    The extraction entry validates its source before reaching this reader.
+    Keep row identities until selection is complete, then project prompt fields.
+    """
+    from bestseller.infra.db.models import (
+        AntagonistPlanModel,
+        ArcBeatModel,
+        CharacterModel,
+        ClueModel,
+        PlotArcModel,
+        ProjectModel,
+    )
+
+    # Fetch the project to determine language
+    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id))
+    language = project.language if project else None
+
+    # Load context needed for the prompt
+    characters = ordered_source_rows(
+        await session.scalars(select(CharacterModel).where(CharacterModel.project_id == project_id)
+                              .order_by(CharacterModel.id.asc()))
+    )
+    active_arcs = ordered_source_rows(
+        await session.scalars(
+            select(PlotArcModel).where(
+                PlotArcModel.project_id == project_id,
+                PlotArcModel.status.in_(["planned", "active", "in_progress"]),
+            ).order_by(PlotArcModel.id.asc())
+        )
+    )
+    unresolved_clues = ordered_source_rows(
+        await session.scalars(
+            select(ClueModel).where(
+                ClueModel.project_id == project_id,
+                ClueModel.status.in_(["planted", "active"]),
+                ClueModel.actual_paid_off_chapter_number.is_(None),
+            ).order_by(ClueModel.id.asc())
+        )
+    )
+    active_antagonist_plans = ordered_source_rows(
+        await session.scalars(
+            select(AntagonistPlanModel).where(
+                AntagonistPlanModel.project_id == project_id,
+                AntagonistPlanModel.status == "active",
+            ).order_by(AntagonistPlanModel.id.asc())
+        )
+    )
+
+    # Load arc beats for active arcs (needed for the prompt)
+    arc_beats_by_arc: dict[UUID, list[Any]] = {}
+    if active_arcs:
+        arc_ids = [a.id for a in active_arcs]
+        all_beats = ordered_source_rows(
+            await session.scalars(select(ArcBeatModel).where(ArcBeatModel.plot_arc_id.in_(arc_ids))
+                                  .order_by(ArcBeatModel.beat_order.asc(), ArcBeatModel.id.asc())),
+            priority=lambda row: (row.beat_order,),
+        )
+        for beat in all_beats:
+            arc_beats_by_arc.setdefault(beat.plot_arc_id, []).append(beat)
+
+    # A mutable character row can still retain a withdrawn chapter's cache.
+    # Supply only source-qualified state from the adopted prefix to extraction.
+    from types import SimpleNamespace
+    from bestseller.services.story_bible import get_effective_character_state
+
+    prompt_characters = []
+    for character in characters:
+        prior_state = await get_effective_character_state(
+            session, project_id=project_id, character=character,
+            before_chapter_number=chapter.chapter_number - 1,
+        )
+        prompt_characters.append(SimpleNamespace(
+            name=character.name, arc_state=prior_state.arc_state,
+            knowledge_state_json=prior_state.knowledge_state,
+        ))
+
+    return dict(
+        characters=prompt_characters, active_arcs=active_arcs,
+        arc_beats_by_arc=arc_beats_by_arc, unresolved_clues=unresolved_clues,
+        active_antagonist_plans=active_antagonist_plans, language=language,
+    )
+
+
 async def extract_chapter_feedback(
     session: AsyncSession,
     settings: AppSettings,
@@ -441,15 +528,6 @@ async def extract_chapter_feedback(
     back into the relevant data models so subsequent chapters see an
     up-to-date world state.
     """
-    from bestseller.infra.db.models import (
-        AntagonistPlanModel,
-        ArcBeatModel,
-        CharacterModel,
-        ClueModel,
-        PlotArcModel,
-        ProjectModel,
-    )
-
     chapter_number: int = chapter.chapter_number
     chapter_id: UUID = chapter.id
 
@@ -518,76 +596,15 @@ async def extract_chapter_feedback(
     }
     llm_receipts: list[dict[str, Any]] = []
 
-    # Fetch the project to determine language
-    project = await session.scalar(select(ProjectModel).where(ProjectModel.id == project_id))
-    language = project.language if project else None
-
-    # Load context needed for the prompt
-    characters = list(
-        await session.scalars(select(CharacterModel).where(CharacterModel.project_id == project_id))
+    prompt_context = await load_feedback_prompt_context(
+        session, project_id=project_id, chapter=chapter,
     )
-    active_arcs = list(
-        await session.scalars(
-            select(PlotArcModel).where(
-                PlotArcModel.project_id == project_id,
-                PlotArcModel.status.in_(["planned", "active", "in_progress"]),
-            )
-        )
-    )
-    unresolved_clues = list(
-        await session.scalars(
-            select(ClueModel).where(
-                ClueModel.project_id == project_id,
-                ClueModel.status.in_(["planted", "active"]),
-                ClueModel.actual_paid_off_chapter_number.is_(None),
-            )
-        )
-    )
-    active_antagonist_plans = list(
-        await session.scalars(
-            select(AntagonistPlanModel).where(
-                AntagonistPlanModel.project_id == project_id,
-                AntagonistPlanModel.status == "active",
-            )
-        )
-    )
-
-    # Load arc beats for active arcs (needed for the prompt)
-    arc_beats_by_arc: dict[UUID, list[Any]] = {}
-    if active_arcs:
-        arc_ids = [a.id for a in active_arcs]
-        all_beats = list(
-            await session.scalars(select(ArcBeatModel).where(ArcBeatModel.plot_arc_id.in_(arc_ids)))
-        )
-        for beat in all_beats:
-            arc_beats_by_arc.setdefault(beat.plot_arc_id, []).append(beat)
-
-    # A mutable character row can still retain a withdrawn chapter's cache.
-    # Supply only source-qualified state from the adopted prefix to extraction.
-    from types import SimpleNamespace
-    from bestseller.services.story_bible import get_effective_character_state
-
-    prompt_characters = []
-    for character in characters:
-        prior_state = await get_effective_character_state(
-            session, project_id=project_id, character=character,
-            before_chapter_number=chapter.chapter_number - 1,
-        )
-        prompt_characters.append(SimpleNamespace(
-            name=character.name, arc_state=prior_state.arc_state,
-            knowledge_state_json=prior_state.knowledge_state,
-        ))
 
     # 1. Build prompts
     system_prompt, user_prompt = _build_feedback_extraction_prompts(
         chapter=chapter,
         chapter_md=chapter_md,
-        characters=prompt_characters,
-        active_arcs=active_arcs,
-        arc_beats_by_arc=arc_beats_by_arc,
-        unresolved_clues=unresolved_clues,
-        active_antagonist_plans=active_antagonist_plans,
-        language=language,
+        **prompt_context,
     )
 
     # 2. Call LLM
@@ -647,7 +664,7 @@ async def extract_chapter_feedback(
                         ),
                     )
                 ],
-                language=language,
+                language=prompt_context["language"],
             )
             _, rejection = await validate_adopted_knowledge_source(
                 session,
@@ -1114,7 +1131,7 @@ def _build_feedback_extraction_prompts(
         for arc in active_arcs:
             sections.append(f"- {arc.arc_code}: {arc.name} (status={arc.status})")
             beats = arc_beats_by_arc.get(arc.id, [])
-            sorted_beats = sorted(beats, key=lambda b: b.beat_order)
+            sorted_beats = ordered_source_rows(beats, priority=lambda row: (row.beat_order,))
             for beat in sorted_beats:
                 sections.append(
                     f"  - beat {beat.beat_order}: {beat.summary} (status={beat.status})"

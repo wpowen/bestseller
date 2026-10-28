@@ -341,44 +341,56 @@ async def checkpoint_writing(session, project_id):
 
 
 async def _revision_tasks(session, project, current, review, unlock_segment, *, semantic_view=None):
-    """Queue source-bound normal rewrite work without executing or regrading it."""
+    """Stage new, exact-parent tasks; never rebind previously issued work.
+
+    The assembly reader remains responsible for adoption and knowledge proof.
+    This producer rechecks each body and current outline before issuing a task.
+    All findings for one chapter share one new task, while a title finding has
+    a project-level exit and cannot accidentally dispatch the body editor.
+    """
     from bestseller.services.fanqie_short_gate_v2 import build_fanqie_short_v2_rewrite_instructions
     from bestseller.services.fanqie_short_pipeline import (
-        _ranking_finding_chapter_numbers,
-        _short_v2_finding_chapter_numbers,
+        _ranking_finding_chapter_numbers, _short_v2_finding_chapter_numbers,
     )
     from bestseller.services.fanqie_short_ranking_gate import (
-        FanqieRankingGateReport,
-        build_fanqie_ranking_rewrite_instructions,
+        FanqieRankingFinding, FanqieRankingGateReport, build_fanqie_ranking_rewrite_instructions,
     )
+    from bestseller.services.reviews import rewrite_source_binding
     from bestseller.services.rewrite_patch import text_hash
 
-    existing = list(
-        await session.scalars(
-            select(RewriteTaskModel)
-            .where(
-                RewriteTaskModel.project_id == project.id,
-            )
-            .execution_options(populate_existing=True)
-        )
-    )
+    existing = list(await session.scalars(select(RewriteTaskModel).where(
+        RewriteTaskModel.project_id == project.id,
+    ).order_by(RewriteTaskModel.id).execution_options(populate_existing=True)))
     by_key = {(row.metadata_json or {}).get("whole_revision_key"): row for row in existing}
     sources = {row["chapter_number"]: row for row in current.manifest["sources"]}
-    counts, task_ids = {"ranking": 0, "short_v2": 0}, []
-    for kind, report, target, instructions in (
-        (
-            "ranking",
-            review.ranking_report,
-            _ranking_finding_chapter_numbers,
-            build_fanqie_ranking_rewrite_instructions,
-        ),
-        (
-            "short_v2",
-            review.short_v2_report,
-            _short_v2_finding_chapter_numbers,
-            build_fanqie_short_v2_rewrite_instructions,
-        ),
-    ):
+    if len(sources) != len(current.manifest["sources"]):
+        raise ValueError("fanqie_whole_duplicate_source")
+    grouped, titles = {}, []
+    reports = [
+        ("ranking", review.ranking_report, _ranking_finding_chapter_numbers,
+         build_fanqie_ranking_rewrite_instructions),
+        ("short_v2", review.short_v2_report, _short_v2_finding_chapter_numbers,
+         build_fanqie_short_v2_rewrite_instructions),
+    ]
+    # New generation contracts get explicit length work. Legacy delivery keeps
+    # its historical protocol and separate upload flag (U2).
+    protocol = (project.metadata_json or {}).get("book_length_control") or {}
+    if protocol.get("protocol") == "book-length-control-v1":
+        from bestseller.services.drafts import count_words
+        words, target = count_words(current.full_text), project.target_word_count
+        if target <= 0:
+            raise ValueError("fanqie_whole_word_target_invalid")
+        if words * 100 < target * 85 or words * 100 > target * 115:
+            code = "whole_word_count_under" if words < target else "whole_word_count_over"
+            finding = FanqieRankingFinding(
+                code=code, severity="critical", phase="whole_story", target="whole_story",
+                message=f"Adopted body has {words} words; book target is {target}. Follow the frozen chapter budget.",
+                evidence=f"actual={words};target={target};counting=export-body-words-v1",
+            )
+            reports.append(("short_v2", FanqieRankingGateReport(
+                passed=False, phase="whole_story", findings=(finding,)),
+                _short_v2_finding_chapter_numbers, build_fanqie_short_v2_rewrite_instructions))
+    for kind, report, route, render in reports:
         if report is None or report.passed:
             continue
         for finding in report.findings:
@@ -389,53 +401,63 @@ async def _revision_tasks(session, project, current, review, unlock_segment, *, 
                 if any(row["gate"] == kind + "_report"
                        and _json(row["finding"]) == _json(finding.to_dict()) for row in removed):
                     continue
-            for number in target(
-                finding, segment_total=project.target_chapters, unlock_segment=unlock_segment
-            ):
-                source = sources[number]
-                key = _sha(
-                    {
-                        "source": current.manifest,
-                        "kind": kind,
-                        "finding": finding.to_dict(),
-                        "chapter": number,
-                    }
-                )
-                if key in by_key:
-                    task_ids.append(str(by_key[key].id))
-                    continue
-                draft = await session.get(ChapterDraftVersionModel, UUID(source["draft_id"]))
-                task = RewriteTaskModel(
-                    project_id=project.id,
-                    trigger_type="fanqie_" + kind + "_gate",
-                    trigger_source_id=draft.chapter_id,
-                    rewrite_strategy="fix_" + finding.phase,
-                    priority=1,
-                    status="pending",
-                    instructions=instructions(
-                        FanqieRankingGateReport(
-                            passed=False,
-                            phase=finding.phase,
-                            findings=(finding,),
-                        )
-                    ),
-                    context_required=["chapter_draft", "fanqie_whole_source"],
-                    metadata_json={
-                        "chapter_id": source["chapter_id"],
-                        "chapter_number": number,
-                        "parent_draft_id": source["draft_id"],
-                        "parent_draft_hash": text_hash(draft.content_md),
-                        "whole_revision_key": key,
-                        "finding": finding.to_dict(),
-                        "source_manifest": current.manifest,
-                        "grade_asserted": False,
-                    },
-                )
-                session.add(task)
-                await session.flush()
-                by_key[key] = task
-                task_ids.append(str(task.id))
-                counts[kind] += 1
+            if finding.target == "title" or finding.phase == "title":
+                titles.append({"gate": kind, "finding": finding.to_dict()})
+                continue
+            for number in route(finding, segment_total=project.target_chapters,
+                                unlock_segment=unlock_segment):
+                if number not in sources:
+                    raise ValueError("fanqie_whole_task_source_missing")
+                grouped.setdefault(number, []).append((kind, finding, render))
+    if titles:
+        title_request = {"schema": "fanqie-whole-title-repair.v1", "status": "pending",
+                         "source_manifest": deepcopy(current.manifest), "findings": titles,
+                         "grade_asserted": False}
+        title_request["source_sha256"] = _sha(title_request)
+        project.metadata_json = {**(project.metadata_json or {}),
+                                 "fanqie_whole_title_repair": title_request}
+    counts, task_ids = {"ranking": 0, "short_v2": 0}, []
+    # The publisher already locks chapters before drafts. Recheck fresh columns
+    # here as well, so direct component callers cannot supply a stale manifest.
+    for number in sorted(grouped):
+        source, findings = sources[number], grouped[number]
+        serial = [{"gate": kind, "finding": finding.to_dict()} for kind, finding, _ in findings]
+        serial.sort(key=_json)
+        key = _sha({"schema": "whole-chapter-task.v2", "source": current.manifest,
+                    "chapter": number, "findings": serial})
+        if key in by_key:
+            task_ids.append(str(by_key[key].id))
+            continue
+        chapter = await session.scalar(select(ChapterModel).where(
+            ChapterModel.id == UUID(source["chapter_id"]), ChapterModel.project_id == project.id,
+        ).execution_options(populate_existing=True))
+        draft = await session.scalar(select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.id == UUID(source["draft_id"]),
+            ChapterDraftVersionModel.project_id == project.id,
+        ).execution_options(populate_existing=True))
+        if (chapter is None or draft is None or draft.chapter_id != chapter.id
+            or chapter.chapter_number != number or not draft.is_current
+            or text_hash(draft.content_md) != source["raw_body_sha256"]):
+            raise ValueError("fanqie_whole_task_source_changed")
+        binding = rewrite_source_binding(draft, chapter=chapter)
+        task = RewriteTaskModel(
+            project_id=project.id, trigger_type="fanqie_whole_gate",
+            trigger_source_id=chapter.id, rewrite_strategy="whole_chapter_repair",
+            priority=1, status="pending",
+            instructions="\n\n".join(render(FanqieRankingGateReport(
+                passed=False, phase=finding.phase, findings=(finding,)))
+                for _kind, finding, render in findings),
+            context_required=["chapter_draft", "fanqie_whole_source"],
+            metadata_json={**binding, "chapter_id": str(chapter.id), "chapter_number": number,
+                           "whole_revision_key": key, "whole_findings": serial,
+                           "finding": serial[0]["finding"],
+                           "source_manifest": deepcopy(current.manifest), "grade_asserted": False},
+        )
+        session.add(task)
+        await session.flush()
+        by_key[key] = task
+        task_ids.append(str(task.id))
+        counts[findings[0][0]] += 1
     return counts, task_ids
 
 

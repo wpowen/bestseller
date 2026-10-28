@@ -418,6 +418,7 @@ async def test_public_pipeline_uses_real_adopted_source_and_never_exports_style_
     async def planned(*args, **kwargs):
         return SimpleNamespace(
             workflow_run_id=uuid4(),
+            source_artifact_id=uuid4(),
             chapters_created=0,
             scenes_created=0,
             plot_arc_count=0,
@@ -459,6 +460,20 @@ async def test_public_pipeline_uses_real_adopted_source_and_never_exports_style_
     monkeypatch.setattr(pipeline, "derive_ideology_kernel", no_op)
     monkeypatch.setattr(pipeline, "generate_fanqie_beat_sheet", beats)
     monkeypatch.setattr(pipeline, "persist_fanqie_chapter_outline", no_op)
+    # Planning is outside this one-source export test, like the other planner
+    # producers above. Cover contract completion through its own native tests;
+    # this fixture has no admitted planning source or paid Beat to replay.
+    async def planning_boundary(_session, _settings, **kwargs):
+        return kwargs["outline_payload"]
+
+    monkeypatch.setattr(
+        "bestseller.services.fanqie_outline_contract_completion.complete_missing_outline_contract",
+        planning_boundary,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.fanqie_outline_source_selection.admit_and_select_outline_source",
+        no_op,
+    )
     for name in (
         "materialize_latest_story_bible",
         "materialize_latest_chapter_outline_batch",

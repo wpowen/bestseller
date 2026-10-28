@@ -1098,6 +1098,7 @@ async def run_fanqie_short_pipeline(
             ),
             language="zh",
             workflow_run_id=planning_result.workflow_run_id,
+            project_id=project.id,
         )
         _emit_progress(
             progress,

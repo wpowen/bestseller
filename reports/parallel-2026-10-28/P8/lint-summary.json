@@ -1,0 +1,7 @@
+{
+  "baseline": "refs/tags/e2e17",
+  "baseline_ruff_findings": 157,
+  "current_ruff_findings": 157,
+  "new_ruff_findings": [],
+  "diff_check": 0
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "Q3-completion-verification.v1",
+  "checks": {
+    "core_detector_unchanged": true,
+    "same_module_sha": true,
+    "same_configuration_for_52_chapters": true,
+    "five_sources_52_chapters": true,
+    "exact_original_73_reviewed": true,
+    "all_175_reviewed": true,
+    "at_least_ten_per_source": true,
+    "candidate_explicitly_unadopted": true,
+    "legacy_selection_matches_fixed_seed": true,
+    "legacy_input_file_hashes_match": true,
+    "only_audit_only": true,
+    "db_readonly": true,
+    "no_writes_model_docker": true,
+    "judgment_manifest_binding": true,
+    "no_raw_prose_in_public_records": true,
+    "private_material_permissions": true,
+    "no_runtime_gate_registration": true
+  },
+  "judgments": 175,
+  "unique_alert_units": 131,
+  "controls": 32,
+  "review_type": "agent_editorial_not_human",
+  "human_acceptance": false,
+  "detector_quality_qualification": {
+    "clock": "不合格",
+    "process_terms": "不合格",
+    "state_repetition": "不合格",
+    "number_repetition": "不合格",
+    "negation_chains": "不合格",
+    "dialogue": "不合格"
+  },
+  "source_query_sha256": "71d5db81a0d50e79c5fea06fe33a9efa87128da8c839abe0c953fff632170173",
+  "scripts_sha256": {
+    "complete_generalization.py": "54e2a456a45c269d749f71b0846bf21c542fa68886aec892b887f47cbb1fc373",
+    "summarize_editorial.py": "1163fdecdd5e134f8ced9b6f6f45b6fa748d3268b8459e2173659a4dafabe2b3"
+  }
+}

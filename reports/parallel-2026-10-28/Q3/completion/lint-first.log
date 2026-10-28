@@ -1,0 +1,772 @@
+warning: The following rules have been removed and ignoring them has no effect:
+    - ANN101
+    - ANN102
+
+S311 Standard pseudo-random generators are not suitable for cryptographic purposes
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:73:32
+   |
+71 |     if len(files) < 40:
+72 |         raise ValueError('Need forty distinct chapters')
+73 |     return files[:20] + sorted(random.Random(SEED).sample(files[20:], 20))
+   |                                ^^^^^^^^^^^^^^^^^^^
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:80:25
+   |
+78 |     result = defaultdict(list)
+79 |     for name in ('clock', 'process_terms'):
+80 |         result[name] = [dict(unit=f'{name}:{s["start"]}', spans=[s]) for s in m[name]['spans']]
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+81 |     for name in ('state_repetition', 'number_repetition'):
+82 |         result[name] = [dict(unit=f'{name}:{g["spans"][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:82:25
+   |
+80 |         result[name] = [dict(unit=f'{name}:{s["start"]}', spans=[s]) for s in m[name]['spans']]
+81 |     for name in ('state_repetition', 'number_repetition'):
+82 |         result[name] = [dict(unit=f'{name}:{g["spans"][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+83 |     result['negation_chains'] = [dict(unit=f'negation_chains:{chain[0]["start"]}', spans=chain) for chain in m['negation_chains']['spa…
+84 |     result['dialogue'] = [dict(unit='dialogue:' + ':'.join(pair['speakers']), spans=[], pair=pair) for pair in m['dialogue']['pairs'] …
+   |
+help: Rewrite as a literal
+
+E501 Line too long (115 > 100)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:82:101
+   |
+80 |         result[name] = [dict(unit=f'{name}:{s["start"]}', spans=[s]) for s in m[name]['spans']]
+81 |     for name in ('state_repetition', 'number_repetition'):
+82 |         result[name] = [dict(unit=f'{name}:{g["spans"][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+   |                                                                                                     ^^^^^^^^^^^^^^^
+83 |     result['negation_chains'] = [dict(unit=f'negation_chains:{chain[0]["start"]}', spans=chain) for chain in m['negation_chains']['spa…
+84 |     result['dialogue'] = [dict(unit='dialogue:' + ':'.join(pair['speakers']), spans=[], pair=pair) for pair in m['dialogue']['pairs'] …
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:83:34
+   |
+81 |     for name in ('state_repetition', 'number_repetition'):
+82 |         result[name] = [dict(unit=f'{name}:{g["spans"][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+83 |     result['negation_chains'] = [dict(unit=f'negation_chains:{chain[0]["start"]}', spans=chain) for chain in m['negation_chains']['spa…
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+84 |     result['dialogue'] = [dict(unit='dialogue:' + ':'.join(pair['speakers']), spans=[], pair=pair) for pair in m['dialogue']['pairs'] …
+85 |     return result
+   |
+help: Rewrite as a literal
+
+E501 Line too long (139 > 100)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:83:101
+   |
+81 | …on'):
+82 | …][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+83 | …_chains:{chain[0]["start"]}', spans=chain) for chain in m['negation_chains']['spans']]
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+84 | ….join(pair['speakers']), spans=[], pair=pair) for pair in m['dialogue']['pairs'] if pair['bigram_jaccard'] >= DIALOGUE_THRESHOLD]
+85 | …
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:84:27
+   |
+82 |         result[name] = [dict(unit=f'{name}:{g["spans"][0]["start"]}', spans=g['spans']) for g in m[name]['groups']]
+83 |     result['negation_chains'] = [dict(unit=f'negation_chains:{chain[0]["start"]}', spans=chain) for chain in m['negation_chains']['spa…
+84 |     result['dialogue'] = [dict(unit='dialogue:' + ':'.join(pair['speakers']), spans=[], pair=pair) for pair in m['dialogue']['pairs'] …
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+85 |     return result
+   |
+help: Rewrite as a literal
+
+E501 Line too long (182 > 100)
+  --> reports/parallel-2026-10-28/Q3/complete_generalization.py:84:101
+   |
+82 | …=g['spans']) for g in m[name]['groups']]
+83 | …rt"]}', spans=chain) for chain in m['negation_chains']['spans']]
+84 | …), spans=[], pair=pair) for pair in m['dialogue']['pairs'] if pair['bigram_jaccard'] >= DIALOGUE_THRESHOLD]
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+85 | …
+   |
+
+E501 Line too long (102 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:115:101
+    |
+113 |     if signal == 'dialogue':
+114 |         wanted = set(unit['pair']['speakers'])
+115 |         chunks = [f'{t.speaker}: {t.text}' for t in _extract_dialogue(text)[0] if t.speaker in wanted]
+    |                                                                                                     ^^
+116 |     elif spans and not window:
+117 |         chunks = [text[max(0,s['start']-50):min(len(text),s['end']+70)] for s in spans[:5]]
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:118:14
+    |
+116 |       elif spans and not window:
+117 |           chunks = [text[max(0,s['start']-50):min(len(text),s['end']+70)] for s in spans[:5]]
+118 |       sample = dict(sample_id=f'S{len(samples)+1:03}', source=doc['source'], chapter=doc['chapter'],
+    |  ______________^
+119 | |                   body_sha256=digest(text), signal=signal, unit_id=f"{doc['id']}:{unit['unit']}" if unit else None,
+120 | |                   start=start,end=end,excerpt_sha256=digest(text[start:end]),
+121 | |                   original_73=original is not None, review_type='agent_editorial_not_human',
+122 | |                   extraction_correct=None, editorial_defect=None, reason=None,
+123 | |                   excerpt=text[start:end], related_chunks=chunks)
+    | |_________________________________________________________________^
+124 |       if original:
+125 |           sample['original_sample'] = original
+    |
+help: Rewrite as a literal
+
+E501 Line too long (115 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:119:101
+    |
+117 |         chunks = [text[max(0,s['start']-50):min(len(text),s['end']+70)] for s in spans[:5]]
+118 |     sample = dict(sample_id=f'S{len(samples)+1:03}', source=doc['source'], chapter=doc['chapter'],
+119 |                   body_sha256=digest(text), signal=signal, unit_id=f"{doc['id']}:{unit['unit']}" if unit else None,
+    |                                                                                                     ^^^^^^^^^^^^^^^
+120 |                   start=start,end=end,excerpt_sha256=digest(text[start:end]),
+121 |                   original_73=original is not None, review_type='agent_editorial_not_human',
+    |
+
+E501 Line too long (119 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:134:101
+    |
+132 |     old = json.loads(old_path.read_text())
+133 |     env = {k:v for k,v in dotenv_values(ROOT/'.env').items() if v is not None}
+134 |     settings = load_settings(config_path=ROOT/'config/default.yaml',local_config_path=ROOT/'config/local.yaml',env=env)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+135 |     url = make_url(settings.database.url)
+136 |     assert url.host in ('127.0.0.1','localhost') and url.database=='bestseller'
+    |
+
+E501 Line too long (278 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:137:101
+    |
+135 | …
+136 | …
+137 | …ssword=url.password,database=url.database,timeout=5,server_settings={'default_transaction_read_only':'on','statement_timeout':'30000','application_name':'par_Q3_completion_readonly'})
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+138 | …
+139 | …
+    |
+
+E501 Line too long (143 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:142:101
+    |
+140 | …
+141 | …
+142 | …current_database() AS database,current_setting('transaction_read_only') AS read_only"))
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+143 | …ly':'on'}
+144 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:145:39
+    |
+143 |         assert safety=={'database':'bestseller','read_only':'on'}
+144 |         for row in await connection.fetch(SQL):
+145 |             pid=str(row['project_id']);n=row['chapter_number']
+    |                                       ^
+146 |             if (pid.startswith('fa14') and n>4) or (pid.startswith('d407') and n>3):continue
+147 |             label = 'xuanhuan_candidate' if pid==CANDIDATE else pid[:4]
+    |
+
+E701 Multiple statements on one line (colon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:146:84
+    |
+144 |         for row in await connection.fetch(SQL):
+145 |             pid=str(row['project_id']);n=row['chapter_number']
+146 |             if (pid.startswith('fa14') and n>4) or (pid.startswith('d407') and n>3):continue
+    |                                                                                    ^
+147 |             label = 'xuanhuan_candidate' if pid==CANDIDATE else pid[:4]
+148 |             if pid!=CANDIDATE:
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:149:49
+    |
+147 | …     label = 'xuanhuan_candidate' if pid==CANDIDATE else pid[:4]
+148 | …     if pid!=CANDIDATE:
+149 | …         metadata=row['chapter_metadata'];metadata=json.loads(metadata) if isinstance(metadata,str) else metadata
+    |                                           ^
+150 | …         ch=SimpleNamespace(id=row['chapter_id'],project_id=row['project_id'],metadata_json=metadata)
+151 | …         dr=SimpleNamespace(id=row['draft_id'],chapter_id=row['chapter_id'],project_id=row['project_id'],promotion_state=row['promot…
+    |
+
+E501 Line too long (120 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:149:101
+    |
+147 | …     label = 'xuanhuan_candidate' if pid==CANDIDATE else pid[:4]
+148 | …     if pid!=CANDIDATE:
+149 | …         metadata=row['chapter_metadata'];metadata=json.loads(metadata) if isinstance(metadata,str) else metadata
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^
+150 | …         ch=SimpleNamespace(id=row['chapter_id'],project_id=row['project_id'],metadata_json=metadata)
+151 | …         dr=SimpleNamespace(id=row['draft_id'],chapter_id=row['chapter_id'],project_id=row['project_id'],promotion_state=row['promot…
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:154:25
+    |
+152 |                   assert choose_usable_promoted_chapter_source(chapter=ch,drafts=[dr]) is not None
+153 |               text=row['content_md']
+154 |               docs.append(dict(id=f'{label}:{n}',source=label,chapter=n,text=text,
+    |  _________________________^
+155 | |                              metadata={k:str(row[k]) if k in ('project_id','chapter_id','draft_id') else row[k] for k in ('project_id…
+156 | |                              adoption='候选，未采用' if pid==CANDIDATE else '已采用',audit=audit_prose(text)))
+    | |_____________________________________________________________________________________________________________^
+157 |       finally:
+158 |           await tx.rollback();await connection.close()
+    |
+help: Rewrite as a literal
+
+E501 Line too long (192 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:155:101
+    |
+153 | …
+154 | …
+155 | …ter_id','draft_id') else row[k] for k in ('project_id','chapter_id','draft_id','version_no','promotion_state')},
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+156 | …t=audit_prose(text)))
+157 | …
+    |
+
+E501 Line too long (110 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:156:92
+    |
+154 |             docs.append(dict(id=f'{label}:{n}',source=label,chapter=n,text=text,
+155 |                              metadata={k:str(row[k]) if k in ('project_id','chapter_id','draft_id') else row[k] for k in ('project_id…
+156 |                              adoption='候选，未采用' if pid==CANDIDATE else '已采用',audit=audit_prose(text)))
+    |                                                                                                     ^^^^^^^^^^
+157 |     finally:
+158 |         await tx.rollback();await connection.close()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:158:28
+    |
+156 |                              adoption='候选，未采用' if pid==CANDIDATE else '已采用',audit=audit_prose(text)))
+157 |     finally:
+158 |         await tx.rollback();await connection.close()
+    |                            ^
+159 |     selected=select_legacy(list((ROOT/'output/天机录/if/chapters').glob('ch*.json')))
+160 |     for f in selected:
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:161:27
+    |
+159 |     selected=select_legacy(list((ROOT/'output/天机录/if/chapters').glob('ch*.json')))
+160 |     for f in selected:
+161 |         raw=f.read_bytes();data=json.loads(raw);text,turns=legacy_body(data)
+    |                           ^
+162 |         docs.append(dict(id=f'tianjilu:{data["number"]}',source='tianjilu_legacy',chapter=data['number'],text=text,
+163 |                          metadata=dict(path=str(f.relative_to(ROOT)),file_sha256=sha256(raw).hexdigest(),native_dialogue_turns=len(tu…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:161:48
+    |
+159 |     selected=select_legacy(list((ROOT/'output/天机录/if/chapters').glob('ch*.json')))
+160 |     for f in selected:
+161 |         raw=f.read_bytes();data=json.loads(raw);text,turns=legacy_body(data)
+    |                                                ^
+162 |         docs.append(dict(id=f'tianjilu:{data["number"]}',source='tianjilu_legacy',chapter=data['number'],text=text,
+163 |                          metadata=dict(path=str(f.relative_to(ROOT)),file_sha256=sha256(raw).hexdigest(),native_dialogue_turns=len(tu…
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:162:21
+    |
+160 |       for f in selected:
+161 |           raw=f.read_bytes();data=json.loads(raw);text,turns=legacy_body(data)
+162 |           docs.append(dict(id=f'tianjilu:{data["number"]}',source='tianjilu_legacy',chapter=data['number'],text=text,
+    |  _____________________^
+163 | |                          metadata=dict(path=str(f.relative_to(ROOT)),file_sha256=sha256(raw).hexdigest(),native_dialogue_turns=len(tu…
+164 | |                          adoption='旧链路；本地IF节点正文，未证明现行采用',audit=audit_prose(text),
+165 | |                          native_dialogue_audit=scrub(audit_prose(text,dialogue_turns=turns))['metrics']['dialogue']))
+    | |____________________________________________________________________________________________________________________^
+166 |       by_id={(d['source'],d['chapter']):d for d in docs}
+167 |       samples=[]
+    |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:163:35
+    |
+161 | …ytes();data=json.loads(raw);text,turns=legacy_body(data)
+162 | …dict(id=f'tianjilu:{data["number"]}',source='tianjilu_legacy',chapter=data['number'],text=text,
+163 | …     metadata=dict(path=str(f.relative_to(ROOT)),file_sha256=sha256(raw).hexdigest(),native_dialogue_turns=len(turns)),
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+164 | …     adoption='旧链路；本地IF节点正文，未证明现行采用',audit=audit_prose(text),
+165 | …     native_dialogue_audit=scrub(audit_prose(text,dialogue_turns=turns))['metrics']['dialogue']))
+    |
+help: Rewrite as a literal
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:172:32
+    |
+170 |             d=by_id[(p['project_id'][:4],c['source']['chapter_number'])]
+171 |             assert digest(d['text'])==c['audit']['body_sha256'],'Original adopted input drift'
+172 |             u=units(d['audit']);cursor=defaultdict(int)
+    |                                ^
+173 |             for original in c['samples']:
+174 |                 signal=original['signal'];unit=None
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:174:42
+    |
+172 |             u=units(d['audit']);cursor=defaultdict(int)
+173 |             for original in c['samples']:
+174 |                 signal=original['signal'];unit=None
+    |                                          ^
+175 |                 if signal!='unflagged_control':
+176 |                     flattened=[unit for unit in u[signal] for _ in unit['spans']]
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:177:51
+    |
+175 |                 if signal!='unflagged_control':
+176 |                     flattened=[unit for unit in u[signal] for _ in unit['spans']]
+177 |                     unit=flattened[cursor[signal]];cursor[signal]+=1
+    |                                                   ^
+178 |                 assert digest(d['text'][original['start']:original['end']])==original['excerpt_sha256']
+179 |                 add_sample(samples,d,signal,unit,(original['start'],original['end']),original)
+    |
+
+E501 Line too long (103 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:178:101
+    |
+176 |                     flattened=[unit for unit in u[signal] for _ in unit['spans']]
+177 |                     unit=flattened[cursor[signal]];cursor[signal]+=1
+178 |                 assert digest(d['text'][original['start']:original['end']])==original['excerpt_sha256']
+    |                                                                                                     ^^^
+179 |                 add_sample(samples,d,signal,unit,(original['start'],original['end']),original)
+180 |     assert len(samples)==73
+    |
+
+E501 Line too long (116 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:182:101
+    |
+180 |     assert len(samples)==73
+181 |     for label in sorted({d['source'] for d in docs}):
+182 |         for signal in ('clock','state_repetition','number_repetition','process_terms','negation_chains','dialogue'):
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+183 |             candidates=[(d,u) for d in docs if d['source']==label for u in units(d['audit'])[signal]]
+184 |             existing={s['unit_id'] for s in samples}
+    |
+
+E501 Line too long (101 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:183:101
+    |
+181 |     for label in sorted({d['source'] for d in docs}):
+182 |         for signal in ('clock','state_repetition','number_repetition','process_terms','negation_chains','dialogue'):
+183 |             candidates=[(d,u) for d in docs if d['source']==label for u in units(d['audit'])[signal]]
+    |                                                                                                     ^
+184 |             existing={s['unit_id'] for s in samples}
+185 |             candidates=[(d,u) for d,u in candidates if f"{d['id']}:{u['unit']}" not in existing]
+    |
+
+E501 Line too long (173 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:187:101
+    |
+185 | …unit']}" not in existing]
+186 | …ing or editor labels.
+187 | …idates)-1)) for i in range(min(8,len(candidates)))}) if len(candidates)>1 else range(len(candidates)):
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+188 | …
+189 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:188:34
+    |
+186 | …         # Eight additional evenly spaced units, independent of wording or editor labels.
+187 | …         for i in sorted({round(i*(len(candidates)-1)/min(7,len(candidates)-1)) for i in range(min(8,len(candidates)))}) if len(cand…
+188 | …             d,u=candidates[i];add_sample(samples,d,signal,u)
+    |                                ^
+189 | …     selected_docs=[d for d in docs if d['source']==label]
+190 | …     k=0
+    |
+
+E501 Line too long (121 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:191:101
+    |
+189 |         selected_docs=[d for d in docs if d['source']==label]
+190 |         k=0
+191 |         while sum(s['source']==label for s in samples)<10 or (label in ('xuanhuan_candidate','tianjilu_legacy') and k<4):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+192 |             d=selected_docs[k%len(selected_docs)];start=min(max(0,len(d['text'])-220),int(len(d['text'])*(k+1)/12))
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:192:50
+    |
+190 |         k=0
+191 |         while sum(s['source']==label for s in samples)<10 or (label in ('xuanhuan_candidate','tianjilu_legacy') and k<4):
+192 |             d=selected_docs[k%len(selected_docs)];start=min(max(0,len(d['text'])-220),int(len(d['text'])*(k+1)/12))
+    |                                                  ^
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+194 |     private=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:193:97
+    |
+191 |         while sum(s['source']==label for s in samples)<10 or (label in ('xuanhuan_candidate','tianjilu_legacy') and k<4):
+192 |             d=selected_docs[k%len(selected_docs)];start=min(max(0,len(d['text'])-220),int(len(d['text'])*(k+1)/12))
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+    |                                                                                                 ^
+194 |     private=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+195 |     material=private/'editorial-material.json';material.write_text(json.dumps(dict(documents=docs,samples=samples),ensure_ascii=False…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:194:71
+    |
+192 |             d=selected_docs[k%len(selected_docs)];start=min(max(0,len(d['text'])-220),int(len(d['text'])*(k+1)/12))
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+194 |     private=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+    |                                                                       ^
+195 |     material=private/'editorial-material.json';material.write_text(json.dumps(dict(documents=docs,samples=samples),ensure_ascii=False…
+196 |     public=dict(schema='Q3-completion.v1',at_utc=datetime.now(UTC).isoformat(),transaction=safety,transaction_end='rollback',database…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:195:47
+    |
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+194 |     private=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+195 |     material=private/'editorial-material.json';material.write_text(json.dumps(dict(documents=docs,samples=samples),ensure_ascii=False…
+    |                                               ^
+196 |     public=dict(schema='Q3-completion.v1',at_utc=datetime.now(UTC).isoformat(),transaction=safety,transaction_end='rollback',database…
+197 |     (OUT/'corpus-and-samples.json').write_text(json.dumps(public,ensure_ascii=False,default=str,indent=2)+'\n')
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:195:79
+    |
+193 |             add_sample(samples,d,'unflagged_control',None,(start,min(len(d['text']),start+220)));k+=1
+194 |     private=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+195 |     material=private/'editorial-material.json';material.write_text(json.dumps(dict(documents=docs,samples=samples),ensure_ascii=False…
+    |                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+196 |     public=dict(schema='Q3-completion.v1',at_utc=datetime.now(UTC).isoformat(),transaction=safety,transaction_end='rollback',database…
+197 |     (OUT/'corpus-and-samples.json').write_text(json.dumps(public,ensure_ascii=False,default=str,indent=2)+'\n')
+    |
+help: Rewrite as a literal
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:195:157
+    |
+193 | …20)));k+=1
+194 | …00)
+195 | …s=docs,samples=samples),ensure_ascii=False,default=str,indent=2));os.chmod(material,0o600)
+    |                                                                   ^
+196 | …safety,transaction_end='rollback',database_writes=0,model_api_calls=0,docker_used=False,module_sha256=digest((Path(__file__).parents…
+197 | …=str,indent=2)+'\n')
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:196:12
+    |
+194 | …ivate=Path(tempfile.mkdtemp(prefix='bestseller-Q3-completion-'));os.chmod(private,0o700)
+195 | …terial=private/'editorial-material.json';material.write_text(json.dumps(dict(documents=docs,samples=samples),ensure_ascii=False,default=str,indent=2));os.chmod(material,0o600)
+196 | …blic=dict(schema='Q3-completion.v1',at_utc=datetime.now(UTC).isoformat(),transaction=safety,transaction_end='rollback',database_writes=0,model_api_calls=0,docker_used=False,module_sha256=digest((Path(__file__).parents[3]/'src/bestseller/services/prose_procedural_density.py').read_text()),config_sha256=docs[0]['audit']['config_sha256'],random_seed=SEED,legacy_chapters=[json.loads(f.read_text())['number'] for f in selected],selection='first20 plus seed20261028 random20 without replacement from remaining1180',dialogue_hypothesis_threshold=DIALOGUE_THRESHOLD,original_73_rebound_exactly=True,private_material_path=str(material),documents=[{k:(scrub(v) if k=='audit' else v) for k,v in d.items() if k!='text'} for d in docs],samples=[{k:v for k,v in s.items() if k not in ('excerpt','related_chunks')} for s in samples])
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+197 | …UT/'corpus-and-samples.json').write_text(json.dumps(public,ensure_ascii=False,default=str,indent=2)+'\n')
+198 | …int(json.dumps(dict(private_material=str(material),documents=len(docs),samples=len(samples),by_source={label:sum(s['source']==label for s in samples) for label in sorted({d['source'] for d in docs})},legacy_chapters=public['legacy_chapters']),ensure_ascii=False))
+    |
+help: Rewrite as a literal
+
+E501 Line too long (827 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:196:101
+    |
+194 | …
+195 | …cs,samples=samples),ensure_ascii=False,default=str,indent=2));os.chmod(material,0o600)
+196 | …ty,transaction_end='rollback',database_writes=0,model_api_calls=0,docker_used=False,module_sha256=digest((Path(__file__).parents[3]/'src/bestseller/services/prose_procedural_density.py').read_text()),config_sha256=docs[0]['audit']['config_sha256'],random_seed=SEED,legacy_chapters=[json.loads(f.read_text())['number'] for f in selected],selection='first20 plus seed20261028 random20 without replacement from remaining1180',dialogue_hypothesis_threshold=DIALOGUE_THRESHOLD,original_73_rebound_exactly=True,private_material_path=str(material),documents=[{k:(scrub(v) if k=='audit' else v) for k,v in d.items() if k!='text'} for d in docs],samples=[{k:v for k,v in s.items() if k not in ('excerpt','related_chunks')} for s in samples])
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+197 | …,indent=2)+'\n')
+198 | …s),by_source={label:sum(s['source']==label for s in samples) for label in sorted({d['source'] for d in docs})},legacy_chapters=public['legacy_chapters']),ensure_ascii=False))
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:198:22
+    |
+196 | …schema='Q3-completion.v1',at_utc=datetime.now(UTC).isoformat(),transaction=safety,transaction_end='rollback',database_writes=0,model_api_calls=0,docker_used=False,module_sha256=digest((Path(__file__).parents[3]/'src/bestseller/services/p…
+197 | …-and-samples.json').write_text(json.dumps(public,ensure_ascii=False,default=str,indent=2)+'\n')
+198 | …umps(dict(private_material=str(material),documents=len(docs),samples=len(samples),by_source={label:sum(s['source']==label for s in samples) for label in sorted({d['source'] for d in docs})},legacy_chapters=public['legacy_chapters']),ensu…
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: Rewrite as a literal
+
+E501 Line too long (269 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:198:101
+    |
+196 | …ty,transaction_end='rollback',database_writes=0,model_api_calls=0,docker_used=False,module_sha256=digest((Path(__file__).parents[3]/'src/bestseller/services/prose_procedural_densi…
+197 | …,indent=2)+'\n')
+198 | …s),by_source={label:sum(s['source']==label for s in samples) for label in sorted({d['source'] for d in docs})},legacy_chapters=public['legacy_chapters']),ensure_ascii=False))
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E701 Multiple statements on one line (colon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:202:8
+    |
+201 | if __name__=='__main__':
+202 |     try:asyncio.run(main())
+    |        ^
+203 |     except Exception as error:
+204 |         print(json.dumps({'error_type':type(error).__name__,'details':'redacted'}));raise SystemExit(1) from None
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:204:84
+    |
+202 |     try:asyncio.run(main())
+203 |     except Exception as error:
+204 |         print(json.dumps({'error_type':type(error).__name__,'details':'redacted'}));raise SystemExit(1) from None
+    |                                                                                    ^
+    |
+
+E501 Line too long (113 > 100)
+   --> reports/parallel-2026-10-28/Q3/complete_generalization.py:204:101
+    |
+202 |     try:asyncio.run(main())
+203 |     except Exception as error:
+204 |         print(json.dumps({'error_type':type(error).__name__,'details':'redacted'}));raise SystemExit(1) from None
+    |                                                                                                     ^^^^^^^^^^^^^
+    |
+
+E501 Line too long (103 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:12:101
+   |
+10 | BASE = Path(__file__).resolve().parent
+11 | OUT = BASE / 'completion'
+12 | SIGNALS = ('clock','state_repetition','number_repetition','process_terms','negation_chains','dialogue')
+   |                                                                                                     ^^^
+13 | LABELS = {'clock':'钟点','state_repetition':'状态重复','number_repetition':'数字重复',
+14 |           'process_terms':'流程词','negation_chains':'否定链','dialogue':'对白同质化'}
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:30:12
+   |
+28 |       extraction = sum(e is True for e,q in distinct.values())
+29 |       editorial = sum(e is True and q is True for e,q in distinct.values())
+30 |       return dict(reviewed_units=n,extraction_true_positives=extraction,
+   |  ____________^
+31 | |                 editorial_true_positives=editorial,extraction_precision=extraction/n if n else None,
+32 | |                 editorial_precision=editorial/n if n else None)
+   | |_______________________________________________________________^
+   |
+help: Rewrite as a literal
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:59:33
+   |
+57 |               assert type(e) is bool
+58 |           assert type(q) is bool and reason
+59 |           records.append(sample | dict(extraction_correct=e,editorial_defect=q,reason=reason,
+   |  _________________________________^
+60 | |                                      review_type='agent_editorial_not_human',review_status='completed_agent',
+61 | |                                      human_review='optional_not_performed'))
+   | |___________________________________________________________________________^
+62 |       by_source = defaultdict(list)
+63 |       for record in records:
+   |
+help: Rewrite as a literal
+
+E501 Line too long (115 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:70:101
+   |
+68 | …     docs=[d for d in public['documents'] if d['source']==source]
+69 | …     chars=sum(d['audit']['metrics']['characters'] for d in docs)
+70 | …     signals={signal:review_precision([r for r in source_records if r['signal']==signal]) for signal in SIGNALS}
+   |                                                                                                   ^^^^^^^^^^^^^^^
+71 | …     raw_counts={key:sum(d['audit']['metrics'][key].get('count',d['audit']['metrics'][key].get('repeated_mentions',0)) for d in docs)…
+72 | …     summaries.append(dict(source=source,chapters=len(docs),characters=chars,
+   |
+
+E501 Line too long (160 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:71:101
+   |
+69 | …ocs)
+70 | …rds if r['signal']==signal]) for signal in SIGNALS}
+71 | …t',d['audit']['metrics'][key].get('repeated_mentions',0)) for d in docs) for key in SIGNALS[:4]}
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+72 | …haracters=chars,
+73 | …es=len(source_records),
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:72:26
+   |
+70 |           signals={signal:review_precision([r for r in source_records if r['signal']==signal]) for signal in SIGNALS}
+71 |           raw_counts={key:sum(d['audit']['metrics'][key].get('count',d['audit']['metrics'][key].get('repeated_mentions',0)) for d in doc…
+72 |           summaries.append(dict(source=source,chapters=len(docs),characters=chars,
+   |  __________________________^
+73 | |                               adoption=docs[0]['adoption'],samples=len(source_records),
+74 | |                               original_73=sum(r['original_73'] for r in source_records),
+75 | |                               precision=signals,raw_counts=raw_counts,
+76 | |                               per1000={k:v*1000/chars for k,v in raw_counts.items()},
+77 | |                               negation_chains=sum(d['audit']['metrics']['negation_chains']['chain_count'] for d in docs),
+78 | |                               dialogue_measured_chapters=sum(d['audit']['metrics']['dialogue']['status']=='measured' for d in docs),
+79 | |                               controls=sum(r['signal']=='unflagged_control' for r in source_records)))
+   | |_____________________________________________________________________________________________________^
+80 |       result=dict(schema='Q3-agent-editorial.v1',review_type='agent_editorial_not_human',
+81 |                   human_acceptance=False,judgments=len(records),
+   |
+help: Rewrite as a literal
+
+E501 Line too long (121 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:77:101
+   |
+75 | …                     precision=signals,raw_counts=raw_counts,
+76 | …                     per1000={k:v*1000/chars for k,v in raw_counts.items()},
+77 | …                     negation_chains=sum(d['audit']['metrics']['negation_chains']['chain_count'] for d in docs),
+   |                                                                                             ^^^^^^^^^^^^^^^^^^^^^
+78 | …                     dialogue_measured_chapters=sum(d['audit']['metrics']['dialogue']['status']=='measured' for d in docs),
+79 | …                     controls=sum(r['signal']=='unflagged_control' for r in source_records)))
+   |
+
+E501 Line too long (132 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:78:101
+   |
+76 |                               per1000={k:v*1000/chars for k,v in raw_counts.items()},
+77 |                               negation_chains=sum(d['audit']['metrics']['negation_chains']['chain_count'] for d in docs),
+78 |                               dialogue_measured_chapters=sum(d['audit']['metrics']['dialogue']['status']=='measured' for d in docs),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+79 |                               controls=sum(r['signal']=='unflagged_control' for r in source_records)))
+80 |     result=dict(schema='Q3-agent-editorial.v1',review_type='agent_editorial_not_human',
+   |
+
+E501 Line too long (102 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:79:101
+   |
+77 |                               negation_chains=sum(d['audit']['metrics']['negation_chains']['chain_count'] for d in docs),
+78 |                               dialogue_measured_chapters=sum(d['audit']['metrics']['dialogue']['status']=='measured' for d in docs),
+79 |                               controls=sum(r['signal']=='unflagged_control' for r in source_records)))
+   |                                                                                                     ^^
+80 |     result=dict(schema='Q3-agent-editorial.v1',review_type='agent_editorial_not_human',
+81 |                 human_acceptance=False,judgments=len(records),
+   |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:80:12
+   |
+78 |                                 dialogue_measured_chapters=sum(d['audit']['metrics']['dialogue']['status']=='measured' for d in docs),
+79 |                                 controls=sum(r['signal']=='unflagged_control' for r in source_records)))
+80 |       result=dict(schema='Q3-agent-editorial.v1',review_type='agent_editorial_not_human',
+   |  ____________^
+81 | |                 human_acceptance=False,judgments=len(records),
+82 | |                 original_73_reviewed=sum(r['original_73'] for r in records),
+83 | |                 corpus_manifest_sha256=sha256(public_path.read_bytes()).hexdigest(),
+84 | |                 rule_module_sha256=public['module_sha256'],config_sha256=public['config_sha256'],
+85 | |                 method='Unique unit precision; false lexical extractions remain in denominator. Controls excluded. No zero-alert perfe…
+86 | |                 summaries=summaries,judgments_detail=records)
+   | |_____________________________________________________________^
+87 |       (OUT/'editorial-judgments.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+88 |       # Enrich the private material without copying prose into any committed artifact.
+   |
+help: Rewrite as a literal
+
+E501 Line too long (149 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:85:101
+   |
+83 | …read_bytes()).hexdigest(),
+84 | …,config_sha256=public['config_sha256'],
+85 | …al extractions remain in denominator. Controls excluded. No zero-alert perfection claims.',
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+86 | …ds)
+87 | …(result,ensure_ascii=False,indent=2)+'\n')
+   |
+
+E501 Line too long (102 > 100)
+  --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:93:75
+   |
+91 |         sample.update(by_id[sample['sample_id']])
+92 |     material_path.write_text(json.dumps(private,ensure_ascii=False,default=str,indent=2))
+93 |     rows=['# Q3 分来源编辑抽查精确率','','所有判断均为 agent_editorial_not_human；不是独立真人结论。',
+   |                                                                                                     ^^
+94 |           '以下把命中作为编辑缺陷候选，评估其有多少真值得改。主模块仍只计量、没有原生质量告警。',
+95 |           '同一组的多个片段逐条审阅，但合并为一个精确率单位；对照片段不进入精确率分母。',
+   |
+
+E501 Line too long (128 > 100)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:101:101
+    |
+ 99 |           '|来源|'+ '|'.join(LABELS.values())+'|','|---|'+'---|'*6]
+100 |     for summary in summaries:
+101 |         rows.append('|'+summary['source']+'|'+'|'.join(fraction(summary['precision'][key],'extraction') for key in SIGNALS)+'|')
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+102 |     rows+=['','## 是否真值得编辑改（抽查精确率）','',
+103 |            '|来源|'+ '|'.join(LABELS.values())+'|','|---|'+'---|'*6]
+    |
+
+E501 Line too long (127 > 100)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:105:101
+    |
+103 |            '|来源|'+ '|'.join(LABELS.values())+'|','|---|'+'---|'*6]
+104 |     for summary in summaries:
+105 |         rows.append('|'+summary['source']+'|'+'|'.join(fraction(summary['precision'][key],'editorial') for key in SIGNALS)+'|')
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+106 |     rows+=['','## 逐条回执','','|ID|来源/章|指标|抽取正确|编辑问题|判断（agent_editorial_not_human）|','|---|---|---|---|---|---|']
+107 |     for r in records:
+    |
+
+E501 Line too long (131 > 100)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:106:80
+    |
+104 | …
+105 | …join(fraction(summary['precision'][key],'editorial') for key in SIGNALS)+'|')
+106 | …判断（agent_editorial_not_human）|','|---|---|---|---|---|---|']
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+107 | …
+108 | …f"{r['source']}/{r['chapter']}",r['signal'],str(r['extraction_correct']),str(r['editorial_defect']),r['reason']])+'|')
+    |
+
+E501 Line too long (168 > 100)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:108:101
+    |
+106 | …_not_human）|','|---|---|---|---|---|---|']
+107 | …
+108 | …['chapter']}",r['signal'],str(r['extraction_correct']),str(r['editorial_defect']),r['reason']])+'|')
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+109 | …n')
+110 | …d=result['original_73_reviewed'],by_source={s['source']:s['samples'] for s in summaries},editorial_precision={s['source']:{k:fractio…
+    |
+
+C408 Unnecessary `dict()` call (rewrite as a literal)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:110:22
+    |
+108 | …end('|'+ '|'.join([r['sample_id'],f"{r['source']}/{r['chapter']}",r['signal'],str(r['extraction_correct']),str(r['editorial_defect']),r['reason']])+'|')
+109 | …ion-and-judgments.md').write_text('\n'.join(rows)+'\n')
+110 | …umps(dict(judgments=len(records),original_73_reviewed=result['original_73_reviewed'],by_source={s['source']:s['samples'] for s in summaries},editorial_precision={s['source']:{k:fraction(v,'editorial') for k,v in s['precision'].items()} for s in summaries}),ensu…
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: Rewrite as a literal
+
+E501 Line too long (293 > 100)
+   --> reports/parallel-2026-10-28/Q3/summarize_editorial.py:110:101
+    |
+108 | …tr(r['extraction_correct']),str(r['editorial_defect']),r['reason']])+'|')
+109 | …
+110 | …wed'],by_source={s['source']:s['samples'] for s in summaries},editorial_precision={s['source']:{k:fraction(v,'editorial') for k,v in s['precision'].items()} for s in summaries}),ensure_ascii=False))
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (106 > 100)
+ --> tests/unit/test_q3_generalization_sources.py:8:101
+  |
+6 | import pytest
+7 |
+8 | SCRIPT = Path(__file__).resolve().parents[2] / "reports/parallel-2026-10-28/Q3/complete_generalization.py"
+  |                                                                                                     ^^^^^^
+  |
+
+Found 68 errors (1 fixed, 67 remaining).
+No fixes available (16 hidden fixes can be enabled with the `--unsafe-fixes` option).

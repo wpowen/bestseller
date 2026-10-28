@@ -133,3 +133,12 @@ def test_supersession_cannot_allocate_second_successor_for_same_old_cycle():
             {epoch.HISTORY_KEY: [receipt]}, {**receipt, "successor_cycle_id": "two"}
         )
     assert caught.value.differences[0]["field"] == "supersession.once"
+
+
+def test_legacy_v1_successor_identity_is_exact_and_not_reissued_as_v2():
+    ids=dict(project_id=uuid4(),chapter_id=uuid4(),draft_id=uuid4(),
+             body_sha256="a"*64,source_cycle_id="b"*64)
+    expected=epoch.recorded._hash({"schema":"pre-f0-review-disposition.v1",
+        **{k:str(v) for k,v in ids.items()},"source_ordering_policy":epoch.SOURCE_ORDERING_POLICY})
+    assert epoch._successor_id(**ids,receipt_schema=epoch.LEGACY_SCHEMA)==expected
+    assert epoch._successor_id(**ids)!=expected

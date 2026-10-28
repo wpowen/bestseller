@@ -2774,6 +2774,17 @@ async def prepare_commercial_component_slot(
         raise ValueError("commercial_cohort_workflow_scope_mismatch")
     journals = deepcopy((owner.metadata_json or {}).get("commercial_component_cohorts") or {})
     journal = journals.get(key)
+    if pointer is not None and not retained_only:
+        from bestseller.services.review_source_ordering import prepare_fresh_commercial_cohort
+
+        fresh = await prepare_fresh_commercial_cohort(
+            session, settings, chapter=chapter, old_owner=owner, old_journal=journal,
+            key=key, pointer=pointer, binding=binding, workflow_run_id=workflow_run_id,
+        )
+        if fresh is not None:
+            owner, journals, journal = fresh
+            pointers = deepcopy((chapter.metadata_json or {}).get("commercial_component_cohorts") or {})
+            pointer = pointers[key]
     if pointer is not None:
         if (
             journal is None
@@ -2889,6 +2900,9 @@ async def prepare_commercial_component_slot(
     if entry and entry.get("state") not in {"prepared", "completed"}:
         raise ValueError("commercial_cohort_cursor_invalid")
     if entry and entry["state"] == "completed":
+        from bestseller.services.review_source_ordering import verify_fresh_commercial_paid_origin
+        await verify_fresh_commercial_paid_origin(session, journal=journal, key=key,
+            slot=sample_slot, entry=entry, report=entry["report"])
         result, envelope, _ = await _verified_paid_slot(
             session,
             report=entry["report"],
@@ -2939,8 +2953,10 @@ async def prepare_commercial_component_slot(
         "owner_id": str(owner.id),
         "slot": sample_slot,
         "attempt": entry["used_attempts"],
-        "retry_context": entry.get("retry_context"),
+        "retry_context": deepcopy(entry.get("retry_context")),
         "namespace": (
+            f"commercial-component:{key}:f0:{journal['f0_supersession_receipt_sha256']}:round:{entry['used_attempts']}"
+            if journal.get("f0_supersession_receipt_sha256") else
             f"commercial-component:{key}:policy:{_digest(evaluation_contract)}:round:{entry['used_attempts']}"
             if journal.get("protocol_successor_workflow_id")
             else f"commercial-component:{key}:round:{entry['used_attempts']}"
@@ -2968,6 +2984,9 @@ async def save_commercial_component_slot(
         raise ValueError("commercial_cohort_cursor_changed")
     if entry.get("state") == "completed" and entry.get("report") != result.model_dump(mode="json"):
         raise ValueError("commercial_cohort_concurrent_result_changed")
+    from bestseller.services.review_source_ordering import verify_fresh_commercial_paid_origin
+    await verify_fresh_commercial_paid_origin(session, journal=journal, key=binding["key"],
+        slot=binding["slot"], entry=entry, report=result.model_dump(mode="json"))
     entry.update(state="completed", report=result.model_dump(mode="json"))
     owner.metadata_json = {**(owner.metadata_json or {}), "commercial_component_cohorts": journals}
     await session.flush()
@@ -3014,7 +3033,7 @@ async def freeze_commercial_component_request(
     if isolation is not None and entry["request"].get("metadata", {}).get("exact_unknown_business_dispatch") != isolation:
         raise ValueError("commercial_cohort_isolation_dispatch_guard_changed")
     await session.commit()
-    return LLMCompletionRequest.model_validate(entry["request"]), deepcopy(entry["source_receipt"])
+    return LLMCompletionRequest.model_validate(deepcopy(entry["request"])), deepcopy(entry["source_receipt"])
 
 
 @_component_savepoint

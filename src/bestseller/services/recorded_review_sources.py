@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
@@ -329,6 +329,59 @@ def _commercial_report_binding(evidence, slots) -> None:
         )
 
 
+async def _commercial_cohort_for_report(reader, *, chapter, draft_id, cycle_id, report_id, evidence, body_sha256, allow_archive=False):
+    """Locate custody from native report references after a forward pointer moves.
+
+    A matching journal proves paid-source custody only. Issued judgment equality
+    remains the separate issuer verifier's responsibility.
+    """
+    key = _hash({"project_id": str(chapter.project_id), "chapter_id": str(chapter.id),
+                 "body_sha256": body_sha256})
+    metadata = chapter.metadata_json or {}
+    pointer = (metadata.get("commercial_component_cohorts") or {}).get(key) or {}
+
+    def candidate(owner, pointer_binding=_MISSING):
+        _need(owner is not None and owner.project_id == chapter.project_id
+              and owner.scope_type == "chapter" and owner.scope_id == chapter.id, "commercial_owner")
+        journal = ((owner.metadata_json or {}).get("commercial_component_cohorts") or {}).get(key) or {}
+        binding = journal.get("binding") or {}
+        _need(journal.get("schema") == "commercial-component-cohort.v1"
+              and all(binding.get(k) == str(v) for k, v in (
+                  ("project_id", chapter.project_id), ("chapter_id", chapter.id), ("draft_id", draft_id))),
+              "commercial_binding")
+        if pointer_binding is not _MISSING:
+            _need(pointer_binding == _hash(binding), "commercial_pointer_binding")
+        slots = _commercial_slots(journal, binding)
+        _commercial_report_binding(evidence, slots)
+        return owner, journal, key, slots
+
+    current_owner = await reader.get(WorkflowRunModel, UUID(pointer["workflow_run_id"])) if pointer.get("workflow_run_id") else None
+    try:
+        return candidate(current_owner, pointer.get("binding_sha256"))
+    except (RecordedReviewSourceError, KeyError, ValueError, TypeError):
+        # Only a native, separately recorded forward supersession can make the
+        # active body pointer belong to a different cohort than this archive.
+        history = metadata.get("deterministic_audit_f0_review_supersessions") or []
+        expected = {"code": "pre_f0_source_unprovable",
+                    "source_cycle_id": cycle_id, "review_report_id": str(report_id),
+                    "draft_id": str(draft_id), "body_sha256": body_sha256}
+        _need(allow_archive and isinstance(history, list)
+              and any(isinstance(row, dict) and row.get("schema") in {"pre-f0-review-disposition.v1", "pre-f0-review-disposition.v2"}
+                      and all(row.get(k) == v for k,v in expected.items())
+                      for row in history), "commercial_archived_pointer_not_authorized")
+    matches = []
+    for owner in await reader.scalars(select(WorkflowRunModel).where(
+            WorkflowRunModel.project_id == chapter.project_id,
+            WorkflowRunModel.scope_type == "chapter", WorkflowRunModel.scope_id == chapter.id,
+        ).order_by(WorkflowRunModel.id)):
+        try:
+            matches.append(candidate(owner))
+        except (RecordedReviewSourceError, KeyError, ValueError, TypeError):
+            continue
+    _need(len(matches) == 1, "commercial_archive_issuer_ambiguous")
+    return matches[0]
+
+
 @dataclass(frozen=True)
 class RecordedReviewCall:
     llm_run_id: UUID
@@ -360,6 +413,7 @@ class RecordedReviewSources:
     adoption_authorized: bool = field(default=False, init=False)
     current_applicability_checked: bool = field(default=False, init=False)
     issued_report_verified: bool = field(default=False, init=False)
+    commercial_cohort: dict[str, Any] | None = field(default=None, repr=False)
 
 
 class _Reader(physical._Reader):
@@ -739,43 +793,17 @@ async def _read_recorded_cycle_sources(
         )
         calls.append(window)
     commercial = evidence.get("llm_commercial_judge")
+    cohort_descriptor = None
     if commercial is not None:
         _need(type(commercial) is dict and bool(commercial), "commercial_result_missing")
-        key = _hash(
-            {
-                "project_id": str(project_id),
-                "chapter_id": str(chapter_id),
-                "body_sha256": _sha(draft.content_md.encode()),
-            }
+        owner, journal, key, slots = await _commercial_cohort_for_report(
+            reader, chapter=chapter, draft_id=draft_id, cycle_id=cycle_id,
+            report_id=report.id, evidence=evidence, body_sha256=_sha(draft.content_md.encode()),
+            allow_archive=selected_cycle_id is not None,
         )
-        pointer = (metadata.get("commercial_component_cohorts") or {}).get(key) or {}
-        owner = await reader.get(WorkflowRunModel, UUID(pointer["workflow_run_id"]))
-        _need(
-            owner is not None
-            and owner.project_id == project_id
-            and owner.scope_type == "chapter"
-            and owner.scope_id == chapter_id,
-            "commercial_owner",
-        )
-        journal = ((owner.metadata_json or {}).get("commercial_component_cohorts") or {}).get(
-            key
-        ) or {}
-        binding = journal.get("binding") or {}
-        _need(
-            journal.get("schema") == "commercial-component-cohort.v1"
-            and pointer.get("binding_sha256") == _hash(binding)
-            and all(
-                binding.get(k) == str(v)
-                for k, v in (
-                    ("project_id", project_id),
-                    ("chapter_id", chapter_id),
-                    ("draft_id", draft_id),
-                )
-            ),
-            "commercial_binding",
-        )
-        slots = _commercial_slots(journal, binding)
-        _commercial_report_binding(evidence, slots)
+        cohort_descriptor = {"workflow_run_id": str(owner.id), "key": key,
+            "binding_sha256": _hash(journal["binding"]), "journal_sha256": _hash(journal)}
+        binding = journal["binding"]
         for name, slot in slots:
             calls.append(
                 await _call(
@@ -795,5 +823,6 @@ async def _read_recorded_cycle_sources(
         "distinct_paid_calls",
     )
     return RecordedReviewSources(
-        project_id, chapter_id, draft_id, report.id, cycle_id, tuple(calls)
+        project_id, chapter_id, draft_id, report.id, cycle_id, tuple(calls),
+        commercial_cohort=cohort_descriptor,
     )

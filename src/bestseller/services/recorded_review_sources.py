@@ -641,6 +641,29 @@ async def read_recorded_review_sources(
     No caller-supplied source, hash, issuer or approval is an input. Historical
     source comparison is distinct from current DB applicability and permissions.
     """
+    return await _read_recorded_cycle_sources(
+        session, settings, project_id=project_id, chapter_id=chapter_id, draft_id=draft_id,
+    )
+
+
+async def read_archived_review_sources(
+    session, settings, *, project_id, chapter_id, draft_id, cycle_id
+) -> RecordedReviewSources:
+    """Read a native historical cycle for this current body, without authority.
+
+    A cycle ID is only a lookup: the original cycle/report/body/paid bindings
+    are revalidated exactly. This never moves the active pointer or a grade.
+    """
+    _need(isinstance(cycle_id, str) and len(cycle_id) == 64, "archive_cycle_id")
+    return await _read_recorded_cycle_sources(
+        session, settings, project_id=project_id, chapter_id=chapter_id, draft_id=draft_id,
+        selected_cycle_id=cycle_id,
+    )
+
+
+async def _read_recorded_cycle_sources(
+    session, settings, *, project_id, chapter_id, draft_id, selected_cycle_id=None
+):
     from bestseller.services import pipelines
 
     _need(
@@ -664,11 +687,12 @@ async def read_recorded_review_sources(
         ChapterDraftVersionModel.chapter_id == chapter_id,
         ChapterDraftVersionModel.is_current.is_(True),
     )
-    _need(len(current) == 1 and current[0].id == draft_id, "current_draft")
+    if selected_cycle_id is None:
+        _need(len(current) == 1 and current[0].id == draft_id, "current_draft")
     fingerprint = pipelines.chapter_review_body_fingerprint(draft.content_md or "")
     metadata = chapter.metadata_json or {}
     active = metadata.get("chapter_review_active_cycle") or {}
-    cycle_id = (
+    cycle_id = selected_cycle_id or (
         active.get("cycle_id")
         if active.get("source_body_hash") == fingerprint["digest"]
         else pipelines._chapter_critic_cycle_id(project_id, chapter_id, fingerprint["digest"])

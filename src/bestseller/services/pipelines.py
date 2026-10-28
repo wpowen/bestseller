@@ -5562,6 +5562,8 @@ async def _count_pending_chapter_rewrite_tasks(
     project_id: UUID,
     chapter_id: UUID,
 ) -> int:
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=project_id, chapter_id=chapter_id)
     count = await session.scalar(
         select(func.count())
         .select_from(RewriteTaskModel)
@@ -5569,6 +5571,7 @@ async def _count_pending_chapter_rewrite_tasks(
             RewriteTaskModel.project_id == project_id,
             RewriteTaskModel.trigger_source_id == chapter_id,
             RewriteTaskModel.status.in_(("pending", "queued")),
+            RewriteTaskModel.id.not_in(archived),
         )
     )
     return int(count or 0)
@@ -5599,6 +5602,9 @@ async def _supersede_obsolete_stitched_draft_tasks(
             )
         )
     )
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=project_id, chapter_id=chapter_id)
+    tasks = [task for task in tasks if task.id not in archived]
     stitched_tasks = [
         task
         for task in tasks
@@ -5663,6 +5669,9 @@ async def _supersede_pending_chapter_rewrite_tasks_for_regeneration(
             )
         )
     )
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=project_id, chapter_id=chapter_id)
+    tasks = [task for task in tasks if task.id not in archived]
     for task in tasks:
         task.status = "superseded"
         task.metadata_json = {
@@ -6563,6 +6572,9 @@ async def _review_chapter_with_evidence_retry(
     )
     policy_hash = chapter_review_recovery_source_hash()
     semantic_hash = await _chapter_critic_semantic_dependencies(session, settings, chapter)
+    if active.get("f0_supersession_receipt_sha256") and active.get("source_body_hash") == fingerprint["digest"]:
+        from bestseller.services.review_source_ordering import read_fresh_review_preflight
+        await read_fresh_review_preflight(session, settings, chapter=chapter, draft=draft)
     if cycle is None:
         # Legacy paid rounds have no resumable cycle receipt. Never silently
         # replenish them; an explicit policy recovery establishes a new cycle.
@@ -7332,6 +7344,8 @@ async def resume_chapter_review_after_policy_change(
         )
     # Retain all tasks and diagnostics, but quarantine invalid-critic tasks so
     # they cannot be consumed by the new cycle or its predraft readiness gate.
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=project.id, chapter_id=chapter.id)
     tasks = list(
         await session.scalars(
             select(RewriteTaskModel).where(
@@ -7339,6 +7353,7 @@ async def resume_chapter_review_after_policy_change(
                 RewriteTaskModel.trigger_source_id == chapter.id,
                 RewriteTaskModel.trigger_type == "chapter_review",
                 RewriteTaskModel.status.in_(("pending", "queued")),
+                RewriteTaskModel.id.not_in(archived),
             )
         )
     )
@@ -14658,6 +14673,10 @@ async def run_chapter_pipeline(
                 current_step_name = f"chapter_first_review_regenerate_{chapter_rewrite_iterations}"
                 workflow_run.current_step = current_step_name
                 if chapter_rewrite_task is not None:
+                    from bestseller.services.review_source_ordering import archived_rewrite_task_ids, CODE
+                    archived = await archived_rewrite_task_ids(session, project_id=project.id, chapter_id=chapter.id)
+                    if chapter_rewrite_task.id in archived:
+                        raise ValueError(CODE)
                     chapter_rewrite_task.status = "superseded"
                     chapter_rewrite_task.metadata_json = {
                         **(chapter_rewrite_task.metadata_json or {}),

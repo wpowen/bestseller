@@ -9,6 +9,18 @@ from bestseller.settings import load_settings
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def no_archived_tasks_in_revision_fixture(monkeypatch):
+    # This existing fake-session suite covers revision acceptance, not native
+    # custody. Archive authenticity has separate real SQLite/PG tests.
+    from bestseller.services import review_source_ordering
+
+    async def empty_archive(*args, **kwargs):
+        return set()
+
+    monkeypatch.setattr(review_source_ordering, "archived_rewrite_task_ids", empty_archive)
+
+
 def test_explicit_length_band_allows_intentional_shortening():
     assert revision._issue_length_band(
         "目标字数：3200-3800字\n兑现冲突", SimpleNamespace(metadata_json={}), load_settings()
@@ -114,12 +126,33 @@ def fixtures():
     task = SimpleNamespace(
         id=uuid4(),
         project_id=project.id,
+        trigger_source_id=chapter.id,
         instructions="目标字数：3200-3800字\n凶手交代动机",
         attempts=0,
         status="queued",
         metadata_json={"source_chapter_draft_id": str(current.id)},
     )
     return project, chapter, current, task
+
+
+@pytest.mark.asyncio
+async def test_task_cannot_be_revised_through_another_chapter(monkeypatch):
+    project, chapter, current, task = fixtures()
+    task.trigger_source_id = uuid4()
+
+    async def load(*args):
+        return project, chapter, current
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("foreign chapter task reached revision/model stage")
+
+    monkeypatch.setattr(revision, "_load_current_chapter_draft", load)
+    monkeypatch.setattr(revision, "_build_revision_candidate", forbidden)
+    with pytest.raises(ValueError, match="task_chapter_mismatch") as caught:
+        await revision.apply_chapter_revision_task(Session(task, current), load_settings(),
+            project.slug, 20, rewrite_task_id=task.id, operation="humanize")
+    assert caught.value.differences[0]["field"] == "rewrite_task.chapter_id"
+    assert task.status == "queued" and task.attempts == 0
 
 
 @pytest.mark.asyncio

@@ -149,6 +149,9 @@ async def settle_outstanding_rewrite_tasks(
     from sqlalchemy import select
 
     from bestseller.infra.db.models import RewriteTaskModel
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+
+    archived = await archived_rewrite_task_ids(session, project_id=project_id)
 
     rows = list(
         (
@@ -156,6 +159,7 @@ async def settle_outstanding_rewrite_tasks(
                 select(RewriteTaskModel).where(
                     RewriteTaskModel.project_id == project_id,
                     RewriteTaskModel.status.in_(("pending", "queued")),
+                    RewriteTaskModel.id.not_in(archived),
                 )
             )
         )

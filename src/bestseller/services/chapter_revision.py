@@ -916,6 +916,10 @@ async def apply_chapter_revision_task(
     task = await session.get(RewriteTaskModel, rewrite_task_id)
     if task is None or task.project_id != project.id:
         raise ValueError("Rewrite task was not found for this project.")
+    from bestseller.services.review_source_ordering import CODE, _equal, archived_rewrite_task_ids
+    _equal("rewrite_task.chapter_id", str(chapter.id), str(task.trigger_source_id), code="task_chapter_mismatch")
+    if task.id in await archived_rewrite_task_ids(session, project_id=project.id, settings=settings):
+        raise ValueError(CODE)
     source_id = (task.metadata_json or {}).get("source_chapter_draft_id")
     if source_id and str(current.id) != str(source_id):
         return _reject_revision(task, current, chapter, operation, "stale_source_draft", {})

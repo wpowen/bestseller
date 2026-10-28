@@ -6556,6 +6556,10 @@ class WebTaskManager:
             from bestseller.services.web_pipeline_owner import web_pipeline_owner
             async with web_pipeline_owner(settings, project_slug), session_scope(settings) as session:
                 if operation == "regenerate":
+                    from bestseller.services.review_source_ordering import CODE, archived_rewrite_task_ids
+                    original_task = await session.get(RewriteTaskModel, rewrite_task_id)
+                    if original_task is not None and rewrite_task_id in await archived_rewrite_task_ids(session, project_id=original_task.project_id, settings=settings):
+                        raise ValueError(CODE)
                     chapter_result = await run_chapter_pipeline(
                         session,
                         settings,
@@ -6568,7 +6572,7 @@ class WebTaskManager:
                     )
                     raise_if_execution_stopped()
                     task = await session.get(RewriteTaskModel, rewrite_task_id)
-                    if task is not None:
+                    if task is not None and rewrite_task_id not in await archived_rewrite_task_ids(session, project_id=task.project_id, settings=settings):
                         task.status = "completed"
                         task.attempts = int(task.attempts or 0) + 1
                         task.metadata_json = {

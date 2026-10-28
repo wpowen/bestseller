@@ -51,6 +51,8 @@ async def supersede_review_tasks_preserving_history(
     # Exclude in-memory terminal changes as well: a second invocation before
     # caller flush must not reload the still-pending DB image and undo them.
     excluded = {except_task_id} if except_task_id is not None else set()
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    excluded |= await archived_rewrite_task_ids(session, project_id=project_id, chapter_id=chapter_id)
     for obj in session.dirty:
         if not isinstance(obj, RewriteTaskModel):
             continue

@@ -603,11 +603,14 @@ async def _load_pending_rewrite_tasks(
     task_ids: Iterable[UUID | str] | None = None,
 ) -> list[RewriteTaskModel]:
     normalized_task_ids = _normalize_uuid_filter(task_ids)
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=project_id)
     query = (
         select(RewriteTaskModel)
         .where(
             RewriteTaskModel.project_id == project_id,
             RewriteTaskModel.status.in_(["pending", "queued"]),
+            RewriteTaskModel.id.not_in(archived),
         )
         .order_by(
             RewriteTaskModel.priority.asc(),
@@ -2487,6 +2490,8 @@ async def run_project_repair(
         )
         await _checkpoint_repair_progress(session)
 
+        from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+        archived = await archived_rewrite_task_ids(session, project_id=project.id)
         remaining_pending_rewrite_count = (
             int(
                 await session.scalar(
@@ -2495,6 +2500,7 @@ async def run_project_repair(
                     .where(
                         RewriteTaskModel.project_id == project.id,
                         RewriteTaskModel.status.in_(["pending", "queued"]),
+                        RewriteTaskModel.id.not_in(archived),
                     )
                 )
                 or 0

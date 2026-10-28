@@ -161,7 +161,8 @@ async def stage_outline_revision_rewrite_tasks(
     )
 
     expected = validate_source_plan_binding(expected_plan_binding)
-    excluded: set[UUID] = set()
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    excluded = await archived_rewrite_task_ids(session, project_id=project_id, chapter_id=chapter_id)
     local_terminal = []
     for obj in session.dirty:
         if isinstance(obj, ChapterModel) and obj.id == chapter_id:

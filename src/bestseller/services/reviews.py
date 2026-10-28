@@ -11382,9 +11382,14 @@ async def rewrite_chapter_from_task(
         chapter_number,
     )
 
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids, CODE
+    archived = await archived_rewrite_task_ids(session, project_id=project.id, chapter_id=chapter.id)
+    if rewrite_task_id in archived:
+        raise ValueError(CODE)
     rewrite_query = select(RewriteTaskModel).where(
         RewriteTaskModel.project_id == project.id,
         RewriteTaskModel.trigger_source_id == chapter.id,
+        RewriteTaskModel.id.not_in(archived),
     )
     if rewrite_task_id is not None:
         rewrite_query = rewrite_query.where(RewriteTaskModel.id == rewrite_task_id)

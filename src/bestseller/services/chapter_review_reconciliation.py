@@ -1090,6 +1090,9 @@ async def _prepare_native_chapter_resume(session, settings, *, project_id, chapt
     cid = active.get('cycle_id') if active.get('source_body_hash') == body else pipelines._chapter_critic_cycle_id(project_id,chapter_id,body)
     cycle = cycles.get(cid)
     if cycle is None:
+        if active.get('f0_supersession_receipt_sha256'):
+            from bestseller.services.review_source_ordering import read_fresh_review_preflight
+            await read_fresh_review_preflight(session, settings, chapter=chapter, draft=draft)
         return None
     _native_need(cycle.get('source_draft_id') == str(draft.id) and cycle.get('source_body_hash') == body, 'current_cycle_source')
     policy = pipelines.chapter_review_recovery_source_hash()
@@ -1133,6 +1136,15 @@ async def _prepare_native_chapter_resume(session, settings, *, project_id, chapt
     _native_need(len(rows) == 1 and rows[0].id == draft.id
         and pipelines.chapter_review_body_fingerprint(rows[0].content_md or '')['digest'] == body, 'source_changed_under_lock')
     draft = rows[0]
+    fresh_cycle = (chapter.metadata_json or {}).get('chapter_critic_cycles', {}).get(cid, {})
+    if (fresh_cycle.get('state') == 'completed' and fresh_cycle.get('attempts')
+            and fresh_cycle['attempts'][-1].get('outcome') == 'available'):
+        from bestseller.services.review_source_ordering import _prepare_supersession_locked
+        supersession = await _prepare_supersession_locked(session, settings,
+            project=project, chapter=chapter, draft=draft, cycle_id=cid)
+        if supersession is not None:
+            return {'chapter_id': str(chapter_id), 'cycle_id': cid,
+                'policy_alias': None, 'waiting_rearm': None, 'supersession': supersession}
     ledger_before = await _ledger(session,scope,lock=True)
     original_meta = deepcopy(chapter.metadata_json or {})
     cycle = deepcopy(original_meta['chapter_critic_cycles'][cid])

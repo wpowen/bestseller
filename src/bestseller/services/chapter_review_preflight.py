@@ -105,6 +105,11 @@ async def _validate_retained_review_before_processing(
 
     body_hash = pipelines.chapter_review_body_fingerprint(current.content_md or "")["digest"]
     matching_active = bool(active and active["source_body_hash"] == body_hash)
+    if matching_active and active.get("f0_supersession_receipt_sha256"):
+        from bestseller.services.review_source_ordering import read_fresh_review_preflight
+        fresh = await read_fresh_review_preflight(session, settings, chapter=chapter, draft=current)
+        if fresh is not None:
+            return fresh
     automatic_cycle_id = pipelines._chapter_critic_cycle_id(
         chapter.project_id,
         chapter.id,

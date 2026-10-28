@@ -232,12 +232,15 @@ async def _pending_rewrite_tasks(
     session: AsyncSession,
     chapter: ChapterModel,
 ) -> tuple[RewriteTaskModel, ...]:
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=chapter.project_id, chapter_id=chapter.id)
     return tuple(
         (
             await session.scalars(
                 select(RewriteTaskModel).where(
                     RewriteTaskModel.project_id == chapter.project_id,
                     RewriteTaskModel.status.in_(["pending", "queued"]),
+                    RewriteTaskModel.id.not_in(archived),
                     or_(
                         RewriteTaskModel.trigger_source_id == chapter.id,
                         RewriteTaskModel.metadata_json["chapter_id"].astext == str(chapter.id),
@@ -571,11 +574,14 @@ async def attempt_recover_outline_readiness(
             new_state=str(chapter.production_state),
             reason="not_outline_blocked",
         )
+    from bestseller.services.review_source_ordering import archived_rewrite_task_ids
+    archived = await archived_rewrite_task_ids(session, project_id=chapter.project_id, chapter_id=chapter.id)
     pending_rewrite_task_count = int(
         await session.scalar(
             select(func.count(RewriteTaskModel.id)).where(
                 RewriteTaskModel.project_id == chapter.project_id,
                 RewriteTaskModel.status.in_(["pending", "queued"]),
+                RewriteTaskModel.id.not_in(archived),
                 or_(
                     RewriteTaskModel.trigger_source_id == chapter.id,
                     RewriteTaskModel.metadata_json["chapter_id"].astext == str(chapter.id),

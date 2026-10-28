@@ -1,0 +1,11 @@
+{
+  "schema": "cp1-batch2-executed-scripts.v1",
+  "receipt": "reports/v3-repair-execution-2026-10-27/g2/cp1-batch2-sdk-20261028T104108177976Z.json",
+  "files": {
+    "run-g2b-cp1-successor.py": "911ba8c7d85f682db09c09660b02220b394c45d39dde2bfac70efccc44ba5b2e",
+    "verify-g2b-cp1-successor.py": "1593f45c15f9cc04f25c531517b222aeac56ad5d61f7010adb4a7349bec7adc0",
+    "verify-g2b-cp1-local.py": "94bfee4b0ec292252938582a5cd8f432aaeb36372879eac1f7c099ed8e6a563d"
+  },
+  "shared_controls": "tests/support/cp1_rehearsal.py",
+  "shared_controls_sha256": "af1afd27c7baba6377a76ee5a8c6d2039f50e26e4aac1f86923f7cd16c2948fd"
+}

@@ -497,7 +497,15 @@ async def search_retrieval_for_project(
 ) -> RetrievalSearchResult:
     await ensure_project_retrieval_index(session, settings, project.id)
     chunks = list(
-        await session.scalars(select(RetrievalChunkModel).where(RetrievalChunkModel.project_id == project.id))
+        await session.scalars(
+            select(RetrievalChunkModel)
+            .where(RetrievalChunkModel.project_id == project.id)
+            .order_by(
+                RetrievalChunkModel.source_type.asc(),
+                RetrievalChunkModel.source_id.asc(),
+                RetrievalChunkModel.chunk_index.asc(),
+            )
+        )
     )
     if any(chunk.source_type == "world_rule" for chunk in chunks):
         current_ids = {
@@ -532,9 +540,14 @@ async def search_retrieval_for_project(
         if score < settings.retrieval.min_score:
             continue
         scored.append(candidate)
-    scored.sort(key=lambda item: item.score, reverse=True)
+    # Cache row UUIDs change during rebuilds. The native unique source tuple
+    # remains stable; retain the existing rounded score as primary priority.
+    def rank(item: RetrievedChunk) -> tuple[float, str, int, int]:
+        return (-item.score, item.source_type, item.source_id.int, item.chunk_index)
+
+    scored.sort(key=rank)
     if not scored:
-        fallback_candidates.sort(key=lambda item: item.score, reverse=True)
+        fallback_candidates.sort(key=rank)
         scored = fallback_candidates
     return RetrievalSearchResult(
         project_id=project.id,

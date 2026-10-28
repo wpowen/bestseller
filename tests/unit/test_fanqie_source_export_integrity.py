@@ -486,6 +486,17 @@ async def test_public_pipeline_uses_real_adopted_source_and_never_exports_style_
         return SimpleNamespace(final_score=0, level="not_applicable")
 
     monkeypatch.setattr(pipeline, "judge_chapter_litstyle_stable", litstyle)
+    # Component boundary: this test checks the source/export branch, while the
+    # bounded executor and real SDK chain have their own acceptance scenarios.
+    repair_calls = []
+    async def repair_boundary(_session, _settings, **kwargs):
+        repair_calls.append(kwargs["outcome"])
+        assert kwargs["project_id"] == case.project.id
+        assert kwargs["outcome"]["normal_rewrite_task_ids"]
+        return False
+    monkeypatch.setattr(
+        "bestseller.services.fanqie_whole_repair.execute_round", repair_boundary,
+    )
     case.settings.output.base_dir = str(case.output.parent)
     case.project.slug = case.output.name
     await case.session.commit()
@@ -513,6 +524,7 @@ async def test_public_pipeline_uses_real_adopted_source_and_never_exports_style_
         path.read_text() for path in case.output.glob("candidates/whole-story/*/candidate.md")
     ]
     assert candidate_raw in candidates
+    assert len(repair_calls) == (1 if case.weak else 0)
     if not case.weak:
         assert result.final_verdict == "pass", case.project.metadata_json[
             "fanqie_whole_export_receipt"

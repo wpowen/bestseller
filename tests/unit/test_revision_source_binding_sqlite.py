@@ -13,6 +13,7 @@ from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
+    ProjectModel,
     ReviewReportModel,
     RewriteTaskModel,
 )
@@ -37,6 +38,7 @@ async def db(tmp_path):
     engine = create_engine(f"sqlite:///{path}")
     with engine.begin() as connection:
         for model in (
+            ProjectModel,
             ChapterModel,
             ChapterDraftVersionModel,
             RewriteTaskModel,
@@ -45,7 +47,8 @@ async def db(tmp_path):
         ):
             # Only table DDL: PostgreSQL partial indexes are not valid SQLite
             # index definitions. No production engine or migrations are used.
-            connection.execute(CreateTable(model.__table__))
+            ddl = str(CreateTable(model.__table__).compile(dialect=connection.dialect))
+            connection.exec_driver_sql(ddl.replace("::jsonb", ""))
         connection.exec_driver_sql(
             "CREATE UNIQUE INDEX revision_test_current ON chapter_draft_versions(chapter_id) WHERE is_current = 1"
         )
@@ -66,17 +69,24 @@ class AsyncFacade:
     def add(self, value):
         self.session.add(value)
 
-    async def get(self, model, key):
-        return self.session.get(model, key)
+    @property
+    def no_autoflush(self):
+        return self.session.no_autoflush
 
-    async def scalar(self, stmt):
-        return self.session.scalar(stmt)
+    async def get(self, *args, **kwargs):
+        return self.session.get(*args, **kwargs)
 
-    async def scalars(self, stmt):
-        return self.session.scalars(stmt)
+    async def scalar(self, *args, **kwargs):
+        return self.session.scalar(*args, **kwargs)
 
-    async def execute(self, stmt):
-        return self.session.execute(stmt)
+    async def scalars(self, *args, **kwargs):
+        return self.session.scalars(*args, **kwargs)
+
+    async def execute(self, *args, **kwargs):
+        return self.session.execute(*args, **kwargs)
+
+    async def refresh(self, *args, **kwargs):
+        return self.session.refresh(*args, **kwargs)
 
     async def flush(self):
         self.session.flush()
@@ -86,8 +96,15 @@ class AsyncFacade:
 
 
 async def seed(session):
+    project = ProjectModel(
+        id=uuid4(), slug=f"revision-legacy-{uuid4().hex[:12]}",
+        title="Revision legacy fixture", genre="science-fiction", language="en",
+        target_word_count=2200, target_chapters=1, metadata_json={},
+    )
+    session.add(project)
+    await session.flush()
     chapter = ChapterModel(
-        id=uuid4(), project_id=uuid4(), chapter_number=1, chapter_goal="Choose a route"
+        id=uuid4(), project_id=project.id, chapter_number=1, chapter_goal="Choose a route"
     )
     session.add(chapter)
     draft = ChapterDraftVersionModel(

@@ -16,7 +16,11 @@ async def create_bible_fixture_tables(session):
 
 async def seed_empty_bible(configured, monkeypatch):
     from test_adopted_knowledge_lineage import stub_llm
+    from story_bible_read_views_test_support import create_story_bible_read_view_tables
     session, settings, project, chapter, draft = configured
+    # Reuse the existing native SQLite projection fixture. Its advisory UDFs
+    # permit SQL execution only; PostgreSQL concurrency is verified separately.
+    await create_story_bible_read_view_tables(session)
     await create_bible_fixture_tables(session)
     with monkeypatch.context() as patch:
         calls = stub_llm(patch, llm, {})

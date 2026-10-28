@@ -32,6 +32,20 @@ from bestseller.services.commercial_review_context import project_commercial_sou
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
 
+def _native_effective_receipts(request, role):
+    """Match settle's compact receipt and finish's request-derived expansion."""
+    input_hash = llm._effective_input_hash(request, role)
+    origin = llm._paid_call_origin(request, input_hash)
+    compact = {"schema": "effective-input.v1", "hash": input_hash, "model": role.model}
+    expanded = {
+        **compact,
+        "messages_source": "override" if request.messages_override is not None else "system_user",
+        "tools_included": bool(request.tools),
+        "legacy_prompt_hash": llm._hash_prompt(request.system_prompt, request.user_prompt),
+    }
+    return input_hash, origin, compact, expanded
+
+
 @pytest.fixture
 async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
     rig = cohort
@@ -57,14 +71,56 @@ async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
     )
     rig.project.metadata_json = {"llm_model_id": entry.id}
     await rig.session.commit()
+    from bestseller.services import chapter_llm_quality_judge as commercial_judge
+
+    synthetic_complete = commercial_judge.complete_text
+    synthetic_inputs = []
+
+    async def capture_synthetic_input(session, settings, request):
+        retained_request = request.model_copy(deep=True)
+        retained_role = settings.llm.critic.model_copy(deep=True)
+        result = await synthetic_complete(session, settings, request)
+        synthetic_inputs.append((result.llm_run_id, retained_request, retained_role))
+        return result
+
+    monkeypatch.setattr(commercial_judge, "complete_text", capture_synthetic_input)
     _, _, _, report = await _history(rig)
     await _judge(rig, bound=True, commercial_retained_only=True)
     await rig.session.refresh(rig.chapter)
     await rig.session.refresh(rig.owner)
-    for run in await rig.session.scalars(select(LlmRunModel)):
+    # These rows were produced only by cohort's synthetic provider above.
+    # Preserve every identity/hash/body and correct metadata from its captured
+    # original request/role; never read or patch an actual paid payload file.
+    for run_id, retained_request, retained_role in synthetic_inputs:
+        run = await rig.session.get(LlmRunModel, run_id)
+        input_hash, origin, compact, expanded = _native_effective_receipts(
+            retained_request, retained_role
+        )
+        assert run.prompt_hash == input_hash
+        execution = deepcopy(run.metadata_json["execution_receipt"])
+        operation = await rig.session.get(ExecutionOperationModel, execution["operation_key"])
+        attempt_id = execution["attempts"][0]["attempt_id"]
+        transport_key = hashlib.sha256(
+            f"transport-result.v1\n{SCOPE}\n{attempt_id}".encode()
+        ).hexdigest()
+        transport = await rig.session.get(ExecutionOperationModel, transport_key)
+        assert operation.input_hash == transport.input_hash == input_hash
+        completed = deepcopy(operation.result_json)
+        completed["metadata"] = {
+            **completed["metadata"], "paid_call_origin": deepcopy(origin),
+            "effective_input_receipt": deepcopy(expanded),
+        }
+        wire = deepcopy(transport.result_json)
+        wire["result"]["metadata"] = {
+            **wire["result"]["metadata"], "paid_call_origin": deepcopy(origin),
+            "effective_input_receipt": deepcopy(compact),
+        }
+        operation.result_json = completed
+        transport.result_json = wire
         run.metadata_json = {
             **run.metadata_json,
-            "effective_input_receipt": {"hash": run.prompt_hash},
+            "paid_call_origin": deepcopy(origin),
+            "effective_input_receipt": deepcopy(expanded),
         }
 
     source = {
@@ -124,23 +180,25 @@ async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
         role = proof._fresh_role(
             rig.settings, rig.project, request, {entry.id: entry, window_entry.id: window_entry}
         )
-        effective_hash = llm._effective_input_hash(request, role)
+        effective_hash, origin, compact, expanded = _native_effective_receipts(request, role)
         operation_key, attempt_id = uuid4().hex, uuid4().hex
         execution = {
             "scope_id": SCOPE,
             "operation_key": operation_key,
             "attempts": [{"attempt_id": attempt_id, "status": "completed"}],
+            "policy": "execution-budget.v1",
         }
         metadata = {
             "execution_receipt": execution,
-            "effective_input_receipt": {"hash": effective_hash},
+            "paid_call_origin": deepcopy(origin),
+            "effective_input_receipt": deepcopy(expanded),
         }
         if template == "chapter_review":
             metadata["review_source_receipt"] = {
                 "source_complete": True,
                 "source_sha256": proof._hash(source),
             }
-        paid = llm.LLMCompletionResult(
+        transport_paid = llm.LLMCompletionResult(
             content="Retained provider return",
             provider="minimax",
             model_name=role.model,
@@ -148,10 +206,14 @@ async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
             input_tokens=3,
             output_tokens=4,
             metadata={
-                "paid_call_origin": llm._paid_call_origin(request, effective_hash),
-                "effective_input_receipt": {"hash": effective_hash},
+                "llm_run_flushed": False,
+                "paid_call_origin": deepcopy(origin),
+                "effective_input_receipt": deepcopy(compact),
+                "execution_receipt": deepcopy(execution),
             },
         ).model_dump(mode="json")
+        completed_paid = deepcopy(transport_paid)
+        completed_paid["metadata"]["effective_input_receipt"] = deepcopy(expanded)
         path = root / f"{run_id}.request.json"
         path.write_text(
             json.dumps(
@@ -208,7 +270,7 @@ async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
                 status="completed",
                 owner="fixture",
                 lease_until=datetime.now(UTC) + timedelta(hours=1),
-                result_json=paid,
+                result_json=completed_paid,
             )
         )
         rig.session.add(
@@ -234,10 +296,11 @@ async def retained(cohort, tmp_path, monkeypatch):  # noqa: F811
                 owner="fixture",
                 lease_until=datetime.now(UTC) + timedelta(hours=1),
                 result_json={
+                    "schema": "transport-result.v1",
                     "operation_key": operation_key,
                     "attempt_id": attempt_id,
                     "input_hash": effective_hash,
-                    "result": paid,
+                    "result": transport_paid,
                 },
             )
         )
@@ -279,6 +342,46 @@ async def verify(case):
             report=case.report,
             cycle=case.cycle,
         )
+
+
+@pytest.mark.parametrize(
+    "side,field",
+    [
+        ("transport", "schema"),
+        ("operation", "messages_source"),
+        ("operation", "tools_included"),
+        ("operation", "legacy_prompt_hash"),
+    ],
+)
+async def test_native_paid_identity_rejects_missing_effective_receipt_field(side, field):
+    from bestseller.services import recorded_review_sources
+    from bestseller.settings import load_settings
+
+    role = load_settings(env={}).llm.critic.model_copy(update={"model": "minimax/offline-fixture"})
+    request = llm.LLMCompletionRequest(
+        logical_role="critic", project_id=uuid4(), workflow_run_id=uuid4(),
+        prompt_template="chapter_review", prompt_version="fixture-v1",
+        system_prompt="Synthetic system", user_prompt="Synthetic full input",
+        fallback_response="unused",
+    )
+    input_hash, origin, compact, expanded = _native_effective_receipts(request, role)
+    transport = llm.LLMCompletionResult(
+        content="Synthetic complete return", provider="minimax", model_name=role.model,
+        finish_reason="stop", input_tokens=3, output_tokens=4,
+        metadata={"paid_call_origin": origin, "effective_input_receipt": compact},
+    ).model_dump(mode="json")
+    completed = deepcopy(transport)
+    completed["metadata"]["effective_input_receipt"] = deepcopy(expanded)
+    selected = transport if side == "transport" else completed
+    selected["metadata"]["effective_input_receipt"].pop(field)
+    with pytest.raises(recorded_review_sources.RecordedReviewSourceError,
+                       match="paid_identity_metadata") as stopped:
+        recorded_review_sources._strict_paid_pair(
+            completed, transport, request=request, effective_hash=input_hash, model=role.model,
+        )
+    pointer = f"{side}.metadata.effective_input_receipt.{field}"
+    assert any(item["field"] == pointer and item["actual"]["type"] == "missing"
+               for item in stopped.value.differences)
 
 
 async def test_exact_primary_window_and_three_commercial_slots_are_readonly_idempotent(retained):

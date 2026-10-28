@@ -1408,7 +1408,9 @@ async def search_narrative_tree_for_project(
     preferred = list(dict.fromkeys(preferred_paths or []))
     nodes = list(
         await session.scalars(
-            select(NarrativeTreeNodeModel).where(NarrativeTreeNodeModel.project_id == project.id)
+            select(NarrativeTreeNodeModel)
+            .where(NarrativeTreeNodeModel.project_id == project.id)
+            .order_by(NarrativeTreeNodeModel.node_path.asc())
         )
     )
     nodes = await _current_world_rule_nodes(session, project.id, nodes)
@@ -1447,7 +1449,7 @@ async def search_narrative_tree_for_project(
                 metadata=dict(node.metadata_json),
             )
         )
-    hits.sort(key=lambda item: item.score, reverse=True)
+    hits.sort(key=lambda item: (-item.score, item.node_path))
     return NarrativeTreeSearchResult(
         project_id=project.id,
         query_text=query_text,

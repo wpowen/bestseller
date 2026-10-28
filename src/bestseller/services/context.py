@@ -1735,10 +1735,11 @@ async def build_scene_writer_context_from_models(
                 ReaderKnowledgeEntryModel.chapter_number <= chapter.chapter_number,
                 ReaderKnowledgeEntryModel.audience.notin_(["character_only"]),
             )
-            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc())
+            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc(), ReaderKnowledgeEntryModel.id.asc())
             .limit(10)
         )
     )
+    _rk_rows = ordered_source_rows(_rk_rows, priority=lambda row: (-row.chapter_number,))
     _reader_knowledge = [
         ReaderKnowledgeEntryRead(
             id=row.id,
@@ -1764,10 +1765,11 @@ async def build_scene_writer_context_from_models(
                     RelationshipEventModel.chapter_number >= _lookback_start,
                     RelationshipEventModel.chapter_number <= chapter.chapter_number,
                 )
-                .order_by(RelationshipEventModel.chapter_number.desc())
+                .order_by(RelationshipEventModel.chapter_number.desc(), RelationshipEventModel.id.asc())
                 .limit(8)
             )
         )
+        _rel_rows = ordered_source_rows(_rel_rows, priority=lambda row: (-row.chapter_number,))
         for row in _rel_rows:
             if row.character_a_label in _participant_names or row.character_b_label in _participant_names:
                 _rel_milestones.append(
@@ -2554,10 +2556,11 @@ async def build_chapter_writer_context(
                 ReaderKnowledgeEntryModel.chapter_number < chapter.chapter_number,
                 ReaderKnowledgeEntryModel.audience.notin_(["character_only"]),
             )
-            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc())
+            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc(), ReaderKnowledgeEntryModel.id.asc())
             .limit(10)
         )
     )
+    _ch_rk_rows = ordered_source_rows(_ch_rk_rows, priority=lambda row: (-row.chapter_number,))
     _ch_reader_knowledge = [
         ReaderKnowledgeEntryRead(
             id=row.id,
@@ -2582,10 +2585,11 @@ async def build_chapter_writer_context(
                     RelationshipEventModel.chapter_number >= _ch_lookback_start,
                     RelationshipEventModel.chapter_number < chapter.chapter_number,
                 )
-                .order_by(RelationshipEventModel.chapter_number.desc())
+                .order_by(RelationshipEventModel.chapter_number.desc(), RelationshipEventModel.id.asc())
                 .limit(10)
             )
         )
+        _ch_rel_rows = ordered_source_rows(_ch_rel_rows, priority=lambda row: (-row.chapter_number,))
         for row in _ch_rel_rows:
             if row.character_a_label in _ch_participant_names or row.character_b_label in _ch_participant_names:
                 _ch_rel_milestones.append(

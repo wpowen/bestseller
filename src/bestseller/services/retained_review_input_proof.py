@@ -635,6 +635,11 @@ def _retained_request(settings, run, *, chapter_body=None):
     path = (root / ref).resolve()
     _require(path.is_relative_to(root), "request_payload_outside_store")
     original_bytes = path.read_bytes()
+    return _request_from_payload(run, original_bytes, chapter_body=chapter_body)
+
+
+def _request_from_payload(run, original_bytes, *, chapter_body=None):
+    """Decode exactly the bytes already read; the store wrapper owns path custody."""
     payload = json.loads(original_bytes)
     reconstruct_tools = (
         _primary6(run)

@@ -36,6 +36,9 @@ fresh owned DB, and compares schema SQL + all table counts + five row hashes per
 table. Missing roles/extensions fail closed; this tool never creates roles,
 changes permissions, starts apps/containers, prunes, drops or deletes anything.
 Only paired pg_dump restrict/unrestrict random tokens are schema-normalized.
+The independent --verify-existing-backup addendum instead compares native
+re-parsed schema dumps verbatim, preserving the failed original receipt. Its
+explicit --align-restored-owner option may change only that owned test DB owner.
 No global-role backup or external-artifact backup; samples are not full data
 hashes. Main alone executes later; static readiness is not restore evidence.
 """
@@ -448,6 +451,119 @@ def execute(args: argparse.Namespace, state: RunState, out: Path) -> None:
                      owner_acl_restored=True, deployment_authority=False)
 
 
+def verify_native_schema_addendum(expected: bytes, restored: bytes) -> dict:
+    """Compare native re-parsed DDL verbatim; never erase casts, owners or ACLs."""
+    equal("schema.native_canonical_bytes", expected, restored)
+    return {"native_schema_bytes_equal": True,
+            "canonical_schema_sha256": hashlib.sha256(expected).hexdigest(),
+            "original_result_replaced": False, "deployment_authority": False}
+
+
+def verify_existing_backup(args: argparse.Namespace, state: RunState, out: Path) -> None:
+    """Target-only addendum: preserve failed originals and reuse the existing dump.
+
+    CLI: --verify-existing-backup PRIVATE_BACKUP_DIR --backup-result-sha256 SHA
+    --census-sha256 SHA --source-owner-receipt PATH --source-owner-sha256 SHA
+    --source-database bestseller --isolation-plan PATH --plan-sha256 SHA
+    [--align-restored-owner]. No production connection or new pg_dump of source.
+    """
+    state.checkpoint("existing_backup_binding")
+    require(__debug__, "isolation.assertions_enabled", True, False)
+    equal("worktree", "int-worktree", ROOT.name)
+    base = args.verify_existing_backup.resolve()
+    require(base.is_relative_to(PRIVATE.resolve()) and base != out,
+            "addendum.original_private_root", True, False)
+    original_path = base / "RESULT.json"
+    receipt = json.loads(pinned(original_path, args.backup_result_sha256))
+    equal("addendum.original_schema", "full-flow-production-backup.v1", receipt.get("schema"))
+    equal("addendum.original_failure", "restore.complete_schema_sql", receipt.get("root_error_code"))
+    equal("addendum.original_status", "失败", receipt.get("status"))
+    diff = next(d for d in receipt["failure_differences"]
+                if d["field"] == "restore.complete_schema_sql")
+    source_schema = base / "source-schema.sql"
+    original_restored_schema = base / "restored-schema.sql"
+    equal("addendum.original_source_schema", diff["expected"],
+          summary(schema_bytes(source_schema.read_bytes())))
+    equal("addendum.original_restored_schema", diff["actual"],
+          summary(schema_bytes(original_restored_schema.read_bytes())))
+    archive = base / "database.pgdump"
+    equal("addendum.archive_sha256", receipt["archive"]["sha256"], file_sha(archive))
+    equal("addendum.archive_size", receipt["archive"]["size_bytes"], archive.stat().st_size)
+    before = json.loads(pinned(base / "source-census.json", args.census_sha256))
+    equal("addendum.original_census", before,
+          json.loads(pinned(base / "restored-census.json", args.census_sha256)))
+    owner_receipt = json.loads(pinned(args.source_owner_receipt, args.source_owner_sha256))
+    equal("addendum.source_database", args.source_database, owner_receipt["database"])
+    owner = owner_receipt["owner"]
+    require(type(owner) is str and bool(NAME.fullmatch(owner)),
+            "addendum.source_owner", "native SQL role name", owner)
+    state.data.update(schema="full-flow-backup-schema-addendum.v1",
+                      original_result_sha256=args.backup_result_sha256,
+                      original_result_path=str(original_path), archive=receipt["archive"],
+                      source_owner_receipt_sha256=args.source_owner_sha256,
+                      original_census_sha256=args.census_sha256, source_connections=0)
+    disk_gate(out)
+    plan = json.loads(pinned(args.isolation_plan, args.plan_sha256))
+    equal("isolation.owner", OWNER, plan.get("owner"))
+    verify(plan)
+    target = plan["container_ids"]["pg"]
+    equal("addendum.restore_container", target, receipt["restore"]["container_id"])
+    database = receipt["restore"]["database"]
+    require(bool(re.fullmatch(r"full_flow_backup_[0-9a-f]{24}_test_db", database)),
+            "addendum.owned_restore_database", "unique backup test DB", database)
+    equal("addendum.original_database_created", True, receipt["restore"]["created"])
+    info_query = ("SELECT json_build_object('owner',pg_get_userbyid(datdba),"
+                  "'encoding',pg_encoding_to_char(encoding),'collate',datcollate,'ctype',datctype) "
+                  "FROM pg_database WHERE datname=current_database();")
+    identity = json.loads(sql(target, "postgres", database, info_query))
+    state.checkpoint("target_owner_readback", restored_database=database,
+                     restored_owner_before=identity["owner"], source_owner=owner,
+                     target_owner_changed=False)
+    if identity["owner"] != owner:
+        equal("addendum.explicit_target_owner_alignment", True, args.align_restored_owner)
+        sql(target, "postgres", plan["database"],
+            'ALTER DATABASE "' + database + '" OWNER TO "' + owner + '";', readonly=False)
+        state.data["target_owner_changed"] = True
+    equal("addendum.restored_owner_after", owner,
+          json.loads(sql(target, "postgres", database, info_query))["owner"])
+    expected_db = "full_flow_schema_" + secrets.token_hex(12) + "_test_db"
+    state.checkpoint("create_native_expected_schema_database", expected_database=expected_db,
+                     restored_owner_after=owner)
+    sql(target, "postgres", plan["database"],
+        'CREATE DATABASE "' + expected_db + '" WITH TEMPLATE template0 OWNER "' + owner
+        + '" ENCODING ' + literal(identity["encoding"]) + " LC_COLLATE "
+        + literal(identity["collate"]) + " LC_CTYPE " + literal(identity["ctype"]) + ";",
+        readonly=False)
+    equal("addendum.expected_database_owner", owner,
+          json.loads(sql(target, "postgres", expected_db, info_query))["owner"])
+    state.checkpoint("native_parse_original_schema")
+    with source_schema.open("rb") as stream:
+        run([*pg_args(target, "postgres", expected_db, "psql", readonly=False),
+             "-X", "-v", "ON_ERROR_STOP=1", "--single-transaction"],
+            field="addendum.native_schema_parse", timeout=1820, stdin=stream)
+    expected_path, restored_path = out / "expected-schema.sql", out / "restored-schema.sql"
+    state.checkpoint("native_schema_redump")
+    for name, path in ((expected_db, expected_path), (database, restored_path)):
+        dump([*pg_args(target, "postgres", name, "pg_dump", readonly=True), "--schema-only"],
+             path, field="addendum.schema_dump")
+    state.data.update(verify_native_schema_addendum(expected_path.read_bytes(),
+                                                  restored_path.read_bytes()))
+    fresh_census = census(target, "postgres", database)
+    save(out / "restored-census.json", fresh_census)
+    equal("addendum.fresh_restored_census", before, fresh_census)
+    equal("addendum.archive_unchanged", receipt["archive"]["sha256"], file_sha(archive))
+    pinned(original_path, args.backup_result_sha256)
+    equal("addendum.original_source_schema_unchanged", diff["expected"],
+          summary(schema_bytes(source_schema.read_bytes())))
+    equal("addendum.original_restored_schema_unchanged", diff["actual"],
+          summary(schema_bytes(original_restored_schema.read_bytes())))
+    verify(plan)
+    disk_gate(out)
+    state.checkpoint("independent_native_schema_verified", all_table_counts_and_samples_exact=True,
+                     original_failure_preserved=True, source_connections=0,
+                     production_sql_writes=0, deployment_authority=False)
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         require(False, "invocation.arguments", "complete explicit arguments", message)
@@ -470,15 +586,30 @@ def main() -> int:
         state.data.update(schema="full-flow-production-backup.v1", production_sql_writes=0,
                           application_starts=0, model_calls=0, deployment_authority=False)
         parser = Parser(description=__doc__)
-        for name in ("gate-manifest", "isolation-plan"):
-            parser.add_argument("--" + name, type=Path, required=True)
+        for name in ("gate-manifest", "isolation-plan", "source-owner-receipt"):
+            parser.add_argument("--" + name, type=Path, required=name == "isolation-plan")
         for name in ("gate-sha256", "plan-sha256", "source-container-id",
                      "source-user", "source-database"):
-            parser.add_argument("--" + name, required=True)
+            parser.add_argument("--" + name, required=name == "plan-sha256")
+        for name in ("backup-result-sha256", "census-sha256", "source-owner-sha256"):
+            parser.add_argument("--" + name)
+        parser.add_argument("--align-restored-owner", action="store_true")
         modes = parser.add_mutually_exclusive_group(required=True)
         modes.add_argument("--execute-after-main-gates", action="store_true")
         modes.add_argument("--execute-pre-release-backup", action="store_true")
-        execute(parser.parse_args(), state, out)
+        modes.add_argument("--verify-existing-backup", type=Path)
+        args = parser.parse_args()
+        required = (("backup_result_sha256", "census_sha256", "source_owner_receipt",
+                     "source_owner_sha256", "source_database") if args.verify_existing_backup
+                    else ("gate_manifest", "gate_sha256", "source_container_id",
+                          "source_user", "source_database"))
+        for name in required:
+            if getattr(args, name) is None:
+                parser.error("missing --" + name.replace("_", "-"))
+        if args.verify_existing_backup:
+            verify_existing_backup(args, state, out)
+        else:
+            execute(args, state, out)
     except BaseException as error:
         if state is None:
             print(json.dumps({"status": "失败", "root_exception_type": type(error).__name__,

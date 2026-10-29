@@ -87,3 +87,49 @@ def test_legacy_admission_still_requires_main_prevalidation(admission, grant):
                      pre_release=False, after_main_gates=True) == {
         "mode": "after_main_gates", "deployment_authority": False,
     }
+
+
+@pytest.fixture
+def native_schema_comparison():
+    path = ROOT / "scripts/full_flow/production_backup.py"
+    tree = ast.parse(path.read_text())
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                 and node.name in {"equal", "verify_native_schema_addendum"}]
+    assert len(functions) == 2
+    namespace = {"require": require, "hashlib": hashlib}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(path), "exec"), namespace)
+    return namespace["verify_native_schema_addendum"]
+
+
+def test_native_schema_exact_bytes_do_not_replace_original_result(native_schema_comparison):
+    schema = b"ALTER TABLE public.example OWNER TO bestseller;\n"
+    assert native_schema_comparison(schema, schema) == {
+        "native_schema_bytes_equal": True,
+        "canonical_schema_sha256": hashlib.sha256(schema).hexdigest(),
+        "original_result_replaced": False, "deployment_authority": False,
+    }
+
+
+def test_native_schema_comparison_never_normalizes_array_casts(native_schema_comparison):
+    original = b"CHECK (value = ANY ((ARRAY['queued'::character varying])::text[]));\n"
+    reparsed = b"CHECK (value = ANY (ARRAY[('queued'::character varying)::text]));\n"
+    with pytest.raises(HarnessInvariantError) as caught:
+        native_schema_comparison(original, reparsed)
+    difference = caught.value.differences[0]
+    assert difference["field"] == "schema.native_canonical_bytes"
+    assert difference["expected"]["type"] == difference["actual"]["type"] == "bytes"
+    assert difference["expected"]["length"] == len(original)
+    assert difference["actual"]["length"] == len(reparsed)
+    assert difference["expected"]["sha256"] != difference["actual"]["sha256"]
+
+
+def test_native_schema_comparison_preserves_owner_acl_and_literals(native_schema_comparison):
+    schema = (b"CHECK (state = 'queued');\n"
+              b"ALTER TABLE public.example OWNER TO bestseller;\n"
+              b"GRANT SELECT ON public.example TO bestseller;\n")
+    for changed in (schema.replace(b"queued", b"pending"),
+                    schema.replace(b"OWNER TO bestseller", b"OWNER TO postgres"),
+                    schema.replace(b"GRANT SELECT ON public.example TO bestseller;\n", b"")):
+        with pytest.raises(HarnessInvariantError) as caught:
+            native_schema_comparison(schema, changed)
+        assert caught.value.differences[0]["field"] == "schema.native_canonical_bytes"

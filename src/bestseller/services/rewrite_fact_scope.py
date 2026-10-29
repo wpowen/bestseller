@@ -230,3 +230,139 @@ def reader_first_repair_route(parent_text: str, report_payload: object) -> dict:
         "body_edit_authorized": False, "unrestricted_fallback_allowed": False,
         "adoption_authorized": False, "grades_modified": False, "grants_credit": False,
     }
+
+
+class MixedRepairScopeUnavailableError(ValueError):
+    """Mixed debt has no provable bounded scope; never select a wider route."""
+
+    def __init__(
+        self, parent_text: object, report_payload: object, *,
+        field: str = "mixed_scope.available", expected: object = True, actual: object = False,
+    ) -> None:
+        from bestseller.services.chapter_automatic_revision_budget import diagnostic_difference
+
+        self.code = "mixed_repair_scope_unavailable"
+        self.diagnostics = [
+            _scope_input_diagnostic("parent_text", parent_text),
+            _scope_input_diagnostic("report_payload", report_payload),
+        ]
+        self.differences = [diagnostic_difference(field, expected, actual)]
+        super().__init__(self.code)
+
+
+def derive_mixed_repair_scope(parent_text: str, full_report: object) -> dict:
+    """Split verified mixed proposals within the same authorized task.
+
+    Replay the complete original report; a primary rewrite remains a rewrite.
+    Items reference retained commercial lineage or primary citations, while
+    their exact paragraph union bounds a single candidate. This contract grants
+    neither a task/budget nor adoption authority; native consumers must rederive
+    it from their authenticated report and enforce exact outside-scope bytes.
+    """
+    from itertools import pairwise
+
+    routing = reader_first_repair_route(parent_text, full_report)
+
+    def deny(field: str, expected: object, actual: object) -> None:
+        raise MixedRepairScopeUnavailableError(
+            parent_text, full_report, field="mixed_scope." + field,
+            expected=expected, actual=actual,
+        )
+
+    if routing["route"] != "mixed":
+        deny("route", "mixed", routing["route"])
+
+    # Keep public proof/policy errors intact, including audit and Unknown proof.
+    actions = list(verified_commercial_actions(full_report["evidence_summary"], parent_text))
+    catalog = {row["id"]: row for row in build_critic_body_anchors(parent_text)}
+    spans, items = {}, []
+
+    def retain_span(identity: str, quote: str, field: str) -> str:
+        anchor = catalog.get(identity)
+        if anchor is None:
+            deny(field + ".id", "current paragraph id", identity)
+        if quote != anchor["text"]:
+            deny(field + ".quote", anchor["text"], quote)
+        occurrences = parent_text.count(quote)
+        if occurrences != 1:
+            deny(field + ".quote_occurrences", 1, occurrences)
+        spans[identity] = {
+            "id": identity, "start": anchor["start"], "end": anchor["end"],
+            "quote": quote, "sha256": text_hash(quote),
+        }
+        return identity
+
+    try:
+        facts = set(routing["fact_action_indexes"])
+        editorial = set(routing["editorial_action_indexes"])
+        audit = set(routing["audit_action_indexes"])
+        for index, action in enumerate(actions):
+            if index in audit:
+                continue
+            action_field = f"commercial_actions[{index}]"
+            if index not in facts | editorial:
+                deny(action_field + ".classified_for_edit", True, False)
+            if not action["lineage"]:
+                deny(action_field + ".lineage", "nonempty list", action["lineage"])
+            identities = set()
+            for origin_index, origin in enumerate(action["lineage"]):
+                citation_field = f"{action_field}.lineage[{origin_index}].issue.body_citations"
+                citations = origin["issue"].get("body_citations")
+                if not citations:
+                    deny(citation_field, "nonempty list", citations)
+                for citation_index, citation in enumerate(citations):
+                    field = f"{citation_field}[{citation_index}]"
+                    if citation["kind"] != "current":
+                        deny(field + ".kind", "current", citation["kind"])
+                    identities.add(retain_span(citation["id"], citation["quote"], field))
+            items.append({
+                "kind": "fact" if index in facts else "editorial",
+                "source": "commercial", "source_index": index,
+                "span_ids": [identity for identity in catalog if identity in identities],
+            })
+
+        # The routing parser already replayed and matched this complete receipt.
+        primary = full_report["primary_submission_receipt"]["parsed_payload"]
+        primary_citations = primary["citations"]
+        if routing["primary_editorial_proposal"]:
+            anchors = list(catalog.values())
+            for index, citation in enumerate(primary_citations):
+                anchor = anchors[citation["paragraph_number"] - 1]
+                identity = retain_span(
+                    anchor["id"], anchor["text"], f"primary_citations[{index}]",
+                )
+                items.append({
+                    "kind": "editorial", "source": "primary", "source_index": index,
+                    "span_ids": [identity],
+                })
+    except (KeyError, IndexError, TypeError) as exc:
+        raise MixedRepairScopeUnavailableError(
+            parent_text, full_report, field="mixed_scope.structure",
+            expected="complete verified paragraph lineage",
+            actual={"error_type": type(exc).__name__, "operands": exc.args},
+        ) from None
+
+    authorized = sorted(spans.values(), key=lambda row: (row["start"], row["end"]))
+    if not authorized:
+        deny("authorized_spans", "nonempty list", authorized)
+    for index, (before, after) in enumerate(pairwise(authorized), 1):
+        if before["end"] > after["start"]:
+            deny(f"authorized_spans[{index}].start", before["end"], after["start"])
+    authorized_utf8_bytes = sum(len(row["quote"].encode("utf-8")) for row in authorized)
+    byte_limit = len(parent_text.encode("utf-8")) // 4
+    if authorized_utf8_bytes > byte_limit:
+        deny("authorized_utf8_bytes", byte_limit, authorized_utf8_bytes)
+    return {
+        "schema": "verified-mixed-repair-scope.v1",
+        "parent_sha256": routing["parent_sha256"],
+        "report_payload_sha256": routing["report_payload_sha256"],
+        "primary_receipt_sha256": routing["primary_receipt_sha256"],
+        "action_projection_sha256": routing["action_projection_sha256"],
+        "authority": "backend_edit_scope_for_verified_mixed_repair",
+        "routing": deepcopy(routing), "commercial_actions": deepcopy(actions),
+        "primary_citations": deepcopy(primary_citations), "repair_items": items,
+        "authorized_spans": authorized, "outside_scope": "preserve_exact_parent_bytes",
+        "fresh_review_required": True, "body_edit_authorized": False,
+        "unrestricted_fallback_allowed": False, "adoption_authorized": False,
+        "grades_modified": False, "grants_credit": False,
+    }

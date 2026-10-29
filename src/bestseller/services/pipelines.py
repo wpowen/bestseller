@@ -283,6 +283,245 @@ _DESLOP_REVIEW_METADATA_KEYS = (
 )
 
 
+async def _deslop_reader_binding(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_id: UUID,
+) -> dict | None:
+    """Read the native Project; a missing row is never a legacy opt-out."""
+    from bestseller.services.reader_judge import _ReaderRevisionError
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    with session.no_autoflush:
+        result = await session.execute(
+            select(ProjectModel.metadata_json).where(ProjectModel.id == project_id)
+        )
+        row = result.one_or_none()
+    if row is None:
+        raise _ReaderRevisionError("selection.project_missing")
+    binding = reader_first_binding(row[0] or {})
+    if binding is None:
+        with session.no_autoflush:
+            metadata = await session.scalar(
+                select(ChapterModel.metadata_json).where(
+                    ChapterModel.id == chapter_id,
+                    ChapterModel.project_id == project_id,
+                )
+            )
+        if {"reader_revision_anchors", "reader_revision_preservation"} & set(metadata or {}):
+            raise _ReaderRevisionError("selection.protocol_removed")
+    return binding
+
+
+async def _revalidate_deslop_reader_candidate(
+    session: AsyncSession,
+    *,
+    chapter: ChapterModel,
+    candidate: ChapterDraftVersionModel,
+    settings: AppSettings | None,
+    workflow_run_id: UUID | None,
+) -> tuple[ChapterModel, ChapterDraftVersionModel]:
+    """Replay an existing native semantic receipt, then reacquire selection locks.
+
+    Persistence is evidence only. Selection must neither mint a missing judge
+    receipt nor carry a pre-checkpoint current pointer into the write phase.
+    """
+    from bestseller.infra.db.models import LlmRunModel
+    from bestseller.services import reader_judge as reader
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    pid, cid, did = chapter.project_id, chapter.id, candidate.id
+    marker = await _deslop_reader_binding(session, pid, cid)
+    if marker is None:
+        return chapter, candidate
+    reader._rr_need(settings is not None, "selection.settings_missing")
+    # populate_existing must not discard an uncommitted native source change.
+    reader._rr_need(
+        not any(
+            (isinstance(item, ProjectModel) and item.id == pid)
+            or (isinstance(item, ChapterModel) and item.id == cid)
+            or (isinstance(item, ChapterDraftVersionModel) and item.chapter_id == cid)
+            for item in session.dirty
+        ),
+        "selection.uncommitted_source",
+    )
+    expected_candidate = deepcopy(
+        {
+            "project_id": str(candidate.project_id),
+            "chapter_id": str(candidate.chapter_id),
+            "body": candidate.content_md,
+            "llm_run_id": str(candidate.llm_run_id),
+            "metadata": candidate.promotion_metadata,
+            "promotion_state": candidate.promotion_state,
+            "promotion_score": str(candidate.promotion_score),
+        }
+    )
+
+    async def load(*, lock: bool):
+        async def row(model, identity):
+            with session.no_autoflush:
+                statement = (
+                    select(model)
+                    .where(model.id == identity)
+                    .execution_options(populate_existing=True)
+                )
+                return await session.scalar(statement.with_for_update() if lock else statement)
+
+        project = await row(ProjectModel, pid)
+        reader._rr_need(project is not None, "selection.project_missing")
+        reader._rr_equal("selection.protocol", marker, reader_first_binding(project))
+        fresh_chapter = await row(ChapterModel, cid)
+        reader._rr_need(
+            fresh_chapter is not None and fresh_chapter.project_id == pid,
+            "selection.chapter_identity",
+        )
+        fresh_candidate = await row(ChapterDraftVersionModel, did)
+        reader._rr_need(
+            fresh_candidate is not None
+            and fresh_candidate.project_id == pid
+            and fresh_candidate.chapter_id == cid,
+            "selection.candidate_identity",
+        )
+        actual = {
+            "project_id": str(fresh_candidate.project_id),
+            "chapter_id": str(fresh_candidate.chapter_id),
+            "body": fresh_candidate.content_md,
+            "llm_run_id": str(fresh_candidate.llm_run_id),
+            "metadata": fresh_candidate.promotion_metadata,
+            "promotion_state": fresh_candidate.promotion_state,
+            "promotion_score": str(fresh_candidate.promotion_score),
+        }
+        reader._rr_equal("selection.candidate_changed", expected_candidate, actual)
+        metadata = fresh_candidate.promotion_metadata or {}
+        receipt = metadata.get("reader_revision_preservation")
+        reader._rr_need(type(receipt) is dict, "selection.receipt_required")
+        for key, value in {
+            "schema": "reader-revision-preservation.v1",
+            "preserved": True,
+            "adoption_authority": False,
+            "project_id": str(pid),
+            "chapter_id": str(cid),
+            "candidate_body_sha256": reader._rr_sha(fresh_candidate.content_md),
+            "candidate_llm_run_id": str(fresh_candidate.llm_run_id),
+        }.items():
+            reader._rr_equal("selection.receipt." + key, value, receipt.get(key))
+        reader._rr_need(isinstance(fresh_candidate.llm_run_id, UUID), "selection.paid_run_required")
+        # Requiring a completed native journal entry before calling the public
+        # verifier prevents selection from dispatching an absent/unknown judge.
+        journal = (fresh_chapter.metadata_json or {}).get("reader_revision_preservation")
+        reader._rr_need(type(journal) is dict, "selection.native_receipt_missing")
+        entries = [
+            entry
+            for entry in journal.values()
+            if isinstance(entry, dict)
+            and entry.get("receipt") == receipt
+            and entry.get("state") == "complete"
+        ]
+        reader._rr_need(len(entries) == 1, "selection.native_receipt_missing")
+        entry = entries[0]
+        binding = entry.get("binding")
+        reader._rr_need(type(binding) is dict, "selection.native_binding_missing")
+        reader._rr_equal("selection.journal_identity", entry, journal.get(reader._rr_sha(binding)))
+        for key in ("candidate_body_sha256", "candidate_llm_run_id"):
+            reader._rr_equal("selection.journal." + key, receipt[key], binding.get(key))
+
+        # Each persisted transformation retains its actual parent fingerprint.
+        # A second-round parent may be unselected, so accept only a current
+        # ancestor, never an unrelated draft that arrived while judging.
+        lineage = []
+        seen = {did}
+        child = fresh_candidate
+        while (child.promotion_metadata or {}).get("origin") == "ai_flavor_deslop":
+            child_metadata = child.promotion_metadata or {}
+            parent_id = reader._rr_uuid(
+                child_metadata.get("parent_draft_id"), "selection.parent_id"
+            )
+            reader._rr_need(parent_id not in seen, "selection.lineage_cycle")
+            seen.add(parent_id)
+            parent = await row(ChapterDraftVersionModel, parent_id)
+            reader._rr_need(
+                parent is not None and parent.project_id == pid and parent.chapter_id == cid,
+                "selection.parent_identity",
+            )
+            reader._rr_equal(
+                "selection.parent_body",
+                child_metadata.get("source_body_fingerprint"),
+                chapter_review_body_fingerprint(parent.content_md),
+            )
+            reader._rr_equal(
+                "selection.parent_version",
+                child_metadata.get("parent_version_no"),
+                parent.version_no,
+            )
+            lineage.append(
+                {
+                    "id": str(parent.id),
+                    "body_sha256": reader._rr_sha(parent.content_md),
+                    "metadata": deepcopy(parent.promotion_metadata),
+                }
+            )
+            child = parent
+        reader._rr_need(bool(lineage), "selection.parent_required")
+        with session.no_autoflush:
+            statement = (
+                select(ChapterDraftVersionModel)
+                .where(
+                    ChapterDraftVersionModel.chapter_id == cid,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+                .execution_options(populate_existing=True)
+            )
+            current_rows = list(
+                await session.scalars(statement.with_for_update() if lock else statement)
+            )
+        reader._rr_need(len(current_rows) == 1, "selection.current_required")
+        current = current_rows[0]
+        reader._rr_need(
+            current.project_id == pid and current.id in seen, "selection.current_changed"
+        )
+        derivation = receipt.get("derivation")
+        reader._rr_need(type(derivation) is dict, "selection.derivation_missing")
+        source = derivation.get("source_binding")
+        reader._rr_need(type(source) is dict, "selection.source_binding_missing")
+        sid = reader._rr_uuid(source.get("source_draft_id"), "selection.native_source_id")
+        reader._rr_need(sid in seen - {did}, "selection.native_source_lineage")
+        paid = await row(LlmRunModel, fresh_candidate.llm_run_id)
+        reader._rr_need(paid is not None and paid.project_id == pid, "selection.paid_identity")
+        owner = workflow_run_id or paid.workflow_run_id
+        reader._rr_need(isinstance(owner, UUID), "selection.workflow_missing")
+        snapshot = deepcopy(
+            {
+                "candidate": actual,
+                "lineage": lineage,
+                "current_id": str(current.id),
+                "current_body_sha256": reader._rr_sha(current.content_md),
+                "chapter_metadata": fresh_chapter.metadata_json,
+                "chapter_status": fresh_chapter.status,
+                "chapter_production_state": fresh_chapter.production_state,
+                "native_entry": entry,
+                "owner": str(owner),
+                "source_id": str(sid),
+            }
+        )
+        return fresh_chapter, fresh_candidate, receipt, sid, owner, snapshot
+
+    fresh_chapter, fresh_candidate, receipt, sid, owner, before = await load(lock=False)
+    actual_receipt = await reader.verify_reader_revision_preservation(
+        session,
+        settings,
+        project_id=pid,
+        chapter_id=cid,
+        source_draft_id=sid,
+        candidate_text=fresh_candidate.content_md,
+        candidate_llm_run_id=fresh_candidate.llm_run_id,
+        workflow_run_id=owner,
+    )
+    reader._rr_equal("selection.native_receipt", receipt, actual_receipt)
+    fresh_chapter, fresh_candidate, _receipt, _sid, _owner, after = await load(lock=True)
+    reader._rr_equal("selection.checkpoint_changed", before, after)
+    return fresh_chapter, fresh_candidate
+
+
 async def _select_deslop_candidate(
     session: AsyncSession,
     *,
@@ -293,6 +532,7 @@ async def _select_deslop_candidate(
     selection_pool: Sequence[ChapterDraftVersionModel] = (),
     selection_origin: str | None = None,
     settings: AppSettings | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> ChapterDraftVersionModel:
     """Make one already-persisted candidate current without promoting it.
 
@@ -302,6 +542,10 @@ async def _select_deslop_candidate(
     stale report from the new body's live namespace is not evidence of a pass.
     """
 
+    chapter, candidate = await _revalidate_deslop_reader_candidate(
+        session, chapter=chapter, candidate=candidate, settings=settings,
+        workflow_run_id=workflow_run_id,
+    )
     candidate_metadata = candidate.promotion_metadata or {}
     if "book_length_control" in candidate_metadata:
         from bestseller.settings import load_settings
@@ -446,6 +690,7 @@ async def _persist_deslop_candidate(
     transformation: str = "deslop_rewrite",
     make_current: bool = False,
     information_preservation: dict | None = None,
+    reader_revision_preservation: dict | None = None,
     length_request: Mapping[str, Any] | None = None,
     settings: AppSettings | None = None,
 ) -> ChapterDraftVersionModel:
@@ -491,6 +736,8 @@ async def _persist_deslop_candidate(
             "transformation": transformation,
             **({"information_preservation": deepcopy(information_preservation)}
                if information_preservation is not None else {}),
+            **({"reader_revision_preservation": deepcopy(reader_revision_preservation)}
+               if reader_revision_preservation is not None else {}),
         },
         llm_run_id=llm_run_id,
     )
@@ -6659,7 +6906,30 @@ async def _review_chapter_with_evidence_retry(
         or cycle.get("source_body_hash") != fingerprint["digest"]
     ):
         raise ValueError("chapter_critic_cycle_source_mismatch")
-    if cycle.get("policy_source_hash") != policy_hash:
+    retained_proof = None
+    retained_attempts = cycle.get("attempts")
+    if (cycle.get("state") == "completed" and isinstance(retained_attempts, list)
+            and retained_attempts and isinstance(retained_attempts[-1], Mapping)
+            and retained_attempts[-1].get("state") == "completed"
+            and retained_attempts[-1].get("outcome") == "available"):
+        from bestseller.services.chapter_review_preflight import validate_retained_review_before_processing
+
+        retained_proof = await validate_retained_review_before_processing(session, settings, chapter)
+        expected = {
+            "project_id": str(draft.project_id), "chapter_id": str(draft.chapter_id),
+            "draft_id": str(draft.id), "body_sha256": fingerprint["digest"],
+            "cycle_id": cycle_id, "reuse_kind": "available_review",
+            "policy_source_hash": cycle.get("policy_source_hash"),
+            "issued_runtime_policy_sha256": cycle.get("policy_source_hash"),
+            "current_runtime_policy_sha256": policy_hash,
+        }
+        if not isinstance(retained_proof, Mapping) or any(
+            retained_proof.get(key) != value for key, value in expected.items()
+        ):
+            raise ValueError("chapter_critic_retained_preflight_binding_mismatch")
+        if chapter_review_recovery_source_hash() != policy_hash:
+            raise ValueError("chapter_critic_policy_changed_requires_explicit_recovery")
+    if cycle.get("policy_source_hash") != policy_hash and retained_proof is None:
         raise ValueError("chapter_critic_policy_changed_requires_explicit_recovery")
     if cycle.get("semantic_dependencies_sha256") != semantic_hash or cycle.get(
         "semantic_dependency_change_detected"
@@ -7926,7 +8196,7 @@ async def _promote_best_scoring_chapter_draft_on_stall(
         return current_draft
     audit.update(semantic_dependencies_sha256=semantic_hash, policy_source_hash=policy_hash)
     rows, audit["candidates"] = await eligible_reviewed_candidates(
-        session, chapter=chapter, rows=rows, semantic_hash=semantic_hash, policy_hash=policy_hash,
+        session, settings=settings, chapter=chapter, rows=rows, semantic_hash=semantic_hash, policy_hash=policy_hash,
         fingerprint=chapter_review_body_fingerprint, retained_result=_retained_chapter_critic_result,
         evidence_unknown=_chapter_critic_evidence_unknown,
     )
@@ -10852,13 +11122,26 @@ async def run_chapter_pipeline(
         )
 
     def retained_review_matches(draft):
+        if not retained_review_reuse or draft is None:
+            return False
+        active_cycle = (chapter.metadata_json or {}).get("chapter_review_active_cycle") or {}
+        body_hash = chapter_review_body_fingerprint(draft.content_md or "")["digest"]
+        expected_cycle = critic_cycle_id
+        if expected_cycle is None:
+            expected_cycle = (
+                active_cycle.get("cycle_id")
+                if active_cycle.get("source_draft_id") == str(draft.id)
+                and active_cycle.get("source_body_hash") == body_hash
+                else _chapter_critic_cycle_id(project.id, chapter.id, body_hash)
+            )
         return bool(
-            retained_review_reuse
-            and draft is not None
+            str(project.id) == retained_review_reuse.get("project_id") == str(draft.project_id)
+            and str(chapter.id) == retained_review_reuse.get("chapter_id") == str(draft.chapter_id)
+            and expected_cycle == retained_review_reuse.get("cycle_id")
             and str(draft.id) == retained_review_reuse["draft_id"]
-            and chapter_review_body_fingerprint(draft.content_md or "")["digest"]
-                == retained_review_reuse["body_sha256"]
-            and chapter_review_recovery_source_hash() == retained_review_reuse["policy_source_hash"]
+            and body_hash == retained_review_reuse["body_sha256"]
+            and chapter_review_recovery_source_hash()
+            == retained_review_reuse.get("current_runtime_policy_sha256")
         )
 
     # Current source/policy rejection must precede any paid prefix recovery.
@@ -12988,19 +13271,18 @@ async def run_chapter_pipeline(
                 logger.warning("fanqie_long_ranking_gate review unavailable", exc_info=True)
 
         # ── AI-flavor gate ─────────────────────────────────────────────
-        # Runs after bible_gate and before export/signing. Detects span-
-        # level AI "味" and applies *only* localized fixes at the marked
-        # positions. Surrounding prose is never rewritten. When the
-        # post-patch score is still above the block threshold the chapter
-        # is routed to machine repair — same escape hatch the rest of the
-        # gates use.
+        # Reader-first projects evaluate unchanged bytes at both gate sites.
+        # Any selected rewrite needs its native full-body preservation proof.
+        # Unmarked historical projects retain the existing local patch path.
         from bestseller.services.style_phase_receipts import (
             StylePhaseReceiptError, close_style_phase, completed_style_phase,
             draft_application_binding, style_policy_fingerprint, successful_style_rounds,
         )
 
         from bestseller.services.budget import ExecutionBudgetError
+        from bestseller.services.reader_judge import _ReaderRevisionError
 
+        _af_reader_binding = None
         ai_flavor_outcome = None
         try:
             _af_gates_cfg = get_quality_gates_config()
@@ -13009,6 +13291,7 @@ async def run_chapter_pipeline(
                 and chapter_draft is not None
                 and chapter_draft.content_md
             ):
+                _af_reader_binding = await _deslop_reader_binding(session, chapter.project_id, chapter.id)
                 from bestseller.services.ai_flavor_gate import (
                     run_ai_flavor_gate,
                 )
@@ -13034,9 +13317,10 @@ async def run_chapter_pipeline(
                 _af_phase_observation = None
                 flavor_evaluator = (
                     _evaluate_chapter_ai_flavor_without_edits
-                    if resume_existing_draft_only or _af_reuse or _af_review_reuse else run_ai_flavor_gate
+                    if _af_reader_binding is not None or resume_existing_draft_only or _af_reuse or _af_review_reuse
+                    else run_ai_flavor_gate
                 )
-                flavor_kwargs = {} if resume_existing_draft_only or _af_reuse or _af_review_reuse else {
+                flavor_kwargs = {} if _af_reader_binding is not None or resume_existing_draft_only or _af_reuse or _af_review_reuse else {
                     "project_output_dir": _af_output_dir,
                 }
                 ai_flavor_outcome = flavor_evaluator(
@@ -13052,7 +13336,7 @@ async def run_chapter_pipeline(
                 # （2026-08-31 排障：我据此差点把「修复通道有效」误判成「完全失效」）。
                 # 单独留一份进门分，改善幅度才可查。
                 _af_entry_score = ai_flavor_outcome.before_score
-                if not resume_existing_draft_only and not _af_reuse and not _af_review_reuse and ai_flavor_outcome.patched_text is not None:
+                if _af_reader_binding is None and not resume_existing_draft_only and not _af_reuse and not _af_review_reuse and ai_flavor_outcome.patched_text is not None:
                     chapter_draft = await _persist_deslop_candidate(
                         session,
                         chapter=chapter,
@@ -13112,6 +13396,7 @@ async def run_chapter_pipeline(
                                 round_no=int(cast(int, observation.get("round") or 0)),
                                 language=_af_lang,
                                 information_preservation=cast(dict | None, observation.get("information_preservation")),
+                                reader_revision_preservation=cast(dict | None, observation.get("reader_revision_preservation")),
                                 length_request=_deslop_length_request,
                                 settings=settings,
                             )
@@ -13138,6 +13423,8 @@ async def run_chapter_pipeline(
                             target_chars=_af_target,
                             rounds=2,
                             chapter_number=chapter_number,
+                            chapter_id=chapter.id,
+                            source_draft_id=chapter_draft.id,
                             observe_candidate=_observe_deslop_candidate,
                             length_request=_deslop_length_request,
                             writing_voice_data=render_writer_voice_data(get_project_runtime_writing_profile(project)),
@@ -13182,12 +13469,19 @@ async def run_chapter_pipeline(
                             ),
                             None,
                         )
-                        _recheck = run_ai_flavor_gate(
+                        _af_current_binding = await _deslop_reader_binding(session, chapter.project_id, chapter.id)
+                        if _af_current_binding != _af_reader_binding:
+                            raise _ReaderRevisionError("selection.protocol_changed", _af_reader_binding, _af_current_binding)
+                        _post_evaluator = (
+                            _evaluate_chapter_ai_flavor_without_edits
+                            if _af_current_binding is not None else run_ai_flavor_gate
+                        )
+                        _recheck = _post_evaluator(
                             chapter_number=chapter_number,
                             content_md=_revised,
                             language=_af_lang,
                             config=_af_gates_cfg.ai_flavor,
-                            project_output_dir=_af_output_dir,
+                            **({} if _af_current_binding is not None else {"project_output_dir": _af_output_dir}),
                         )
                         # 采纳判据：清干净了收，**没清干净但更干净了也收**
                         # （2026-08-19 定罪）。旧逻辑是 all-or-nothing：只有
@@ -13198,7 +13492,7 @@ async def run_chapter_pipeline(
                         # 残留仍 block 而被扔掉，成稿 16 章 AI 味几乎零改善。
                         _af_improved = _recheck.after_score < ai_flavor_outcome.after_score
                         if _recheck.decision != "block" or _af_improved:
-                            _final_text = _recheck.patched_text or _revised
+                            _final_text = _revised if _af_current_binding is not None else (_recheck.patched_text or _revised)
                             if _final_text == chapter_draft.content_md:
                                 pass  # Deterministic no-op: retain the exact current application.
                             elif (
@@ -13213,8 +13507,11 @@ async def run_chapter_pipeline(
                                     selected_reason="existing_deslop_quality_selection",
                                     selection_pool=_deslop_candidates,
                                     settings=settings,
+                                    workflow_run_id=workflow_run.id,
                                 )
                             else:
+                                if _af_current_binding is not None:
+                                    raise _ReaderRevisionError("selection.observed_candidate_missing")
                                 _postcheck_candidate = await _persist_deslop_candidate(
                                     session,
                                     chapter=chapter,
@@ -13248,7 +13545,7 @@ async def run_chapter_pipeline(
                                 _recheck.after_score,
                             )
                         _af_phase_complete = _af_rounds_complete and _recheck.decision != "block"
-                    except (ExecutionBudgetError, full_flow_length.LengthControlError):
+                    except (ExecutionBudgetError, full_flow_length.LengthControlError, _ReaderRevisionError):
                         raise
                     except (PendingRollbackError, DBAPIError, MissingGreenlet):
                         # Candidate persistence is the source receipt for the
@@ -13257,6 +13554,8 @@ async def run_chapter_pipeline(
                         # prose whose model lineage was never stored.
                         raise
                     except Exception:
+                        if _af_reader_binding is not None:
+                            raise
                         logger.debug(
                             "ai_flavor_gate: deslop revise failed (non-fatal)",
                             exc_info=True,
@@ -13333,12 +13632,12 @@ async def run_chapter_pipeline(
                             raise
                         except Exception as exc:
                             raise StylePhaseReceiptError("style phase checkpoint failed") from exc
-        except (ExecutionBudgetError, full_flow_length.LengthControlError):
+        except (ExecutionBudgetError, full_flow_length.LengthControlError, _ReaderRevisionError):
             raise
         except (PendingRollbackError, DBAPIError, MissingGreenlet, StylePhaseReceiptError):
             raise
         except Exception:
-            if resume_existing_draft_only:
+            if resume_existing_draft_only or _af_reader_binding is not None:
                 raise
             logger.debug("ai_flavor_gate failed (non-fatal)", exc_info=True)
 

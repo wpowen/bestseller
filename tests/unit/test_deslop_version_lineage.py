@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -11,10 +10,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 from sqlalchemy.schema import CreateTable
+from sqlalchemy.sql.dml import Update
 
-from bestseller.infra.db.models import ChapterDraftVersionModel
+from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ProjectModel
 from bestseller.services.pipelines import (
     _persist_deslop_candidate,
     _select_deslop_candidate,
@@ -38,6 +38,10 @@ class _AsyncSessionFacade:
     def add(self, value) -> None:
         self.sync_session.add(value)
 
+    @property
+    def no_autoflush(self):
+        return self.sync_session.no_autoflush
+
     async def scalar(self, statement):
         return self.sync_session.scalar(statement)
 
@@ -50,7 +54,11 @@ class _AsyncSessionFacade:
 
 class _FailingSelectionFacade(_AsyncSessionFacade):
     async def execute(self, statement):
-        raise DBAPIError("UPDATE current", {}, RuntimeError("write failed"))
+        # Source reads must reach the actual ORM rows; inject the failure at
+        # the original current-pointer write boundary, not at its preflight.
+        if isinstance(statement, Update) and statement.table.name == "chapter_draft_versions":
+            raise DBAPIError("UPDATE current", {}, RuntimeError("write failed"))
+        return await super().execute(statement)
 
 
 @contextmanager
@@ -59,7 +67,10 @@ def _draft_database():
     with engine.begin() as connection:
         # Avoid compiling the PostgreSQL-only current index as an unconditional
         # SQLite unique index; install SQLite's real partial-current invariant.
-        connection.execute(CreateTable(ChapterDraftVersionModel.__table__))
+        for model in (ProjectModel, ChapterModel, ChapterDraftVersionModel):
+            ddl = str(CreateTable(model.__table__).compile(dialect=engine.dialect))
+            # DDL-only adapter: the JSON values and native ORM rows are intact.
+            connection.exec_driver_sql(ddl.replace("::jsonb", ""))
         connection.exec_driver_sql(
             "CREATE UNIQUE INDEX uq_test_chapter_draft_current "
             "ON chapter_draft_versions (chapter_id) WHERE is_current = 1"
@@ -70,9 +81,31 @@ def _draft_database():
 
 
 def _original(sync_session: Session, *, content: str = "原稿正文"):
+    project = ProjectModel(
+        id=uuid4(),
+        slug=f"deslop-lineage-test-{uuid4().hex}",
+        title="历史去味版本测试",
+        genre="family",
+        target_word_count=12000,
+        target_chapters=4,
+        # This is an ordinary unmarked historical project. No reader-first,
+        # paid, quality, or adoption authority is synthesized by the fixture.
+        metadata_json={},
+    )
+    sync_session.add(project)
+    sync_session.flush()
+    chapter = ChapterModel(
+        id=uuid4(),
+        project_id=project.id,
+        chapter_number=1,
+        chapter_goal="保留源稿与改稿版本关系",
+        metadata_json={},
+    )
+    sync_session.add(chapter)
+    sync_session.flush()
     original = ChapterDraftVersionModel(
-        project_id=uuid4(),
-        chapter_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
         version_no=1,
         content_md=content,
         word_count=4,
@@ -89,24 +122,27 @@ def _original(sync_session: Session, *, content: str = "原稿正文"):
 
 
 def _chapter_for(original: ChapterDraftVersionModel):
-    return SimpleNamespace(
-        id=original.chapter_id,
-        current_word_count=original.word_count,
-        status="revision",
-        production_state="blocked",
-        metadata_json={
-            "reader_judge": {"decision": "fail", "issues": ["old-body"]},
-            "retention_gate_last_findings": [{"code": "OLD_RETENTION_FAIL"}],
-            "deterministic_audit_latest": {"passed": False},
-            "current_body_review_status": "failed",
-            "current_body_draft_id": str(original.id),
-            "current_body_fingerprint": chapter_review_body_fingerprint(
-                original.content_md
-            ),
-            "reader_review_required": True,
-            "blocked_by_ai_flavor_gate": True,
-        },
-    )
+    sync_session = object_session(original)
+    assert sync_session is not None
+    chapter = sync_session.get(ChapterModel, original.chapter_id)
+    assert chapter is not None and chapter.project_id == original.project_id
+    chapter.current_word_count = original.word_count
+    chapter.status = "revision"
+    chapter.production_state = "blocked"
+    chapter.metadata_json = {
+        "reader_judge": {"decision": "fail", "issues": ["old-body"]},
+        "retention_gate_last_findings": [{"code": "OLD_RETENTION_FAIL"}],
+        "deterministic_audit_latest": {"passed": False},
+        "current_body_review_status": "failed",
+        "current_body_draft_id": str(original.id),
+        "current_body_fingerprint": chapter_review_body_fingerprint(
+            original.content_md
+        ),
+        "reader_review_required": True,
+        "blocked_by_ai_flavor_gate": True,
+    }
+    sync_session.flush()
+    return chapter
 
 
 async def _two_rounds(session, chapter, original):

@@ -39,3 +39,47 @@ def test_unknown_objects_do_not_gain_string_equivalence(compare):
 
     with pytest.raises(TypeError):
         compare(Unsupported(), Unsupported())
+
+
+@pytest.fixture
+def driver_uuid():
+    # The actual asyncpg decoder class, not a locally invented UUID subclass.
+    from asyncpg.pgproto.pgproto import UUID as AsyncpgUUID
+
+    value = AsyncpgUUID(str(UUID(int=17)))
+    assert type(value).__module__ == "asyncpg.pgproto.pgproto"
+    assert type(value) is not UUID and isinstance(value, UUID)
+    assert len(value.bytes) == 16
+    return AsyncpgUUID
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("same", True),
+    ("different", False),
+    ("to_stdlib", False),
+    ("from_stdlib", False),
+    ("to_string", False),
+    ("from_string", False),
+    ("nested_reordered_dict", True),
+    ("nested_byte_difference", False),
+    ("nested_missing_field", False),
+    ("list_order_difference", False),
+])
+def test_real_asyncpg_uuid_keeps_exact_type_bytes_and_full_nested_comparison(
+    compare, driver_uuid, case, expected,
+):
+    one, same, other = (driver_uuid(str(UUID(int=n))) for n in (17, 17, 18))
+    pairs = {
+        "same": (one, same),
+        "different": (one, other),
+        "to_stdlib": (one, UUID(int=17)),
+        "from_stdlib": (UUID(int=17), one),
+        "to_string": (one, str(one)),
+        "from_string": (str(one), one),
+        "nested_reordered_dict": ({"id": one, "body": b"a"}, {"body": b"a", "id": same}),
+        "nested_byte_difference": ({"id": one, "body": b"a"}, {"id": same, "body": b"b"}),
+        "nested_missing_field": ({"id": one, "extra": None}, {"id": same}),
+        "list_order_difference": ([one, other], [other, same]),
+    }
+    left, right = pairs[case]
+    assert compare(left, right) is expected

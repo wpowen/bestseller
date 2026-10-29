@@ -1,6 +1,7 @@
 """Native completion boundaries with explicit no-provider/no-DB tripwires."""
 
 import hashlib
+import json
 import socket
 from uuid import uuid4
 
@@ -17,6 +18,8 @@ pytestmark = pytest.mark.unit
 GENERATION = (
     "conception_finalize",
     "conception_finalize_repair",
+    "conception_finalize_reader_first_v1",
+    "conception_finalize_reader_first_v1_repair",
     "conception_concept_seed_final_premise_reconciliation",
     "conception_concept_seed_final_premise_reconciliation_repair",
     "conception_explicit_seed_fidelity_repair",
@@ -81,7 +84,7 @@ def queued_gateway(monkeypatch, *outcomes):
     return requests
 
 
-async def call_json(tracker=None):
+async def call_json(tracker=None, *, template="conception_finalize"):
     return await conception._llm_call_json(
         NoDatabase(),
         load_settings(env={"BESTSELLER__LLM__MOCK": "true"}),
@@ -89,7 +92,7 @@ async def call_json(tracker=None):
         system_prompt="Return the complete editorial JSON.",
         user_prompt="ORIGINAL_USER_INPUT",
         fallback='{"static_fallback": true}',
-        template="conception_finalize",
+        template=template,
         stage="conception.final",
         project_id=uuid4(),
         workflow_run_id=uuid4(),
@@ -252,6 +255,74 @@ async def test_repair_execution_stop_preserves_old_native_id_and_exception_type(
     assert len(requests) == 2
 
 
+@pytest.mark.parametrize("template", [
+    "conception_finalize_reader_first_v1", "conception_finalize_reader_first_v1_repair",
+])
+async def test_reader_first_unknown_does_not_request_repair_or_replace_terminal(monkeypatch, template):
+    stop = ExecutionBudgetError("execution_result_unknown")
+    requests = queued_gateway(monkeypatch, stop)
+    with pytest.raises(ExecutionBudgetError) as caught:
+        await call_json(template=template)
+    assert caught.value is stop
+    assert len(requests) == 1 and requests[0].prompt_template == template
+
+
+@pytest.mark.parametrize("template", [
+    "conception_finalize_reader_first_v1", "conception_finalize_reader_first_v1_repair",
+])
+def test_reader_first_projectless_profile_catalog_has_medium_wire_and_exact_input(
+    monkeypatch, tmp_path, template,
+):
+    """RUN2 policy RED: actual profile/catalog, no project-wide editor fallback."""
+    from bestseller.services.model_catalog import ModelCatalogEntry
+    from bestseller.settings import LLM_RUNTIME_PROFILE_ENV, apply_runtime_llm_profile
+
+    profile = tmp_path / "llm-runtime-profile.json"
+    profile.write_text(json.dumps({"active_profile": "minimax"}))
+    monkeypatch.setenv(LLM_RUNTIME_PROFILE_ENV, str(profile))
+    settings = apply_runtime_llm_profile(load_settings(env={}))
+    entry = ModelCatalogEntry(
+        id="minimax-m3.1-flash", display_name="MiniMax M3.1 Flash", vendor="MiniMax",
+        model="openai/MiniMax-M3.1-Flash", api_base="https://api.minimaxi.com/v1",
+    )
+    role = llm._apply_model_override(settings.llm.editor, entry)
+    assert role.reasoning_effort is role.thinking_type is None
+    assert role.max_tokens == 32768
+    request = LLMCompletionRequest(
+        logical_role="editor", project_id=None, workflow_run_id=uuid4(),
+        prompt_template=template, system_prompt="Return the complete editorial JSON.",
+        user_prompt=json.dumps({
+            "source": [{"id": n, "value": "A character makes a costly choice.",
+                        "unknown": None, "required": False} for n in range(32)],
+            "tail": "PRESERVE_FINAL_SOURCE_LEAF  ",
+        }, ensure_ascii=False),
+        fallback_response="{}",
+    )
+    before_request, before_role = request.model_dump(), role.model_dump()
+    source_sha = hashlib.sha256((request.system_prompt + request.user_prompt).encode()).hexdigest()
+    # Preserve the historical/default max operand as a detached value; applying
+    # this policy is not a rewrite or settlement of a retained paid request.
+    before_payload = llm._effective_input_payload(request, role)
+    assert before_payload["reasoning_effort"] == "max"
+    actual = production_strategy.apply_production_stream_settings(
+        request, role, profile=None, ambient_complete=True,
+    )
+    effective = llm._effective_input_payload(request, actual)
+    wire = minimax_m31_protocol.wire_options(
+        {"messages": effective["messages"], "max_tokens": effective["max_tokens"],
+         "stream": effective["stream"]}, actual,
+    )
+    assert actual.reasoning_effort == effective["reasoning_effort"] == wire["reasoning_effort"] == "medium"
+    assert actual.max_tokens == effective["max_tokens"] == wire["max_completion_tokens"] == 32768
+    assert "max_tokens" not in wire
+    assert actual.thinking_type is effective["thinking_type"] is None
+    assert actual.stream is effective["stream"] is wire["stream"] is True
+    assert wire["messages"] == before_payload["messages"]
+    assert hashlib.sha256((request.system_prompt + request.user_prompt).encode()).hexdigest() == source_sha
+    assert request.model_dump() == before_request and role.model_dump() == before_role
+    assert before_payload["reasoning_effort"] == "max"
+
+
 @pytest.mark.parametrize("logical_role,template", GENERATION_ROUTES)
 @pytest.mark.parametrize("profile,ambient", [(None, True), ("complete", False)])
 def test_exact_generation_defaults_to_medium_without_increasing_cap_or_disabling_thinking(
@@ -338,6 +409,13 @@ def test_new_exact_generation_exceptions_do_not_lower_critic_effort(template):
         ("conception_finalize_extra", "openai/MiniMax-M3.1-Flash", True, None),
         ("conception_title_arena", "openai/MiniMax-M3.1-Flash", True, None),
         ("conception_final_material_seed_fidelity_judge", "openai/MiniMax-M3.1-Flash", True, None),
+        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3.1-Flash", False, None),
+        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3", True, None),
+        (
+            "conception_finalize_reader_first_v1", "openai/MiniMax-M3.1-Flash", True,
+            [{"type": "function", "function": {"name": "unrelated"}}],
+        ),
+        ("conception_finalize_reader_first_v1_extra", "openai/MiniMax-M3.1-Flash", True, None),
     ],
 )
 def test_no_prefix_role_model_or_tool_widening(template, model, ambient, tools):

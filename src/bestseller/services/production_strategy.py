@@ -109,6 +109,8 @@ def apply_production_stream_settings(request, role, *, profile=None, ambient_com
         request.prompt_template in {'conception_finalize_continuation_v2','conception_finalize_adjudication_repair'}
         or (request.logical_role == 'editor' and request.prompt_template in {
             'conception_finalize', 'conception_finalize_repair',
+            'conception_finalize_reader_first_v1',
+            'conception_finalize_reader_first_v1_repair',
             'conception_concept_seed_final_premise_reconciliation',
             'conception_concept_seed_final_premise_reconciliation_repair',
             'conception_explicit_seed_fidelity_repair',

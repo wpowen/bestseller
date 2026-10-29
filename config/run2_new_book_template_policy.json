@@ -1,0 +1,386 @@
+{
+  "schema": "run2-new-book-template-policy.v1",
+  "templates": {
+    "chapter_first_writer": {
+      "roles": {
+        "writer": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "chapter_rewrite": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "chapter_rewrite_quality_retrofit_repair": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "chapter_rewrite_repair": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "concept_methodology": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    },
+    "concept_tournament_candidate_reader_first_v1": {
+      "roles": {
+        "planner": {
+          "effort": "bounded_generation",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament planner: effective cap 900 is narrower than captured raw 32768, preserving existing low effort and route. Cap is a native source literal, not a captured configuration key."
+        }
+      }
+    },
+    "concept_tournament_engine_kernel_reader_first_v1": {
+      "roles": {
+        "planner": {
+          "effort": "bounded_generation",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament planner: effective cap 8000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_finalist_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 5000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_finalist_seriality_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 7000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 1800 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_premise_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 8000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_raw_idea_pool_reader_first_v1": {
+      "roles": {
+        "planner": {
+          "effort": "bounded_generation",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament planner: effective cap 9000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_raw_idea_rank_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 8000 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_seriality_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 1800 is narrower than captured raw 32768, preserving existing low effort and route."
+        }
+      }
+    },
+    "concept_tournament_seriality_reader_first_v1": {
+      "roles": {
+        "planner": {
+          "effort": "bounded_generation",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament planner: effective cap 2200 is narrower than captured raw 32768, preserving existing low effort and route. Cap is a native source literal, not a captured configuration key."
+        }
+      }
+    },
+    "concept_tournament_story_judge_reader_first_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first tournament critic: effective cap 1600 is narrower than captured raw 32768, preserving existing low effort and route. Captured key is absent; native source default is 1600, not null."
+        }
+      }
+    },
+    "conception_cast_reality_audit": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "RUN1 native role identity. Independent review retains full-cap max and narrower-cap low; no quality reduction."
+        }
+      }
+    },
+    "conception_character": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    },
+    "conception_commercial_positioning": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    },
+    "conception_explicit_seed_fidelity_judge": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "RUN1 native role identity. Independent review retains full-cap max and narrower-cap low; no quality reduction."
+        }
+      }
+    },
+    "conception_finalize_reader_first_v1": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap."
+        }
+      }
+    },
+    "conception_finalize_reader_first_v1_repair": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap."
+        }
+      }
+    },
+    "conception_market": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    },
+    "conception_reader_first_repair_v1": {
+      "roles": {
+        "editor": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap. Native project request 8192 has M31 effective cap 16000; retain existing complete-project medium, not narrowed low."
+        }
+      }
+    },
+    "conception_reader_first_skeleton_v1": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first reviewer keeps request/effective cap 4096 and existing low effort; full-cap review would retain max."
+        }
+      }
+    },
+    "conception_review": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "RUN1 native role identity. Independent review retains full-cap max and narrower-cap low; no quality reduction."
+        }
+      }
+    },
+    "conception_source_effect_contract": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "RUN1 native role identity. Independent review retains full-cap max and narrower-cap low; no quality reduction."
+        }
+      }
+    },
+    "conception_story_spine_polish_reader_first_v1": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap. Projectless renamed spine previously fell through to default max."
+        }
+      }
+    },
+    "conception_story_spine_polish_reader_first_v1_repair": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap. Projectless renamed spine previously fell through to default max."
+        }
+      }
+    },
+    "conception_world": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    },
+    "fanqie_reader_first_field_roles": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap."
+        }
+      }
+    },
+    "planner_fanqie_beat_sheet": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "planner_reader_first_full_outline_commercial_surgical_repair": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Q4 new-book generation/repair explicitly uses medium without changing its completion cap."
+        }
+      }
+    },
+    "planner_reader_first_outline_review": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Native reader-first reviewer keeps request/effective cap 4096 and existing low effort; full-cap review would retain max."
+        }
+      }
+    },
+    "planner_structured_field_correction": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior. fanqie-plan-fields-v1/v2 allowance 32768 differs from native field-recovery override 8192; exact name never replaces either cap."
+        }
+      }
+    },
+    "reader_judge": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Same-name final reader review intentionally retains native no-override cap 32768 and max effort; audit only, no raw-role change or quality reduction."
+        }
+      }
+    },
+    "reader_revision_anchors": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Full original/candidate semantic and anchor review intentionally retains raw cap 32768 and max effort; do not lower independent review quality."
+        }
+      }
+    },
+    "reader_revision_preservation": {
+      "roles": {
+        "critic": {
+          "effort": "bounded_review",
+          "cap": "effective_request",
+          "reason": "Full original/candidate semantic and anchor review intentionally retains raw cap 32768 and max effort; do not lower independent review quality."
+        }
+      }
+    },
+    "scene_writer": {
+      "roles": {
+        "writer": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "Same-name new-book prompt version audit only; existing complete-project generation already uses medium. Preserve native request reserve, version-specific cap and raw runtime behavior."
+        }
+      }
+    },
+    "story_architect_v1": {
+      "roles": {
+        "planner": {
+          "effort": "medium",
+          "cap": "effective_request",
+          "reason": "RUN1 native generation identity; new-book policy records medium intent. This audit entry does not change the existing generic runtime route."
+        }
+      }
+    }
+  },
+  "audit": {
+    "scope": "RUN1 actual 18 union reviewed 22 Q4 names plus 8 user-named same-template new-book consumers = 40 exact names, including 10 generic RUN1 names; no whole-repository guard.",
+    "runtime_boundary": "Audit and apply are separate. Only reviewed new-book generation alias mismatches may change; correct review/low wires and generic/legacy/research routes retain raw-role identity. Unknown names and roles are outside this table, not denied globally.",
+    "role_config_source": "reports/full-flow-2026-10-28/RUN2-PRODUCTION-ROLE-CONFIG.json",
+    "native_identity_source": "reports/full-flow-2026-10-28/RUN2-PRIOR-CONCEPTION-TEMPLATE-CENSUS.json",
+    "tournament_config_source": "reports/full-flow-2026-10-28/RUN2-TOURNAMENT-CONFIG.json",
+    "captured_model": "openai/MiniMax-M3.1-Flash",
+    "captured_raw_role_caps": {
+      "planner": 32768,
+      "writer": 32768,
+      "critic": 32768,
+      "editor": 32768,
+      "summarizer": 1536
+    },
+    "source_literal_caps": {
+      "concept_tournament_candidate_reader_first_v1": 900,
+      "concept_tournament_seriality_reader_first_v1": 2200
+    },
+    "story_judge_key_present": false,
+    "story_judge_native_default": 1600
+  }
+}

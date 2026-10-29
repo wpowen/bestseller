@@ -1,0 +1,80 @@
+{
+  "schema": "q4-automatic-revision-budget-freeze.v1",
+  "status": "main_green_format_only_frozen_for_commit",
+  "worktree": "/Volumes/MACSSD/owen-home/Documents/workspace/bestseller/scratch/int-worktree",
+  "red_report": "reports/full-flow-2026-10-28/Q4-consumer-budget-red-20261028T154514004012Z.json",
+  "recorded_main_red_budget_errors": 105,
+  "owner_validation": [
+    "AST parse",
+    "compile without execution",
+    "strict source/fixture hash unchanged",
+    "format-only AST equivalence",
+    "all test lines <=100 characters",
+    "ORM assignment surface",
+    "freeze hash readback"
+  ],
+  "owner_executed_tests": false,
+  "owner_executed_database": false,
+  "owner_executed_models": false,
+  "authored_test_functions": 33,
+  "native_claim_reserve_send_integration": "main-owned; no primitive callers observed; readonly API handoff contains central hook and bypass matrix",
+  "manual_new_event_authorization": "Unknown; unsupported; existing cap retained",
+  "postgresql_concurrency_evidence": "Unknown; main validation required",
+  "files_sha256": {
+    "src/bestseller/services/chapter_automatic_revision_budget.py": "516e90cb951c1260670467b64224d9d9457164d58c6f959e6d3673536405456d",
+    "tests/unit/full_flow_q4_edit_budget/README.md": "8caf88220e778af4ebb75475ffad0b23466254d83dc51bad9bb6027bb0b43cf6",
+    "tests/unit/full_flow_q4_edit_budget/conftest.py": "dc877c7f038dec5d148f83e1dbb13a769362531c75c77fad870b4580a1e66b0e",
+    "tests/unit/full_flow_q4_edit_budget/test_shared_budget.py": "3ad514c9c6a2e7b589a2694f034e6627292c0447ee54589959a66007383bb93e"
+  },
+  "previous_freezes": [
+    {
+      "manifest_sha256": "ca696ea3fd752ac5cdd4c9c56f4823016c1791665c16f0c91594b334e658cdf0",
+      "files_sha256": {
+        "src/bestseller/services/chapter_automatic_revision_budget.py": "bd1ca8a90f9631df4215f3f5c1e73dbdb073867e21f0fc784112ba2e9825ae33",
+        "tests/unit/full_flow_q4_edit_budget/README.md": "c7ca8ea7b5cb0f1cdd1080baed815e8db4373eba7a4c5fa9405a0086a6a2b4e0",
+        "tests/unit/full_flow_q4_edit_budget/conftest.py": "2f92ca6f91450e8b1351e56365842a6263ac8dd9f4462bb2313f26d109adb967",
+        "tests/unit/full_flow_q4_edit_budget/test_shared_budget.py": "cf78ff7cc914b2c5f4b726817f3f1b537a78cb9aade022285bb85b249d64b12a"
+      }
+    }
+  ],
+  "source_tests_frozen_for_main_commit": true,
+  "main_green": {
+    "receipt": "reports/full-flow-2026-10-28/resume-edit-budget-fixed-20261029T015744789689Z.json",
+    "sha256": "aeb7438fbca8b2eedb63a5550f292576a27ac498d62e11086ae0f930526c0001",
+    "passed": 111,
+    "elapsed_seconds": 4.08,
+    "source_sha256": "516e90cb951c1260670467b64224d9d9457164d58c6f959e6d3673536405456d",
+    "test_rerun_after_format": false
+  },
+  "preserved_main_report_sha256": {
+    "reports/full-flow-2026-10-28/Q4-consumer-budget-red-20261028T154514004012Z.json": "e29c4c1e27b0220798b8de7b2d8eca461567462588250b9bc767fdde11844862",
+    "reports/full-flow-2026-10-28/resume-owned-components-20261029T012443636528Z.json": "629fb31f68482670ccecdf6ac9b04c89d17ea20a855c68200b55463134dd1aeb",
+    "reports/full-flow-2026-10-28/resume-edit-budget-fixed-20261029T015744789689Z.json": "aeb7438fbca8b2eedb63a5550f292576a27ac498d62e11086ae0f930526c0001"
+  },
+  "format_only": {
+    "original_line_numbers": [
+      105,
+      127,
+      197,
+      208,
+      327,
+      392,
+      453,
+      482,
+      511,
+      584
+    ],
+    "test_sha256_before": "9e1b5427a0be5abbc79543caf12d469467e40ff944b83628d39e7cf14c0b8b67",
+    "test_sha256_after": "3ad514c9c6a2e7b589a2694f034e6627292c0447ee54589959a66007383bb93e",
+    "ast_sha256_before": "0418600618034e062f37a553e469ccabae536425d0567cd655131508da3d881c",
+    "ast_sha256_after": "0418600618034e062f37a553e469ccabae536425d0567cd655131508da3d881c",
+    "equivalent": true
+  },
+  "preflight": {
+    "internal_available_kib": 7988668,
+    "internal_minimum_bytes": 5000000000,
+    "internal_space_passed": true,
+    "docker_server_version": "29.5.3",
+    "docker_check": "version only; no container started"
+  }
+}

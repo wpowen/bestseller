@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel, ProjectModel
+from bestseller.services import chapter_automatic_revision_budget as revision_budget
 from bestseller.services.cost_attribution import merge_attribution_into
 from bestseller.services.progress_context import check_cancellation
 from bestseller.services.budget import (
@@ -565,6 +566,103 @@ class _ExecutionCall:
         self.completed = False
         self.stream_total_timeout_seconds: float | None = None
         self.native_deadline_policy: dict[str, Any] | None = None
+        self.revision_binding: revision_budget.RevisionSendBinding | None = None
+        self.revision_legacy_project_id: UUID | None = None
+
+
+def _automatic_revision_selector(request: LLMCompletionRequest) -> tuple[UUID, UUID]:
+    """Only locate rows; native source/claim checks happen in independent DB sessions."""
+    key = "automatic_revision_source"
+    field = "request.metadata." + key
+    context = revision_budget.current_revision_source(request.project_id)
+    present = key in request.metadata
+    raw = request.metadata[key] if present else context
+
+    def reject(reason: str, name: str, expected: object, actual: object) -> None:
+        raise revision_budget.AutomaticRevisionBudgetError(reason, differences=[
+            revision_budget.diagnostic_difference(name, expected, actual),
+        ])
+
+    required_shape = {"chapter_id": "canonical UUID", "source_draft_id": "canonical UUID"}
+    if not present and raw is None:
+        reject("source_selector_missing", field, required_shape, raw)
+    if type(raw) is not dict or raw.keys() != {"chapter_id", "source_draft_id"}:
+        reject("source_selector_invalid", field, required_shape, raw)
+    selected = {}
+    for key in ("chapter_id", "source_draft_id"):
+        value = raw[key]
+        try:
+            identity = (
+                value if isinstance(value, UUID) else UUID(value) if type(value) is str else None
+            )
+        except ValueError:
+            identity = None
+        if identity is None or (type(value) is str and str(identity) != value):
+            reject("source_selector_invalid", field + "." + key,
+                   str(identity) if identity is not None else "canonical UUID", value)
+        selected[key] = str(identity)
+    if context is not None and context != selected:
+        reject("source_selector_conflict", field, context, raw)
+    return UUID(selected["chapter_id"]), UUID(selected["source_draft_id"])
+
+
+def _revision_execution_error(
+    exc: revision_budget.AutomaticRevisionBudgetError, call: _ExecutionCall,
+) -> ExecutionBudgetError:
+    error = ExecutionBudgetError(exc.code, call.ledger.scope_id)
+    # The original primitive has frozen integer/presence receipts. Only the
+    # gateway projects their send diagnostics, keeping wrapper and cause equal.
+    exc.differences = getattr(exc, "send_differences", exc.differences)
+    error.differences = exc.differences
+    return error
+
+
+async def _reserve_automatic_revision(
+    request: LLMCompletionRequest, call: _ExecutionCall, input_hash: str,
+) -> None:
+    if not revision_budget.is_automatic_revision_body(
+        request.prompt_template, request.prompt_version,
+    ):
+        return
+    try:
+        required = await revision_budget.requires_revision_source(
+            session_factory=call.ledger.sessions, settings=call.settings,
+            project_id=request.project_id,
+        )
+        if not required:
+            call.revision_legacy_project_id = request.project_id
+            return
+        chapter_id, source_id = _automatic_revision_selector(request)
+        await call.ledger.assert_result_adoptable(call.claim, allow_pending=True)
+        call.revision_binding = await revision_budget.reserve_revision_send(
+            session_factory=call.ledger.sessions, settings=call.settings,
+            project_id=request.project_id, chapter_id=chapter_id, source_draft_id=source_id,
+            operation_key=call.claim.key, operation_scope_id=call.ledger.scope_id,
+            operation_owner=call.claim.owner, operation_input_sha256=input_hash,
+        )
+    except revision_budget.AutomaticRevisionBudgetError as exc:
+        raise _revision_execution_error(exc, call) from exc
+
+
+async def _assert_automatic_revision_send(call: _ExecutionCall) -> None:
+    try:
+        if call.revision_binding is not None:
+            await revision_budget.assert_revision_send(
+                session_factory=call.ledger.sessions, settings=call.settings,
+                binding=call.revision_binding,
+            )
+        elif call.revision_legacy_project_id is not None:
+            if await revision_budget.requires_revision_source(
+                session_factory=call.ledger.sessions, settings=call.settings,
+                project_id=call.revision_legacy_project_id,
+            ):
+                raise revision_budget.AutomaticRevisionBudgetError("protocol_changed", differences=[
+                    revision_budget.diagnostic_difference(
+                        "projects.metadata.reader_first_planning.present", False, True,
+                    ),
+                ])
+    except revision_budget.AutomaticRevisionBudgetError as exc:
+        raise _revision_execution_error(exc, call) from exc
 
 
 class UnusableProviderResponse(ValueError):
@@ -608,6 +706,9 @@ async def _guard_provider_http_send(http_request: Any) -> None:
     if count[0]:
         raise ExecutionBudgetError("execution_hidden_transport_retry", call.ledger.scope_id)
     await _execution_boundary()
+    # Includes source/control/claim-owner CAS after arbitrary asynchronous SDK
+    # work. It cannot append or refund, and closes its fresh session before I/O.
+    await _assert_automatic_revision_send(call)
     # Child tasks share this reservation counter. Recheck after the awaited
     # boundary; the check and slot occupation below have no intervening await.
     if count[0]:
@@ -660,7 +761,21 @@ async def _execution_boundary() -> None:
         # Claim/reserve already serialize financial admission. A liveness
         # check must only read current scope and ownership, never compete for
         # a writer lock or slide the reserved attempt's transport deadline.
-        await call.ledger.assert_result_adoptable(call.claim, allow_pending=True)
+        try:
+            await call.ledger.assert_result_adoptable(call.claim, allow_pending=True)
+        except ExecutionBudgetError as error:
+            if call.revision_binding is not None and error.code == "execution_operation_stopped":
+                # The native refusal is final. Read the existing reservation
+                # solely to attach exact native operands, never to retry or
+                # change its error code, accounting or permission decision.
+                try:
+                    await _assert_automatic_revision_send(call)
+                except ExecutionBudgetError as detail:
+                    cause = detail.__cause__
+                    if isinstance(cause, revision_budget.AutomaticRevisionBudgetError):
+                        error.differences = detail.differences
+                        raise error from cause
+            raise
 
 
 async def _execution_backoff(seconds: float) -> None:
@@ -724,6 +839,7 @@ async def _paid_transport_attempt_impl(request: LLMCompletionRequest, role: LLMR
         reserve_tokens = acceptance_proof["input_tokens_upper"] + acceptance_proof["output_tokens_upper"]
     from bestseller.services.finite_book_budget import quote as finite_quote
     financial_quote = await finite_quote(request, role, payload, input_hash)
+    await _assert_automatic_revision_send(call)
     attempt_id = await call.ledger.reserve(call.claim, role.model, input_hash, reserve_tokens,
         independent_acceptance_proof=acceptance_proof,
         **({'finite_book_binding':financial_quote} if financial_quote is not None else {}),
@@ -787,9 +903,24 @@ async def _paid_transport_attempt_impl(request: LLMCompletionRequest, role: LLMR
             "partial_stream_observed": isinstance(partial_stream, dict),
             "error_chain": safe_error_chain(exc),
         })
-        await call.ledger.settle(attempt_id, settled_status,
-            actual_tokens=0 if sent == 0 or (rejected and status != 400) else None)
+        try:
+            await call.ledger.settle(attempt_id, settled_status,
+                actual_tokens=0 if sent == 0 or (rejected and status != 400) else None)
+        except ExecutionBudgetError as settlement_error:
+            # Native settlement can independently refuse a changed owner.
+            # Keep that refusal/code and its untouched reservation, while
+            # carrying forward already-observed revision operands for diagnosis.
+            cause = exc.__cause__
+            if sent == 0 and isinstance(cause, revision_budget.AutomaticRevisionBudgetError):
+                settlement_error.differences = cause.differences
+                raise settlement_error from cause
+            raise
         call.attempts[-1]["status"] = settled_status
+        if sent == 0 and isinstance(exc, ExecutionBudgetError):
+            # Source/control/CAS refusal is already a terminal, sanitized
+            # boundary error. Preserve its code, typed differences and chain;
+            # wrapping it as provider-not-sent would hide the actual rejection.
+            raise
         if not rejected:
             if isinstance(exc, asyncio.CancelledError):
                 raise
@@ -3242,6 +3373,10 @@ async def _complete_text_impl(
                 execution_call.stream_total_timeout_seconds = max(
                     float(role_settings.timeout_seconds), float(settings.llm.planner.timeout_seconds))
             _execution_call_var.set(execution_call)
+            # The durable cached-result return above must remain before this
+            # gate. A fresh native claim precedes shared accounting, which in
+            # turn commits before any financial reservation/SDK/physical send.
+            await _reserve_automatic_revision(request, execution_call, prompt_hash)
             call_settings = role_settings
             retry_settings = settings.llm.retry
             if rate_limit_fallback_settings and _is_rate_limit_fallback_active(

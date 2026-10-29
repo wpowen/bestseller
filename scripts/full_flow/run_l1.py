@@ -6,6 +6,10 @@ From int-worktree, AFTER final source/harness commits and authoring review:
     --authorization-id <fixed-this-book-id> --actor <actual-executor> \
     --authorization-ref <existing-user-authorization-receipt>
 
+For an explicitly prepared finite v3 prefix, add --allow-finite-prefix.
+This admits bound private inputs without claiming full authoring coverage;
+missing replies still stop normally and success still requires native adoption.
+
 No automatic resume, replacement POST, grant renewal, skip, or image pull.
 Source and authoring copies, SDK bytes and failures stay in a new private root.
 Only this file is new; normal web_entry, grants, SDK and adoption guards are used.
@@ -153,7 +157,84 @@ def stage_record(private, stage, **values):
         stream.write(canonical(row) + "\n")
 
 
-def private_tree(root):
+def _finite_prefix_integrity(root, file_hashes, file_sizes):
+    documents = {}
+    for name, schema in (
+        ("readiness.json", "finite-firstchapter-prefix-readiness.v3"),
+        ("manifest.json", "private-finite-prefix-manifest.v3"),
+    ):
+        require(name in file_hashes, "L1_AUTHORING_INCOMPLETE", "authoring." + name, True, False)
+        value = read_json(root / name)
+        require(
+            type(value) is dict, "L1_FINITE_PREFIX_SHAPE", "authoring." + name, "dict", value
+        )
+        for field, expected in (("schema", schema), ("state", "FINITE_PREFIX_PREPARED")):
+            require(
+                value.get(field) == expected,
+                "L1_FINITE_PREFIX_INVALID",
+                "authoring." + name + "." + field,
+                expected,
+                value.get(field),
+            )
+        documents[name] = value
+    readiness = documents["readiness.json"]
+    require(
+        readiness.get("full_firstchapter_ready") is False,
+        "L1_FINITE_PREFIX_INVALID",
+        "authoring.readiness.full_firstchapter_ready",
+        False,
+        readiness.get("full_firstchapter_ready"),
+    )
+    for field, expected in (
+        ("config_sha256", digest(canonical(read_json(root / "script.json")).encode())),
+        ("script_sha256", file_hashes["script.json"]),
+    ):
+        require(
+            readiness.get(field) == expected,
+            "L1_AUTHORING_CONFIG_CHANGED",
+            "authoring.readiness." + field,
+            expected,
+            readiness.get(field),
+        )
+    files = documents["manifest.json"].get("files")
+    require(
+        type(files) is dict, "L1_FINITE_PREFIX_SHAPE", "authoring.manifest.files", "dict", files
+    )
+    expected_names = sorted(set(file_hashes) - {"manifest.json"})
+    require(
+        sorted(files) == expected_names,
+        "L1_AUTHORING_INVENTORY_CHANGED",
+        "authoring.manifest.files",
+        expected_names,
+        sorted(files),
+    )
+    for name, record in files.items():
+        field = "authoring.manifest.files." + name
+        require(type(record) is dict, "L1_FINITE_PREFIX_SHAPE", field, "dict", record)
+        require(
+            record.get("sha256") == file_hashes[name],
+            "L1_AUTHORING_ARTIFACT_CHANGED",
+            field + ".sha256",
+            file_hashes[name],
+            record.get("sha256"),
+        )
+        require(
+            type(record.get("bytes")) is int and record["bytes"] == file_sizes[name],
+            "L1_AUTHORING_ARTIFACT_CHANGED",
+            field + ".bytes",
+            file_sizes[name],
+            record.get("bytes"),
+        )
+
+
+def private_tree(root, *, allow_finite_prefix: bool = False):
+    require(
+        type(allow_finite_prefix) is bool,
+        "L1_FINITE_PREFIX_FLAG_INVALID",
+        "authoring.allow_finite_prefix",
+        "bool",
+        allow_finite_prefix,
+    )
     root = Path(root).absolute()
     require(
         root.is_dir() and not any(p.is_symlink() for p in (root, *root.parents)),
@@ -169,7 +250,7 @@ def private_tree(root):
         "outside checkout",
         str(root),
     )
-    result = {}
+    result, file_sizes = {}, {}
     for path in (root, *sorted(root.rglob("*"))):
         require(
             not path.is_symlink() and (path.is_dir() or path.is_file()),
@@ -201,9 +282,22 @@ def private_tree(root):
                 "fresh input; never reset checkpoint",
                 path.name,
             )
-            result[str(path.relative_to(root))] = digest(path.read_bytes())
-    for name in ("script.json", "quickstart.request.json", "authoring-status.json"):
+            name = str(path.relative_to(root))
+            raw = path.read_bytes()
+            result[name] = digest(raw)
+            file_sizes[name] = len(raw)
+    for name in ("script.json", "quickstart.request.json"):
         require(name in result, "L1_AUTHORING_INCOMPLETE", "authoring." + name, True, False)
+    if allow_finite_prefix and "authoring-status.json" not in result:
+        _finite_prefix_integrity(root, result, file_sizes)
+        return result
+    require(
+        "authoring-status.json" in result,
+        "L1_AUTHORING_INCOMPLETE",
+        "authoring.authoring-status.json",
+        True,
+        False,
+    )
     authoring = read_json(root / "authoring-status.json")
     require(
         type(authoring) is dict, "L1_AUTHORING_STATUS_SHAPE", "authoring.status", "dict", authoring
@@ -891,19 +985,24 @@ def host(args):
         )
         stage = "authoring_preflight"
         stage_record(evidence, stage)
-        source_files = private_tree(args.authoring_root)
+        source_files = private_tree(
+            args.authoring_root, allow_finite_prefix=args.allow_finite_prefix
+        )
         stage = "host_preflight"
         preflight()  # Only main executing this driver contacts Docker.
         stage = "frozen_source_copy"
         source, manifest = frozen_copy(ROOT, out)
         save(evidence / "FROZEN-SOURCE.json", manifest)
         shutil.copytree(args.authoring_root, data / "authoring")
+        copied_files = private_tree(
+            data / "authoring", allow_finite_prefix=args.allow_finite_prefix
+        )
         require(
-            private_tree(data / "authoring") == source_files,
+            copied_files == source_files,
             "L1_AUTHORING_COPY_CHANGED",
             "authoring.sha256",
             source_files,
-            private_tree(data / "authoring"),
+            copied_files,
         )
         save(evidence / "AUTHORING-SOURCE.json", source_files)
         save(
@@ -1204,6 +1303,12 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--authoring-root", type=Path)
+    parser.add_argument(
+        "--allow-finite-prefix",
+        action="store_true",
+        default=False,
+        help="Accept a verified finite v3 prefix; not full coverage or native adoption proof.",
+    )
     parser.add_argument("--authorization-id")
     parser.add_argument("--actor")
     parser.add_argument("--authorization-ref")

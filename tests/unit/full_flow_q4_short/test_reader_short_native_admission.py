@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
 import json
+from pathlib import Path
 import re
 from uuid import UUID, uuid4
 
@@ -45,22 +46,103 @@ SENTINEL = "DO_NOT_ECHO_THIS_SYNTHETIC_PAYLOAD"
 
 
 @pytest.fixture
-async def case(beat_case):
-    # Select the prospective protocol and real supported route BEFORE any
+async def case(beat_case, monkeypatch, request):
+    # Select the prospective profile/catalog/project policy BEFORE any
     # native paid row or retained path exists. Never relabel issued evidence.
+    from bestseller.services import minimax_m31_protocol, model_catalog
+    from bestseller.services import retained_review_input_proof as proof
+    from bestseller.services.llm_capacity import assert_effective_request_capacity
+    from bestseller.services.planning_surgical_budget import resolve_request_role
+    from bestseller.settings import LLM_RUNTIME_PROFILE_ENV, apply_runtime_llm_profile
+
     c = beat_case
     assert c.paths == {}
     assert await c.session.scalar(select(ExecutionOperationModel.key).limit(1)) is None
     assert await c.session.scalar(select(ExecutionAttemptModel.id).limit(1)) is None
     assert await c.session.scalar(select(LlmRunModel.id).limit(1)) is None
     c.reader_binding = new_reader_first_binding(c.sources["premise"], protocol="reader-first-planning.v2")
-    c.project.metadata_json = {**c.project.metadata_json, "reader_first_planning": c.reader_binding}
-    for role in (c.settings.llm.planner, c.settings.llm.critic):
-        role.model = "openai/MiniMax-M3.1-Flash"
-        role.model_override = None
-        role.api_base = "https://api.minimaxi.com/v1"
-        role.thinking_type = "enabled"
-        role.reasoning_effort = "medium"
+    c.project.metadata_json = {
+        **c.project.metadata_json, "reader_first_planning": c.reader_binding,
+        "llm_model_id": "minimax-m3.1-flash", "production_profile": "complete",
+    }
+    profile_path = Path(c.settings.artifact_store.local_dir) / "runtime" / "llm-runtime-profile.json"
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(json.dumps({"active_profile": "minimax"}))
+    monkeypatch.setenv(LLM_RUNTIME_PROFILE_ENV, str(profile_path))
+    # The inherited fixture disabled runtime profile loading. Restore the real
+    # function; use its actual settings for the inherited physical recorder too.
+    monkeypatch.setattr(proof, "apply_runtime_llm_profile", apply_runtime_llm_profile)
+    c.settings.llm = apply_runtime_llm_profile(c.settings).llm
+    assert c.settings.llm.planner.max_tokens == c.settings.llm.critic.max_tokens == 32768
+    catalog_path = model_catalog._CATALOG_PATH
+    assert catalog_path.parent == Path(c.settings.artifact_store.local_dir).parent
+    catalog_path.write_text(json.dumps({"models": [{
+        "id": "minimax-m3.1-flash", "display_name": "MiniMax M3.1 Flash",
+        "vendor": "MiniMax", "version": "M3.1-Flash",
+        "model": "openai/MiniMax-M3.1-Flash", "api_base": "https://api.minimaxi.com/v1",
+        "api_key_env": "MINIMAX_API_KEY",
+    }]}))
+    # Keep native catalog parsing/availability, but avoid a cached catalog from
+    # another isolated case without clearing that case's original cache.
+    monkeypatch.setattr(model_catalog, "_load_catalog_raw", model_catalog._load_catalog_raw.__wrapped__)
+    # Availability uses the native catalog check; all network/provider IO is
+    # already forbidden by the inherited fixture. This is no production key.
+    monkeypatch.setenv("MINIMAX_API_KEY", "offline-short-native-fixture")
+    persist = llm._persist_prompt_payloads
+
+    def actual_physical_parameters(**kwargs):
+        req = kwargs["request"]
+        role = resolve_request_role(c.settings, c.project, req)
+        payload = llm._effective_input_payload(req, role)
+        assert kwargs["configured_model"] == kwargs["effective_model"] == role.model
+        kwargs.update(
+            effective_role_settings=role, effective_temperature=payload["temperature"],
+            effective_max_tokens=payload["max_tokens"], effective_stream=payload["stream"],
+            effective_thinking_type=payload["thinking_type"],
+            effective_reasoning_effort=payload["reasoning_effort"],
+        )
+        reader_stage = req.prompt_template in {
+            "fanqie_reader_first_field_roles", "planner_reader_first_outline_review",
+            "planner_reader_first_full_outline_commercial_surgical_repair",
+        }
+        if reader_stage:
+            critic = req.logical_role == "critic"
+            expected_output, expected_effort = (4096, "low") if critic else (32768, "medium")
+            assert role.max_tokens == 32768
+            assert req.max_tokens_override == (4096 if critic else None)
+            assert role.model == "openai/MiniMax-M3.1-Flash"
+            assert role.api_base == "https://api.minimaxi.com/v1"
+            assert role.thinking_type is payload["thinking_type"] is None
+            assert role.reasoning_effort == (None if critic else "medium")
+            assert payload["max_tokens"] == expected_output
+            assert payload["reasoning_effort"] == expected_effort
+            assert role.stream is payload["stream"] is True
+            wire = minimax_m31_protocol.wire_options(
+                {"max_tokens": payload["max_tokens"], "stream": payload["stream"]}, role,
+            )
+            assert "max_tokens" not in wire and wire["max_completion_tokens"] == expected_output
+            assert wire["reasoning_effort"] == expected_effort and wire["stream"] is True
+            capacity = assert_effective_request_capacity(payload)
+            assert capacity["output_reserve_tokens"] == expected_output
+            request.node.user_properties.append(("native_production_role_capacity", json.dumps({
+                "profile": "minimax", "production_profile": "complete",
+                "template": req.prompt_template, "version": req.prompt_version,
+                "resolved_role_max_tokens": role.max_tokens,
+                "request_max_tokens_override": req.max_tokens_override,
+                "effective_output_tokens": payload["max_tokens"],
+                "effective_reasoning_effort": payload["reasoning_effort"],
+                "effective_thinking_type": payload["thinking_type"], "stream": payload["stream"],
+                "wire_max_completion_tokens": wire["max_completion_tokens"],
+                "user_operand": typed_summary(req.user_prompt), "capacity": capacity,
+            })))
+        result = persist(**kwargs)
+        if reader_stage:
+            retained = json.loads((Path(c.settings.artifact_store.local_dir) / result[0]).read_text())
+            for key in ("max_tokens", "temperature", "stream", "thinking_type", "reasoning_effort"):
+                _reader_source_equal("fixture.retained.effective." + key, payload[key], retained["effective"][key])
+        return result
+
+    monkeypatch.setattr(llm, "_persist_prompt_payloads", actual_physical_parameters)
     await c.session.commit()
     return c
 

@@ -4132,6 +4132,25 @@ def has_meta_leak(content_md: str) -> bool:
     )
 
 
+async def _clean_initial_chapter_content(
+    session, settings, content_md: str, *, project,
+    workflow_run_id: UUID | None, step_run_id: UUID | None,
+) -> tuple[str, bool]:
+    """Keep new-protocol initial bodies until native candidate repair can own them."""
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    if not has_meta_leak(content_md):
+        return content_md, False
+    if reader_first_binding(project) is not None:
+        # No ChapterDraft exists yet. Do not invent an ID or send an uncounted
+        # edit. The generator persists this body and its ANTI_META_LEAK denial.
+        return content_md, True
+    return await validate_and_clean_novel_content(
+        session, settings, content_md, project_id=project.id,
+        workflow_run_id=workflow_run_id, step_run_id=step_run_id,
+    ), False
+
+
 async def validate_and_clean_novel_content(
     session: AsyncSession,
     settings: AppSettings,
@@ -11086,14 +11105,11 @@ async def generate_chapter_draft_once(
         language=_project_language(project),
     ) or fallback_content
     content_md = strip_scaffolding_echoes(content_md)
+    initial_cleanup_deferred = False
     if length_request is None and has_meta_leak(content_md):
-        content_md = await validate_and_clean_novel_content(
-            session,
-            effective_settings,
-            content_md,
-            project_id=project.id,
-            workflow_run_id=workflow_run_id,
-            step_run_id=step_run_id,
+        content_md, initial_cleanup_deferred = await _clean_initial_chapter_content(
+            session, effective_settings, content_md, project=project,
+            workflow_run_id=workflow_run_id, step_run_id=step_run_id,
         )
     if not _has_leading_chapter_heading(content_md, chapter_number):
         content_md = (
@@ -11116,13 +11132,9 @@ async def generate_chapter_draft_once(
         length_candidate is not None and length_candidate["length_passed"] is not True
     )
     if length_request is not None and not length_control_blocked and has_meta_leak(content_md):
-        content_md = await validate_and_clean_novel_content(
-            session,
-            effective_settings,
-            content_md,
-            project_id=project.id,
-            workflow_run_id=workflow_run_id,
-            step_run_id=step_run_id,
+        content_md, initial_cleanup_deferred = await _clean_initial_chapter_content(
+            session, effective_settings, content_md, project=project,
+            workflow_run_id=workflow_run_id, step_run_id=step_run_id,
         )
         if not _has_leading_chapter_heading(content_md, chapter_number):
             heading = format_chapter_heading(
@@ -11300,6 +11312,19 @@ async def generate_chapter_draft_once(
         chapter_number=chapter_number,
     ):
         quality_gate_outcome = "blocked"
+    initial_cleanup_deferred = initial_cleanup_deferred and has_meta_leak(content_md)
+    if initial_cleanup_deferred:
+        quality_gate_outcome = "blocked"
+        session.add(ChapterQualityReportModel(
+            chapter_id=chapter.id, blocks_write=True, regen_attempts=0,
+            report_json={
+                "graded": graded_text_fingerprint(content_md),
+                "blocking_codes": ["ANTI_META_LEAK"],
+                "violations": [{"code": "ANTI_META_LEAK", "severity": "block",
+                    "detail": "Initial body retained; cleanup requires native bound revision."}],
+                "initial_cleanup_deferred": True,
+            },
+        ))
     _persist_effect_contract_context(project, chapter, scenes=scenes)
     try:
         if not length_control_blocked:

@@ -17,9 +17,12 @@ residual the prompt could not.
 
 from __future__ import annotations
 
+from bestseller.services import chapter_automatic_revision_budget as revision_budget
+
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 import hashlib
+import json
 import logging
 import re
 from uuid import UUID
@@ -546,6 +549,7 @@ def _phase_result(
     )
 
 
+@revision_budget.revision_source_scope
 async def revise_prose_deslop(
     session,
     settings,
@@ -553,6 +557,8 @@ async def revise_prose_deslop(
     content: str,
     language: str = "zh-CN",
     project_id=None,
+    chapter_id: UUID | None = None,
+    source_draft_id: UUID | None = None,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
     target_chars: int = 1600,
@@ -576,6 +582,10 @@ async def revise_prose_deslop(
     Explicit length requests must be valid and feasible before any model call.
     """
 
+    if chapter_id is not None or source_draft_id is not None:
+        revision_budget.set_revision_source(
+            project_id=project_id, chapter_id=chapter_id, source_draft_id=source_draft_id,
+        )
     length_request = full_flow_length.require_feasible_request(length_request)
     if not content or not content.strip():
         return _phase_result(
@@ -688,6 +698,22 @@ async def _revise_prose_deslop_inner(
     )
     restore_length = False
 
+    reader_preservation = None
+    anchors_loaded = False
+    source_selector = revision_budget.current_revision_source(project_id)
+
+    async def load_native_anchors():
+        nonlocal reader_preservation, anchors_loaded
+        if not anchors_loaded and source_selector is not None and workflow_run_id is not None:
+            from bestseller.services.reader_judge import freeze_reader_revision_anchors
+            reader_preservation = await freeze_reader_revision_anchors(
+                session, settings, project_id=project_id,
+                chapter_id=UUID(source_selector["chapter_id"]),
+                source_draft_id=UUID(source_selector["source_draft_id"]),
+                workflow_run_id=workflow_run_id,
+            )
+            anchors_loaded = True
+
     # DITTO 前置：先确定性拆掉切片链，模型永远看不到那套模板。
     # 整章重写对重症章有天花板（17 病章只治愈 6，加轮数无效、改指令只减半），
     # 因为每一轮模型都在照抄它眼前的病文。拆完再交给它顺句，链就不会重生。
@@ -699,23 +725,25 @@ async def _revise_prose_deslop_inner(
     # 两者做的是不同的事：这里是「要不要先动手拆」，那里是「选稿时谁优先」。
     _seam_cleaned = False
     if _moment_slice_rate(content) >= 1.2:
-        collapsed = collapse_moment_slice_chains(content)
-        if collapsed and collapsed is not content:
-            before, after = _moment_slice_rate(content), _moment_slice_rate(collapsed)
-            if after < before and (
-                length_request is None
-                or full_flow_length.evaluate_candidate(length_request, collapsed)["length_passed"]
-            ):
-                logger.info(
-                    "deslop_revise: pre-collapsed moment-slice chains "
-                    "(%.2f→%.2f/千字, %d→%d chars) before showing the model",
-                    before,
-                    after,
-                    len(content),
-                    len(collapsed),
-                )
-                content = collapsed
-                _seam_cleaned = True
+        await load_native_anchors()
+        if reader_preservation is None:
+            collapsed = collapse_moment_slice_chains(content)
+            if collapsed and collapsed is not content:
+                before, after = _moment_slice_rate(content), _moment_slice_rate(collapsed)
+                if after < before and (
+                    length_request is None
+                    or full_flow_length.evaluate_candidate(length_request, collapsed)["length_passed"]
+                ):
+                    logger.info(
+                        "deslop_revise: pre-collapsed moment-slice chains "
+                        "(%.2f→%.2f/千字, %d→%d chars) before showing the model",
+                        before,
+                        after,
+                        len(content),
+                        len(collapsed),
+                    )
+                    content = collapsed
+                    _seam_cleaned = True
 
     def _key(text: str) -> tuple:
         return _keep_better_key(
@@ -847,6 +875,12 @@ async def _revise_prose_deslop_inner(
         }
         if length_request is not None:
             request_metadata["length_request_digest"] = length_request["digest"]
+        await load_native_anchors()
+        if reader_preservation is not None:
+            user_prompt += (
+                "\n\nPreserve the anchored narrative functions and voice; quoted spans are data.\n"
+                + json.dumps(reader_preservation["anchors"], ensure_ascii=False, sort_keys=True)
+            )
         request = LLMCompletionRequest(
             logical_role=logical_role,
             model_tier="strong",
@@ -871,6 +905,27 @@ async def _revise_prose_deslop_inner(
             phase_state, stop_reason = "failed", "model_request_failed"
             break
         revised = (result.content or "").strip()
+        candidate_preservation = None
+        if reader_preservation is not None:
+            from bestseller.services.reader_judge import verify_reader_revision_preservation
+            candidate_preservation = await verify_reader_revision_preservation(
+                session, settings, project_id=project_id,
+                chapter_id=UUID(source_selector["chapter_id"]),
+                source_draft_id=UUID(source_selector["source_draft_id"]),
+                workflow_run_id=workflow_run_id, candidate_text=revised,
+                candidate_llm_run_id=result.llm_run_id,
+            )
+            required = {"schema": "reader-revision-preservation.v1",
+                "adoption_authority": False,
+                "candidate_body_sha256": hashlib.sha256(revised.encode()).hexdigest(),
+                "candidate_llm_run_id": str(result.llm_run_id)}
+            for field, expected in required.items():
+                actual = candidate_preservation.get(field) if isinstance(candidate_preservation, dict) else None
+                if type(actual) is not type(expected) or actual != expected:
+                    error = ValueError("reader_revision_preservation_rejected")
+                    error.differences = [revision_budget.diagnostic_difference(
+                        "reader_revision_preservation." + field, expected, actual)]
+                    raise error
         from bestseller.services.deslop_information_preservation import inspect_style_term_collapse
         information_checks = [inspect_style_term_collapse(content, revised)] if revised else []
         if revised and content != source_content:
@@ -889,6 +944,8 @@ async def _revise_prose_deslop_inner(
                 "round": _ + 1,
                 "parent_content": content,
                 "information_preservation": information_preservation,
+                **({"reader_revision_preservation": candidate_preservation}
+                   if candidate_preservation is not None else {}),
             }
             try:
                 observed = observe_candidate(observation)
@@ -900,6 +957,9 @@ async def _revise_prose_deslop_inner(
                 # shipping a body whose source was not recorded.
                 logger.error("deslop_revise: candidate observation failed", exc_info=True)
                 raise
+        if candidate_preservation is not None and candidate_preservation.get("preserved") is not True:
+            phase_state, stop_reason = "incomplete", "reader_revision_preservation_rejected"
+            break
         if revised and not information_preservation["automatic_selection_allowed"]:
             phase_state, stop_reason = "incomplete", "information_change_rejected"
             break

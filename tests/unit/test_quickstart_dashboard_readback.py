@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import os
 import shutil
 import subprocess
 
@@ -224,7 +225,7 @@ vm.runInContext(`const pollingResources=new Map();let dashboardRefreshInFlight=n
 def test_original_loader_has_explicit_behavioral_counterexample(scenario):
     import hashlib
 
-    preimage = ROOT / "reports/ui-e2e-followup-2026-10-26/dashboard-stage/novel_quickstart.preimage.html"
+    preimage = Path(os.environ.get("BESTSELLER_TEST_PROTECTED_SNAPSHOT", ROOT)) / "reports/ui-e2e-followup-2026-10-26/dashboard-stage/novel_quickstart.preimage.html"
     assert hashlib.sha256(preimage.read_bytes()).hexdigest() == (
         "1138fe7cd19ab008d12c4f6489ca253faa7b9b06a4e9c030dedcda1063e2ac86"
     )
@@ -335,9 +336,13 @@ def test_recorded_progress_rows_through_real_projection_and_card(scenario):
 @pytest.mark.unit
 @pytest.mark.parametrize("scenario", ["closed", "partial"])
 def test_deployed_recorded_card_has_real_semantic_counterexample(scenario):
-    preimage = ROOT / (
+    preimage = Path(os.environ.get("BESTSELLER_TEST_PROTECTED_SNAPSHOT", ROOT)) / (
         "reports/ui-e2e-followup-2026-10-26/dashboard-stage/"
         "semantic-correction/preimage/src/bestseller/web/novel_quickstart.html"
+    )
+    import hashlib
+    assert hashlib.sha256(preimage.read_bytes()).hexdigest() == (
+        "ec8e9034a3b2eeaba2aaf9d0b8e41342fb0976d031bdde180b074769e67ed61d"
     )
     result = subprocess.run(
         [shutil.which("node"), "-e", CARD_HARNESS, str(preimage),

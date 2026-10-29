@@ -218,6 +218,16 @@ async def test_action_classification_preserves_hard_sources_not_raw_passed_flag(
 
 async def test_new_repair_version_binds_failed_body_while_preserving_primary_request(db, monkeypatch, runtime):
     path = Path(__file__).resolve().parents[2] / 'reports/continuous-recovery-2026-10-16/freezes/before-rewrite-candidate-evidence/reviews.py'
+    # Isolated worktrees do not contain private historical source snapshots.
+    # The runner can point at the byte-verified, read-only protection snapshot.
+    import hashlib
+    import os
+    archived = os.environ.get("BESTSELLER_TEST_RETAINED_REWRITE_SOURCE")
+    if archived:
+        path = Path(archived)
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+            "5004d2b7fead1344748ea4241657c54686ae5b09a70797fb95b13bfc2238c776"
+        )
     tree = ast.parse(path.read_text())
     function = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == 'rewrite_chapter_from_task')
     namespace = dict(reviews.__dict__)

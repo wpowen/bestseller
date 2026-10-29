@@ -3617,6 +3617,63 @@ class WebTaskManager:
             task = self._tasks.get(task_id)
             payload = dict(task.payload) if task else {}
             slug = str(task.project_slug or "") if task is not None else ""
+        if "new_book_budget_grant" in payload:
+            from bestseller.infra.db.models import ExecutionBudgetModel
+            from bestseller.services.execution_authorization import (
+                _new_book_require, new_book_budget_policy,
+            )
+
+            expected_scope = f"conception:{task_id}"
+            code = "execution_new_book_binding_mismatch"
+            binding = payload["new_book_budget_grant"]
+            _new_book_require(
+                type(binding) is dict, code, expected_scope,
+                "task.new_book_budget_grant", "native grant binding", binding,
+            )
+            _new_book_require(
+                binding.get("task_id") == task_id and binding.get("scope_id") == expected_scope,
+                code, expected_scope, "task.grant_identity",
+                [task_id, expected_scope], [binding.get("task_id"), binding.get("scope_id")],
+            )
+            _new_book_require(
+                not payload.get("_active_continuation_scope"), code, expected_scope,
+                "task._active_continuation_scope", None, payload.get("_active_continuation_scope"),
+            )
+            _new_book_require(
+                bool(slug) and slug == payload.get("slug") and slug.endswith("-" + task_id),
+                code, expected_scope, "task.project_slug", payload.get("slug"), slug,
+            )
+            try:
+                async with session_scope(load_settings()) as session:
+                    row = await session.get(ExecutionBudgetModel, expected_scope, populate_existing=True)
+                    native = new_book_budget_policy(row) if row is not None else None
+                    _new_book_require(
+                        native is not None and native.get("consumed_at") is not None,
+                        code, expected_scope, "execution_budgets.grant_consumed", True,
+                        native is not None and native.get("consumed_at") is not None,
+                    )
+                    _new_book_require(
+                        native["binding"].keys() == binding.keys(), code, expected_scope,
+                        "task.new_book_budget_grant.keys", sorted(native["binding"]), sorted(binding),
+                    )
+                    for key, value in native["binding"].items():
+                        _new_book_require(
+                            type(binding[key]) is type(value) and binding[key] == value,
+                            code, expected_scope, "task.new_book_budget_grant." + key,
+                            value, binding[key],
+                        )
+                    project = await get_project_by_slug(session, slug)
+                    if project is not None:
+                        actual_scope = (project.metadata_json or {}).get("execution_scope_id")
+                        _new_book_require(
+                            actual_scope == expected_scope, code, expected_scope,
+                            "projects.metadata.execution_scope_id", expected_scope, actual_scope,
+                        )
+                return expected_scope
+            except ExecutionBudgetError:
+                raise
+            except Exception as error:
+                raise ExecutionBudgetError("execution_ledger_unavailable", expected_scope) from error
         if payload.get("_active_continuation_scope"):
             from bestseller.services.conception_continuation import active_scope
             async with session_scope(load_settings()) as session:

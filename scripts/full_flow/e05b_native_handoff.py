@@ -138,6 +138,8 @@ def full_equal(expected, actual):
     """Full typed equality, including physical bytes; hashes are diagnostics only."""
     if type(expected) is not type(actual):
         return False
+    if type(expected) is UUID:
+        return expected.bytes == actual.bytes
     if isinstance(expected, dict):
         return {(type(key), key) for key in expected} == {
             (type(key), key) for key in actual

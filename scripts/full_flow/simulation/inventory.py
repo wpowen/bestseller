@@ -74,6 +74,22 @@ def template_expression(node):
     return symbol(node)
 
 
+def expression_sha256(node, generators=None):
+    """Seal expression semantics without exporting literals or line positions."""
+    expression = ast.dump(node, include_attributes=False)
+    # A local naming helper is part of the expression's semantics. In
+    # particular, changing a helper's return suffix must invalidate its callers.
+    helpers = {
+        item.func.id: ast.dump(generators[item.func.id], include_attributes=False)
+        for item in ast.walk(node)
+        if isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+        and generators and item.func.id in generators
+    }
+    if helpers:
+        expression = json.dumps([expression, helpers], sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(expression.encode()).hexdigest()
+
+
 def phase_for(template, path=""):
     if any(x in template for x in ("title", "blurb", "listing", "persona_click")):
         return "title_listing"
@@ -108,7 +124,7 @@ def _historical(path):
 def scan_repository(root):
     root = Path(root).resolve(strict=True)
     templates = defaultdict(list)
-    unresolved, files, failures = [], [], []
+    unresolved, files, failures, unnamed = [], [], [], []
     services = root / "src/bestseller/services"
     for path in sorted(services.rglob("*.py")):
         if path.is_symlink():
@@ -127,6 +143,17 @@ def scan_repository(root):
             )
             continue
         historical = _historical(path.relative_to(services))
+        generators = {
+            node.name: node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        request_constructors = {"LLMCompletionRequest"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "bestseller.services.llm":
+                request_constructors.update(
+                    alias.asname or alias.name for alias in node.names
+                    if alias.name == "LLMCompletionRequest"
+                )
         # Only unambiguous module-level constants are resolved. Function-local
         # variable names are never treated as global template identities.
         constants = {}
@@ -198,6 +225,7 @@ def scan_repository(root):
         class Visitor(ast.NodeVisitor):
             def __init__(self, relative, archived, module_constants, positions, is_planner):
                 self.scope = []
+                self.scope_nodes = []
                 self.relative = relative
                 self.archived = archived
                 self.constants = module_constants
@@ -206,7 +234,9 @@ def scan_repository(root):
 
             def visit_FunctionDef(self, node):
                 self.scope.append(node.name)
+                self.scope_nodes.append(node)
                 self.generic_visit(node)
+                self.scope_nodes.pop()
                 self.scope.pop()
 
             def visit_AsyncFunctionDef(self, node):
@@ -231,6 +261,7 @@ def scan_repository(root):
                                 {
                                     **site,
                                     "expression": template_expression(value),
+                                    "expression_sha256": expression_sha256(value, generators),
                                     "status": "dynamic_unresolved",
                                 }
                             )
@@ -242,6 +273,33 @@ def scan_repository(root):
             def visit_Call(self, node):
                 call = symbol(node.func)
                 arguments = [(k.arg, k.value) for k in node.keywords]
+                is_request_constructor = (
+                    call in request_constructors or call.endswith(".LLMCompletionRequest")
+                )
+                if is_request_constructor:
+                    explicit = [value for kind, value in arguments if kind == "prompt_template"]
+                    is_none = bool(explicit and isinstance(explicit[0], ast.Constant)
+                                   and explicit[0].value is None)
+                    if not explicit or is_none:
+                        kind = ("explicit_none" if is_none else "kwargs"
+                                if any(key is None for key, _ in arguments) else "missing_keyword")
+                        # Binding the enclosing function detects a previously
+                        # read-only probe being changed into a paid sender.
+                        scope = self.scope_nodes[-1] if self.scope_nodes else tree
+                        binding = json.dumps([
+                            expression_sha256(node, generators),
+                            ast.dump(scope, include_attributes=False),
+                        ], separators=(",", ":"))
+                        unnamed.append({
+                            "file": self.relative,
+                            "line": node.lineno,
+                            "function": ".".join(self.scope),
+                            "call": call,
+                            "keyword": "prompt_template",
+                            "historical": self.archived,
+                            "kind": kind,
+                            "expression_sha256": hashlib.sha256(binding.encode()).hexdigest(),
+                        })
                 local_name = node.func.id if isinstance(node.func, ast.Name) else None
                 positions = self.positions.get(local_name, set())
                 if len(positions) == 1:
@@ -249,6 +307,9 @@ def scan_repository(root):
                     if position < len(node.args):
                         arguments.append(("template", node.args[position]))
                 for kind, value in arguments:
+                    if (is_request_constructor and kind == "prompt_template"
+                            and isinstance(value, ast.Constant) and value.value is None):
+                        continue  # Report once, through the strict unnamed census.
                     if kind not in {"prompt_template", "template"} and not (
                         kind == "logical_name" and self.is_planner
                     ):
@@ -267,7 +328,9 @@ def scan_repository(root):
                         if kind == "logical_name":
                             expression = "planner_" + expression
                         unresolved.append(
-                            {**site, "expression": expression, "status": "dynamic_unresolved"}
+                            {**site, "expression": expression,
+                             "expression_sha256": expression_sha256(value, generators),
+                             "status": "dynamic_unresolved"}
                         )
                     for name in sorted(names):
                         if not TEMPLATE_NAME.fullmatch(name):
@@ -275,6 +338,7 @@ def scan_repository(root):
                                 {
                                     **site,
                                     "expression": "<non-template-literal>",
+                                    "expression_sha256": expression_sha256(value, generators),
                                     "status": "non_template_argument",
                                 }
                             )
@@ -305,6 +369,7 @@ def scan_repository(root):
         "runtime_reachability": "Unknown; optional/repair sites are included",
         "templates": rows,
         "dynamic_sites": unresolved,
+        "unnamed_send_sites": unnamed,
         "source_files": files,
         "parse_failures": failures,
     }

@@ -101,19 +101,32 @@ async def case(beat_case, monkeypatch, request):
             effective_thinking_type=payload["thinking_type"],
             effective_reasoning_effort=payload["reasoning_effort"],
         )
-        reader_stage = req.prompt_template in {
-            "fanqie_reader_first_field_roles", "planner_reader_first_outline_review",
-            "planner_reader_first_full_outline_commercial_surgical_repair",
-        }
+        reader_stage = {
+            "fanqie_reader_first_field_roles": ("planner", None, 32768, "medium"),
+            "planner_reader_first_outline_review": ("critic", 4096, 4096, "low"),
+            "planner_reader_first_full_outline_commercial_surgical_repair": (
+                "planner", None, 32768, "medium",
+            ),
+        }.get(req.prompt_template)
         if reader_stage:
-            critic = req.logical_role == "critic"
-            expected_output, expected_effort = (4096, "low") if critic else (32768, "medium")
+            expected_role, expected_override, expected_output, expected_effort = reader_stage
+            # RUN2-affected-L0-20261029T122849628391Z failed at the old
+            # implicit critic role effort=None assertion. The explicit policy
+            # resolves low; the native low/4096 wire expectation stays exact.
+            effort_field = "fixture.reader_stage.resolved_role.reasoning_effort"
+            request.node.user_properties.append(("native_reader_role_policy", json.dumps({
+                "template": req.prompt_template, "logical_role": req.logical_role,
+                "operands": [{"field": effort_field,
+                              "expected": typed_summary(expected_effort),
+                              "actual": typed_summary(role.reasoning_effort)}],
+            })))
+            assert req.logical_role == expected_role
             assert role.max_tokens == 32768
-            assert req.max_tokens_override == (4096 if critic else None)
+            assert req.max_tokens_override == expected_override
             assert role.model == "openai/MiniMax-M3.1-Flash"
             assert role.api_base == "https://api.minimaxi.com/v1"
             assert role.thinking_type is payload["thinking_type"] is None
-            assert role.reasoning_effort == (None if critic else "medium")
+            _reader_source_equal(effort_field, expected_effort, role.reasoning_effort)
             assert payload["max_tokens"] == expected_output
             assert payload["reasoning_effort"] == expected_effort
             assert role.stream is payload["stream"] is True
@@ -202,6 +215,7 @@ async def native_reader_case(outline_case, bound_native_scope, monkeypatch, requ
                 request.node.user_properties.append(("native_paid_record_failure", json.dumps({
                     "template": req.prompt_template,
                     "exception_type": type(error).__name__, "exception": typed_summary(str(error)),
+                    "differences": getattr(error, "differences", []),
                     "pending_attempt_operands": attempts,
                     "outcome": "record_rejected; no successful custody claimed",
                 })))

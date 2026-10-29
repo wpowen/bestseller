@@ -24,9 +24,15 @@ GENERATION = (
     "conception_concept_seed_final_premise_reconciliation_repair",
     "conception_explicit_seed_fidelity_repair",
 )
-GENERATION_ROUTES = [("editor", template) for template in GENERATION] + [
-    ("planner", "conception_concept_seed_final_premise_reconciliation"),
-    ("planner", "conception_concept_seed_final_premise_reconciliation_repair"),
+RECONCILIATION = (
+    "conception_concept_seed_final_premise_reconciliation",
+    "conception_concept_seed_final_premise_reconciliation_repair",
+)
+# The native reconciliation producer calls planner; JSON repair forwards that
+# same role. Keep the old editor combinations below as explicit negatives.
+GENERATION_ROUTES = [
+    ("planner" if template in RECONCILIATION else "editor", template)
+    for template in GENERATION
 ]
 
 
@@ -388,37 +394,62 @@ def test_new_exact_generation_exceptions_do_not_lower_critic_effort(template):
     role = LLMRoleSettings(
         model="openai/MiniMax-M3.1-Flash", temperature=0.4, timeout_seconds=60, max_tokens=32768
     )
-    actual = production_strategy.apply_production_stream_settings(
-        request, role, ambient_complete=True
+    before_request, before_role = request.model_dump(), role.model_dump()
+    # These are authored generation routes, not evidence for a critic route.
+    with pytest.raises(ValueError, match="^production_template_policy:unregistered_role$"):
+        production_strategy.apply_production_stream_settings(request, role, ambient_complete=True)
+    assert request.model_dump() == before_request and role.model_dump() == before_role
+    assert minimax_m31_protocol.reasoning_effort(role, max_completion_tokens=32768) == "max"
+
+
+@pytest.mark.parametrize("template", RECONCILIATION)
+@pytest.mark.parametrize("profile,ambient,effort", [
+    (None, True, None), ("complete", False, None),
+    (None, True, "low"), (None, True, "high"), (None, True, "max"),
+])
+def test_reconciliation_rejects_nonproducer_editor_role(template, profile, ambient, effort):
+    request = LLMCompletionRequest(
+        logical_role="editor", prompt_template=template,
+        system_prompt="system", user_prompt="user", fallback_response="{}",
     )
-    assert actual.reasoning_effort is None
-    assert minimax_m31_protocol.reasoning_effort(actual, max_completion_tokens=32768) == "max"
+    role = LLMRoleSettings(
+        model="openai/MiniMax-M3.1-Flash", temperature=0.4, timeout_seconds=60,
+        max_tokens=32768, reasoning_effort=effort,
+    )
+    before_request, before_role = request.model_dump(), role.model_dump()
+    with pytest.raises(ValueError, match="^production_template_policy:unregistered_role$"):
+        production_strategy.apply_production_stream_settings(
+            request, role, profile=profile, ambient_complete=ambient,
+        )
+    assert request.model_dump() == before_request and role.model_dump() == before_role
 
 
 @pytest.mark.parametrize(
-    "template,model,ambient,tools",
+    "template,model,ambient,tools,outcome",
     [
-        ("conception_finalize", "openai/MiniMax-M3.1-Flash", False, None),
-        ("conception_finalize", "openai/MiniMax-M3", True, None),
+        ("conception_finalize", "openai/MiniMax-M3.1-Flash", False, None, "identity"),
+        ("conception_finalize", "openai/MiniMax-M3", True, None, "identity"),
         (
             "conception_finalize",
             "openai/MiniMax-M3.1-Flash",
             True,
             [{"type": "function", "function": {"name": "unrelated"}}],
+            "medium_tools",
         ),
-        ("conception_finalize_extra", "openai/MiniMax-M3.1-Flash", True, None),
-        ("conception_title_arena", "openai/MiniMax-M3.1-Flash", True, None),
-        ("conception_final_material_seed_fidelity_judge", "openai/MiniMax-M3.1-Flash", True, None),
-        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3.1-Flash", False, None),
-        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3", True, None),
+        ("conception_finalize_extra", "openai/MiniMax-M3.1-Flash", True, None, "unregistered_template"),
+        ("conception_title_arena", "openai/MiniMax-M3.1-Flash", True, None, "unregistered_template"),
+        ("conception_final_material_seed_fidelity_judge", "openai/MiniMax-M3.1-Flash", True, None, "unregistered_role"),
+        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3.1-Flash", False, None, "identity"),
+        ("conception_finalize_reader_first_v1", "openai/MiniMax-M3", True, None, "identity"),
         (
             "conception_finalize_reader_first_v1", "openai/MiniMax-M3.1-Flash", True,
             [{"type": "function", "function": {"name": "unrelated"}}],
+            "medium_tools",
         ),
-        ("conception_finalize_reader_first_v1_extra", "openai/MiniMax-M3.1-Flash", True, None),
+        ("conception_finalize_reader_first_v1_extra", "openai/MiniMax-M3.1-Flash", True, None, "unregistered_template"),
     ],
 )
-def test_no_prefix_role_model_or_tool_widening(template, model, ambient, tools):
+def test_no_prefix_role_model_or_tool_widening(template, model, ambient, tools, outcome):
     request = LLMCompletionRequest(
         logical_role="editor",
         prompt_template=template,
@@ -428,8 +459,20 @@ def test_no_prefix_role_model_or_tool_widening(template, model, ambient, tools):
         tools=tools,
     )
     role = LLMRoleSettings(model=model, temperature=0.4, timeout_seconds=60, max_tokens=32768)
+    before_request, before_role = request.model_dump(), role.model_dump()
+    if outcome.startswith("unregistered_"):
+        with pytest.raises(ValueError, match="^production_template_policy:" + outcome + "$"):
+            production_strategy.apply_production_stream_settings(request, role, ambient_complete=ambient)
+        assert request.model_dump() == before_request and role.model_dump() == before_role
+        return
     actual = production_strategy.apply_production_stream_settings(
         request, role, ambient_complete=ambient
     )
-    assert actual.reasoning_effort is None
+    if outcome == "identity":
+        assert actual is role and actual.reasoning_effort is None
+    else:
+        assert actual.reasoning_effort == "medium"
+        assert actual.stream == role.stream
+        assert llm._effective_input_payload(request, actual)["stream"] is False
     assert actual.max_tokens == role.max_tokens
+    assert request.model_dump() == before_request and role.model_dump() == before_role

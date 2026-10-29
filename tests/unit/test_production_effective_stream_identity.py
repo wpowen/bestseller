@@ -1,8 +1,9 @@
 """Pre-extraction dispatch equivalence; no gateway, provider or database calls.
 
-The reference below freezes the original complete-stream rule, including its
-template exceptions. Compare complete effective inputs, not stream alone: M3.1
-reasoning defaults and stream_include_usage also affect paid input identity.
+The original reference remains frozen for legacy/non-M3.1/non-complete inputs.
+Complete M3.1 uses independently specified native role/template expectations.
+Compare complete effective inputs, not stream alone: reasoning defaults and
+stream_include_usage also affect paid input identity.
 """
 
 import ast
@@ -24,6 +25,22 @@ from bestseller.settings import LLMRoleSettings, load_settings
 pytestmark = pytest.mark.unit
 MODELS = ["openai/MiniMax-M3.1-Flash", "openai/MiniMax-M3"]
 SPECIAL = ["conception_finalize_continuation_v2", "conception_finalize_adjudication_repair"]
+NATIVE_TEMPLATES = {
+    "planner": "planner_structured_field_correction",
+    "critic": "draft_continuity_hard_safety",
+    "writer": "chapter_first_writer",
+    "editor": "conception_finalize_adjudication_repair",
+}
+# Independent expected defaults at this fixture's fixed 32768 role cap and
+# narrowed request caps (8192 planner/critic, 16000 writer/editor). Do not read
+# the registry or call the policy under test to manufacture expected values.
+COMPLETE_DEFAULTS = {
+    ("planner_structured_field_correction", "planner"): ("medium", "low"),
+    ("draft_continuity_hard_safety", "critic"): ("low", "low"),
+    ("chapter_first_writer", "writer"): ("medium", "low"),
+    ("conception_finalize_continuation_v2", "editor"): ("medium", "medium"),
+    ("conception_finalize_adjudication_repair", "editor"): ("medium", "medium"),
+}
 TOOL = {
     "type": "function",
     "function": {
@@ -111,11 +128,39 @@ def original_dispatch(request, role, *, profile, ambient):
     return complete_stream, role
 
 
+def complete_policy_active(model, *, profile, ambient):
+    return model == MODELS[0] and (profile == "complete" or ambient)
+
+
+def matrix_request(logical_role, tools, *, model, profile, ambient=False):
+    if complete_policy_active(model, profile=profile, ambient=ambient):
+        return request_for(logical_role, tools, NATIVE_TEMPLATES[logical_role])
+    return request_for(logical_role, tools)
+
+
+def expected_dispatch(request, role, *, profile, ambient):
+    if not complete_policy_active(role.model, profile=profile, ambient=ambient):
+        return original_dispatch(request, role, profile=profile, ambient=ambient)
+    changes = {} if request.tools else {"stream": True}
+    if role.reasoning_effort in (None, ""):
+        project_effort, ambient_effort = COMPLETE_DEFAULTS[
+            (request.prompt_template, request.logical_role)
+        ]
+        changes["reasoning_effort"] = project_effort if profile == "complete" else ambient_effort
+    return not bool(request.tools), role.model_copy(update=changes)
+
+
 def assert_identity(request, expected, actual):
     assert actual.model_dump() == expected.model_dump()
     expected_payload = llm._effective_input_payload(request, expected)
     actual_payload = llm._effective_input_payload(request, actual)
     assert actual_payload == expected_payload
+    assert request.max_tokens_override == 8192
+    assert expected.max_tokens == actual.max_tokens == 32768
+    cap = 16000 if request.logical_role in ("writer", "editor") else 8192
+    assert expected_payload["max_tokens"] == actual_payload["max_tokens"] == cap
+    assert llm._effective_request_max_tokens(expected, request) == cap
+    assert llm._effective_request_max_tokens(actual, request) == cap
     physical = json.dumps(
         expected_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode()
@@ -135,9 +180,10 @@ def assert_identity(request, expected, actual):
 def test_full_original_dispatch_matrix_preserves_predicate_role_payload_and_hash(
     model, tools, profile, ambient, logical_role, reasoning, initial_stream
 ):
-    request, role = request_for(logical_role, tools), base_role(model, reasoning, initial_stream)
+    request = matrix_request(logical_role, tools, model=model, profile=profile, ambient=ambient)
+    role = base_role(model, reasoning, initial_stream)
     before_request, before_role = request.model_dump(), role.model_dump()
-    predicate, expected = original_dispatch(request, role, profile=profile, ambient=ambient)
+    predicate, expected = expected_dispatch(request, role, profile=profile, ambient=ambient)
     assert (
         strategy.production_stream_enabled(request, role, profile=profile, ambient_complete=ambient)
         is predicate
@@ -147,7 +193,7 @@ def test_full_original_dispatch_matrix_preserves_predicate_role_payload_and_hash
     )
     assert_identity(request, expected, actual)
     assert request.model_dump() == before_request and role.model_dump() == before_role
-    if not predicate:
+    if not complete_policy_active(model, profile=profile, ambient=ambient):
         assert actual is role
 
 
@@ -155,33 +201,66 @@ def test_full_original_dispatch_matrix_preserves_predicate_role_payload_and_hash
 @pytest.mark.parametrize("profile", [None, "complete", "research"])
 @pytest.mark.parametrize("ambient", [False, True])
 @pytest.mark.parametrize("reasoning", [None, "low"])
-def test_finalize_template_medium_exception_is_identical_for_critic(
+def test_finalize_critic_rejected_under_complete_policy_and_legacy_identity_preserved(
     template, profile, ambient, reasoning
 ):
     request, role = request_for("critic", False, template), base_role(MODELS[0], reasoning)
+    before_request, before_role = request.model_dump(), role.model_dump()
     predicate, expected = original_dispatch(request, role, profile=profile, ambient=ambient)
     assert (
         strategy.production_stream_enabled(request, role, profile=profile, ambient_complete=ambient)
         is predicate
     )
+    if complete_policy_active(role.model, profile=profile, ambient=ambient):
+        with pytest.raises(ValueError, match="production_template_policy:unregistered_role") as caught:
+            strategy.apply_production_stream_settings(
+                request, role, profile=profile, ambient_complete=ambient
+            )
+        assert caught.value.differences[0]["field"] == "logical_role"
+        assert request.model_dump() == before_request and role.model_dump() == before_role
+        return
     actual = strategy.apply_production_stream_settings(
         request, role, profile=profile, ambient_complete=ambient
     )
     assert_identity(request, expected, actual)
     assert actual.reasoning_effort == ("medium" if predicate and reasoning is None else reasoning)
+    assert request.model_dump() == before_request and role.model_dump() == before_role
+
+
+@pytest.mark.parametrize("template", SPECIAL)
+@pytest.mark.parametrize("profile", [None, "complete", "research"])
+@pytest.mark.parametrize("ambient", [False, True])
+@pytest.mark.parametrize("reasoning", [None, "low"])
+def test_finalize_native_editor_preserves_full_effective_identity(
+    template, profile, ambient, reasoning
+):
+    request, role = request_for("editor", False, template), base_role(MODELS[0], reasoning)
+    before_request, before_role = request.model_dump(), role.model_dump()
+    predicate, expected = expected_dispatch(request, role, profile=profile, ambient=ambient)
+    assert strategy.production_stream_enabled(
+        request, role, profile=profile, ambient_complete=ambient
+    ) is predicate
+    actual = strategy.apply_production_stream_settings(
+        request, role, profile=profile, ambient_complete=ambient
+    )
+    assert_identity(request, expected, actual)
+    assert actual.reasoning_effort == ("medium" if predicate and reasoning is None else reasoning)
+    assert request.model_dump() == before_request and role.model_dump() == before_role
 
 
 @pytest.mark.parametrize("reasoning", [None, "low"])
 def test_editor_and_empty_tool_list_keep_the_original_text_semantics(reasoning):
-    request = request_for("editor", False).model_copy(update={"tools": []})
+    request = request_for("editor", False, NATIVE_TEMPLATES["editor"]).model_copy(update={"tools": []})
     role = base_role(MODELS[0], reasoning)
-    predicate, expected = original_dispatch(request, role, profile="complete", ambient=False)
+    before_request, before_role = request.model_dump(), role.model_dump()
+    predicate, expected = expected_dispatch(request, role, profile="complete", ambient=False)
     assert predicate and strategy.production_stream_enabled(request, role, profile="complete")
     assert_identity(
         request,
         expected,
         strategy.apply_production_stream_settings(request, role, profile="complete"),
     )
+    assert request.model_dump() == before_request and role.model_dump() == before_role
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -192,20 +271,23 @@ def test_editor_and_empty_tool_list_keep_the_original_text_semantics(reasoning):
 def test_fresh_reader_known_profile_reproduces_original_dispatch_hash(
     model, tools, logical_role, reasoning, profile
 ):
-    request, role = request_for(logical_role, tools), base_role(model, reasoning)
+    request = matrix_request(logical_role, tools, model=model, profile=profile)
+    role = base_role(model, reasoning)
     settings = load_settings(env={}).model_copy(deep=True)
     settings.llm.mock = False
     setattr(settings.llm, logical_role, role)
     metadata = {} if profile is None else {"production_profile": profile}
     project = SimpleNamespace(id=request.project_id, metadata_json=metadata)
     before_settings, before_metadata = settings.model_dump(), deepcopy(metadata)
-    _, expected = original_dispatch(request, role, profile=profile, ambient=False)
+    before_request, before_role = request.model_dump(), role.model_dump()
+    _, expected = expected_dispatch(request, role, profile=profile, ambient=False)
     # Current ambient work cannot reconfigure a historical request. Its known
     # project profile is the reader's evidence, including absent legacy profile.
     with strategy.protect_downstream("complete", 1):
         actual = retained._fresh_role(settings, project, request, {})
     assert_identity(request, expected, actual)
     assert settings.model_dump() == before_settings and metadata == before_metadata
+    assert request.model_dump() == before_request and role.model_dump() == before_role
     if profile == "complete" and model == MODELS[0] and not tools:
         assert actual.stream is True
         assert llm._effective_input_hash(request, actual) != llm._effective_input_hash(
@@ -215,7 +297,7 @@ def test_fresh_reader_known_profile_reproduces_original_dispatch_hash(
 
 @pytest.mark.parametrize("logical_role", ["planner", "critic", "writer"])
 def test_fresh_selected_catalog_route_includes_complete_profile_after_model_override(logical_role):
-    request = request_for(logical_role, False)
+    request = matrix_request(logical_role, False, model=MODELS[0], profile="complete")
     settings = load_settings(env={}).model_copy(deep=True)
     settings.llm.mock = False
     role = base_role(MODELS[1], "low")
@@ -232,10 +314,14 @@ def test_fresh_selected_catalog_route_includes_complete_profile_after_model_over
         metadata_json={"llm_model_id": entry.id, "production_profile": "complete"},
     )
     resolved = llm._apply_model_override(role, entry)
-    _, expected = original_dispatch(request, resolved, profile="complete", ambient=False)
+    before_request, before_settings = request.model_dump(), settings.model_dump()
+    before_metadata, before_role = deepcopy(project.metadata_json), role.model_dump()
+    _, expected = expected_dispatch(request, resolved, profile="complete", ambient=False)
     actual = retained._fresh_role(settings, project, request, {entry.id: entry})
     assert_identity(request, expected, actual)
     assert actual.model == MODELS[0] and actual.stream
+    assert request.model_dump() == before_request and settings.model_dump() == before_settings
+    assert project.metadata_json == before_metadata and role.model_dump() == before_role
 
 
 def test_exact_historical_route_does_not_apply_new_profile_stream_policy():

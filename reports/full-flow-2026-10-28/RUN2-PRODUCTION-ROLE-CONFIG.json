@@ -1,0 +1,65 @@
+{
+  "schema": "run2-production-role-whitelist.v1",
+  "captured_at_utc": "2026-10-29T11:15:34.007400+00:00",
+  "source": "bestseller-web-1: load_settings -> apply_runtime_llm_profile -> get_model_catalog_entry -> _apply_model_override; only whitelisted fields emitted",
+  "active_runtime_profile": "minimax",
+  "profile_sha256": "849cde451eda4f68c264935efbb5f73b40e64e5e06c53077bebbfff9485fecba",
+  "model_catalog_id": "minimax-m3.1-flash",
+  "catalog_available": true,
+  "production_profile": "complete",
+  "roles": {
+    "planner": {
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "max_tokens": 32768,
+      "thinking_type": null,
+      "reasoning_effort": null,
+      "stream": false,
+      "temperature": 0.82,
+      "timeout_seconds": 900
+    },
+    "writer": {
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "max_tokens": 32768,
+      "thinking_type": null,
+      "reasoning_effort": null,
+      "stream": false,
+      "temperature": 0.85,
+      "timeout_seconds": 360
+    },
+    "critic": {
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "max_tokens": 32768,
+      "thinking_type": null,
+      "reasoning_effort": null,
+      "stream": false,
+      "temperature": 0.25,
+      "timeout_seconds": 180
+    },
+    "editor": {
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "max_tokens": 32768,
+      "thinking_type": null,
+      "reasoning_effort": null,
+      "stream": false,
+      "temperature": 0.4,
+      "timeout_seconds": 360
+    },
+    "summarizer": {
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "max_tokens": 1536,
+      "thinking_type": null,
+      "reasoning_effort": null,
+      "stream": false,
+      "temperature": 0.2,
+      "timeout_seconds": 120
+    }
+  },
+  "production_db_calls": 0,
+  "model_calls": 0,
+  "config_writes": 0
+}

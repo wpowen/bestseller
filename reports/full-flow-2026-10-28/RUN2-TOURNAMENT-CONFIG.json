@@ -1,0 +1,56 @@
+{
+  "config": {
+    "generation_model_key": "minimax-m3.1-flash",
+    "judge_model_key": "minimax-m3.1-flash",
+    "finalist_judge_model_key": "minimax-m3.1-flash",
+    "raw_idea_judge_model_key": "minimax-m3.1-flash",
+    "premise_judge_model_key": "minimax-m3.1-flash",
+    "engine_kernel_max_tokens": 8000,
+    "raw_idea_pool_max_tokens": 9000,
+    "judge_max_tokens": 1800,
+    "story_judge_max_tokens": null,
+    "seriality_judge_max_tokens": 1800,
+    "finalist_judge_max_tokens": 5000,
+    "finalist_seriality_judge_max_tokens": 7000,
+    "raw_idea_rank_max_tokens": 8000,
+    "premise_judge_max_tokens": 8000
+  },
+  "configured_catalogs": {
+    "generation_model_key": {
+      "id": "minimax-m3.1-flash",
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "available": true
+    },
+    "judge_model_key": {
+      "id": "minimax-m3.1-flash",
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "available": true
+    },
+    "finalist_judge_model_key": {
+      "id": "minimax-m3.1-flash",
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "available": true
+    },
+    "raw_idea_judge_model_key": {
+      "id": "minimax-m3.1-flash",
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "available": true
+    },
+    "premise_judge_model_key": {
+      "id": "minimax-m3.1-flash",
+      "model": "openai/MiniMax-M3.1-Flash",
+      "api_base": "https://api.minimaxi.com/v1",
+      "available": true
+    }
+  },
+  "generation_explicit_book_binding": "minimax-m3.1-flash",
+  "at_utc": "2026-10-29T11:46:59.574529+00:00",
+  "mode": "readonly actual config/native catalog whitelist; no DB/SDK",
+  "mounted_config_equal_to_candidate_sha256": "2384509cb981155297b2e78d4b26af95594cd5200da2692b2f90d01935ea631d",
+  "story_judge_max_tokens_present_in_identical_config": false,
+  "story_judge_effective_source_default": 1600
+}

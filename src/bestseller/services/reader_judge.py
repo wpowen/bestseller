@@ -511,6 +511,7 @@ def _reader_revision_candidate_derivation(
         ("chapter_rewrite", "3.1-lossless-source-time"),
         ("chapter_rewrite", "3.2-source-selected-voice-editor"),
         ("chapter_rewrite", "3.3-verified-fact-edit-scope"),
+        ("chapter_rewrite", "3.4-verified-mixed-edit-scope"),
         ("chapter_rewrite_repair", "2.0-candidate-source"),
         ("chapter_rewrite_quality_retrofit_repair", "2.0-candidate-source"),
         ("chapter_localized_opening_repair", "1.0"),
@@ -776,6 +777,53 @@ async def _rr_paid(
     return request, paid, proof
 
 
+def _rr_mixed_task_binding(
+    request: LLMCompletionRequest,
+    expected: dict[str, str],
+    *,
+    field: str = "candidate.mixed_task_binding",
+) -> dict[str, str]:
+    """Match one paid-wire object to identities already loaded from native rows.
+
+    Retained request metadata is not part of the physical prompt codec. Native
+    run metadata can locate a task; only these exact paid bytes bind that task
+    to its project, chapter, original body and complete source report.
+    """
+    marker = "BACKEND_MIXED_REPAIR_TASK_JSON:\n"
+    count = request.user_prompt.count(marker)
+    _rr_equal(field + ".marker_count", 1, count)
+    tail = request.user_prompt.split(marker, 1)[1].lstrip(" \t\r\n")
+
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value = {}
+        for key, item in pairs:
+            _rr_need(key not in value, "json_duplicate_key")
+            value[key] = item
+        return value
+
+    def constant(_value: str) -> None:
+        raise _ReaderRevisionError("json_nonfinite")
+
+    try:
+        value, _end = json.JSONDecoder(
+            object_pairs_hook=unique, parse_constant=constant,
+        ).raw_decode(tail)
+    except _ReaderRevisionError:
+        raise
+    except (ValueError, TypeError, OverflowError, RecursionError):
+        raise _ReaderRevisionError(field + ".json", "one finite JSON object", tail) from None
+    _rr_need(type(value) is dict, "json_object", "dict", value)
+    fields = {
+        "project_id", "chapter_id", "source_draft_id", "source_body_sha256",
+        "review_report_id", "rewrite_task_id",
+    }
+    _rr_fields(value, fields, field)
+    for key in sorted(fields):
+        _rr_need(type(value[key]) is str, field + "." + key + ".type", "str", value[key])
+        _rr_equal(field + "." + key, expected[key], value[key])
+    return value
+
+
 async def _rr_fact_derivation(
     session: AsyncSession,
     settings: AppSettings,
@@ -786,28 +834,38 @@ async def _rr_fact_derivation(
     raw: str,
     candidate: str,
 ) -> dict[str, Any] | None:
-    """Read native fact sources before any identity/normalization shortcut.
+    """Read native bounded-repair sources before any normalization shortcut.
 
     Run metadata supplies lookup IDs only. The native available review reader,
-    strict fact-scope reader and exact paid prompt must independently agree.
+    strict full-report scope reader and exact paid prompt must independently agree.
+    Mixed declarations never fall back to fact-only or raw identity derivation.
     Projection proves bytes for the semantic judge; it grants no adoption.
     """
     from dataclasses import asdict
     import inspect
 
     from bestseller.infra.db import models as m
-    from bestseller.services import drafts, retained_rewrite_projection, rewrite_patch
+    from bestseller.services import (
+        drafts,
+        retained_rewrite_projection,
+        rewrite_fact_scope,
+        rewrite_patch,
+    )
     from bestseller.services import recorded_review_sources as recorded
     from bestseller.services.retained_planning_generation import _Reader
     from bestseller.services.retained_review_input_proof import verify_retained_review_inputs
     from bestseller.services.reviews import chapter_review_body_fingerprint
-    from bestseller.services.rewrite_fact_scope import require_fact_repair_scope
-
-    declared = (request.prompt_template, request.prompt_version) == (
-        "chapter_rewrite",
-        "3.3-verified-fact-edit-scope",
+    from bestseller.services.rewrite_fact_scope import (
+        derive_mixed_repair_scope,
+        require_fact_repair_scope,
     )
-    if not declared and request.prompt_template not in {
+
+    fact_protocol = ("chapter_rewrite", "3.3-verified-fact-edit-scope")
+    mixed_protocol = ("chapter_rewrite", "3.4-verified-mixed-edit-scope")
+    protocol = (request.prompt_template, request.prompt_version)
+    declared = protocol == fact_protocol
+    mixed = protocol == mixed_protocol
+    if not (declared or mixed) and request.prompt_template not in {
         "chapter_rewrite",
         "chapter_rewrite_repair",
         "chapter_rewrite_quality_retrofit_repair",
@@ -817,28 +875,40 @@ async def _rr_fact_derivation(
     run = await reader.get(m.LlmRunModel, UUID(physical["llm_run_id"]))
     run_metadata = run.metadata_json or {}
     task_id = run_metadata.get("rewrite_task_id")
-    if not declared and task_id is None:
+    if not (declared or mixed) and task_id is None:
         return None
     task = await reader.get(m.RewriteTaskModel, _rr_uuid(task_id, "candidate.fact_task_id"))
     _rr_need(task is not None, "candidate.fact_task_missing")
     task_metadata = task.metadata_json or {}
     # Existing scope metadata may demand a refusal, never establish authority.
     # Native repair ancestry also prevents an ordinary template from bypassing
-    # its original fact-only contract after a report/scope marker is removed.
+    # its original bounded contract after a report/scope marker is removed.
     declared = declared or "verified_fact_repair_scope" in task_metadata
+    mixed = mixed or "verified_mixed_repair_scope" in task_metadata
     prior_id = run_metadata.get("semantic_repair_of")
+    prior = None
     if prior_id is not None:
         prior = await reader.get(m.LlmRunModel, _rr_uuid(prior_id, "candidate.fact_prior_run"))
         _rr_need(
             prior is not None and prior.project_id == request.project_id,
             "candidate.fact_prior_identity",
         )
-        declared = declared or (prior.prompt_template, prior.prompt_version) == (
-            "chapter_rewrite",
-            "3.3-verified-fact-edit-scope",
-        )
-    if not declared:
+        prior_protocol = (prior.prompt_template, prior.prompt_version)
+        declared = declared or prior_protocol == fact_protocol
+        mixed = mixed or prior_protocol == mixed_protocol
+    if not (declared or mixed):
         return None
+    if mixed:
+        _rr_need(not declared, "candidate.mixed_conflicting_fact_protocol")
+        _rr_need(
+            protocol == mixed_protocol or (
+                prior is not None and protocol in {
+                    ("chapter_rewrite_repair", "2.0-candidate-source"),
+                    ("chapter_rewrite_quality_retrofit_repair", "2.0-candidate-source"),
+                }
+            ),
+            "candidate.mixed_request_protocol",
+        )
     _rr_need(
         task.project_id == request.project_id == context["project"].id
         and task.trigger_type == "chapter_review"
@@ -876,6 +946,31 @@ async def _rr_fact_derivation(
         and report.target_id == context["chapter_id"],
         "candidate.fact_report_identity",
     )
+    task_binding = prior_task_binding = prior_physical = None
+    if mixed:
+        expected_task = {
+            "project_id": str(task.project_id), "chapter_id": str(context["chapter_id"]),
+            "source_draft_id": str(parent.id), "source_body_sha256": _rr_sha(parent.content_md),
+            "review_report_id": str(report.id), "rewrite_task_id": str(task.id),
+        }
+        # The current candidate's own physical request must match before any
+        # full-report derivation. Neither task metadata nor a prior run can
+        # replace a missing, forged or duplicated current paid-wire object.
+        task_binding = _rr_mixed_task_binding(request, expected_task)
+        if prior is not None:
+            # semantic_repair_of is a locator only. Verify the original paid
+            # response and its own 3.4 wire independently, without guessing
+            # metadata fields that the retained request codec does not store.
+            prior_request, _prior_paid, prior_physical = await _rr_paid(
+                session, settings, context, prior.id
+            )
+            _rr_equal(
+                "candidate.mixed_prior_protocol", list(mixed_protocol),
+                [prior_request.prompt_template, prior_request.prompt_version],
+            )
+            prior_task_binding = _rr_mixed_task_binding(
+                prior_request, expected_task, field="candidate.mixed_prior_task_binding",
+            )
     payload = report.structured_output
     _rr_need(type(payload) is dict, "candidate.fact_report_payload")
     _rr_equal("candidate.fact_report_draft", str(parent_id), payload.get("draft_id"))
@@ -884,7 +979,18 @@ async def _rr_fact_derivation(
         chapter_review_body_fingerprint(parent.content_md),
         payload.get("reviewed_body_fingerprint"),
     )
-    scope = require_fact_repair_scope(parent.content_md, payload)
+    scope = (
+        derive_mixed_repair_scope(parent.content_md, payload)
+        if mixed else require_fact_repair_scope(parent.content_md, payload)
+    )
+    if mixed:
+        _rr_need(type(scope) is dict, "candidate.mixed_scope_type")
+        _rr_equal("candidate.mixed_scope_schema", "verified-mixed-repair-scope.v1", scope.get("schema"))
+        _rr_equal("candidate.mixed_scope_parent", _rr_sha(parent.content_md), scope.get("parent_sha256"))
+        _rr_equal("candidate.mixed_scope_full_report", _rr_sha(payload), scope.get("report_payload_sha256"))
+        _rr_equal(
+            "candidate.mixed_task_scope", scope, task_metadata.get("verified_mixed_repair_scope")
+        )
 
     # Authenticate the actual report, primary/window/commercial paid calls and
     # current full sources through the existing read-only native readers. No
@@ -912,14 +1018,23 @@ async def _rr_fact_derivation(
         report=report,
         cycle=cycle,
     )
-    marker = "\n\nBACKEND_FACT_REPAIR_SCOPE_JSON:\n"
-    _rr_need(request.user_prompt.count(marker) == 1, "candidate.fact_paid_scope_missing")
+    marker = (
+        "\n\nBACKEND_MIXED_REPAIR_SCOPE_JSON:\n"
+        if mixed else "\n\nBACKEND_FACT_REPAIR_SCOPE_JSON:\n"
+    )
+    scope_field = "candidate.mixed_paid_scope" if mixed else "candidate.fact_paid_scope"
+    _rr_need(request.user_prompt.count(marker) == 1, scope_field + "_missing")
+    if mixed:
+        _rr_need(
+            "\n\nBACKEND_FACT_REPAIR_SCOPE_JSON:\n" not in request.user_prompt,
+            "candidate.mixed_fact_marker_conflict",
+        )
     tail = request.user_prompt.split(marker, 1)[1]
     try:
         _, end = json.JSONDecoder().raw_decode(tail)
     except (ValueError, TypeError):
-        raise _ReaderRevisionError("candidate.fact_paid_scope_json") from None
-    _rr_equal("candidate.fact_paid_scope", scope, _rr_parse(tail[:end]))
+        raise _ReaderRevisionError(scope_field + "_json") from None
+    _rr_equal(scope_field, scope, _rr_parse(tail[:end]))
 
     # New-protocol native callers use canonical sanitizer(raw), then this
     # existing bounded projection. No fallback, postprocess or arbitrary text
@@ -945,19 +1060,31 @@ async def _rr_fact_derivation(
         "native projection accepted",
         list(projection.failure_codes),
     )
-    _rr_equal("candidate.fact_projection_bytes", projection.candidate_text, candidate)
+    _rr_equal(
+        "candidate.mixed_projection_bytes" if mixed else "candidate.fact_projection_bytes",
+        projection.candidate_text, candidate,
+    )
     custody = {
         module.__name__: _rr_sha(inspect.getsource(module))
         for module in (retained_rewrite_projection, rewrite_patch)
     }
+    if mixed:
+        custody[rewrite_fact_scope.__name__] = _rr_sha(inspect.getsource(rewrite_fact_scope))
+        custody[__name__ + "._rr_mixed_task_binding"] = _rr_sha(inspect.getsource(_rr_mixed_task_binding))
     return {
-        "schema": "reader-revision-fact-derivation.v1",
+        "schema": (
+            "reader-revision-mixed-derivation.v1" if mixed else "reader-revision-fact-derivation.v1"
+        ),
         "normalizer": "bestseller.services.retained_rewrite_projection.project_retained_rewrite",
         "source_binding": source_binding,
         "rewrite_task_id": str(task.id),
         "review_report_id": str(report.id),
         "report_payload_sha256": _rr_sha(payload),
-        "fact_scope_sha256": _rr_sha(scope),
+        ("mixed_scope_sha256" if mixed else "fact_scope_sha256"): _rr_sha(scope),
+        **({
+            "kind": "verified_mixed_repair_projection", "task_binding": task_binding,
+            "prior_task_binding": prior_task_binding, "prior_physical": prior_physical,
+        } if mixed else {}),
         "review_proof_sha256": _rr_sha(review_proof),
         "review_cycle_id": sources.cycle_id,
         "normalization": normalization,
@@ -1218,7 +1345,10 @@ async def _rr_process(
             )
             if (
                 fact_readback is not None
-                or binding["derivation"].get("schema") == "reader-revision-fact-derivation.v1"
+                or binding["derivation"].get("schema") in {
+                    "reader-revision-fact-derivation.v1",
+                    "reader-revision-mixed-derivation.v1",
+                }
             ):
                 _rr_equal("candidate.fact_source_readback", binding["derivation"], fact_readback)
         result = (
@@ -1328,7 +1458,7 @@ async def verify_reader_revision_preservation(
     """Compare complete native original/candidate bodies and frozen functions.
 
     Candidate bytes must equal their physical response or an exact native
-    normalization/projection replay. Fact derivation requires actual native
+    normalization/projection replay. Bounded derivation requires actual native
     task/report/paid-scope evidence and never grants adoption authority.
     The caller must recheck the same candidate hash at its own adoption gate.
     """

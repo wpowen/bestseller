@@ -191,7 +191,9 @@ def _bind_reader_first_conception(
     original_user_input: str | None = None,
 ) -> dict[str, Any] | None:
     """Bind only a NEW creation, before any generation or derived proposal."""
-    from bestseller.services.source_bound_planning_content import new_reader_first_binding
+    from bestseller.services.source_bound_planning_content import (
+        CURRENT_READER_FIRST_PROTOCOL, new_reader_first_binding, reader_first_binding,
+    )
 
     hints = user_hints or {}
     if hints.get("reader_first_planning") is False:
@@ -211,7 +213,10 @@ def _bind_reader_first_conception(
         raw = seed if isinstance(seed, str) and seed.strip() else json.dumps(
             inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
         )
-    marker = new_reader_first_binding(raw)
+    existing = reader_first_binding(ctx)
+    marker = new_reader_first_binding(
+        raw, protocol=existing["protocol"] if existing is not None else CURRENT_READER_FIRST_PROTOCOL,
+    )
     if "reader_first_planning" in ctx and ctx["reader_first_planning"] != marker:
         raise ValueError("reader_first_protocol_conflict")
     ctx["reader_first_planning"] = copy.deepcopy(marker)

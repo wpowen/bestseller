@@ -508,6 +508,8 @@ def _project_create_metadata(payload: ProjectCreate, settings: AppSettings):
         "creation_intent_contract": project_metadata.get("creation_intent_contract"),
         "story_facets": project_metadata.get("story_facets"),
     }
+    if prior is not None:
+        ctx["reader_first_planning"] = copy.deepcopy(prior)
     raw = project_metadata.get("reader_first_original_input")
     if raw is None:
         raw = project_metadata.get("premise")

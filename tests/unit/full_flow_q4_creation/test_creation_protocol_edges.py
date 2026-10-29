@@ -47,7 +47,9 @@ async def test_direct_native_creation_defaults_reader_first_from_actual_input(cr
     async with case.sessions() as session:
         project = await projects.create_project(session, project_request(payload, metadata={"premise": RAW}), case.settings)
         await session.commit()
-        assert reader_first_binding(project) == new_reader_first_binding(RAW)
+        assert reader_first_binding(project) == new_reader_first_binding(
+            RAW, protocol="reader-first-planning.v2",
+        )
         assert project.metadata_json["reader_first_original_input"] == RAW
         assert STAGING_KEY not in project.metadata_json
         assert server._payload_from_project_model(project)["_run_conception"] is False

@@ -40,7 +40,7 @@ def response(request, score=.9):
 def test_new_binding_uses_exact_raw_input_and_can_disable_before_generation():
     ctx = {'genre': '现实', 'chapter_count': 5}
     marker = c._bind_reader_first_conception(ctx, original_user_input=RAW)
-    assert marker == p.new_reader_first_binding(RAW)
+    assert marker == p.new_reader_first_binding(RAW, protocol='reader-first-planning.v2')
     assert ctx['reader_first_original_input'] == RAW
     disabled = {}
     assert c._bind_reader_first_conception(disabled, user_hints={'reader_first_planning': False}, original_user_input=RAW) is None
@@ -358,7 +358,9 @@ async def test_creation_preflight_happens_before_any_generation(monkeypatch, mod
     elif mode == 'disabled':
         assert 'reader_first_planning' not in captured[0]
     else:
-        assert captured[0]['reader_first_planning'] == p.new_reader_first_binding(RAW)
+        assert captured[0]['reader_first_planning'] == p.new_reader_first_binding(
+            RAW, protocol='reader-first-planning.v2',
+        )
         assert captured[0]['reader_first_request_context'] == {key: str(value) for key, value in ids.items()}
 
 

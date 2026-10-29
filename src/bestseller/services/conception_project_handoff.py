@@ -48,7 +48,9 @@ def read_conception_project_handoff(project) -> dict[str, Any] | None:
         raise ValueError("conception_staging_identity_invalid")
     UUID(stage["workflow_run_id"])
     raw = metadata.get("reader_first_original_input")
-    if not isinstance(raw, str) or reader_first_binding(metadata) != new_reader_first_binding(raw):
+    marker = reader_first_binding(metadata)
+    if (not isinstance(raw, str) or marker is None
+            or marker != new_reader_first_binding(raw, protocol=marker["protocol"])):
         raise ValueError("conception_staging_reader_input_changed")
     intent = contract_from_payload(stage["request_payload"])
     if intent.contract_hash() != stage.get("creation_intent_hash"):

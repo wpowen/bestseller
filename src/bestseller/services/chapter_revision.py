@@ -1479,6 +1479,12 @@ async def _apply_revision_candidate(
         or 0
     )
     next_version = max(max_existing_version, int(current.version_no or 0)) + 1
+    if workflow is not None:
+        # Authority may have changed while the chapter lock waited. Recheck
+        # before adoption; the earlier binding check still holds the source lock.
+        await _check_reader_revision_binding(
+            session, workflow, project, chapter, current, task, operation
+        )
     if source_id or operation == "issue":
         # A pipeline writer need not take the reader's chapter lock. Compare
         # and clear the precise source row atomically as the final stale guard.

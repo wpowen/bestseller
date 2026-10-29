@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -28,12 +29,97 @@ async def validate_retained_review_before_processing(
     """Normal reuse always requires the actual current policy; no override API."""
     from bestseller.services import pipelines
 
-    return await _validate_retained_review_before_processing(
+    current_policy = pipelines.chapter_review_recovery_source_hash()
+    proof = await _validate_retained_review_before_processing(
         session,
         settings,
         chapter,
-        expected_policy_hash=pipelines.chapter_review_recovery_source_hash(),
+        expected_policy_hash=current_policy,
     )
+    if proof is None:
+        return None
+    from bestseller.services import review_issuer_view
+
+    review_issuer_view._require_equal(
+        "/preflight/current_runtime_policy_sha256", current_policy,
+        pipelines.chapter_review_recovery_source_hash(), code="runtime_policy_changed",
+    )
+    return {
+        **proof,
+        "issued_runtime_policy_sha256": proof["policy_source_hash"],
+        "current_runtime_policy_sha256": current_policy,
+    }
+
+
+async def validate_retained_review_candidate(
+    session, settings, *, project_id, chapter_id, draft_id, cycle_id
+) -> dict | None:
+    """Validate an explicit native candidate with the common retained guards.
+
+    Selecting a draft does not change the current pointer. No source, issuer
+    proof, expected policy, grade or permission may be supplied by the caller.
+    """
+    from bestseller.infra.db import models as db
+    from bestseller.services import pipelines, recorded_review_sources, review_issuer_view
+
+    ids = review_issuer_view._ids(project_id, chapter_id, draft_id, cycle_id)
+    reader = recorded_review_sources._Reader(session)
+    chapter = await reader.get(db.ChapterModel, chapter_id)
+    if chapter is None:
+        review_issuer_view._reject(
+            "native_scope_changed", "/candidate/chapter",
+            {"type": "native row", "length": None, "sha256": None}, None,
+        )
+    review_issuer_view._require_equal(
+        "/candidate/chapter/project_id", project_id, chapter.project_id,
+        code="native_scope_changed",
+    )
+    candidate_metadata = chapter.metadata_json or {}
+    review_issuer_view._require_type(
+        "/candidate/chapter/metadata", candidate_metadata, dict, code="native_cycle_changed",
+    )
+    candidate_cycles = candidate_metadata.get("chapter_critic_cycles", review_issuer_view._MISSING)
+    review_issuer_view._require_type(
+        "/candidate/cycles", candidate_cycles, dict, code="native_cycle_changed",
+    )
+    candidate_cycle = deepcopy(candidate_cycles.get(cycle_id, review_issuer_view._MISSING))
+    review_issuer_view._require_type(
+        "/candidate/cycle", candidate_cycle, dict, code="native_cycle_changed",
+    )
+    current_policy = pipelines.chapter_review_recovery_source_hash()
+    proof = await _validate_retained_review_before_processing(
+        session, settings, chapter, expected_policy_hash=current_policy, _selected_ids=ids,
+    )
+    if proof is None:
+        return None
+    review_issuer_view._require_equal(
+        "/candidate/reuse_kind", "available_review", proof["reuse_kind"],
+        code="candidate_review_unavailable",
+    )
+    for key, value in ids.items():
+        review_issuer_view._require_equal(
+            "/candidate/" + key, str(value), proof[key], code="native_source_changed",
+        )
+    review_issuer_view._require_equal(
+        "/candidate/current_runtime_policy_sha256", current_policy,
+        pipelines.chapter_review_recovery_source_hash(), code="runtime_policy_changed",
+    )
+    latest = await reader.get(db.ChapterModel, chapter_id)
+    review_issuer_view._require_equal(
+        "/candidate/cycle", candidate_cycle,
+        (latest.metadata_json or {}).get("chapter_critic_cycles", {}).get(cycle_id)
+        if latest is not None else None,
+        code="native_cycle_changed",
+    )
+    return {
+        **proof,
+        "native_cycle": candidate_cycle,
+        "issued_runtime_policy_sha256": proof["policy_source_hash"],
+        "current_runtime_policy_sha256": current_policy,
+        "selection_only": True,
+        "grade_granted": False, "new_credit_allowed": False,
+        "dispatch_authorized": False, "adoption_authorized": False,
+    }
 
 
 async def _validate_retained_review_before_processing(
@@ -42,6 +128,7 @@ async def _validate_retained_review_before_processing(
     chapter: ChapterModel,
     *,
     expected_policy_hash: str,
+    _selected_ids: Mapping | None = None,
 ) -> dict | None:
     """Validate existing source/policy fences without consuming or creating a cycle.
 
@@ -93,6 +180,24 @@ async def _validate_retained_review_before_processing(
     if len(current_rows) > 1:
         raise ValueError("chapter_critic_cycle_source_mismatch")
     current = current_rows[0] if current_rows else None
+    if _selected_ids is not None:
+        from bestseller.services import recorded_review_sources, review_issuer_view
+
+        current = await recorded_review_sources._Reader(session).get(
+            ChapterDraftVersionModel, _selected_ids["draft_id"],
+        )
+        if current is None:
+            review_issuer_view._reject(
+                "native_scope_changed", "/candidate/draft",
+                {"type": "native row", "length": None, "sha256": None}, None,
+            )
+        for key, expected, actual in (
+            ("project_id", chapter.project_id, current.project_id),
+            ("chapter_id", chapter.id, current.chapter_id),
+        ):
+            review_issuer_view._require_equal(
+                "/candidate/draft/" + key, expected, actual, code="native_scope_changed",
+            )
     if current is None:
         return
     from bestseller.services import pipelines
@@ -104,7 +209,9 @@ async def _validate_retained_review_before_processing(
     )
 
     body_hash = pipelines.chapter_review_body_fingerprint(current.content_md or "")["digest"]
-    matching_active = bool(active and active["source_body_hash"] == body_hash)
+    matching_active = bool(
+        _selected_ids is None and active and active["source_body_hash"] == body_hash
+    )
     if matching_active and active.get("f0_supersession_receipt_sha256"):
         from bestseller.services.review_source_ordering import read_fresh_review_preflight
         fresh = await read_fresh_review_preflight(session, settings, chapter=chapter, draft=current)
@@ -116,8 +223,10 @@ async def _validate_retained_review_before_processing(
         body_hash,
     )
     cycle_id = active["cycle_id"] if matching_active else automatic_cycle_id
+    if _selected_ids is not None:
+        cycle_id = _selected_ids["cycle_id"]
     cycle = cycles.get(cycle_id) if isinstance(cycles, Mapping) else None
-    if not matching_active and cycle is None:
+    if not matching_active and cycle is None and _selected_ids is None:
         return
     if (
         not isinstance(cycle, Mapping)
@@ -127,7 +236,70 @@ async def _validate_retained_review_before_processing(
         or cycle.get("source_body_hash") != body_hash
     ):
         raise ValueError("chapter_critic_cycle_source_mismatch")
-    if cycle.get("policy_source_hash") != expected_policy_hash:
+    issuer_policy = None
+    issuer_inputs = None
+    issuer_report = None
+    # Only the actual current-policy route may authenticate a new native
+    # issuer. Historical private overrides retain their fixed-byte guards.
+    attempts_for_issuer = cycle.get("attempts")
+    if (
+        expected_policy_hash == pipelines.chapter_review_recovery_source_hash()
+        and cycle.get("state") == "completed"
+        and isinstance(attempts_for_issuer, list)
+        and attempts_for_issuer
+        and isinstance(attempts_for_issuer[-1], Mapping)
+        and attempts_for_issuer[-1].get("state") == "completed"
+        and attempts_for_issuer[-1].get("outcome") == "available"
+    ):
+        from bestseller.infra.db import models as db
+        from bestseller.services import recorded_review_sources, retained_review_input_proof
+        from bestseller.services import review_issuer_view
+
+        issuer_ids = {
+            "project_id": chapter.project_id, "chapter_id": chapter.id,
+            "draft_id": current.id, "cycle_id": cycle_id,
+        }
+        issuer_policy = await review_issuer_view.require_cycle_policy(
+            session, settings, **issuer_ids,
+        )
+        if issuer_policy is not None:
+            reader = recorded_review_sources._Reader(session)
+            native_chapter = await reader.get(db.ChapterModel, chapter.id)
+            if native_chapter is None:
+                review_issuer_view._reject(
+                    "native_scope_changed", "/preflight/chapter",
+                    {"type": "native row", "length": None, "sha256": None}, None,
+                )
+            native_cycle = (native_chapter.metadata_json or {}).get(
+                "chapter_critic_cycles", {}
+            ).get(cycle_id)
+            issuer_active = deepcopy(active)
+            review_issuer_view._require_equal(
+                "/preflight/active_cycle", issuer_active,
+                (native_chapter.metadata_json or {}).get("chapter_review_active_cycle"),
+                code="native_cycle_changed",
+            )
+            review_issuer_view._require_equal(
+                "/preflight/cycle", cycle, native_cycle, code="native_cycle_changed",
+            )
+            cycle = deepcopy(native_cycle)
+            native_project = await reader.get(db.ProjectModel, chapter.project_id)
+            native_report = await reader.get(
+                db.ReviewReportModel, UUID(issuer_policy["binding"]["report_id"]),
+            )
+            for label, native_row in (("project", native_project), ("report", native_report)):
+                if native_row is None:
+                    review_issuer_view._reject(
+                        "native_scope_changed", "/preflight/" + label,
+                        {"type": "native row", "length": None, "sha256": None}, None,
+                    )
+            issuer_report = deepcopy(vars(native_report))
+            issuer_report["created_at"] = native_report.created_at.isoformat()
+            issuer_inputs = await retained_review_input_proof.verify_retained_review_inputs(
+                session, settings, project=native_project, chapter=native_chapter,
+                draft=current, report=native_report, cycle=cycle,
+            )
+    if cycle.get("policy_source_hash") != expected_policy_hash and issuer_policy is None:
         raise ValueError("chapter_critic_policy_changed_requires_explicit_recovery")
     if cycle.get("native_runtime_policy_alias") is not None:
         from bestseller.services.chapter_review_reconciliation import validate_native_policy_alias
@@ -308,6 +480,53 @@ async def _validate_retained_review_before_processing(
             raise ValueError("chapter_critic_cycle_rewrite_not_pending")
     elif result.verdict != "pass" or task is not None:
         raise ValueError("chapter_critic_cycle_result_binding_mismatch")
+    if issuer_policy is not None:
+        # Rebuild the full source after the unchanged semantic/result/task
+        # guards, then compare native cycle/report and runtime again. A capsule
+        # alone never supplies a successful quality result or a replacement ID.
+        source_renderer = (
+            review_issuer_view.derive_current_primary_source
+            if _selected_ids is None else review_issuer_view.derive_selected_primary_source
+        )
+        final_source = await source_renderer(
+            session, settings, **issuer_ids,
+        )
+        review_issuer_view._require_type(
+            "/preflight/final_source", final_source, dict, code="native_source_changed",
+        )
+        for key in ("binding", "paid_calls", "capsule", "current_runtime_policy_sha256"):
+            review_issuer_view._require_equal(
+                "/preflight/" + key, issuer_policy[key], final_source[key],
+                code="native_source_changed",
+            )
+        latest_chapter = await reader.get(db.ChapterModel, chapter.id)
+        if latest_chapter is None:
+            review_issuer_view._reject(
+                "native_scope_changed", "/preflight/chapter",
+                {"type": "native row", "length": None, "sha256": None}, None,
+            )
+        review_issuer_view._require_equal(
+            "/preflight/cycle", cycle,
+            (latest_chapter.metadata_json or {}).get("chapter_critic_cycles", {}).get(cycle_id),
+            code="native_cycle_changed",
+        )
+        review_issuer_view._require_equal(
+            "/preflight/active_cycle", issuer_active,
+            (latest_chapter.metadata_json or {}).get("chapter_review_active_cycle"),
+            code="native_cycle_changed",
+        )
+        latest_report = await reader.get(db.ReviewReportModel, report.id)
+        if latest_report is None:
+            review_issuer_view._reject(
+                "native_scope_changed", "/preflight/report",
+                {"type": "native row", "length": None, "sha256": None}, None,
+            )
+        latest_report_fields = deepcopy(vars(latest_report))
+        latest_report_fields["created_at"] = latest_report.created_at.isoformat()
+        review_issuer_view._require_equal(
+            "/preflight/report", issuer_report, latest_report_fields,
+            code="native_source_changed",
+        )
     return {
         **proof,
         "reuse_kind": "available_review",
@@ -315,6 +534,8 @@ async def _validate_retained_review_before_processing(
         "quality_score_id": str(quality.id),
         "task_id": str(task.id) if task is not None else None,
         "verdict": result.verdict,
+        **({"issuer_policy": issuer_policy, "retained_input_proof": issuer_inputs}
+           if issuer_policy is not None else {}),
     }
 
 

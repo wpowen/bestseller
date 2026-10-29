@@ -438,12 +438,33 @@ async def derive_current_primary_source(
     session, settings, *, project_id, chapter_id, draft_id, cycle_id
 ) -> dict | None:
     """Reinsert the original issuer only after native custody and AST equivalence."""
+    return await _derive_primary_source(
+        session,
+        settings,
+        ids=_ids(project_id, chapter_id, draft_id, cycle_id),
+        require_current=True,
+    )
+
+
+async def derive_selected_primary_source(
+    session, settings, *, project_id, chapter_id, draft_id, cycle_id
+) -> dict | None:
+    """Rebuild this native draft's full source; never grant current/adoption status."""
+    return await _derive_primary_source(
+        session,
+        settings,
+        ids=_ids(project_id, chapter_id, draft_id, cycle_id),
+        require_current=False,
+    )
+
+
+async def _derive_primary_source(session, settings, *, ids, require_current):
     from sqlalchemy import select
 
     from bestseller.infra.db import models as db
     from bestseller.services import context, retained_review_input_proof, review_source_context
 
-    ids = _ids(project_id, chapter_id, draft_id, cycle_id)
+    project_id, chapter_id, draft_id = (ids["project_id"], ids["chapter_id"], ids["draft_id"])
     authenticated = await _authenticate(session, settings, ids)
     if authenticated is None:
         return None
@@ -463,8 +484,27 @@ async def derive_current_primary_source(
         db.ChapterDraftVersionModel.chapter_id == chapter_id,
         db.ChapterDraftVersionModel.is_current.is_(True),
     )
-    _require_equal("/current_drafts/count", 1, len(current), code="current_draft_changed")
-    _require_equal("/current_drafts/0/id", draft_id, current[0].id, code="current_draft_changed")
+    if require_current:
+        _require_equal("/current_drafts/count", 1, len(current), code="current_draft_changed")
+        _require_equal(
+            "/current_drafts/0/id", draft_id, current[0].id, code="current_draft_changed"
+        )
+    elif len(current) > 1:
+        _reject(
+            "current_draft_changed",
+            "/current_drafts/count",
+            {"type": "zero or one native current draft", "length": None, "sha256": None},
+            len(current),
+        )
+    current_binding = [
+        {"id": row.id, "content_md": row.content_md, "is_current": row.is_current}
+        for row in current
+    ]
+    selected_binding = {
+        "is_current": state["draft"].is_current,
+        "promotion_state": state["draft"].promotion_state,
+        "content_md": state["draft"].content_md,
+    }
     readonly = retained_review_input_proof._ReadOnlySession(session)
     packet = await context.build_chapter_writer_context(
         readonly, settings, state["project"].slug, state["chapter"].chapter_number
@@ -503,8 +543,31 @@ async def derive_current_primary_source(
         db.ChapterDraftVersionModel.chapter_id == chapter_id,
         db.ChapterDraftVersionModel.is_current.is_(True),
     )
-    _require_equal("/current_drafts/count", 1, len(latest), code="current_draft_changed")
-    _require_equal("/current_drafts/0/id", draft_id, latest[0].id, code="current_draft_changed")
+    if require_current:
+        _require_equal("/current_drafts/count", 1, len(latest), code="current_draft_changed")
+        _require_equal("/current_drafts/0/id", draft_id, latest[0].id, code="current_draft_changed")
+    _require_equal(
+        "/current_drafts",
+        current_binding,
+        [
+            {"id": row.id, "content_md": row.content_md, "is_current": row.is_current}
+            for row in latest
+        ],
+        code="current_draft_changed",
+    )
+    selected = await state["reader"].get(db.ChapterDraftVersionModel, draft_id)
+    _require_equal(
+        "/selected_draft/state",
+        selected_binding,
+        {
+            "is_current": selected.is_current,
+            "promotion_state": selected.promotion_state,
+            "content_md": selected.content_md,
+        }
+        if selected is not None
+        else None,
+        code="native_source_changed",
+    )
     return {**receipt, "status": "exact_primary_source", "source": derived}
 
 

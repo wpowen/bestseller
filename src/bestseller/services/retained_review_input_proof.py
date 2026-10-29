@@ -1510,8 +1510,18 @@ async def verify_retained_review_inputs(
         settings=settings,
     )
     from bestseller.services import review_issuer_view
+    from bestseller.services.recorded_review_sources import _Reader
 
-    issuer_source = await review_issuer_view.derive_current_primary_source(
+    native_draft = await _Reader(session).get(ChapterDraftVersionModel, draft.id)
+    # Pick the source renderer from native state, never a consumer override.
+    # The selected renderer proves exact inputs only; it cannot make a candidate
+    # current or waive any physical/primary/commercial comparison below.
+    source_renderer = (
+        review_issuer_view.derive_current_primary_source
+        if native_draft is not None and native_draft.is_current is True
+        else review_issuer_view.derive_selected_primary_source
+    )
+    issuer_source = await source_renderer(
         session, settings, project_id=project.id, chapter_id=chapter.id,
         draft_id=draft.id, cycle_id=cycle["cycle_id"],
     )

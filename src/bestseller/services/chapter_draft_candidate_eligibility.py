@@ -255,13 +255,23 @@ def record_selection(chapter, receipt):
 
 async def eligible_reviewed_candidates(
     session, *, chapter, rows, semantic_hash, policy_hash,
-    fingerprint, retained_result, evidence_unknown,
+    fingerprint, retained_result, evidence_unknown, settings=None,
 ):
     """Only a completed, available, currently bound review may supply a score.
 
     Use the existing cycle's semantic fence for approved plans, adopted context
     and evaluation configuration. Legacy scores never acquire inferred lineage.
+    Without settings, retain the original exact-policy path. Actual settings
+    enable only the common native candidate verifier, never a caller proof.
     """
+    if settings is not None:
+        from bestseller.services import chapter_review_preflight, pipelines, review_issuer_view
+
+        actual_policy = pipelines.chapter_review_recovery_source_hash()
+        review_issuer_view._require_equal(
+            "/candidate/current_runtime_policy_sha256", actual_policy, policy_hash,
+            code="runtime_policy_changed",
+        )
     eligible, decisions = [], []
     cycles = (chapter.metadata_json or {}).get("chapter_critic_cycles")
     for draft, quality in rows:
@@ -291,6 +301,7 @@ async def eligible_reviewed_candidates(
         body = fingerprint(draft.content_md or "")
         decision["body_fingerprint"] = body
         matching = []
+        native_proofs = {}
         for key, cycle in cycles.items():
             if not isinstance(cycle, Mapping) or cycle.get("source_draft_id") != str(draft.id):
                 continue
@@ -300,7 +311,40 @@ async def eligible_reviewed_candidates(
             if cycle.get("source_body_hash") != body["digest"]:
                 reasons.append("review_body_changed")
                 continue
-            if cycle.get("policy_source_hash") != policy_hash:
+            if settings is not None:
+                try:
+                    native_proof = await chapter_review_preflight.validate_retained_review_candidate(
+                        session, settings, project_id=chapter.project_id,
+                        chapter_id=chapter.id, draft_id=draft.id, cycle_id=key,
+                    )
+                    review_issuer_view._require_type(
+                        "/candidate/preflight", native_proof, dict,
+                        code="candidate_review_unavailable",
+                    )
+                    for field, expected in (
+                        ("project_id", str(chapter.project_id)),
+                        ("chapter_id", str(chapter.id)), ("draft_id", str(draft.id)),
+                        ("body_sha256", body["digest"]), ("cycle_id", key),
+                        ("report_id", str(quality.review_report_id)),
+                        ("quality_score_id", str(quality.id)),
+                        ("policy_source_hash", cycle.get("policy_source_hash")),
+                        ("issued_runtime_policy_sha256", cycle.get("policy_source_hash")),
+                        ("current_runtime_policy_sha256", actual_policy),
+                        ("semantic_dependencies_sha256", semantic_hash),
+                        ("native_cycle", dict(cycle)), ("reuse_kind", "available_review"),
+                    ):
+                        review_issuer_view._require_equal(
+                            "/candidate/" + field, expected,
+                            native_proof.get(field, review_issuer_view._MISSING),
+                            code="native_source_changed",
+                        )
+                    native_proofs[key] = native_proof
+                except ValueError as exc:
+                    reasons.append(str(exc))
+                    if getattr(exc, "differences", None):
+                        decision["differences"] = deepcopy(exc.differences)
+                    continue
+            elif cycle.get("policy_source_hash") != policy_hash:
                 reasons.append("evaluation_policy_changed")
                 continue
             if cycle.get("semantic_dependencies_sha256") != semantic_hash or cycle.get("semantic_dependency_change_detected"):
@@ -329,6 +373,16 @@ async def eligible_reviewed_candidates(
         key, attempt = matching[0]
         try:
             result, report, saved_quality, _task = await retained_result(session, draft, attempt)
+            if settings is not None:
+                native_proof = native_proofs[key]
+                for field, actual in (
+                    ("report_id", str(report.id)), ("quality_score_id", str(saved_quality.id)),
+                    ("verdict", result.verdict),
+                ):
+                    review_issuer_view._require_equal(
+                        "/candidate/retained/" + field, native_proof[field], actual,
+                        code="native_source_changed",
+                    )
             payload = report.structured_output
             evidence = payload.get("critic_evidence") or {}
             if (evidence_unknown(report) or result.verdict not in {"pass", "rewrite"}
@@ -363,6 +417,10 @@ async def eligible_reviewed_candidates(
                 decision["effective_fact_blockers"] = fact_blockers
                 raise ValueError("known_effective_fact_blocker")
         except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
+            if settings is not None and isinstance(exc, review_issuer_view.ReviewIssuerViewError):
+                reasons.append(str(exc))
+                decision["differences"] = deepcopy(exc.differences)
+                continue
             reasons.append(str(exc) if isinstance(exc, ValueError) and str(exc) in {
                 "review_evidence_unknown", "review_score_binding_mismatch",
                 "known_hard_or_critical_blocker",
@@ -370,6 +428,11 @@ async def eligible_reviewed_candidates(
                 "chapter_critic_cycle_result_binding_mismatch", "chapter_critic_cycle_rewrite_binding_mismatch",
             } else "review_receipt_malformed")
             continue
+        if settings is not None:
+            review_issuer_view._require_equal(
+                "/candidate/current_runtime_policy_sha256", actual_policy,
+                pipelines.chapter_review_recovery_source_hash(), code="runtime_policy_changed",
+            )
         decision.update(eligible=True, cycle_id=key, review_report_id=str(report.id))
         decision["reasons"] = []
         eligible.append((draft, quality))

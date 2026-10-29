@@ -2359,6 +2359,10 @@ async def _collect_minimax_streaming_content(response: Any, *, template: str | N
                 last_activity = time.monotonic()
         content = "".join(parts)
         if not finish_reason or not content.strip():
+            if finish_reason == "length" and any(part.strip() for part in reasoning):
+                error = ValueError("reasoning_output_exhausted: stream has no terminal content")
+                error.code = "execution_reasoning_output_exhausted"
+                raise error
             raise ValueError("stream has no terminal content")
         message = {"role": "assistant", "content": content, "reasoning_content": "".join(reasoning)}
         return content, input_tokens, output_tokens, finish_reason, None, message

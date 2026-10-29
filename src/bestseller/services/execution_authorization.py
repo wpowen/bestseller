@@ -1,19 +1,423 @@
-"""Operator-only, audited authorization of a bounded next execution phase.
+"""Operator-only, audited authorization of finite new books and execution phases.
 
 Not registered as an LLM tool, retry hook, self-heal action or reconciliation.
 Ordinary execution config can only tighten caps. A trusted transaction owner
 must supply the operator, authorization reference and expected old limits here.
+Fresh-book grants instead bind one exact normal POST before any dispatch.
 """
 
 import asyncio
-from typing import Any
+from contextlib import asynccontextmanager
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+import hashlib
+import json
+from typing import Any
+from urllib.parse import urlsplit
+from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from bestseller.infra.db.models import ExecutionBudgetModel, ExecutionOperationModel
 from bestseller.services.budget import ExecutionBudgetError
+
+_NEW_BOOK_KEY = "new_book_budget_grant"
+_NEW_BOOK_POLICY = "new-book-budget.v1"
+_NEW_BOOK_SELECTOR = "execution_budget_grant_id"
+_NEW_BOOK_CALLS = 400
+_NEW_BOOK_TOKENS = 20_000_000
+_NEW_BOOK_BINDING_FIELDS = frozenset({
+    "grant_id", "task_id", "scope_id", "payload_sha256", "model", "endpoint",
+    "max_calls", "max_tokens", "created_at", "deadline_at",
+})
+
+
+def _new_book_summary(value: Any) -> dict[str, Any]:
+    """Typed operands only; never include POST text or provider credentials."""
+    try:
+        encoded = json.dumps(value, sort_keys=True, default=str).encode()
+    except (TypeError, ValueError, RecursionError):
+        encoded = type(value).__name__.encode()
+    return {
+        "type": type(value).__name__,
+        "length": len(value) if isinstance(value, (str, list, dict, bytes)) else None,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
+def _new_book_require(
+    valid: bool, code: str, scope: str, field: str, expected: Any, actual: Any,
+) -> None:
+    if not valid:
+        error = ExecutionBudgetError(code, scope)
+        error.differences = [{
+            "field": field, "expected": _new_book_summary(expected),
+            "actual": _new_book_summary(actual),
+        }]
+        raise error
+
+
+def _new_book_hash(value: Any) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _new_book_json(value: Any) -> bool:
+    if type(value) is dict:
+        return all(type(key) is str and _new_book_json(item) for key, item in value.items())
+    if type(value) is list:
+        return all(_new_book_json(item) for item in value)
+    return type(value) in (str, int, float, bool, type(None))
+
+
+def _new_book_payload(payload: Any, *, preparing: bool, scope: str = "") -> dict:
+    code = "execution_new_book_payload_invalid"
+    try:
+        valid = type(payload) is dict and _new_book_json(payload)
+        if valid:
+            _new_book_hash(payload)  # Also reject NaN/Infinity and invalid Unicode.
+    except (ValueError, TypeError, RecursionError, UnicodeError):
+        valid = False
+    _new_book_require(valid, code, scope, "request.payload", "finite JSON object", payload)
+    if preparing:
+        _new_book_require(
+            _NEW_BOOK_SELECTOR not in payload, code, scope,
+            f"request.{_NEW_BOOK_SELECTOR}", None, payload.get(_NEW_BOOK_SELECTOR),
+        )
+        for name in (
+            "project_slug", "project_id", "_active_continuation_scope",
+            "execution_scope_id", "scope_id", "task_id",
+        ):
+            _new_book_require(
+                payload.get(name) in (None, ""), code, scope,
+                f"request.{name}", None, payload.get(name),
+            )
+    return {key: value for key, value in payload.items() if key != _NEW_BOOK_SELECTOR}
+
+
+def _new_book_route(model: Any, endpoint: Any, *, scope: str = "") -> None:
+    code = "execution_new_book_grant_invalid"
+    _new_book_require(
+        type(model) is str and bool(model.strip()) and len(model) <= 1024,
+        code, scope, "request.model", "resolved provider model", model,
+    )
+    try:
+        parsed = urlsplit(endpoint) if type(endpoint) is str else None
+        valid = bool(
+            parsed and parsed.scheme == "https" and parsed.hostname
+            and not parsed.username and not parsed.password and not parsed.query
+            and not parsed.fragment and len(endpoint) <= 2048
+        )
+    except ValueError:
+        valid = False
+    _new_book_require(
+        valid, code, scope, "request.endpoint", "HTTPS base URL without credentials", endpoint,
+    )
+
+
+def _new_book_identity(payload_hash: str) -> str:
+    # The same full creation cannot receive another ledger by changing its locator.
+    return str(uuid5(NAMESPACE_URL, f"{_NEW_BOOK_POLICY}:{payload_hash}"))
+
+
+def _new_book_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def new_book_budget_policy(row: ExecutionBudgetModel) -> dict | None:
+    """Validate the native finite grant; legacy scopes retain their old policy."""
+    metadata = row.metadata_json or {}
+    if not isinstance(metadata, dict):
+        return None
+    if _NEW_BOOK_KEY not in metadata and metadata.get("policy") != _NEW_BOOK_POLICY:
+        return None
+    scope, code = row.scope_id, "execution_new_book_binding_invalid"
+    prefix = f"execution_budgets.metadata.{_NEW_BOOK_KEY}"
+    _new_book_require(
+        metadata.get("policy") == _NEW_BOOK_POLICY, code, scope,
+        "execution_budgets.metadata.policy", _NEW_BOOK_POLICY, metadata.get("policy"),
+    )
+    record = metadata.get(_NEW_BOOK_KEY)
+    _new_book_require(type(record) is dict, code, scope, prefix, "grant record", record)
+    binding = record.get("binding")
+    _new_book_require(
+        type(binding) is dict and set(binding) == _NEW_BOOK_BINDING_FIELDS,
+        code, scope, f"{prefix}.binding", sorted(_NEW_BOOK_BINDING_FIELDS),
+        sorted(binding) if type(binding) is dict else binding,
+    )
+    _new_book_require(
+        record.get("schema") == _NEW_BOOK_POLICY, code, scope,
+        f"{prefix}.schema", _NEW_BOOK_POLICY, record.get("schema"),
+    )
+    for name in ("authorization_id", "actor", "authorization_ref"):
+        value = record.get(name)
+        _new_book_require(
+            type(value) is str and bool(value.strip()) and len(value) <= 1024,
+            code, scope, f"{prefix}.{name}", "nonempty trusted identity", value,
+        )
+    payload_hash = binding.get("payload_sha256")
+    _new_book_require(
+        type(payload_hash) is str and len(payload_hash) == 64
+        and all(char in "0123456789abcdef" for char in payload_hash),
+        code, scope, f"{prefix}.binding.payload_sha256", "sha256", payload_hash,
+    )
+    task_id = _new_book_identity(payload_hash)
+    for name, expected in (
+        ("task_id", task_id), ("grant_id", task_id), ("scope_id", f"conception:{task_id}"),
+        ("max_calls", _NEW_BOOK_CALLS), ("max_tokens", _NEW_BOOK_TOKENS),
+    ):
+        actual = binding.get(name)
+        _new_book_require(
+            type(actual) is type(expected) and actual == expected,
+            code, scope, f"{prefix}.binding.{name}", expected, actual,
+        )
+    _new_book_require(
+        row.scope_id == binding["scope_id"], code, scope,
+        "execution_budgets.scope_id", binding["scope_id"], row.scope_id,
+    )
+    for name in ("max_calls", "max_tokens"):
+        actual = getattr(row, name)
+        _new_book_require(
+            type(actual) is int and actual == binding[name], code, scope,
+            f"execution_budgets.{name}", binding[name], actual,
+        )
+    for name in ("calls_used", "tokens_charged"):
+        actual = getattr(row, name)
+        _new_book_require(
+            type(actual) is int and actual >= 0, code, scope,
+            f"execution_budgets.{name}", "nonnegative integer", actual,
+        )
+    dates = {}
+    for name in ("created_at", "deadline_at"):
+        value = binding.get(name)
+        try:
+            parsed = datetime.fromisoformat(value) if type(value) is str else None
+        except ValueError:
+            parsed = None
+        _new_book_require(
+            parsed is not None and parsed.utcoffset() == timedelta(0),
+            code, scope, f"{prefix}.binding.{name}", "UTC ISO timestamp", value,
+        )
+        dates[name] = parsed
+    _new_book_require(
+        dates["deadline_at"] == dates["created_at"] + timedelta(hours=24), code, scope,
+        f"{prefix}.binding.deadline_at", (dates["created_at"] + timedelta(hours=24)).isoformat(),
+        binding["deadline_at"],
+    )
+    actual_deadline = _new_book_utc(row.deadline_at).isoformat()
+    _new_book_require(
+        actual_deadline == binding["deadline_at"], code, scope,
+        "execution_budgets.deadline_at", binding["deadline_at"], actual_deadline,
+    )
+    for name in ("provider_authorization", "independent_acceptance"):
+        _new_book_require(
+            not metadata.get(name), code, scope, f"execution_budgets.metadata.{name}",
+            None, metadata.get(name),
+        )
+    summary = record.get("payload_summary")
+    _new_book_require(
+        type(summary) is dict and set(summary) == {"type", "length", "sha256"}
+        and summary.get("type") == "dict" and type(summary.get("length")) is int
+        and summary["length"] >= 0 and type(summary.get("sha256")) is str
+        and len(summary["sha256"]) == 64,
+        code, scope, f"{prefix}.payload_summary", "typed full POST hash", summary,
+    )
+    core = {key: value for key, value in record.items() if key != "sha256"}
+    try:
+        seal = _new_book_hash(core)
+    except (TypeError, ValueError, RecursionError):
+        seal = None
+    _new_book_require(
+        seal is not None and record.get("sha256") == seal,
+        code, scope, f"{prefix}.sha256", seal, record.get("sha256"),
+    )
+    consumed = record.get("consumed_at")
+    if consumed is None:
+        _new_book_require(
+            row.status != "active", code, scope, f"{prefix}.consumed_at",
+            "committed consumption before active state", consumed,
+        )
+    else:
+        try:
+            consumed_at = datetime.fromisoformat(consumed) if type(consumed) is str else None
+        except ValueError:
+            consumed_at = None
+        _new_book_require(
+            consumed_at is not None and consumed_at.utcoffset() == timedelta(0)
+            and dates["created_at"] <= consumed_at < dates["deadline_at"]
+            and row.status != "awaiting_submission",
+            code, scope, f"{prefix}.consumed_at", "once within original window", consumed,
+        )
+    return record
+
+
+def assert_new_book_budget_route(
+    row: ExecutionBudgetModel, *, model: str, endpoint: str | None,
+) -> None:
+    record = new_book_budget_policy(row)
+    if record is not None:
+        for field, actual in (("model", model), ("endpoint", endpoint)):
+            expected = record["binding"][field]
+            _new_book_require(
+                type(actual) is str and actual == expected,
+                "execution_new_book_route_mismatch", row.scope_id,
+                f"request.{field}", expected, actual,
+            )
+
+
+@asynccontextmanager
+async def _new_book_transaction(engine: AsyncEngine, *, identities: tuple[str, ...] = ()):
+    """Serialize fresh identities too, before any lookup, with no sentinel rows."""
+    if not isinstance(engine, AsyncEngine) or engine.dialect.name not in {"sqlite", "postgresql"}:
+        raise ExecutionBudgetError("execution_ledger_unavailable")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with asyncio.timeout(5), factory() as session, session.begin():
+            if engine.dialect.name == "sqlite":
+                await session.execute(text("BEGIN IMMEDIATE"))
+            else:
+                keys = {
+                    int.from_bytes(
+                        hashlib.sha256(identity.encode()).digest()[:8], "big", signed=True,
+                    )
+                    for identity in identities
+                }
+                for key in sorted(keys):
+                    await session.execute(select(func.pg_advisory_xact_lock(key)))
+            yield session
+    except ExecutionBudgetError:
+        raise
+    except Exception as error:
+        raise ExecutionBudgetError("execution_ledger_unavailable") from error
+
+
+async def prepare_new_book_budget(
+    engine: AsyncEngine, *, authorization_id: str, actor: str, authorization_ref: str,
+    payload: dict[str, Any], model: str, endpoint: str,
+) -> dict[str, Any]:
+    """Trusted one-book grant: 400 calls / 20M tokens / 24h from creation."""
+    identity = {
+        "authorization_id": authorization_id, "actor": actor,
+        "authorization_ref": authorization_ref,
+    }
+    for name, value in identity.items():
+        _new_book_require(
+            type(value) is str and bool(value.strip()) and len(value) <= 1024,
+            "execution_new_book_grant_invalid", "", name, "trusted nonempty identity", value,
+        )
+    body = _new_book_payload(payload, preparing=True)
+    _new_book_route(model, endpoint)
+    payload_hash = _new_book_hash(body)
+    task_id = _new_book_identity(payload_hash)
+    scope = f"conception:{task_id}"
+    async with _new_book_transaction(engine, identities=(
+        f"{_NEW_BOOK_POLICY}:authorization:{authorization_id}", scope,
+    )) as session:
+        prior_scope = await session.scalar(select(ExecutionBudgetModel.scope_id).where(
+            ExecutionBudgetModel.metadata_json[_NEW_BOOK_KEY]["authorization_id"].as_string()
+            == authorization_id,
+        ).limit(1))
+        _new_book_require(
+            prior_scope in (None, scope), "execution_new_book_binding_mismatch", scope,
+            "authorization_id.scope_id", prior_scope, scope,
+        )
+        row = await session.get(ExecutionBudgetModel, scope, with_for_update=True)
+        if row is not None:
+            record = new_book_budget_policy(row)
+            _new_book_require(
+                record is not None, "execution_new_book_binding_mismatch", scope,
+                "execution_budgets.metadata.policy", _NEW_BOOK_POLICY,
+                (row.metadata_json or {}).get("policy"),
+            )
+            for name, actual in {**identity, "model": model, "endpoint": endpoint}.items():
+                expected = (
+                    record["binding"][name] if name in {"model", "endpoint"} else record[name]
+                )
+                _new_book_require(
+                    actual == expected, "execution_new_book_binding_mismatch", scope,
+                    name, expected, actual,
+                )
+            return deepcopy(record["binding"])
+        now = datetime.now(UTC)
+        binding = {
+            "grant_id": task_id, "task_id": task_id, "scope_id": scope,
+            "payload_sha256": payload_hash, "model": model, "endpoint": endpoint,
+            "max_calls": _NEW_BOOK_CALLS, "max_tokens": _NEW_BOOK_TOKENS,
+            "created_at": now.isoformat(), "deadline_at": (now + timedelta(hours=24)).isoformat(),
+        }
+        record = {
+            "schema": _NEW_BOOK_POLICY, "binding": binding, **identity,
+            "payload_summary": _new_book_summary(body), "consumed_at": None,
+        }
+        record["sha256"] = _new_book_hash(record)
+        session.add(ExecutionBudgetModel(
+            scope_id=scope, max_calls=_NEW_BOOK_CALLS, max_tokens=_NEW_BOOK_TOKENS,
+            calls_used=0, tokens_charged=0, status="awaiting_submission",
+            deadline_at=now + timedelta(hours=24),
+            metadata_json={"policy": _NEW_BOOK_POLICY, _NEW_BOOK_KEY: record},
+        ))
+        return deepcopy(binding)
+
+
+async def consume_new_book_budget(
+    engine: AsyncEngine, *, payload: dict[str, Any], model: str, endpoint: str,
+) -> dict[str, Any] | None:
+    """Normal POST consumes a prebound grant; replay never resets its ledger."""
+    if type(payload) is dict and _NEW_BOOK_SELECTOR not in payload:
+        return None
+    locator = payload.get(_NEW_BOOK_SELECTOR) if type(payload) is dict else None
+    try:
+        valid = type(locator) is str and str(UUID(locator)) == locator
+    except ValueError:
+        valid = False
+    code = "execution_new_book_grant_invalid"
+    _new_book_require(valid, code, "", f"request.{_NEW_BOOK_SELECTOR}", "grant UUID", locator)
+    scope = f"conception:{locator}"
+    body = _new_book_payload(payload, preparing=False, scope=scope)
+    async with _new_book_transaction(engine) as session:
+        # PostgreSQL locks the native row; SQLite already holds BEGIN IMMEDIATE.
+        row = await session.get(
+            ExecutionBudgetModel, scope, with_for_update=True, populate_existing=True,
+        )
+        _new_book_require(
+            row is not None, code, scope,
+            f"request.{_NEW_BOOK_SELECTOR}", "persisted grant", locator,
+        )
+        record = new_book_budget_policy(row)
+        _new_book_require(
+            record is not None, code, scope,
+            f"request.{_NEW_BOOK_SELECTOR}", "persisted finite grant", locator,
+        )
+        if _new_book_hash(body) != record["binding"]["payload_sha256"]:
+            error = ExecutionBudgetError("execution_new_book_payload_mismatch", scope)
+            error.differences = [{
+                "field": "request.payload", "expected": deepcopy(record["payload_summary"]),
+                "actual": _new_book_summary(body),
+            }]
+            raise error
+        assert_new_book_budget_route(row, model=model, endpoint=endpoint)
+        now = datetime.now(UTC)
+        from bestseller.services.budget import execution_scope_block_code
+
+        block = execution_scope_block_code(row, now=now)
+        if block and block != "execution_submission_not_authorized":
+            raise ExecutionBudgetError(block, scope)
+        if now >= _new_book_utc(row.deadline_at):
+            raise ExecutionBudgetError("execution_deadline_exhausted", scope)
+        if record["consumed_at"] is None:
+            _new_book_require(
+                row.status == "awaiting_submission" and row.calls_used == row.tokens_charged == 0,
+                "execution_new_book_binding_invalid", scope, "execution_budgets.consumption",
+                ["awaiting_submission", 0, 0], [row.status, row.calls_used, row.tokens_charged],
+            )
+            record = {**record, "consumed_at": now.isoformat()}
+            record["sha256"] = _new_book_hash({k: v for k, v in record.items() if k != "sha256"})
+            row.metadata_json = {**row.metadata_json, _NEW_BOOK_KEY: record}
+            row.status = "active"
+        return deepcopy(record["binding"])
 
 
 async def authorize_execution_phase(

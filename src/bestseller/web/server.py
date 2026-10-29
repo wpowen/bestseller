@@ -2461,6 +2461,7 @@ class WebTaskManager:
         self._lock = threading.Lock()
         self._tasks: dict[str, WebTaskState] = {}
         self._executing_task_ids: set[str] = set()
+        self._creation_dispatch_ids: set[str] = set()
         self._persist_path = persist_path
         # Bounded concurrency for long-running writing tasks. Each autowrite /
         # repair / interactive-fiction task acquires one slot before doing any
@@ -2959,7 +2960,64 @@ class WebTaskManager:
             task = self._tasks.get(task_id)
             return task.to_dict() if task is not None else None
 
-    def create_autowrite_task(self, payload: dict[str, object]) -> dict[str, object]:
+    def _create_granted_autowrite_task(
+        self, payload: dict[str, object], binding: dict[str, object],
+    ) -> dict[str, object]:
+        """Persist the consumed native creation identity before one dispatch.
+
+        Only the normal quickstart consumer calls this method. The binding is
+        the service result, never an authority field accepted from a POST.
+        """
+        serialized = json.loads(json.dumps(payload, default=_json_default))
+        task_id = str(binding["task_id"])
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None:
+                if (task.task_type != "autowrite"
+                        or (task.payload or {}).get("new_book_budget_grant") != binding):
+                    raise ValueError("new_book_budget_task_binding_mismatch")
+                if (task.status != "queued" or task_id in self._executing_task_ids
+                        or task_id in self._creation_dispatch_ids
+                        or task_id in self._pending_auto_resume_ids):
+                    return task.to_dict()
+                # A failed thread start may retry the already persisted exact
+                # envelope; refreshed timestamps/presets are not a new source.
+                serialized = dict(task.payload or {})
+            else:
+                slug = str(serialized.get("slug") or "")
+                if any(row.project_slug == slug for row in self._tasks.values()):
+                    raise ValueError("new_book_budget_existing_project_task")
+                now = _utc_now()
+                task = WebTaskState(
+                    task_id=task_id, task_type="autowrite", status="queued",
+                    created_at=now, updated_at=now, project_slug=slug,
+                    title=str(serialized.get("title") or ""), current_stage="queued",
+                    payload=serialized,
+                    runtime_provenance=self._task_runtime_provenance(task_id, now),
+                )
+                self._tasks[task_id] = task
+                try:
+                    self._save_to_disk()
+                except Exception:
+                    self._tasks.pop(task_id, None)
+                    raise
+            snapshot = task.to_dict()
+            self._creation_dispatch_ids.add(task_id)
+            try:
+                threading.Thread(
+                    target=self._run_with_slot,
+                    args=(task_id, self._run_autowrite_worker, serialized), daemon=True,
+                ).start()
+            except Exception:
+                self._creation_dispatch_ids.discard(task_id)
+                raise
+            return snapshot
+
+    def create_autowrite_task(
+        self, payload: dict[str, object], *, creation_budget: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        if creation_budget is not None:
+            return self._create_granted_autowrite_task(payload, creation_budget)
         slug = str(payload.get("slug") or "").strip()
         title = str(payload.get("title") or "")
         serialized_payload = json.loads(json.dumps(payload, default=_json_default))
@@ -5901,6 +5959,9 @@ class WebTaskManager:
             list_length_presets,
         )
 
+        if "new_book_budget_grant" in payload:
+            raise ValueError("new_book_budget_internal_binding_forbidden")
+
         creation_mode = str(payload.get("creation_mode") or "long_serial").strip()
         if creation_mode not in {"long_serial", "fanqie_short"}:
             raise ValueError(
@@ -6372,7 +6433,33 @@ class WebTaskManager:
                 rebuilt_payload,
             )
             autowrite_payload["_run_conception"] = False
-        task = self.create_autowrite_task(autowrite_payload)
+        if "execution_budget_grant_id" in payload:
+            from bestseller.services.model_catalog import get_model_catalog_entry
+
+            selected = get_model_catalog_entry(_model_id)
+            if selected is None or not selected.available or not selected.api_base:
+                raise ValueError("new_book_budget_native_route_unavailable")
+
+            async def consume_creation_budget():
+                from bestseller.services.execution_authorization import consume_new_book_budget
+
+                async with session_scope(load_settings()) as grant_session:
+                    return await consume_new_book_budget(
+                        grant_session.bind, payload=payload,
+                        model=selected.model, endpoint=selected.api_base,
+                    )
+
+            binding = asyncio.run(consume_creation_budget())
+            if binding is None:
+                raise ValueError("new_book_budget_grant_required")
+            # This stable identity survives a crash after consume but before
+            # task-file persistence. Scope remains conception:<native task>.
+            autowrite_payload["slug"] = f"{genre_key}-{binding['task_id']}"
+            autowrite_payload["_conception_attempt_id"] = f"{binding['task_id']}:initial"
+            autowrite_payload["new_book_budget_grant"] = binding
+            task = self.create_autowrite_task(autowrite_payload, creation_budget=binding)
+        else:
+            task = self.create_autowrite_task(autowrite_payload)
         task["creation_input_receipt"] = creation_input_receipt
         # Enrich response with quickstart metadata
         task["quickstart_meta"] = {

@@ -43,6 +43,9 @@ def execution_scope_block_code(row: ExecutionBudgetModel, *, now: datetime | Non
         return "execution_submission_not_authorized"
     if row.status == "cancelled":
         return "execution_cancelled"
+    from bestseller.services.execution_authorization import new_book_budget_policy
+
+    new_book_budget_policy(row)
     policy = completion_authorization(row)
     if policy:
         if policy.get("status") == "paused":
@@ -371,6 +374,9 @@ class ExecutionLedger:
                 .with_for_update()
             )
         ).scalar_one()
+        from bestseller.services.execution_authorization import new_book_budget_policy
+
+        new_book = new_book_budget_policy(row)
         # One scope has one dispatcher epoch. A second entrance must not
         # declare a still-leased provider request abandoned and poison its
         # live owner. Dead owners can be explicitly quarantined at full charge;
@@ -405,12 +411,12 @@ class ExecutionLedger:
         authorized = completion_authorization(row)
         from bestseller.services.independent_acceptance import policy as independent_policy
         independent = independent_policy(row)
-        if not authorized and independent is None:
+        if not authorized and independent is None and new_book is None:
             row.max_calls = min(row.max_calls, self.limits.execution_max_calls)
         cap = self.limits.execution_max_tokens
         if self.limits.max_tokens_per_project > 0:
             cap = min(cap, self.limits.max_tokens_per_project)
-        if not authorized and independent is None:
+        if not authorized and independent is None and new_book is None:
             row.max_tokens = min(row.max_tokens, cap)
         # Retain the old aggregate deadline as history. Each invocation still
         # has a finite transport horizon and the provider's own request timeout.
@@ -453,7 +459,14 @@ class ExecutionLedger:
             state = (await session.execute(select(
                 ExecutionBudgetModel.status.label("scope_status"),
                 ExecutionBudgetModel.deadline_at.label("scope_deadline"),
+                ExecutionBudgetModel.max_calls,
+                ExecutionBudgetModel.max_tokens,
+                ExecutionBudgetModel.calls_used,
+                ExecutionBudgetModel.tokens_charged,
                 ExecutionBudgetModel.metadata_json["provider_authorization"].label("authorization"),
+                ExecutionBudgetModel.metadata_json["policy"].label("budget_policy"),
+                ExecutionBudgetModel.metadata_json["new_book_budget_grant"].label("new_book_grant"),
+                ExecutionBudgetModel.metadata_json["independent_acceptance"].label("acceptance"),
                 ExecutionOperationModel.scope_id.label("operation_scope"),
                 ExecutionOperationModel.status.label("operation_status"),
                 ExecutionOperationModel.owner.label("operation_owner"),
@@ -462,8 +475,22 @@ class ExecutionLedger:
             ).select_from(ExecutionBudgetModel).outerjoin(
                 ExecutionOperationModel, ExecutionOperationModel.key == claim.key,
             ).where(ExecutionBudgetModel.scope_id == self.scope_id))).mappings().first()
-            row = (SimpleNamespace(status=state["scope_status"], deadline_at=state["scope_deadline"],
-                metadata_json={"provider_authorization":state["authorization"]}) if state else None)
+            row = None
+            if state:
+                metadata = {"provider_authorization": state["authorization"]}
+                if (state["new_book_grant"] is not None
+                    or state["budget_policy"] == "new-book-budget.v1"):
+                    metadata.update({
+                        "policy": state["budget_policy"],
+                        "new_book_budget_grant": state["new_book_grant"],
+                        "independent_acceptance": state["acceptance"],
+                    })
+                row = SimpleNamespace(
+                    scope_id=self.scope_id, status=state["scope_status"],
+                    deadline_at=state["scope_deadline"], max_calls=state["max_calls"],
+                    max_tokens=state["max_tokens"], calls_used=state["calls_used"],
+                    tokens_charged=state["tokens_charged"], metadata_json=metadata,
+                )
             error = self._check(row, persist_expiry=False) if row is not None else "execution_scope_missing"
             if cached and error in {"execution_deadline_exhausted", "execution_budget_exhausted"}:
                 error = None
@@ -592,7 +619,10 @@ class ExecutionLedger:
             if not error and (op is None or op.owner != claim.owner or op.status != "pending"):
                 error = "execution_operation_stopped"
             if not error:
+                from bestseller.services.execution_authorization import assert_new_book_budget_route
                 from bestseller.services.independent_acceptance import validate_reservation
+
+                assert_new_book_budget_route(row, model=model, endpoint=endpoint)
                 await validate_reservation(session, row, independent_acceptance_proof,
                     model=model, input_hash=input_hash, tokens=tokens, endpoint=endpoint)
             if not error and not policy and (

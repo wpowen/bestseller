@@ -7074,6 +7074,9 @@ def chapter_review_recovery_source_hash() -> str:
             "story_enhancers.py", "ideology_coherence_gate.py", "ideology_judge.py",
             "ideology_kernel.py", "entry_system_kernel.py",
             "full_flow_length/__init__.py", "fanqie_whole_repair.py", "full_flow_title_sources.py", "review_issuer_archive.py",
+            "review_issuer_view.py", "chapter_writer_sources.py", "source_bound_planning_content.py",
+            "reader_judge.py", "chapter_revision.py", "deslop_revise.py", "conception_project_handoff.py",
+            "chapter_automatic_revision_budget.py",
         )
     }
     policy_files.update((services / "quality_levers").rglob("*.py"))

@@ -1509,6 +1509,18 @@ async def verify_retained_review_inputs(
         content_md=draft.content_md,
         settings=settings,
     )
+    from bestseller.services import review_issuer_view
+
+    issuer_source = await review_issuer_view.derive_current_primary_source(
+        session, settings, project_id=project.id, chapter_id=chapter.id,
+        draft_id=draft.id, cycle_id=cycle["cycle_id"],
+    )
+    if issuer_source is not None:
+        review_issuer_view._require_equal(
+            "/retained/report_id", issuer_source["binding"]["report_id"], str(report.id),
+            code="native_source_changed",
+        )
+        source = issuer_source["source"]
     source_hash = _hash(source)
     receipt = (primary.metadata_json or {}).get("review_source_receipt") or {}
     source_compatibility = None

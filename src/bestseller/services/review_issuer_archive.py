@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Mapping
 from contextlib import contextmanager
+from copy import deepcopy
 import errno
 import fcntl
 import hashlib
@@ -33,6 +34,7 @@ _CAPSULE_KEYS = {"schema", "archive_ref", "archive_sha256", *_SUMMARIES}
 _MANIFEST_KEYS = {"schema", "files", *_SUMMARIES}
 _ENTRY_KEYS = {"path", "kind", "sha256", "ast_sha256"}
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
+_BINDING_MISSING = object()
 _DENIALS = {
     "grade_granted": False,
     "new_credit_allowed": False,
@@ -48,8 +50,9 @@ _DENIALS = {
 class IssuerArchiveError(ValueError):
     """Stable, value-free diagnostics: never echo source or credential values."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, differences=None):
         self.code = code
+        self.differences = deepcopy(differences) if differences is not None else []
         super().__init__("review_issuer_archive:" + code)
 
 
@@ -786,3 +789,98 @@ def verify_current_issuer_archive(settings, *, capsule: Mapping[str, object]) ->
         "non_python_sha256": current["non_python_sha256"],
         **_DENIALS,
     }
+
+
+def _binding_summary(value: object) -> dict:
+    if value is _BINDING_MISSING:
+        return {"type": "missing", "length": None, "sha256": None}
+    try:
+        digest = _sha(_canonical(value))
+    except (TypeError, ValueError, RecursionError, OverflowError):
+        # Unsupported values have a type, but no invented canonical identity.
+        digest = None
+    return {
+        "type": type(value).__name__,
+        "length": len(value) if type(value) in (dict, list, str) else None,
+        "sha256": digest,
+    }
+
+
+def _binding_reject(code: str, field: str, expected_summary: dict, actual: object) -> None:
+    raise IssuerArchiveError(
+        code,
+        differences=[
+            {"field": field, "expected": expected_summary, "actual": _binding_summary(actual)}
+        ],
+    )
+
+
+def _binding_equal(field: str, expected: object, actual: object, *, code: str) -> None:
+    # Compare complete values and types; diagnostic hashes never decide equality.
+    try:
+        equal = type(expected) is type(actual) and _canonical(expected) == _canonical(actual)
+    except (TypeError, ValueError, RecursionError, OverflowError):
+        equal = False
+    if not equal:
+        _binding_reject(code, field, _binding_summary(expected), actual)
+
+
+def _binding_dict(field: str, value: object) -> None:
+    if type(value) is not dict:
+        _binding_reject(
+            "primary_source_invalid",
+            field,
+            {"type": "dict", "length": None, "sha256": None},
+            value,
+        )
+
+
+def bind_primary_review_issuer(settings, source: dict) -> dict:
+    """Bind a fresh native primary source; never re-sign retained paid inputs.
+
+    Main calls this after the native source loader, before primary transport.
+    A missing ordering marker preserves legacy data without archive access.
+    The returned capsule establishes source-code custody, not paid authority.
+    """
+    _binding_dict("/source", source)
+    bound = deepcopy(source)
+    channels = bound.get("current_source_channels", {})
+    _binding_dict("/source/current_source_channels", channels)
+    selection = channels.get("source_selection_receipt", {})
+    selection_path = "/source/current_source_channels/source_selection_receipt"
+    _binding_dict(selection_path, selection)
+    if "source_ordering_policy" not in selection:
+        return bound
+
+    from bestseller.services.editable_plan_source import REVIEW_SOURCE_SCHEMA
+    from bestseller.services.review_source_context import SOURCE_POLICY
+    from bestseller.services.review_source_ordering import SOURCE_ORDERING_POLICY
+
+    _binding_equal(
+        selection_path + "/source_ordering_policy",
+        SOURCE_ORDERING_POLICY,
+        selection["source_ordering_policy"],
+        code="primary_source_marker",
+    )
+    _binding_equal(
+        selection_path + "/policy",
+        "typed-world-and-relevant-current-state.v1",
+        selection.get("policy", _BINDING_MISSING),
+        code="primary_source_invalid",
+    )
+    schemas = [SOURCE_POLICY, REVIEW_SOURCE_SCHEMA]
+    schema = bound.get("schema", _BINDING_MISSING)
+    if type(schema) is not str or schema not in schemas:
+        _binding_reject(
+            "primary_source_invalid", "/source/schema", _binding_summary(schemas), schema
+        )
+    if "review_issuer" in bound:
+        _binding_reject(
+            "primary_source_already_bound",
+            "/source/review_issuer",
+            _binding_summary(_BINDING_MISSING),
+            bound["review_issuer"],
+        )
+    captured = capture_current_issuer_archive(settings)
+    bound["review_issuer"] = deepcopy(captured["capsule"])
+    return bound

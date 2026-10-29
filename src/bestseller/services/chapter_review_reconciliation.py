@@ -1096,6 +1096,13 @@ async def _prepare_native_chapter_resume(session, settings, *, project_id, chapt
         return None
     _native_need(cycle.get('source_draft_id') == str(draft.id) and cycle.get('source_body_hash') == body, 'current_cycle_source')
     policy = pipelines.chapter_review_recovery_source_hash()
+    issuer_policy = None
+    if (cycle.get('state') == 'completed' and isinstance(cycle.get('attempts'), list)
+            and cycle['attempts'] and isinstance(cycle['attempts'][-1], dict)
+            and cycle['attempts'][-1].get('outcome') == 'available'):
+        from bestseller.services.review_issuer_view import require_cycle_policy
+        issuer_policy = await require_cycle_policy(session, settings, project_id=project_id,
+            chapter_id=chapter_id, draft_id=draft.id, cycle_id=cid)
     if cycle.get('policy_source_hash') == policy and cycle.get('state') != WAITING:
         if cycle.get('native_runtime_policy_alias') is not None:
             validate_native_policy_alias(cycle,project_id=project_id,chapter_id=chapter_id,draft_id=draft.id,body_sha256=body)
@@ -1145,6 +1152,20 @@ async def _prepare_native_chapter_resume(session, settings, *, project_id, chapt
         if supersession is not None:
             return {'chapter_id': str(chapter_id), 'cycle_id': cid,
                 'policy_alias': None, 'waiting_rearm': None, 'supersession': supersession}
+    if issuer_policy is not None:
+        # A native capsule does not authorize reuse. The common normal preflight
+        # must prove availability and current inputs; never migrate this cycle
+        # into an alias based only on code/source custody. Until that common
+        # seam admits a drift, its ordinary policy rejection stays in force.
+        from bestseller.services.chapter_review_preflight import validate_retained_review_before_processing
+        from bestseller.services.review_issuer_view import _require_equal
+        proof = await validate_retained_review_before_processing(session, settings, chapter)
+        for field, expected in (('cycle_id', cid), ('draft_id', str(draft.id)),
+                                ('body_sha256', body), ('reuse_kind', 'available_review'),
+                                ('current_runtime_policy_sha256', policy)):
+            _require_equal('/preflight/' + field, expected,
+                proof.get(field) if isinstance(proof, dict) else None, code='native_source_changed')
+        return None
     ledger_before = await _ledger(session,scope,lock=True)
     original_meta = deepcopy(chapter.metadata_json or {})
     cycle = deepcopy(original_meta['chapter_critic_cycles'][cid])

@@ -9507,6 +9507,8 @@ async def review_chapter_draft(
                 context_packet=chapter_context, content_md=draft.content_md,
                 settings=settings,
             )
+            from bestseller.services.review_issuer_archive import bind_primary_review_issuer
+            source_context = bind_primary_review_issuer(settings, source_context)
             review_output_budget = min(
                 int(resolve_llm_role_max_tokens(settings, role="critic") or settings.llm.critic.max_tokens),
                 8192,

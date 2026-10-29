@@ -274,6 +274,7 @@ class BaseForge:
             system_prompt=self._full_system_prompt(),
             user_prompt=user_prompt,
             logical_role="planner",
+            prompt_template="material_forge_dimension",
             fallback_response="{}",
         )
         registry = ToolRegistry(tools)

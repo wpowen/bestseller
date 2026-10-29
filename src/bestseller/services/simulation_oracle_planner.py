@@ -124,6 +124,7 @@ async def augment_story_design_kernel_with_oracle(
             settings,
             LLMCompletionRequest(
                 logical_role="planner",
+                prompt_template="simulation_oracle_kernel_augment",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 fallback_response="{}",

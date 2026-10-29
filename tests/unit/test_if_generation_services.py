@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -14,6 +15,7 @@ from bestseller.services.if_generation import (
     build_concept_json,
     run_bible_phase,
 )
+from bestseller.services.prompt_source_policy import adopt_story_package
 
 
 pytestmark = pytest.mark.unit
@@ -22,6 +24,7 @@ pytestmark = pytest.mark.unit
 def _build_project(slug: str = "apocalypse-001", **overrides: object) -> SimpleNamespace:
     """Build a minimal ProjectModel stand-in for concept-building tests."""
     project = SimpleNamespace(
+        id=uuid4(),
         slug=slug,
         title=overrides.get("title", "灰烬执政官"),
         metadata_json=overrides.get("metadata_json", {}),
@@ -80,6 +83,10 @@ def test_load_story_package_characters_reads_canonical_names(tmp_path: Path) -> 
     )
 
     project = _build_project(slug=slug, metadata_json={})
+    # A file discovered on disk is not adopted source authority. Exercise the
+    # same explicit import service that issues the source snapshot receipt.
+    assert _load_story_package_characters(project) == []
+    adopt_story_package(project, package_dir / "story_package.json", requested_by="unit-import")
 
     prev_cwd = Path.cwd()
     import os
@@ -134,6 +141,8 @@ def test_build_concept_json_merges_story_package_canonical_names(tmp_path: Path)
 
     project = _build_project(slug=slug, metadata_json={})
     cfg = _minimal_cfg()
+    assert "key_characters" not in build_concept_json(cfg, project)
+    adopt_story_package(project, package_dir / "story_package.json", requested_by="unit-import")
 
     prev_cwd = Path.cwd()
     import os

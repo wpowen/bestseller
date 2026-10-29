@@ -1335,6 +1335,7 @@ async def _store_chapter_summary(
         settings,
         LLMCompletionRequest(
             logical_role="summarizer",
+            prompt_template="if_chapter_summary",
             system_prompt="你是故事摘要助手。用2-3句话简洁总结章节内容，保留关键情节和人物状态变化，输出纯中文，不超过100字。",
             user_prompt=(
                 f"请总结以下互动小说章节：\n"

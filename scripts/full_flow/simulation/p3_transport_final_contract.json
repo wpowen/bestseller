@@ -1,0 +1,49 @@
+{
+  "schema": "full-flow-p3-interface-review.v1",
+  "compatible": true,
+  "mismatches": [],
+  "source_sha256": "9e47777ad45d94b8e295e918f822db92575f05873eaa0f53a8850edd3b89e5b2",
+  "found": {
+    "NativeObservation": [
+      "prompt_template",
+      "call_index",
+      "project_id",
+      "workflow_run_id"
+    ],
+    "NativeTemplateObserver.__call__": [
+      "self",
+      "_request",
+      "native_call"
+    ],
+    "Tape.__init__": [
+      "self",
+      "document",
+      "audit_path",
+      "template_observer"
+    ],
+    "Tape.from_file": [
+      "cls",
+      "path",
+      "audit_path",
+      "template_observer"
+    ],
+    "Tape._choose": [
+      "self",
+      "body",
+      "fields",
+      "observation"
+    ],
+    "Tape._response": [
+      "self",
+      "request",
+      "body",
+      "spec",
+      "asynchronous"
+    ],
+    "install_scripted_http": [
+      "tape"
+    ]
+  },
+  "tape_schema": "v3-scripted-provider-tape.v1",
+  "execution_performed": false
+}

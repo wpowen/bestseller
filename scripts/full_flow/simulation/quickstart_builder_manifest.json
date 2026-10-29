@@ -1,0 +1,995 @@
+{
+  "builders": {
+    "schema": "normal-quickstart-builders.v1",
+    "producers": [
+      "chapter_first_writer",
+      "conception_blurb_polish",
+      "conception_character",
+      "conception_character_repair",
+      "conception_commercial_positioning",
+      "conception_commercial_positioning_repair",
+      "conception_finalize",
+      "conception_finalize_reader_first_v1",
+      "conception_finalize_reader_first_v1_repair",
+      "conception_finalize_repair",
+      "conception_golden_finger_polish",
+      "conception_golden_finger_polish_repair",
+      "conception_hook_one_liner_adapt",
+      "conception_hook_one_liner_adapt_repair",
+      "conception_logline_from_champion",
+      "conception_logline_from_champion_repair",
+      "conception_logline_regen",
+      "conception_market",
+      "conception_market_repair",
+      "conception_story_spine_polish",
+      "conception_story_spine_polish_reader_first_v1",
+      "conception_story_spine_polish_reader_first_v1_repair",
+      "conception_story_spine_polish_repair",
+      "conception_title_polish",
+      "conception_world",
+      "conception_world_repair",
+      "planner_book_spec",
+      "planner_cast_spec",
+      "planner_volume_plan",
+      "planner_world_spec",
+      "story_architect_v1",
+      "story_architect_v1_repair",
+      "title_platform_revision",
+      "title_story_grounded_revision",
+      "title_tournament_candidates"
+    ],
+    "requires_explicit_physical_reply": {
+      "bible_update_v1": "json",
+      "bible_update_v1_repair": "json",
+      "book_ending": "tool:submit_book_ending",
+      "chapter_commercial_quality_judge": "tool:submit_chapter_review",
+      "chapter_feedback_extraction": "json",
+      "chapter_feedback_extraction_repair": "json",
+      "chapter_review": "tool:submit_chapter_critique",
+      "chapter_state_snapshot": "json",
+      "chapter_state_snapshot_repair": "json",
+      "chapter_window_quality_judge": "json",
+      "conception_cast_reality_audit": "json",
+      "conception_cast_reality_audit_repair": "json",
+      "conception_intent_alignment": "tool:submit_intent_review",
+      "conception_reader_first_repair_v1": "json",
+      "conception_reader_first_skeleton_v1": "json",
+      "conception_review": "json",
+      "conception_review_repair": "json",
+      "draft_continuity_hard_safety": "tool:submit_draft_continuity_safety",
+      "fanqie_long_semantic_review": "json",
+      "fanqie_reader_first_field_roles": "json",
+      "fanqie_short_semantic_evidence_selection": "tool:select_whole_semantic_evidence",
+      "fanqie_short_semantic_review": "json",
+      "fanqie_short_title_semantic_judge": "tool:judge_current_publication_title",
+      "planner_cast_links_part": "json",
+      "planner_cast_person_part": "json",
+      "planner_reader_first_full_outline_commercial_surgical_repair": "json",
+      "planner_reader_first_outline_review": "json",
+      "planner_source_bound_expansion_semantic_review": "json",
+      "planning_draft_admission": "tool:submit_planning_admission",
+      "reader_revision_anchors": "json",
+      "reader_revision_preservation": "json",
+      "title_tournament_arena": "json",
+      "volume_quality_checkpoint_judge": "json"
+    },
+    "keyflow_explicit_reply_protocols": [
+      "concept_tournament_candidate",
+      "concept_tournament_candidate_reader_first_v1",
+      "concept_tournament_engine_kernel",
+      "concept_tournament_engine_kernel_reader_first_v1",
+      "concept_tournament_finalist_judge",
+      "concept_tournament_finalist_judge_reader_first_v1",
+      "concept_tournament_finalist_seriality_judge",
+      "concept_tournament_finalist_seriality_judge_reader_first_v1",
+      "concept_tournament_judge",
+      "concept_tournament_judge_reader_first_v1",
+      "concept_tournament_premise_judge",
+      "concept_tournament_premise_judge_reader_first_v1",
+      "concept_tournament_raw_idea_pool",
+      "concept_tournament_raw_idea_pool_reader_first_v1",
+      "concept_tournament_raw_idea_rank",
+      "concept_tournament_raw_idea_rank_reader_first_v1",
+      "concept_tournament_seriality",
+      "concept_tournament_seriality_judge",
+      "concept_tournament_seriality_judge_reader_first_v1",
+      "concept_tournament_seriality_reader_first_v1",
+      "concept_tournament_story_judge",
+      "concept_tournament_story_judge_reader_first_v1",
+      "concept_tournament_winner_seed_repair",
+      "concept_tournament_winner_seed_repair_repair",
+      "conception_concept_seed_final_premise_reconciliation",
+      "conception_concept_seed_final_premise_reconciliation_repair",
+      "conception_explicit_seed_fidelity_arbitration",
+      "conception_explicit_seed_fidelity_arbitration_repair",
+      "conception_explicit_seed_fidelity_judge",
+      "conception_explicit_seed_fidelity_judge_repair",
+      "conception_explicit_seed_fidelity_repair",
+      "conception_explicit_seed_fidelity_repair_repair",
+      "conception_final_material_seed_fidelity_judge",
+      "conception_final_material_seed_fidelity_judge_repair",
+      "conception_final_packaging_canonical_quote_recovery",
+      "conception_final_packaging_canonical_quote_recovery_repair",
+      "conception_final_packaging_focused_blurb_repair",
+      "conception_final_packaging_focused_blurb_repair_repair",
+      "conception_final_packaging_focused_blurb_retry",
+      "conception_final_packaging_focused_blurb_retry_repair",
+      "conception_final_packaging_seed_fidelity_arbitration",
+      "conception_final_packaging_seed_fidelity_arbitration_repair",
+      "conception_final_packaging_seed_fidelity_judge",
+      "conception_final_packaging_seed_fidelity_judge_repair",
+      "conception_final_packaging_seed_fidelity_repair",
+      "conception_final_packaging_seed_fidelity_repair_repair",
+      "conception_final_packaging_seed_fidelity_repair_v2",
+      "conception_final_packaging_seed_fidelity_repair_v2_repair",
+      "conception_preproject_materialized_seed_fidelity_arbitration",
+      "conception_preproject_materialized_seed_fidelity_arbitration_repair",
+      "conception_preproject_materialized_seed_fidelity_judge",
+      "conception_preproject_materialized_seed_fidelity_judge_repair",
+      "conception_reconciled_seed_fidelity_judge",
+      "conception_reconciled_seed_fidelity_judge_repair"
+    ],
+    "finite_dynamic_family": "planner_volume_1_chapter_outline[_batch_A_B], 1<=A<=B<=chapter_count<=32",
+    "native_business_acceptance": "Unknown",
+    "normal_http_driver_included": false
+  },
+  "keyflows": {
+    "schema": "normal-quickstart-keyflow-contracts.v1",
+    "protocols": {
+      "concept_tournament_candidate": {
+        "format": "json",
+        "required_fields": [
+          "concept",
+          "mechanism",
+          "hook_question"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_candidate_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "concept",
+          "mechanism",
+          "hook_question"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_engine_kernel": {
+        "format": "json",
+        "required_fields": [
+          "protagonist_identity",
+          "protagonist_private_desire",
+          "protagonist_flaw",
+          "core_abnormality",
+          "current_goal",
+          "effective_resistance",
+          "failure_cost",
+          "success_cost",
+          "irreversible_change",
+          "reader_promise",
+          "scene_seeds",
+          "post_reveal_scene_seeds",
+          "deformable_loop",
+          "expansion_axes",
+          "story_architecture"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_engine_kernel_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "protagonist_identity",
+          "protagonist_private_desire",
+          "protagonist_flaw",
+          "core_abnormality",
+          "current_goal",
+          "effective_resistance",
+          "failure_cost",
+          "success_cost",
+          "irreversible_change",
+          "reader_promise",
+          "scene_seeds",
+          "post_reveal_scene_seeds",
+          "deformable_loop",
+          "expansion_axes",
+          "story_architecture"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_finalist_judge": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_finalist_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_finalist_seriality_judge": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_finalist_seriality_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_judge": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_premise_judge": {
+        "format": "json",
+        "required_fields": [
+          "verdicts"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_premise_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "verdicts"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_raw_idea_pool": {
+        "format": "json",
+        "required_fields": [
+          "ideas"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_raw_idea_pool_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "ideas"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_raw_idea_rank": {
+        "format": "json",
+        "required_fields": [
+          "ranked"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_raw_idea_rank_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "ranked"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_seriality": {
+        "format": "json",
+        "required_fields": [
+          "repeatable_story_unit",
+          "core_promise_invariant",
+          "unit_families",
+          "progress_bar",
+          "unit_frequency",
+          "unit_count_estimate",
+          "renewal_sources",
+          "accumulation_tracks",
+          "phase_transitions",
+          "opposing_ecology",
+          "endgame_direction"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_seriality_judge": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_seriality_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_seriality_reader_first_v1": {
+        "format": "json",
+        "required_fields": [
+          "repeatable_story_unit",
+          "core_promise_invariant",
+          "unit_families",
+          "progress_bar",
+          "unit_frequency",
+          "unit_count_estimate",
+          "renewal_sources",
+          "accumulation_tracks",
+          "phase_transitions",
+          "opposing_ecology",
+          "endgame_direction"
+        ],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_story_judge": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_story_judge_reader_first_v1": {
+        "format": "json",
+        "required_fields": [],
+        "source": "src/bestseller/services/concept_tournament.py"
+      },
+      "concept_tournament_winner_seed_repair": {
+        "format": "json",
+        "required_fields": [
+          "candidate"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "concept_tournament_winner_seed_repair_repair": {
+        "format": "json",
+        "required_fields": [
+          "candidate"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_concept_seed_final_premise_reconciliation": {
+        "format": "json",
+        "required_fields": [
+          "concept",
+          "mechanism",
+          "hook_question"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_concept_seed_final_premise_reconciliation_repair": {
+        "format": "json",
+        "required_fields": [
+          "concept",
+          "mechanism",
+          "hook_question"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_arbitration": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives",
+          "arbitration_reason"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_arbitration_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives",
+          "arbitration_reason"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_judge": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_judge_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_repair": {
+        "format": "json",
+        "required_fields": [
+          "title",
+          "premise",
+          "synopsis",
+          "writing_profile",
+          "story_spine"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_explicit_seed_fidelity_repair_repair": {
+        "format": "json",
+        "required_fields": [
+          "title",
+          "premise",
+          "synopsis",
+          "writing_profile",
+          "story_spine"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_material_seed_fidelity_judge": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_material_seed_fidelity_judge_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_canonical_quote_recovery": {
+        "format": "json",
+        "required_fields": [
+          "corrections",
+          "unrecoverable"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_canonical_quote_recovery_repair": {
+        "format": "json",
+        "required_fields": [
+          "corrections",
+          "unrecoverable"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_focused_blurb_repair": {
+        "format": "json",
+        "required_fields": [
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_focused_blurb_repair_repair": {
+        "format": "json",
+        "required_fields": [
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_focused_blurb_retry": {
+        "format": "json",
+        "required_fields": [
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_focused_blurb_retry_repair": {
+        "format": "json",
+        "required_fields": [
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_arbitration": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_arbitration_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_judge": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_judge_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_repair": {
+        "format": "json",
+        "required_fields": [
+          "title_candidates",
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_repair_repair": {
+        "format": "json",
+        "required_fields": [
+          "title_candidates",
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_repair_v2": {
+        "format": "json",
+        "required_fields": [
+          "title_candidates",
+          "synopsis_candidates",
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_final_packaging_seed_fidelity_repair_v2_repair": {
+        "format": "json",
+        "required_fields": [
+          "title_candidates",
+          "synopsis_candidates",
+          "synopsis"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_preproject_materialized_seed_fidelity_arbitration": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives",
+          "arbitration_reason"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_preproject_materialized_seed_fidelity_arbitration_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives",
+          "arbitration_reason"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_preproject_materialized_seed_fidelity_judge": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_preproject_materialized_seed_fidelity_judge_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_reconciled_seed_fidelity_judge": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      },
+      "conception_reconciled_seed_fidelity_judge_repair": {
+        "format": "json",
+        "required_fields": [
+          "passed",
+          "hard_conflicts",
+          "compatible_extensions",
+          "preserved_facts",
+          "repair_directives"
+        ],
+        "source": "src/bestseller/services/conception.py"
+      }
+    },
+    "packaging_subject_bases": [
+      "conception_final_packaging_canonical_quote_recovery",
+      "conception_final_packaging_seed_fidelity_arbitration",
+      "conception_final_packaging_seed_fidelity_judge"
+    ],
+    "explicit_authored_material_required": true,
+    "verdicts_inferred": false
+  },
+  "blueprint_requirements": {
+    "story_fields": [
+      "advantage",
+      "audiences",
+      "career_ledger",
+      "channel",
+      "content_mode",
+      "development",
+      "era",
+      "genre",
+      "goal",
+      "locations",
+      "logline",
+      "narrative_drive",
+      "platform",
+      "power_tiers",
+      "premise",
+      "profession_boundary",
+      "reader_rationale",
+      "relationship_tension",
+      "review_adjudications",
+      "romance_mode",
+      "rules",
+      "setting",
+      "stakes",
+      "sub_genre",
+      "synopsis",
+      "tags",
+      "theme",
+      "title",
+      "title_candidates",
+      "tone_keywords",
+      "trigger"
+    ],
+    "actors": {
+      "protagonist": [
+        "name",
+        "occupation",
+        "background",
+        "fear",
+        "flaw",
+        "strength",
+        "age",
+        "gender"
+      ],
+      "antagonist": [
+        "name",
+        "occupation",
+        "background",
+        "fear",
+        "flaw",
+        "strength",
+        "age",
+        "gender"
+      ],
+      "ally": [
+        "name",
+        "occupation",
+        "background",
+        "fear",
+        "flaw",
+        "strength",
+        "age",
+        "gender"
+      ]
+    },
+    "chapter_fields": [
+      "number",
+      "title",
+      "goal",
+      "obstacle",
+      "choice",
+      "consequence",
+      "hook",
+      "location",
+      "reveals",
+      "target_word_count",
+      "causal_contract",
+      "methodology_contract",
+      "scenes",
+      "prose_atoms"
+    ],
+    "prose_atom_fields": [
+      "action",
+      "reaction",
+      "result"
+    ],
+    "runtime_body_reply_binding": [
+      "current_body",
+      "source_body_sha256",
+      "template:physical_index"
+    ],
+    "profile": "Chinese; one volume; 1..32 chapters; no implicit review opinions"
+  },
+  "reader_first_contracts": {
+    "schema": "normal-quickstart-reader-first-contracts.v1",
+    "tournament_aliases": {
+      "concept_tournament_candidate_reader_first_v1": "concept_tournament_candidate",
+      "concept_tournament_engine_kernel_reader_first_v1": "concept_tournament_engine_kernel",
+      "concept_tournament_finalist_judge_reader_first_v1": "concept_tournament_finalist_judge",
+      "concept_tournament_finalist_seriality_judge_reader_first_v1": "concept_tournament_finalist_seriality_judge",
+      "concept_tournament_judge_reader_first_v1": "concept_tournament_judge",
+      "concept_tournament_premise_judge_reader_first_v1": "concept_tournament_premise_judge",
+      "concept_tournament_raw_idea_pool_reader_first_v1": "concept_tournament_raw_idea_pool",
+      "concept_tournament_raw_idea_rank_reader_first_v1": "concept_tournament_raw_idea_rank",
+      "concept_tournament_seriality_reader_first_v1": "concept_tournament_seriality",
+      "concept_tournament_seriality_judge_reader_first_v1": "concept_tournament_seriality_judge",
+      "concept_tournament_story_judge_reader_first_v1": "concept_tournament_story_judge"
+    },
+    "producer_aliases": {
+      "conception_finalize_reader_first_v1": "conception_finalize",
+      "conception_finalize_reader_first_v1_repair": "conception_finalize_repair",
+      "conception_story_spine_polish_reader_first_v1": "conception_story_spine_polish",
+      "conception_story_spine_polish_reader_first_v1_repair": "conception_story_spine_polish_repair"
+    },
+    "reviews": {
+      "conception_reader_first_skeleton_v1": {
+        "checkpoint": "skeleton",
+        "prompt_version": "reader-first-review.v1"
+      },
+      "planner_reader_first_outline_review": {
+        "checkpoint": "outline",
+        "prompt_version": "rf-outline-review-v1"
+      }
+    },
+    "context_required": [
+      "wire_body",
+      "expected_wire_sha256",
+      "protocol_subject.reader_first_planning"
+    ],
+    "review_context_required": [
+      "protocol_subject.prompt_version",
+      "submissions[actual_template:global_ordinal]"
+    ],
+    "authored_only": [
+      "score",
+      "reason",
+      "issues",
+      "options"
+    ],
+    "runtime_verification": "Main reported simulation-q4-candidate-20261029T032237065255Z.json exit0/status passed for frozen 17-template batch",
+    "short_outline_source_variant": {
+      "template": "planner_reader_first_outline_review",
+      "prompt_version": "rf-outline-review-v1",
+      "source_fields": [
+        "selected_source",
+        "original_beat",
+        "base_outline",
+        "outline"
+      ],
+      "status": "Implemented; main module GREEN; native runtime coverage Unknown"
+    }
+  },
+  "reader_first_authored_repair_contracts": {
+    "schema": "normal-quickstart-q4-authored-repairs.v1",
+    "templates": {
+      "fanqie_reader_first_field_roles": "fanqie-rf-field-roles-v1",
+      "conception_reader_first_repair_v1": "reader-first-repair.v1",
+      "planner_reader_first_full_outline_commercial_surgical_repair": "rf-outline-repair-v1"
+    },
+    "context_required": [
+      "wire_body",
+      "expected_wire_sha256",
+      "protocol_subject.reader_first_planning",
+      "protocol_subject.prompt_version",
+      "submissions[actual_template:global_ordinal]"
+    ],
+    "outline_repair_context_required": [
+      "protocol_subject.source_sha256"
+    ],
+    "outline_wire_routes": [
+      "normal-text",
+      "short-json"
+    ],
+    "authored_only": [
+      "field_roles",
+      "candidate",
+      "patches"
+    ],
+    "unknown_template_error": "SCRIPT_TEMPLATE_UNCOVERED",
+    "runtime_verification": "Main remaining-handoffs-red-20261029T034003051485Z received; 3-template implementation awaits main serial GREEN"
+  },
+  "reader_revision_contracts": {
+    "templates": {
+      "reader_revision_anchors": "json",
+      "reader_revision_preservation": "json"
+    },
+    "logical_role": "critic",
+    "prompt_version": "1.0",
+    "protocol_subject_required": [
+      "logical_role",
+      "prompt_version",
+      "reader_first_planning",
+      "reader_revision_binding"
+    ],
+    "anchors_reply_fields": [
+      "schema",
+      "source_body_sha256",
+      "anchors"
+    ],
+    "anchors_item_fields": [
+      "anchor_id",
+      "start",
+      "end",
+      "quote",
+      "kind",
+      "narrative_function"
+    ],
+    "preservation_reply_fields": [
+      "schema",
+      "source_body_sha256",
+      "candidate_body_sha256",
+      "anchors",
+      "voice_preserved",
+      "no_system_procedure_intrusion"
+    ],
+    "preservation_item_fields": [
+      "anchor_id",
+      "preserved",
+      "evidence",
+      "reason"
+    ],
+    "evidence_fields": [
+      "start",
+      "end",
+      "quote"
+    ],
+    "binding": "Full native request/body/hash/UUID/anchors; no synthetic identities or verdicts",
+    "verification": "Main reported two modules GREEN in remaining-wiring-red-green-20261029T044321186665Z; combined 198 PASS +171 subtests, unrelated RED remains"
+  },
+  "normal_l1_authoring": {
+    "module": "scripts.full_flow.simulation.author_l1",
+    "input_schema": "l1_authoring.schema.json",
+    "profile": "ordinary-urban-family-four-part.reader-first.v1",
+    "required_template_lower_bound": {
+      "conception_finalize_reader_first_v1": "conception.py::run_conception_pipeline",
+      "conception_reader_first_skeleton_v1": "conception.py::_review_reader_first_skeleton",
+      "planner_fanqie_beat_sheet": "fanqie_beat_recovery.py::build_current_request",
+      "fanqie_reader_first_field_roles": "fanqie_short_planner.py::_short_roles_request",
+      "planner_reader_first_outline_review": "planner.py::_run_reader_first_outline_checkpoint",
+      "reader_judge": "pipelines.py::judge_chapter_readability (enabled default)"
+    },
+    "conditional_template_requirements": {
+      "planner_structured_field_correction": "missing short-outline fields",
+      "planner_cast_field_correction": "native Cast field repair",
+      "planner_source_bound_expansion_evidence_repair": "invalid expansion evidence",
+      "prewrite_plan_manifest": "scene-generation path",
+      "scene_writer": "scene-generation or deslop revision path"
+    },
+    "complete_private_config": "Only script.json when structural blockers are empty; otherwise script.pending.json and exit 2. Never native adoption/quality evidence.",
+    "missing_native_codecs": [
+      {
+        "template": "concept_methodology",
+        "condition": "New normal conception; enable_concept_methodology_agent defaults true",
+        "logical_role": "planner",
+        "prompt_version": null,
+        "source": "src/bestseller/services/conception.py::_attach_concept_methodology -> concept_methodology_agent.select_concept_methodology",
+        "material": "Explicit authored creative methodology. Native request leaves prompt_version unset; bind actual native identity. Best-effort native fallback is not scripted coverage."
+      },
+      {
+        "template": "conception_source_effect_contract",
+        "condition": "chapter_count > 0 and nonempty user-owned seed before tournament",
+        "logical_role": "critic",
+        "prompt_version": null,
+        "source": "src/bestseller/services/conception.py::run_conception_pipeline -> _llm_call_json -> _llm_call",
+        "material": "Explicit applicability/applicability_reason/mechanism_quote/causal_mode. Bind current seed and native request. Native request leaves prompt_version unset."
+      },
+      {
+        "template": "planner_fanqie_beat_sheet",
+        "condition": "New fanqie_short planning",
+        "prompt_version": "fq-beats-v1.reader-first-v1",
+        "source": "src/bestseller/services/fanqie_beat_recovery.py::build_current_request",
+        "material": "Explicit complete FanqieShortBeatSheet: title/logline/pov/beats/unlock_milestone_segment/ideology_compact. Each four-part beat includes native contracts; no schema defaults."
+      },
+      {
+        "template": "planner_structured_field_correction",
+        "condition": "Actual short-outline missing field targets",
+        "prompt_version": "fq-fields-v1.reader-first-v1 (four parts)",
+        "source": "src/bestseller/services/fanqie_outline_contract_completion.py",
+        "material": "Every current response_schema pointer has an explicit authored typed value; planning_document is native lossless v4."
+      },
+      {
+        "template": "reader_judge",
+        "condition": "New draft readability judge enabled by current default",
+        "prompt_version": "1.2",
+        "source": "src/bestseller/services/reader_judge.py::judge_chapter_readability",
+        "material": "Exactly six explicit numeric scores in [0,1]: opening_pull/payoff_density/emotional_impact/anti_abandon/ai_taste/human_voice, plus authored comment (<=30 characters). Bind current full body SHA and actual native trimmed/capped excerpt; no 0.7 fallback or coercion.",
+        "logical_role": "critic"
+      }
+    ],
+    "private_authored_material_available": {
+      "path": "/private/tmp/bestseller-l1-authored-20261029-herschel",
+      "scope": "PREFIX_ONLY; full L1 BLOCKED",
+      "chapter_skeletons": 4,
+      "chapter_one_chars": 2637,
+      "prefix_slots": 3,
+      "staged_authored_packets": 13,
+      "config_canonical_sha256": "7e8ed83b55f13d67c7ce936ca3518f1131d5e63488b10eb20b1a291fbe7e5097",
+      "files": [
+        "authoring.json",
+        "script.json",
+        "blueprint.json",
+        "quickstart.request.json",
+        "chapter-01.txt",
+        "chapters-outline.json",
+        "private-authored-replies.json",
+        "compiler-status.json",
+        "script.compiler-pending.json",
+        "known-gaps.json",
+        "manifest.json",
+        "README.txt"
+      ]
+    },
+    "existing_normal_server": "scripts/full_flow/web_entry.py --mode simulation --private-root /private/<run> --config /private/<run>/script.json --run-id <run> --port 8787",
+    "http_creation": "POST /api/tasks/quickstart with current quickstart-client.v2 manifest",
+    "http_orchestration": "Main-owned; full first-adoption HTTP orchestration/stop command not found in inspected scripts",
+    "authoring_execution": "Pure compile_private_bundle and private config structure processing performed; result BLOCKED. Permissions/JSON/file SHA read back. No pytest, HTTP, DB, model or rehearsal.",
+    "next_main_red": {
+      "selectors": [
+        "tests/e2e_sim/full_flow/test_l1_missing_codecs.py::ShortPlannerCodecRedTests",
+        "tests/e2e_sim/full_flow/test_l1_missing_codecs.py::ReaderJudgeCodecRedTests",
+        "tests/e2e_sim/full_flow/test_l1_authoring_readiness.py::L1AuthoringReadinessRedTests"
+      ],
+      "state": "Prepared; not executed; implementations remain frozen pending main actual RED",
+      "authoring_integrity_cases": [
+        "cleared codec blockers",
+        "changed rendered body",
+        "changed quickstart input",
+        "changed finite plan"
+      ]
+    },
+    "minimum_http_sequence": [
+      "POST /api/tasks/quickstart",
+      "GET /api/tasks/{task_id}",
+      "GET /api/tasks/{task_id}/execution",
+      "POST /api/tasks/{task_id}/cancel only after verified first adoption",
+      "GET /api/tasks/{task_id}/execution after native stop request"
+    ],
+    "adoption_readback_required": [
+      "returned task identity matches submitted task",
+      "chapter_word_stats.source=db",
+      "chapter_word_stats.adoption_evidence=verified",
+      "1 in adopted_chapter_numbers",
+      "chapters contains number=1 and native draft_id/acceptance",
+      "no unknown template/builder-blocked transport audit",
+      "stop response alone is not worker termination"
+    ],
+    "earliest_normal_prefix": {
+      "template": "story_architect_v1",
+      "prompt_version": "1.0",
+      "slots": 1,
+      "conditional_repair_template": "story_architect_v1_repair",
+      "conditional_repair_slots": 2,
+      "next_template": "concept_methodology",
+      "native_acceptance": "Unknown; no HTTP or native runtime executed"
+    }
+  }
+}

@@ -1,0 +1,859 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private normal L1 explicit authoring input",
+  "description": "Structural input contract only, not a native acceptance or full route proof. No defaults. All prose, original input and authored SDK judgments belong outside checkout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile",
+    "original_input",
+    "quickstart",
+    "story",
+    "execution_plan",
+    "replies"
+  ],
+  "properties": {
+    "schema": {
+      "const": "normal-l1-private-authoring.v1"
+    },
+    "profile": {
+      "const": "ordinary-urban-family-four-part.reader-first.v1"
+    },
+    "original_input": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "quickstart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "creation_mode",
+        "length_key",
+        "pov",
+        "production_profile",
+        "stop_after_conception",
+        "draft_mode",
+        "llm_model_id",
+        "concept_seed"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "genre_key"
+          ]
+        },
+        {
+          "required": [
+            "selection"
+          ]
+        }
+      ],
+      "properties": {
+        "creation_mode": {
+          "const": "fanqie_short"
+        },
+        "length_key": {
+          "const": "fanqie-short-8k"
+        },
+        "pov": {
+          "enum": [
+            "first_person",
+            "third_limited"
+          ]
+        },
+        "production_profile": {
+          "enum": [
+            "complete",
+            "research"
+          ]
+        },
+        "stop_after_conception": {
+          "const": false
+        },
+        "draft_mode": {
+          "const": false
+        },
+        "llm_model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "concept_seed": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "genre_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "selection": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "chapter_count": {
+          "const": 4
+        },
+        "client_schema_version": {
+          "const": "quickstart-client.v2"
+        },
+        "client_intent_manifest": {
+          "type": "object"
+        },
+        "story_enhancers": {
+          "type": "object"
+        },
+        "creative_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "audience_orientation": {
+          "enum": [
+            "male",
+            "female"
+          ]
+        },
+        "narrative_scale": {
+          "enum": [
+            "serial",
+            "epic"
+          ]
+        },
+        "tone_preference": {
+          "enum": [
+            "epic",
+            "light",
+            "dark",
+            "hot"
+          ]
+        },
+        "autonomous_book": {
+          "type": "boolean"
+        },
+        "execution_budget_grant_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Existing native locator supplied by main; compiler does not create or verify a grant"
+        }
+      }
+    },
+    "story": {
+      "type": "object",
+      "required": [
+        "advantage",
+        "audiences",
+        "career_ledger",
+        "channel",
+        "content_mode",
+        "development",
+        "era",
+        "genre",
+        "goal",
+        "locations",
+        "logline",
+        "narrative_drive",
+        "platform",
+        "power_tiers",
+        "premise",
+        "profession_boundary",
+        "reader_rationale",
+        "relationship_tension",
+        "review_adjudications",
+        "romance_mode",
+        "rules",
+        "setting",
+        "stakes",
+        "sub_genre",
+        "synopsis",
+        "tags",
+        "theme",
+        "title",
+        "title_candidates",
+        "tone_keywords",
+        "trigger",
+        "protagonist",
+        "antagonist",
+        "ally",
+        "chapters"
+      ],
+      "properties": {
+        "advantage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "audiences": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "career_ledger": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "content_mode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "development": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "era": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "genre": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "locations": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "logline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "narrative_drive": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "power_tiers": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "premise": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "profession_boundary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "reader_rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "relationship_tension": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "review_adjudications": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 0
+        },
+        "romance_mode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "setting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "stakes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "sub_genre": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "synopsis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "theme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "title_candidates": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "tone_keywords": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "protagonist": {
+          "type": "object",
+          "required": [
+            "name",
+            "occupation",
+            "background",
+            "fear",
+            "flaw",
+            "strength",
+            "age",
+            "gender"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "occupation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "background": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "fear": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "flaw": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "strength": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "age": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "gender": {
+              "enum": [
+                "male",
+                "female",
+                "nonbinary",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "antagonist": {
+          "type": "object",
+          "required": [
+            "name",
+            "occupation",
+            "background",
+            "fear",
+            "flaw",
+            "strength",
+            "age",
+            "gender"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "occupation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "background": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "fear": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "flaw": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "strength": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "age": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "gender": {
+              "enum": [
+                "male",
+                "female",
+                "nonbinary",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "ally": {
+          "type": "object",
+          "required": [
+            "name",
+            "occupation",
+            "background",
+            "fear",
+            "flaw",
+            "strength",
+            "age",
+            "gender"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "occupation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "background": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "fear": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "flaw": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "strength": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "age": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "gender": {
+              "enum": [
+                "male",
+                "female",
+                "nonbinary",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "chapters": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "number",
+              "title",
+              "goal",
+              "obstacle",
+              "choice",
+              "consequence",
+              "hook",
+              "location",
+              "reveals",
+              "target_word_count",
+              "causal_contract",
+              "methodology_contract",
+              "scenes",
+              "prose_atoms"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "obstacle": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "choice": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "consequence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "hook": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "location": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "number": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "target_word_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20000
+              },
+              "reveals": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                }
+              },
+              "causal_contract": {
+                "type": "object",
+                "minProperties": 1
+              },
+              "methodology_contract": {
+                "type": "object",
+                "minProperties": 1
+              },
+              "scenes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object"
+                }
+              },
+              "prose_atoms": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "action",
+                    "reaction",
+                    "result"
+                  ],
+                  "properties": {
+                    "action": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 16000
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 64,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16000
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "story_pointer"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "story_pointer": {
+                                    "type": "string",
+                                    "pattern": "^/"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "reaction": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 16000
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 64,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16000
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "story_pointer"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "story_pointer": {
+                                    "type": "string",
+                                    "pattern": "^/"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "result": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 16000
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 64,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16000
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "story_pointer"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "story_pointer": {
+                                    "type": "string",
+                                    "pattern": "^/"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "execution_plan": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template",
+          "template_ordinal",
+          "prompt_version",
+          "source_site"
+        ],
+        "properties": {
+          "template": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+$"
+          },
+          "template_ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "prompt_version": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "source_site": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          }
+        },
+        "allOf": [{
+          "if": {"properties": {"prompt_version": {"type": "null"}}},
+          "then": {"properties": {"template": {"enum": [
+            "concept_methodology",
+            "conception_source_effect_contract",
+            "conception_source_effect_contract_repair"
+          ]}}}
+        }]
+      }
+    },
+    "replies": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "template",
+          "template_ordinal",
+          "chapter_number"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "wire_sha256"
+            ]
+          },
+          {
+            "required": [
+              "wire_assertions"
+            ]
+          }
+        ],
+        "properties": {
+          "template": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+$"
+          },
+          "template_ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "global_ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "native_operation_key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "native_input_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "wire_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "wire_assertions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            }
+          },
+          "protocol_subject": {
+            "type": "object"
+          },
+          "chapter_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "current_body": {
+            "type": "object",
+            "description": "Explicit $wire selection of the actual current body, never the initial blueprint substituted for a rewrite"
+          },
+          "material": {
+            "type": "object",
+            "minProperties": 1,
+            "description": "Explicit private SDK payload; literal opinions, native-wire source/hash/quote/ID bindings; never native DB receipts"
+          }
+        }
+      }
+    }
+  }
+}

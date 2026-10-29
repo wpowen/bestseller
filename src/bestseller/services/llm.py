@@ -1397,6 +1397,10 @@ _PROSE_LENGTH_RETRY_KEEP_CAP_TEMPLATES = frozenset(
         "concept_tournament_premise_judge",
         "concept_tournament_finalist_judge",
         "concept_tournament_finalist_seriality_judge",
+        "concept_tournament_raw_idea_rank_reader_first_v1",
+        "concept_tournament_premise_judge_reader_first_v1",
+        "concept_tournament_finalist_judge_reader_first_v1",
+        "concept_tournament_finalist_seriality_judge_reader_first_v1",
     }
 )
 # Prefixes catch A/B / variant suffixes (e.g. scene_writer_lean, scene_writer_c0,

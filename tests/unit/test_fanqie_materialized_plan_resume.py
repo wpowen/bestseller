@@ -515,12 +515,14 @@ async def test_public_pipeline_retries_skip_all_planning_and_enter_existing_segm
         return {
             "full_text": body,
             "review": review,
+            "effective_passed": False,
             "status": "needs_revision",
             "whole_book_complete": False,
             "export_paths": {},
             "rejected_paths": {},
             "candidate_paths": {},
             "revision_task_counts": {"ranking": 0, "short_v2": 0},
+            "normal_rewrite_task_ids": [],
         }
 
     monkeypatch.setattr(pipeline, "_run_fanqie_segments", segments)

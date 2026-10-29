@@ -598,7 +598,7 @@ async def _sources(session, settings, project_id):
     _need(
         run.workflow_run_id == producer.id
         and run.prompt_template == beat.TEMPLATE
-        and run.prompt_version == beat.PROMPT_VERSION
+        and run.prompt_version == expected.prompt_version
         and request.system_prompt == expected.system_prompt
         and request.user_prompt == expected.user_prompt
         and receipt.get("schema") == beat.SOURCE_SCHEMA
@@ -771,7 +771,7 @@ def _request(
             }
         )
     )
-    return llm.LLMCompletionRequest(
+    request = llm.LLMCompletionRequest(
         logical_role="planner",
         system_prompt=SYSTEM,
         user_prompt=user,
@@ -788,6 +788,10 @@ def _request(
             **{f"outline_completion_{key}": value for key, value in binding.items()},
         },
     )
+
+    from bestseller.services.source_bound_planning_content import planning_reader_first_request
+
+    return planning_reader_first_request(request, project, stage="fanqie_contract_completion")
 
 
 def _prepare_capacity(request, settings, project):
@@ -809,7 +813,7 @@ def _prepare_capacity(request, settings, project):
     )
 
     role = resolve_request_role(settings, project, request)
-    if request.prompt_version == PROMPT_VERSION_V2:
+    if request.prompt_version != PROMPT_VERSION:
         # v2 is not registered by the shared v1-only retention/output adapters.
         # Keep the ordinary physical cap; never impersonate a registered v1 pair.
         allowance = output_budget_for_request(request, role, answer_tokens=2000)

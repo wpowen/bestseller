@@ -34,6 +34,7 @@ from bestseller.services.fanqie_short_planner import (
     build_fanqie_segment_outline_batch,
     generate_fanqie_beat_sheet,
     persist_fanqie_chapter_outline,
+    prepare_reader_first_short_outline,
 )
 from bestseller.services.fanqie_short_quality import review_whole_fanqie_short_story
 from bestseller.services.fanqie_short_ranking_gate import (
@@ -700,6 +701,17 @@ async def _deslop_whole_short_story(
     The returned candidate grants no adoption or publication authority.
     """
 
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    if reader_first_binding(project) is not None:
+        # New-protocol edits need a chapter source, frozen anchors and the same
+        # persistent two-round budget. This advisory full-book candidate cannot
+        # be adopted; all normal chapter and whole-book quality gates still run.
+        _emit_progress(progress, "fanqie_deslop_chapter_scope_required", {
+            "project_slug": project.slug, "quality_pass_asserted": False,
+            "reason": "use_bound_chapter_revision_budget",
+        })
+        return full_text
     if not full_text or not full_text.strip():
         return full_text
     try:
@@ -925,6 +937,10 @@ async def run_fanqie_short_pipeline(
         outline_payload = await complete_missing_outline_contract(
             session, settings, project_id=project.id, outline_payload=outline_payload,
             requested_by=requested_by,
+        )
+        outline_payload = await prepare_reader_first_short_outline(
+            session, settings, project_id=project.id, outline_payload=outline_payload,
+            workflow_run_id=planning_result.workflow_run_id, requested_by=requested_by,
         )
         source_paths = _write_fanqie_source_artifacts(
             output_dir,

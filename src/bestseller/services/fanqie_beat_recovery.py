@@ -236,7 +236,7 @@ def build_current_request(
             "current_output_contract": document["output_schema"],
         }
     )
-    return LLMCompletionRequest(
+    request = LLMCompletionRequest(
         logical_role="planner",
         system_prompt=SYSTEM,
         user_prompt=user,
@@ -251,6 +251,10 @@ def build_current_request(
             "require_source_complete_capacity": True,
         },
     )
+
+    from bestseller.services.source_bound_planning_content import planning_reader_first_request
+
+    return planning_reader_first_request(request, project, stage="fanqie_beat")
 
 
 async def _runnable(
@@ -375,7 +379,7 @@ async def _paid_beat(session, settings, project, producer, request):
         run.project_id == project.id
         and run.logical_role == "planner"
         and run.prompt_template == TEMPLATE
-        and run.prompt_version == PROMPT_VERSION,
+        and run.prompt_version == request.prompt_version,
         "retained_paid_run_identity",
     )
     # The existing proof reader uses session.get. Refresh all financial rows
@@ -417,7 +421,7 @@ async def _paid_beat(session, settings, project, producer, request):
         and stored.step_run_id == request.step_run_id
         and stored.logical_role == request.logical_role
         and stored.prompt_template == TEMPLATE
-        and stored.prompt_version == PROMPT_VERSION
+        and stored.prompt_version == request.prompt_version
         and llm._effective_input_hash(request, role) == proof["effective_input_sha256"]
         and paid.finish_reason in {"stop", "end_turn", "completed"}
         and not paid.tool_calls
@@ -797,7 +801,7 @@ async def ensure_beat_sheet(
             _need(
                 run.workflow_run_id == producer.id
                 and run.prompt_template == TEMPLATE
-                and run.prompt_version == PROMPT_VERSION
+                and run.prompt_version == request.prompt_version
                 and retained_request.system_prompt == request.system_prompt
                 and retained_request.user_prompt == request.user_prompt,
                 "cache_entire_request",
@@ -899,7 +903,7 @@ async def ensure_beat_sheet(
         _need(
             run.workflow_run_id == workflow.id
             and run.prompt_template == TEMPLATE
-            and run.prompt_version == PROMPT_VERSION
+            and run.prompt_version == request.prompt_version
             and paid.finish_reason in {"stop", "end_turn", "completed"}
             and not paid.tool_calls
             and not paid.fallback_used

@@ -792,13 +792,24 @@ async def persist_native_outline(c, payload, *, legacy=False):
 
 @pytest.mark.parametrize("legacy", [False, True])
 async def test_real_typed_import_boundary_base_and_derived_are_replayed(outline_case, legacy):
+    from full_flow_q4_short.typed_leaf_differences import complete_leaf_differences
+
     c = outline_case
     original = await persist_native_outline(c, c.base, legacy=legacy)
     assert "methodology_lineage" in original.content["_meta"]
-    assert beat._same(
-        {key: value for key, value in original.content.items() if key != "_meta"},
-        ChapterOutlineBatchInput.model_validate(c.base).model_dump(mode="json"),
-    )
+    try:
+        assert beat._same(
+            {key: value for key, value in original.content.items() if key != "_meta"},
+            ChapterOutlineBatchInput.model_validate(c.base).model_dump(mode="json"),
+        )
+    except AssertionError as error:
+        error.code = "fanqie_typed_import_base_mismatch"
+        error.differences = complete_leaf_differences(
+            ChapterOutlineBatchInput.model_validate(c.base).model_dump(mode="json"),
+            {key: value for key, value in original.content.items() if key != "_meta"},
+        )
+        error.args = (error.code,)
+        raise
     first = await complete(c)
     await c.session.commit()
     derived = await persist_native_outline(c, first, legacy=legacy)

@@ -145,7 +145,8 @@ async def load_reader_first_source_receipt(session,settings,*,project,chapter,ar
     from bestseller.services import retained_planning_generation as physical
     from bestseller.services import retained_review_input_proof as proof
     from bestseller.services.source_bound_planning_content import (
-        parse_reader_first_review, reader_first_binding, reader_first_review_prompts,
+        attach_reader_complete_retention, parse_reader_first_review,
+        reader_first_binding, reader_first_review_request,
     )
     reader=physical._Reader(session)
     with session.no_autoflush:
@@ -180,21 +181,26 @@ async def load_reader_first_source_receipt(session,settings,*,project,chapter,ar
         run=await reader.get(LlmRunModel,run_id)
         if run is None:
             raise ReaderFirstSourceError('run','persisted',str(run_id))
-        for field,expected in {'project_id':native.id,'logical_role':'critic',
-                              'prompt_template':'planner_reader_first_outline_review',
-                              'prompt_version':'rf-outline-review-v1'}.items():
+        expected_request=reader_first_review_request(
+            native,binding,source,run.workflow_run_id,metadata={'coverage':coverage})
+        expected_request=attach_reader_complete_retention(settings,native,expected_request)
+        for field,expected in {'project_id':native.id,'logical_role':expected_request.logical_role,
+                              'prompt_template':expected_request.prompt_template,
+                              'prompt_version':expected_request.prompt_version}.items():
             _reader_source_equal('run.'+field,str(expected),str(getattr(run,field)))
         _reader_source_equal('checkpoint.workflow',str(run.workflow_run_id),entry.get('workflow_run_id'))
         _,request_sha=physical._file(settings,run,'request')
         response,response_sha=physical._file(settings,run,'response')
         request=proof._retained_request(settings,run)
-        system,user=reader_first_review_prompts(binding,source=source,checkpoint='outline')
-        for field,expected in {'system_prompt':system,'user_prompt':user,'tools':None,
-                              'max_tokens_override':4096,'temperature_override':.2}.items():
-            _reader_source_equal('request.'+field,expected,getattr(request,field))
+        for field in ('system_prompt','user_prompt','tools','tool_choice','messages_override',
+                      'max_tokens_override','temperature_override'):
+            _reader_source_equal('request.'+field,getattr(expected_request,field),getattr(request,field))
         catalog,_=proof._fresh_catalog()
         role=llm._apply_conception_phase_settings(request,proof._fresh_role(settings,native,request,catalog))
-        effective=llm._effective_input_hash(request,role)
+        if binding['protocol']=='reader-first-planning.v2':
+            from bestseller.services.planning_surgical_budget import resolve_request_role
+            role=resolve_request_role(settings,native,expected_request)
+        effective=llm._effective_input_hash(expected_request,role)
         scope=(native.metadata_json or {}).get('execution_scope_id')
         paid,key=await proof._physical_return(reader,run,scope=scope,
                                               expected_hash=effective,expected_model=role.model)

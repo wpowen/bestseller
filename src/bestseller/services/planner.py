@@ -20922,7 +20922,8 @@ async def _run_reader_first_outline_checkpoint(
     """
     from bestseller.services.source_bound_planning_content import (
         READER_FIRST_DIMENSIONS, ReaderFirstDirectionRequired,
-        parse_reader_first_review, reader_first_binding, reader_first_review_prompts,
+        attach_reader_complete_retention, parse_reader_first_review,
+        reader_first_binding, reader_first_review_request,
     )
 
     binding = reader_first_binding(project)
@@ -21033,7 +21034,10 @@ async def _run_reader_first_outline_checkpoint(
             state["history"].append(entry)
             try:
                 entry["coverage"] = _reader_first_outline_coverage(current, project, binding)
-                system, user = reader_first_review_prompts(binding, source=current, checkpoint="outline")
+                request = reader_first_review_request(
+                    project, binding, current, workflow_run_id,
+                    metadata={"coverage": entry["coverage"]},
+                )
             except (ValueError, TypeError, KeyError) as error:
                 entry["receipt"] = unknown(str(error))
                 await stop(entry["receipt"])
@@ -21047,14 +21051,8 @@ async def _run_reader_first_outline_checkpoint(
             state["status"] = "review_reserved"
             await save()  # Crashes and failed sends consume the reservation.
             try:
-                completion = await complete_text(session, bounded_settings, LLMCompletionRequest(
-                    logical_role="critic", project_id=project.id, workflow_run_id=workflow_run_id,
-                    system_prompt=system, user_prompt=user, fallback_response="{}",
-                    prompt_template="planner_reader_first_outline_review", prompt_version="rf-outline-review-v1",
-                    max_tokens_override=4096, temperature_override=.2,
-                    metadata={"source_sha256": source_hash, "reader_first_planning": binding,
-                              "checkpoint": "outline", "coverage": entry["coverage"]},
-                ))
+                request = attach_reader_complete_retention(bounded_settings, project, request)
+                completion = await complete_text(session, bounded_settings, request)
                 entry["llm_run_id"] = str(completion.llm_run_id) if completion.llm_run_id else None
                 entry["raw_review"] = completion.content
                 if (completion.llm_run_id is None or completion.fallback_used
@@ -21134,7 +21132,7 @@ def _reader_first_planner_prompts(
     binding = reader_first_binding(project)
     if binding is None:
         return system, user
-    instruction = ("" if "[reader-first-planning.v1:" in system else
+    instruction = ("" if f"[{binding['protocol']}:" in system else
                    reader_first_instruction(binding, language=_planner_language(project), stage=stage))
     if "outline" in stage and "reader_first_field_roles" not in system:
         instruction += (

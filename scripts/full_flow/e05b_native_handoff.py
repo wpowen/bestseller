@@ -410,11 +410,53 @@ class ScriptedWire(httpx.AsyncByteStream):
         yield self.body
 
 
+def snapshot_payload(body, system_prompt):
+    """One synthetic extraction, not a factual-completeness or quality claim."""
+    messages = body.get("messages") or []
+    if body.get("tools") or len(messages) != 2:
+        return None
+    system, user = messages
+    content = user.get("content")
+    if (
+        system.get("role") != "system"
+        or system.get("content") != system_prompt
+        or user.get("role") != "user"
+        or not isinstance(content, str)
+        or not content.startswith("第 ")
+        or "=== 本章正文开始 ===\n" not in content
+        or "\n=== 本章正文结束 ===\n\n" not in content
+        or not content.endswith(
+            "请严格按照 system prompt 规定的 JSON 格式输出本章结束时的硬事实状态。"
+        )
+    ):
+        return None
+    return {"facts": [], "time_anchor": None, "chapter_time_span": None}
+
+
 class SDKScript:
     def __init__(self):
         self.calls = []
         self.body_id = None
         self.epoch = "C0"
+
+    def check_slot(self, family):
+        limits = {"commercial": 3, "window": 1, "primary": 1, "snapshot": 1}
+        need(family in limits, "sdk_expected_family", sorted(limits), family)
+        counts = Counter(call["family"] for call in self.calls)
+        need(
+            counts[family] < limits[family],
+            "sdk_family_limit." + family,
+            limits[family],
+            counts[family] + 1,
+        )
+        if family == "snapshot":
+            need(
+                counts == {"commercial": 3, "window": 1, "primary": 1},
+                "sdk_snapshot_after_reviews",
+                {"commercial": 3, "window": 1, "primary": 1},
+                dict(counts),
+            )
+        need(len(self.calls) < 6, "sdk_call_limit", 6, len(self.calls) + 1)
 
     def response(self, body):
         tools = body.get("tools") or []
@@ -463,6 +505,11 @@ class SDKScript:
                 }
             family = "commercial"
         else:
+            from bestseller.services.continuity import _EXTRACTION_SYSTEM_PROMPT
+
+            payload = snapshot_payload(body, _EXTRACTION_SYSTEM_PROMPT)
+            if payload is not None:
+                return "snapshot", None, payload
             messages = body.get("messages") or []
             user = "\n".join(
                 str(row.get("content") or "") for row in messages if row.get("role") == "user"
@@ -496,8 +543,8 @@ class SDKScript:
         )
         body = json.loads(request.content)
         family, name, payload = self.response(body)
+        self.check_slot(family)
         number = len(self.calls) + 1
-        need(number <= 5, "sdk_call_limit", 5, number)
         self.calls.append(
             {
                 "number": number,
@@ -787,7 +834,7 @@ async def native_entry():
                     True,
                     retained_returns,
                 )
-            equal("entry.new_sdk_calls", 5 if ENTRY_EPOCH == "C0" else 0, len(script.calls))
+            equal("entry.new_sdk_calls", 6 if ENTRY_EPOCH == "C0" else 0, len(script.calls))
             STATE.checkpoint(
                 "native_entry_verified",
                 imported_source_sha256=imported,
@@ -1373,14 +1420,14 @@ async def main():
                 )
                 + "\n"
             )
-            need(len(script.calls) == 5, "no_repeated_sdk_calls", 5, len(script.calls))
+            need(len(script.calls) == 6, "no_repeated_sdk_calls", 6, len(script.calls))
             paid = {
                 t: await table_snapshot(compare_connection, t)
                 for t in ("llm_runs", "execution_operations", "execution_attempts")
             }
             budgets_now = await budget_rows(compare_connection)
             verify_budgets(
-                all_budgets_before, budgets_now, target=scope, calls_delta=5, tokens_delta=1000
+                all_budgets_before, budgets_now, target=scope, calls_delta=6, tokens_delta=1200
             )
             if ordinal == 0:
                 first_cycle, first_paid, first_budget = cycle, paid, budgets_now
@@ -1442,7 +1489,17 @@ async def main():
             new_runs = [
                 row for row in new_runs if str(row.id) not in clone_before["llm_runs"]["rows"]
             ]
-            need(len(new_runs) == 5, "native_new_runs", 5, len(new_runs))
+            need(len(new_runs) == 6, "native_new_runs", 6, len(new_runs))
+            equal(
+                "native_template_counts",
+                {
+                    "chapter_commercial_quality_judge": 3,
+                    "chapter_window_quality_judge": 1,
+                    "chapter_review": 1,
+                    "chapter_state_snapshot": 1,
+                },
+                dict(Counter(row.prompt_template for row in new_runs)),
+            )
             STATE.data["new_native_runs"] = [
                 {
                     "id": str(row.id),
@@ -1511,9 +1568,9 @@ async def main():
             )
         need(
             Counter(call["family"] for call in script.calls)
-            == {"commercial": 3, "window": 1, "primary": 1},
+            == {"commercial": 3, "window": 1, "primary": 1, "snapshot": 1},
             "sdk_template_counts",
-            {"commercial": 3, "window": 1, "primary": 1},
+            {"commercial": 3, "window": 1, "primary": 1, "snapshot": 1},
             dict(Counter(call["family"] for call in script.calls)),
         )
         need(
@@ -1533,8 +1590,10 @@ async def main():
             old_report_task_cycle_journal_unchanged=True,
             all_budget_fields_protected=True,
             old_physical_files_unchanged=True,
-            simulated_new_calls=5,
-            simulated_tokens=1000,
+            simulated_new_calls=6,
+            simulated_review_calls=5,
+            simulated_snapshot_calls=1,
+            simulated_tokens=1200,
             shared_issuer_view_verified=True,
             e05b_complete=True,
             full_report_quality_task_paid_bytes_equal=True,
@@ -1563,6 +1622,11 @@ async def main():
                 STATE.failure(error, step="read_child_sdk_audit")
         STATE.data["script_consumed_index"] = len(script.calls)
         STATE.data["sdk_calls"] = script.calls
+        observed_families = Counter(call["family"] for call in script.calls)
+        STATE.data["simulated_review_calls"] = sum(
+            observed_families[family] for family in ("commercial", "window", "primary")
+        )
+        STATE.data["simulated_snapshot_calls"] = observed_families["snapshot"]
         if script.calls and STATE.data.get("last_successful_llm_template", "Unknown").startswith(
             "Unknown"
         ):
@@ -1570,6 +1634,7 @@ async def main():
                 "primary": "chapter_review",
                 "window": "chapter_window_quality_judge",
                 "commercial": "chapter_commercial_quality_judge",
+                "snapshot": "chapter_state_snapshot",
             }[script.calls[-1]["family"]]
         if observer is not None:
             event.remove(Session, "after_flush", observer)

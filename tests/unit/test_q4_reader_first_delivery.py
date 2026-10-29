@@ -57,11 +57,11 @@ def _leaves(node, path=""):
         yield path, node
 
 
-def _case(language="zh"):
+def _case(language="zh", *, count=12, number=7):
     binding = protocol.new_reader_first_binding("A reconciliation; preserve the seal and 1200.50.")
-    args = dict(project_id=uuid4(), chapter_id=uuid4(), chapter_number=7, artifact_id=uuid4())
+    args = dict(project_id=uuid4(), chapter_id=uuid4(), chapter_number=number, artifact_id=uuid4())
     approved = {
-        "chapter_number": 7, "goal": "Ask why she left before choosing to stay.",
+        "chapter_number": number, "goal": "Ask why she left before choosing to stay.",
         "precise/fact~": "09:17; 1200.50; do not open before tomorrow.",
         "constraints": ["Do not sign again.", "Keep all three seals intact."],
         "scenes": [{"scene_number": 1, "participants": ["Ming", "Lan"],
@@ -79,7 +79,14 @@ def _case(language="zh"):
     roles["/scenes/0/exit_state/choice"] = "narrative_task"
     approved["_meta"] = {"reader_first_planning": deepcopy(binding),
                          "writer_delivery_schema": V3, "reader_first_field_roles": roles}
-    source = {"reader_first_planning": deepcopy(binding), "outline": {"chapters": [approved]},
+    # Keep the selected chapter at its original pointer while reviewing all N.
+    chapters = [approved]
+    for chapter_number in range(1, count + 1):
+        if chapter_number != number:
+            other = deepcopy(approved)
+            other["chapter_number"] = chapter_number
+            chapters.append(other)
+    source = {"reader_first_planning": deepcopy(binding), "outline": {"chapters": chapters},
               "whole_book_payoff_index": "Reconciliation remains the ending promise."}
     raw = {"schema": "reader-first-review.v1", "checkpoint": "outline",
            "source_sha256": content_hash(source), "config_sha256": binding["config_sha256"],
@@ -91,7 +98,7 @@ def _case(language="zh"):
     reader_receipt = protocol.parse_reader_first_review(raw, source=source, binding=binding,
                                                        checkpoint="outline")
     assert reader_receipt["status"] == "passed"
-    receipt = {"chapter_numbers": [7], "reader_first_source": {
+    receipt = {"chapter_numbers": list(range(1, count + 1)), "reader_first_source": {
         "schema": "reader-first-writer-source.v1", "binding": deepcopy(binding),
         "source_binding": {key: str(value) if key != "chapter_number" else value
                            for key, value in args.items()},
@@ -206,7 +213,8 @@ def test_writer_rejects_block_drift_after_verified_delivery(fault):
     elif fault == "approved_hash": payload["approved_chapter_sha256"] = "0" * 64
     elif fault == "scope": payload["source_binding"]["chapter_id"] = str(uuid4())
     changed = block.model_copy(update={"text": block.text.rsplit("\n", 1)[0] + "\n" + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))})
-    project = SimpleNamespace(id=args["project_id"], metadata_json={"reader_first_planning": binding})
+    project = SimpleNamespace(id=args["project_id"], target_chapters=12, language="zh",
+                              metadata_json={"reader_first_planning": binding})
     chapter = SimpleNamespace(id=args["chapter_id"], chapter_number=7)
     with pytest.raises(ValueError, match="reader_first"):
         reader_first_writer_blocks(project, chapter, (changed,), language="zh")
@@ -239,7 +247,8 @@ def test_writer_reparses_retained_review_instead_of_trusting_rehashed_delivery(f
     elif fault == "changed_raw_review": payload["raw_review"]["source_sha256"] = "0" * 64
     changed = block.model_copy(update={"text": delivery._reader_first_delivery_text(payload, "zh"),
                                        "provenance": provenance})
-    project = SimpleNamespace(id=args["project_id"], metadata_json={"reader_first_planning": binding})
+    project = SimpleNamespace(id=args["project_id"], target_chapters=12, language="zh",
+                              metadata_json={"reader_first_planning": binding})
     chapter = SimpleNamespace(id=args["chapter_id"], chapter_number=7)
     with pytest.raises(ValueError, match="reader_first"):
         delivery.reader_first_writer_blocks(project, chapter, (changed,), language="zh")
@@ -271,11 +280,15 @@ def test_new_source_cannot_downgrade_when_marker_is_lost():
 async def test_loader_requires_source_and_scope_and_preserves_legacy_reference(monkeypatch):
     from bestseller.services import editable_plan_source
     args, approved, receipt, binding = _case()
-    project = SimpleNamespace(id=args["project_id"], metadata_json={"reader_first_planning": binding})
+    project = SimpleNamespace(id=args["project_id"], target_chapters=12, language="zh",
+                              metadata_json={"reader_first_planning": binding})
     chapter = SimpleNamespace(id=args["chapter_id"], chapter_number=7, metadata_json={})
 
     async def missing(*a, **kw): return None
 
+    async def retained_receipt(*a, **kw): return deepcopy(receipt)
+
+    monkeypatch.setattr(delivery, "load_reader_first_source_receipt", retained_receipt)
     monkeypatch.setattr(editable_plan_source, "load_selected_plan_source", missing)
     with pytest.raises(ValueError, match="reader_first"):
         await delivery.load_delivery_blocks(None, None, project=project, chapter=chapter, scenes=[])
@@ -304,7 +317,8 @@ async def test_loader_requires_source_and_scope_and_preserves_legacy_reference(m
 async def test_loader_requires_exact_whole_reviewed_artifact_not_only_chapter(monkeypatch):
     from bestseller.services import editable_plan_source
     args, approved, receipt, binding = _case()
-    project = SimpleNamespace(id=args["project_id"], metadata_json={"reader_first_planning": binding})
+    project = SimpleNamespace(id=args["project_id"], target_chapters=12, language="zh",
+                              metadata_json={"reader_first_planning": binding})
     chapter = SimpleNamespace(id=args["chapter_id"], chapter_number=7, metadata_json={})
 
     async def selected(*a, **kw):
@@ -312,6 +326,9 @@ async def test_loader_requires_exact_whole_reviewed_artifact_not_only_chapter(mo
                                                                   "other_future_promise": "unreviewed"})
         return artifact, approved, receipt
 
+    async def retained_receipt(*a, **kw): return deepcopy(receipt)
+
+    monkeypatch.setattr(delivery, "load_reader_first_source_receipt", retained_receipt)
     monkeypatch.setattr(editable_plan_source, "load_selected_plan_source", selected)
     with pytest.raises(ValueError, match="reader_first"):
         await delivery.load_delivery_blocks(None, None, project=project, chapter=chapter, scenes=[])
@@ -335,7 +352,7 @@ def test_nested_metadata_is_retained_and_matches_planner_non_meta_roles():
 
 def test_actual_planner_coverage_accepts_writer_source_shape():
     from bestseller.services.planner import _reader_first_outline_coverage
-    case = _case()
+    case = _case(count=1, number=1)
     args, approved, receipt, binding = case
     args["chapter_number"] = approved["chapter_number"] = 1
     receipt["chapter_numbers"] = [1]
@@ -365,6 +382,8 @@ def _caller_inputs(language):
     packet.retrieval_chunks = []
     case = _case(language)
     args, _, _, binding = case
+    project.target_chapters = len(case[2]["reader_first_source"]["source"]["outline"]["chapters"])
+    project.target_word_count = project.target_chapters * 2600
     project.id, chapter.id = args["project_id"], args["chapter_id"]
     chapter.project_id = project.id
     scene.project_id, scene.chapter_id = project.id, chapter.id
@@ -485,16 +504,20 @@ async def test_historical_reference_is_task_project_and_chapter_scoped(version, 
     import asyncio
     from bestseller.services import editable_plan_source
     args, _, _, binding = _case()
-    project = SimpleNamespace(id=args["project_id"], metadata_json={"reader_first_planning": binding})
+    project = SimpleNamespace(id=args["project_id"], target_chapters=12, language="zh",
+                              metadata_json={"reader_first_planning": binding})
     chapter = SimpleNamespace(id=args["chapter_id"], chapter_number=7, metadata_json={})
     old = _legacy_case()
 
     async def selected(*a, **kw):
         return SimpleNamespace(id=args["artifact_id"]), old["approved"], old["receipt"]
 
+    async def retained_receipt(*a, **kw): return deepcopy(old["receipt"])
+
     async def load():
         return await delivery.load_delivery_blocks(None, None, project=project, chapter=chapter, scenes=[])
 
+    monkeypatch.setattr(delivery, "load_reader_first_source_receipt", retained_receipt)
     monkeypatch.setattr(editable_plan_source, "load_selected_plan_source", selected)
     token = delivery._REFERENCE_DELIVERY_SCHEMA.set((current_task(), "approved-current-chapter-delivery." + version,
                                                      project.id, chapter.id))

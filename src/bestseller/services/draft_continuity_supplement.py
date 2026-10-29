@@ -74,11 +74,20 @@ def plan_catalog(approved_plan):
 
 
 async def applicable_plan(session,settings,*,project,chapter):
-    from bestseller.services.chapter_writer_delivery import load_delivery_blocks
+    from bestseller.services.chapter_writer_delivery import (
+        READER_FIRST_DELIVERY_SCHEMA,
+        READER_FIRST_DELIVERY_SOURCE,
+        load_delivery_blocks,
+    )
+    from bestseller.services.chapter_writer_sources import verify_reader_first_delivery
+
     scenes=list(await session.scalars(select(m.SceneCardModel).where(m.SceneCardModel.chapter_id==chapter.id).order_by(m.SceneCardModel.scene_number)))
     blocks=await load_delivery_blocks(session,settings,project=project,chapter=chapter,scenes=scenes)
     dc.need(len(blocks)==1,'supplement_approved_current_task_unavailable')
     payload=strict_json(blocks[0].text.split('\n',2)[2])
+    if (blocks[0].source==READER_FIRST_DELIVERY_SOURCE
+            or payload.get('schema')==READER_FIRST_DELIVERY_SCHEMA):
+        return verify_reader_first_delivery(project=project,chapter=chapter,block=blocks[0])
     dc.need(payload['project_id']==str(project.id) and payload['chapter_id']==str(chapter.id) and payload['chapter_number']==chapter.chapter_number,'supplement_current_plan_scope')
     return payload
 

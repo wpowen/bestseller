@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 import math
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from bestseller.services import finite_book_budget
@@ -29,6 +30,16 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class _ReaderFirstSourceScope:
+    project_id: str
+    chapter_id: str
+    chapter_number: int
+    target_chapters: int
+    language: str
+    binding_json: str
+
+
+@dataclass(frozen=True)
 class WriterSourceCapacity:
     output_tokens: int
     n_candidates: int
@@ -36,6 +47,7 @@ class WriterSourceCapacity:
     delivery_bindings: tuple[tuple[str, str], ...]
     model: str | None = None
     endpoint_hash: str | None = None
+    reader_first_scope: _ReaderFirstSourceScope | None = None
 
 
 def _delivery_binding(block: PromptBlock) -> tuple[str, str]:
@@ -75,6 +87,67 @@ def _delivery_binding(block: PromptBlock) -> tuple[str, str]:
     return block.key, sha256(block.model_dump_json().encode()).hexdigest()
 
 
+def _reader_first_bound_payload(block: PromptBlock, scope: _ReaderFirstSourceScope) -> dict:
+    from bestseller.services.chapter_writer_sources import verify_reader_first_delivery
+
+    return verify_reader_first_delivery(
+        project=SimpleNamespace(
+            id=scope.project_id,
+            target_chapters=scope.target_chapters,
+            language=scope.language,
+            metadata_json={"reader_first_planning": json.loads(scope.binding_json)},
+        ),
+        chapter=SimpleNamespace(id=scope.chapter_id, chapter_number=scope.chapter_number),
+        block=block,
+    )
+
+
+def _reader_first_source_evidence(block: PromptBlock, payload: dict) -> dict:
+    """Hashes describe retained source bodies; they never assert a manuscript grade."""
+    from bestseller.services.prompt_source_policy import content_hash
+
+    census = [
+        {
+            "chapter_number": row["chapter_number"],
+            "chapter_sha256": content_hash(row),
+            "scene_numbers": [scene["scene_number"] for scene in row["scenes"]],
+            "field_roles_sha256": content_hash(row["_meta"]["reader_first_field_roles"]),
+        }
+        for row in payload["review_source"]["outline"]["chapters"]
+    ]
+    raw_review = payload["raw_review"]
+    review_body = (
+        raw_review
+        if isinstance(raw_review, str)
+        else json.dumps(
+            raw_review,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    )
+    return {
+        "schema": "reader-first-writer-consumer-evidence.v1",
+        "source_binding": payload["source_binding"],
+        "reader_first_planning": payload["reader_first_planning"],
+        "block_text_sha256": sha256(block.text.encode()).hexdigest(),
+        "block_model_sha256": sha256(block.model_dump_json().encode()).hexdigest(),
+        "approved_chapter_sha256": payload["approved_chapter_sha256"],
+        "review_source_sha256": payload["review_source_sha256"],
+        "raw_review_sha256": content_hash(raw_review),
+        "raw_review_body_sha256": sha256(review_body.encode()).hexdigest(),
+        "raw_review_body_encoding": "retained_utf8"
+        if isinstance(raw_review, str)
+        else "canonical_json",
+        "reader_receipt_sha256": payload["reader_receipt_sha256"],
+        "readiness_receipt_sha256": payload["readiness_receipt_sha256"],
+        "census": census,
+        "census_sha256": content_hash(census),
+        "native_positive": "unknown",
+    }
+
+
 def prepare_writer_source_capacity(
     settings: AppSettings,
     *,
@@ -85,11 +158,40 @@ def prepare_writer_source_capacity(
     max_tokens_override: int | None,
 ) -> WriterSourceCapacity | None:
     """Called only after the production loader verifies current chapter delivery."""
+    from bestseller.services.chapter_writer_sources import verify_reader_first_delivery
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    binding = reader_first_binding(project)
+    scope = None
+    if binding is not None:
+        if len(delivery_blocks) != 1:
+            raise ValueError("writer_source_capacity_reader_first_delivery_required")
+        verify_reader_first_delivery(project=project, chapter=chapter, block=delivery_blocks[0])
+        scope = _ReaderFirstSourceScope(
+            str(project.id),
+            str(chapter.id),
+            chapter.chapter_number,
+            project.target_chapters,
+            getattr(project, "language", None) or "zh",
+            json.dumps(binding, sort_keys=True, separators=(",", ":"), allow_nan=False),
+        )
     if not delivery_blocks:
         return None
-    bindings = tuple(_delivery_binding(block) for block in delivery_blocks)
+    bindings = (
+        tuple(
+            (block.key, sha256(block.model_dump_json().encode()).hexdigest())
+            for block in delivery_blocks
+        )
+        if scope is not None
+        else tuple(_delivery_binding(block) for block in delivery_blocks)
+    )
     for block in delivery_blocks:
         payload = json.loads(block.text[block.text.index("{") :])
+        if (
+            scope is None
+            and {"reader_first_planning", "review_source", "raw_review"} & payload.keys()
+        ):
+            raise ValueError("writer_source_capacity_reader_first_scope_required")
         if (
             payload.get("project_id") != str(project.id)
             or payload.get("chapter_id") != str(chapter.id)
@@ -129,6 +231,7 @@ def prepare_writer_source_capacity(
         bindings,
         effective["model"],
         effective["endpoint_hash"],
+        scope,
     )
 
 
@@ -168,10 +271,29 @@ def compile_writer_source_prompt(
     ):
         raise ValueError("writer_source_capacity_limits_invalid")
     delivery = [block for block in blocks if block.key in dict(capacity.delivery_bindings)]
-    if (
-        not delivery
-        or tuple(_delivery_binding(block) for block in delivery) != capacity.delivery_bindings
-    ):
+    scope = capacity.reader_first_scope
+    delivery_evidence = {}
+    if scope is not None:
+        if not isinstance(scope, _ReaderFirstSourceScope) or len(delivery) != 1:
+            raise ValueError("writer_source_capacity_reader_first_scope_invalid")
+        bindings = tuple(
+            (block.key, sha256(block.model_dump_json().encode()).hexdigest()) for block in delivery
+        )
+        if bindings != capacity.delivery_bindings:
+            raise ValueError("writer_source_capacity_delivery_binding_changed")
+        from bestseller.services.chapter_writer_delivery import READER_FIRST_DELIVERY_SOURCE
+
+        if any(
+            block.source == READER_FIRST_DELIVERY_SOURCE and block not in delivery
+            for block in blocks
+        ):
+            raise ValueError("writer_source_capacity_unbound_reader_first_delivery")
+        for block in delivery:
+            payload = _reader_first_bound_payload(block, scope)
+            delivery_evidence[block.key] = _reader_first_source_evidence(block, payload)
+    else:
+        bindings = tuple(_delivery_binding(block) for block in delivery)
+    if not delivery or bindings != capacity.delivery_bindings:
         raise ValueError("writer_source_capacity_delivery_binding_changed")
     core = [block for block in blocks if block.required or block.key in integrity_keys]
     system, user = _render_channels(sorted(core, key=_block_sort_key))
@@ -191,13 +313,16 @@ def compile_writer_source_prompt(
     ceiling = min(capacity.capacity_limit, finite_book_budget.current_capacity())
 
     def request_capacity(system: str, user: str) -> dict:
-        return measure_request_capacity(
+        measured = measure_request_capacity(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
             tools=None,
             output_tokens=capacity.output_tokens,
             n_candidates=capacity.n_candidates,
             total_budget=ceiling,
         )
+        if delivery_evidence:
+            measured = {**measured, "reader_first_delivery_evidence": delivery_evidence}
+        return measured
 
     # Do not process optional material, or construct an over-capacity prompt,
     # when the complete source alone already cannot fit the physical request.
@@ -267,6 +392,8 @@ def compile_writer_source_prompt(
         "financial_authorization": False,
         "gateway_revalidation_required": True,
     }
+    if delivery_evidence:
+        receipt["reader_first_delivery_evidence"] = delivery_evidence
     return compiled.model_copy(
         update={
             "report": compiled.report.model_copy(

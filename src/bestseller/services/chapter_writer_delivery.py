@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from asyncio import current_task
 from uuid import UUID
 import json
+import hashlib
 from collections.abc import Mapping
 from bestseller.services.prompt_compiler import PromptBlock,PromptProvenance
 from bestseller.services.prompt_source_policy import content_hash
@@ -84,15 +85,20 @@ async def load_delivery_blocks(session,settings,*,project,chapter,scenes):
         return []
     artifact,approved,receipt=selected_plan
     if binding is not None:
+        receipt=await load_reader_first_source_receipt(
+            session,settings,project=project,chapter=chapter,artifact=artifact,receipt=receipt)
         envelope=receipt.get('reader_first_source')
         source=envelope.get('source') if isinstance(envelope,dict) else None
         if (not isinstance(source,dict) or not isinstance(source.get('outline'),dict)
                 or source['outline']!=getattr(artifact,'content',None)
                 or content_hash(source['outline'])!=content_hash(artifact.content)):
             raise ValueError('reader_first_delivery_full_artifact_binding_required')
-        return [delivery_block(project_id=project.id,chapter_id=chapter.id,
+        block=delivery_block(project_id=project.id,chapter_id=chapter.id,
             chapter_number=chapter.chapter_number,artifact_id=artifact.id,approved=approved,
-            receipt=receipt,reader_first=binding,language=getattr(project,'language',None) or 'zh')]
+            receipt=receipt,reader_first=binding,language=getattr(project,'language',None) or 'zh')
+        from bestseller.services.chapter_writer_sources import verify_reader_first_delivery
+        verify_reader_first_delivery(project=project,chapter=chapter,block=block)
+        return [block]
     constructor=(_source_protocol_delivery_block_v1 if historical
         and selected[1]=='approved-current-chapter-delivery.v1' else delivery_block)
     return [constructor(project_id=project.id,chapter_id=chapter.id,chapter_number=chapter.chapter_number,
@@ -101,6 +107,130 @@ async def load_delivery_blocks(session,settings,*,project,chapter,scenes):
 
 READER_FIRST_DELIVERY_SCHEMA = 'approved-current-chapter-delivery.v3-reader-first'
 READER_FIRST_DELIVERY_SOURCE = 'chapter_writer_delivery.v3-reader-first'
+
+
+class ReaderFirstSourceError(ValueError):
+    """Diagnostic identities only; never expose retained prompts or story text."""
+
+    def __init__(self, field, expected, actual):
+        def summary(value):
+            raw=json.dumps(value,ensure_ascii=False,sort_keys=True,default=str).encode()
+            return {'type':type(value).__name__,'length':len(raw),
+                    'sha256':hashlib.sha256(raw).hexdigest()}
+        self.code='reader_first_source:'+field
+        self.differences=[{'field':field,'expected':summary(expected),'actual':summary(actual)}]
+        super().__init__(self.code)
+
+
+def _reader_source_equal(field, expected, actual):
+    def wire(value):
+        return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'),
+                          allow_nan=False,default=str)
+    if wire(expected)!=wire(actual):
+        raise ReaderFirstSourceError(field,expected,actual)
+
+
+async def load_reader_first_source_receipt(session,settings,*,project,chapter,artifact,receipt):
+    """Attach a detached current view of an actual settled whole-outline review.
+
+    The caller has already admitted the selected native plan. Read its entire
+    review from the durable project checkpoint and verify physical payloads and
+    native financial custody; mutable cached scores alone never grant delivery.
+    No historic receipt, grade, source artifact or caller ORM object is changed.
+    """
+    from bestseller.infra.db.models import (
+        ExecutionAttemptModel, LlmRunModel, ProjectModel, WorkflowRunModel,
+    )
+    from bestseller.services import llm, planner
+    from bestseller.services import retained_planning_generation as physical
+    from bestseller.services import retained_review_input_proof as proof
+    from bestseller.services.source_bound_planning_content import (
+        parse_reader_first_review, reader_first_binding, reader_first_review_prompts,
+    )
+    reader=physical._Reader(session)
+    with session.no_autoflush:
+        native=await reader.get(ProjectModel,project.id)
+        if native is None:
+            raise ReaderFirstSourceError('project','persisted',None)
+        _reader_source_equal('chapter.project_id',str(native.id),str(chapter.project_id))
+        _reader_source_equal('artifact.project_id',str(native.id),str(artifact.project_id))
+        binding=reader_first_binding(native)
+        _reader_source_equal('project.binding',binding,reader_first_binding(project))
+        if binding is None:
+            raise ReaderFirstSourceError('binding','reader-first',None)
+        checkpoint=(native.metadata_json or {}).get('reader_first_outline_checkpoint') or {}
+        _reader_source_equal('checkpoint.schema','reader-first-outline-checkpoint.v1',checkpoint.get('schema'))
+        _reader_source_equal('checkpoint.status','passed',checkpoint.get('status'))
+        history=checkpoint.get('history')
+        if not isinstance(history,list) or not history:
+            raise ReaderFirstSourceError('checkpoint.history','nonempty list',history)
+        # Only the latest complete review can confer delivery on the selected source.
+        entry=deepcopy(history[-1])
+        source=entry.get('source')
+        if not isinstance(source,dict):
+            raise ReaderFirstSourceError('checkpoint.source','object',source)
+        _reader_source_equal('checkpoint.outline',artifact.content,source.get('outline'))
+        _reader_source_equal('checkpoint.binding',binding,entry.get('binding'))
+        _reader_source_equal('checkpoint.source_sha256',content_hash(source),entry.get('source_sha256'))
+        coverage=planner._reader_first_outline_coverage(source,native,binding)
+        try:
+            run_id=UUID(entry.get('llm_run_id'))
+        except (TypeError,ValueError,AttributeError):
+            raise ReaderFirstSourceError('checkpoint.llm_run_id','UUID',entry.get('llm_run_id')) from None
+        run=await reader.get(LlmRunModel,run_id)
+        if run is None:
+            raise ReaderFirstSourceError('run','persisted',str(run_id))
+        for field,expected in {'project_id':native.id,'logical_role':'critic',
+                              'prompt_template':'planner_reader_first_outline_review',
+                              'prompt_version':'rf-outline-review-v1'}.items():
+            _reader_source_equal('run.'+field,str(expected),str(getattr(run,field)))
+        _reader_source_equal('checkpoint.workflow',str(run.workflow_run_id),entry.get('workflow_run_id'))
+        _,request_sha=physical._file(settings,run,'request')
+        response,response_sha=physical._file(settings,run,'response')
+        request=proof._retained_request(settings,run)
+        system,user=reader_first_review_prompts(binding,source=source,checkpoint='outline')
+        for field,expected in {'system_prompt':system,'user_prompt':user,'tools':None,
+                              'max_tokens_override':4096,'temperature_override':.2}.items():
+            _reader_source_equal('request.'+field,expected,getattr(request,field))
+        catalog,_=proof._fresh_catalog()
+        role=llm._apply_conception_phase_settings(request,proof._fresh_role(settings,native,request,catalog))
+        effective=llm._effective_input_hash(request,role)
+        scope=(native.metadata_json or {}).get('execution_scope_id')
+        paid,key=await proof._physical_return(reader,run,scope=scope,
+                                              expected_hash=effective,expected_model=role.model)
+        physical._response(response,paid)
+        owner=await reader.get(WorkflowRunModel,run.workflow_run_id)
+        if owner is None:
+            raise ReaderFirstSourceError('workflow','persisted',None)
+        _reader_source_equal('workflow.project_id',str(native.id),str(owner.project_id))
+        _reader_source_equal('workflow.scope',scope,(owner.metadata_json or {}).get('execution_scope_id'))
+        attempts=await reader.rows(ExecutionAttemptModel,ExecutionAttemptModel.operation_key==key)
+        _reader_source_equal('attempts.count',1,len(attempts))
+        _reader_source_equal('attempt.status','completed',attempts[0].status)
+        _reader_source_equal('attempt.tokens',run.input_tokens+run.output_tokens,attempts[0].actual_tokens)
+        _reader_source_equal('run.input_tokens',paid.input_tokens,run.input_tokens)
+        _reader_source_equal('run.output_tokens',paid.output_tokens,run.output_tokens)
+        _reader_source_equal('checkpoint.raw_review',paid.content,entry.get('raw_review'))
+        _reader_source_equal('paid.tool_calls',None,paid.tool_calls)
+        if paid.finish_reason not in {'stop','end_turn','completed'}:
+            raise ReaderFirstSourceError('paid.finish_reason','complete',paid.finish_reason)
+        parsed=parse_reader_first_review(paid.content,source=source,binding=binding,checkpoint='outline')
+        _reader_source_equal('reader.status','passed',parsed['status'])
+        _reader_source_equal('checkpoint.receipt',parsed,entry.get('receipt'))
+        for kind,expected in (('request',request_sha),('response',response_sha)):
+            _reader_source_equal('physical.'+kind+'.sha256',expected,physical._file(settings,run,kind)[1])
+        indices=[i for i,c in enumerate(source['outline']['chapters'])
+                 if type(c.get('chapter_number')) is int and c['chapter_number']==chapter.chapter_number]
+        _reader_source_equal('chapter.matches',1,len(indices))
+        envelope={'schema':'reader-first-writer-source.v1','binding':deepcopy(binding),
+                  'source_binding':{'project_id':str(native.id),'chapter_id':str(chapter.id),
+                    'chapter_number':chapter.chapter_number,'artifact_id':str(artifact.id)},
+                  'source':source,'chapter_pointer':'/outline/chapters/'+str(indices[0]),
+                  'review':paid.content,'reader_receipt':parsed,
+                  'native_custody':{'llm_run_id':str(run.id),'operation_key':key,
+                    'request_sha256':request_sha,'response_sha256':response_sha,
+                    'effective_input_sha256':effective,'coverage':coverage}}
+        return {**deepcopy(receipt),'reader_first_source':envelope}
 
 
 def _source_pointer(source, pointer):
@@ -278,17 +408,19 @@ def _reader_first_delivery_block(*,project_id,chapter_id,chapter_number,artifact
 def reader_first_writer_blocks(project,chapter,blocks,*,language):
     """Gate both writer prompt entry points before compilation or model work.
 
-    Typed source blocks are produced by load_delivery_blocks; this check fences
-    scope/hash drift between that verified read and either prompt consumer.
+    The shared verifier rechecks the whole reviewed census after loading and
+    before either prompt consumer. Historical scope only selects old protocols.
     """
+    from bestseller.services.chapter_writer_sources import verify_reader_first_delivery
     from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    candidates=[b for b in blocks if b.source==READER_FIRST_DELIVERY_SOURCE]
     selected=_REFERENCE_DELIVERY_SCHEMA.get()
-    if (selected is not None and selected[0] is current_task()
+    if (not candidates and selected is not None and selected[0] is current_task()
             and selected[1] in {'approved-current-chapter-delivery.v1','approved-current-chapter-delivery.v2'}
             and selected[2]==project.id and selected[3]==chapter.id):
         return None
     binding=reader_first_binding(project)
-    candidates=[b for b in blocks if b.source==READER_FIRST_DELIVERY_SOURCE]
     if binding is None:
         if candidates:
             raise ValueError('reader_first_delivery_project_binding_required')
@@ -296,42 +428,10 @@ def reader_first_writer_blocks(project,chapter,blocks,*,language):
     if len(candidates)!=1:
         raise ValueError('reader_first_delivery_v3_integration_required')
     block=candidates[0]
-    try:
-        payload=json.loads(block.text.split('\n',2)[2])
-        approved=payload['approved_source']
-        roles,paths=_reader_first_field_roles(approved,binding)
-        metadata_paths=tuple(_source_metadata_paths(approved))
-        expected={'project_id':str(project.id),'chapter_id':str(chapter.id),
-                  'chapter_number':chapter.chapter_number,'artifact_id':payload['artifact_id']}
-        review=_verified_reader_first_review(source=payload['review_source'],
-            pointer=payload['source_chapter_pointer'],approved=approved,binding=binding,
-            chapter_number=chapter.chapter_number,raw_review=payload['raw_review'],
-            receipt=payload['reader_receipt'])
-        if (payload['schema']!=READER_FIRST_DELIVERY_SCHEMA
-                or payload['reader_first_planning']!=binding
-                or approved['chapter_number']!=chapter.chapter_number
-                or any(payload[key]!=value for key,value in expected.items())
-                or payload['source_binding']!=expected
-                or payload['approved_chapter_sha256']!=content_hash(approved)
-                or payload['reader_receipt_sha256']!=content_hash(payload['reader_receipt'])
-                or payload['reader_receipt']['status']!='passed'
-                or payload['reader_receipt']['checkpoint']!='outline'
-                or payload['reader_receipt']['config_sha256']!=binding['config_sha256']
-                or payload['reader_receipt']['source_sha256']!=payload['review_source_sha256']
-                or review['source_sha256']!=content_hash(payload['review_source'])
-                or payload['narrative_task']!=[p for p in paths if roles[p]=='narrative_task']
-                or payload['continuity_reference']!=[p for p in paths if roles[p]=='continuity_reference']+list(metadata_paths)
-                or payload['field_sources']!={p:{'approved_chapter_sha256':content_hash(approved),
-                    'review_source_pointer':payload['source_chapter_pointer']+p}
-                    for p in (*paths,*metadata_paths)}
-                or not block.required or block.trim_policy!='preserve'
-                or block.provenance is None or block.provenance.source_id!=payload['artifact_id']
-                or block.provenance.source_hash!=content_hash(approved)
-                or block.provenance.field_paths!=(*paths,*metadata_paths)
-                or block.text!=_reader_first_delivery_text(payload,language)):
-            raise ValueError('reader_first_delivery_writer_binding_changed')
-    except (KeyError,TypeError,IndexError,AttributeError) as exc:
-        raise ValueError('reader_first_delivery_writer_binding_changed') from exc
+    payload=verify_reader_first_delivery(project=project,chapter=chapter,block=block)
+    # The caller's rendering language must agree with the verified project view.
+    if block.text!=_reader_first_delivery_text(payload,language):
+        raise ValueError('reader_first_delivery_writer_binding_changed')
     # The required v3 block already carries the instruction once. Return only
     # the validated marker for renderers; do not duplicate its source obligations.
     return binding

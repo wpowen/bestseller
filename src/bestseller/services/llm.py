@@ -813,11 +813,21 @@ async def _paid_transport_attempt_impl(request: LLMCompletionRequest, role: LLMR
     await _execution_boundary()
     call = _execution_call_var.get()
     from bestseller.services import planning_output_budget, planning_surgical_budget
+    from bestseller.services.source_complete_retention import (
+        SourceCompleteRetentionError,
+        is_reader_complete_request,
+    )
     if (planning_surgical_budget.applies(request)
             or planning_output_budget.is_literal_full_source_request(request)
+            or is_reader_complete_request(request)
             or 'source_complete_retention' in request.metadata):
         from bestseller.services.source_complete_retention import retention_limit
         if call is None or call.settings is None:
+            if is_reader_complete_request(request):
+                raise SourceCompleteRetentionError(
+                    'physical_settings_unavailable', field='physical.settings',
+                    expected='native runtime settings', actual=None,
+                )
             raise ValueError('source_complete_retention:physical_settings_unavailable')
         retention_limit(call.settings, request, audit=_project_prompt_audit.get(), role=role)
     if call is None:
@@ -1047,9 +1057,19 @@ def _persist_prompt_payloads(
     # This version promises complete physical custody. Its required evidence
     # cannot silently become best effort after pre-send validation.
     from bestseller.services import planning_output_budget
-    if planning_output_budget.is_literal_full_source_request(request):
+    from bestseller.services.source_complete_retention import (
+        SourceCompleteRetentionError,
+        is_reader_complete_request,
+    )
+    if (planning_output_budget.is_literal_full_source_request(request)
+            or is_reader_complete_request(request)):
         from bestseller.services.source_complete_retention import retention_limit
         if effective_role_settings is None:
+            if is_reader_complete_request(request):
+                raise SourceCompleteRetentionError(
+                    'physical_role_unavailable', field='physical.effective_role_settings',
+                    expected='actual resolved LLMRoleSettings', actual=None,
+                )
             raise ValueError('source_complete_retention:physical_role_unavailable')
         retention_limit(settings, request, audit=_project_prompt_audit.get(), role=effective_role_settings)
     artifact = settings.artifact_store
@@ -1066,6 +1086,7 @@ def _persist_prompt_payloads(
     from bestseller.services import planning_output_budget, planning_surgical_budget
     expanded = (planning_surgical_budget.applies(request)
         or planning_output_budget.is_literal_full_source_request(request)
+        or is_reader_complete_request(request)
         or 'source_complete_retention' in request.metadata)
     if expanded:
         from bestseller.services.source_complete_retention import retention_limit

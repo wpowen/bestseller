@@ -2,6 +2,7 @@
 from functools import cache
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,6 +34,12 @@ def _frozen_8r_prompts():
         frozen = Path(directory)
         for name, expected in archives.items():
             archive = reports / name
+            # Deployment preservation moved ignored historical archives out of
+            # the checkout. Read the protected copy; its original SHA below is
+            # still mandatory, and no archive or golden is replaced.
+            protected = os.environ.get("BESTSELLER_TEST_PROTECTED_SNAPSHOT")
+            if not archive.is_file() and protected:
+                archive = Path(protected) / "reports/framework-recovery-2026-10-21" / name
             assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected
             with tarfile.open(archive) as bundle:
                 for member in bundle.getmembers():

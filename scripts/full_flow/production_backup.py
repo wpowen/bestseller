@@ -20,6 +20,15 @@ Main remains responsible for actual L0/all cores/L1-or-authorized-skip and all
 other user gates. A descendant HEAD is allowed only with identical application
 sources. Pin the manifest SHA after review; there is no implicit latest receipt.
 
+Explicit 2026-10-29 17:10 pre-release backup mode replaces only the admission:
+  use --execute-pre-release-backup instead of --execute-after-main-gates.
+  Manifest: scope="production_backup_before_release_only", candidate_sha,
+  application_source_sha256 (src/**/*.py and config/**), and
+  authorization={path: original USER-AUTHORIZATION-20261029-1710.md, sha256}.
+  The original authorization path/SHA are pinned below. No L0/L1 assertion is
+  required or emitted. Source ancestry and src/config drift remain checked;
+  dirty harness files do not block this separately authorized backup.
+
 Reuse isolation.verify and RunState. All new files are private 0600/directories
 0700 outside the checkout. Full custom pg_dump, schema and count/hash samples
 share one exported READ ONLY snapshot. Restore keeps owner/ACL, creates ONLY a
@@ -63,6 +72,10 @@ APPLICATION_ROOTS = (
 INTERNAL = Path("/System/Volumes/Data")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}\Z")
+BACKUP_AUTHORIZATION = (
+    ROOT / "reports/full-flow-2026-10-28/USER-AUTHORIZATION-20261029-1710.md"
+)
+BACKUP_AUTHORIZATION_SHA = "fc24dd5f143bb14c0c458b70f04592338e9c764947c1ce422c47b5dfc330e969"
 
 
 def file_sha(path: Path) -> str:
@@ -109,27 +122,58 @@ def run(args: list[str], *, field: str, timeout: int = 30,
     return result.stdout or b""
 
 
+def admit_backup_scope(gate: dict, decision_bytes: bytes | None, *,
+                       pre_release: bool, after_main_gates: bool) -> dict:
+    """Pure admission: the explicit backup grant never becomes release evidence."""
+    require(type(pre_release) is bool and type(after_main_gates) is bool
+            and pre_release != after_main_gates,
+            "invocation.one_authorization_mode", "exactly one explicit mode",
+            [pre_release, after_main_gates])
+    if not pre_release:
+        equal("gate.main_prevalidated", True, gate.get("main_prevalidated"))
+        return {"mode": "after_main_gates", "deployment_authority": False}
+    equal("authorization.scope", "production_backup_before_release_only", gate.get("scope"))
+    ref = gate.get("authorization")
+    equal("authorization.reference_type", "dict", type(ref).__name__)
+    equal("authorization.path", str(BACKUP_AUTHORIZATION), ref.get("path"))
+    equal("authorization.sha256", BACKUP_AUTHORIZATION_SHA, ref.get("sha256"))
+    equal("authorization.bytes_type", "bytes", type(decision_bytes).__name__)
+    equal("authorization.original_bytes_sha256", ref["sha256"],
+          hashlib.sha256(decision_bytes).hexdigest())
+    return {"mode": "pre_release_backup", "scope": gate["scope"],
+            "authorization_sha256": ref["sha256"], "release_gates_verified": False,
+            "l1": "not_evaluated", "deployment_authority": False}
+
+
 def gate_binding(args: argparse.Namespace) -> dict:
     gate = json.loads(pinned(args.gate_manifest, args.gate_sha256))
-    equal("gate.main_prevalidated", True, gate.get("main_prevalidated"))
+    pre_release = getattr(args, "execute_pre_release_backup", False)
+    decision = pinned(BACKUP_AUTHORIZATION, BACKUP_AUTHORIZATION_SHA) if pre_release else None
+    admission = admit_backup_scope(gate, decision, pre_release=pre_release,
+                                   after_main_gates=args.execute_after_main_gates)
+    roots = ("src", "config") if pre_release else APPLICATION_ROOTS
     candidate = gate["candidate_sha"]
     require(bool(re.fullmatch(r"[0-9a-f]{40}", candidate)), "gate.commit", "full SHA", candidate)
     base = ["/usr/bin/git", "-C", str(ROOT)]
     run([*base, "merge-base", "--is-ancestor", candidate, "HEAD"], field="gate.commit_ancestry")
     equal("gate.application_drift", b"", run(
-        [*base, "diff", "--name-only", candidate, "--", *APPLICATION_ROOTS], field="git.diff"))
+        [*base, "diff", "--name-only", candidate, "--", *roots], field="git.diff"))
     equal("gate.untracked_application", b"", run(
-        [*base, "ls-files", "--others", "--exclude-standard", "--", *APPLICATION_ROOTS],
+        [*base, "ls-files", "--others", "--exclude-standard", "--", *roots],
         field="git.untracked"))
-    names = run([*base, "ls-tree", "-r", "--name-only", candidate, "--", *APPLICATION_ROOTS],
+    names = run([*base, "ls-tree", "-r", "--name-only", candidate, "--", *roots],
                 field="git.source_files").decode().splitlines()
     actual = {}
     for name in names:
         path = ROOT / name
         require(path.is_file() and not path.is_symlink(), "gate.regular_source", True, False)
-        actual[name] = file_sha(path)
+        if not pre_release or name.startswith("config/") or path.suffix == ".py":
+            actual[name] = file_sha(path)
     require(bool(actual), "gate.source_fingerprints", "nonempty", actual)
     equal("gate.application_source_sha256", gate["application_source_sha256"], actual)
+    if pre_release:
+        return {"candidate_sha": candidate, "manifest_sha256": args.gate_sha256,
+                "admission": admission}
     require(type(gate.get("evidence")) is list and bool(gate["evidence"]),
             "gate.original_evidence", "nonempty reference list", gate.get("evidence"))
     for ref in gate["evidence"]:
@@ -311,7 +355,8 @@ def dump(args: list[str], path: Path, *, field: str) -> dict[str, Any]:
 
 def execute(args: argparse.Namespace, state: RunState, out: Path) -> None:
     state.checkpoint("main_gate_binding")
-    equal("invocation.explicit_main_gate_ack", True, args.execute_after_main_gates)
+    require(args.execute_after_main_gates or getattr(args, "execute_pre_release_backup", False),
+            "invocation.explicit_backup_ack", True, False)
     require(__debug__, "isolation.assertions_enabled", True, False)
     equal("worktree", "int-worktree", ROOT.name)
     for key in ("source_user", "source_database"):
@@ -430,7 +475,9 @@ def main() -> int:
         for name in ("gate-sha256", "plan-sha256", "source-container-id",
                      "source-user", "source-database"):
             parser.add_argument("--" + name, required=True)
-        parser.add_argument("--execute-after-main-gates", action="store_true")
+        modes = parser.add_mutually_exclusive_group(required=True)
+        modes.add_argument("--execute-after-main-gates", action="store_true")
+        modes.add_argument("--execute-pre-release-backup", action="store_true")
         execute(parser.parse_args(), state, out)
     except BaseException as error:
         if state is None:

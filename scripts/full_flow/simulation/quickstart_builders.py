@@ -33,7 +33,7 @@ from .contracts import (
     text_response,
     tool_response,
 )
-from .wire_material import bind_authored_material
+from .wire_material import bind_authored_material, pointer
 
 
 @dataclass(frozen=True)
@@ -316,18 +316,115 @@ def world_spec(context):
     }
 
 
+BOOK_SPEC_REQUIRED = (
+    "logline",
+    "theme_statement",
+    "dramatic_question",
+    "protagonist.name",
+    "protagonist.external_goal",
+    "series_engine.core_serial_engine",
+)
+
+
+def _book_spec_document(context):
+    """Read this physical native request; private subject data grants no identity."""
+    from bestseller.services.source_bound_planning_content import (
+        SOURCE_BOUND_PLANNING_PROTOCOL,
+        decode_source_bound_planning_document,
+    )
+
+    wire = context.wire_body
+    need(
+        isinstance(wire, Mapping) and digest(wire) == context.expected_wire_sha256,
+        "SCRIPT_SOURCE_WIRE_MATCH_REQUIRED",
+    )
+    messages = wire.get("messages")
+    need(type(messages) is list, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    users = [row for row in messages if isinstance(row, Mapping) and row.get("role") == "user"]
+    need(
+        len(users) == 1 and type(users[0].get("content")) is str,
+        "SCRIPT_BOOK_SPEC_WIRE_INVALID",
+    )
+    text = users[0]["content"]
+    need(len(text.encode()) <= 32_000_000, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    try:
+        document, end = json.JSONDecoder(
+            object_pairs_hook=_review_json_pairs, parse_constant=_review_json_constant
+        ).raw_decode(text, len(text) - len(text.lstrip()))
+        need(not text[end:].lstrip().startswith(("{", "[")), "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+        canonical(document)  # Also rejects overflowing JSON numbers.
+        document = decode_source_bound_planning_document(document)
+    except (ValueError, TypeError, KeyError, RecursionError):
+        need(False, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    contract = document.get("current_output_contract")
+    need(
+        document.get("protocol") == SOURCE_BOUND_PLANNING_PROTOCOL
+        and document.get("kind") == "book_spec"
+        and type(contract) is dict
+        and contract.get("kind") == "book_spec"
+        and contract.get("expected_root") == "object"
+        and contract.get("mandatory_exact_dotted_fields") == list(BOOK_SPEC_REQUIRED)
+        and type(contract.get("native_submission")) is dict
+        and contract["native_submission"].get("function_name") == "submit_book_spec",
+        "SCRIPT_BOOK_SPEC_WIRE_INVALID",
+    )
+    return document
+
+
+def _book_projection_value(document, value):
+    """Follow only the selected local projection reference, with finite custody."""
+    seen = set()
+    while type(value) is dict and "$ref" in value:
+        ref = value["$ref"]
+        need(
+            set(value) == {"$ref"}
+            and type(ref) is str
+            and ref.startswith("#/")
+            and ref not in seen
+            and len(seen) < 64,
+            "SCRIPT_BOOK_SPEC_WIRE_INVALID",
+        )
+        seen.add(ref)
+        try:
+            value = pointer(document, ref[1:])
+        except (ValueError, TypeError, KeyError, RecursionError):
+            need(False, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    return value
+
+
 def book_spec(context):
-    story = context.story
-    return {
-        "logline": _text(story.get("logline")),
-        "theme_statement": _text(story.get("theme")),
-        "dramatic_question": story_spine(context)["question"],
-        "series_engine": _text(story.get("development")),
-        "reader_promise": market_proposal(context)["reader_promise"],
-        "main_characters": character_proposal(context)["key_characters"],
-        "opening_image": _chapters(story)[0]["obstacle"],
-        "ending_image": _chapters(story)[-1]["consequence"],
-    }
+    """Return the complete explicit slot proposal; never fill from a schema."""
+    material = context.submissions.get("planner_book_spec:" + str(context.call_index))
+    need(isinstance(material, Mapping) and bool(material), "SCRIPT_SOURCE_BOUND_REPLY_REQUIRED")
+    need(len(canonical(material).encode()) <= 512_000, "SCRIPT_RESPONSE_UNBOUNDED")
+    need(
+        type(material.get("protagonist")) is dict
+        and type(material.get("series_engine")) is dict
+        and not _review_has_binding(material),
+        "SCRIPT_BOOK_SPEC_MATERIAL_INVALID",
+    )
+    for field in BOOK_SPEC_REQUIRED:
+        parts = field.split(".")
+        value = material.get(parts[0])
+        if len(parts) == 2:
+            value = value.get(parts[1])
+        need(
+            type(value) is str and bool(value.strip()) and len(value) <= 16_000,
+            "SCRIPT_BOOK_SPEC_MATERIAL_INVALID",
+        )
+    document = _book_spec_document(context)
+    projection = _book_projection_value(document, document.get("projection"))
+    need(type(projection) is dict, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    person = _book_projection_value(document, projection.get("protagonist"))
+    need(type(person) is dict, "SCRIPT_BOOK_SPEC_WIRE_INVALID")
+    for key in ("name", "gender", "pronoun_set_zh", "pronoun_set_en"):
+        identity = _book_projection_value(document, person.get(key))
+        if identity and identity != "unknown":
+            need(
+                canonical(material["protagonist"].get(key)) == canonical(identity),
+                "SCRIPT_BOOK_SPEC_IDENTITY_MISMATCH",
+            )
+    return deepcopy(dict(material))
 
 
 def volume_plan(context):
@@ -894,6 +991,88 @@ def _validate_source_review_evidence(rows, catalog, fields, *, side):
     need(seen == set(fields), "SCRIPT_SOURCE_REVIEW_EVIDENCE_MISMATCH")
 
 
+def _source_review_selection(value, decoded, *, target):
+    """Bind a named hash or one authored catalog match, never a judgment."""
+    if type(value) is not dict or "$source_review" not in value:
+        return deepcopy(value)
+    invalid = "SCRIPT_SOURCE_REVIEW_BINDING_INVALID"
+    path = value["$source_review"]
+    if target in {"authority_snapshot_hash", "candidate_hash"}:
+        need(set(value) == {"$source_review"} and path == "/hashes/" + target, invalid)
+        return decoded["hashes"][target]
+    need(
+        target in {"source", "candidate"}
+        and set(value) == {"$source_review", "match", "take"}
+        and path == "/data/" + target + "_quote_options"
+        and value["take"] == "quote_id",
+        invalid,
+    )
+    match = value["match"]
+    need(type(match) is dict and bool(match) and not _review_has_binding(match), invalid)
+    if "schema" in match:
+        need(
+            set(match) <= {
+                "schema", "kind", "side", "field", "json_pointer",
+                "present", "value_type", "value_hash",
+            }
+            and {"schema", "side", "field", "present", "value_type", "value_hash"} <= match.keys()
+            and match["schema"] == "source-bound-field-presence.v1"
+            and match["side"] == target
+            and type(match["field"]) is str
+            and type(match["present"]) is bool
+            and type(match["value_type"]) is str
+            and (match["value_hash"] is None or type(match["value_hash"]) is str),
+            invalid,
+        )
+    else:
+        need(
+            set(match) <= {"source_path", "field", "quote"}
+            and type(match.get("quote")) is str
+            and bool(match["quote"].strip())
+            and all(type(item) is str and bool(item.strip()) for item in match.values())
+            and (target == "source" or "field" in match),
+            invalid,
+        )
+    # Canonical JSON equality distinguishes booleans, numbers, null and absent
+    # fields. Catalog order and the first enum member are never selectors.
+    matches = [
+        row for row in decoded["data"][target + "_quote_options"]
+        if type(row) is dict
+        and all(key in row and canonical(row[key]) == canonical(item) for key, item in match.items())
+    ]
+    need(bool(matches), "SCRIPT_SOURCE_REVIEW_SELECTION_MISSING")
+    need(len(matches) == 1, "SCRIPT_SOURCE_REVIEW_SELECTION_AMBIGUOUS")
+    quote_id = matches[0].get("quote_id")
+    need(type(quote_id) is str and bool(quote_id), "SCRIPT_SOURCE_REVIEW_EVIDENCE_MISMATCH")
+    return quote_id
+
+
+def _bind_source_review_view(material, decoded):
+    """Expose only the approved output positions of the existing decoded view."""
+    result = deepcopy(dict(material))
+    for key in ("authority_snapshot_hash", "candidate_hash"):
+        result[key] = _source_review_selection(result[key], decoded, target=key)
+    for side in ("source", "candidate"):
+        rows = result[side + "_evidence"]
+        if type(rows) is list:
+            for row in rows:
+                if type(row) is dict and "quote_id" in row:
+                    row["quote_id"] = _source_review_selection(row["quote_id"], decoded, target=side)
+    # A marker in any other position is not a generic decoder extension. Keep
+    # the existing raw-$wire API for earlier explicit finite materials intact.
+    pending, count = [result], 0
+    while pending:
+        value = pending.pop()
+        count += 1
+        need(count <= 100_000, "SCRIPT_AUTHORED_MATERIAL_UNBOUNDED")
+        if isinstance(value, Mapping):
+            need("$source_review" not in value, "SCRIPT_SOURCE_REVIEW_BINDING_INVALID")
+            pending.extend(value.values())
+        elif type(value) is list:
+            pending.extend(value)
+    return result
+
+
 def source_review_submission(context):
     """Validate explicit private judgments and citations without upgrading them."""
     material = context.submissions.get(SOURCE_REVIEW_TEMPLATE + ":" + str(context.call_index))
@@ -935,8 +1114,9 @@ def source_review_submission(context):
                         not _review_has_binding(row["source_relation"]),
                         "SCRIPT_VERDICT_MUST_BE_AUTHORED",
                     )
+    selected = _bind_source_review_view(material, decoded)
     payload, _receipt = bind_authored_material(
-        material, context.wire_body, expected_wire_sha256=context.expected_wire_sha256
+        selected, context.wire_body, expected_wire_sha256=context.expected_wire_sha256
     )
     need(
         set(payload) <= SOURCE_REVIEW_REPLY_FIELDS | {"protagonist_identity_supported"}

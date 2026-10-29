@@ -109,6 +109,8 @@ def _normalize_project_title(value: object) -> str:
 async def _find_duplicate_fanqie_short_project(
     session: AsyncSession,
     payload: ProjectCreate,
+    *,
+    exclude_project_id: object | None = None,
 ) -> ProjectModel | None:
     metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
     if bool(metadata.get("allow_duplicate_project")):
@@ -127,6 +129,7 @@ async def _find_duplicate_fanqie_short_project(
             ProjectModel.genre == payload.genre,
             ProjectModel.target_chapters == payload.target_chapters,
             func.lower(func.trim(ProjectModel.title)) == normalized_title,
+            ProjectModel.id != exclude_project_id if exclude_project_id is not None else True,
         )
         .order_by(ProjectModel.updated_at.desc())
         .limit(1)
@@ -442,11 +445,7 @@ def _tone_keywords_for(payload: ProjectCreate, writing_profile: WritingProfile) 
     return merge_tone_keywords(lead=lead, base=base)
 
 
-async def create_project(
-    session: AsyncSession,
-    payload: ProjectCreate,
-    settings: AppSettings,
-) -> ProjectModel:
+def _validate_project_create_payload(payload: ProjectCreate) -> ProjectCreate:
     payload_metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
     if "book_length_control" in payload_metadata:
         length_control = payload_metadata["book_length_control"]
@@ -456,20 +455,6 @@ async def create_project(
             or length_control.get("counting") != LENGTH_CONTROL_COUNT_UNIT_V1
         ):
             raise LengthControlError("LENGTH_CONTROL_PROTOCOL_INVALID")
-    existing = await get_project_by_slug(session, payload.slug)
-    if existing is not None:
-        raise ValueError(f"Project slug '{payload.slug}' already exists.")
-    duplicate = await _find_duplicate_fanqie_short_project(session, payload)
-    if duplicate is not None:
-        archived = ""
-        duplicate_meta = getattr(duplicate, "metadata_json", None) or {}
-        if isinstance(duplicate_meta, dict) and duplicate_meta.get("library_archived"):
-            archived = " (archived)"
-        raise ValueError(
-            "Duplicate fanqie_short project title "
-            f"'{payload.title}' for genre '{payload.genre}' already exists as "
-            f"'{duplicate.slug}'{archived}."
-        )
     if (
         str(payload_metadata.get("concept_contract_version") or "") == "2"
         or payload_metadata.get("concept_contract_required")
@@ -495,8 +480,10 @@ async def create_project(
                 }
             }
         )
-    clear_project_delete_tombstone(settings, payload.slug)
+    return payload
 
+
+def _project_create_metadata(payload: ProjectCreate, settings: AppSettings):
     writing_profile = resolve_project_create_writing_profile(payload)
     from bestseller.services.model_catalog import default_new_project_model_id
     project_metadata = apply_new_project_generation_policy(build_project_metadata(payload, writing_profile))
@@ -509,6 +496,70 @@ async def create_project(
         default_model = default_new_project_model_id(settings)
         if default_model:
             project_metadata = {**project_metadata, "llm_model_id": default_model}
+    # Only NEW creation uses this default. Existing rows are never migrated by
+    # reads/resume, and staging supplies the exact original Q4 input explicitly.
+    from bestseller.services.conception import _bind_reader_first_conception
+    from bestseller.services.source_bound_planning_content import reader_first_binding
+
+    prior = reader_first_binding(project_metadata)
+    ctx = {
+        "genre": payload.genre, "sub_genre": payload.sub_genre,
+        "chapter_count": payload.target_chapters,
+        "creation_intent_contract": project_metadata.get("creation_intent_contract"),
+        "story_facets": project_metadata.get("story_facets"),
+    }
+    raw = project_metadata.get("reader_first_original_input")
+    if raw is None:
+        raw = project_metadata.get("premise")
+        if not isinstance(raw, str) or not raw.strip():
+            raw = None
+    marker = _bind_reader_first_conception(
+        ctx, user_hints=project_metadata.get("user_hints"), original_user_input=raw,
+    )
+    if prior is not None and marker != prior:
+        raise ValueError("reader_first_protocol_conflict")
+    if marker is not None:
+        project_metadata["reader_first_planning"] = marker
+        project_metadata["reader_first_original_input"] = ctx["reader_first_original_input"]
+        project_metadata["writing_profile"]["reader_first_planning"] = copy.deepcopy(marker)
+    return writing_profile, project_metadata
+
+
+def _project_style_values(payload, writing_profile, settings):
+    return dict(
+        pov_type=writing_profile.style.pov_type or settings.generation.pov,
+        tense=writing_profile.style.tense,
+        tone_keywords=_tone_keywords_for(payload, writing_profile),
+        prose_style=writing_profile.style.prose_style,
+        sentence_style=writing_profile.style.sentence_style,
+        info_density=writing_profile.style.info_density,
+        dialogue_ratio=writing_profile.style.dialogue_ratio,
+        taboo_words=writing_profile.style.taboo_words,
+        taboo_topics=writing_profile.style.taboo_topics,
+        reference_works=writing_profile.style.reference_works,
+        custom_rules=writing_profile.style.custom_rules,
+    )
+
+
+async def create_project(
+    session: AsyncSession,
+    payload: ProjectCreate,
+    settings: AppSettings,
+) -> ProjectModel:
+    payload = _validate_project_create_payload(payload)
+    existing = await get_project_by_slug(session, payload.slug)
+    if existing is not None:
+        raise ValueError(f"Project slug '{payload.slug}' already exists.")
+    duplicate = await _find_duplicate_fanqie_short_project(session, payload)
+    if duplicate is not None:
+        archived = " (archived)" if (duplicate.metadata_json or {}).get("library_archived") else ""
+        raise ValueError(
+            "Duplicate fanqie_short project title "
+            f"'{payload.title}' for genre '{payload.genre}' already exists as "
+            f"'{duplicate.slug}'{archived}."
+        )
+    clear_project_delete_tombstone(settings, payload.slug)
+    writing_profile, project_metadata = _project_create_metadata(payload, settings)
     project = ProjectModel(
         slug=payload.slug,
         title=payload.title,
@@ -526,17 +577,7 @@ async def create_project(
 
     style = StyleGuideModel(
         project_id=project.id,
-        pov_type=writing_profile.style.pov_type or settings.generation.pov,
-        tense=writing_profile.style.tense,
-        tone_keywords=_tone_keywords_for(payload, writing_profile),
-        prose_style=writing_profile.style.prose_style,
-        sentence_style=writing_profile.style.sentence_style,
-        info_density=writing_profile.style.info_density,
-        dialogue_ratio=writing_profile.style.dialogue_ratio,
-        taboo_words=writing_profile.style.taboo_words,
-        taboo_topics=writing_profile.style.taboo_topics,
-        reference_works=writing_profile.style.reference_works,
-        custom_rules=writing_profile.style.custom_rules,
+        **_project_style_values(payload, writing_profile, settings),
     )
     session.add(style)
     await session.flush()
@@ -562,6 +603,46 @@ async def create_project(
         promote_creation_packaging_contract_if_ready,
     )
 
+    await promote_creation_packaging_contract_if_ready(session, project=project)
+    return project
+
+
+async def materialize_staged_project(session, payload: ProjectCreate, settings, *, project: ProjectModel):
+    """Apply the native creation contract to the same, still-empty staging row."""
+    from bestseller.services.conception_project_handoff import read_conception_project_handoff
+
+    stage = read_conception_project_handoff(project)
+    if stage is None or stage["state"] != "staging":
+        raise ValueError("conception_staging_project_required")
+    payload = _validate_project_create_payload(payload)
+    if (payload.slug, payload.genre, payload.language, payload.target_chapters,
+        payload.target_word_count, payload.project_type.value) != (
+        project.slug, project.genre, project.language, project.target_chapters,
+        project.target_word_count, project.project_type):
+        raise ValueError("conception_staging_target_changed")
+    duplicate = await _find_duplicate_fanqie_short_project(session, payload, exclude_project_id=project.id)
+    if duplicate is not None:
+        raise ValueError(f"Duplicate fanqie_short project title already exists as '{duplicate.slug}'.")
+    styles = list(await session.scalars(select(StyleGuideModel).where(StyleGuideModel.project_id == project.id)))
+    if len(styles) != 1:
+        raise ValueError("conception_staging_style_identity_invalid")
+    original = dict(project.metadata_json or {})
+    payload = payload.model_copy(update={"metadata": {
+        **payload.metadata,
+        "reader_first_planning": original["reader_first_planning"],
+        "reader_first_original_input": original["reader_first_original_input"],
+        "execution_scope_id": original["execution_scope_id"],
+    }})
+    profile, metadata = _project_create_metadata(payload, settings)
+    project.title, project.sub_genre, project.audience = payload.title, payload.sub_genre, payload.audience
+    project.metadata_json = {**original, **metadata, "conception_project_handoff": stage}
+    for key, value in _project_style_values(payload, profile, settings).items():
+        setattr(styles[0], key, value)
+    await session.flush()
+    await initialize_project_genre_capabilities(session, project)
+    from bestseller.services.planning_kernel import persist_project_planning_kernel
+    persist_project_planning_kernel(project, output_base_dir=settings.output.base_dir)
+    from bestseller.services.book_packaging_store import promote_creation_packaging_contract_if_ready
     await promote_creation_packaging_contract_if_ready(session, project=project)
     return project
 

@@ -4238,6 +4238,7 @@ class WebTaskManager:
             }
         active_workflow_slugs: set[str] = set()
         existing_project_slugs: set[str] = set()
+        staging_creation_payloads: dict[str, dict[str, object]] = {}
         if settings is not None and pending_slugs:
             try:
                 active_workflow_slugs = asyncio.run(
@@ -4256,6 +4257,9 @@ class WebTaskManager:
             try:
                 existing_project_slugs = asyncio.run(
                     _load_existing_project_slugs(settings, pending_slugs)
+                )
+                staging_creation_payloads = asyncio.run(
+                    _load_staging_creation_payloads(settings, pending_slugs)
                 )
             except RuntimeError:
                 logger.warning(
@@ -4316,8 +4320,10 @@ class WebTaskManager:
                     task.task_type == "autowrite"
                     and settings is not None
                     and slug
-                    and slug not in existing_project_slugs
+                    and (slug not in existing_project_slugs or slug in staging_creation_payloads)
                     and bool(task.payload.get("_run_conception"))
+                    and not heal_owned
+                    and not db_workflow_active
                 ):
                     # Conception-phase zombie: no project row exists yet, so
                     # worker self-heal (which resumes a stored project keyed on
@@ -4325,7 +4331,7 @@ class WebTaskManager:
                     # (premise / hooks / concept bundle) live ONLY in this web
                     # task payload, so re-run conception in-process — this is
                     # what extends the closed loop to the pre-project phase.
-                    conception_resume_payload = dict(task.payload)
+                    conception_resume_payload = dict(staging_creation_payloads.get(slug) or task.payload)
                     conception_resume_payload["_run_conception"] = True
                     task.status = "queued"
                     task.current_stage = "queued"
@@ -4477,6 +4483,7 @@ class WebTaskManager:
         return delegated
 
     def _run_autowrite_worker(self, task_id: str, payload: dict[str, object]) -> None:
+        payload = dict(payload)
         self._mark_running(task_id)
         # Persist payload so resume after restart can re-build the task
         with self._lock:
@@ -4573,9 +4580,46 @@ class WebTaskManager:
             # to ensure transactional consistency.
             async with session_scope(settings) as session:
                 conception_workflow_run = None
+                conception_project_binding = None
                 conception_checkpoint = None
                 conception_replay_context = None
                 conception_input_hash = None
+                from bestseller.services.conception_project_handoff import (
+                    read_conception_project_handoff, staging_resume_payload,
+                )
+                from bestseller.services.creation_intent_contract import contract_from_payload as read_creation_intent
+                existing_creation = (
+                    await get_project_by_slug(session, str(payload["slug"]))
+                    if creation_intent_contract is not None else None
+                )
+                creation_stage = read_conception_project_handoff(existing_creation) if existing_creation is not None else None
+                if run_conception and creation_stage is not None and creation_stage["state"] == "complete":
+                    await staging_resume_payload(session, existing_creation)
+                    if read_creation_intent(creation_stage["request_payload"]).stop_after_conception:
+                        snapshot = await session.get(
+                            PlanningArtifactVersionModel, UUID(creation_stage["conception_snapshot_id"]),
+                        )
+                        if snapshot.status == "pending_user_approval":
+                            return {"project_slug": existing_creation.slug, "project_id": str(existing_creation.id),
+                                "mode": "conception_only", "planning_started": False,
+                                "concept_contract": existing_creation.metadata_json.get("concept_contract") or {}}
+                        # Approval was verified against native rows above. Rebase
+                        # the stale stop-only envelope without rewriting its
+                        # saved request, snapshots or execution-budget scope.
+                        resumed_payload = _merge_resume_payload_with_project_truth(
+                            payload, _payload_from_project_model(existing_creation),
+                        )
+                        if str(existing_creation.metadata_json.get("planning_status") or "").lower() == "conception_approved":
+                            resumed_payload = build_planning_handoff_payload(
+                                resumed_payload, project=existing_creation,
+                                canonical_snapshot={"id": str(snapshot.id), "status": snapshot.status,
+                                    "content": snapshot.content},
+                            )
+                        payload.update(resumed_payload)
+                    run_conception = False
+                    effective_title = existing_creation.title
+                    effective_premise = str(existing_creation.metadata_json["premise"])
+                    effective_writing_profile = existing_creation.metadata_json.get("writing_profile")
                 if run_conception:
                     from bestseller.domain.enums import WorkflowStatus
 
@@ -4589,62 +4633,89 @@ class WebTaskManager:
 
                         conception_input_hash = stable_conception_input_hash(conception_attempt)
                         source_run_id = payload.get("_conception_workflow_run_id")
+                        source_workflow = await session.get(WorkflowRunModel, UUID(str(source_run_id))) if source_run_id else None
+                        use_staging = creation_stage is not None or (existing_creation is None and source_workflow is None)
                         if source_run_id:
                             resume_project = await get_project_by_slug(session, str(payload.get("slug") or ""))
                             checkpoint_read_binding = {
                                 "expected_project_id": resume_project.id if resume_project else None,
                                 "expected_intent_hash": creation_intent_contract.contract_hash(),
                             }
-                            conception_checkpoint = await load_conception_checkpoint(
-                                session,
-                                workflow_run_id=UUID(str(source_run_id)),
-                                input_hash=conception_input_hash,
-                                **checkpoint_read_binding,
-                            )
-
-                            conception_replay_context = await load_replay_context(
-                                session, workflow_run_id=UUID(str(source_run_id)), input_hash=conception_input_hash,
-                                **checkpoint_read_binding)
+                            if use_staging:
+                                from bestseller.services.conception_project_handoff import load_staging_conception_state
+                                conception_checkpoint, conception_replay_context = await load_staging_conception_state(
+                                    session, project_id=existing_creation.id, workflow_run_id=UUID(str(source_run_id)),
+                                    input_hash=conception_input_hash,
+                                )
+                            else:
+                                conception_checkpoint = await load_conception_checkpoint(
+                                    session, workflow_run_id=UUID(str(source_run_id)), input_hash=conception_input_hash,
+                                    **checkpoint_read_binding,
+                                )
+                                conception_replay_context = await load_replay_context(
+                                    session, workflow_run_id=UUID(str(source_run_id)), input_hash=conception_input_hash,
+                                    **checkpoint_read_binding)
 
                         attempt_id = conception_attempt.attempt_id
-                        conception_workflow_run = await create_workflow_run(
-                            session,
-                            project_id=None,
-                            workflow_type="conception_initial",
-                            status=WorkflowStatus.RUNNING,
-                            scope_type="creation",
-                            scope_id=None,
-                            requested_by="web-ui",
-                            current_step="conception",
-                            idempotency_key=attempt_id,
-                            metadata={
-                                "execution_scope_id": current_execution_scope(),
-                                "attempt_id": attempt_id,
-                                "creation_intent_hash": creation_intent_contract.contract_hash(),
-                                "creation_intent_schema": creation_intent_contract.schema_version,
-                                "input_hash": conception_attempt.input_hash(),
-                                "conception_checkpoint_input_hash": conception_input_hash,
-                                "source_conception_workflow_run_id": str(source_run_id)
-                                if source_run_id
-                                else None,
-                            },
-                        )
+                        if use_staging:
+                            from bestseller.services.conception_project_handoff import prepare_conception_project_handoff
+                            conception_project_binding = await prepare_conception_project_handoff(
+                                session, settings, task_id=task_id, request_payload=payload,
+                                attempt=conception_attempt, source_workflow_run_id=UUID(str(source_run_id)) if source_run_id else None,
+                            )
+                            conception_workflow_run = conception_project_binding.workflow
+                        else:
+                            conception_workflow_run = await create_workflow_run(
+                                session,
+                                project_id=None,
+                                workflow_type="conception_initial",
+                                status=WorkflowStatus.RUNNING,
+                                scope_type="creation",
+                                scope_id=None,
+                                requested_by="web-ui",
+                                current_step="conception",
+                                idempotency_key=attempt_id,
+                                metadata={
+                                    "execution_scope_id": current_execution_scope(),
+                                    "attempt_id": attempt_id,
+                                    "creation_intent_hash": creation_intent_contract.contract_hash(),
+                                    "creation_intent_schema": creation_intent_contract.schema_version,
+                                    "input_hash": conception_attempt.input_hash(),
+                                    "conception_checkpoint_input_hash": conception_input_hash,
+                                    "source_conception_workflow_run_id": str(source_run_id)
+                                    if source_run_id
+                                    else None,
+                                },
+                            )
                         if conception_checkpoint is not None:
                             from bestseller.services.conception_checkpoints import (
                                 save_conception_checkpoint,
                             )
 
-                            await save_conception_checkpoint(
-                                session,
-                                workflow_run_id=conception_workflow_run.id,
-                                checkpoint={
-                                    **conception_checkpoint,
-                                    "source_workflow_run_id": str(source_run_id),
-                                },
-                            )
+                            if conception_project_binding is not None:
+                                from bestseller.services.conception_project_handoff import save_staging_conception_state
+                                await save_staging_conception_state(
+                                    session, project_id=conception_project_binding.project.id,
+                                    workflow_run_id=conception_workflow_run.id,
+                                    checkpoint={**conception_checkpoint, "source_workflow_run_id": str(source_run_id)},
+                                )
+                            else:
+                                await save_conception_checkpoint(
+                                    session,
+                                    workflow_run_id=conception_workflow_run.id,
+                                    checkpoint={
+                                        **conception_checkpoint,
+                                        "source_workflow_run_id": str(source_run_id),
+                                    },
+                                )
                         if conception_replay_context is not None:
-                            await save_replay_context(session, workflow_run_id=conception_workflow_run.id,
-                                                      record=conception_replay_context)
+                            if conception_project_binding is not None:
+                                from bestseller.services.conception_project_handoff import save_staging_conception_state
+                                await save_staging_conception_state(session, project_id=conception_project_binding.project.id,
+                                    workflow_run_id=conception_workflow_run.id, record=conception_replay_context)
+                            else:
+                                await save_replay_context(session, workflow_run_id=conception_workflow_run.id,
+                                                          record=conception_replay_context)
                         # LLM receipts are written by separate provider/session
                         # paths and reference this workflow row.  Commit the
                         # run before the first conception call so its FK is
@@ -4760,8 +4831,14 @@ class WebTaskManager:
                                 async def _save_conception_replay_context(record):
                                     from bestseller.services.conception_checkpoints import save_replay_context
                                     async with session_scope(settings) as checkpoint_session:
-                                        await save_replay_context(checkpoint_session,
-                                            workflow_run_id=conception_workflow_run.id, record=record)
+                                        if conception_project_binding is not None:
+                                            from bestseller.services.conception_project_handoff import save_staging_conception_state
+                                            await save_staging_conception_state(checkpoint_session,
+                                                project_id=conception_project_binding.project.id,
+                                                workflow_run_id=conception_workflow_run.id, record=record)
+                                        else:
+                                            await save_replay_context(checkpoint_session,
+                                                workflow_run_id=conception_workflow_run.id, record=record)
 
                                 async def _save_conception_checkpoint(
                                     checkpoint: dict[str, object],
@@ -4771,19 +4848,22 @@ class WebTaskManager:
                                     )
 
                                     async with session_scope(settings) as checkpoint_session:
-                                        await save_conception_checkpoint(
-                                            checkpoint_session,
-                                            workflow_run_id=conception_workflow_run.id,
-                                            checkpoint={
-                                                **checkpoint,
-                                                "input_hash": conception_input_hash,
-                                                "source_workflow_run_id": str(
-                                                    source_conception_workflow_run_id
-                                                )
-                                                if source_conception_workflow_run_id
-                                                else None,
-                                            },
-                                        )
+                                        saved_checkpoint = {
+                                            **checkpoint, "input_hash": conception_input_hash,
+                                            "source_workflow_run_id": str(source_conception_workflow_run_id)
+                                                if source_conception_workflow_run_id else None,
+                                        }
+                                        if conception_project_binding is not None:
+                                            from bestseller.services.conception_project_handoff import save_staging_conception_state
+                                            await save_staging_conception_state(checkpoint_session,
+                                                project_id=conception_project_binding.project.id,
+                                                workflow_run_id=conception_workflow_run.id, checkpoint=saved_checkpoint)
+                                        else:
+                                            await save_conception_checkpoint(
+                                                checkpoint_session,
+                                                workflow_run_id=conception_workflow_run.id,
+                                                checkpoint=saved_checkpoint,
+                                            )
 
                                 _conception_pipeline_options: dict[str, object] = {
                                     "resume_checkpoint": conception_checkpoint,
@@ -4796,6 +4876,12 @@ class WebTaskManager:
                                             "resume_replay_context": conception_replay_context,
                                             "replay_context_callback": _save_conception_replay_context,
                                         }
+                                    )
+                                if conception_project_binding is not None:
+                                    _conception_pipeline_options.update(
+                                        project_id=conception_project_binding.project.id,
+                                        workflow_run_id=conception_workflow_run.id,
+                                        original_user_input=conception_project_binding.project.metadata_json["reader_first_original_input"],
                                     )
                                 conception_result = await run_conception_pipeline(
                                     session,
@@ -5244,6 +5330,8 @@ class WebTaskManager:
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 stop_after_conception = bool(payload.get("stop_after_conception", False))
+                if conception_project_binding is not None:
+                    stop_after_conception = conception_attempt.contract.stop_after_conception
 
                 async def persist_creation_snapshots(project: object) -> None:
                     """Persist the immutable creation/conception handoff after row creation."""
@@ -5400,8 +5488,16 @@ class WebTaskManager:
                 if stop_after_conception and run_conception:
                     from bestseller.services.projects import create_project
 
-                    project = await create_project(session, project_create, settings)
-                    await persist_creation_snapshots(project)
+                    if conception_project_binding is not None:
+                        from bestseller.services.conception_project_handoff import finalize_conception_project_handoff
+                        project = await finalize_conception_project_handoff(
+                            session, settings, project_id=conception_project_binding.project.id,
+                            workflow_run_id=conception_workflow_run.id, project_payload=project_create,
+                            attempt=conception_attempt, conception_result=conception_result,
+                        )
+                    else:
+                        project = await create_project(session, project_create, settings)
+                        await persist_creation_snapshots(project)
                     hook_card = conception_contract.get("hook_card", {})
                     progress(
                         "conception_only_complete",
@@ -5439,7 +5535,22 @@ class WebTaskManager:
                 # Resume payloads have ``run_conception=False`` and therefore
                 # deliberately bypass this block and never mint a new initial
                 # snapshot.
-                if (
+                if conception_project_binding is not None:
+                    from bestseller.services.conception_project_handoff import finalize_conception_project_handoff
+                    project = await finalize_conception_project_handoff(
+                        session, settings, project_id=conception_project_binding.project.id,
+                        workflow_run_id=conception_workflow_run.id, project_payload=project_create,
+                        attempt=conception_attempt, conception_result=conception_result,
+                    )
+                    if market_validation_report_obj is not None:
+                        try:
+                            from bestseller.services.market_validation.repository import persist_market_validation_report
+                            await persist_market_validation_report(session, str(project.slug), market_validation_report_obj)
+                        except Exception:
+                            logger.debug("market validation artifact persist failed (non-fatal)", exc_info=True)
+                    raise_if_execution_stopped()
+                    await session.commit()
+                elif (
                     run_conception
                     and creation_intent_contract is not None
                     and hasattr(session, "scalar")
@@ -6912,6 +7023,12 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
     tasks can be resumed without relying on a previously persisted payload.
     """
     metadata = project.metadata_json or {}
+    from bestseller.services.conception_project_handoff import read_conception_project_handoff
+    stage = read_conception_project_handoff(project)
+    if stage is not None and stage["state"] == "staging":
+        staged_payload = json.loads(json.dumps(stage["request_payload"]))
+        staged_payload.update(_run_conception=True, _conception_workflow_run_id=stage["workflow_run_id"])
+        return staged_payload
     genre_key = str(metadata.get("genre_key") or _infer_genre_key_from_slug(project.slug))
     premise = str(
         metadata.get("premise") or f"\u7ee7\u7eed\u300a{project.title}\u300b\u7684\u521b\u4f5c"
@@ -7007,6 +7124,10 @@ async def _rebuild_payload_from_db(
         project = await get_project_by_slug(session, slug)
         if project is None:
             return None
+        from bestseller.services.conception_project_handoff import staging_resume_payload
+        staged_payload = await staging_resume_payload(session, project)
+        if staged_payload is not None:
+            return staged_payload
         payload = _payload_from_project_model(project)
         # Resume from the accepted, versioned premise. The original web
         # envelope may contain a generic pre-conception sentence, while a
@@ -7871,6 +7992,22 @@ async def _load_active_workflow_slugs_by_slug(
         return {str(slug) for slug in result.scalars() if slug}
 
 
+async def _load_staging_creation_payloads(settings, slugs):
+    from sqlalchemy import select
+    from bestseller.infra.db.models import ProjectModel
+    from bestseller.services.conception_project_handoff import pending_conception_project, staging_resume_payload
+
+    if not slugs:
+        return {}
+    result = {}
+    async with session_scope(settings) as session:
+        projects = list(await session.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs))))
+        for project in projects:
+            if pending_conception_project(project):
+                result[project.slug] = await staging_resume_payload(session, project)
+    return result
+
+
 async def _load_existing_project_slugs(
     settings: AppSettings,
     slugs: set[str],
@@ -8295,14 +8432,14 @@ async def _close_creation_workflow_after_task_exit_async(
     attempt_id: str,
     status: str,
     error_message: str,
+    workflow_run_id: UUID | None = None,
+    task_id: str | None = None,
 ) -> int:
-    """Close a project-less conception row after its web task exits.
+    """Close the actual task's active conception row after its web task exits.
 
-    The conception row is created before a project exists, so the synthetic
-    ``project:<slug>`` cancellation path cannot find it. This task-scoped
-    fallback uses the persisted attempt id and only updates active
-    ``conception_initial`` rows; a later workflow or a different book cannot be
-    cancelled accidentally.
+    Legacy rows retain exact attempt-id matching. Staging reentry also checks
+    the persisted current WF, real project and native task binding, because its
+    resume attempt id differs from the task's original creation attempt.
     """
     attempt = str(attempt_id or "").strip()
     if not attempt or status not in {"failed", "cancelled"}:
@@ -8320,7 +8457,12 @@ async def _close_creation_workflow_after_task_exit_async(
         closed = 0
         for row in rows:
             metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
-            if str(metadata.get("attempt_id") or "") != attempt:
+            if task_id is not None and workflow_run_id is not None and metadata.get("conception_staging_task_id") == task_id:
+                if row.id != workflow_run_id:
+                    continue
+                from bestseller.services.conception_project_handoff import verify_staging_workflow
+                await verify_staging_workflow(session, project_id=row.project_id, workflow_run_id=row.id, current=True)
+            elif str(metadata.get("attempt_id") or "") != attempt:
                 continue
             row.status = status
             row.current_step = "cancelled" if status == "cancelled" else "failed"
@@ -8352,6 +8494,9 @@ def _close_creation_workflow_after_task_exit(
                 attempt_id=attempt_id,
                 status=status,
                 error_message=error_message,
+                workflow_run_id=UUID(str(payload["_conception_workflow_run_id"]))
+                    if payload.get("_conception_workflow_run_id") else None,
+                task_id=task_id,
             )
         )
     except Exception:
@@ -15969,7 +16114,11 @@ def serve_web_app(
                         slug and asyncio.run(_load_existing_project_slugs(settings, {slug}))
                     )
                     if project_exists:
-                        saved_payload["_run_conception"] = False
+                        staging_payloads = asyncio.run(_load_staging_creation_payloads(settings, {slug}))
+                        if slug in staging_payloads:
+                            saved_payload = {**saved_payload, **staging_payloads[slug]}
+                        else:
+                            saved_payload["_run_conception"] = False
                     else:
                         saved_payload["_run_conception"] = True
                     block_payload = asyncio.run(

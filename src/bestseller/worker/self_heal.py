@@ -786,6 +786,8 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     halted = await halted_project_ids(session)
 
     for project in projects:
+        if await _pending_native_conception_project(session, project):
+            continue
         if _project_is_finished(project):
             continue
         # Pending manuscripts own a separate reference-bound continuation lane.
@@ -1266,7 +1268,34 @@ async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:
     return active is not None
 
 
+async def _pending_native_conception_project(session, project):
+    """Read-only exclusion: incomplete creation is owned by the Web handoff."""
+    from bestseller.services.conception_project_handoff import (
+        pending_conception_project, read_conception_project_handoff, verify_staging_workflow,
+    )
+    try:
+        if not pending_conception_project(project):
+            return False
+        stage = read_conception_project_handoff(project)
+        from uuid import UUID
+        await verify_staging_workflow(session, project_id=project.id,
+            workflow_run_id=UUID(stage["workflow_run_id"]), current=True)
+    except (ValueError, KeyError, TypeError):
+        # Unknown staging provenance cannot admit ordinary prose recovery.
+        logger.warning("self-heal: invalid creation handoff; no prose recovery for %s", project.slug)
+    return True
+
+
 async def _has_active_continuation_pipeline_run(session: Any, project_id: Any) -> bool:
+    from bestseller.services.conception_project_handoff import read_conception_project_handoff, verify_staging_workflow
+    from uuid import UUID
+    project = await session.get(ProjectModel, project_id)
+    stage = read_conception_project_handoff(project) if project is not None else None
+    if stage is not None and stage["state"] == "staging":
+        binding = await verify_staging_workflow(session, project_id=project_id,
+            workflow_run_id=UUID(stage["workflow_run_id"]), current=True)
+        if binding.workflow.status in _ACTIVE_STATUSES:
+            return True
     active = await session.scalar(
         select(WorkflowRunModel.id)
         .where(
@@ -2523,6 +2552,8 @@ async def heal_stuck_projects(
                             "self-heal: skipped slug=%s — project disappeared before enqueue",
                             stuck.slug,
                         )
+                        continue
+                    if await _pending_native_conception_project(session, project):
                         continue
                     if execution_terminal_code(project.metadata_json or {}):
                         continue

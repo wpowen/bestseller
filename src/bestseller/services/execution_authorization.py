@@ -24,12 +24,18 @@ from bestseller.services.budget import ExecutionBudgetError
 
 _NEW_BOOK_KEY = "new_book_budget_grant"
 _NEW_BOOK_POLICY = "new-book-budget.v1"
+_NEW_BOOK_BOUNDED_POLICY = "new-book-budget.v2"
 _NEW_BOOK_SELECTOR = "execution_budget_grant_id"
 _NEW_BOOK_CALLS = 400
 _NEW_BOOK_TOKENS = 20_000_000
 _NEW_BOOK_BINDING_FIELDS = frozenset({
     "grant_id", "task_id", "scope_id", "payload_sha256", "model", "endpoint",
     "max_calls", "max_tokens", "created_at", "deadline_at",
+})
+_NEW_BOOK_BOUNDED_BINDING_FIELDS = _NEW_BOOK_BINDING_FIELDS | {"schema", "authorization_id"}
+_NEW_BOOK_BOUNDED_RECORD_FIELDS = frozenset({
+    "schema", "binding", "authorization_id", "actor", "authorization_ref",
+    "payload_summary", "consumed_at", "sha256",
 })
 
 
@@ -123,6 +129,27 @@ def _new_book_identity(payload_hash: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"{_NEW_BOOK_POLICY}:{payload_hash}"))
 
 
+def _new_book_bounded_limits(
+    max_calls: Any, max_tokens: Any, *, code: str, scope: str = "", prefix: str = "",
+) -> None:
+    for name, value, ceiling in (
+        ("max_calls", max_calls, _NEW_BOOK_CALLS),
+        ("max_tokens", max_tokens, _NEW_BOOK_TOKENS),
+    ):
+        _new_book_require(
+            type(value) is int and 1 <= value <= ceiling, code, scope, prefix + name,
+            {"type": "int", "minimum": 1, "maximum": ceiling}, value,
+        )
+
+
+def _new_book_bounded_identity(
+    payload_hash: str, authorization_id: str, max_calls: int, max_tokens: int,
+) -> str:
+    binding = {"authorization_id": authorization_id, "payload_sha256": payload_hash,
+               "max_calls": max_calls, "max_tokens": max_tokens}
+    return str(uuid5(NAMESPACE_URL, f"{_NEW_BOOK_BOUNDED_POLICY}:{_new_book_hash(binding)}"))
+
+
 def _new_book_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
@@ -132,25 +159,34 @@ def new_book_budget_policy(row: ExecutionBudgetModel) -> dict | None:
     metadata = row.metadata_json or {}
     if not isinstance(metadata, dict):
         return None
-    if _NEW_BOOK_KEY not in metadata and metadata.get("policy") != _NEW_BOOK_POLICY:
+    if (_NEW_BOOK_KEY not in metadata
+            and metadata.get("policy") not in (_NEW_BOOK_POLICY, _NEW_BOOK_BOUNDED_POLICY)):
         return None
     scope, code = row.scope_id, "execution_new_book_binding_invalid"
     prefix = f"execution_budgets.metadata.{_NEW_BOOK_KEY}"
+    bounded = metadata.get("policy") == _NEW_BOOK_BOUNDED_POLICY
+    policy = _NEW_BOOK_BOUNDED_POLICY if bounded else _NEW_BOOK_POLICY
+    binding_fields = _NEW_BOOK_BOUNDED_BINDING_FIELDS if bounded else _NEW_BOOK_BINDING_FIELDS
     _new_book_require(
-        metadata.get("policy") == _NEW_BOOK_POLICY, code, scope,
-        "execution_budgets.metadata.policy", _NEW_BOOK_POLICY, metadata.get("policy"),
+        metadata.get("policy") == policy, code, scope,
+        "execution_budgets.metadata.policy", policy, metadata.get("policy"),
     )
     record = metadata.get(_NEW_BOOK_KEY)
     _new_book_require(type(record) is dict, code, scope, prefix, "grant record", record)
+    if bounded:
+        _new_book_require(
+            set(record) == _NEW_BOOK_BOUNDED_RECORD_FIELDS, code, scope,
+            f"{prefix}.keys", sorted(_NEW_BOOK_BOUNDED_RECORD_FIELDS), sorted(record),
+        )
     binding = record.get("binding")
     _new_book_require(
-        type(binding) is dict and set(binding) == _NEW_BOOK_BINDING_FIELDS,
-        code, scope, f"{prefix}.binding", sorted(_NEW_BOOK_BINDING_FIELDS),
+        type(binding) is dict and set(binding) == binding_fields,
+        code, scope, f"{prefix}.binding", sorted(binding_fields),
         sorted(binding) if type(binding) is dict else binding,
     )
     _new_book_require(
-        record.get("schema") == _NEW_BOOK_POLICY, code, scope,
-        f"{prefix}.schema", _NEW_BOOK_POLICY, record.get("schema"),
+        record.get("schema") == policy, code, scope,
+        f"{prefix}.schema", policy, record.get("schema"),
     )
     for name in ("authorization_id", "actor", "authorization_ref"):
         value = record.get(name)
@@ -164,10 +200,22 @@ def new_book_budget_policy(row: ExecutionBudgetModel) -> dict | None:
         and all(char in "0123456789abcdef" for char in payload_hash),
         code, scope, f"{prefix}.binding.payload_sha256", "sha256", payload_hash,
     )
-    task_id = _new_book_identity(payload_hash)
+    calls, tokens = _NEW_BOOK_CALLS, _NEW_BOOK_TOKENS
+    if bounded:
+        calls, tokens = binding["max_calls"], binding["max_tokens"]
+        _new_book_bounded_limits(calls, tokens, code=code, scope=scope,
+                                 prefix=f"{prefix}.binding.")
+        for name, expected in (("schema", policy), ("authorization_id", record["authorization_id"])):
+            _new_book_require(
+                type(binding[name]) is str and binding[name] == expected, code, scope,
+                f"{prefix}.binding.{name}", expected, binding[name],
+            )
+        task_id = _new_book_bounded_identity(payload_hash, record["authorization_id"], calls, tokens)
+    else:
+        task_id = _new_book_identity(payload_hash)
     for name, expected in (
         ("task_id", task_id), ("grant_id", task_id), ("scope_id", f"conception:{task_id}"),
-        ("max_calls", _NEW_BOOK_CALLS), ("max_tokens", _NEW_BOOK_TOKENS),
+        ("max_calls", calls), ("max_tokens", tokens),
     ):
         actual = binding.get(name)
         _new_book_require(
@@ -297,8 +345,14 @@ async def _new_book_transaction(engine: AsyncEngine, *, identities: tuple[str, .
 async def prepare_new_book_budget(
     engine: AsyncEngine, *, authorization_id: str, actor: str, authorization_ref: str,
     payload: dict[str, Any], model: str, endpoint: str,
+    max_calls: int | None = None, max_tokens: int | None = None,
 ) -> dict[str, Any]:
-    """Trusted one-book grant: 400 calls / 20M tokens / 24h from creation."""
+    """Trusted one-book grant; explicit bounded limits select v2, omission keeps v1.
+
+    v2 binds the authorization, payload and limits to one native identity. It
+    does not calculate cross-book allowances or modify any previous grant.
+    Both protocols retain the original 24-hour window on retries.
+    """
     identity = {
         "authorization_id": authorization_id, "actor": actor,
         "authorization_ref": authorization_ref,
@@ -311,8 +365,18 @@ async def prepare_new_book_budget(
     body = _new_book_payload(payload, preparing=True)
     _new_book_route(model, endpoint)
     payload_hash = _new_book_hash(body)
-    task_id = _new_book_identity(payload_hash)
+    bounded = max_calls is not None or max_tokens is not None
+    policy = _NEW_BOOK_BOUNDED_POLICY if bounded else _NEW_BOOK_POLICY
+    calls, tokens = _NEW_BOOK_CALLS, _NEW_BOOK_TOKENS
+    if bounded:
+        _new_book_bounded_limits(max_calls, max_tokens, code="execution_new_book_grant_invalid")
+        calls, tokens = max_calls, max_tokens
+        task_id = _new_book_bounded_identity(payload_hash, authorization_id, calls, tokens)
+    else:
+        task_id = _new_book_identity(payload_hash)
     scope = f"conception:{task_id}"
+    # Keep the same authorization lock across v1/v2 and all limit variants:
+    # changed limits must conflict with the existing scope, never create one.
     async with _new_book_transaction(engine, identities=(
         f"{_NEW_BOOK_POLICY}:authorization:{authorization_id}", scope,
     )) as session:
@@ -328,8 +392,9 @@ async def prepare_new_book_budget(
         if row is not None:
             record = new_book_budget_policy(row)
             _new_book_require(
-                record is not None, "execution_new_book_binding_mismatch", scope,
-                "execution_budgets.metadata.policy", _NEW_BOOK_POLICY,
+                record is not None and record["schema"] == policy,
+                "execution_new_book_binding_mismatch", scope,
+                "execution_budgets.metadata.policy", policy,
                 (row.metadata_json or {}).get("policy"),
             )
             for name, actual in {**identity, "model": model, "endpoint": endpoint}.items():
@@ -345,19 +410,21 @@ async def prepare_new_book_budget(
         binding = {
             "grant_id": task_id, "task_id": task_id, "scope_id": scope,
             "payload_sha256": payload_hash, "model": model, "endpoint": endpoint,
-            "max_calls": _NEW_BOOK_CALLS, "max_tokens": _NEW_BOOK_TOKENS,
+            "max_calls": calls, "max_tokens": tokens,
             "created_at": now.isoformat(), "deadline_at": (now + timedelta(hours=24)).isoformat(),
         }
+        if bounded:
+            binding.update(schema=policy, authorization_id=authorization_id)
         record = {
-            "schema": _NEW_BOOK_POLICY, "binding": binding, **identity,
+            "schema": policy, "binding": binding, **identity,
             "payload_summary": _new_book_summary(body), "consumed_at": None,
         }
         record["sha256"] = _new_book_hash(record)
         session.add(ExecutionBudgetModel(
-            scope_id=scope, max_calls=_NEW_BOOK_CALLS, max_tokens=_NEW_BOOK_TOKENS,
+            scope_id=scope, max_calls=calls, max_tokens=tokens,
             calls_used=0, tokens_charged=0, status="awaiting_submission",
             deadline_at=now + timedelta(hours=24),
-            metadata_json={"policy": _NEW_BOOK_POLICY, _NEW_BOOK_KEY: record},
+            metadata_json={"policy": policy, _NEW_BOOK_KEY: record},
         ))
         return deepcopy(binding)
 

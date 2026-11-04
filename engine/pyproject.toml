@@ -13,7 +13,7 @@ bookengine = "bookengine.__main__:main"
 deai = "deai.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["bookengine*", "deai*", "exporter*"]
+include = ["bookengine*", "deai*", "exporter*", "ideation*"]
 
 [tool.setuptools.package-data]
 deai = ["data/*.yaml"]

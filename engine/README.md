@@ -19,3 +19,21 @@ PYTHONPATH=engine python3 -m deai run chapter.md --env .env
 常规处理只改命中句；整场对白与演员法用 `--dialogue-mode scene` / `actor` 显式运行。
 
 历史 S1–S5 用法已合并到当前入口：书设定 YAML 指定题材、章数、字数和用户输入，`--q1 --style b` 使用圣经、多线排期、卷章规划和极简正文提示；同目录重跑复用检查点，写作草稿与独立去 AI 终稿分开保存。早期各阶段验收及调用、耗时和质量结论保留在 [PLAN.md](PLAN.md)、[INBOX.md](INBOX.md) 和 [reports/](reports/)，不再使用旧 worktree 路径作为启动说明。当前网页、导出和检查命令见仓库 [README.md](../README.md)。
+
+## 选题工坊（第 24 条，独立分支待验收）
+
+网页“生成新选题”和“换一批”均创建新批次；最近选题只在用户主动恢复时读取。
+卡片显示钩子、标签、金手指规则、开场、长篇引擎、市场备注与参考分，可编辑后开书，
+也可保留熟壳或新变量继续发散。“两组各 6 个”同时提供这两种方向。
+每批上限 $0.05；市场获取失败使用缓存或明确标记无数据，不阻断选题。
+判官只有当日同题材锚点测试通过后才参与排序，否则多样性轮转；分数不替代读者选择。
+
+```sh
+PYTHONPATH=engine python -m ideation --env .env --books books --out books/topics/my-batch --genre suspense-mystery --chapters 100 --channel 男频
+```
+
+同一 `--out` 恢复已完成步骤；换批须使用新目录，历史去重查找同一父目录下最近五批。
+请求已发出但结果未知时停止并保留调用记录，不自动重发；需先核对请求与费用。
+生成提示只用类别词与结构要求，榜单原文仅供撞车检查和判官。
+真实对照工具为 `engine/tools/ideation_acceptance.py`，需显式指定 `--env`、`--out` 和 `--blind`；
+原始响应、预算和答案均保存在忽略的书目录，不进入 Git。

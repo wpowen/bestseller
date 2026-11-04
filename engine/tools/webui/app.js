@@ -1,7 +1,7 @@
 'use strict';
 (() => {
 const $ = id => document.getElementById(id);
-const state = { config: null, topic: null, candidate: null, topicInput: null, topicTimer: null, topicBusy: false, creating: false, booksBusy: false, book: null, readerId: null, readerBusy: false, topicReady: false, topicSubmitting: false, topicEpoch: 0, topicRenderKey: null, bookCards: new Map(), pendingActions: new Set() };
+const state = { config: null, topic: null, candidate: null, topicInput: null, topicTimer: null, topicBusy: false, creating: false, booksBusy: false, book: null, readerId: null, readerBusy: false, topicReady: false, topicSubmitting: false, topicEpoch: 0, topicRenderKey: null, candidates: [], edits: {}, bookCards: new Map(), pendingActions: new Set() };
 const text = (id, value) => { const next = value == null ? '' : String(value); if ($(id).textContent !== next) $(id).textContent = next; };
 const printable = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value, null, 2);
 async function api(path, body) {
@@ -13,8 +13,12 @@ async function api(path, body) {
 }
 const el = (tag, content, cls) => { const node = document.createElement(tag); if (content != null) node.textContent = String(content); if (cls) node.className = cls; return node; };
 function updateCreate() {
+ const busy = state.topicSubmitting || state.creating || (!!state.topic && !state.topicReady && $('generate-topics').disabled);
+ $('refresh-topics').disabled = busy || !state.topic;
+ document.querySelectorAll('[data-direction]').forEach(button => { button.disabled = busy || !state.topicReady; });
+ document.querySelectorAll('.candidate-editor input,.candidate-editor textarea').forEach(input => { input.disabled = state.creating; });
  const enabled = state.config?.models?.some(m => String(m.id) === $('model').value && m.enabled === true);
- $('create-book').disabled = state.creating || state.candidate === null || !state.topic || !state.topicReady || !enabled;
+ $('create-book').disabled = state.creating || state.topicSubmitting || state.candidate === null || !state.topic || !state.topicReady || !enabled;
  text('create-book', state.creating ? '正在创建，请稍候…' : state.candidate === null ? '选定故事后，开始写作' : '以这个故事，开始写作');
  const model = state.config?.models?.find(m => String(m.id) === $('model').value);
  text('model-info', model ? `${model.name}${model.reason ? ' · ' + model.reason : ''}` : '没有可用写手时，无法开书。');
@@ -24,12 +28,14 @@ async function loadConfig() {
   const config = await api('/api/config'); state.config = config;
   $('genre').replaceChildren();
   for (const genre of config.genres || []) { const option = el('option', genre.name); option.value = genre.id; $('genre').append(option); }
+  $('channel').replaceChildren(el('option', '不限')); $('channel').firstChild.value = '';
+  for (const name of config.channels || ['男频','女频']) { const option = el('option', name); option.value = name; $('channel').append(option); }
   $('model').replaceChildren();
   for (const model of config.models || []) { const option = el('option', `${model.name}${model.enabled === true ? '' : ' · 不可用'}${model.reason ? ' — ' + model.reason : ''}`); option.value = model.id; option.disabled = model.enabled !== true; $('model').append(option); }
   const preferred = config.models?.find(m => m.id === 'flash' && m.enabled === true) || config.models?.find(m => m.enabled === true);
   $('model').value = preferred?.id || '';
   $('generate-topics').disabled = !(config.genres || []).length;
-  text('topic-status', '已连接。已有选题可从上方恢复，不必再次生成。');
+  text('topic-status', '已连接。每次生成都会抽取新方向；已有选题可从上方恢复。');
   text('budget-info', config.budgets ? `总预算上限 $${config.budgets.total ?? '—'} · 预留 $${config.budgets.reserve ?? '—'}；提交前请核对单书预算。` : '预算以服务端配置为准。'); updateCreate();
  } catch (error) { text('topic-status', error.message + ' 刷新页面可重试。'); }
 }
@@ -46,7 +52,7 @@ function refreshRecent() {
 function saveTopic(data) {
  if (!state.topic || !state.topicInput) return;
  const saved = savedTopics(); const input = state.topicInput;
- saved[input.genre + ':' + input.chapters] = { id: state.topic, input, data, genreName: state.config?.genres?.find(g => g.id === input.genre)?.name, saved: Date.now() };
+ saved[state.topic] = { id: state.topic, input, genreName: state.config?.genres?.find(g => g.id === input.genre)?.name, saved: Date.now() };
  try { localStorage.setItem(topicStorageKey, JSON.stringify(saved)); refreshRecent(); } catch { text('restore-status', '浏览器未允许本地保存，请记下选题 ID：' + state.topic); }
  if ($('topic-id')) $('topic-id').value = state.topic;
 }
@@ -60,7 +66,8 @@ async function restoreTopic(id, entry) {
   const data = await api('/api/topics?id=' + encodeURIComponent(id));
   if (state.topic !== id || state.topicEpoch !== epoch) return;
   if (data.genre || data.chapters) { input.genre = data.genre || input.genre; input.chapters = Number(data.chapters) || input.chapters; }
-  $('genre').value = input.genre; $('chapters').value = input.chapters; $('idea').value = input.idea || '';
+  input.idea = data.idea ?? input.idea ?? ''; input.channel = data.channel ?? input.channel ?? ''; input.direction = data.direction;
+  $('genre').value = input.genre; $('chapters').value = input.chapters; $('idea').value = input.idea || ''; $('channel').value = input.channel || '';
   $('length').value = [...$('length').options].some(o => o.value === String(input.chapters)) ? String(input.chapters) : 'custom';
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(id), 2000);
   text('restore-status', '已恢复。请重新点击一个候选，再点“开始写作”。'); $('candidate-section').scrollIntoView({behavior:'smooth', block:'start'});
@@ -72,31 +79,81 @@ $('restore-recent').addEventListener('click', () => { const entry = savedTopics(
 refreshRecent();
 function invalidateTopic() {
  if (state.creating) return;
- clearTimeout(state.topicTimer); state.topicEpoch++; state.topic = null; state.candidate = null; state.topicInput = null; state.topicReady = false; state.topicRenderKey = null;
+ clearTimeout(state.topicTimer); state.topicEpoch++; state.topic = null; state.candidate = null; state.topicInput = null; state.topicReady = false; state.topicRenderKey = null; state.candidates = []; state.edits = {};
  $('candidates').replaceChildren(); $('candidate-section').hidden = true; updateCreate();
+}
+const cardFields = {title:'书名', hook:'一句话钩子', tags:'卖点标签（用顿号分隔）', premise:'人物与冲突', golden_finger_rule:'金手指规则', opening:'开场画面', engine:'长篇引擎'};
+function currentCard(index) { return state.edits[index] || state.candidates[index]; }
+function editorFor(candidate, index) {
+ const details = el('details', null, 'candidate-editor'); details.append(el('summary', '改一改 · 修改后可直接开书'));
+ const rich = Object.keys(cardFields).some(key => !['title','premise'].includes(key) && key in candidate);
+ for (const [key, name] of Object.entries(cardFields)) {
+  if (!rich && !['title','premise'].includes(key)) continue;
+  const label = el('label', name); const input = el(key === 'title' || key === 'tags' ? 'input' : 'textarea');
+  input.id = `edit-${index}-${key}`; label.htmlFor = input.id; input.value = key === 'tags' ? (candidate.tags || []).join('、') : candidate[key] || '';
+  input.required = key !== 'engine' || state.topicInput.chapters >= 30;
+  if (key !== 'tags') input.maxLength = {title:rich ? 40 : 80,hook:30,premise:120,golden_finger_rule:120,opening:100,engine:240}[key];
+  input.addEventListener('input', () => {
+   state.edits[index] = {...currentCard(index), [key]: key === 'tags' ? input.value.split(/[、，,\n]+/).map(s => s.trim()).filter(Boolean) : input.value};
+   selectCandidate(index); text('book-status', '卡片修改将在开书时由服务端复检；原批次保留。');
+  });
+  label.append(input); details.append(label);
+ }
+ return details;
+}
+function selectCandidate(index) {
+ state.candidate = index;
+ $('candidates').querySelectorAll('.candidate').forEach((node, i) => { node.classList.toggle('selected', i === index); node.querySelector('input[type=radio]').checked = i === index; });
+ updateCreate();
 }
 function renderTopics(data) {
  if (data.id) state.topic = data.id;
  saveTopic(data);
  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
  $('candidate-section').hidden = !candidates.length;
- const renderKey = JSON.stringify(candidates);
+ const renderKey = JSON.stringify([candidates, data.collisions || []]);
  if (state.topicRenderKey !== renderKey) {
- state.topicRenderKey = renderKey; $('candidates').replaceChildren();
- candidates.forEach((candidate, index) => {
-  const label = el('label', null, 'candidate');
-  const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'candidate'; radio.id = `candidate-${index}`; radio.value = String(index); radio.checked = state.candidate === index;
-  radio.addEventListener('change', () => { state.candidate = index; $('candidates').querySelectorAll('.candidate').forEach(n => n.classList.toggle('selected', n.contains(radio))); updateCreate(); });
-  label.classList.toggle('selected', radio.checked); label.append(radio, el('span', String(index + 1).padStart(2, '0'), 'candidate-number'), el('h3', candidate.title), el('p', candidate.premise)); $('candidates').append(label);
- });
+  state.topicRenderKey = renderKey; state.candidates = candidates; state.edits = {}; state.candidate = null; $('candidates').replaceChildren();
+  candidates.forEach((candidate, index) => {
+   const card = el('article', null, 'candidate'); const label = el('label', null, 'candidate-choice');
+   const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'candidate'; radio.id = `candidate-${index}`; radio.value = String(index);
+   radio.addEventListener('change', () => selectCandidate(index));
+   label.append(radio, el('span', String(index + 1).padStart(2, '0'), 'candidate-number'), el('h3', candidate.title)); card.append(label);
+   if (candidate.hook) card.append(el('p', candidate.hook, 'candidate-hook'));
+   if (Array.isArray(candidate.tags)) card.append(el('p', candidate.tags.map(t => `【${t}】`).join(''), 'candidate-tags'));
+   card.append(el('p', candidate.premise));
+   const fields = el('dl', null, 'candidate-fields');
+   for (const key of ['golden_finger_rule', 'opening', 'engine']) { if (key in candidate) fields.append(el('dt', cardFields[key]), el('dd', candidate[key] || '暂无')); }
+   card.append(fields);
+   const scores = candidate.scores || {};
+   card.append(el('p', '判官四轴（参考）：' + ['不可补全','点击欲','长篇引擎','好懂'].map(k => `${k} ${scores[k] ?? '—'}`).join(' · '), 'candidate-scores'));
+   card.append(el('p', candidate.market_note || `熟壳：${candidate.axes?.shell || '未知'}；今日同壳新书：未知`, 'candidate-market'));
+   const actions = el('div', null, 'candidate-actions');
+   if (candidate.axes?.shell && candidate.axes?.variable) for (const [mode, name] of [['both','沿这个方向再来 · 两组各6个'],['shell','保留熟壳，换新变量'],['variable','保留新变量，换熟壳']]) {
+    const button = el('button', name); button.type = 'button'; button.dataset.direction = mode;
+    button.addEventListener('click', () => {
+     if ([...card.querySelectorAll('.candidate-editor input,.candidate-editor textarea')].some(input => !input.reportValidity())) return;
+     submitTopics({mode, candidate:currentCard(index)});
+    }); actions.append(button);
+   }
+   card.append(actions, editorFor(candidate, index)); $('candidates').append(card);
+  });
+ }
+ if (Array.isArray(data.collisions) && data.collisions.length && !$('candidates').querySelector('.market-collision')) {
+  const notes = el('aside', null, 'market-collision'); notes.append(el('h3', '已避开的榜单撞车'));
+  for (const row of data.collisions) notes.append(el('p', `${row.title} · ${(row.reasons || []).join('；')}（已剔除）`));
+  $('candidates').append(notes);
  }
  const status = String(data.status || '').toLowerCase();
  const failed = /failed|error|cancelled/.test(status);
  const done = /^(ready|complete|completed|done|success|succeeded)$/.test(status);
  state.topicReady = done && !failed && candidates.length > 0;
- text('topic-status', failed ? printable(data.error || data.message || '选题生成失败，请重新生成。') : candidates.length ? `已收到 ${candidates.length} 个候选，请点击选择。${done ? '' : '其余候选生成中…'}` : '选题正在构思中，每 2 秒更新…');
- if (state.topic) text('restore-status', '选题 ID：' + state.topic + ' · 已保存时可从最近选题恢复。');
- text('candidate-help', `共 ${candidates.length} 个候选 · 请亲自点选一个，不会默认选择。`);
+ text('topic-status', failed ? printable(data.error || data.message || '选题生成失败，原始记录已保留。') : done ? `实际展示 ${candidates.length} 个候选。${data.notice || ''}` : '选题正在构思中，每 2 秒更新…');
+ const usage = data.usage || {};
+ text('topic-cost', `本批 ${money(data.cost_usd ?? usage.cost ?? data.cost)} · 上限 $0.05` + (usage.unknown ? ` · Unknown ${usage.unknown} 次，上界 ${money(usage.unknown_bound)}` : ''));
+ text('topic-notes', [data.judge_status, data.market?.status].filter(Boolean).join(' · '));
+ if (state.topic) text('restore-status', '选题 ID：' + state.topic + ' · 可从最近选题恢复。');
+ text('candidate-help', `共 ${candidates.length} 个候选 · 请亲自点选一个；参考分不能代替读者判断。`);
  $('generate-topics').disabled = !done && !failed; updateCreate();
  return !done && !failed;
 }
@@ -108,33 +165,34 @@ async function pollTopic(id) {
  catch (error) { if (state.topic === id) text('topic-status', error.message + ' · 2 秒后重试查询，不会重新提交。'); }
  finally { state.topicBusy = false; if (again && state.topic === id && state.topicEpoch === epoch) state.topicTimer = setTimeout(() => pollTopic(id), 2000); }
 }
-$('topic-form').addEventListener('submit', async event => {
- event.preventDefault(); if (state.topicSubmitting || state.creating || !$('topic-form').reportValidity()) return;
- const input = { genre: $('genre').value, idea: $('idea').value.trim(), chapters: Number($('chapters').value) };
- const cached = savedTopics()[input.genre + ':' + input.chapters];
- if (cached?.id && (cached.input?.idea || '') === input.idea) { await restoreTopic(cached.id, cached); return; }
- invalidateTopic(); const epoch = state.topicEpoch; state.topicSubmitting = true; $('generate-topics').disabled = true; state.topicInput = input;
- text('topic-status', '正在提交选题请求…');
+async function submitTopics(direction) {
+ if (state.topicSubmitting || state.creating || !$('topic-form').reportValidity()) return;
+ const input = { genre: $('genre').value, idea: $('idea').value.trim(), chapters: Number($('chapters').value), channel:$('channel').value };
+ if (direction) input.direction = direction;
+ clearTimeout(state.topicTimer); state.topicEpoch++; const epoch = state.topicEpoch; state.topicSubmitting = true; $('generate-topics').disabled = true; updateCreate();
+ text('topic-status', direction ? '正在沿选定方向抽取新组合…' : '正在提交新批次，不读取旧批次缓存…');
  try {
   const data = await api('/api/topics', input); if (!data.id) throw new Error('服务没有返回选题 ID。');
   if (state.topicEpoch !== epoch) {
-   const saved = savedTopics(); saved[input.genre + ':' + input.chapters] = { id: data.id, input, data, saved: Date.now() };
+   const saved = savedTopics(); saved[data.id] = { id: data.id, input, saved: Date.now() };
    try { localStorage.setItem(topicStorageKey, JSON.stringify(saved)); refreshRecent(); } catch { text('restore-status', '请记下已有选题 ID：' + data.id); }
    return;
   }
-  state.topic = data.id; if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(data.id), 2000);
+  state.topic = data.id; state.topicInput = input; state.candidate = null; state.topicReady = false; state.topicRenderKey = null;
+  if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(data.id), 2000);
  } catch (error) { if (state.topicEpoch === epoch) { text('topic-status', error.message + ' · 不会自动重复提交。'); $('generate-topics').disabled = false; } }
- finally { state.topicSubmitting = false; }
-});
-for (const id of ['genre', 'chapters', 'idea']) $(id).addEventListener('input', () => { invalidateTopic(); $('generate-topics').disabled = !state.config; });
+ finally { state.topicSubmitting = false; updateCreate(); }
+}
+$('topic-form').addEventListener('submit', event => { event.preventDefault(); submitTopics(); });
+$('refresh-topics').addEventListener('click', () => submitTopics(state.topicInput?.direction));
+for (const id of ['genre', 'chapters', 'idea', 'channel']) $(id).addEventListener('input', () => { invalidateTopic(); $('generate-topics').disabled = !state.config; });
 $('length').addEventListener('change', () => { if ($('length').value !== 'custom') $('chapters').value = $('length').value; invalidateTopic(); $('generate-topics').disabled = !state.config; });
 $('chapters').addEventListener('input', () => { $('length').value = [...$('length').options].some(o => o.value === $('chapters').value) ? $('chapters').value : 'custom'; });
 function quickGenre(pattern, chapters) {
  if (state.creating) { text('topic-status', '书籍正在提交，请稍候再切换题材。'); return; }
  const genre = state.config?.genres?.find(g => pattern.test(g.name) || pattern.test(g.id));
  if (!genre) { text('topic-status', '配置中暂未找到该题材，请从题材列表选择。'); return; }
- $('genre').value = genre.id; $('chapters').value = String(chapters); $('length').value = String(chapters); invalidateTopic(); $('generate-topics').disabled = false; text('topic-status', `已选择${genre.name} · ${chapters}章。点击生成选题开始。`); const cached = savedTopics()[genre.id + ':' + chapters];
- if (cached?.id) { restoreTopic(cached.id, cached); return; }
+ $('genre').value = genre.id; $('chapters').value = String(chapters); $('length').value = String(chapters); invalidateTopic(); $('generate-topics').disabled = false; text('topic-status', `已选择${genre.name} · ${chapters}章。点击生成选题开始。`);
  $('generate-topics').focus();
 }
 $('quick-suspense').addEventListener('click', () => quickGenre(/悬疑|suspense|mystery/i, 5));
@@ -142,12 +200,14 @@ $('quick-fantasy').addEventListener('click', () => quickGenre(/玄幻|xuanhuan|f
 $('model').addEventListener('change', updateCreate);
 $('book-form').addEventListener('submit', async event => {
  event.preventDefault(); if (!$('book-form').reportValidity() || $('create-book').disabled) return;
+ const selected = $('candidates').children[state.candidate];
+ if ([...selected.querySelectorAll('.candidate-editor input,.candidate-editor textarea')].some(input => !input.reportValidity())) return;
  state.creating = true; updateCreate(); text('book-status', '正在创建书籍，请勿重复提交…');
  try {
-  const result = await api('/api/books', { topic_id: state.topic, candidate: state.candidate, genre: state.topicInput.genre, chapters: state.topicInput.chapters, model: $('model').value, polish: $('polish').checked, budget: Number($('budget').value), jobs: Number($('jobs').value) });
+  const result = await api('/api/books', { ...(state.edits[state.candidate] ? {candidate_edit:state.edits[state.candidate]} : {}), topic_id: state.topic, candidate: state.candidate, genre: state.topicInput.genre, chapters: state.topicInput.chapters, model: $('model').value, polish: $('polish').checked, budget: Number($('budget').value), jobs: Number($('jobs').value) });
   if (!result.id) throw new Error('服务没有返回书籍 ID，请先查看书库再决定是否重试。');
   text('book-status', '已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。');
-  state.candidate = null; $('candidates').querySelectorAll('input').forEach(r => { r.checked = false; r.closest('label').classList.remove('selected'); });
+  state.candidate = null; $('candidates').querySelectorAll('input[type=radio]').forEach(r => { r.checked = false; r.closest('.candidate').classList.remove('selected'); });
   await refreshBooks();
  } catch (error) { text('book-status', error.message + ' 如提交结果不明，请先检查书库，避免重复开书。'); }
  finally { state.creating = false; updateCreate(); }

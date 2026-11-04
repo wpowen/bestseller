@@ -623,7 +623,7 @@
 
 ## 2026-11-04-24：选题工坊——市场驱动、抽轴发散、换一批（用户 2026-11-04 22:50 反馈“选题质量一般、每次差不多”，监工设计）
 
-状态：待执行（用户 2026-11-04 改为单独任务并行开发：在独立工作树 `scratch/ideation-worktree`、分支 `feat/ideation` 上做，不碰主工作区；完成后由监工在第 22 条提交之后合并回 main，webui 冲突由监工处理）
+状态：已执行，待验收（用户 2026-11-04 改为单独任务并行开发：在独立工作树 `scratch/ideation-worktree`、分支 `feat/ideation` 上做，不碰主工作区；完成后由监工在第 22 条提交之后合并回 main，webui 冲突由监工处理）
 
 设计、证据和验收标准都在 [reports/ideation-design-20261104.md](reports/ideation-design-20261104.md)，先通读，按其中第 3–5 节实现。要点：
 1. 新包 `engine/ideation/`（≤600 行，check_scope 加限额），轴池/俗套/题材→番茄分类映射/名字黑名单放 `engine/data/ideation/`。不 import bookengine。
@@ -633,3 +633,5 @@
 5. 判官上线前先做锚点测试（真实榜单书 6 + 旧生成器 6 盲排，真实书进前 6 ≥5/6），不达标就降为“参考”并写明。
 6. 按设计第 5 节逐项验收，生成 `books/blind-ideation/` 盲选包（玄幻、悬疑、女频言情各旧 1 批 + 新 1 批，打乱，答案另存不放同目录）。
 7. 约束：bookengine、deai 不改；单批 ≤$0.05，本条总预算 ≤$1，超出停下；只做本地提交，不 push；测试与 check_scope 必须通过。报告写 `engine/reports/ideation-20261104.md`，区分 Evidence / Inference / Unknown。完成后把本条状态改成「已执行，待验收」并停下，等用户盲选。
+
+本轮执行：独立工作树已实现并验证，报告 [reports/ideation-20261104.md](reports/ideation-20261104.md)。用户盲选与监工合并尚未进行；判官未过先验门槛已降级，所有方向短批次保留。到此停止，不合并、不 push。

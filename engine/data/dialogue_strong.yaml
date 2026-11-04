@@ -1,0 +1,36 @@
+schema_version: 1
+purpose: 独立实验的对白强改写提示与验收口径；由实验调用方读取。
+target_substantive_ratio: 0.60
+acceptance_substantive_ratio: 0.40
+polish_prompt: |-
+  只改提供的 spoken 对白引号内部；完整正文仅供理解情境。
+  至少让本章 60% 的目标对白行真正换一种说法，为最终至少 40% 的实质改动验收留出余量。
+  真正换句法、语气和表达：把书面长句改成此人在眼前处境里会说的话，
+  可以打断、倒装、反问、省略、顶嘴、犹豫、先发脾气再说眼前的事。
+  不能只删几个字，不能靠标点、空白、虚词或语气词凑改动；短句也可以整句换说法。
+  按已有的人物口吻卡区分句长、用词、粗口或文雅程度、地方说法；不强塞方言或粗口，
+  不让人人都耍贫嘴，不机械重复口头禅。归属不明的 speaker 保留 Unknown，不猜姓名。
+  不讲机制、原则、道理，不总结人生，不以抽象判断收尾；只说此刻要办的事与切身利害。
+  需要表达的设定事实仍须保留，用人物正在争取、拒绝、追问的具体事情说出来，不删信息。
+  事实必须逐项保留：否定、条件、先后与时间、姓名与称呼、数值与单位、
+  谁对谁做什么、亲属身份、位置、归属、借还欠付等关系；不得反转或弱化承诺与限制。
+  不编造新事实、动作、经历或人物关系，不靠加新笑话改变信息。
+  每个输入 id 仍对应原来同一个引号槽位；只返回需要改写的 id，不新增、删除、合并或拆分说话 turn。
+  引号外旁白逐字保留；标牌、术语、字样等非 spoken 引文不在可改目标内。
+  不新增换行、英文词、嵌套引号或外层引号；替换 text 不得为空。
+  只输出 JSON：{"edits":[{"id":"输入的原id","text":"替换后的引号内部文字"}]}。
+  不输出解释、旁白或改动说明；调用方会按 id 从原稿补 original，再调用既有 apply_dialogue_edits。
+measurement:
+  line: 由 dialogue_metrics.dialogues 扫描、spoken_dialogue 白名单认定的一处外层对白引号槽位，不是物理文本行。
+  alignment: 按全部引号的顺序槽位对齐，包含非 spoken 引文；数量、引号类型或 spoken 分类改变则标记对齐失败，不计实质改动。
+  normalization: 去 Unicode 标点、空白与保守虚词表；不移除否定、条件、时间、代词、数量、情态动词。词法处理可能误删词内同字，不是分词或语义识别。
+  particles: 的地得了着吗呢吧啊呀嘛啦呐哇哟哦噢唉哎诶
+  substantive: 规范化 Levenshtein 距离除以两串最大长度须大于等于 0.25，且规范化汉字串的 Levenshtein 编辑数至少为 2；无原句最短长度限制。
+  denominator: 原稿 spoken 槽位总数，含未改行；距离均值也含未改行。空集为零，对齐失败时距离及改动为零，必须同时检查 slot_alignment_unchanged。
+  literal_distance: mean_literal_edit_distance 及 lines 中 literal_edit_distance 保留标点、空白、虚词的原字面比较，范围 0 到 1。
+  facts_program_flags: 数字、否定、时间、条件、关系词的逐槽位词法差异告警；可能误报或漏报，不能证明姓名、归属及其他事实未变。
+  limitation: 距离不证明语义等价；告警为空不代表事实验收通过；比例达标不代表好读或人工接受。
+interfaces:
+  dialogue_diff: 'dialogue_diff(before: str, after: str) -> dict；纯函数，不调用模型、不改文件。'
+  fields: [total_lines, changed_lines, substantive_ratio, mean_edit_distance, mean_literal_edit_distance, narration_unchanged, facts_program_flags, slot_alignment_unchanged, lines]
+  edits: 'edits 为 {id, text} 列表；调用方补原文 original 后使用既有 apply_dialogue_edits，不替换旧接口。'

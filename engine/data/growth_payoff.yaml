@@ -1,0 +1,1067 @@
+scheduling:
+  upgrade_gap: [4, 8]
+  setup_lead_chapters: 1
+  seed_source: canon.seed
+  policy: 逐书可复现升级日历；前章蓄势；其余爽点在连续与十章覆盖约束下逐章随机，不按最少计数固定轮换。
+payoff_policy:
+  window_chapters: 10
+  max_per_type: null
+  max_due_per_window: 10
+  due_spacing_chapters: 1
+  max_consecutive_per_type: 2
+  min_types_per_window: 3
+  suspense_due_spacing_chapters: 2
+  fulfillment_denominator: due_chapters
+  target_fulfillment_rate: 0.95
+  solution_window_chapters: 30
+  solution_max_per_type: 2
+  solution_no_repeat_chapters: 5
+  group_solution_book_max: 2
+  group_solution_final_volume_max: 1
+  realm_display_after_upgrade_chapters: 3
+  realm_display_before_next_upgrade: true
+  new_physical_cost_max: 1
+  notes:
+  - 爽文每章due且主类有值，同类连续最多两章、任意十章至少三类；reserved与actual各自规范归主类，不按子类规避；悬疑保留原频率；due仅供程序比较契约，95%仅按due章计算。
+  - 未兑现债务保留原类型并优先排下一章；排期冲突交调用方处理，不伪报已兑现。
+  - 实力与地位按列表顺序；实力最多升一级，跳级拒绝并保留旧级；下降须本章demotion_event原句确证；升级后三章内展示能力，realm_displayed=true且realm_display_quote命中正文才认可。
+  - 题材阶梯开书写入canon，此后不临时增级改名；非超能题材实力指实际解决问题能力，不等于身体伤残或恋爱身份。
+  - 解法按正文消除障碍的因果机理归类，同义必须并入同类，不按子动作、对象或措辞拆类别；每章仅一主类别，30章同类最多两次且5章不重复；旧多类别保留solution_history及primary_basis待复核，不改历史正文；未破局为[]，菜单首项不是默认选择。
+  - 爽文每卷至少两项实得增益且仪表盘至少一项上升；代价条目超过收获条目一点五倍仅报警，不改旧事实。
+packs:
+  apocalypse-supply-chain:
+    ladder:
+      strength:
+      - 独立求生
+      - 稳定搜集
+      - 据点自足
+      - 区域调配
+      - 跨区统筹
+      - 生存网支柱
+      wealth_unit: 标准补给份
+      status:
+      - 流亡者
+      - 据点居民
+      - 物资骨干
+      - 据点主事
+      - 区域盟主
+      - 生存网领袖
+    genre_kind: 爽文
+    payoff_menu: &id004
+    - 升级
+    - 打脸
+    - 收获
+    - 身份抬升
+    - 碾压
+    solution_menu: &id001
+    - 断源制停
+    - 耗竭制胜
+    - 脱域避险
+    - 触发反用
+    - 弱点克制
+    - 通路重构
+    - 实力压制
+    - 夺取控制
+    - 信息欺骗
+    - 隐蔽绕行
+    - 追踪定位
+    - 实验复现
+    - 物证鉴别
+    - 时序还原
+    - 证词排伪
+    - 公开解胁
+    - 利益分化
+    - 对价交换
+    - 外援协同
+    - 替代依赖
+    - 弃权止损
+    - 主体归位
+    - 隔离封存
+    - 反馈抑制
+    - 断链脱控
+    - 修复故障
+    - 资源重配
+    - 履约修复
+    - 逆向归因
+    - 群体表态
+    hook_types: &id002
+    - 人物当场隐瞒
+    - 证词矛盾
+    - 错误判断后果
+    - 关系破裂
+    - 新势力登场
+    - 反转揭示
+    - clue
+    - 新事实推翻旧判断
+    - 眼前危险逼近
+    - 关键行动悬停
+    - 熟人身份改观
+    - 两条路各有代价
+    - 异常物件待解释
+    - 截止时刻将到
+    - 誓言或威吓落地
+    - 人物物件无故失踪
+    - 话中漏洞露端倪
+    - 旧意象发生变化
+    - 首尾照面生新义
+    - 留下未答的反应
+  cozy-fantasy:
+    ladder:
+      strength:
+      - 初学手艺
+      - 独立制作
+      - 稳定出品
+      - 精巧改良
+      - 传授专长
+      - 独创名作
+      wealth_unit: 铜币
+      status:
+      - 新住客
+      - 街坊熟人
+      - 可靠店主
+      - 社区骨干
+      - 城镇名家
+      - 地区名匠
+    genre_kind: 其他
+    payoff_menu:
+    - 手艺成就
+    - 邻里互助
+    - 安稳经营
+    - 自我接纳
+    solution_menu: *id001
+    hook_types: *id002
+  cozy-litrpg:
+    ladder:
+      strength:
+      - 学徒一级
+      - 熟练二级
+      - 专精三级
+      - 能手四级
+      - 大师五级
+      - 宗匠六级
+      wealth_unit: 金币
+      status:
+      - 临时帮工
+      - 正式学徒
+      - 独立匠人
+      - 店铺主人
+      - 行会导师
+      - 地区名匠
+    genre_kind: 其他
+    payoff_menu:
+    - 技能精进
+    - 经营收获
+    - 邻里互助
+    - 日常满足
+    solution_menu: *id001
+    hook_types: *id002
+  cozy-mystery:
+    ladder:
+      strength:
+      - 观察入门
+      - 独立询访
+      - 核实线索
+      - 重建现场
+      - 识破复杂诡计
+      - 破解连环谜局
+      wealth_unit: 元
+      status:
+      - 普通居民
+      - 热心邻人
+      - 社区协查者
+      - 可靠调查者
+      - 地方名探
+      - 跨区名探
+    genre_kind: 悬疑
+    payoff_menu: &id005
+    - 解谜
+    - 证据落地
+    - 推翻判断
+    - 反转
+    solution_menu: *id001
+    hook_types: *id002
+  dark-romance:
+    ladder:
+      strength:
+      - 识别处境
+      - 守住边界
+      - 独立决策
+      - 掌握谈判
+      - 应对复杂关系
+      - 自主安排生活
+      wealth_unit: 元
+      status:
+      - 被动依附者
+      - 独立生活者
+      - 稳定从业者
+      - 合作伙伴
+      - 事业主理人
+      - 行业领军者
+    genre_kind: 其他
+    payoff_menu:
+    - 自主选择
+    - 揭穿控制
+    - 互信建立
+    - 脱离困局
+    solution_menu: *id001
+    hook_types: *id002
+  eastern-aesthetic:
+    ladder:
+      strength:
+      - 辨物入门
+      - 初通技艺
+      - 独立创作
+      - 融会诸艺
+      - 自成意境
+      - 传承开新
+      wealth_unit: 铜钱
+      status:
+      - 无名游人
+      - 乡里熟客
+      - 地方雅士
+      - 一城名家
+      - 诸地受邀者
+      - 一代宗师
+    genre_kind: 其他
+    payoff_menu:
+    - 技艺领悟
+    - 人情回响
+    - 寻获旧物
+    - 心结释然
+    solution_menu: *id001
+    hook_types: *id002
+  enemies-to-lovers:
+    ladder:
+      strength:
+      - 独立担当
+      - 看清偏见
+      - 有效协作
+      - 化解复杂分歧
+      - 承担共同难题
+      - 保持成熟自主
+      wealth_unit: 元
+      status:
+      - 初入职场
+      - 正式成员
+      - 关键骨干
+      - 项目主理
+      - 行业名家
+      - 事业领军者
+    genre_kind: 甜宠
+    payoff_menu: &id003
+    - 心动
+    - 关系推进
+    - 护短
+    solution_menu: *id001
+    hook_types: *id002
+  entertainment-sweet:
+    ladder:
+      strength:
+      - 表演入门
+      - 稳定发挥
+      - 驾驭主角
+      - 突破类型
+      - 独创风格
+      - 传授表演
+      wealth_unit: 元
+      status:
+      - 无名新人
+      - 签约艺人
+      - 稳定配角
+      - 领衔主演
+      - 一线艺人
+      - 行业标杆
+    genre_kind: 甜宠
+    payoff_menu: *id003
+    solution_menu: *id001
+    hook_types: *id002
+  epic-fantasy:
+    ladder:
+      strength:
+      - 感知魔力
+      - 掌握基础术
+      - 独立施法
+      - 复合施法
+      - 领域掌控
+      - 传奇技艺
+      wealth_unit: 金币
+      status:
+      - 无名旅人
+      - 领地公民
+      - 受勋卫士
+      - 城邦骨干
+      - 诸国使者
+      - 大陆领袖
+    genre_kind: 其他
+    payoff_menu:
+    - 战局突破
+    - 盟约兑现
+    - 真相揭示
+    - 守护成功
+    solution_menu: *id001
+    hook_types: *id002
+  fanqie_short:
+    ladder:
+      strength:
+      - 辨清困境
+      - 守住底线
+      - 独立行动
+      - 掌握关键技能
+      - 化解复杂危机
+      - 自主选择人生
+      wealth_unit: 元
+      status:
+      - 受困个体
+      - 独立生活者
+      - 获得支持者
+      - 稳定从业者
+      - 事务主理人
+      - 领域受敬者
+    genre_kind: 其他
+    payoff_menu:
+    - 反击成功
+    - 真相揭晓
+    - 关系改变
+    - 愿望达成
+    solution_menu: *id001
+    hook_types: *id002
+  female-palace:
+    ladder:
+      strength:
+      - 初识局势
+      - 稳住立足
+      - 独立谋划
+      - 化解多方局
+      - 统筹宫务
+      - 驾驭朝局
+      wealth_unit: 银两
+      status:
+      - 无名入宫者
+      - 低阶女官
+      - 掌事女官
+      - 一宫主事
+      - 内廷总理
+      - 执政中枢
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  game-esport:
+    ladder:
+      strength:
+      - 青铜段
+      - 白银段
+      - 黄金段
+      - 铂金段
+      - 钻石段
+      - 大师段
+      - 王者段
+      wealth_unit: 元
+      status:
+      - 普通玩家
+      - 战队替补
+      - 正式队员
+      - 队伍核心
+      - 联赛明星
+      - 冠军领袖
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  history-strategy:
+    ladder:
+      strength:
+      - 识字习艺
+      - 独立营生
+      - 统筹乡事
+      - 治理一县
+      - 经营一郡
+      - 统筹诸州
+      wealth_unit: 文钱
+      status:
+      - 无名平民
+      - 乡里骨干
+      - 县中主事
+      - 郡府重臣
+      - 一方诸侯
+      - 天下共主
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  litrpg-progression:
+    ladder:
+      strength:
+      - 初职一级
+      - 熟职二级
+      - 进阶三级
+      - 精英四级
+      - 大师五级
+      - 传奇六级
+      - 神话七级
+      wealth_unit: 金币
+      status:
+      - 无名冒险者
+      - 登记队员
+      - 队伍主力
+      - 公会骨干
+      - 城邦英雄
+      - 大陆传奇
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  mafia-romance:
+    ladder:
+      strength:
+      - 识别风险
+      - 守住独立
+      - 有效谈判
+      - 处理利益分歧
+      - 统筹自身事业
+      - 自主化解危机
+      wealth_unit: 元
+      status:
+      - 受限家属
+      - 独立成员
+      - 合作代表
+      - 事业主理人
+      - 商会核心
+      - 行业领袖
+    genre_kind: 其他
+    payoff_menu:
+    - 自主选择
+    - 互信建立
+    - 危机脱身
+    - 利益重整
+    solution_menu: *id001
+    hook_types: *id002
+  paranormal-romance:
+    ladder:
+      strength:
+      - 感知本能
+      - 控制变化
+      - 独立运用
+      - 协同异能
+      - 掌握复合能力
+      - 自控圆熟
+      wealth_unit: 金币
+      status:
+      - 孤身外来者
+      - 族群成员
+      - 巡护骨干
+      - 部族代表
+      - 联盟使者
+      - 族群领袖
+    genre_kind: 甜宠
+    payoff_menu: *id003
+    solution_menu: *id001
+    hook_types: *id002
+  psychological-thriller:
+    ladder:
+      strength:
+      - 辨认异常
+      - 保存事实
+      - 交叉核实
+      - 识别操纵
+      - 重建事件
+      - 破解连环布局
+      wealth_unit: 元
+      status:
+      - 孤立当事人
+      - 获得支持者
+      - 可靠协查者
+      - 独立调查者
+      - 受托专家
+      - 领域权威
+    genre_kind: 悬疑
+    payoff_menu: *id005
+    solution_menu: *id001
+    hook_types: *id002
+  realistic-life:
+    ladder:
+      strength:
+      - 生活自理
+      - 独立从业
+      - 胜任复杂工作
+      - 专长成熟
+      - 带领团队
+      - 传授经验
+      wealth_unit: 元
+      status:
+      - 求职新人
+      - 稳定从业者
+      - 专业骨干
+      - 团队主理人
+      - 行业名家
+      - 社区领袖
+    genre_kind: 其他
+    payoff_menu:
+    - 技能成长
+    - 生活改善
+    - 关系修复
+    - 自主决定
+    solution_menu: *id001
+    hook_types: *id002
+  reverse-harem:
+    ladder:
+      strength:
+      - 独立求学
+      - 掌握专长
+      - 稳定协作
+      - 应对多方分歧
+      - 统筹共同目标
+      - 保持成熟自主
+      wealth_unit: 金币
+      status:
+      - 新入学者
+      - 正式学员
+      - 社团骨干
+      - 学苑代表
+      - 联盟使者
+      - 独立领袖
+    genre_kind: 甜宠
+    payoff_menu: *id003
+    solution_menu: *id001
+    hook_types: *id002
+  romance-tension-growth:
+    ladder:
+      strength:
+      - 识别情绪
+      - 表达需求
+      - 独立担当
+      - 应对分歧
+      - 承担共同责任
+      - 保持成熟自主
+      wealth_unit: 元
+      status:
+      - 初入职场
+      - 正式成员
+      - 专业骨干
+      - 项目主理
+      - 行业名家
+      - 事业领袖
+    genre_kind: 甜宠
+    payoff_menu: *id003
+    solution_menu: *id001
+    hook_types: *id002
+  romantasy:
+    ladder:
+      strength:
+      - 感知魔力
+      - 基础施法
+      - 独立施法
+      - 复合施法
+      - 领域掌控
+      - 传奇技艺
+      wealth_unit: 金币
+      status:
+      - 外来旅人
+      - 王庭学员
+      - 受任使者
+      - 领地代表
+      - 联盟骨干
+      - 王国领袖
+    genre_kind: 甜宠
+    payoff_menu: *id003
+    solution_menu: *id001
+    hook_types: *id002
+  scifi-starwar:
+    ladder:
+      strength:
+      - 基础操作
+      - 单舰驾驭
+      - 多舰协同
+      - 战术统筹
+      - 战区指挥
+      - 星域战略
+      wealth_unit: 信用点
+      status:
+      - 见习船员
+      - 正式舰员
+      - 舰桥骨干
+      - 独立舰长
+      - 舰队统帅
+      - 星域领袖
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  shezhu-bailan-comedy:
+    ladder:
+      strength:
+      - 基础自理
+      - 熟悉营生
+      - 稳定产出
+      - 巧改工具
+      - 组织互助
+      - 自给圆熟
+      wealth_unit: 铜钱
+      status:
+      - 外来打工者
+      - 常住街坊
+      - 小店店主
+      - 社区骨干
+      - 地方名人
+      - 自在乡贤
+    genre_kind: 其他
+    payoff_menu:
+    - 巧解麻烦
+    - 经营改善
+    - 伙伴互助
+    - 愿望实现
+    solution_menu: *id001
+    hook_types: *id002
+  space-opera:
+    ladder:
+      strength:
+      - 基础航行
+      - 独立领航
+      - 多舰协同
+      - 区域统筹
+      - 舰队指挥
+      - 星域战略
+      wealth_unit: 信用点
+      status:
+      - 无名船员
+      - 正式领航员
+      - 独立舰长
+      - 联盟代表
+      - 舰队统帅
+      - 星际领袖
+    genre_kind: 其他
+    payoff_menu:
+    - 航路突破
+    - 外交成功
+    - 战局扭转
+    - 文明发现
+    solution_menu: *id001
+    hook_types: *id002
+  suspense-mystery:
+    ladder:
+      strength:
+      - 辨认异常
+      - 独立调查
+      - 核实线索
+      - 重建现场
+      - 识破复杂诡计
+      - 破解连环谜局
+      - 统合跨案真相
+      wealth_unit: 元
+      status:
+      - 普通当事人
+      - 可靠协查者
+      - 独立调查者
+      - 地方名探
+      - 跨区顾问
+      - 领域权威
+    genre_kind: 悬疑
+    payoff_menu: *id005
+    solution_menu:
+    - 证词排伪
+    - 物证鉴别
+    - 时序还原
+    - 实验复现
+    - 逆向归因
+    - 信息欺骗
+    - 隐蔽绕行
+    - 追踪定位
+    - 利益分化
+    - 对价交换
+    - 公开解胁
+    - 隔离封存
+    - 反馈抑制
+    - 替代依赖
+    - 主体归位
+    - 断源制停
+    - 耗竭制胜
+    - 脱域避险
+    - 触发反用
+    - 弱点克制
+    - 通路重构
+    - 实力压制
+    - 夺取控制
+    - 外援协同
+    - 弃权止损
+    - 断链脱控
+    - 修复故障
+    - 资源重配
+    - 履约修复
+    - 群体表态
+    hook_types: *id002
+  system-apocalypse-healer:
+    ladder:
+      strength:
+      - 基础急救
+      - 稳定治疗
+      - 复合救治
+      - 群体支援
+      - 战区统筹
+      - 生命领域
+      wealth_unit: 标准补给份
+      status:
+      - 避难居民
+      - 救助队员
+      - 治疗骨干
+      - 据点医师长
+      - 区域救助统领
+      - 生存联盟支柱
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  urban-cultivation-2.0:
+    ladder:
+      strength:
+      - 引气
+      - 凝元
+      - 筑基
+      - 结丹
+      - 元婴
+      - 化神
+      - 合道
+      wealth_unit: 元
+      status:
+      - 普通市民
+      - 入门修士
+      - 社区守护者
+      - 一城名家
+      - 区域宗师
+      - 修行界领袖
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  urban-power-reversal:
+    ladder:
+      strength:
+      - 初醒
+      - 稳定控制
+      - 复合运用
+      - 能力进阶
+      - 领域成形
+      - 领域圆熟
+      - 超域
+      wealth_unit: 元
+      status:
+      - 无名新人
+      - 独立从业者
+      - 行业骨干
+      - 一城名人
+      - 区域领军者
+      - 全国影响者
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  villainess-reincarnation:
+    ladder:
+      strength:
+      - 辨清旧局
+      - 独立应对
+      - 掌握专长
+      - 化解多方局
+      - 统筹领地
+      - 主导变局
+      wealth_unit: 金币
+      status:
+      - 受排挤贵女
+      - 独立继承人
+      - 领地代表
+      - 王庭重臣
+      - 摄政主理人
+      - 王国领袖
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  wuxia-jianghu-honor:
+    ladder:
+      strength:
+      - 初窥门径
+      - 登堂入室
+      - 融会贯通
+      - 炉火纯青
+      - 自成一家
+      - 一代宗师
+      - 绝顶宗师
+      wealth_unit: 银两
+      status:
+      - 无名行者
+      - 门派弟子
+      - 地方名侠
+      - 一派掌门
+      - 武林名宿
+      - 江湖共尊
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  xianxia-upgrade-core:
+    ladder:
+      strength:
+      - 炼气
+      - 筑基
+      - 金丹
+      - 元婴
+      - 化神
+      - 炼虚
+      - 合道
+      wealth_unit: 灵石
+      status:
+      - 散修
+      - 宗门弟子
+      - 执事
+      - 长老
+      - 一宗之主
+      - 仙盟领袖
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu: *id001
+    hook_types: *id002
+  xuanhuan-power-fantasy:
+    ladder:
+      strength:
+      - 醒脉
+      - 凝纹
+      - 蕴魂
+      - 融血
+      - 铸域
+      - 王境
+      - 皇境
+      - 圣境
+      wealth_unit: 灵晶
+      status:
+      - 旁支子弟
+      - 内族精英
+      - 一城强者
+      - 王朝栋梁
+      - 一域霸主
+      - 诸域共尊
+    genre_kind: 爽文
+    payoff_menu: *id004
+    solution_menu:
+    - 实力压制
+    - 弱点克制
+    - 信息欺骗
+    - 夺取控制
+    - 断链脱控
+    - 利益分化
+    - 对价交换
+    - 断源制停
+    - 脱域避险
+    - 外援协同
+    - 通路重构
+    - 反馈抑制
+    - 耗竭制胜
+    - 触发反用
+    - 隐蔽绕行
+    - 追踪定位
+    - 实验复现
+    - 物证鉴别
+    - 时序还原
+    - 证词排伪
+    - 公开解胁
+    - 替代依赖
+    - 弃权止损
+    - 主体归位
+    - 隔离封存
+    - 修复故障
+    - 资源重配
+    - 履约修复
+    - 逆向归因
+    - 群体表态
+    payoff_subtype_to_type:
+      血脉晋阶: 升级
+      武魂凝形: 升级
+      战技突破: 升级
+      擂台雪耻: 打脸
+      当众破除废材断言: 打脸
+      亲手击败轻视自己的同辈: 打脸
+      夺得可用传承: 收获
+      赢取独立支配的修炼资源: 收获
+      收服真心追随的盟友: 收获
+      获得正式继承资格: 身份抬升
+      凭战功取得领地: 身份抬升
+      被敌对势力承认主导地位: 身份抬升
+      正面对决压制强敌: 碾压
+      以既有战技击溃围攻: 碾压
+      以实力优势破掉敌阵: 碾压
+    payoff_descriptions:
+      升级:
+      - 血脉晋阶
+      - 武魂凝形
+      - 战技突破
+      打脸:
+      - 擂台雪耻
+      - 当众破除废材断言
+      - 亲手击败轻视自己的同辈
+      收获:
+      - 夺得可用传承
+      - 赢取独立支配的修炼资源
+      - 收服真心追随的盟友
+      身份抬升:
+      - 获得正式继承资格
+      - 凭战功取得领地
+      - 被敌对势力承认主导地位
+      碾压:
+      - 正面对决压制强敌
+      - 以既有战技击溃围攻
+      - 以实力优势破掉敌阵
+    hook_types: *id002
+solution_mechanisms:
+  断源制停: 切断持续输入的能量或补给，使对方无法维持行动。
+  耗竭制胜: 不切外部输入，以防守或拖延耗尽对方已有的有限储备或有效时限。
+  脱域避险: 将人或危险载体移出已知生效的时空范围，不靠正面击败对手。
+  触发反用: 利用已确立的条件、顺序或对象限制，让既有规则不触发或反向生效。
+  弱点克制: 使用已知相克属性或生理短板，以针对性克制压低对方效能。
+  通路重构: 改变地形连通关系，建立新通路或毁掉必经路。
+  实力压制: 以实际技能或战力正面胜过对手，包括缴械、制服和硬碰硬突破。
+  夺取控制: 取得已有控制节点的操作权，使系统转由己方操控。
+  信息欺骗: 制造错误认知诱使对方选错对象、位置或行动；诱饵、分追、引敌换地、伪装、掉包均属此类。
+  隐蔽绕行: 不主动制造假信号，利用观察盲区或未封路线避开对方发现。
+  追踪定位: 沿真实物理痕迹或交接路径定位原本隐藏的人、物或源头。
+  实验复现: 通过可重复的实地试验排除错误机制，实际验证破局条件。
+  物证鉴别: 用材料、痕迹或成像差异辨真伪、同源及替换，不靠供述认定。
+  时序还原: 利用时间基准或事件先后约束，排除不可能成立的事件顺序。
+  证词排伪: 交叉比对陈述的互斥细节，揭出谎言并解除错误指控。
+  公开解胁: 主动公开被隐瞒的信息，消除勒索赖以成立的信息差。
+  利益分化: 利用敌方成员目标冲突，使其合作或服从关系瓦解。
+  对价交换: 交付对方认可的实际对价，换回所需资源、释放或合作。
+  外援协同: 引入互补能力或重新分工，完成单人无法同时完成的任务。
+  替代依赖: 找到可实际使用的替代来源，使原有独家供应或唯一手段失去钳制力。
+  弃权止损: 主动放弃奖励、资格或依附，令以该利益为钩的操纵失效。
+  主体归位: 让原权利人亲自决定或取回其物，切断他人冒领、代办所得的控制。
+  隔离封存: 以边界或容器阻断接触传播，使危险无法继续扩散。
+  反馈抑制: 抑制已有自激反馈，令循环放大的失控过程稳定，不等于直接断开输入。
+  断链脱控: 移除识别标记或信息连接，令定位、遥控或附着失去联系。
+  修复故障: 修正已有设施或流程的损坏环节，恢复原本正常功能。
+  资源重配: 不新增或交易资源，重排已有资源的用途与先后，使关键需求得到满足。
+  履约修复: 用已履行的承诺、赔偿或补救重建信任，使原来的合作障碍消失。
+  逆向归因: 从异常结果反推必要成因及受益者，确定因果源头而非单纯沿踪追人。
+  群体表态: 以口头或书面共同表态、齐声喊名、众人作证的表达行为直接破局；全书最多两次，末卷最多一次。实际共同行动须按作用因果归类，不因参与者多就计入。
+  集体认同: 旧历史未审proxy，保留旧标签与事实；明确content含齐声、作证、共同拒绝可归群体表态，其余独立保留但保守占group预算；group_history_unknown统计待正文核的主记录条数，不宣称确为口头，不作新章候选。
+solution_examples:
+  断源制停:
+  - 截断攻城器械的补给，使其不能继续发射。
+  耗竭制胜:
+  - 守住掩体直到对方有限弹药用尽。
+  脱域避险:
+  - 趁已知退潮窗口带人离开受限区域。
+  - 把附着危险的物件送出人群所在的作用域。
+  触发反用:
+  - 按已有触发顺序先解除前置条件，使陷阱不能启动。
+  弱点克制:
+  - 使用前文已知能克制对手能力的材料挡住攻击。
+  通路重构:
+  - 搭桥越过断口撤人。
+  - 拆掉追兵必经的栈桥截断路线。
+  实力压制:
+  - 在正面对决中夺下对方兵器并制服对手。
+  夺取控制:
+  - 夺下已有闸门的控制柄，打开困人的出口。
+  信息欺骗:
+  - 用假目标分走追兵。
+  - 引敌换地后伏击。
+  - 换装混入或事前掉包，使敌人认错对象。
+  隐蔽绕行:
+  - 沿未被监视的侧道穿过封锁，不放假消息诱导守卫。
+  追踪定位:
+  - 沿沾泥足迹追到藏人的仓房。
+  实验复现:
+  - 重做现场操作，验证原先认定的不可能通路实际可用。
+  物证鉴别:
+  - 比对材料纹理，认出被替换的关键物件。
+  时序还原:
+  - 校正两只时钟的差值，推翻伪造的不在场时间。
+  证词排伪:
+  - 让两名证人分别陈述，找出不能同时成立的细节。
+  公开解胁:
+  - 主动公开自己的旧事，使威胁曝光的勒索失效。
+  利益分化:
+  - 使同盟成员发现首领将牺牲自己，导致其撤回支持。
+  对价交换:
+  - 以自己可支配的货物换回被扣住的同行者。
+  外援协同:
+  - 一人稳住险桥，另一人利用其专业技能把被困者带出。
+  替代依赖:
+  - 启用已找到的备用水源，摆脱独占水井者的控制。
+  弃权止损:
+  - 主动放弃附带控制条件的奖励，停止被对方牵制。
+  主体归位:
+  - 把被冒领的遗物交还当事人，由其本人终止代领授权。
+  隔离封存:
+  - 封住会传播污染的破口，阻止伤害进入居住区。
+  反馈抑制:
+  - 开启已有泄压通道，使越积越高的压力回路恢复稳定。
+  断链脱控:
+  - 移除已经确认的追踪标记，摆脱对方持续定位。
+  修复故障:
+  - 换回损坏的传动零件，让停住的升降台恢复运行。
+  资源重配:
+  - 把闲置照明用的储备转给正在断电的救援设备。
+  履约修复:
+  - 兑现先前答应的补救，令受损伙伴重新愿意合作。
+  逆向归因:
+  - 由受损结果所需的特定条件，反推唯一有能力造成它的人。
+  群体表态:
+  - 众人齐声喊出真名解除冒名控制。
+  - 众人各自陈述拒绝使强制代签失效。
+  集体认同:
+  - 旧历史标签待主破局quote复核，不将共同行动改写为口头表态。
+solution_aliases:
+  假目标分追: 信息欺骗
+  引敌换地: 信息欺骗
+  诱敌: 信息欺骗
+  伪装混入: 信息欺骗
+  事前掉包: 信息欺骗
+  放出假目标分散追兵: 信息欺骗
+  引敌离开熟悉地形再交战: 信息欺骗
+  换装混入敌方队伍穿过关口: 信息欺骗
+  预先掉包使敌方夺到无效物: 信息欺骗
+  诱导敌方火力击毁自身屏障: 信息欺骗
+  预设伏击在敌方返程截获目标: 信息欺骗
+  共同表态: 群体表态
+  齐声喊名: 群体表态
+  众人齐声喊名: 群体表态
+  群体表态: 群体表态
+  齐声: 群体表态
+  众人作证: 群体表态
+  众人齐声: 群体表态
+  众人共同拒绝: 群体表态
+  共同喊名: 群体表态
+  集体认同: 集体认同
+  断开外部供能使敌方装置停机: 断源制停
+  截断运输补给迫使围困者撤走: 断源制停
+  耗尽敌方有限弹药后反攻: 耗竭制胜
+  坚守既有防线拖过敌方有效时限: 耗竭制胜
+  搭建临时桥梁撤出被困者: 通路重构
+  破坏承重结构阻断追击路线: 通路重构
+  缴械制服施害者终止攻击: 实力压制
+  夺取控制器解除远程威胁: 夺取控制
+  沿观察盲区穿过封锁: 隐蔽绕行
+  绕开正面守军从侧路夺取关键物: 隐蔽绕行
+  切断已知追踪媒介后隐蔽转移: 断链脱控
+  分化敌方利益使其联盟瓦解: 利益分化
+  交换对方急需资源换回被扣物: 对价交换
+  抵押自有资产换取急需周转资源: 对价交换
+  主动放弃敌方控制的奖励退出陷阱: 弃权止损
+  当事人主动解除依附关系终止操纵: 弃权止损
+  建立备用供给摆脱独家供货钳制: 替代依赖
+solution_review_required:
+  共同见证: 须按主破局quote判断是作证表态还是实际共同行动
+  拆册: 须按作用因果复核不设口头alias
+  拆册共管: 重新分配既有资源归资源重配，拆分控制连接归断链脱控，缺证保留未审
+  分印共管: 按控制或分配的实际因果归类，不直接当群体表态
+growth_interfaces:
+  growth_obligation: display_before_upgrade为true时即使排了升级也须先展示level当前阶，required_action说明先后，不假报已展示
+  injuries: 带content和正文quote的新身体伤残或代价列表，costs中身体代价或physical=true也计入，injuries_count统计所有正文事实，injuries仅保留一项主新增，injury_facts保留全部；Main将计数写row
+  final_volume_start: choose_contract可传末卷起章，reduce_growth从canon读取；state提供全书解法账本；group_history_unknown为保守占额的待正文核条数
+  primary: solutions可标primary=true，历史缺标按因果描述优先否则首条待正文复核
+solution_usage: 旧集体认同未审proxy保守占group预算并报告unknown数，不追溯全改口头；群体表态须由Main按明确正文候选的主quote分类。仅选择本题材及既有世界机制适用的候选，不强行执行全题材通用首项；旧标签含义有歧义时按正文机理重归类，不以改名重置近三十章历史。
+payoff_criteria:
+  升级: 只由当前阶跨到下一合法阶，原文明确新阶名及当场能力效果；感到变强、夺到灵力不自动算境界升级。
+  打脸: 主角以自己的行动当场推翻对手的挑衅或判断，对手实际败退或失去所争目标，不能仅靠口头申辩。
+  收获: 主角实际取得、能留用或当场使用的资源/战利品；仅找到下章线索、拿到待核材料不算。
+  身份抬升: 主角赢得明确新资格或地位，待遇/行动权限当场实变；众人喊话不算正式获得。
+  碾压: 以既有合法能力正面压制并赢下冲突，不依赖新伤、临时规则或勉强逃脱。

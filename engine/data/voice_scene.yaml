@@ -1,0 +1,38 @@
+# Original lexical rules, not copied prose. All scene hits are editorial candidates.
+# No score here establishes AI authorship, story quality, or complete continuity.
+scene:
+  opening_sentences: 3
+  opening_environment: '(?:细雨|大雨|小雨|暴雨|夜雨|寒风|冷风|夜风|晨雾|浓雾|月光|灯光|灯影|光影|阴影|天色|夜色|晨光|日光|夕阳|阳光|街灯|霓虹|路灯|灯箱|雨|雪|风|雾)'
+  opening_frame: '^(?:[\u4e00-\u9fff]{0,6}的)?(?:细雨|大雨|小雨|暴雨|夜雨|寒风|冷风|夜风|晨雾|浓雾|月光|灯光|灯影|光影|阴影|天色|夜色|晨光|日光|夕阳|阳光|街灯|霓虹|路灯|灯箱|雨|雪|风|雾)'
+  embodied: '(?:我|你|他|她|咱|俺|我们|他们|她们|手心|脚底|脚趾|脚踝|破鞋|额头|喉咙|鼻尖|冻得|冷得|饿得|疼得|骂|喊|问|说|推门|抬头|跑进|抱起)'
+  # Require three delimited noun-like items, not three arbitrary clauses/actions.
+  object_item: '(?:[\u4e00-\u9fff]{0,6}(?:盆|勺|壶|杯|碗|筷|桌|椅|凳|灯|灯箱|招牌|摊位|积水|雨幕|水桶|车票|布袋|塑料袋|雨伞|门板|砖头|铁皮|算盘|烟袋|米袋|纸箱|酒瓶|窗帘|水管|石阶|霓虹))'
+  object_minimum: 3
+  personified_light: '(?:月光|灯光|灯影|阴影|光影|阳光|霓虹)[^，。！？；\n]{0,10}(?:舔|咬|吞噬|窥视|爬行|挣扎|喘息|狞笑|缠住|攥住|掐住|啃|蠕动)'
+  precise_micro_action:
+    - '(?:指尖|手指|嘴角|眼皮|眉梢|唇角|脚尖|杯沿)[^，。！？；\n]{0,12}(?:挪|移|抬|转|挑|扬|偏|缩|退|动|张|收|翘)[^，。！？；\n]{0,5}(?:半寸|半圈|一线|一寸|一分|一毫米)'
+    - '(?:挪|移|抬|转|挑|扬|偏|缩|退|张|收|翘)(?:了|开|起|动)?(?:半寸|半圈|一线|一毫米)'
+  generic_imagery: [雨幕, 霓虹, 坏灯箱, 刺耳的响动, 浓得化不开的夜色, 不知名的寒意, 空气仿佛凝固]
+chapter:
+  heading: '^\s*(?:#{1,6}\s*)?第\s*([零〇一二两三四五六七八九十百千万0-9]+)\s*章[^\n]*$'
+  minimum_han: 8
+  neighbor_distance: 3
+  similarity: 0.88
+  nickname: '(?:[\u4e00-\u9fff](?:哥|姐|爷|叔|婶)(?![哥姐爷叔婶])|阿[\u4e00-\u9fff]|小[SURNAME])'
+  nickname_exclusions: [大哥, 大姐, 二哥, 三哥, 哥哥, 姐姐, 姐夫, 师哥, 师姐, 表哥, 表姐, 堂哥, 堂姐, 老哥, 大爷, 少爷, 老爷, 大叔, 叔叔, 大婶, 婶婶, 阿姨, 阿婆, 阿爸, 阿妈, 小姐, 小孩, 小心, 小声, 小屋, 小路, 小雨, 小雪, 小镇, 小院, 小门, 小手, 小腿]
+  compound_surnames: [欧阳, 司马, 上官, 诸葛, 夏侯, 东方, 皇甫, 尉迟, 公孙, 慕容, 司徒, 令狐]
+  genders:
+    male: [male, m, 男, 男性, 男人]
+    female: [female, f, 女, 女性, 女人]
+  pronoun:
+    male: '她'
+    female: '他'
+  opposite_description:
+    male: '(?:是|作为)(?:个|一个|一位|名|一名)?(?:女儿|女人|女性|女子|女孩|女生|少女|姑娘)'
+    female: '(?:是|作为)(?:个|一个|一位|名|一名)?(?:儿子|男人|男性|男子|男孩|男生|少年|小伙子)'
+  seats: [副驾, 后排]
+  movement: '从|离开|离了|下车|下了车|换到|换座|挪到|移到|爬到|钻到|走到|坐进|坐到|转到|回忆|想起|先前|之前|刚才|如果|假如|可能|不是|不在|没有'
+outline:
+  # Exact structured labels only. No substring inference from free-form summaries.
+  final_results: [final_win, finalwin, win, 最终获胜, 最终胜利, 最终击败, final_loss, loss, 最终落败, 最终失败]
+  nonfinal_flags: [recap, hypothetical, misjudged, temporary]

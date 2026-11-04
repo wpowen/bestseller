@@ -1,0 +1,234 @@
+schema_version: 1
+language: zh
+purpose: 自写句级编辑案例；用于解释候选问题，不鉴定作者身份。
+source_notes:
+  cases: 全部现场自写；original 是故意写出的病句，human_alternative 也是原创，不代表真人实测。
+  label_seeds: 仅保留 INBOX19 及本轮用户明确点名的短句或短语，禁止扩成原文段落。
+  comparison_texts: 三份 compare 稿只供离线校准，不进入 cases、few-shot 或替换句。
+case_schema:
+  required: [type, original, why, human_alternative]
+  additional_properties: false
+  type_enum: [verb_mismatch, negation_turn, empty_scene, cool_micro_action, written_dialogue, mixed_language, cliche_simile, character_label, ominous_rendering, emotion_overload, paragraph_moral, procedural_plot, long_de_chain, adverb_dialogue_tag, era_conflict, triple_parallel, date_arithmetic]
+usage:
+  - few-shot 只从 cases 选取同类自写案例；label_seeds 和 calibration_negatives 永不作为坏句示范。
+  - 案例的改句只对该虚构情境成立，不得直接粘贴进书稿；实际修改须保留本稿事实、否定、视角和信息来源。
+  - why 描述失效条件，不把一个词或句式设为禁令；有具体作用的同型句可以保留。
+  - human_alternative 是虚构案例的示意写法，不能作为本稿事实依据；不能把示意动作、新人物或身份猜测带入实际修订。
+cases:
+  - type: verb_mismatch
+    original: 饥饿把他的衣领拧出了褶子。
+    why: 饥饿与衣领变皱没有可理解的动作关系，借强动词代替身体感受。
+    human_alternative: 他饿得发慌，手一直揪着衣领。
+  - type: verb_mismatch
+    original: 午后的闷热把她的嗓子折成了两截。
+    why: 嗓子被折断既非字面事件，也没有说明闷热造成的实际不适。
+    human_alternative: 午后闷得很，她开口时嗓子发干，话没说完就停了。
+  - type: negation_turn
+    original: 他不是在等车，是在等一个答案；不是在站着，是在抵抗命运。
+    why: 两次否定把普通等车拔成抽象宣言，后半句没增加处境或行动。
+    human_alternative: 车还没来，他得在这儿等到有人答复。
+  - type: negation_turn
+    original: 她端来的不是一碗面，而是一份关怀，不是一顿饭，而是一种救赎。
+    why: 同一动作被连续翻译成抽象价值，遮住端面这一刻的具体关系。
+    human_alternative: 她把面端来，让他先吃。
+  - type: empty_scene
+    original: 暮色铺满街巷，灯影摇动，远处的屋脊沉进灰蓝的天际。
+    why: 假定这是章首且后文不使用这些景物，连写远景仍未交代人物在做什么；孤立看不判错。
+    human_alternative: 天快黑了，街上还没见到她要等的人。
+  - type: empty_scene
+    original: 雾绕着水塔，晨光擦过瓦沿，街道在薄白的寂静里缓缓醒来。
+    why: 假定开头连续铺景却迟迟不落到人物，拟人词并未产生可用信息；雾影响行动时应保留。
+    human_alternative: 雾大，她走到水塔底下，才认出要找的那条街。
+  - type: cool_micro_action
+    original: 面对追问，他把杯沿转过一毫米，唇角只抬起一线。
+    why: 微小动作被过度量化来摆姿态，既无操作需求，也没交代人物怎样回应追问。
+    human_alternative: 他捏着杯子，没有接话。
+  - type: cool_micro_action
+    original: 她没看门口，指尖将袖扣推开半分，眼皮懒懒地压下一线。
+    why: 多个难以感知的尺度挤在一句里，只用于表演镇定；精细操作另论。
+    human_alternative: 她低头拨弄袖扣，没往门口看。
+  - type: written_dialogue
+    original: “鉴于目前家庭经济状况不容乐观，我建议你优先解决欠款问题。”
+    why: 假定说话者是正在为家用争吵的家人，像会议意见，绕开对方眼前欠款；正式会议可这样说。
+    human_alternative: “家里都快没钱了，你先把欠的还上。”
+  - type: written_dialogue
+    original: “你的离开将对我们双方的合作关系造成不可逆的负面影响。”
+    why: 假定这是同伴当面挽留，句子整齐而抽象，没有说清离开对眼下合作的后果。
+    human_alternative: “你这一走，咱俩以后还怎么搭伙？”
+  - type: mixed_language
+    original: “我现在很 upset，你最好给我一个 explanation。”
+    why: 假定人物平时只用中文且当场没有外语缘由，夹词不体现身份，只打断声口。
+    human_alternative: “我正生气呢，你把话说清楚。”
+  - type: mixed_language
+    original: 他把这场争执当成一次 challenge，决心做最后的 fighting。
+    why: 普通中文叙述无理由夹入英语词，且搭配别扭；引用原标识或人物惯用语不能照此判。
+    human_alternative: 他不肯在这场争执里让步，还想争到底。
+  - type: cliche_simile
+    original: 她的心像断了线的风筝，飘向无边无际的深渊。
+    why: 风筝与深渊拼接，读者仍不知道她具体在怕什么，比喻只扩大情绪。
+    human_alternative: 她心里没了着落。
+  - type: cliche_simile
+    original: 那句话像一把利刃，狠狠刺穿了他早已千疮百孔的心。
+    why: 同一受伤含义叠上利刃与千疮百孔，套用强烈比喻而没有新信息。
+    human_alternative: 那句话他听不得。
+  - type: character_label
+    original: 她身上有一种小镇女人惯有的庸俗与势利。
+    why: 从群体标签直接给人物定性，缺少当场可见行为；人物有偏见的内心话需保留视角归属。
+    human_alternative: 她问了两遍工钱，才肯往里让人。
+  - type: character_label
+    original: 他眼里闪着生意人独有的狡诈和贪婪。
+    why: 叙述凭职业替人物盖章，用抽象属性跳过交易中真正的利害。
+    human_alternative: 钱还没谈妥，他先把货推回了柜里。
+  - type: ominous_rendering
+    original: 门后弥漫着诡谲而邪恶的气息，连静默都透着恶意。
+    why: 先宣布邪恶，读者却看不到门后发生什么；真实异常不应被这些判断词代替。
+    human_alternative: 她站在门外，听不见里面的动静。
+  - type: ominous_rendering
+    original: 那盏灯发出恶毒的光，把四壁照得令人毛骨悚然。
+    why: 光被赋予道德属性，恐惧程度由叙述预先喊出，未交代人物看到的东西。
+    human_alternative: 灯照着四壁，她看着害怕。
+  - type: emotion_overload
+    original: 他听见少算了两角钱，顿时血液沸腾，恨意滔天，几乎要把眼前的人撕碎。
+    why: 假定此前没有积怨或危急处境，小额争执直接跳到杀意，强度没有铺垫。
+    human_alternative: “还差两角。”他把钱推回去。
+  - type: emotion_overload
+    original: “你居然没等我！”她声嘶力竭地喊，绝望、愤怒和背叛感同时将她吞没。
+    why: 假定只是一次普通失约，喊声之后再叠三种极端情绪，抹平了人物具体的不满。
+    human_alternative: “你怎么没等我？”
+  - type: paragraph_moral
+    original: 关上铺门的那一刻，他终于懂得，人生的意义就是永不向苦难低头。
+    why: 段尾从关门跳到万能人生主题，未发生足以支持这种认识的选择。
+    human_alternative: 他关上了铺门。
+  - type: paragraph_moral
+    original: 她把碗洗净，也洗净了心灵，从此明白真正的勇气是与自己和解。
+    why: 日常动作后附带抽象顿悟，洗碗和心理转变之间没有可追溯的因果。
+    human_alternative: 她把碗洗净了。
+  - type: procedural_plot
+    original: 他先核对名册，再登记异议，最后要求见证人在编号单上确认归属，双方的争执也就结束了。
+    why: 假定争执本应围绕谁舍得交出东西展开，手续代替双方选择；正常登记工作本身不是问题。
+    human_alternative: “东西到底给谁？”他问。两个人都不肯先松手。
+  - type: procedural_plot
+    original: 她没有理会弟弟要把母亲留下的床搬走，只说先补齐签字、交接和验收材料，再讨论谁能留下它。
+    why: 亲人争夺旧物的场面被连续手续拖走，是否留床的欲望与代价没有展开；单句只作章级线索。
+    human_alternative: “妈那张床，你真要搬？”她问弟弟。
+  - type: long_de_chain
+    original: 她盯着那只摆在靠窗的铺着褪色的布的桌上的缺了口的碗。
+    why: 连续嵌套定语迫使读者回找中心词，桌与碗的位置关系被拖到句末。
+    human_alternative: 桌子靠窗，铺着一块褪色的布。她盯着桌上那只缺口碗。
+  - type: long_de_chain
+    original: 他接过那个从隔壁的经营旧货的瘸腿的老头手里买来的裂了盖的盒子。
+    why: 来源、职业、身体与物件外观挤在一个定语链里，读者难以一次分清。
+    human_alternative: 盒子盖裂了，是从隔壁卖旧货的瘸腿老头手里买的。他把盒子接过来。
+  - type: adverb_dialogue_tag
+    original: “还我。”他冷冷地说。“不给。”她冷冷地答。“还我。”他又冷冷地重复。
+    why: 每一轮都贴同一个情绪标签，既不区分声口，也没比话本身多给信息。
+    human_alternative: “还我。”“不给。”“还我。”
+  - type: adverb_dialogue_tag
+    original: “去不去？”她决然地问。“去。”他坚定地说。“现在走。”她果断地命令。
+    why: 三个近义副词把普通问答逐次盖章，节奏和意图原本已由对白交代。
+    human_alternative: “去不去？”“去。”“现在走。”
+  - type: era_conflict
+    original: 一九九二年，她用微信给同事发消息，问工资何时能领。
+    why: 假定普通现实年代且无穿越设定，微信与明确年份冲突；讨工资这一欲望本身合理。
+    human_alternative: 一九九二年，她去问同事，工资何时能领。
+  - type: era_conflict
+    original: 这个没有穿越设定的古代县令，给捕快发了条微信催他到场。
+    why: 文中明确排除穿越，通信工具仍越过时代；不能只因出现古代官名就判错。
+    human_alternative: 县令叫人去催捕快到场。
+  - type: era_conflict
+    original: 二〇〇四年的苏南工地，更鼓敲过两点，工人们该换班了。
+    why: 假定普通工地报时且无民俗表演或特殊设定，把更鼓当现代两点报时器；不是出现更鼓二字就必错。
+    human_alternative: 二〇〇四年的苏南工地，两点了，工人们该换班了。
+  - type: date_arithmetic
+    original: 今天是四月十二日，十六日才领钱，她还得再等两天。
+    why: 同年同月按日历日期相减是四天，原句明确的两天与两个日期不符。
+    human_alternative: 今天是四月十二日，十六日才领钱，她还得再等四天。
+  - type: date_arithmetic
+    original: 今天是九月二十九日，十月三日到期的借条，明天就该还了。
+    why: 同年日期相减为四天，明天是九月三十日；当前日期已经明确，不把票面字样当今天。
+    human_alternative: 今天是九月二十九日，借条十月三日到期，还差四天。
+  - type: triple_parallel
+    original: 他推开门，是为了生活；他走下阶，是为了希望；他迈过沟，是为了未来。
+    why: 三个普通动作被套成同长抽象解释，排比没有推进处境。
+    human_alternative: 他推开门，走下台阶，迈过沟，接着为生活奔忙。
+  - type: triple_parallel
+    original: 这不是一场争吵，不是一场考验，不是一场较量，这是灵魂的觉醒。
+    why: 三重否定加抽象结论重复抬高语势，没有解释争吵改变了什么。
+    human_alternative: 他们吵了起来。
+
+# 用户点名的最小标注种子；不是从 compare 再摘整句，更不是 few-shot。
+label_seeds:
+  - {type: verb_mismatch, original: 潮气已经吃到砖腰, expected: candidate}
+  - {type: negation_turn, original: '不是 xxx，是 xx', expected: context_required}
+  - {type: negation_turn, original: 不是樟脑，是旧棉花, expected: no_issue}
+  - {type: empty_scene, original: 雨幕压低……灯箱坏了一半, expected: context_required}
+  - {type: cool_micro_action, original: 沈亦衡没有回头，只把方向盘向左压了半圈, expected: context_required}
+  - {type: cliche_simile, original: 像狗啃的一样, expected: context_required}
+  - {type: cliche_simile, original: 死鱼眼, expected: context_required}
+  - {type: cliche_simile, original: 像三口棺材, expected: context_required}
+  - {type: character_label, original: 常年跟钱打交道的人特有的精明与刻薄, expected: candidate}
+  - {type: ominous_rendering, original: 阴森的蓝光, expected: context_required}
+  - {type: ominous_rendering, original: 透着一股说不出的古怪和阴毒, expected: candidate}
+
+# 全部自写的负例：用于误报回归，不能当作坏句 few-shot。
+calibration_negatives:
+  - id: natural_negation
+    text: “不是我的，是小何的。你还给他。”
+    expected: no_issue
+    reason: 实际纠正物主，否定不可删。
+  - id: sensory_correction
+    text: 不是敲门，是楼上有人剁馅。
+    expected: no_issue
+    reason: 纠正声音来源，新增了具体信息。
+  - id: normal_work_dialogue
+    text: “这两箱先登记，下午送走。”库管说。
+    expected: no_issue
+    reason: 正常职业活动，单个工作指令不构成程序办事章。
+  - id: wages_conflict
+    text: “欠我三个月的工资，今天给不给？”“先签领款单，钱就在这儿。”
+    expected: no_issue
+    reason: 签单直接连着拿钱的利害，仍是人物冲突，不是泛讲原则流程。
+  - id: useful_landscape
+    text: 雨水灌进鞋里，她走几步就得停下来倒一倒。
+    expected: no_issue
+    reason: 天气直接阻碍人物行动。
+  - id: repeated_unknown
+    text: “谁动过水壶？”“不知道。”“昨晚谁在？”“也不知道。”
+    expected: no_issue
+    reason: 不同问题的未知状态，不按词面重复当成冗余或隐瞒确证。
+  - id: unopened_owner_claim
+    text: 箱子还封着。物主说：“里面是冬衣。”
+    expected: no_issue
+    reason: 物主可以知道箱内物品；自述不等于已经开箱核实，也不与封箱矛盾。
+  - id: screen_claim
+    text: 屏幕上写着“已付款”。他没查到账，只把这行字念给她听。
+    expected: no_issue
+    reason: 屏幕文字是显示内容，不证明钱已实际到账；引号内不是人物对白。
+  - id: fake_interface_location
+    text: 她站在车站，伪造的订单页却写着“她已到仓库”。她还没离开站台。
+    expected: no_issue
+    reason: 伪界面不构成第二个真实位置，不能报人物同时两地。
+  - id: figurative_location
+    text: 他还蹲在井边，心早飞到山那头去了。
+    expected: no_issue
+    reason: 比喻不构成位置事件，不能与井边的位置相冲突。
+  - id: motivated_high_emotion
+    text: 火从孩子睡的屋里蹿出来，她喊得嗓子都劈了。
+    expected: no_issue
+    reason: 危急处境支持强烈情绪，不为压低强度而改。
+  - id: functional_micro_action
+    text: 螺丝只松了半圈，盖子还拿不下来。
+    expected: no_issue
+    reason: 精确尺度与拆卸结果直接相关。
+  - id: attributed_foreign_text
+    text: 盒盖印着 OPEN，她照着箭头掀开。
+    expected: no_issue
+    reason: 外语标识有明确出处，照录不等于无故夹词。
+  - id: literal_supernatural
+    text: 这屋的影子真能咬人。她腕上还留着昨晚的齿印。
+    expected: no_issue
+    reason: 明确的世界设定与后果，不能按光影拟人一概删除。
+  - id: formal_speaker
+    text: 仲裁员念道：“请双方确认材料是否齐全。”
+    expected: no_issue
+    reason: 职务、场合与正式语体相符。

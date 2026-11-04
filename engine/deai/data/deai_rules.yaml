@@ -1,0 +1,437 @@
+schema_version: 1
+enabled_by_default: false
+purpose: INBOX19/17 的零调用候选规则、统计口径与待实测校准合同。
+status: calibration_passed_integration_blocked
+case_file: ai_flavor_cases.yaml
+prompt_file: deai_prompts.yaml
+policy:
+  mode: certain_rules_direct_semantic_two_votes
+  abstract_negation_terms:
+  - 命运
+  - 意义
+  - 人生
+  - 成长
+  - 救赎
+  - 灵魂
+  - 真正
+  - 证明
+  - 选择
+  - 未来
+  - 代价
+  - 希望
+  - 勇气
+  - 责任
+  regex_dialect: python_re
+  auto_delete: false
+  infer_authorship: false
+  thresholds: 自写初始筛查值，未经真实校准；不能凭密度排序宣称质量达标。
+  localization: 每项候选保留 sid、pid、原句及半开字符区间 start/end；sid 由调用方提供，不按物理行号猜测。
+  offsets: 在未经规范化的输入正文中计 Unicode code point；引号内外归属须分清。
+  matching: 同句同类合并；词表/regex/markers/cliche_terms的重叠区间只计一次；事实检查不入风格分。
+  missing_context: unknown，不用缺失人物卡、年代或历史状态推定错误。
+  protected_facts:
+  - 姓名
+  - 亲属
+  - 归属
+  - 物件
+  - 地点
+  - 时间
+  - 数字与单位
+  - 事件先后
+  - 否定
+  - 条件
+  - 承诺
+  - 说话人
+  - 信息来源
+  - 已知与未知的区别
+  revision: 统计仅辅助定位，实际改句不能从案例移植事实；新问题回滚该处，不能靠删情报降低指标。
+density:
+  unit: per_1000_han
+  formula: 1000 * non_overlapping_match_count / han_count
+  han_regex: '[\u3400-\u4dbf\u4e00-\u9fff\U00020000-\U0002fa1f]'
+  denominator: 本章正文汉字数，去标题；保留对白，不以标点或空白充数。
+  zero_denominator: null
+  short_text_han: 300
+  short_text_policy: 少于300汉字只报原始次数和密度，不按章阈值判断；附样本不足标记。
+  strata:
+  - narration
+  - spoken_dialogue
+  - quoted_or_displayed_text
+  note: 分层统计后另给全章合计，标牌/信件/屏幕与真实说话不混计；全章密度不是修订清单。
+lexicons:
+  procedural:
+    type: procedural_plot
+    terms:
+    - 清点
+    - 登记
+    - 编号
+    - 编号签
+    - 按手印
+    - 写欠条
+    - 验收
+    - 证据
+    - 见证
+    - 核验
+    - 核对
+    - 凭据
+    - 归属
+    - 证明
+    - 签字
+    - 签收
+    - 封条
+    - 封存
+    - 流程
+    - 交接
+    - 名册
+    - 材料齐全
+    - 领款单
+    review_density_per_1000: 8
+    note: 整理遗物、仓储和讨工资可以自然包含这些词；只有原则流程反复替代欲望、阻碍、选择与后果，才升为章级问题。
+  cliche:
+    type: cliche_density
+    terms:
+    - 仿佛
+    - 一丝
+    - 缓缓
+    - 微微
+    - 深吸一口气
+    - 嘴角勾起
+    - 不由自主
+    - 心头一震
+    - 空气仿佛凝固
+    - 命运的齿轮
+    review_density_per_1000: 6
+    note: 高频只是复核信号；单独的微微、仿佛或自然呼吸不判错。
+  simile:
+    type: cliche_simile
+    markers:
+    - 仿佛
+    - 宛如
+    - 犹如
+    - 好似
+    - 好像
+    regex: (?:像[^。！？!?；\n]{1,28}(?:一样|一般|似的)|仿佛|宛如|犹如|好似|好像)
+    cliche_terms:
+    - 断了线的风筝
+    - 如坠冰窟
+    - 无底深渊
+    - 心如刀绞
+    - 死鱼眼
+    - 像狗啃的一样
+    - 像三口棺材
+    review_density_per_1000: 5
+    note: 字面外观比较、人物职业比方与新信息保留；不是所有像字都构成比喻，也不是所有比喻都陈套。
+  idiom:
+    type: idiom_density
+    terms:
+    - 一丝不苟
+    - 不寒而栗
+    - 毛骨悚然
+    - 死气沉沉
+    - 千疮百孔
+    - 心如刀绞
+    - 不言而喻
+    - 毋庸置疑
+    - 意味深长
+    - 深不可测
+    - 波澜不惊
+    - 声嘶力竭
+    - 怒不可遏
+    - 恍然大悟
+    review_density_per_1000: 5
+    note: 有限自写词表，只报词表命中密度，不声称穷尽汉语成语；符合人物声口的成语不罚。
+  character_labels:
+    type: character_label
+    terms:
+    - 精明刻薄
+    - 精明与刻薄
+    - 狡诈和贪婪
+    - 庸俗与势利
+    - 天生冷漠
+    - 特有的精明
+    review_density_per_1000: 2
+    note: 分清叙述替人物盖章、人物偏见、既有行为后的有效概括。
+  ominous:
+    type: ominous_rendering
+    terms:
+    - 阴森
+    - 诡异
+    - 压抑
+    - 阴毒
+    - 死气沉沉
+    - 说不出的古怪
+    - 邪恶的气息
+    - 恶毒的光
+    review_density_per_1000: 4
+    note: 气氛词须结合真实环境、人物感受和密集程度，单词不构成错误。
+patterns:
+- id: corrective_negation
+  type: negation_turn
+  scope: sentence
+  regex: (?:不是|并非)[^。！？!?；\n]{1,45}(?:[，,](?:而是|是)|而是)[^。！？!?；\n]{1,45}
+  note: 只提候选；具体纠正感知、身份、归属、因果或承诺必须保留；抽象拔高及重复改述才复核。
+- id: repeated_negation
+  type: negation_turn
+  scope: paragraph
+  regex: (?:不是[^。！？!?；\n]{1,25}[，,、]){2,}不是[^。！？!?；\n]{1,25}
+  note: 列举真实排除项或紧张口语可能合理，不能自动删除否定。
+- id: quiet_but
+  type: ending_template
+  scope: sentence
+  regex: 声音不大[，,]却[^。！？!?；\n]{1,45}
+  note: 对比若增加听觉或权力关系信息可保留，重复拿来摆威势才是问题。
+- id: dash_explanation
+  type: ending_template
+  scope: sentence
+  regex: ——[^。！？!?；\n]{2,50}
+  note: 破折号只计形式；插语、打断和有效补充不能仅凭此报问题。
+- id: long_de_chain
+  type: long_de_chain
+  scope: sentence
+  regex: (?:[^的。！？!?；，,\n]{1,16}的){3,}[^。！？!?；，,\n]{1,16}
+  note: 至少三个近接的定语标记只是候选；须读中心词与修饰关系，不按全句的字总数判错。
+- id: adverb_dialogue_tag
+  type: adverb_dialogue_tag
+  scope: spoken_dialogue_with_tag
+  regex: (?:冷冷|淡淡|缓缓|幽幽|狠狠|坚定|决然|果断|意味深长|不紧不慢|漫不经心)(?:地)?(?:说|问|答|道|命令|重复)
+  note: 说话方式有独立作用时保留；旁白中的说明、逐字引用不作为对白标签。
+- id: moral_at_paragraph_end
+  type: paragraph_moral
+  scope: paragraph_last_sentence
+  regex: (?:终于(?:懂得|明白)|真正的(?:勇气|成长|意义)|人生的(?:真谛|意义)|与自己和解|命运的齿轮|这一切才刚刚开始)[^。！？!?\n]{0,70}[。！？!?]?\s*$
+  note: 只在段末定位；确实改变人物选择的新认识不可当空话删掉。
+- id: english_fragment
+  type: mixed_language
+  scope: sentence
+  regex: (?<![A-Za-z])[A-Za-z]{2,}(?:[ -][A-Za-z]{2,})*
+  note: 中文句中才复核；姓名、型号、外语标识、代码、引语与人物合理语码转换不自动报错。
+structural_candidates:
+  opening_scene:
+    type: empty_scene
+    first_sentences: 3
+    terms:
+    - 雨
+    - 雪
+    - 风
+    - 雾
+    - 晨光
+    - 月光
+    - 灯影
+    - 夜色
+    - 雨幕
+    - 霓虹
+    - 灯箱
+    minimum_listed_objects: 3
+    review: 必须联合判定是否离开人物、景物是否影响行动、是否延误欲望与危机；不把前三句有天气直接等于空镜。
+  micro_action:
+    type: cool_micro_action
+    measures:
+    - 半寸
+    - 一线
+    - 半分
+    - 一毫米
+    - 半圈
+    body_or_object:
+    - 指尖
+    - 眼皮
+    - 嘴角
+    - 唇角
+    - 眉梢
+    - 杯沿
+    - 袖扣
+    - 方向盘
+    review: 精细维修、转向、辨认或身体限制所需的尺度是有效事实；只审无作用的摆姿态。
+  triple_parallel:
+    type: triple_parallel
+    minimum_clauses: 3
+    separators:
+    - ，
+    - ；
+    - 。
+    - ！
+    - ？
+    repeated_openers:
+    - 不是
+    - 是为了
+    - 他要
+    - 她要
+    - 没有
+    - 为了
+    review: 句法平行且反复表达同一抽象含义才提示；三件不同的事、真实排除项或口语激动不自动算病句。
+  confrontation_window:
+    type: procedural_plot
+    chapters: 5
+    maximum_proof_only_confrontations: 1
+    review: 章纲层面统计核心冲突仅为谁能证明什么的对质；必要职业手续不计，跨章资料不足为unknown，不由本章词频推算窗口。
+  emotion:
+    type: emotion_overload
+    terms:
+    - 绝望
+    - 愤怒
+    - 恨意滔天
+    - 撕碎
+    - 吞没
+    - 血液沸腾
+    - 背叛感
+    review: 核对触发事件、人物经历和当下风险；高强度有原因就保留，不把情绪写平当目标。
+era_consistency:
+  type: era_conflict
+  requires:
+  - explicit_story_year_or_era
+  - place
+  - literal_context
+  missing_setting: unknown
+  modern:
+    terms:
+    - 微信
+    - 智能手机
+    - 收款码
+    - 扫码支付
+    - 短视频直播
+    - 网约车软件
+    ancient_context: 古代现实环境无穿越、架空技术等解释时才候选。
+    dated_contexts:
+    - years:
+      - 1992
+      incompatible_terms:
+      - 微信
+      - 智能手机
+      - 收款码
+      - 扫码支付
+      - 短视频直播
+      - 网约车软件
+    - years:
+      - 2004
+      incompatible_terms:
+      - 微信
+      - 收款码
+      - 扫码支付
+      - 短视频直播
+      - 网约车软件
+    note: 这两组仅覆盖已知场景，不伪造各产品精确上线年；其他年份缺技术史依据时为 unknown。
+  ancient:
+    terms:
+    - 更鼓
+    - 更夫
+    - 衙役
+    - 知县
+    - 县令
+    - 银两
+    - 飞鸽传书
+    modern_context: 普通现代生活场景中履行古代职能或当作当代通用工具才候选。
+    combined_regex: 更鼓[^。！？!?；\n]{0,10}(?:两点|二点|三点|四点|五点|六点)
+    note: 现代称呼、博物馆、戏曲、古建筑、民俗表演、回忆或修辞可合理提古词；2004工地以更鼓报两点须查语境。
+  exclusions:
+  - 穿越
+  - 架空技术
+  - 梦境
+  - 角色误认
+  - 明确引文
+  - 戏曲表演
+  - 历史回忆
+  - 古物名称
+  - 比喻
+facts_review:
+  separate_from_style_score: true
+  types:
+  - date_arithmetic
+  - continuity_conflict
+  dates:
+    requires: 同一时间线中明确的当前日期、目标日期、年份/月界及所用计日方式。
+    calendar: 公历按实际年月日相减；阴历、含首尾计日、约数、日期不明或跨年不明不硬算。
+    display_date: 日历、票据或屏幕上的日期仅是文字内容，须确认它代表当前日期才参与当前时点运算。
+    review: 自相矛盾的精确天数可报；未来日期的票据可作悬念，不等于时间倒退。
+  locations:
+    requires: 同一人物、同一时段、两个互斥实际位置，且无移动或远程解释。
+    exclusions:
+    - 屏幕字样
+    - 订单定位
+    - 伪界面
+    - 他人声称
+    - 物主自述
+    - 比喻
+    - 想象
+    - 梦境
+    - 回忆
+    - 电话
+    - 视频
+    - 假设
+    - 否定
+    - 真实移动
+    - 转交
+    review: 身份伪装、背景所属与物件所有权不证明本体在场，不由字样更新真实位置。
+  unknown: 不知道可多次出现；不同问题、不同角色或刻意回避不自动成为重复冗余，未知继续保留。
+  unopened: 未开箱不代表物主不知道内容；自述与开箱核实属于不同知识来源，不能互换或据此报矛盾。
+fingerprints:
+  purpose: 只生成描述性统计；参考区间待用户认可文本的统计实测，不把分布拟合成写作目标。
+  metrics:
+    sentence_length_variance: 句长按汉字数，输出总体方差；同时列分句规则和句数，不合并短句来追方差。
+    paragraph_length_distribution: 原段落汉字数，输出样本量、min/p25/median/p75/max；不为了分布拆段。
+    dialogue_ratio: 已确认 spoken 引号内汉字数 / 正文汉字数；屏幕、术语、信件等另计，归属不清为 unknown。
+    idiom_density: lexicons.idiom 的最长不重叠命中数，按 density 计算。
+    simile_density: lexicons.simile 的标记/模板匹配并集合并跨度后，按 density 计算；不是语义比喻总数。
+    procedural_density: lexicons.procedural 的最长不重叠命中数，按层报告。
+    cliche_density: lexicons.cliche 的最长不重叠命中数，按层报告。
+  chapter_han_range:
+  - 1870
+  - 2700
+  range_status: 本轮验收带，单独报告，不用词数代替汉字数。
+  reference_intervals: null
+false_positive_guards:
+- 自然的不是、并非、没有和具体纠正感知都可成立，不能因模板命中判 AI 味。
+- 整理职业与讨工资可含清点、登记、领款签字；只有讲原则流程替代活人冲突才报程序化。
+- 风景传递地点、身体处境、行动障碍或人物偏见时有效；不是所有景物都要改写。
+- 强烈情绪、方言、粗口、长句与短段落均不单独证明问题。
+- 屏幕、伪订单、招牌、信件是显示或声称，不等于客观事实；不把这些字样当人物对白或真实位置。
+- 主人可知道未开箱内容，自述不能冒充开箱核实；比喻也不是客观事实。
+- 重复未知不等于重复事实或无效对白，不把 unknown 补成肯定或否定。
+- 拟人若为设定中的字面事件须保留，所有事实冲突先排除回忆、假设、否定、远程与明确移动。
+calibration:
+  status: r2_passed
+  score_direction: lower_is_fewer_confirmed_editorial_issues
+  model_input_policy: 仅正文、稳定sid/pid、必要场景卡、自写案例；路径、作者、模型标签、用户偏好和预期名次均不发给判别器。
+  sources:
+  - path: ../engine-books/compare/claude.md
+    role: user_preferred_anchor
+    max_false_positives: 3
+  - path: ../engine-books/compare/gpt.md
+    role: comparison_only
+  - path: ../engine-books/compare/gemini.md
+    role: expected_higher_issue_rate
+  - path: ../engine-books/blind-2
+    role: offline_samples_no_key
+  - path: ../engine-books/blind-3
+    role: offline_samples_no_key
+  paths_relative_to: worktree_root
+  path_status: 三份compare存在并已只读；blind目录不读KEY，不推断盲码归属。
+  sample_policy: 全文留在本地校准端；仓库只留自写案例、授权短种子、统计与位置，不摘段落或复制替换句。
+  targets:
+    ranking: 用户认可锚点问题分最低，较弱对照与引擎原稿较高；先盲判再离线比较，不向模型喂预期。
+    named_sentence_recall_min: 0.8
+    preferred_anchor_false_positive_max: 3
+    recall_denominator: 用户实际确认的问题句，人工标定sid/type并去重；context_required种子须回原句上下文标注，不能把短语硬算确诊。
+    false_positive_unit: 用户复核的不当句级定位，同句多类型合并计一处；未复核不算零误报。
+    split_policy: 调参样本与验收样本区分；自写负例做回归但不能替代真实锚点误报验收。
+  gate: 本轮校准已达标；正式闭环接入仍受核心5000行上限限制，默认关闭，不代表用户质量认可。
+  observed_results_previous:
+    passed: false
+    named_sentence_recall: 0.1111111111
+    named_hits: 1
+    named_total: 9
+    anchor_confirmed_candidates: 0
+    ranking_passed: false
+    valid_chapter_reads: 7
+    total_chapters: 8
+    report: ../reports/deai-loop.md
+  observed_results:
+    passed: true
+    heldout_hits: 4
+    heldout_total: 5
+    heldout_recall: 0.8
+    anchor_confirmed_candidates: 0
+    ranking_passed: true
+    valid_chapters: 8
+    scope_blocked: true
+    core_current: 4984
+    core_projected_detector_only: 5059
+    report: ../reports/deai-loop.md

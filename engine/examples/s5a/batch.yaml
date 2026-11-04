@@ -1,0 +1,11 @@
+books:
+- id: urban-300
+  path: urban-300.yaml
+- id: esport-10
+  path: esport-10.yaml
+- id: romance-10
+  path: romance-10.yaml
+- id: history-10
+  path: history-10.yaml
+- id: cozy-10
+  path: cozy-10.yaml

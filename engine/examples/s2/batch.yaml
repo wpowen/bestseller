@@ -1,0 +1,13 @@
+books:
+- id: realistic-5
+  path: realistic-5.yaml
+- id: realistic-10
+  path: realistic-10.yaml
+- id: xuanhuan-5
+  path: xuanhuan-5.yaml
+- id: xuanhuan-10
+  path: xuanhuan-10.yaml
+- id: suspense-5
+  path: suspense-5.yaml
+- id: suspense-10
+  path: suspense-10.yaml

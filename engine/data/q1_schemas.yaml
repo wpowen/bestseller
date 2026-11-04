@@ -1,0 +1,327 @@
+continuation: '用户已明确授权从现有最后一章续到新目标，保留所有旧章及已发生事实，不重新构思、不重复黄金三章。
+
+  原书用户输入中的旧目标章数、旧卷末范围仅描述已完成单元，不能再据此在旧章数截止；本次新目标优先。
+
+  只返回bible的volumes/world/summary补充及threads，不改姓名、人物身份、能力规则、代价、真相和旧事实。
+
+  已完成单元仍已完成，不撤销胜利。按既有机制和关系后果设计续写单元；最后10%收束，末章不新开主线。
+
+  volumes覆盖所有25章卷的走向，保留原卷1；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
+
+  threads保留原线id、所有旧节拍id与旧description，已完成节拍不得重开；对未写部分和后续卷增补有具体事件的节拍，结束全部回收。
+
+  每卷至少一次主角亲自赢得的实力/资源/地位/盟友收获，代价按卷递增而非每章加码；不凭空恢复伤残、补余额或解除封禁。
+
+  每卷至少一场不靠打架或开门解决的公开分歧，配角不同方案至少两次改变决策；钩子轮换，避免反复另一个我、又醒了。
+
+  '
+profile:
+  payoff_types:
+  - 反制
+  - 得到回报
+  - 救回同伴
+  - 解开局部谜题
+  payoff_max_gap: 4
+  chapter_type_mix:
+    对抗: 30
+    谋划: 20
+    情感: 15
+    日常: 10
+    揭秘: 15
+    收获: 10
+  romance_max_gap: 8
+  dark_max_gap: 10
+  opening_templates:
+  - 当下受阻并作出有代价的选择
+  forbidden_zones:
+  - 核账主导
+  - 协议争执主导
+  - 文书审查代替行动
+  style_anchors: []
+hook_types:
+- 人物当场隐瞒
+- 证词矛盾
+- 错误判断后果
+- 关系破裂
+- 新势力登场
+- 反转揭示
+- clue
+structures:
+- 对峙谈判
+- 追逐
+- 潜入
+- 日常喘息里藏冲突
+- 误判后果
+- 多方抢夺同一物
+- 公开对质
+- 情感摊牌
+thread_kinds:
+- main
+- dark
+- hidden
+- romance
+- growth
+- support
+rules: '冲突靠行动、欲望、恐惧、人物选择及代价推进，不写核账、协议、审查文书主导的戏。
+
+  q1字段优先于旧题材片段的文书、物件与口号要求。使用原创示范的口吻而不抄示范人名事件。
+
+  写什么由圣经与规划决定，正文另用极简提示；不规定段落句数，允许幽默、斗嘴和脾气。
+
+  规划是未来安排，不是已发生进展；不得将排期、预计仪表盘、待兑现爽点计作正文事实。
+
+  '
+instructions:
+  continuation: '用户已明确授权从现有最后一章续到新目标，保留所有旧章及已发生事实，不重新构思、不重复黄金三章。
+
+    原书用户输入中的旧目标章数、旧卷末范围仅描述已完成单元，不能再据此在旧章数截止；本次新目标优先。
+
+    只返回bible的volumes/world/summary补充及threads，不改姓名、人物身份、能力规则、代价、真相和旧事实。
+
+    已完成单元仍已完成，不撤销胜利。按既有机制和关系后果设计续写单元；最后10%收束，末章不新开主线。
+
+    volumes覆盖所有25章卷的走向，保留原卷1；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
+
+    threads保留原线id、所有旧节拍id与旧description，已完成节拍不得重开；对未写部分和后续卷增补有具体事件的节拍，结束全部回收。
+
+    每卷至少一次主角亲自赢得的实力/资源/地位/盟友收获，代价按卷递增而非每章加码；不凭空恢复伤残、补余额或解除封禁。
+
+    每卷至少一场不靠打架或开门解决的公开分歧，配角不同方案至少两次改变决策；钩子轮换，避免反复另一个我、又醒了。
+
+    '
+  prepare: 'world.levels严格逐条用固定实力阶梯规范名，initial_dashboard.strength从第一阶开始；不可另创境界。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
+
+    initial_dashboard各项用可对账短值，实力写等级，财富写数值和单位，地位/名声写等级，归属和舞台用规范名；禁止把动作情绪写成长句。
+
+    开书仅一次生成bible与threads，可同一响应列出全部卷走向，不列100章章纲。
+
+    每卷25章，末卷按总章数截断；每卷换不同舞台，至少两次舞台变化。
+
+    圣经含卖点/读者期待、金手指代价与上限、世界规则等级、3—6势力各自利益、三层真相。
+
+    人物为列表：主角、恋爱对象、3—5配角、逐卷升级的反派阶梯。
+
+    每人都给name/role/desire/fear/flaw/bottom_line/voice/growth_end/goal/exit_volume。
+
+    role使用protagonist/romance/support/antagonist，主角必须为protagonist，不能用中文角色名替代。
+
+    恋爱对象另给attraction/obstacle/relationship_stages；反派给ladder_volume。
+
+    3—5全书主伏笔各写close_volume。summary不超过1800字，固定初始主角仪表盘。
+
+    六类线各至少一条，各线每卷至少一个节拍；暗线与感情线每卷多次，满足max_gap。
+
+    每节拍固定唯一id，volume为卷号；reveal_not_before一律为全书绝对章号，非卷号。
+
+    隐藏线早期仅铺线索，不提前揭底；分清线索与谜底，分三层递进真相。
+
+
+    人物每人明确gender/address，主角另有active_desire/personality_tags/catchphrase/never_do。主角主动欲望必须尖锐，不能靠服从团队复核推进；设定必须按选定高概念，不转入救援维保审计档案。'
+  volume: '每卷安排四个真实转折：第4章无法靠打架/开门解决的公开分歧；第9/21章不同配角提出与主角不同且真正改变决策的方案；第16章主角因既有能力代价误判重要关系或行动并付出后果。不能靠开会、核表或讲原则完成。
+
+    每卷必须明确主角赢得的实力、资源、地位或盟友，卷末交代实际所得；代价按卷递增，不逐章加残疾或扣寿。遵守continuity封禁、左右手和余额，不凭空恢复。
+
+    只展开指定25章卷纲，领取本卷固定线索节拍，不改圣经、线索或旧章。
+
+    写清stage/goal/cost/expected_dashboard、人物进退、beats、callback_events、feedback。
+
+    仪表盘卷末必须改变，改变附带代价，舞台不能原地复写。
+
+    反馈只改善未来内容。callback_events只能选择已发生历史；没有历史就留空。
+
+    暗线与感情卷内多次推进，隐藏线未到reveal_not_before仅露线索。
+
+
+    每卷至少一次主角主动选择并主导的决定性胜利，写明获胜场面及个人所得。全书最后10%只收不开，最后最多一条非新主线续作钩子。'
+  outlines: '本批完整范围的count条章纲必须全部返回，不能只写前几章。每章恰好两场，场内goal/obstacle/choice/emotion各≤25字，压短JSON但不省略章号。固定人物卡最高优先，所有scene.characters只用卡上的原名，不得改名换姓或凭空增主要角色。growth_setup=true的章必须出现具体卡关或蓄势但不升级；upgrade_due=true才安排升级，每次最多一级并正面展示。不得按五章固定循环爽点，按所给槽位设计实际行动。末章两场只结清既有角色的本单元矛盾，不提出新目的地、新失踪者、新幕后人。structure从8种结构池逐章选择，相邻不得同结构；严禁连续重复遇袭—协作破门—得到新线索。结构是本章冲突展开方式，不是换地名重复打斗。
+
+    新术语每章最多1个，首次一句白话解释；优先旧术语。不得临时造规则解围。结尾同语义类型十章最多2次，双身/复醒全书最多3次；正文承担已规划轮换，不只更换标签。
+
+    章末按6种人物/关系钩子轮换，clue表示线索浮出/新痕迹，滚动5章至多1次；不能换说法绕开配额。
+
+    稳定排期中的required_event必须落实到人物行动与后果：公开分歧不用武力解，代价误判要真的判断错，配角不同方案必须改变原决策。
+
+    只生成指定窗口（最多10章）的chapters列表，不生成其余章节；每章约2200字、两场戏。
+
+    遵从稳定节奏排期；章型和末钩均不连续三同，不出现连续五章没有具体爽点。
+
+    payoff_due是待写要求，须设计本章具体爽点与代价，不能把它或空泛“变强”算已兑现。
+
+    每个滚动5章会议/审查/文书合计至多一场；优先不用会议，meeting_allowed=false时禁止。
+
+    场景给where/characters/goal/obstacle/choice/emotion/kind，会议kind必须标meeting。
+
+    全部前三章前300字进入当下冲突，第三章最迟首次兑现小目标并抛长线悬念。
+
+    章纲threads只用线id或节拍id；暗线每10章内至少推进一次，感情按profile上限安排。
+
+    隐藏线在reveal_not_before绝对章号前只能铺线索；收尾走完所有必结节拍，不空降谜底。
+
+    第100章自然引用第一卷至少3个已发生事件，从已发生历史选择；历史不足留空，禁止编造。
+
+    用户要求重排时只重排未来章纲，正常输出格式缺字段由程序默认，不要求重调模型。
+
+
+    每章主角主动争夺、决定和代价要明确；复核/待核/按她判断每章最多一次。最后10%只回收，不新增敌人、坐标、幕后或新机制。
+
+    每章payoff_due/payoff_type按排期，必须让两场戏实际通向该结果。solution_type从canon菜单选择本世界已有且未在近30章用过的破局机理，无破局为null；不要为菜单强加新规则或装置，不强迫每章破局。
+
+    本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。'
+schemas:
+  continuation:
+    bible:
+      summary: ''
+      volumes:
+      - number: 1
+        start: 1
+        end: 25
+        stage: ''
+        goal: ''
+        gain: ''
+        cost: ''
+      world:
+        stages:
+        - volume: 1
+          stage: ''
+    threads:
+      threads:
+      - id: ''
+        kind: ''
+        beats:
+        - id: ''
+          volume: 2
+          description: ''
+          reveal_not_before: 0
+  prepare:
+    bible:
+      characters:
+      - name: ''
+        role: ''
+        desire: ''
+        fear: ''
+        flaw: ''
+        bottom_line: ''
+        voice: ''
+        growth_end: ''
+        goal: ''
+        exit_volume: 0
+        attraction: ''
+        obstacle: ''
+        relationship_stages: []
+        ladder_volume: 0
+        gender: ''
+        address: ''
+        active_desire: ''
+        personality_tags: []
+        catchphrase: ''
+        never_do: []
+      title: ''
+      premise: ''
+      reader_expectation: ''
+      selling_points: []
+      power:
+        cost: ''
+        limit: ''
+      world:
+        rules: []
+        levels: []
+        factions:
+        - name: ''
+          interest: ''
+        stages:
+        - volume: 1
+          stage: ''
+        truth_layers:
+        - layer: 1
+          truth: ''
+          reveal_not_before: 1
+      main_foreshadows:
+      - id: ''
+        description: ''
+        close_volume: 4
+      summary: ''
+      initial_dashboard:
+        strength: ''
+        wealth: ''
+        status: ''
+        affiliation: ''
+        stage: ''
+      volumes:
+      - number: 1
+        start: 1
+        end: 25
+        stage: ''
+        goal: ''
+        change: ''
+        cost: ''
+    threads:
+      threads:
+      - id: main
+        kind: main
+        max_gap: 10
+        beats:
+        - id: main-v1-1
+          volume: 1
+          description: ''
+          reveal_not_before: 0
+  volume:
+    number: 1
+    start: 1
+    end: 25
+    stage: ''
+    goal: ''
+    cost: ''
+    expected_dashboard:
+      strength: ''
+      wealth: ''
+      status: ''
+      affiliation: ''
+      stage: ''
+    beats:
+    - id: ''
+      volume: 1
+      description: ''
+      reveal_not_before: 0
+    characters: []
+    callback_events: []
+    feedback: []
+  outlines:
+    chapters:
+    - number: 1
+      title: ''
+      structure: ''
+      required_event: ''
+      type: ''
+      payoff: ''
+      hook_type: ''
+      hook: ''
+      scenes:
+      - where: ''
+        characters: []
+        goal: ''
+        obstacle: ''
+        choice: ''
+        emotion: ''
+        kind: action
+      threads: []
+      opening_conflict: ''
+      callback_events: []
+      solution_type: null
+plan_card_fields:
+- name
+- role
+- voice
+- desire
+plan_slot_fields:
+- number
+- type
+- structure
+- payoff_due
+- payoff_type
+- hook_type
+- growth_setup
+- upgrade_due
+- next_upgrade
+- threads
+- solution_type
+- meeting_allowed

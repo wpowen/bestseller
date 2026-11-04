@@ -1,0 +1,67 @@
+dashboard_aliases:
+  strength:
+  - strength
+  - 实力
+  - 实力等级
+  wealth:
+  - wealth
+  - 财富
+  - 财富数值
+  - 财富数值及单位
+  - 财富数值和单位
+  status:
+  - status
+  - 地位
+  - 地位名声
+  - 地位名声等级
+  affiliation:
+  - affiliations
+  - affiliation
+  - 势力
+  - 势力规范名
+  stage:
+  - stage
+  - 舞台
+  - 舞台规范名
+dashboard_unknown: unknown|unchanged|none|null|n/?a|未(?:知|明|明确|披露|标注|计|计量|量化|载|变|变化)|无(?:变化|明确变化)|不(?:详|变)|保持不变|同前|暂无|nan|inf|-inf
+scene_aliases:
+  action: action
+  combat: action
+  battle: action
+  行动: action
+  动作: action
+  战斗: action
+  打斗: action
+  对抗: action
+  冲突: action
+  emotion: emotion
+  romance: emotion
+  relationship: emotion
+  情感: emotion
+  感情: emotion
+  情绪: emotion
+  感情戏: emotion
+  daily: daily
+  日常: daily
+  生活: daily
+  日常生活: daily
+  reveal: reveal
+  mystery: reveal
+  revelation: reveal
+  揭秘: reveal
+  揭示: reveal
+  揭露: reveal
+  解谜: reveal
+  线索: reveal
+  meeting: meeting
+  paperwork: meeting
+  review: meeting
+  会议: meeting
+  开会: meeting
+  议事: meeting
+  审查: meeting
+  文书: meeting
+  核账: meeting
+environment_personification: '[风雪水光][^，,。！？!?；;：:\n他她我你它]{0,6}(?:挤进|咬住|舔过|爬上)'
+
+events_prompt: "状态事件只记正文明确事实，按段落顺序；人物/地点/物品用固定名称。quote逐字复制所在段落的短原句。人物kind=character，name/location/action；action只用enter入场、leave离场、move转场、stay原地。跨场景到达须记enter/move，不把已写明转场误当原地；离场后未返回仍在场才是矛盾。电话/短信另一端的人物记remote=true，不表示重新入场，不改实体所在场景。物品kind=object，name/location/owner/action(move或stay)，随身物owner填人物名，无主人填空串。时间kind=time，day从故事第0天起递增，minute为当日分钟0—1439；只在明确时间锚点提取，不确定就不编造；回忆事件flashback=true，不改当前状态。预定/预计/预约的未来时间用projected=true，不推进当前时钟。伏笔kind=foreshadow，name为固定短名，status=open或closed。所有事件都有paragraph和quote，只需填所属类型必要字段，不复制无变化的旧事件。"

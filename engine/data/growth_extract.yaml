@@ -1,0 +1,89 @@
+effort: low
+type_aliases:
+  解谜: 揭秘
+  推理: 揭秘
+  战斗: 对抗
+  打斗: 对抗
+  谋略: 谋划
+prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
+
+  state仅实际变化，未知保旧：dashboard的strength/wealth/status/affiliation/stage用短规范值与带单位财富；实力只用阶梯，每次最多一级。power_status仅代价/限制/封禁/余额/当前状态/境界，各{值,最后更新}≤50字；continuity仅blocked/limbs/balances/released，不编治愈。characters记录本章在场角色所在地/在场，objects最多3个关键物品owner/location，clock只明确day/minute，伏笔open/closed。不要复制旧状态和整段对白。
+
+  gains/costs/solutions/injuries在根层，元素{type,content≤25字,pid}；每章仅1个主解法，按实际胜负因果选菜单，不罗列辅助动作，群体表态单列。injuries列所有新增伤病/寿命能力代价，旧伤复发不算；最多1项，不能隐瞒超额。realm_displayed只在正面展示当前境界且产生结果时true，realm_display_pid定位；带伤潜行不算。events仅确证死者再现/同时异地/时间倒流，一般[]；advances为已推进的本章线{thread,beat,event,done}，不要复制计划。
+
+  opens_new_mainline只判当前输入全章（不是拟改后）：末章还有新身份/新时间关联/新核心目标待解就true，即使早铺垫也不算结清。正常揭清旧真相与生活余味可false；ending_reason≤50字。
+
+  最多提出一次修订，修订内容不算已发生：
+
+  1. 末章开坑或force_scene=true：scene={start:末场P起段,text:末场完整新正文}，start必须用本章要求给定的scene_start，不是新稿段号，仅替换可改范围，≤600字、每段≤150字，必须是动作场面与直接对白。收掉现有矛盾，以行动或对白停；不解释机关原理，不写“意为/这意味着/换言之”等说明。不得用转交警方/继续核对/再去新地点把悬念甩走，不留新主谜。前文不改。
+
+  2. 字数不在word_range：body为完整全章字符串（保留---两场），压缩或扩写到2000–2400汉字，一次完成，保留所有情节点、现场对白、人物口吻；删除冗余转述，不加新情节，不是几处同义替换。body内同时纠正命中的英文/称名及多余新增伤病；只改多余伤句成避开或已有旧伤，不凭空治好已有伤。
+
+  3. 其他问题：edits为{id:S句号,text:新句}，只改程序点名句；多出新增伤病只改多出的那句，英文残片改成自然中文，不删词蒙混。rename为{卡外误称:固定卡原名}，不新增主要角色。缺指定爽点/新境界展示/禁用主手法用patch={after:P整数,text:≤400字符一个自然段,replace:布尔}，只补或替该段。edits和patch可针对不同位置同时返回。不要改未点名句，不补新谜。
+
+  没修订则body空、scene=null、rename={}、edits=[]、patch=null。上一章失败正文若存在，可在同次previous_delta补提该旧章（quote复制旧章原句），判不明留{}，不造达标。'
+final_prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
+
+  state仅实际变化，未知保旧：dashboard的strength/wealth/status/affiliation/stage用短规范值与带单位财富；实力只用阶梯，每次最多一级。power_status仅代价/限制/封禁/余额/当前状态/境界，各{值,最后更新}≤50字；continuity仅blocked/limbs/balances/released，不编治愈。characters记录本章在场角色所在地/在场，objects最多3个关键物品owner/location，clock只明确day/minute，伏笔open/closed。不要复制旧状态和整段对白。
+
+  gains/costs/solutions/injuries在根层，元素{type,content≤25字,pid}；每章仅1个主解法，按实际胜负因果选菜单，不罗列辅助动作，群体表态单列。injuries列所有新增伤病/寿命能力代价，旧伤复发不算；最多1项，不能隐瞒超额。realm_displayed只在正面展示当前境界且产生结果时true，realm_display_pid定位；带伤潜行不算。events仅确证死者再现/同时异地/时间倒流，一般[]；advances为已推进的本章线{thread,beat,event,done}，不要复制计划。
+
+  opens_new_mainline只判当前输入全章（不是拟改后）：末章还有新身份/新时间关联/新核心目标待解就true，即使早铺垫也不算结清。正常揭清旧真相与生活余味可false；ending_reason≤50字。
+
+  这是改动后的最终事实提取，不再修订或恢复旧章，不输出body/scene/rename/edits/patch。'
+schema:
+  type: null
+  hook_type: null
+  payoff:
+    type: 无兑现
+    fulfilled: false
+    pid: null
+  opens_new_mainline: false
+  ending_reason: ''
+  body: ''
+  scene: null
+  rename: {}
+  edits: []
+  patch: null
+  summary: ''
+  scene_types: []
+  demotion_event: null
+  gains: []
+  costs: []
+  solutions: []
+  injuries: []
+  realm_displayed: false
+  realm_display_pid: null
+  events: []
+  advances: []
+  previous_delta: {}
+  state: {}
+items:
+  gain:
+    type: 收获
+    content: 实得内容
+    pid: 1
+  solution:
+    type: 菜单主类
+    content: 决定性破局因果
+    pid: 1
+    primary: true
+  injury:
+    type: 身体代价
+    content: 一项新代价
+    pid: 1
+  patch:
+    after: 1
+    text: 一段正文
+    replace: false
+  edit:
+    id: 1
+    text: 一原句
+    reason: 候选命中
+  paragraph_edit:
+    paragraph: 1
+    text: 对应P段替换内容
+injury_pattern: 受伤|新伤|负伤|骨折|失明|断臂|流血|血痕|划伤|划破|灼伤|撕裂|寿命|失觉|旧伤|伤口|喷出血|皮肤.{0,6}裂
+length_first: '程序已确认当前正文不在字数带内，本次必须返回body完整修订稿，不能body为空、只改一两句或只给状态。先完成body再列其他字段。若超2700则整章净压到2000–2300汉字，两场各约1000字；不足下限则只扩写原场景至2200。完整保留人物选择、情节点和现场对白，不增加新剧情。不得把已知原文称为合格而跳过压缩。
+
+  '

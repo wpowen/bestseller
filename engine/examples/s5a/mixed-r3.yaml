@@ -1,0 +1,7 @@
+books:
+- id: urban-300
+  path: urban-300.yaml
+- id: wuxia-10
+  path: wuxia-10.yaml
+- id: entertainment-10
+  path: entertainment-10.yaml

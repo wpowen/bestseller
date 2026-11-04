@@ -1,0 +1,5 @@
+books:
+  - id: xuanhuan-30
+    path: xuanhuan.yaml
+  - id: suspense-30
+    path: suspense.yaml

@@ -171,6 +171,10 @@ class MinimalBTests(unittest.TestCase):
         self.assertNotIn('阿宁.dashboard', dropped)
         self.assertEqual((cards[0]['voice'],cards[0]['gender'],cards[0]['address']), ('说话直接，先问再答。','女','阿宁'))
         self.assertEqual((bible,state,chapter), before)
+        fallback=dict(q1.context(dict(bible,characters=[]),self.threads,{'number':1},chapter,dict(dashboard=dashboard,characters={'阿宁':{'location':'院'}}),[],[],''))
+        dossier=json.loads(fallback['出场人物档案、口吻卡与当前状态'])
+        self.assertEqual(dossier['dashboard'],dashboard)
+        self.assertEqual(dossier['characters'][0]['name'],'阿宁')
 
     def test_invalid_extraction_returns_raw_once_without_recovery_chain(self):
         raw = dict(type='日常', state={'characters':{'阿宁':{'location':'未证实地点'}}}, summary='保留失败内容')
@@ -265,8 +269,8 @@ class MinimalBTests(unittest.TestCase):
 
     def test_dialogue_and_length_are_local_finish_repairs_without_extra_calls(self):
         cases = [('dialogue',body(10),dict(patch=dict(after=1,replace=True,text=body(35).split('\n\n')[0]))),
-                 ('long',body(60,340),dict(paragraph_edits=[dict(paragraph=2,text=body(60).split('\n\n')[1])])),
-                 ('short',body(20,100),dict(paragraph_edits=[dict(paragraph=2,text=body(20).split('\n\n')[1])]))]
+                 ('long',body(60,340),dict(body=body(60))),
+                 ('short',body(20,100),dict(body=body(20)))]
         for label,draft,proposal in cases:
             with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
                 self.out = Path(directory)
@@ -363,6 +367,44 @@ class MinimalBTests(unittest.TestCase):
                 self.assertEqual(q1.extract_state(*args),(value,False,0))
                 self.assert_calls(client,['r2-ch2-finish'])
 
+    def test_nested_extract_fields_and_string_ids_preserve_root_truth_and_real_quotes(self):
+        first = '她锁上院门。她收起旧钥匙。'
+        second = '她一掌震开石闸。守卫退到了阶下。'
+        text = first+'\n\n'+second
+        nested = dict(opens_new_mainline=False, ending_reason='旧谜已收束',
+                      realm_displayed=True, realm_display_pid='P2')
+        raw = dict(state=deepcopy(nested), payoff={'pid':'P2'},
+                   gains=[{'sid':'S3','content':'震开石闸'}])
+        normalized = q1.normalize_extract(deepcopy(raw))
+        self.assertIs(normalized['opens_new_mainline'], False)
+        self.assertEqual(normalized['ending_reason'], '旧谜已收束')
+        self.assertIs(normalized['realm_displayed'], True)
+        grounded = q1.ground(deepcopy(raw), text)
+        self.assertEqual(grounded['realm_display_pid'], 2)
+        self.assertEqual(grounded['realm_display_quote'], second)
+        self.assertEqual(grounded['payoff']['pid'], 2)
+        self.assertEqual(grounded['payoff']['quote'], second)
+        self.assertEqual(grounded['gains'][0]['sid'], 3)
+        self.assertEqual(grounded['gains'][0]['quote'], '她一掌震开石闸。')
+        for root_verdict in (False, True):
+            with self.subTest(root_verdict=root_verdict):
+                root = dict(state=dict(nested, opens_new_mainline=not root_verdict),
+                            opens_new_mainline=root_verdict, ending_reason='根层结论',
+                            realm_displayed=False, realm_display_pid='P1')
+                value = q1.ground(root, text)
+                self.assertIs(value['opens_new_mainline'], root_verdict)
+                self.assertEqual(value['ending_reason'], '根层结论')
+                self.assertIs(value['realm_displayed'], False)
+                self.assertEqual(value['realm_display_pid'], 1)
+                self.assertEqual(value['realm_display_quote'], first)
+        for unknown in ('P42', 'P0', 'Punknown'):
+            with self.subTest(unknown=unknown):
+                value = q1.ground(dict(state={}, realm_display_pid=unknown,
+                                      payoff={'pid':unknown}, gains=[{'sid':'S99'}]), text)
+                self.assertNotIn('realm_display_quote', value)
+                self.assertNotIn('quote', value['payoff'])
+                self.assertNotIn('quote', value['gains'][0])
+
     def test_acceptance_counts_new_dialogue_without_rewriting_history(self):
         client=CaptureClient(self.out,[body(60)])
         row=self.run_chapter(client)
@@ -374,6 +416,16 @@ class MinimalBTests(unittest.TestCase):
         self.assertEqual(q1.acceptance([old,row],[],client,self.bible,self.threads,{},base=0)['new_chapters'],2)
         self.assertEqual(old,before)
         self.assertNotIn('criteria',result)
+        self.assertEqual(q1.ground({'state':{},'type':'解谜'},'正文。')['type'],'揭秘')
+        self.assertEqual(q1.ground({'state':{},'type':'未知分类'},'正文。')['type'],'未知分类')
+        self.assertEqual(q1.ground({'state':{},'type':{}},'正文。')['type'],{})
+        ranged=q1.ground({'state':{},'payoff':{'pid':'P2-P3'}},'首段。\n\n第二段。\n\n第三段。')
+        self.assertEqual(ranged['payoff']['quote'],'第二段。\n\n第三段。')
+        invalid=q1.ground({'state':{},'payoff':{'pid':'P2-P9'}},'首段。\n\n第二段。')
+        self.assertNotIn('quote',invalid['payoff'])
+        final={'state':{},'type':'日常','hook_type':None,'payoff':{'fulfilled':False,'type':'无兑现'},'opens_new_mainline':False}
+        self.assertTrue(q1.valid_extract(final,'归家。',[],[],ending=True))
+        self.assertFalse(q1.valid_extract(final,'归家。',[],[],ending=False))
 
 
 if __name__ == '__main__':

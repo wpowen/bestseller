@@ -3,11 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass,field,asdict
 from pathlib import Path
 import json
+import re
 import random
 import time
 import yaml
 from .text import paragraphs,sentences,count,parse,replace,invariant,distance,rollback_invalid
-from .rules import detect,features,merge_hits,FACT_TYPES,carry_hits
+from .rules import detect,features,merge_hits,FACT_TYPES,carry_hits,RECALL,neutral_tags
 from .client import LLMError
 from .version import VERSION
 
@@ -42,7 +43,7 @@ class Session:
     def classify(self,text,stage,only=None):
         rows=sentences(text);direct=detect(text,rows);ids={r['sid'] for r in rows};jobs=[]
         for kind in only or KINDS:
-            chosen=[r for r in rows if (kind!='empty_scene' or r['start']<450) and (kind!='written_dialogue' or any(q in r['text'] for q in ('“','「','"')))]
+            chosen=[r for r in (rows[:RECALL['semantic_windows']['opening_sentences']] if kind=='empty_scene' else rows) if kind!='written_dialogue' or any(q in r['text'] for q in ('“','「','"'))]
             if not chosen:continue
             grouped={}
             for r in chosen:grouped.setdefault(r['pid'],[]).append({k:r[k] for k in ('sid','text')})
@@ -112,115 +113,79 @@ def _entities(ctx,inventory):
     return [c.get('name') for c in cards if isinstance(c,dict) and c.get('name')]+[e for p in inventory.get('paragraphs',[]) for e in p.get('entities',[]) if isinstance(e,str)]+[e for e in inventory.get('entities',[]) if isinstance(e,str)]
 
 def _factcheck(session,stage,items,ctx):
+    items=[dict(item,before=neutral_tags(item['before']),after=neutral_tags(item['after'])) for item in items]
     raw=session.ask(stage,PROMPTS['runtime']['facts_preservation'],dict(items=items,characters=ctx.get('characters',[]),must_keep=ctx.get('facts',[]),ending=ctx.get('ending_image')),6000)
     return {x['id']:x for x in raw.get('checks',[]) if isinstance(x,dict) and isinstance(x.get('id'),str) and type(x.get('ok')) is bool}
 
-def _rank_semantic(session,candidates,stage):
-    for kind in KINDS:
-        selected=[c for c in candidates if kind in c['hit']['types']]
-        if not selected:continue
-        payload=dict(paragraphs=[dict(pid=c['id'],sentences=[dict(sid=c['id'],text=c['after'])]) for c in selected],examples=[e for e in CASES['cases'] if e['type']==kind][:2],character_cards=session.ctx.get('characters',[]))
-        ids={c['id'] for c in selected};votes=[]
-        try:
-            def read(i):return session.ask(stage+'-'+kind+'-'+str(i),PROMPTS['r2']['type_instructions'][kind]+'\n'+PROMPTS['r2']['style_format']+'\n只准type='+kind,payload,6000)
-            with ThreadPoolExecutor(max_workers=3) as pool:reads=list(pool.map(read,range(3)))
-            for raw in reads:
-                if set(raw.get('checked_pids',[]))!=ids or not isinstance(raw.get('issues'),list):raise ValueError('incomplete candidate recheck')
-                if any(h.get('sid') not in ids or h.get('type')!=kind for h in raw['issues']):raise ValueError('invalid candidate type')
-                votes.append({h['sid'] for h in raw['issues']})
-            for c in selected:c['semantic_bad']=c.get('semantic_bad',False) or sum(c['id'] in v for v in votes)>=2
-        except Exception:
-            for c in selected:c['semantic_bad']=True
-
 def polish(text,ctx,llm):
-    started=time.monotonic();ctx=dict(ctx);ctx.setdefault('word_range',(int(count(text)*.9+.999),int(count(text)*1.1)));session=Session(llm,ctx);result=Result(text);original=text;accepted=text;current_hits=[]
-    baseline=len(getattr(llm,'calls',[]));all_edits=[];inventory={};original_ps=paragraphs(text)
+    started=time.monotonic();ctx=dict(ctx);ctx.setdefault('word_range',(int(count(text)*.9+.999),int(count(text)*1.1)))
+    session=Session(llm,ctx);result=Result(text);original=text;baseline=len(getattr(llm,'calls',[]));inventory={};current_hits=[]
+    all_edits=[];accepted=original;ps=paragraphs(original);ctx['ending_image']=ps[-1]['text'] if ps else '';entities=_entities(ctx,inventory)
     try:
-        before,unknown=session.classify(text,'initial');current_hits=before;result.hits=before;result.before_score=score(before,text) if not unknown else None
+        before,unknown=session.classify(original,'recall22-initial');result.hits=before;current_hits=before
         if unknown:result.warnings+=unknown;raise ValueError('Initial detector incomplete; original retained')
-        inventory=ctx.get('inventory') or (dict(paragraphs=[],ending_image=original_ps[-1]['text'],scenes=[]) if not before and not ctx.get('force_dialogue') else None) or session.ask('inventory',PROMPTS['runtime']['inventory'],dict(paragraphs=original_ps,target_pids=sorted({h['pid'] for h in before}),characters=ctx.get('characters',[])),6500)
-        if not isinstance(inventory.get('paragraphs'),list) or not inventory.get('ending_image'):raise ValueError('Missing fact inventory/end image')
-        ctx['ending_image']=inventory['ending_image'];entities=_entities(ctx,inventory)
-        for round_no in range(0 if ctx.get('skip_local') else 2):
-            hits=before if round_no==0 else after
-            if not hits:break
-            rows={r['sid']:r for r in sentences(text)};ps=paragraphs(text);by_sid={h['sid']:dict(rows[h['sid']],types=[x['type'] for x in hits if x['sid']==h['sid']]) for h in hits}
-            targets=[]
-            for h in by_sid.values():
-                i=next(i for i,p in enumerate(ps) if p['pid']==h['pid']);targets.append(dict(h,context=[p['text'] for p in ps[max(0,i-1):i+2]]))
-            packets=[targets[i:i+5] for i in range(0,len(targets),5)]
-            def propose(pair):
-                index,packet=pair
-                return session.ask(f'r{round_no}-candidates-{index}',PROMPTS['runtime']['candidates'],dict(targets=packet,characters=ctx.get('characters',[]),facts=inventory,word_range=ctx['word_range']),6500)
-            raw=[]
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                for value in pool.map(propose,enumerate(packets)):raw.extend(value.get('candidates',[]))
+        result.before_score=score(before,original);targets=[];by_sid={h['sid']:dict(h,types=[x['type'] for x in before if x['sid']==h['sid']]) for h in before}
+        for hit in list(by_sid.values())[:RECALL['repair']['maximum_sentences']]:
+            i=next(i for i,p in enumerate(ps) if p['pid']==hit['pid']);hit['context']=[p['text'] for p in ps[max(0,i-1):i+2]];targets.append(hit)
+        raw=[];size=RECALL['repair']['packet_size']
+        packets=[targets[i:i+size] for i in range(0,len(targets),size)]
+        def propose(pair):
+            i,packet=pair
+            return session.ask('recall22-candidates-'+str(i),RECALL['prompts']['candidates'],dict(targets=packet,characters=ctx.get('characters',[])),7000)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            for data in pool.map(propose,enumerate(packets)):raw.extend(data.get('candidates',[]))
+        edits=[]
+        for hit in targets:
+            choices=next((r.get('choices',[]) for r in raw if isinstance(r,dict) and r.get('sid')==hit['sid']),[])
+            choices=[c for c in choices if isinstance(c,str) and c!=hit['text'] and '\n' not in c and '\r' not in c]
+            view=re.sub(r'“[^”]*”|「[^」]*」|"[^"\n]*"',lambda m:' '*len(m[0]),hit['text'])
+            for item in RECALL['patterns']:
+                if item.get('replacement_regex'):
+                    spans=list(re.finditer(item['replacement_regex'],view));cleaned=hit['text']
+                    for m in reversed(spans):cleaned=cleaned[:m.start()]+cleaned[m.end():]
+                    if spans:choices.insert(0,cleaned)
+            if neutral_tags(hit['text'])!=hit['text']:choices=[neutral_tags(hit['text'])]
             candidates=[]
-            for item in raw:
-                hit=by_sid.get(item.get('sid'));choices=item.get('choices',[])
-                if not hit or not isinstance(choices,list):continue
-                choices=list(dict.fromkeys(c for c in choices if isinstance(c,str)))
-                if len(choices)<3:result.warnings.append(dict(sid=hit['sid'],warning='fewer than three distinct candidates'));continue
-                for index,replacement in enumerate(choices[:3]):
-                    if not isinstance(replacement,str) or replacement==hit['text'] or '\n' in replacement or '\r' in replacement:continue
-                    p=next(p for p in ps if p['pid']==hit['pid']);new=p['text'][:hit['start']-p['start']]+replacement+p['text'][hit['end']-p['start']:]
-                    if invariant(p['text'],new,ctx,entities):continue
-                    candidates.append(dict(id=hit['sid']+'-'+str(index),sid=hit['sid'],before=p['text'],after=new,replacement=replacement,hit=hit,rule_score=score(detect(new),new)))
-            if not candidates:break
-            checks={}
-            for i in range(0,len(candidates),12):checks.update(_factcheck(session,f'r{round_no}-facts-{i}',[{k:c[k] for k in ('id','before','after')} for c in candidates[i:i+12]],ctx))
-            _rank_semantic(session,candidates,f'r{round_no}-candidate-style')
-            edits=[]
-            for sid,hit in by_sid.items():
-                oldp=next(p for p in ps if p['pid']==hit['pid'])['text'];options=[c for c in candidates if c['sid']==sid and checks.get(c['id'],{}).get('ok')]
-                if not options:continue
-                options=[c for c in options if not c.get('semantic_bad')]
-                if not options:continue
-                chosen=min(options,key=lambda c:(c['rule_score'],distance(hit['text'],c['replacement'])))
-                if chosen['rule_score']>=score(detect(oldp),oldp) and not any(k in KINDS for k in hit['types']):continue
-                options=[dict(text=c['replacement'],rule_score=c['rule_score'],semantic_bad=c.get('semantic_bad'),facts=checks.get(c['id'])) for c in candidates if c['sid']==sid]
-                edits.append(dict(start=hit['start'],end=hit['end'],replacement=chosen['replacement'],before=hit['text'],sid=sid,pid=hit['pid'],round=round_no+1,candidates=options,facts=checks[chosen['id']]))
-            if not edits:break
-            revised=replace(text,edits)
-            if invariant(original,revised,ctx,entities,True):result.warnings.append(dict(round=round_no+1,rollback='whole_chapter_invariant'));break
-            after,unknown=session.classify(revised,f'r{round_no}-recheck')
-            after=carry_hits(hits,after,revised,text)
-            changed_pids={e['pid'] for e in edits};previous_kinds={(h['pid'],h['type'],h['text']) for h in hits};bad={h['pid'] for h in after if h['pid'] in changed_pids and (h['pid'],h['type'],h['text']) not in previous_kinds}
-            if unknown:result.warnings+=unknown;result.warnings.append(dict(round=round_no+1,rollback='recheck_unknown'));break
-            good_edits=[e for e in edits if e['pid'] not in bad];revised=replace(text,good_edits)
-            if bad:result.warnings.append(dict(round=round_no+1,rollback='new_style_issue',paragraphs=sorted(bad)))
-            combined=_factcheck(session,f'r{round_no}-combined', [dict(id='whole',before=original,after=revised)],ctx)
-            if not combined.get('whole',{}).get('ok'):result.warnings.append(dict(round=round_no+1,rollback='combined_facts'));break
-            if invariant(original,revised,ctx,entities,True):break
-            if bad:after,unknown=session.classify(revised,f'r{round_no}-rollback-recheck');after=carry_hits(hits,after,revised,text)
-            if unknown:break
-            text=revised;accepted=text;current_hits=after;all_edits.extend(good_edits)
-        ctx['dialogue_targets']=[h['pid'] for h in current_hits if h['type']=='written_dialogue']
+            for choice in dict.fromkeys(choices):
+                if invariant(hit['text'],choice,ctx,entities):continue
+                revised=replace(original,[dict(hit,replacement=choice)])
+                if invariant(original,revised,ctx,entities,True):continue
+                candidates.append(dict(text=choice,rule_score=score(detect(revised),revised)))
+            if not candidates:continue
+            chosen=min(candidates,key=lambda c:(c['rule_score'],distance(hit['text'],c['text'])))
+            if chosen['rule_score']>score(detect(original),original):continue
+            edits.append(dict(start=hit['start'],end=hit['end'],before=hit['text'],replacement=chosen['text'],pid=hit['pid'],sid=hit['sid'],types=hit['types'],round=1,candidates=candidates))
+        revised=replace(original,edits)
+        if invariant(original,revised,ctx,entities,True):raise ValueError('Whole chapter invariant failed')
+        revised_ps={p['pid']:p['text'] for p in paragraphs(revised)};changed={e['pid'] for e in edits}
+        fact_items=[dict(id=p['pid'],before=p['text'],after=revised_ps[p['pid']]) for p in ps if p['pid'] in changed]
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            facts=pool.submit(_factcheck,session,'recall22-facts',fact_items,ctx) if edits else None
+            review=pool.submit(session.classify,revised,'recall22-recheck') if edits else None
+            diagnostic=pool.submit(session.diagnostics,original)
+            checks=facts.result() if facts else {};after,unknown=review.result() if review else (before,[]);diagnostics=diagnostic.result()
+        if unknown:result.warnings+=unknown;raise ValueError('Recheck incomplete; original retained')
+        bad={p['id'] for p in fact_items if not checks.get(p['id'],{}).get('ok')}
+        if bad:
+            revised,edits,_=rollback_invalid(original,revised,edits,ctx,bad);result.warnings.append(dict(rollback='facts',paragraphs=sorted(bad)))
+        after=carry_hits(before,after,revised,original)
+        revised,edits,after,rolled=final_adoption(original,revised,edits,before,after,ctx)
+        if rolled:result.warnings.append(dict(rollback='new_style',paragraphs=rolled))
+        accepted=revised;all_edits=edits;current_hits=after
+        ctx['dialogue_targets']=[h['pid'] for h in after if h['type']=='written_dialogue']
         if ctx.get('dialogue_mode') in ('scene','actor') and (ctx.get('force_dialogue') or ctx['dialogue_targets']):
             from .dialogue import rewrite
-            voiced,voice_edits=rewrite(session,text,inventory,ctx,ctx['dialogue_mode'],entities)
+            inventory=session.ask('inventory',PROMPTS['runtime']['inventory'],dict(paragraphs=ps,target_pids=ctx['dialogue_targets'],characters=ctx.get('characters',[])),6500)
+            voiced,voice_edits=rewrite(session,accepted,inventory,ctx,ctx['dialogue_mode'],entities)
             if voice_edits and not invariant(original,voiced,ctx,entities,True):
                 voice_hits,voice_unknown=session.classify(voiced,'dialogue-final')
-                voice_hits=carry_hits(current_hits,voice_hits,voiced,text)
-                prior={(h['pid'],h['type'],h['text']) for h in current_hits};changed={e['pid'] for e in voice_edits}
-                bad={h['pid'] for h in voice_hits if h['pid'] in changed and (h['pid'],h['type'],h['text']) not in prior}
-                voiced,voice_edits,rolled=rollback_invalid(text,voiced,voice_edits,ctx,bad)
-                if rolled:voice_hits,voice_unknown=session.classify(voiced,'dialogue-rollback-recheck');voice_hits=carry_hits(current_hits,voice_hits,voiced,text);result.warnings.append(dict(rollback='dialogue_paragraphs',paragraphs=rolled))
-                if not voice_unknown and score(voice_hits,voiced)<=score(current_hits,text):
-                    text=voiced;accepted=text;all_edits.extend(voice_edits);current_hits=voice_hits
-                else:result.warnings.append(dict(rollback='dialogue_recheck'))
-        result.warnings.extend(session.warnings)
-        result.text=text;result.edits=all_edits;result.after_score=score(current_hits,text);result.status='polished' if text!=original else 'unchanged'
+                if not voice_unknown and score(voice_hits,voiced)<=score(current_hits,accepted):accepted,all_edits,current_hits=voiced,all_edits+voice_edits,voice_hits
+        result.status='polished' if accepted!=original else 'unchanged'
     except Exception as exc:
-        result.warnings.append(dict(error=type(exc).__name__+':'+str(exc)[:200]));result.text=accepted;result.edits=all_edits;result.after_score=score(current_hits,accepted) if result.before_score is not None else None;result.status='partial' if all_edits else 'retained'
-    if invariant(original,result.text,ctx,_entities(ctx,inventory),True):
-        result.text=original;result.edits=[];result.status='retained';result.after_score=result.before_score
-    if result.edits and result.before_score is not None:
-        result.text,result.edits,current_hits,rolled=final_adoption(original,result.text,result.edits,result.hits,current_hits,ctx)
-        result.after_score=score(current_hits,result.text);result.status='polished' if result.text!=original else 'unchanged'
-        if rolled:result.warnings.append(dict(rollback='final_style',paragraphs=rolled))
-    diagnostics=session.diagnostics(original)
-    result.checks=dict(diagnostics=diagnostics,entities=_entities(ctx,inventory),metrics_before=features(original),metrics_after=features(result.text),remaining_hits=current_hits,dialogue_mode=ctx.get('dialogue_mode'),original_chars=count(original),final_chars=count(result.text),programmatic=invariant(original,result.text,ctx,_entities(ctx,inventory),True),ending_image=ctx.get('ending_image'),facts='preservation_model_checked' if result.edits else 'original retained')
+        result.warnings.append(dict(error=type(exc).__name__+':'+str(exc)[:200]));result.status='partial' if all_edits else 'retained';diagnostics=dict(status='unknown')
+    if invariant(original,accepted,ctx,entities,True):accepted=original;all_edits=[];result.status='retained'
+    result.text=accepted;result.edits=all_edits;result.after_score=score(current_hits,accepted) if result.before_score is not None else None
+    result.checks=dict(diagnostics=diagnostics,entities=entities,metrics_before=features(original),metrics_after=features(accepted),remaining_hits=current_hits,dialogue_mode=ctx.get('dialogue_mode'),original_chars=count(original),final_chars=count(accepted),programmatic=invariant(original,accepted,ctx,entities,True),ending_image=ctx['ending_image'],facts='preservation_model_checked' if all_edits else 'original retained')
     entries=getattr(llm,'calls',[])[baseline:] if hasattr(llm,'calls') else None;usages=[r.get('usage') or {} for r in entries] if entries is not None else session.usages
     result.calls=len(entries) if entries is not None else session.calls;result.prompt_tokens=sum(u.get('prompt_tokens') or 0 for u in usages);result.completion_tokens=sum(u.get('completion_tokens') or 0 for u in usages);result.seconds=round(time.monotonic()-started,3)
     result.checks['unknown_usage']=sum(u.get('prompt_tokens') is None or u.get('completion_tokens') is None for u in usages)

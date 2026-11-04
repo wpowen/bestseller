@@ -20,6 +20,8 @@ class ConcurrencyTests(WebFixture):
             put(folder / 'calls.json', [])
             if kind == 'polish':
                 put(folder / 'run.json', {'status': 'complete', 'book': {'chapters': 2}})
+                data = library.read(folder / 'web.json'); data.update(polish=True, deai_budget=budget)
+                put(folder / 'web.json', data)
             self.queue.launch(folder, library.read(folder / 'web.json'), kind)
         self.assertEqual(self.spawn.call_count, 2)
         self.spawn.reset_mock(side_effect=True)

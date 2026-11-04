@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import uuid
-from library import GENRES, costs, now, read, save
+from library import GENRES, costs, now, read, save, stage_costs
 
 
 def finite(value, low, high):
@@ -37,10 +37,24 @@ class Queue:
         threading.Thread(target=self.loop, daemon=True).start()
 
     def charge(self, folder):
-        data = read(folder / 'web.json', {})
-        base = costs(folder, include_final=False)['cost']
-        extra = costs(folder)['cost'] - base if data.get('polish') else 0
-        return base + max(0, extra - data.get('external_polish_cost', 0))
+        return sum(stage_costs(folder, read(folder / 'web.json', {})))
+
+    def reserve(self, folder, data):
+        if not data or data.get('status') == 'complete': return 0
+        writer, deai = stage_costs(folder, data)
+        writing = read(folder / 'run.json', {}).get('status') != 'complete'
+        return (max(0, data['budget']-writer) if writing else 0) + (max(0, data.get('deai_budget', .5)-deai) if data.get('polish') else 0)
+
+    def remaining(self, folder, data, kind):
+        writer, deai = stage_costs(folder, data)
+        return data.get('deai_budget', .5)-deai if kind == 'polish' else data['budget']-writer
+
+    def available(self, folder, data, kind):
+        proposed = dict(data, status='queued_polish' if kind == 'polish' else 'queued')
+        if kind == 'polish': proposed['polish'] = True
+        old = read(folder / 'web.json', {})
+        if self.committed()-self.reserve(folder, old)+self.reserve(folder, proposed) > self.limit + 1e-9: return 0
+        return min(self.remaining(folder, data, kind), self.limit-self.spending())
 
     def spending(self):
         folders = [p for p in self.library.own.iterdir() if p.is_dir() and not p.is_symlink()]
@@ -51,15 +65,15 @@ class Queue:
         for folder in self.library.own.iterdir():
             if not folder.is_dir() or folder.is_symlink(): continue
             data = read(folder / 'web.json', {})
-            if data and data.get('status') != 'complete':
-                total += max(0, data['budget'] - self.charge(folder))
+            total += self.reserve(folder, data)
         return total
 
     def child_env(self):
         env = dict(os.environ)
         env['PYTHONPATH'] = str(self.engine)
         env['PYTHONUNBUFFERED'] = '1'
-        for key in ('BOOKENGINE_PHASE', 'BOOKENGINE_RATE_FILE'): env.pop(key, None)
+        for key in list(env):
+            if key in ('BOOKENGINE_PHASE', 'BOOKENGINE_RATE_FILE') or key.startswith(('BOOKENGINE_BUDGET_','DEAI_BUDGET_')): env.pop(key, None)
         return env
 
     def topic(self, data):
@@ -91,28 +105,33 @@ class Queue:
             chapters = int(finite(data.get('chapters', topic['chapters']), 1, 2000))
             if chapters != topic['chapters'] or data.get('genre') != topic['genre']: raise ValueError('请按新题材/章数重新选题')
             budget = finite(data.get('budget', .23), .04, self.limit)
+            deai_budget = finite(data.get('deai_budget', .5), .01, max(.5, self.limit))
             jobs = int(finite(data.get('jobs', 2), 1, 4))
-            if self.committed() + budget > self.limit: raise ValueError('已有书籍占用预算，请降低本书上限')
+            if self.committed() + budget + (deai_budget if data.get('polish') is True else 0) > self.limit: raise ValueError('已有书籍占用预算，请降低本书上限')
             self.jobs = jobs; save(self.library.own / '.queue.json', dict(jobs=jobs))
             candidate = topic['candidates'][index]; key = str(uuid.uuid4()); folder = self.library.own / key
             settings = dict(prompt_pack=topic['genre'], chapters=chapters, words_per_chapter=2200,
                             user_input=candidate['title']+'。'+candidate['premise'])
             save(folder / 'book.yaml', settings)  # JSON is a YAML subset, no YAML dependency.
             save(folder / 'web.json', dict(title=candidate['title'], genre=topic['genre'], chapters=chapters,
-                budget=budget, polish=data.get('polish') is True, status='queued', created=now(), jobs=self.jobs))
+                budget=budget, deai_budget=deai_budget, polish=data.get('polish') is True, status='queued', created=now(), jobs=self.jobs))
             topic['book_id'] = 'webui/'+key
             save(self.library.own / '.topics' / topic['id'] / 'topic.json', topic)
             return dict(id='webui/'+key)
 
     def launch(self, folder, data, kind='book'):
-        available = min(data['budget']-self.charge(folder), self.limit-self.spending())
+        if kind == 'polish': data = dict(data, polish=True, deai_budget=data.get('deai_budget', .5))
+        available = self.available(folder, data, kind)
         if available < .03:
             data.update(status='budget_paused', reason='预算余量不足 $0.03，保留检查点与 unknown')
             save(folder / 'web.json', data); return
         command = [sys.executable, '-m', 'bookengine', str(folder / 'book.yaml'), '--q1', '--style', 'b', '--env', str(self.env), '--out', str(folder)]
-        if kind == 'polish': command = [sys.executable, '-m', 'deai', 'run', str(folder), '--env', str(self.env)]
         env = self.child_env()
-        env.update(BOOKENGINE_BUDGET_ROOT=str(folder), BOOKENGINE_BUDGET_USD=str(costs(folder, include_final=False)['cost'] + available))
+        if kind == 'polish':
+            # CLI caps the final/ ledger lifetime; preserve externally paid history.
+            gross = costs(folder)['cost'] - costs(folder, include_final=False)['cost']
+            command = [sys.executable, '-m', 'deai', 'run', str(folder), '--env', str(self.env), '--budget', str(round(gross+available, 9)), '--budget-root', str(folder / 'final')]
+        else: env.update(BOOKENGINE_BUDGET_ROOT=str(folder), BOOKENGINE_BUDGET_USD=str(costs(folder, include_final=False)['cost'] + available))
         with (folder / 'web-process.log').open('a') as log:
             p = subprocess.Popen(command, cwd=self.engine.parent, env=env, stdout=log, stderr=log, start_new_session=True)
         key = str(folder.relative_to(self.library.root))
@@ -131,25 +150,24 @@ class Queue:
                 base = costs(folder, include_final=False)['cost']
                 if not data.get('polish'):
                     data['external_polish_cost'] = max(0, costs(folder)['cost']-base)
-                if self.charge(folder)+.03 > data['budget'] or self.spending()+.03 > self.limit: raise ValueError('预算余量不足')
-                extra_reserve = max(0, data['budget']-self.charge(folder)) if data.get('status') == 'complete' else 0
-                if self.committed()+extra_reserve > self.limit: raise ValueError('其他书籍已预留预算，暂不能启动后处理')
-                data.update(polish=True, status='queued_polish', reason='独立deai CLI后处理；原始草稿不变')
+                data.update(polish=True, deai_budget=data.get('deai_budget', .5), status='queued_polish', reason='独立deai CLI后处理；原始草稿不变')
+                if self.available(folder, data, 'polish') < .03: raise ValueError('去AI或总预算余量不足，含其他书籍预留')
             elif action == 'pause':
                 if item and item['p'].poll() is None:
                     os.killpg(item['p'].pid, signal.SIGSTOP); item['paused'] = True
                 data.update(status='paused', reason='已暂停；在途请求按未知上界计入')
             elif action in ('resume', 'retry'):
                 if data.get('status') == 'orphaned': raise ValueError(data['reason'])
-                if self.charge(folder)+.03 > data['budget'] or self.spending()+.03 > self.limit: raise ValueError('预算余量不足，未启动调用')
                 run = read(folder / 'run.json', {})
+                kind = item['kind'] if item and item['p'].poll() is None else ('polish' if run.get('status') == 'complete' and data.get('polish') else 'book')
+                if self.available(folder, data, kind) < .03: raise ValueError('当前阶段或总预算余量不足，未启动调用')
                 if run.get('status') == 'stopped': raise ValueError('公开CLI拒绝恢复 stopped 检查点；需A轨提供恢复能力，网页不会修改状态')
                 if item and item['p'].poll() is None:
                     if sum(not x['paused'] for x in self.processes.values() if x['p'].poll() is None) >= self.jobs: raise ValueError('并发已满，请稍后继续')
                     os.killpg(item['p'].pid, signal.SIGCONT); item['paused'] = False
                     data.update(status='polishing' if item['kind']=='polish' else 'running', reason='')
                 elif run.get('status') == 'complete' and not data.get('polish'): raise ValueError('本书已完成，无需重跑')
-                else: data.update(status='queued', reason='从原检查点恢复，不重写已完成章节')
+                else: data.update(status='queued_polish' if kind == 'polish' else 'queued', reason='从原检查点恢复，不重写已完成章节')
             else: raise ValueError('未知操作')
             save(folder / 'web.json', data)
             return {'ok': True}
@@ -189,7 +207,7 @@ class Queue:
                 elif item['kind'] == 'polish': data.update(status='complete' if p.returncode == 0 else 'postprocess_failed', reason='' if p.returncode == 0 else '后处理未全部通过，草稿保留；可从检查点重试')
                 else: data.update(status='budget_paused' if run.get('status') == 'stopped' else 'failed', reason=run.get('stop_reason') or 'CLI退出；可从检查点重试')
                 save(folder / 'web.json', data); self.library.static()
-            elif not item['paused'] and (total+.025 > self.limit or self.charge(folder)+.025 > data['budget']):
+            elif not item['paused'] and (total+.025 > self.limit or self.remaining(folder, data, item['kind']) < .025):
                 os.killpg(p.pid, signal.SIGSTOP); item['paused'] = True
                 data.update(status='budget_paused', reason='已冻结原子进程；含在途/unknown保守预算已接近上限')
                 save(folder / 'web.json', data)
@@ -197,7 +215,7 @@ class Queue:
         for item in self.processes.values():
             if running >= self.jobs: break
             data = read(item['folder'] / 'web.json', {})
-            if item['paused'] and data.get('status') == 'concurrency_paused' and self.charge(item['folder'])+.03 <= data['budget'] and total+.03 <= self.limit:
+            if item['paused'] and data.get('status') == 'concurrency_paused' and self.available(item['folder'], data, item['kind']) >= .03:
                 os.killpg(item['p'].pid, signal.SIGCONT); item['paused'] = False; running += 1
                 data.update(status='polishing' if item['kind']=='polish' else 'running', reason='')
                 save(item['folder'] / 'web.json', data)

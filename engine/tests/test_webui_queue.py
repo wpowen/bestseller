@@ -15,6 +15,9 @@ class QueueTests(WebFixture):
         for kind, module in [('book', 'bookengine'), ('polish', 'deai')]:
             with self.subTest(kind=kind):
                 folder = self.book('webui/' + kind)
+                data = library.read(folder / 'web.json'); data['deai_budget'] = .2
+                put(folder / 'web.json', data)
+                if kind == 'polish': put(folder / 'run.json', {'status': 'complete'})
                 before_run = (folder / 'run.json').read_bytes()
                 self.queue.launch(folder, library.read(folder / 'web.json'), kind)
                 args, kwargs = self.spawn.call_args
@@ -24,8 +27,13 @@ class QueueTests(WebFixture):
                 self.assertIn(str(self.env), command)
                 self.assertFalse(kwargs.get('shell', False))
                 self.assertTrue(kwargs['start_new_session'])
-                self.assertEqual(kwargs['env']['BOOKENGINE_BUDGET_ROOT'], str(folder))
-                cap = float(kwargs['env']['BOOKENGINE_BUDGET_USD'])
+                if kind == 'book':
+                    self.assertEqual(kwargs['env']['BOOKENGINE_BUDGET_ROOT'], str(folder))
+                    cap = float(kwargs['env']['BOOKENGINE_BUDGET_USD'])
+                else:
+                    self.assertFalse(any(k.startswith('BOOKENGINE_BUDGET_') for k in kwargs['env']))
+                    self.assertEqual(command[command.index('--budget-root')+1], str(folder / 'final'))
+                    cap = float(command[command.index('--budget')+1])
                 self.assertTrue(math.isfinite(cap))
                 self.assertGreater(cap, 0)
                 self.assertLessEqual(cap, .2)

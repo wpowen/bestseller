@@ -58,7 +58,7 @@ def chapters(book):
 def policy(book, mode, model):
     data = Path(__file__).parent/'data'
     return dict(version=VERSION, mode=mode, model=model,
-                data={p.name:read_text(p) for p in sorted(data.glob('*.yaml'))},
+                data={p.name:read_text(p) for p in [*sorted(data.glob('*.yaml')),data.parents[1]/'data/deai_recall.yaml']},
                 context={n:read_text(Path(book)/n) for n in ('story_bible.yaml','deai-context.json') if (Path(book)/n).exists()})
 
 def reusable(root, number, text, configuration):
@@ -68,6 +68,9 @@ def reusable(root, number, text, configuration):
             and read_json(safe(work,'policy.json')) == configuration and final.exists()
             and all(safe(work,n).exists() for n in ('input.md','output.md'))
             and read_text(safe(work,'input.md')) == text and read_text(safe(work,'output.md')) == read_text(final))
+
+def keep_previous(report,previous,old_source,source):
+    return report.get('complete') is not True and previous.get('complete') is True and previous.get('status') in ('polished','unchanged') and old_source==source
 
 def summarize(book, statuses):
     rows=['# 全书去 AI 味处理','', '| 章 | 状态 | 字数 原→终 | 命中句 原→终 | 检测分 原→终 | 采纳句 | 耗时秒 |', '|---|---|---:|---:|---:|---:|---:|']; bodies=[]; notes=[]
@@ -111,6 +114,8 @@ def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1
             if report.get('status') in ('error', 'failed', 'invalid'): save(root, f'final/chapter-{number}.deai.json', report); return 'error'
             if report.get('status') == 'retained': result.text = text; report.update(text=text, complete=False)
             else: report['complete'] = report.get('status') in ('polished', 'unchanged')
+            if final.exists() and safe(work,'input.md').exists() and keep_previous(report,read_json(safe(root,f'final/chapter-{number}.deai.json'),{}),read_text(safe(work,'input.md')),text):
+                save(work,'attempt-last.json',report);return report.get('status','retained')
             if not result.text.strip(): raise ValueError('Polish did not produce a valid result')
             if not ctx['length_range'][0] <= len(re.findall(r'[\u3400-\u4dbf\u4e00-\u9fff]', result.text)) <= ctx['length_range'][1]: raise ValueError('Output outside original length +/-10%')
             if read_text(source) != text:

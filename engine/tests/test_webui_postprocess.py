@@ -9,8 +9,10 @@ from test_webui_contracts import WebFixture, library, put, snapshot
 
 
 class PostprocessTests(WebFixture):
-    def completed_book(self, key='webui/story', *, budget=.2):
+    def completed_book(self, key='webui/story', *, budget=.2, deai_budget=.2):
         folder = self.book(key, status='complete', budget=budget)
+        data = library.read(folder / 'web.json'); data['deai_budget'] = deai_budget
+        put(folder / 'web.json', data)
         put(folder / 'run.json', {'status': 'complete', 'book': {'chapters': 2}})
         put(folder / 'state.json', {'chapter': 2, 'ledger': {'unresolved': 'preserve'}})
         # Writer: $0.015. External A postprocess: $0.30, above B's book budget.
@@ -65,7 +67,7 @@ class PostprocessTests(WebFixture):
         self.assertIs(data['polish'], True)
         self.assertAlmostEqual(data['external_polish_cost'], .3)
         self.assertAlmostEqual(self.queue.charge(folder), .015)
-        self.assertAlmostEqual(self.queue.committed(), .2)
+        self.assertAlmostEqual(self.queue.committed(), .215)
         self.assert_only_web_metadata_changed(folder, before)
         self.spawn.assert_not_called()
 
@@ -142,7 +144,7 @@ class PostprocessTests(WebFixture):
         self.assertAlmostEqual(meta['writer_cost'], .015)
         self.assertAlmostEqual(meta['postprocess_cost'], .33)
         self.assertAlmostEqual(meta['cost'], .345)
-        self.assertAlmostEqual(self.queue.committed(), .2)
+        self.assertAlmostEqual(self.queue.committed(), .215)
         # Another click must not snapshot B's own increment as external A cost.
         self.assertEqual(self.postprocess()[0], 200)
         self.assertAlmostEqual(library.read(folder / 'web.json')['external_polish_cost'], .3)
@@ -174,7 +176,7 @@ class PostprocessTests(WebFixture):
         self.assert_only_web_metadata_changed(folder, before)
 
     def test_web_owned_unknown_is_reserved_and_blocks_retry_without_losing_ledger(self):
-        folder = self.completed_book(budget=.05)
+        folder = self.completed_book(budget=.05, deai_budget=.04)
         self.assertEqual(self.postprocess()[0], 200)
         self.append_web_cost(folder, self.unknown_row())
         before = snapshot(folder)
@@ -189,7 +191,7 @@ class PostprocessTests(WebFixture):
         self.spawn.assert_not_called()
 
     def test_postprocess_local_budget_failure_does_not_save_external_baseline(self):
-        folder = self.completed_book(budget=.04)
+        folder = self.completed_book(budget=.04, deai_budget=.02)
         before = snapshot(folder)
         self.assertEqual(self.postprocess()[0], 400)
         self.assertEqual(snapshot(folder), before)
@@ -215,7 +217,7 @@ class PostprocessTests(WebFixture):
         self.spawn.assert_not_called()
 
     def test_budget_tick_counts_only_b_increment_and_freezes_unknown_at_limit(self):
-        folder = self.completed_book(budget=.05)
+        folder = self.completed_book(budget=.05, deai_budget=.04)
         self.assertEqual(self.postprocess()[0], 200)
         self.queue.tick()
         self.spawn.assert_called_once()

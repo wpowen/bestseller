@@ -30,7 +30,7 @@ async function loadConfig() {
   $('model').value = preferred?.id || '';
   $('generate-topics').disabled = !(config.genres || []).length;
   text('topic-status', '已连接。已有选题可从上方恢复，不必再次生成。');
-  text('budget-info', config.budgets ? `总预算上限 $${config.budgets.total ?? '—'} · 预留 $${config.budgets.reserve ?? '—'}；提交前请核对单书预算。` : '预算以服务端配置为准。'); updateCreate();
+  text('budget-info', config.budgets ? `总预算上限 $${config.budgets.total ?? '—'} · 预留 $${config.budgets.reserve ?? '—'}；写作与去 AI 分别限额，开启润色时同时预留两份预算。` : '预算以服务端配置为准。'); updateCreate();
  } catch (error) { text('topic-status', error.message + ' 刷新页面可重试。'); }
 }
 const topicStorageKey = 'bestseller-b-topics-v1';
@@ -144,7 +144,7 @@ $('book-form').addEventListener('submit', async event => {
  event.preventDefault(); if (!$('book-form').reportValidity() || $('create-book').disabled) return;
  state.creating = true; updateCreate(); text('book-status', '正在创建书籍，请勿重复提交…');
  try {
-  const result = await api('/api/books', { topic_id: state.topic, candidate: state.candidate, genre: state.topicInput.genre, chapters: state.topicInput.chapters, model: $('model').value, polish: $('polish').checked, budget: Number($('budget').value), jobs: Number($('jobs').value) });
+  const result = await api('/api/books', { topic_id: state.topic, candidate: state.candidate, genre: state.topicInput.genre, chapters: state.topicInput.chapters, model: $('model').value, polish: $('polish').checked, budget: Number($('budget').value), deai_budget: Number($('deai-budget').value), jobs: Number($('jobs').value) });
   if (!result.id) throw new Error('服务没有返回书籍 ID，请先查看书库再决定是否重试。');
   text('book-status', '已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。');
   state.candidate = null; $('candidates').querySelectorAll('input').forEach(r => { r.checked = false; r.closest('label').classList.remove('selected'); });
@@ -154,7 +154,7 @@ $('book-form').addEventListener('submit', async event => {
 });
 const statusNames = {
  queued: '等待写作', pending: '等待写作', running: '写作中', writing: '写作中', planning: '规划中',
- polishing: '润色中', postprocessing: '后处理中', postprocess_running: '后处理中', paused: '已暂停',
+ queued_polish: '等待去 AI', polishing: '润色中', postprocessing: '后处理中', postprocess_running: '后处理中', paused: '已暂停',
  pausing: '暂停中', done: '已完成', completed: '已完成', complete: '已完成', ready: '就绪',
  failed: '生成失败', error: '运行异常', blocked: '已阻塞', budget_exceeded: '预算已用尽',
  budget_paused: '预算暂停', interrupted: '运行中断', postprocess_failed: '后处理失败',
@@ -175,7 +175,7 @@ function bookDetails(book) {
  return `${book.genre || '题材待更新'} · ${creationDate(book.created)} · ${scoreLabel(book.score)} · ${etaLabel(book.eta)}`;
 }
 function bookUsage(book) {
- return `写作 ${money(book.writer_cost)} · 后处理 ${money(book.postprocess_cost)} · 调用 ${count(book.calls)} 次 · Token ${count(book.tokens)} · Unknown ${count(book.unknown)} 次 · 单书预算 ${money(book.budget)} · 去 AI：${book.polish === true ? '开启' : '关闭'}`;
+ return `写作 ${money(book.writer_cost)} / 预算 ${money(book.budget)}（余额 ${money(book.writer_remaining)}） · 去 AI ${money(book.deai_cost)} / 预算 ${money(book.deai_budget)}（余额 ${money(book.deai_remaining)}） · 后处理累计 ${money(book.postprocess_cost)} · 调用 ${count(book.calls)} 次 · Token ${count(book.tokens)} · Unknown ${count(book.unknown)} 次 · 去 AI：${book.polish === true ? '开启' : '关闭'}`;
 }
 async function action(id, name) {
  if (state.pendingActions.has(id)) return;
@@ -194,9 +194,9 @@ function actionButtons(book) {
  if (book.owned !== true) { wrapper.append(el('span', '历史书籍 · 只读', 'muted')); return wrapper; }
  const status = String(book.status || '').toLowerCase(); let choices = [];
  if (isComplete(book)) choices = [['postprocess', '运行去AI后处理']];
- else if (status === 'paused' || status === 'budget_paused') choices = [['resume', '继续写作']];
+ else if (status === 'paused' || status === 'budget_paused') choices = [['resume', '继续当前阶段']];
  else if (/^(failed|error|blocked|interrupted|postprocess_failed|orphaned|stopped|budget_exceeded)$/.test(status)) choices = [['retry', '从检查点重试']];
- else if (/^(running|writing|planning|queued|pending|polishing|postprocessing|postprocess_running)$/.test(status)) choices = [['pause', '暂停']];
+ else if (/^(running|writing|planning|queued|queued_polish|pending|polishing|postprocessing|postprocess_running)$/.test(status)) choices = [['pause', '暂停']];
  else wrapper.append(el('span', status === 'unknown' ? '结果待确认，请先核对回执' : '暂无可用操作', 'muted'));
  for (const [name, label] of choices) {
   const button = el('button', label); button.type = 'button'; button.dataset.action = name; button.dataset.bookId = String(book.id);

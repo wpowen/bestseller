@@ -31,7 +31,7 @@ def locked(path):
         yield
 
 class MiniMax:
-    def __init__(self, out, env, model='MiniMax-M3.1-Flash', timeout=180, budget=None):
+    def __init__(self, out, env, model='MiniMax-M3.1-Flash', timeout=180, budget=None,budget_root=None):
         self.out = Path(out).resolve() / 'http'; self.out.mkdir(parents=True, exist_ok=True)
         values = dict(os.environ)
         for line in Path(env).read_text(encoding='utf-8').splitlines():
@@ -40,7 +40,9 @@ class MiniMax:
         self._key = values.get(values.get('BESTSELLER__LLM__WRITER__API_KEY_ENV', 'MINIMAX_API_KEY'), '')
         self.base = values.get('MINIMAX_BASE_URL', values.get('BESTSELLER__LLM__WRITER__API_BASE', 'https://api.minimaxi.com/v1')).rstrip('/')
         if not self._key or not self.base.startswith('https://') or '@' in self.base or '?' in self.base: raise LLMError('Missing key or invalid HTTPS endpoint')
-        self.model, self.timeout, self.budget = model, timeout, budget
+        self.model,self.timeout,self.budget=model,timeout,budget if budget is not None else float(os.environ.get('DEAI_BUDGET_USD',.5))
+        self.budget_root=Path(budget_root or os.environ.get('DEAI_BUDGET_ROOT') or self.out).resolve();self.budget_root.mkdir(parents=True,exist_ok=True)
+        if self.budget_root!=self.out and self.budget_root not in self.out.parents:raise LLMError('Budget root must contain chapter ledgers')
         self._local = threading.local(); self.calls = read_json(safe(self.out, 'ledger.json'), []); self.last_usage = {}
     @property
     def last_usage(self): return getattr(self._local, 'usage', {})
@@ -86,10 +88,11 @@ class MiniMax:
                 break
             while True:
                 if STOP.is_set(): raise InterruptedError('Interrupted')
-                with locked(safe(self.out, '.ledger.lock')):
+                with locked(safe(self.budget_root,'.budget.lock')),locked(safe(self.out, '.ledger.lock')):
                     self.calls = read_json(safe(self.out, 'ledger.json'), [])
                     row = dict(stage=stage, model=model, input_bytes=len(body), max_tokens=limit, usage=None, waited=waited, attempt=attempt+1, retry_remaining=0, status='inflight', http_status=None, elapsed=0, started=dt.datetime.now(dt.timezone.utc).isoformat())
-                    if self.budget is not None and self.estimate() + self.cost(row) > self.budget: raise LLMError('USD budget exhausted (including missing usage/inflight)')
+                    spent=sum(self.cost(c) for p in self.budget_root.rglob('ledger.json') if p.parent.name=='http' for c in read_json(p,[]))
+                    if self.budget is not None and spent+self.cost(row)>self.budget:raise LLMError('USD budget exhausted (including missing usage/inflight)')
                     index = len(self.calls); stem = f'{index:06d}'; row.update(request=stem+'.request.json', output=stem+'.text')
                     save(self.out, row['request'], body.decode('utf-8')); self.calls.append(row); save(self.out, 'ledger.json', self.calls)
                 tick = time.monotonic(); wait = 0; retry = False; slot = None

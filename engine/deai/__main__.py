@@ -3,6 +3,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import signal
+import os
 from .client import MiniMax, STOP
 from .io import chapters, process, summarize, read_text,save
 
@@ -21,10 +22,13 @@ def main(argv=None):
     run = sub.add_parser('run'); run.add_argument('bookdir', type=Path,help='书目录或单个.md文件'); run.add_argument('--env', type=Path, default=Path(__file__).resolve().parents[2]/'../../.env')
     run.add_argument('--watch', action='store_true'); run.add_argument('--jobs','--concurrency', type=int, choices=range(1, 5), default=1)
     run.add_argument('--chapters',type=chapter_range);run.add_argument('--model',choices=('MiniMax-M3.1-Flash','MiniMax-M3'),default='MiniMax-M3.1-Flash')
+    run.add_argument('--budget',type=float,default=.5);run.add_argument('--budget-root',type=Path)
     run.add_argument('--dialogue-mode', choices=('local','scene','actor'), default='local'); args = parser.parse_args(argv)
+    if not 0<args.budget<=50:parser.error('去AI独立预算须在(0,50]美元')
     single=args.bookdir.resolve() if args.bookdir.is_file() else None
     if single and single.suffix.lower()!='.md':parser.error('单文件输入须为Markdown正文')
     if single:args.bookdir=single.parent/'final/.deai/single'/single.stem
+    os.environ.update(DEAI_BUDGET_USD=str(args.budget),DEAI_BUDGET_ROOT=str((args.budget_root or args.bookdir/'final').resolve()))
     from . import polish
     STOP.clear(); previous = signal.signal(signal.SIGINT, lambda *_: STOP.set()); statuses = {}; seen = {}
     try:

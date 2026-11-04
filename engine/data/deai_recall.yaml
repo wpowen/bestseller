@@ -1,0 +1,60 @@
+version: 2026-11-04-22
+reference:
+  source: https://github.com/zenstory-ai/oh-story-claudecode/blob/main/skills/story-deslop/scripts/check-ai-patterns.js
+  license: MIT
+  implementation: 独立重写；只借鉴句式分类，不复制实现，不以词频代替读者判断。
+  density_unit: 每千正文汉字；先保留参考区间内的出现，只把超额出现定位为候选。
+patterns:
+  - id: voice_contrast
+    type: voice_contrast
+    regex: '(?:声音|嗓音)(?:并|原本|本来)?不(?:算|太)?[大高][^。！？!?；\n]{0,12}[，,](?:可|却|但|然而)'
+  - id: expression_template
+    type: expression_cliche
+    regex: '(?:脸色(?:忽然|突然|猛地)?一变|瞳孔(?:骤然|猛地|微微)?一缩|嘴角(?:微微)?勾起|笑意(?:忽然|渐渐)?淡了(?:一瞬)?|眸光(?:微微)?一闪|目光(?:一凝|骤冷|沉了)|眼底(?:闪过|掠过)[^。！？!?，,]{0,8}|嘴唇(?:一抖|动了动)|面色(?:一沉|一白))'
+  - id: action_template
+    type: action_cliche
+    regex: '(?:话音(?:刚)?落下|话音未落|冷声打断|(?:指腹|指尖|手指)[^。！？!?，,]{0,6}缓缓|(?:喉结|喉头)[^。！？!?，,]{0,5}(?:滚动|滚了滚)|(?:手指|指节|拳头)[^。！？!?，,]{0,5}(?:泛白|发白|收紧))'
+  - id: atmosphere_template
+    type: atmosphere_cliche
+    regex: '(?:空气(?:仿佛|像是)?凝固|(?:霎时|刹那间|瞬间)[^。！？!?，,]{0,3}静了|死一般(?:的)?寂静|(?:走廊|屋里|四周|人群)(?:里)?(?:顿时|忽然)?(?:一片死寂|鸦雀无声))'
+  - id: emotional_tag
+    type: adverb_dialogue_tag
+    regex: '(?:冷声|尖声|沉声|厉声|低声|柔声|寒声|淡淡|冷冷|幽幽|狠狠|不紧不慢)(?:地)?(?:道|说|问|答|反问|打断|喊|喝道)'
+    replacement_regex: '(?:冷声|尖声|沉声|厉声|低声|柔声|寒声|淡淡|冷冷|幽幽|狠狠|不紧不慢)(?:地)?(?=(?:道|说|问|答|反问|打断|喊|喝道))'
+  - id: abstract_negative_list
+    type: negation_turn
+    regex: '(?:(?:没有|不是|并非)[^。！？!?，,；\n]{1,22}[，,]){2,}(?:(?:没有|不是|并非|只是|只有)[^。！？!?，,；\n]{1,28})'
+  - id: paragraph_summary
+    type: paragraph_moral
+    scope: paragraph_end
+    regex: '(?:这一刻[^。！？!?]{0,18}(?:终于|才)(?:明白|懂得)|(?:真正|所谓)的(?:勇气|意义|成长|救赎|选择)|(?:这|那)(?:才|就)是[^。！？!?]{0,16}(?:意义|代价|底气)|(?:故事|命运|战争|复仇|较量)[^。！？!?]{0,12}才刚刚开始|没人知道[^。！？!?]{0,25}(?:即将|将会)|(?:未来|命运|真相)[^。！？!?]{0,20}(?:苏醒|醒来))'
+densities:
+  - id: pacing_adverbs
+    type: adverb_density
+    terms: [缓缓, 微微, 轻轻, 慢慢, 淡淡, 悄然, 不由自主, 下意识地]
+    per_1000: 1.2
+    maximum_same_term: 1
+  - id: stock_actions
+    type: action_density
+    terms: [深吸一口气, 心头一震, 眉头一皱, 眼神一凛, 一怔, 一愣, 冷笑, 苦笑, 嘴角抽了抽, 嘴角扯了扯, 目光从, 扫过, 抬起眼, 垂下眼, 眼皮一跳, 手指一顿, 衣摆微微一僵, 脸色难看]
+    per_1000: 1.5
+    maximum_same_term: 1
+repair:
+  maximum_sentences: 40
+  target_changes: [15, 40]
+  packet_size: 15
+  note: 只改真实命中项，不为凑数改无问题句；同套话一章最多留一次。
+semantic_windows:
+  opening_sentences: 3
+prompts:
+  detect: >-
+    逐段审读，仅报告明确的文风问题，禁止报告事实/连续性/日期/时代错误。短段、自然对白、
+    有用的环境、真实恐惧/愤怒、职业动作本身不是问题。只查下述六类，结合对照例子判断，
+    不必把所有句子都判成有问题。每项引用现有sid和type，不猜不存在的句号。
+    checked_pids必须覆盖所有输入段落；返回{"checked_pids":[],"issues":[{"sid":"S1","type":"verb_mismatch","severity":2,"reason":""}]}。
+  candidates: >-
+    对每个命中句给3个最小改动候选，保留句中实际动作/实体/数字/否定/条件/说话人/信息来源，
+    不用新动作替换旧动作，不补剧情，不加比喻、情绪解释、总结或升华。优先删套话修饰，
+    同套话词本章最多留一次；对白标签情绪副词直接删，保留说/问/答/道及原台词。
+    原文每个换行、段落和未点名句完全不动，候选无换行，不删空整段。
+    不为凑15–40处修改而乱改。返回{"candidates":[{"sid":"S1","choices":["","",""]}]}。

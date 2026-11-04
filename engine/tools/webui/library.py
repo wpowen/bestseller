@@ -59,7 +59,7 @@ def costs(folder, include_final=True):
     """No cache discount; missing usage retains request upper bounds."""
     known = bound = 0.; unknown = calls = tokens = 0
     paths = [folder / 'calls.json']
-    if include_final: paths.extend(folder.glob('final/.deai/*/http/ledger.json'))
+    if include_final: paths.extend(folder.glob('final/**/http/ledger.json'))
     if (folder / 'http/ledger.json').exists(): paths.append(folder / 'http/ledger.json')
     for path in paths:
         ledger = read(path, None)
@@ -87,6 +87,12 @@ def costs(folder, include_final=True):
                 bound += (max(ins if valid(ins) else 0, capin) * rates[0] + max(outs if valid(outs) else 0, capout) * rates[1]) / 1e6
     return dict(cost=round(known + bound, 9), known=round(known, 9),
                 unknown_bound=round(bound, 9), unknown=unknown, calls=calls, tokens=tokens)
+
+
+def stage_costs(folder, web):
+    writer = costs(folder, include_final=False)['cost']
+    deai = max(0, costs(folder)['cost'] - writer - web.get('external_polish_cost', 0)) if web.get('polish') else 0
+    return writer, round(deai, 9)
 
 
 class Library:
@@ -152,13 +158,16 @@ class Library:
         elapsed = run.get('execution_seconds', run.get('wall_seconds', 0)) or 0
         stat = costs(folder)
         writer_cost = costs(folder, include_final=False)['cost']
+        writer, deai = stage_costs(folder, web)
         scores = [r['report'].get('after_score') for r in rows if isinstance(r.get('report'), dict)]
         scores = [x for x in scores if isinstance(x, (int, float)) and math.isfinite(x)]
         return dict(id=str(folder.relative_to(self.root)), title=title,
                     genre=GENRES.get(book.get('prompt_pack', web.get('genre')), book.get('prompt_pack', '未知')),
                     chapters=len(rows), total=total, words=sum(len(re.findall(r'[\u3400-\u9fff]', r['draft'])) for r in rows),
                     status=state, created=web.get('created', run.get('started', '')), owned=owned,
-                    polish=web.get('polish', False), budget=web.get('budget'),
+                    polish=web.get('polish', False), budget=web.get('budget'), deai_budget=web.get('deai_budget', .5) if owned else None,
+                    writer_remaining=round(max(0, web['budget']-writer), 9) if owned else None,
+                    deai_cost=deai, deai_remaining=round(max(0, web.get('deai_budget', .5)-deai), 9) if owned else None,
                     step=web.get('reason') or run.get('stop_reason') or (('正文' if rows else '圣经 / 排期') if state == 'running' else state),
                     score=round(sum(scores)/len(scores), 3) if scores else None,
                     writer_cost=writer_cost, postprocess_cost=round(stat['cost']-writer_cost,9),

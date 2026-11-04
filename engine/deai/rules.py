@@ -14,7 +14,14 @@ def metrics(text):
     return dict(chars=n,paragraphs=len(ps),dialogue_ratio=round(sum(count(''.join(x)) for x in quoted)/max(1,n),4),average_paragraph_chars=round(n/max(1,len(ps)),2),single_sentence_ratio=round(sum(len(sentences(p['text']))==1 for p in ps)/max(1,len(ps)),4))
 
 DEFAULT=yaml.safe_load((DATA/'deai_rules.yaml').read_text())
+RECALL=yaml.safe_load((DATA.parents[1]/'data/deai_recall.yaml').read_text())
 FACT_TYPES={'continuity_conflict','date_arithmetic','era_conflict'}
+
+def neutral_tags(text):
+    view=re.sub(r'“[^”]*”|「[^」]*」|"[^"\n]*"',lambda m:' '*len(m[0]),text)
+    spans=[m.span() for item in RECALL['patterns'] if item.get('replacement_regex') for m in re.finditer(item['replacement_regex'],view)]
+    for a,b in sorted(spans,reverse=True):text=text[:a]+text[b:]
+    return text
 
 def sentence_rows(text):
     paragraphs=_paragraph_spans(text)
@@ -83,4 +90,17 @@ def detect(text,rows=None,rules=None):
             if re.search(pattern,row['text']):
                 if kind=='negation_turn' and not any(term in row['text'] for term in rules.get('policy',{}).get('abstract_negation_terms',[])):continue
                 result.append(dict(row,type=kind,rule=rule,severity=2,source='rule'))
+    if using_default:
+        views={r['sid']:re.sub(r'“[^”]*”|「[^」]*」|"[^"\n]*"',lambda m:' '*len(m[0]),r['text']) for r in rows}
+        last={r['pid']:r['sid'] for r in rows}
+        for item in RECALL['patterns']:
+            for r in rows:
+                if item.get('scope')=='paragraph_end' and last[r['pid']]!=r['sid']:continue
+                if re.search(item['regex'],views[r['sid']]):result.append(dict(r,type=item['type'],rule=item['id'],severity=2,source='rule'))
+        for item in RECALL['densities']:
+            seen={};matches=[(r,m[0]) for r in rows for m in re.finditer('|'.join(map(re.escape,item['terms'])),views[r['sid']])]
+            allowance=max(1,int(chinese_count(text)*item['per_1000']/1000))
+            for i,(r,term) in enumerate(matches):
+                seen[term]=seen.get(term,0)+1
+                if i>=allowance or seen[term]>item['maximum_same_term']:result.append(dict(r,type=item['type'],rule=item['id'],severity=1,source='rule'))
     return merge_hits(result,[])

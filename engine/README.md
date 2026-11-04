@@ -15,6 +15,7 @@ PYTHONPATH=engine python3 -m deai run chapter.md --env .env
 全书 `final/book.md` 和 `final/SUMMARY.md`。它不读取或更新引擎状态，也不会打开阅读软件。
 数字、实体、段落结构、事实与末场画面须保留，字数为原稿 ±10%；不合格的修改回滚。
 相同草稿、人物卡、规则版本和模型已完成时直接跳过；可用 `--chapters 1-10`、`--model MiniMax-M3`。
+去 AI 使用独立 `--budget`（默认 $0.50），累计书内 `final/` 的已知及未知用量上界，续跑不清零；`--budget-root` 可显式指定共享计费目录，不计入写作调用。
 检测分是编辑提示，不能替代人工抽读。故事结构问题列在 SUMMARY，句子润色不能代替补完故事。
 常规处理只改命中句；整场对白与演员法用 `--dialogue-mode scene` / `actor` 显式运行。
 

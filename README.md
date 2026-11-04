@@ -20,7 +20,7 @@ open http://127.0.0.1:8787
 在页面上依次操作：
 
 1. **开书**：选题材、填章数（5–2000），一句话想法可以空着；点“生成选题”，从 12 个设定里点选一个。
-2. 设置单书预算和并发数，选择是否开启“去 AI 润色”，然后点“开始写作”。
+2. 分别设置写作预算、去 AI 预算（默认 $0.50）和并发数，选择是否开启“去 AI 润色”，然后点“开始写作”。两份预算独立，均受全局总额限制。
 3. **书库**：查看每本书的进度、花费、状态；可以暂停、继续、从检查点重试。
 4. **阅读**：按章节目录阅读，能对比草稿和终稿；可以复制本章或全书，下载 MD / DOCX / TXT / EPUB / 番茄分章 ZIP；也能查看故事圣经、章纲和检测报告。最终稿全章完成后才能整书导出；预算暂停会保留原检查点。
 
@@ -38,8 +38,10 @@ BOOK_CONFIG=examples/realistic-life.yaml
 BOOK_DIR=../books/my-book
 PYTHONPATH=. python -m bookengine "$BOOK_CONFIG" --q1 --style b --env ../.env --out "$BOOK_DIR"
 # 去 AI 味：只改命中的句子，保真检查不过就回滚；结果写到 final/
-PYTHONPATH=. python -m deai run "$BOOK_DIR" --env ../.env
+PYTHONPATH=. python -m deai run "$BOOK_DIR" --env ../.env --budget 0.50
 # 限定章节可加 --chapters 1-2；同一输入与配置的已完成章节会跳过，不重复付费
+# --budget 默认 $0.50，累计 final/ 下已知及未知用量上界；与写作费用分开，续跑不清零。
+# 多目录共享限额可用 --budget-root 指定包含所有后处理账目的目录。
 # 导出：txt / md / docx / epub，以及番茄上传用的分章 txt
 PYTHONPATH=. python -m exporter "$BOOK_DIR"
 # 导出全部通过去 AI 检查的终稿；任何一章缺失即拒绝，不以草稿补齐

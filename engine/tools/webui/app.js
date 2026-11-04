@@ -292,7 +292,7 @@ function renderChapter() {
 function updateDownloads() {
  const version = $('version').value;
  const hasContent = (state.book?.chapters || []).some(chapter => typeof chapter[version] === 'string' && chapter[version].trim());
- for (const format of ['md', 'docx', 'txt']) {
+ for (const format of ['md', 'docx', 'txt', 'epub', 'fanqie']) {
   const link = $('download-' + format); link.setAttribute('download', ''); link.setAttribute('aria-disabled', String(!hasContent));
   if (hasContent && state.readerId) link.href = '/download?id=' + encodeURIComponent(state.readerId) + '&format=' + format + '&version=' + version;
   else link.removeAttribute('href');

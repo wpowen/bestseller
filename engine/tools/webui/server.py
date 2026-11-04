@@ -9,9 +9,9 @@ from pathlib import Path
 import signal
 import sys
 import threading
+import tempfile
 from urllib.parse import parse_qs, urlparse
 import zipfile
-from xml.sax.saxutils import escape
 from library import GENRES, Library, read, text
 from jobs import Queue, topic_worker
 
@@ -35,13 +35,20 @@ def config(env):
 
 
 def docx(markdown):
-    paragraphs = ''.join('<w:p><w:r><w:t xml:space="preserve">'+escape(line)+'</w:t></w:r></w:p>' for line in markdown.splitlines())
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-        z.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
-        z.writestr('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
-        z.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'+paragraphs+'</w:body></w:document>')
-    return buf.getvalue()
+    from exporter.documents import docx_bytes
+    return docx_bytes('', [(1, '', markdown)])
+
+
+def export_bytes(detail, version, fmt):
+    from exporter import render, heading
+    rows = [(r['number'], heading(r['number'], r['title']), r[version]) for r in detail['chapters']]
+    with tempfile.TemporaryDirectory(prefix='bookweb-export-') as temporary:
+        out = Path(temporary); render(out, detail['meta']['title'], rows, (fmt,))
+        if fmt != 'fanqie': return (out / ('book.'+fmt)).read_bytes()
+        data = io.BytesIO()
+        with zipfile.ZipFile(data, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted((out / 'fanqie').glob('*.txt')): archive.write(path, 'fanqie/'+path.name)
+        return data.getvalue()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -75,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/LIBRARY.html': self.send(lib.static(), mime='text/html; charset=utf-8')
             elif path == '/download':
                 folder = lib.folder(get('id')); fmt = get('format'); version = get('version', 'draft')
-                if fmt not in ('md','docx','txt') or version not in ('draft','final'): raise ValueError('格式无效')
+                if fmt not in ('md','docx','txt','epub','fanqie') or version not in ('draft','final'): raise ValueError('格式无效')
                 if version == 'draft' and fmt in ('md','docx'):
                     output = lib.safe(folder / ('book.'+fmt))
                     if not output.exists(): raise ValueError('公开CLI尚未导出，请等待完成')
@@ -83,9 +90,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     detail = lib.detail(get('id')); rows = detail['chapters']
                     if version == 'final' and (not rows or len(rows) != detail['meta']['total'] or any(not r['final'] for r in rows)): raise ValueError('后处理尚未完成，不能伪装最终稿')
-                    body = '# '+detail['meta']['title']+'\n\n'+'\n\n'.join(f"## 第{r['number']}章 {r['title']}\n\n"+r[version] for r in rows)
-                    body = docx(body) if fmt == 'docx' else body.encode('utf-8')
-                self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8'}[fmt], filename='book-'+version+'.'+fmt)
+                    if fmt in ('epub','fanqie') and (not rows or len(rows)!=detail['meta']['total']): raise ValueError('整书尚未完成')
+                    body = export_bytes(detail, version, fmt)
+                self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8','epub':'application/epub+zip','fanqie':'application/zip'}[fmt], filename='book-'+version+'.'+('zip' if fmt=='fanqie' else fmt))
             elif path in ('/', '/index.html', '/app.js', '/style.css'):
                 name = 'index.html' if path == '/' else path[1:]
                 self.send((ASSETS/name).read_bytes(), mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[name.rsplit('.',1)[1]])

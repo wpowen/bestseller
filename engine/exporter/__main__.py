@@ -9,7 +9,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bookdir')
     parser.add_argument('--formats', default=','.join(FORMATS), help='Comma-separated: ' + ','.join(FORMATS))
-    parser.add_argument('--version', choices=('draft', 'final'), default='final')
+    parser.add_argument('--version', choices=('draft', 'final', 'polished'), default='final', help='draft=初稿；final=写作定稿；polished=去AI最终稿')
     parser.add_argument('--out', help='Default: BOOKDIR/exports/VERSION')
     args = parser.parse_args()
     try:

@@ -140,6 +140,17 @@ class ExportTests(unittest.TestCase):
         self.cli('--formats', 'txt', ok=False)
         self.assertFalse((self.book / 'exports').exists())
 
+    def test_polished_export_requires_every_completed_chapter(self):
+        final=self.book/'final';final.mkdir()
+        for n in range(1,11):
+            (final/f'chapter-{n:03d}.md').write_text(f'润色{n}正文。')
+            (final/f'chapter-{n:03d}.deai.json').write_text(json.dumps(dict(status='unchanged',complete=True)))
+        self.cli('--version','polished','--formats','txt')
+        text=(self.book/'exports/polished/book.txt').read_text();self.assertIn('润色10正文。',text);self.assertNotIn('初稿',text)
+        (final/'chapter-010.deai.json').write_text(json.dumps(dict(status='partial',complete=False)))
+        self.cli('--version','polished','--formats','epub',ok=False)
+        self.assertFalse((self.book/'exports/polished/book.epub').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

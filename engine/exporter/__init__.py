@@ -65,6 +65,14 @@ def read_book(folder, version='final'):
             label = next((r.get('title') for r in outline if r.get('number') == n), None)
         if not label:
             raise ValueError(f'Missing chapter title: {n}')
+        if version == 'polished':
+            source = folder / f'final/chapter-{n:03d}.md'
+            report = load(folder / f'final/chapter-{n:03d}.deai.json')
+            if not source.is_file() or report.get('status') not in ('polished', 'unchanged') or report.get('complete') is not True:
+                raise ValueError(f'Missing completed polished chapter: {n}')
+            rows.append((n, heading(n, label), read(source)))
+            if not rows[-1][2].strip(): raise ValueError(f'Empty polished chapter: {n}')
+            continue
         suffixes = ('.r2.draft.md', '.draft.md') if version == 'draft' else ('.body.md', '.final.md')
         source = next((Path(str(base) + s) for s in suffixes if Path(str(base) + s).is_file()), None)
         if source:
@@ -129,7 +137,7 @@ def render(out, title, rows, formats, toc=True):
 
 
 def export_book(bookdir, formats=FORMATS, version='final', out=None):
-    if version not in ('draft', 'final') or not formats or set(formats) - set(FORMATS):
+    if version not in ('draft', 'final', 'polished') or not formats or set(formats) - set(FORMATS):
         raise ValueError('Invalid version or formats')
     bookdir = Path(bookdir).resolve()
     target = Path(out).absolute() if out else bookdir / 'exports' / version

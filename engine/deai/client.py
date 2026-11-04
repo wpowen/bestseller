@@ -79,7 +79,8 @@ class MiniMax:
                 if read_json(safe(self.out, row['request'])) != payload: continue
                 if row.get('status') == 'ok':
                     self.last_usage = row.get('usage') or {}; return read_text(safe(self.out, row['output']))
-                if row.get('http_status') in (400, 401, 403, 404, 422): raise LLMError(f"HTTP {row['http_status']}: {row.get('error', '')}")
+                if row.get('error','').startswith('Missing/empty completion'):raise LLMError(row['error'])
+                if row.get('http_status') in (400, 401, 403, 404, 413, 422): raise LLMError(f"HTTP {row['http_status']}: {row.get('error', '')}")
                 self.backoff(index, row); waited = row.get('waited', 0); attempt = row.get('attempt', 0)
                 if row.get('retryable') and waited >= 900: raise LLMError('Network retries exhausted after >=900 seconds actual backoff')
                 break
@@ -94,7 +95,7 @@ class MiniMax:
                 tick = time.monotonic(); wait = 0; retry = False; slot = None
                 try:
                     while slot is None:
-                        for n in range(4):
+                        for n in range(6):
                             candidate = Path(tempfile.gettempdir(), f'deai-slot-{os.getuid()}-{n}.lock').open('a+')
                             try: fcntl.flock(candidate, fcntl.LOCK_EX | fcntl.LOCK_NB)
                             except BlockingIOError: candidate.close(); continue
@@ -111,7 +112,7 @@ class MiniMax:
                     if not isinstance(content, str) or not content.strip(): raise LLMError('Missing/empty completion; inspect raw response')
                     save(self.out, row['output'], content); row['status'] = 'ok'; self.last_usage = row['usage'] or {}; return content
                 except urllib.error.HTTPError as exc:
-                    row['http_status'] = exc.code; row['error'] = self.redact(exc.read().decode('utf-8', errors='replace')); retry = exc.code == 429 or 500 <= exc.code < 600
+                    row['http_status'] = exc.code; row['error'] = self.redact(exc.read().decode('utf-8', errors='replace')); retry = exc.code in (408,429) or 500 <= exc.code < 600
                     header = exc.headers.get('Retry-After', '0') if exc.headers else '0'
                     try: wait = max(0, float(header))
                     except ValueError:

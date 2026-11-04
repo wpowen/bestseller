@@ -1,4 +1,24 @@
-# bookengine · S1–S5a
+# bookengine · 整本生成与独立去 AI 味
+
+在隔离 worktree 中运行，正文草稿和最终版分开保存：
+
+```sh
+PYTHONPATH=engine python3 -m bookengine book.yaml --q1 --style b --env ../../.env --out ../engine-books/my-book
+PYTHONPATH=engine python3 -m deai run ../engine-books/my-book --env ../../.env
+# 长篇边写边处理；Ctrl-C 后用同一命令续跑
+PYTHONPATH=engine python3 -m deai run ../engine-books/my-book --watch --concurrency 2
+# 单独的Markdown也可处理，源文件保留；结果在同目录的final/
+PYTHONPATH=engine python3 -m deai run chapter.md --env ../../.env
+```
+
+`deai` 只读章节草稿及可选人物卡，写入 `final/chapter-NNN.md`、逐章 `.deai.json`、
+全书 `final/book.md` 和 `final/SUMMARY.md`。它不读取或更新引擎状态，也不会打开阅读软件。
+数字、实体、段落结构、事实与末场画面须保留，字数为原稿 ±10%；不合格的修改回滚。
+相同草稿、人物卡、规则版本和模型已完成时直接跳过；可用 `--chapters 1-10`、`--model MiniMax-M3`。
+检测分是编辑提示，不能替代人工抽读。故事结构问题列在 SUMMARY，句子润色不能代替补完故事。
+常规处理只改命中句；整场对白与演员法用 `--dialogue-mode scene` / `actor` 显式运行。
+
+原有阶段说明：
 
 独立的 Python 包；从 mini.py 改造，只读题材与写作知识，不加载旧引擎。
 完整阶段计划见 [PLAN.md](PLAN.md)，当前验证 S5a 的三百章与五本并发。

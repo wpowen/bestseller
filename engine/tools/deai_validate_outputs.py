@@ -11,7 +11,10 @@ ROOT=ENGINE.parent.parent/'engine-books/blind-5/private/experiment';ENV=ENGINE.p
 def validate(original,output,report,context,work):
     old=read_text(original);final=read_text(output);meta=read_json(report);updated,kept,rolled=rollback_invalid(old,final,meta.get('edits',[]),context)
     if not rolled:
-        assert not invariant(old,final,context,whole=True);return
+        assert not invariant(old,final,context,whole=True)
+        if not meta.get('checks',{}).get('diagnostics'):
+            meta.setdefault('checks',{})['diagnostics']=Session(MiniMax(work,ENV),context).diagnostics(old);save(report.parent,report.name,meta)
+        return
     client=MiniMax(work,ENV);session=Session(client,context)
     hits,unknown=session.classify(updated,'preservation-rollback-recheck')
     if unknown:raise RuntimeError('Rollback recheck incomplete')
@@ -22,7 +25,7 @@ def validate(original,output,report,context,work):
         if unknown:raise RuntimeError('Second rollback recheck incomplete')
     assert not invariant(old,updated,context,whole=True)
     meta.update(text=updated,edits=kept,after_score=score(hits,updated),status='polished' if kept else 'unchanged');meta.setdefault('warnings',[]).append(dict(rollback='new_hard_contract',paragraphs=sorted(set(rolled))))
-    meta.setdefault('checks',{}).update(programmatic=[],final_chars=count(updated));save(output.parent,output.name,updated);save(report.parent,report.name,meta)
+    meta.setdefault('checks',{}).update(programmatic=[],final_chars=count(updated),diagnostics=session.diagnostics(old));save(output.parent,output.name,updated);save(report.parent,report.name,meta)
     if (work/'output.md').exists():save(work,'output.md',updated)
     print(output,'rolled',rolled,'remaining',len(kept),flush=True)
 

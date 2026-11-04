@@ -5,12 +5,14 @@ from pathlib import Path
 import re
 import sys
 root=Path(__file__).resolve().parents[1]
-limits={'bookengine':5000,'deai':800,'webui':1200}
+limits={'bookengine':5000,'deai':800,'webui':1200,'exporter':400}
 errors=[];cross=[];imports=[];words=[];maximum=(0,'none')
 blocked=re.compile(r'provenance|custody|receipt|sha256|fingerprint|credential_scan|visual_qa|render_v',re.I)
 for package,limit in limits.items():
     count=0
-    for path in sorted((root/package).rglob('*.py')):
+    paths=set((root/package).rglob('*.py'))
+    if package=='webui':paths.update((root/'tools/webui').rglob('*.py'));paths.update([root/'tools/webui.py'] if (root/'tools/webui.py').exists() else [])
+    for path in sorted(paths):
         if {'tests','eval','__pycache__'}&set(path.parts):continue
         source=path.read_text();lines=len(source.splitlines());count+=lines
         if lines>maximum[0]:maximum=(lines,str(path.relative_to(root)))

@@ -54,6 +54,13 @@ def merge_hits(rule_hits,model_hits):
             if hit.get('source')=='rule':result[key].update(source='rule',rule=hit.get('rule'))
     return list(result.values())
 
+def carry_hits(previous,current,text,before_text=None):
+    rows={(r['pid'],r['text']):r for r in sentence_rows(text)}
+    old={(r['pid'],r['text']) for r in sentence_rows(before_text)} if before_text is not None else set()
+    observed=[dict(h,**rows[(h['pid'],h['text'])]) for h in current if (h['pid'],h['text']) in rows and (h['pid'],h['text']) not in old]
+    unchanged=[dict(h,**rows[(h['pid'],h['text'])]) for h in previous if (h['pid'],h['text']) in rows]
+    return merge_hits(observed,unchanged)
+
 def detect(text,rows=None,rules=None):
     using_default=rules is None;rules=DEFAULT if rules is None else rules;rows=sentence_rows(text) if rows is None else rows
     surface=yaml.safe_load((DATA/'sentence_patterns.yaml').read_text());patterns=[]

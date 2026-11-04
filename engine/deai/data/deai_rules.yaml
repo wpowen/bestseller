@@ -1,7 +1,7 @@
 schema_version: 1
 enabled_by_default: false
-purpose: INBOX19/17 的零调用候选规则、统计口径与待实测校准合同。
-status: calibration_passed_integration_blocked
+purpose: INBOX19/17 独立后处理的确定规则、统计口径与实测校准合同。
+status: calibration_passed_independent_workflow
 case_file: ai_flavor_cases.yaml
 prompt_file: deai_prompts.yaml
 policy:
@@ -431,7 +431,13 @@ calibration:
     anchor_confirmed_candidates: 0
     ranking_passed: true
     valid_chapters: 8
-    scope_blocked: true
+    scope_blocked: false
     core_current: 4984
     core_projected_detector_only: 5059
     report: ../reports/deai-loop.md
+hard_guards:
+  mental: 吓|害怕|生气|难过|疼|痛|醉|病|听见|看见|知道|明白|睡着|醒着
+  uncertain: (?:似乎|仿佛|好像|像|看起来|显得)[^。！？!?]{0,8}
+  avoid: 不(?:管|问|关心|理会|在意)
+  unknown: 不(?:知道|清楚|晓得|懂|认识)
+  body_side: '[左右](?:手|臂|肩|耳|腿|脚|眼|肘|腕|侧)'

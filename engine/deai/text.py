@@ -2,6 +2,9 @@
 import ast
 import json
 import re
+from pathlib import Path
+import yaml
+_HARD=yaml.safe_load((Path(__file__).resolve().parent/'data/deai_rules.yaml').read_text())['hard_guards']
 from collections import Counter
 from difflib import SequenceMatcher
 
@@ -45,12 +48,12 @@ def invariant(old,new,ctx,entities=(),whole=False):
     if Counter(NUM.findall(old))!=Counter(NUM.findall(new)):reasons.append('numbers')
     for name in set(entities):
         if isinstance(name,str) and name and name in old and name not in new:reasons.append('entity:'+name)
-    mental=r'吓|害怕|生气|难过|疼|痛|醉|病|听见|看见|知道|明白|睡着|醒着'
+    mental=_HARD['mental']
     for word in set(re.findall(mental,old)):
-        pattern=r'(?:似乎|仿佛|好像|像|看起来|显得)[^。！？!?]{0,8}'+word
+        pattern=_HARD['uncertain']+word
         if len(re.findall(pattern,old))>len(re.findall(pattern,new)) and new.count(word)>=old.count(word):reasons.append('certainty:'+word)
-    if Counter(re.findall(r'[左右](?:手|臂|肩|耳|腿|脚|眼|肘|腕|侧)',old))!=Counter(re.findall(r'[左右](?:手|臂|肩|耳|腿|脚|眼|肘|腕|侧)',new)):reasons.append('body_side')
-    avoid=r'不(?:管|问|关心|理会|在意)';unknown=r'不(?:知道|清楚|晓得|懂|认识)'
+    if Counter(re.findall(_HARD['body_side'],old))!=Counter(re.findall(_HARD['body_side'],new)):reasons.append('body_side')
+    avoid=_HARD['avoid'];unknown=_HARD['unknown']
     if (re.search(avoid,old) and not re.search(unknown,old) and re.search(unknown,new)) or (re.search(unknown,old) and not re.search(avoid,old) and re.search(avoid,new)):reasons.append('knowledge_vs_attitude')
     if whole:
         low,high=ctx.get('word_range',(int(count(old)*.9),int(count(old)*1.1)))

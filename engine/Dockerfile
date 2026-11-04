@@ -11,6 +11,7 @@ WORKDIR /app/engine
 COPY config/ /app/config/
 COPY engine/bookengine/ /app/engine/bookengine/
 COPY engine/deai/ /app/engine/deai/
+COPY engine/ideation/ /app/engine/ideation/
 COPY engine/exporter/ /app/engine/exporter/
 COPY engine/data/ /app/engine/data/
 COPY engine/tools/ /app/engine/tools/

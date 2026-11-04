@@ -31,7 +31,7 @@ def config(env):
         dict(id='flash', name='MiniMax M3.1 Flash', enabled=configured, configured=configured, reason='公开CLI固定模型' if configured else '未配置'),
         dict(id='m3', name='MiniMax M3', enabled=False, configured=configured, reason=('已配置密钥；' if configured else '未配置；')+'公开CLI无模型切换参数'),
         dict(id='claude', name='Claude', enabled=False, reason=('已配置；' if values.get('ANTHROPIC_API_KEY') else '未配置；')+'公开CLI不支持')],
-        budgets=dict(total=.5, reserve=.03), limitations=['stopped检查点暂无公开恢复命令', '单章重写暂无公开命令；重试从检查点续跑'])
+        channels=['男频', '女频'], budgets=dict(total=.5, reserve=.03, topic=.05), limitations=['stopped检查点暂无公开恢复命令', '单章重写暂无公开命令；重试从检查点续跑'])
 
 
 def docx(markdown):

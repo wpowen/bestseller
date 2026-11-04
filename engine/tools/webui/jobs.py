@@ -19,6 +19,19 @@ def finite(value, low, high):
     return value
 
 
+def check_card(card, chapters, legacy=False):
+    if not isinstance(card, dict) or len(json.dumps(card, ensure_ascii=False)) > 10000:
+        raise ValueError('候选字段无效或过长')
+    if legacy:
+        if set(card) != {'title', 'premise'} or any(not isinstance(card.get(k), str) or not card[k].strip() or len(card[k]) > cap for k, cap in (('title', 80), ('premise', 120))):
+            raise ValueError('请填写有效的书名和简介')
+    else:
+        from ideation.filters import validate
+        errors = validate(card, chapters)
+        if errors: raise ValueError('候选无效：' + '；'.join(errors))
+    return card
+
+
 class Queue:
     def __init__(self, library, env, engine, limit=.5):
         self.library, self.env, self.engine, self.limit = library, env, engine, limit
@@ -78,29 +91,46 @@ class Queue:
 
     def topic(self, data):
         genre = data.get('genre'); chapters = int(finite(data.get('chapters', 5), 1, 2000))
-        idea = data.get('idea', '')
+        idea = data.get('idea', ''); channel = data.get('channel', '')
         if genre not in GENRES or not isinstance(idea, str) or len(idea) > 3000: raise ValueError('题材或想法无效')
+        if not isinstance(channel, str) or channel not in ('', '男频', '女频'): raise ValueError('频道无效')
+        direction = data.get('direction')
+        if 'direction' in data:
+            if not isinstance(direction, dict) or direction.get('mode') not in ('both', 'shell', 'variable'): raise ValueError('方向模式无效')
+            direction = dict(mode=direction['mode'], candidate=check_card(direction.get('candidate'), chapters))
+            axes = direction['candidate'].get('axes')
+            if not isinstance(axes, dict) or any(not isinstance(axes.get(k), str) or not axes[k].strip() for k in ('shell', 'variable')): raise ValueError('此候选缺少方向轴')
         with self.lock:
             if any(p['kind'] == 'topic' and p['p'].poll() is None for p in self.processes.values()): raise ValueError('选题正在生成，请稍候')
-            if self.committed() + .015 > self.limit: raise ValueError('总预算不足以生成选题')
+            if self.committed() + .05 > self.limit: raise ValueError('总预算不足以生成选题')
             key = str(uuid.uuid4()); folder = self.library.own / '.topics' / key
-            save(folder / 'topic.json', dict(id=key, status='running', genre=genre, chapters=chapters, idea=idea, candidates=[]))
+            topic = dict(id=key, status='running', genre=genre, chapters=chapters, idea=idea, channel=channel, candidates=[])
+            if direction is not None: topic['direction'] = direction
+            save(folder / 'topic.json', topic)
             command = [sys.executable, '-m', 'tools.webui', '--topic-worker', str(folder), '--env', str(self.env)]
             with (folder / 'worker.log').open('a') as log:
                 p = subprocess.Popen(command, cwd=self.engine.parent, env=self.child_env(), stdout=log, stderr=log, start_new_session=True)
             self.processes['topic/'+key] = dict(p=p, kind='topic', folder=folder, paused=False)
-            return read(folder / 'topic.json')
+            return self.get_topic(key)
 
-    def get_topic(self, key):
+    def get_topic(self, key, internal=False):
         uuid.UUID(key)
-        return read(self.library.own / '.topics' / key / 'topic.json', {})
+        folder = self.library.own / '.topics' / key
+        data = read(folder / 'topic.json', {})
+        if not data or internal: return data
+        public = {k: data[k] for k in ('id', 'status', 'genre', 'chapters', 'idea', 'channel', 'direction', 'candidates', 'notice', 'judge_status', 'cost_usd', 'calls', 'seed', 'error', 'book_id') if k in data}
+        if isinstance(data.get('market'), dict): public['market'] = {k: data['market'][k] for k in ('date', 'status') if k in data['market']}
+        public['collisions'] = [dict(title=row['title'], reasons=[r for r in row['reasons'] if r.startswith('撞车:')]) for row in data.get('rejected', []) if any(r.startswith('撞车:') for r in row['reasons'])]
+        public['usage'] = costs(folder)
+        return public
 
     def create(self, data):
         with self.lock:
-            topic = self.get_topic(data['topic_id'])
+            topic = self.get_topic(data['topic_id'], internal=True)
             index = data.get('candidate')
             if type(index) is not int or not 0 <= index < len(topic.get('candidates', [])): raise ValueError('请先点击选择一个候选题')
             if topic.get('book_id'): raise ValueError('此选题已开书，请到书库继续')
+            if topic.get('status') != 'complete': raise ValueError('请等待选题完成')
             if data.get('model') != 'flash': raise ValueError('公开CLI仅支持 MiniMax Flash')
             chapters = int(finite(data.get('chapters', topic['chapters']), 1, 2000))
             if chapters != topic['chapters'] or data.get('genre') != topic['genre']: raise ValueError('请按新题材/章数重新选题')
@@ -108,10 +138,17 @@ class Queue:
             deai_budget = finite(data.get('deai_budget', .5), .01, max(.5, self.limit))
             jobs = int(finite(data.get('jobs', 2), 1, 4))
             if self.committed() + budget + (deai_budget if data.get('polish') is True else 0) > self.limit: raise ValueError('已有书籍占用预算，请降低本书上限')
+            candidate = topic['candidates'][index]
+            if 'candidate_edit' in data:
+                edited = data['candidate_edit']; legacy = set(candidate) == {'title', 'premise'}
+                check_card(edited, chapters, legacy)
+                editable = {'title', 'premise'} if legacy else {'title', 'hook', 'tags', 'premise', 'golden_finger_rule', 'opening', 'engine'}
+                if set(edited) != set(candidate) or any(edited[k] != candidate[k] for k in candidate if k not in editable): raise ValueError('仅可编辑卡片内容，不能修改参考分和方向轴')
+                candidate = edited
             self.jobs = jobs; save(self.library.own / '.queue.json', dict(jobs=jobs))
-            candidate = topic['candidates'][index]; key = str(uuid.uuid4()); folder = self.library.own / key
+            key = str(uuid.uuid4()); folder = self.library.own / key
             settings = dict(prompt_pack=topic['genre'], chapters=chapters, words_per_chapter=2200,
-                            user_input=candidate['title']+'。'+candidate['premise'])
+                            user_input=json.dumps(candidate, ensure_ascii=False))
             save(folder / 'book.yaml', settings)  # JSON is a YAML subset, no YAML dependency.
             save(folder / 'web.json', dict(title=candidate['title'], genre=topic['genre'], chapters=chapters,
                 budget=budget, deai_budget=deai_budget, polish=data.get('polish') is True, status='queued', created=now(), jobs=self.jobs))
@@ -238,15 +275,12 @@ class Queue:
 
 def topic_worker(folder, env):
     from deai.client import MiniMax
-    from deai.io import parse_json
     folder = Path(folder); data = read(folder / 'topic.json')
     try:
-        client = MiniMax(folder, env, budget=.015)
-        prompt = f"为{GENRES[data['genre']]}、{data['chapters']}章短篇生成12个不同的中文小说选题。想法：{data['idea'] or '自由发挥'}。每个含title和premise（80字以内，具体人物欲望、处境和核心冲突）。只返回JSON数组，恰好12项。"
-        raw = client([dict(role='user', content=prompt)], stage='topics-12', max_tokens=2600)
-        candidates = parse_json(raw)
-        if not isinstance(candidates, list) or len(candidates) != 12 or any(not isinstance(x, dict) or not all(isinstance(x.get(k), str) and x[k].strip() for k in ('title','premise')) for x in candidates): raise ValueError('未返回有效的12候选，未自动重试')
-        data.update(status='complete', candidates=[{k:x[k] for k in ('title','premise')} for x in candidates])
+        from ideation import run
+        client = MiniMax(folder, env, budget=.05)
+        data = run(folder, client, folder.parents[2])
     except Exception as exc:
+        data = read(folder / 'topic.json', data)
         data.update(status='failed', error=type(exc).__name__+'：选题未完成，保留原始调用与费用')
     save(folder / 'topic.json', data)

@@ -1,14 +1,14 @@
 # bookengine · 整本生成与独立去 AI 味
 
-在隔离 worktree 中运行，正文草稿和最终版分开保存：
+在仓库根目录（或 `engine/` 的上一级）运行，正文草稿和最终版分开保存：
 
 ```sh
-PYTHONPATH=engine python3 -m bookengine book.yaml --q1 --style b --env ../../.env --out ../engine-books/my-book
-PYTHONPATH=engine python3 -m deai run ../engine-books/my-book --env ../../.env
+PYTHONPATH=engine python3 -m bookengine book.yaml --q1 --style b --env ../.env --out ../books/my-book
+PYTHONPATH=engine python3 -m deai run ../books/my-book --env ../.env
 # 长篇边写边处理；Ctrl-C 后用同一命令续跑
-PYTHONPATH=engine python3 -m deai run ../engine-books/my-book --watch --concurrency 2
+PYTHONPATH=engine python3 -m deai run ../books/my-book --watch --concurrency 2
 # 单独的Markdown也可处理，源文件保留；结果在同目录的final/
-PYTHONPATH=engine python3 -m deai run chapter.md --env ../../.env
+PYTHONPATH=engine python3 -m deai run chapter.md --env ../.env
 ```
 
 `deai` 只读章节草稿及可选人物卡，写入 `final/chapter-NNN.md`、逐章 `.deai.json`、
@@ -27,7 +27,7 @@ PYTHONPATH=engine python3 -m deai run chapter.md --env ../../.env
 
 ```sh
 PYTHONPATH=engine python3 -m bookengine engine/examples/realistic-life.yaml \
-  --env ../../.env --out ../engine-books/s1-realistic-life
+  --env ../.env --out ../books/s1-realistic-life
 ```
 
 一本书只需一个 YAML：`prompt_pack`、`chapters`、`words_per_chapter`、`user_input`。
@@ -62,7 +62,7 @@ S1 不声明 S3 字数带、程序连续性检查或人工阅读质量验收已�
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=engine python3 -m bookengine \
   --batch engine/examples/s2/batch.yaml --jobs 6 \
-  --env ../../.env --out ../engine-books/s2
+  --env ../.env --out ../books/s2
 ```
 
 manifest 引用六个独立的单书 YAML：三题材各 5/10 章，目标每章 2200 汉字。
@@ -88,7 +88,7 @@ manifest 引用六个独立的单书 YAML：三题材各 5/10 章，目标每章
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=engine python3 -m bookengine \
   --quality --batch engine/examples/s2/batch.yaml --jobs 6 \
-  --env ../../.env --out ../engine-books/s3
+  --env ../.env --out ../books/s3
 ```
 
 同一批六份 YAML、同样题材/章数/用户输入；输出另存 s3，修复后仍运行原命令续跑。
@@ -116,7 +116,7 @@ run.json 的 quality 保存每章检测结果，chapter-NNN.state.json 与 state
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=engine python3 -u -m bookengine \
-  --long engine/examples/s4.yaml --env ../../.env --out ../engine-books/s4
+  --long engine/examples/s4.yaml --env ../.env --out ../books/s4
 ```
 
 全书总纲一次，25章卷纲在十章规划窗口首次需要时才展开；章纲只展开当前十章。
@@ -138,7 +138,7 @@ run.json保存S3失败分布、各章输入、状态对照、伏笔开收与实�
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=engine python3 -u -m bookengine \
   --long --batch engine/examples/s5a/batch.yaml --jobs 5 \
-  --env ../../.env --out ../engine-books/s5a
+  --env ../.env --out ../books/s5a
 ```
 
 书内顺序、书间独立进程。全局滚动60秒限速200RPM/10000000TPM；输入按UTF-8字节上界加输出上限预约，失败重试也预约。

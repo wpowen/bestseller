@@ -1,3 +1,5 @@
+> 2026-11-04：老框架已归档（标签 legacy-final-20261104）。下文 S6 中“导出接 src/bestseller/services/exports.py”已作废，导出由 engine/exporter 提供；主分支只保留 engine/ 与 config/ 的 35 份只读素材。
+
 # bookengine 总计划
 
 任务：建一个快速、可批量的写书引擎 bookengine。本消息是总计划，请先保存为 engine/PLAN.md，然后只做 S1，做完停下汇报。

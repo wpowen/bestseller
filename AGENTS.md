@@ -1,11 +1,17 @@
 # BestSeller agent entry
 
-先按任务读取最相关的 [README.md](README.md)、`docs/`、`.agents/skills/` 或 `src/` 文档；不要把单一 Skill 当作整个项目流程。
+先读 [README.md](README.md)、[engine/README.md](engine/README.md)，再看 `engine/INBOX.md` 和 `engine/PLAN.md` 里当前有效的条目。老框架已归档到标签 `legacy-final-20261104` 和分支 `legacy`，主分支不要再引用或恢复其中的代码。
 
-生产链是 `Premise → Plan → Draft → Review → Rewrite → Knowledge → Export`。PostgreSQL 是事实源，`output/` 是可重建导出物；所有 LLM 调用须经 `src/bestseller/services/llm.py::complete_text` 并带 `project_id`、`workflow_run_id`。
+生产链是：选题 → 故事圣经 → 排期 → 正文 → 检查 → 去 AI 味（可选）→ 导出。
+- 书目录里的正文、规划、状态、步骤检查点和调用记录（`calls.json`、`responses/`、`steps/`）是唯一的恢复依据。没有数据库。
+- 模型调用只走 engine 自带的客户端，用量写进书目录。密钥只从 `.env` 读取，不打印，不写进书稿和日志。
 
-保留硬约束、软约束 Override/追债、Canon/Timeline 单调性、来源归因、checkpoint 和审校回执。静态或 fixture 通过不等于真实模型、读者或榜单证据；报告明确 Evidence / Inference / Unknown。
+保留以下能力：人物、时间、状态的一致性检查；已保存正文和检查点不被覆盖；局部修改后复检，不合格就回滚。
+程序检测和判官分数只是参考，不能代替读者验收。报告里要明确区分 Evidence（证据）、Inference（推断）、Unknown（未知）。
 
-测试时先读取现有隔离测试库配置并核验库名确为测试库，再按需使用 `.venv/bin/pytest --no-cov`；不要在入口中写连接串或密码。生产操作须在明确授权后遵守项目既有流程，并保留生产回读证据；不要覆盖用户已有改动。
-
-快速入口：`README.md`、`docs/architecture.md`、`src/bestseller/services/pipelines.py`、`src/bestseller/services/project_health.py`、`.agents/skills/bestseller-framework/SKILL.md`。
+开发约束：
+- `engine/tools/check_scope.py` 必须 PASS：bookengine ≤5000 行，deai ≤800，webui ≤1200，exporter ≤400，单文件 ≤500 行。
+- 不允许 import `bestseller`；bookengine 与 deai 互不导入。
+- 测试命令：`cd engine && PYTHONPATH=.:tools python -m pytest -q --no-cov tests/`。
+- 用真实模型写书前先确认预算。千章级任务要另外取得授权。
+- 不要覆盖用户已有的改动，也不要删除 `books/` 里的书稿。没有用户要求不 push。

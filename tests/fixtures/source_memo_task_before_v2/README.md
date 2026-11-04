@@ -1,1 +1,0 @@
-Historical v43 source witnesses for the exact future-task and per-selection memo transition. These are test data, not imported modules or current rules. No production rows, credentials, model output or novel-specific code is included.

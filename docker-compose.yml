@@ -1,350 +1,37 @@
-# ── Shared environment loaded from .env ─────────────────────────────────────
-x-env-common: &env-common
-  BESTSELLER__DATABASE__URL: postgresql+asyncpg://${DB_USER:-bestseller}:${DB_PASSWORD:-bestseller}@db:5432/${DB_NAME:-bestseller}
-  BESTSELLER_REDIS_URL: redis://redis:6379/0
-  BESTSELLER__REDIS__URL: redis://redis:6379/0
-  BESTSELLER__OUTPUT__BASE_DIR: /app/output
-  BESTSELLER__ARTIFACT_STORE__LOCAL_DIR: /app/artifacts
-  BESTSELLER_TASK_STALE_SECONDS: ${BESTSELLER_TASK_STALE_SECONDS:-2700}
-  TZ: ${TZ:-Asia/Shanghai}
-  # MiroFish Simulation Oracle:规划期自动增强 story_design_kernel(走向/支线/动机)。
-  # 默认关闭;此处开启做深度融合。oracle 走 complete_text(planner=deepseek-v4-flash)。
-  MIROFISH_ORACLE_PLANNER: ${MIROFISH_ORACLE_PLANNER:-true}
-
-# ── Shared build config ─────────────────────────────────────────────────────
-# Docker Desktop injects http.docker.internal:3128 as a build proxy that is
-# unreachable from inside BuildKit, causing "Network is unreachable". Override
-# all proxy ARGs to empty strings so pip/uv can reach PyPI directly.
-x-build-common: &build-common
-  context: .
-  args:
-    HTTP_PROXY: ""
-    HTTPS_PROXY: ""
-    http_proxy: ""
-    https_proxy: ""
-
-x-llm-env: &env-llm
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-  MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-  NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
-  NIM_API_KEY: ${NIM_API_KEY:-}
-  ARK_API_KEY: ${ARK_API_KEY:-}
-  VOLCENGINE_API_KEY: ${VOLCENGINE_API_KEY:-}
-  VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
-  BESTSELLER__LLM__MOCK: ${BESTSELLER_LLM_MOCK:-false}
-
-# Docker Desktop's embedded DNS can become unavailable while host HTTPS still
-# works (observed during real-book acceptance on 2026-09-03).  Keep the active
-# MiniMax endpoint independently resolvable for every LLM-capable service.  The
-# address remains operator-overridable so it can be refreshed without editing
-# this compose file when the provider rotates its A record.
-x-llm-extra-hosts: &llm-extra-hosts
-  - "api.minimaxi.com:${MINIMAX_API_IP:-47.79.117.67}"
-
-x-volumes: &app-volumes
-  - ./docs:/app/docs:ro
-  - ./output:/app/output
-  - artifacts:/app/artifacts
-
-# ── Python memory: return freed arenas to OS instead of holding them ─────────
-# MALLOC_TRIM_THRESHOLD_=-1  tells glibc malloc to call trim on every free(),
-# preventing the RSS from inflating after large LLM-response allocations.
-# PYTHONMALLOC=malloc        bypasses pymalloc so glibc's trim takes effect.
-x-py-malloc-env: &env-py-malloc
-  MALLOC_TRIM_THRESHOLD_: "-1"
-  PYTHONMALLOC: "malloc"
+# BestSeller · bookengine 网页服务
+#
+#   docker compose up -d --build     # 打开 http://127.0.0.1:8787
+#   docker compose logs -f bookweb
+#   docker compose down
+#
+# 书稿与检查点都在宿主机 ./books（BOOKS_HOST_DIR 可改），容器只是运行环境。
+# 模型密钥只从宿主机 .env 只读挂载，不进镜像、不进日志。
+# 老框架（PostgreSQL / API / worker / scheduler / MCP / 旧 Web Studio）已归档到
+# git 标签 legacy-final-20261104 与分支 legacy；需要时 `git checkout legacy-final-20261104`。
 
 services:
-  # ── PostgreSQL + pgvector ────────────────────────────────────────────────
-  db:
-    image: ankane/pgvector:latest
+  bookweb:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    image: bestseller-bookweb:latest
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-bestseller}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-bestseller}
-      POSTGRES_DB: ${DB_NAME:-bestseller}
+      BOOKS_DIR: /books
+      BOOKENGINE_ENV: /run/bookengine/.env
+      BOOKWEB_HOST: 0.0.0.0
+      BOOKWEB_PORT: "8787"
+      BOOKWEB_PUBLIC_PORT: ${BOOKWEB_PORT:-8787}
+      BOOKWEB_BUDGET_USD: ${BOOKWEB_BUDGET_USD:-20}
       TZ: ${TZ:-Asia/Shanghai}
-      PGTZ: ${TZ:-Asia/Shanghai}
-      # Cap shared_buffers + work_mem so Postgres stays within its memory limit.
-      # shared_buffers=128MB: page cache for hot data (default 128MB, kept low)
-      # work_mem=16MB:        per-sort / per-hash allocation (16 concurrent ops → 256MB max)
-      # maintenance_work_mem: used by VACUUM/ANALYZE, not concurrent
-      # max_connections=150: bumped from 100 to support 10 concurrent books in Web UI.
-      # Budget: web(10 tasks × ~4 conns) + worker(2 × ~10) + api/scheduler/mcp ≈ 70-80
-      # @ ~8MB per backend → ~1.2GB worst case (fits DB memory limit of 768M with
-      # shared_buffers overhead absorbed by effective_cache_size already bumped).
-      POSTGRES_INITDB_ARGS: ""
-    command: >
-      postgres
-        -c shared_buffers=128MB
-        -c work_mem=16MB
-        -c maintenance_work_mem=64MB
-        -c effective_cache_size=384MB
-        -c max_connections=150
-        -c wal_buffers=8MB
-        -c checkpoint_completion_target=0.9
-        -c random_page_cost=1.1
-        -c timezone=${TZ:-Asia/Shanghai}
-        -c log_min_duration_statement=2000
+    ports:
+      - "127.0.0.1:${BOOKWEB_PORT:-8787}:8787"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT:-5432}:5432"
-    deploy:
-      resources:
-        limits:
-          memory: ${DB_MEMORY_LIMIT:-768M}
-        reservations:
-          memory: 128M
+      - ${BOOKS_HOST_DIR:-./books}:/books
+      - ./.env:/run/bookengine/.env:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bestseller}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # ── Backup sidecar: automated daily pg_dump ──────────────────────────────
-  # The library was wiped 3× (2026-07-14/21/23) with no recoverable backup
-  # because the host cron was never installed. This in-stack sidecar removes the
-  # host dependency: it restarts with Docker and dumps daily on its own. Uses
-  # the same image as db so pg_dump matches the server version. Dumps land in
-  # ./output/backups/daily (same place scripts/backup-db.sh writes).
-  backup:
-    image: ankane/pgvector:latest
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGHOST: db
-      PGUSER: ${DB_USER:-bestseller}
-      PGPASSWORD: ${DB_PASSWORD:-bestseller}
-      PGDATABASE: ${DB_NAME:-bestseller}
-      TZ: ${TZ:-Asia/Shanghai}
-      BACKUP_KEEP: ${BACKUP_KEEP:-14}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
-    volumes:
-      - ./output/backups/daily:/backups
-      - ./scripts/backup-sidecar.sh:/backup-sidecar.sh:ro
-    entrypoint: ["/bin/sh", "/backup-sidecar.sh"]
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-
-  # ── Redis ────────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    environment:
-      TZ: ${TZ:-Asia/Shanghai}
-    # maxmemory: cap Redis heap; allkeys-lru evicts least-recently-used keys
-    # when full so the process never grows past the container limit.
-    command: >
-      redis-server
-        --save 60 1
-        --loglevel warning
-        --maxmemory ${REDIS_MAXMEMORY:-96mb}
-        --maxmemory-policy allkeys-lru
-    volumes:
-      - redisdata:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    deploy:
-      resources:
-        limits:
-          memory: ${REDIS_MEMORY_LIMIT:-128M}
-        reservations:
-          memory: 32M
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # ── Database migration (run-once) ────────────────────────────────────────
-  migrate:
-    build: *build-common
-    command: alembic upgrade head
-    environment:
-      <<: *env-common
-    depends_on:
-      db:
-        condition: service_healthy
-    profiles: ["migrate"]
-
-  # ── FastAPI REST API ─────────────────────────────────────────────────────
-  api:
-    build: *build-common
-    restart: unless-stopped
-    command: >
-      uvicorn bestseller.api.app:create_app --factory
-      --host 0.0.0.0 --port 8000 --workers 1
-    environment:
-      <<: [*env-common, *env-llm, *env-py-malloc]
-    env_file:
-      - .env
-    extra_hosts: *llm-extra-hosts
-    ports:
-      - "${API_PORT:-8000}:8000"
-    volumes: *app-volumes
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: ${API_MEMORY_LIMIT:-512M}
-        reservations:
-          memory: 128M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-
-  # ── MCP Server (OpenClaw integration) ────────────────────────────────────
-  mcp:
-    build: *build-common
-    restart: unless-stopped
-    command: python -m bestseller.mcp.server
-    environment:
-      <<: [*env-common, *env-py-malloc]
-      BESTSELLER_API_BASE_URL: http://api:8000
-      BESTSELLER_MCP_API_KEY: ${BESTSELLER_MCP_API_KEY:-}
-    env_file:
-      - .env
-    extra_hosts: *llm-extra-hosts
-    ports:
-      - "${MCP_PORT:-3000}:3000"
-    depends_on:
-      api:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: ${MCP_MEMORY_LIMIT:-256M}
-        reservations:
-          memory: 64M
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import bestseller.mcp.server' || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request,os;urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8787/api/config',headers={'Host':'127.0.0.1:'+os.environ['BOOKWEB_PUBLIC_PORT']}),timeout=5)"]
       interval: 30s
-      timeout: 5s
-      start_period: 15s
+      timeout: 10s
       retries: 3
-
-  # ── ARQ async workers ────────────────────────────────────────────────────
-  worker:
-    build: *build-common
-    restart: unless-stopped
-    command: python -m bestseller.worker.main
-    environment:
-      <<: [*env-common, *env-llm, *env-py-malloc]
-      BESTSELLER_TRACE_SCENE_PROMPTS: ${BESTSELLER_TRACE_SCENE_PROMPTS:-full}
-    env_file:
-      - .env
-    extra_hosts: *llm-extra-hosts
-    volumes: *app-volumes
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      replicas: ${WORKER_REPLICAS:-2}
-      resources:
-        limits:
-          memory: ${WORKER_MEMORY_LIMIT:-768M}
-        reservations:
-          memory: 128M
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
-
-  # ── Publishing scheduler ─────────────────────────────────────────────────
-  scheduler:
-    build: *build-common
-    restart: unless-stopped
-    command: python -m bestseller.scheduler.main
-    environment:
-      <<: [*env-common, *env-py-malloc]
-    env_file:
-      - .env
-    extra_hosts: *llm-extra-hosts
-    volumes: *app-volumes
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: ${SCHEDULER_MEMORY_LIMIT:-256M}
-        reservations:
-          memory: 64M
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
-
-  # ── Web Studio (existing UI on port 8787) ────────────────────────────────
-  web:
-    build: *build-common
-    restart: unless-stopped
-    command: bestseller ui serve --host 0.0.0.0 --port 8787
-    environment:
-      <<: [*env-common, *env-llm, *env-py-malloc]
-      # Limit concurrent autowrite tasks so peak memory is bounded.
-      # Each task uses ~300-500 MB peak during LLM calls:
-      #   5 tasks × ~400 MB + ~300 MB base ≈ 2.3 GB (fits WEB_MEMORY_LIMIT=2560M).
-      # If you raise this further, bump WEB_MEMORY_LIMIT and postgres max_connections
-      # together — each task opens 2-4 async DB connections concurrently.
-      WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-5}
-      # Auto-resume in-flight generation tasks (writing AND conception phase)
-      # after a restart so a deploy/crash never strands a book. Conception-phase
-      # zombies are re-run in-process; writing-phase zombies delegate to worker
-      # self-heal. Set to 0 to debug a hung task without it relaunching.
-      BESTSELLER_AUTO_RESUME_ON_STARTUP: ${BESTSELLER_AUTO_RESUME_ON_STARTUP:-1}
-    env_file:
-      - .env
-    extra_hosts: *llm-extra-hosts
-    ports:
-      # Publish to host loopback only by default — the Web Studio UI has no
-      # auth unless BESTSELLER_WEB_TOKEN is set. To expose it on the network,
-      # set WEB_BIND=0.0.0.0 (and set BESTSELLER_WEB_TOKEN first).
-      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8787}:8787"
-    volumes: *app-volumes
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: ${WEB_MEMORY_LIMIT:-2560M}
-        reservations:
-          memory: 256M
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8787/"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
-
-volumes:
-  pgdata:
-  redisdata:
-  artifacts:
+      start_period: 10s

@@ -1,8 +1,0 @@
-{
-  "error_type": "PermissionError",
-  "sqlstate": null,
-  "errno": 1,
-  "message": "details redacted",
-  "database_writes": 0,
-  "provider_calls": 0
-}

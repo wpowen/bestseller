@@ -1,8 +1,0 @@
-{
-  "current_failed": 17,
-  "pinned_failed": 18,
-  "new_failure_names": [],
-  "baseline_only_failure_names": [
-    "tests/unit/test_planner_services.py::test_foundation_plan_materializes_story_design_before_readiness"
-  ]
-}

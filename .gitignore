@@ -73,3 +73,6 @@ docker-compose.override.yml
 .claude/routines/.state/
 .docker-build-stamp
 .benchmark/
+
+# bookengine 书稿与检查点（本机数据，不进 git）
+books/

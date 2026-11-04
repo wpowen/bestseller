@@ -1,9 +1,0 @@
-# Whole modules required for every delivery release; no test-name filtering.
-tests/unit/test_book_closure.py
-tests/unit/test_book_delivery_closure.py
-tests/unit/test_session_cancellation_durability.py
-tests/unit/test_task_projection_adoption_progress.py
-tests/unit/test_normal_pipeline_prompt_audit_entry.py
-tests/unit/test_commercial_truncated_source_receipt.py
-tests/unit/test_execution_result_durability.py
-tests/unit/test_database_safety_boundary.py

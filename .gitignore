@@ -76,3 +76,7 @@ docker-compose.override.yml
 
 # bookengine 书稿与检查点（本机数据，不进 git）
 books/
+
+# Archived legacy data and local worktrees (never source control).
+legacy-workspace/
+scratch/

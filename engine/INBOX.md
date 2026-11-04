@@ -542,3 +542,74 @@
 5. 报告里写明 Codex 曾经误导入用户个人"图书"App 的测试文件：哪些文件、放在什么位置。不要自行删除，由用户来删。
 6. 约束不变：deai ≤800 行（不够就把规则放进 data/，不写成代码），bookengine 不改，预算 ≤$1，用 MiniMax。完成后停下，等用户盲读。
 
+
+## 2026-11-04-23：整合收尾与上线 8787（用户 2026-11-04 授权：旧的不符合现有设计的该删就删、该清理就清理，以新引擎为核心；由 Codex 完成，Claude 监工验收）
+
+状态：待执行。本条取代第 21 条剩下的 E 轨和 S7 归档步骤。工作目录从现在起改为**主工作区** `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller`，分支 `main`，不再用 `scratch/engine-worktree`。不要删除 INBOX 里已有的条目。
+
+### 一、监工已完成的部分（Evidence，接手前先核对）
+
+- A/B/C/D 四个分支都已提交，并已合流：be082af39（A）、4b617f6a6（B）、73e0e21f3（C）、c0f06b163（D）。合流后有一处改动：epub 的 identifier 由 sha256 改为 uuid5，原因是 check_scope 的禁词表含 sha256。
+- 网页改为可配置，提交 b09cba47d：
+  - 新增参数 `--host`、`--public-port`；
+  - `BOOKS_DIR` 默认指向仓库根目录的 `books/`；
+  - 默认端口 8787，累计预算上限默认 $20，可用 `BOOKWEB_BUDGET_USD` 修改；
+  - Host/Origin 白名单允许 `127.0.0.1` 和 `localhost`。
+- 老框架已归档：
+  - 标签 `legacy-final-20261104` 和分支 `legacy`（1099ce850）里保存了完整的老框架，主工作区当时未提交的两处 writer.md 改动也一并保存。补丁另存 `output/backups/main-checkout-uncommitted-20261104.patch`。
+  - 生产库备份 `output/backups/bestseller-pre-archive-20261104T123051Z.dump`（72 MB，86 张表数据）。
+- main 现在指向 a9fb821d2，只剩 304 个跟踪文件，相比 legacy 净删 3,269,577 行。保留的内容：`engine/`、D 轨核实的 35 份 config、`scripts/scan_secrets.py`（pre-commit 依赖它）、`.remember/`、`.claude/settings.json`。另外新写了以下文件：`.claude/launch.json`、`README.md`、`AGENTS.md`、`docker-compose.yml`（只有 bookweb 服务）、`engine/Dockerfile`、`.env.example`、`.dockerignore`。
+- 测试：485 项和 739 个子测试通过，check_scope PASS（bookengine 4950、deai 789、webui 559、exporter 245）。
+- 老 Docker 服务已用 `docker compose down` 停掉并删除容器，**数据卷保留**（bestseller_pgdata、redisdata、artifacts、backups）。**8787 现在没有服务。**
+- 主工作区里老框架专用的未跟踪和忽略文件，都已移到 `legacy-workspace/2026-11-04/`。其中包括 src、tests、reports（4.1G）、data、docs、.distillation_private（47G）等。这一步只做了移动，没有删除。可再生的缓存已删除，包括 htmlcov、各类 cache、.venv-check/-selftest/-test、dist。
+
+### 二、待办（按顺序执行）
+
+1. **补收尾**
+   - 在 `.gitignore` 加上 `legacy-workspace/`。
+   - `scripts/` 和 `config/` 里还有老框架的忽略文件（如 `_*_drafts.json`、`_deprecated/`、`__pycache__`），移到 `legacy-workspace/2026-11-04/` 对应的子目录。
+   - `git status` 必须只剩 `.remember/` 的两处原有改动。
+2. **书稿目录**
+   - 把 `scratch/engine-books` 移到仓库根目录的 `books/`，并在原位置留一个符号链接 `scratch/engine-books -> ../books`，保证旧报告里的链接可用。
+   - 核对 `books/webui/LIBRARY.html` 和两本网页书能正常打开。
+   - 注意：Library 会拒绝路径中带符号链接的书，所以网页必须指向真实目录 `books/`。
+3. **上线 8787**
+   - 执行 `docker compose up -d --build`。
+   - 验收：
+     - `docker ps` 里只有 `bestseller-bookweb-1` 一个 bestseller 容器，状态为 healthy；
+     - 浏览器打开 http://127.0.0.1:8787 和 http://localhost:8787 都能用；
+     - 书库里能看到已有的书（悬疑 5 章、玄幻 10 章）；
+     - 能阅读、复制、下载 txt/md/docx。
+   - 下载要接上 C 轨的 exporter：页面的下载按钮增加 epub 和番茄分章 zip。webui 行数仍须 ≤1200。
+   - 在页面上真实开一本 5 章短篇，从选题走到能阅读，预算 ≤$0.3，并开启去 AI 润色，验证 deai 在容器内可用。
+   - 截图放 `engine/reports/bookweb-8787/`。
+   - 检查容器日志和书目录：不得出现密钥明文。
+4. **清理旧 worktree 和 scratch**（总共约 20G）
+   - 对每个 worktree 先跑 `git -C <wt> status --short`：
+     - 干净的，用 `git worktree remove` 删除（分支保留，删了也能恢复）；
+     - 有未提交改动的，**不删**，列进报告。
+   - 范围：`scratch/` 下的 int-worktree（16G）、par-worktrees、v5-worktrees、isolated-book1*、legacy-book2、.book1-fixed-runtime、engine-b/c/d-worktree、engine-worktree；以及 mini-baseline、v5-test-runs、v5-b1 这些非 worktree 目录（移到 legacy-workspace，不要删除）。
+   - `.claude/worktrees/` 下属于其他 Claude 会话的 worktree **不要动**，只在报告里列出。
+   - 已合并的 feat/book-engine-a/b/c/d 分支可以删除；run/*、par/*、fix/* 分支保留。
+5. **Docker 旧资源**
+   - 列出老框架用过的镜像和停止的容器（bestseller-api/web/worker 镜像，以及 bestseller-v3-* 容器），连同各自大小写进报告。
+   - **等用户确认后再删。** 数据卷 `bestseller_pgdata` 等**一律不删**。
+6. **文档核对**
+   - 按 README 的“快速开始”和“命令行”两节逐条照做一遍。不通的地方改文档或代码。
+   - `engine/README.md` 里残留的旧阶段说明（S1–S5 用法）压缩成一段。
+7. **测试与提交**
+   - check_scope 必须 PASS，全部测试通过。
+   - 在 main 上按步骤分开提交（conventional commits）。不 push。
+
+### 三、汇报
+
+写 `engine/reports/integration-20261104.md`，控制在一页以内，内容包括：
+
+- 每一步的结论；
+- 磁盘占用的前后对比；
+- 删掉的 worktree 清单，以及保留的 worktree 及保留原因；
+- 8787 冒烟的截图和费用；
+- 等用户确认的事项（第 5 步的 Docker 资源，以及 `legacy-workspace/` 里 47G 私有语料的去留）；
+- 回滚方法：`git checkout legacy-final-20261104`，再 `docker compose up -d`。
+
+完成后停下，等监工验收。

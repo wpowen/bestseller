@@ -9,7 +9,7 @@ from bookengine.text import _paragraph_spans
 
 
 ENGINE = Path(__file__).resolve().parents[1]
-GEMINI = ENGINE.parent.parent / 'engine-books/compare/gemini.md'
+GEMINI = ENGINE.parent / 'books/compare/gemini.md'
 
 
 def sentence_rows(text):

@@ -545,7 +545,7 @@
 
 ## 2026-11-04-23：整合收尾与上线 8787（用户 2026-11-04 授权：旧的不符合现有设计的该删就删、该清理就清理，以新引擎为核心；由 Codex 完成，Claude 监工验收）
 
-状态：待执行。本条取代第 21 条剩下的 E 轨和 S7 归档步骤。工作目录从现在起改为**主工作区** `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller`，分支 `main`，不再用 `scratch/engine-worktree`。不要删除 INBOX 里已有的条目。
+状态：已执行，待验收（2026-11-04）。第 1–7 步均已执行并记录；第 3 步新书正文 5/5，去 AI 有效终稿 3/5 后预算暂停，全书终稿未达标；第 5 步删除与 47G 私有语料去留待用户确认，所有数据卷保留。详见 [reports/integration-20261104.md](reports/integration-20261104.md)。第 22 条未执行。本条取代第 21 条剩下的 E 轨和 S7 归档步骤。工作目录从现在起改为**主工作区** `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller`，分支 `main`，不再用 `scratch/engine-worktree`。不要删除 INBOX 里已有的条目。
 
 ### 一、监工已完成的部分（Evidence，接手前先核对）
 

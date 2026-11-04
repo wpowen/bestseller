@@ -12,7 +12,7 @@ git checkout legacy-final-20261104   # 或 git checkout legacy
 ## 快速开始（网页，端口 8787）
 
 ```bash
-cp .env.example .env        # 填 MINIMAX_API_KEY
+test -f .env || cp .env.example .env  # 仅首次创建；在 .env 填 MINIMAX_API_KEY
 docker compose up -d --build
 open http://127.0.0.1:8787
 ```
@@ -22,7 +22,7 @@ open http://127.0.0.1:8787
 1. **开书**：选题材、填章数（5–2000），一句话想法可以空着；点“生成选题”，从 12 个设定里点选一个。
 2. 设置单书预算和并发数，选择是否开启“去 AI 润色”，然后点“开始写作”。
 3. **书库**：查看每本书的进度、花费、状态；可以暂停、继续、从检查点重试。
-4. **阅读**：按章节目录阅读，能对比草稿和终稿；可以复制本章或全书，下载 MD / DOCX / TXT；也能查看故事圣经、章纲和检测报告。
+4. **阅读**：按章节目录阅读，能对比草稿和终稿；可以复制本章或全书，下载 MD / DOCX / TXT / EPUB / 番茄分章 ZIP；也能查看故事圣经、章纲和检测报告。最终稿全章完成后才能整书导出；预算暂停会保留原检查点。
 
 书稿都存在 `./books/`，每本书一个目录，删除容器不影响书稿。
 `scratch/engine-books` 保留为指向 `../books` 的兼容链接；网页服务始终使用真实的 `books/` 目录。
@@ -30,20 +30,25 @@ open http://127.0.0.1:8787
 
 ## 命令行
 
-在 `engine/` 目录执行，Python 环境需装好 `PyYAML` 和 `python-docx`：
+在 `engine/` 目录执行，以下 `python` 指 Python 3.10+ 且已安装 `PyYAML` 和 `python-docx` 的解释器（已有虚拟环境时先激活；本机系统 Python 3.9 不适用，Docker 自带 3.12）。首次写书使用示例设定；续跑时把两个变量改为原设定文件和原书目录：
 
 ```bash
 # 写一本书：书的设定写在一个 YAML 里，字段为 prompt_pack / chapters / words_per_chapter / user_input
-PYTHONPATH=. python -m bookengine examples/realistic-life.yaml --q1 --style b --env ../.env --out ../books/my-book
+BOOK_CONFIG=examples/realistic-life.yaml
+BOOK_DIR=../books/my-book
+PYTHONPATH=. python -m bookengine "$BOOK_CONFIG" --q1 --style b --env ../.env --out "$BOOK_DIR"
 # 去 AI 味：只改命中的句子，保真检查不过就回滚；结果写到 final/
-PYTHONPATH=. python -m deai run ../books/my-book --env ../.env
+PYTHONPATH=. python -m deai run "$BOOK_DIR" --env ../.env
+# 限定章节可加 --chapters 1-2；同一输入与配置的已完成章节会跳过，不重复付费
 # 导出：txt / md / docx / epub，以及番茄上传用的分章 txt
-PYTHONPATH=. python -m exporter ../books/my-book
+PYTHONPATH=. python -m exporter "$BOOK_DIR"
+# 导出全部通过去 AI 检查的终稿；任何一章缺失即拒绝，不以草稿补齐
+PYTHONPATH=. python -m exporter "$BOOK_DIR" --version polished
 # 不用 Docker 起网页
 PYTHONPATH=. python -m tools.webui --env ../.env --books ../books --port 8787
 ```
 
-同一条命令重跑会复用检查点，不会重写已经完成的章节。
+同一条命令重跑会复用检查点，不会重写已经完成的章节。Docker 已运行时，先停服务再选择宿主网页命令，避免两个服务操作同一写作队列；查看命令参数可用 `--help`。CLI 导出的默认 `final` 指写作定稿，`polished` 才是独立去 AI 的 `final/` 版本。
 
 ## 目录
 

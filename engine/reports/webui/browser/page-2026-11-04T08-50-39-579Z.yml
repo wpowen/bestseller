@@ -1,0 +1,413 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - link "书房 BestSeller · B" [ref=f2e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f2e4]:
+      - link "开一本新书" [ref=f2e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f2e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f2e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f2e8]:
+    - generic [ref=f2e9]:
+      - paragraph [ref=f2e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f2e11]
+      - paragraph [ref=f2e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f2e13]:
+        - button "悬疑 · 5章" [ref=f2e14]
+        - button "玄幻 · 10章" [ref=f2e15]
+      - generic [ref=f2e16]:
+        - generic [ref=f2e17]:
+          - generic [ref=f2e18]:
+            - text: 题材
+            - combobox "题材" [ref=f2e19]:
+              - option "悬疑推理"
+              - option "玄幻爽文" [selected]
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f2e20]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f2e21]:
+              - option "短篇 · 5章"
+              - option "中篇 · 10章" [selected]
+              - option "长篇 · 20章"
+              - option "自定章数"
+          - generic [ref=f2e22]:
+            - text: 章数
+            - spinbutton "章数" [ref=f2e23]: "10"
+        - generic [ref=f2e24]:
+          - text: 故事想法 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f2e25]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f2e26]
+        - status [ref=f2e27]: 已收到 12 个候选，请点击选择。
+      - generic [ref=f2e278]:
+        - heading "选择你的故事" [level=2] [ref=f2e279]
+        - paragraph [ref=f2e280]: 共 12 个候选 · 请亲自点选一个，不会默认选择。
+        - radiogroup "故事候选" [ref=f2e281]:
+          - generic [ref=f2e1016]:
+            - radio "01 《我以凡骨镇仙门》 矿奴叶尘被当作修炼鼎炉逃入仙门，却发现自身能吞噬法术，为救被逐出师门的姐姐，他必须在十场宗门大比中赢下 rivals 的道骨。" [ref=f2e1017]
+            - text: "01"
+            - heading "《我以凡骨镇仙门》" [level=3] [ref=f2e1018]
+            - paragraph [ref=f2e1019]: 矿奴叶尘被当作修炼鼎炉逃入仙门，却发现自身能吞噬法术，为救被逐出师门的姐姐，他必须在十场宗门大比中赢下 rivals 的道骨。
+          - generic [ref=f2e1020]:
+            - radio "02 《退婚后，我成了魔尊》 被未婚妻当众退婚的苏惊鸿意外唤醒魔尊传承，为夺回家族被夺的领土，他假扮正道首席行走十国，挑战七位封帝强者。" [ref=f2e1021]
+            - text: "02"
+            - heading "《退婚后，我成了魔尊》" [level=3] [ref=f2e1022]
+            - paragraph [ref=f2e1023]: 被未婚妻当众退婚的苏惊鸿意外唤醒魔尊传承，为夺回家族被夺的领土，他假扮正道首席行走十国，挑战七位封帝强者。
+          - generic [ref=f2e1024]:
+            - radio "03 《开局捡到一把断剑》 废物少年陆沉在破庙捡到断剑，剑中残魂承诺赐他一场无敌造化，却要求他每破一境便亲手斩断一位故交。" [ref=f2e1025]
+            - text: "03"
+            - heading "《开局捡到一把断剑》" [level=3] [ref=f2e1026]
+            - paragraph [ref=f2e1027]: 废物少年陆沉在破庙捡到断剑，剑中残魂承诺赐他一场无敌造化，却要求他每破一境便亲手斩断一位故交。
+          - generic [ref=f2e1028]:
+            - radio "04 《全宗门都以为我是 farming system's dummy》 林野绑定 Farming system，被迫在荒山种灵药；外界高手纷纷前来抢夺，却不知每株灵药成熟时，他都能复制对方最强的法术。" [ref=f2e1029]
+            - text: "04"
+            - heading "《全宗门都以为我是 farming system's dummy》" [level=3] [ref=f2e1030]
+            - paragraph [ref=f2e1031]: 林野绑定 Farming system，被迫在荒山种灵药；外界高手纷纷前来抢夺，却不知每株灵药成熟时，他都能复制对方最强的法术。
+          - generic [ref=f2e1032]:
+            - radio "05 《我的宠物正在弑神》 少年姜玄只想卖掉神秘黑猫，却意外发现它每晚吞噬一缕神力。为阻止诸神降临，他只能带着弑神宠物参加天宠榜，夺回被封的神宠秘境。" [ref=f2e1033]
+            - text: "05"
+            - heading "《我的宠物正在弑神》" [level=3] [ref=f2e1034]
+            - paragraph [ref=f2e1035]: 少年姜玄只想卖掉神秘黑猫，却意外发现它每晚吞噬一缕神力。为阻止诸神降临，他只能带着弑神宠物参加天宠榜，夺回被封的神宠秘境。
+          - generic [ref=f2e1036]:
+            - radio "06 《一掌镇乾坤》 边城小吏赵山河偶得武碑传承，为保护被妖族掳走的妹妹，他隐忍三年重返朝堂，以文官之身挑战修士、皇子与幕后人皇。" [ref=f2e1037]
+            - text: "06"
+            - heading "《一掌镇乾坤》" [level=3] [ref=f2e1038]
+            - paragraph [ref=f2e1039]: 边城小吏赵山河偶得武碑传承，为保护被妖族掳走的妹妹，他隐忍三年重返朝堂，以文官之身挑战修士、皇子与幕后人皇。
+          - generic [ref=f2e1040]:
+            - radio "07 《重生后，我抢先拜反派为师》 顾青重回拜师前，认出未来灭世大魔，拒绝名门招揽并抢先拜其为师；可魔尊收他为徒的目的，竟是借他重塑自身命数。" [ref=f2e1041]
+            - text: "07"
+            - heading "《重生后，我抢先拜反派为师》" [level=3] [ref=f2e1042]
+            - paragraph [ref=f2e1043]: 顾青重回拜师前，认出未来灭世大魔，拒绝名门招揽并抢先拜其为师；可魔尊收他为徒的目的，竟是借他重塑自身命数。
+          - generic [ref=f2e1044]:
+            - radio "08 《散修：从摆摊开始争霸九州》 无门无派的陈小凡在坊市摆摊卖符，借客人试法感悟万千术法；为替死去的母亲守住祖传铺子，他决定让各大仙门交出occupied 的灵脉。" [ref=f2e1045]
+            - text: "08"
+            - heading "《散修：从摆摊开始争霸九州》" [level=3] [ref=f2e1046]
+            - paragraph [ref=f2e1047]: 无门无派的陈小凡在坊市摆摊卖符，借客人试法感悟万千术法；为替死去的母亲守住祖传铺子，他决定让各大仙门交出occupied 的灵脉。
+          - generic [ref=f2e1048]:
+            - radio "09 《我死后，仙界开始颤抖》 寿尽少年楚归把毕生修为炼成一枚道种，本想赠予妹妹，道种却寄生在她体内。为找出姐姐体内的东西，他以残魂之身闯入十方禁地。" [ref=f2e1049]
+            - text: "09"
+            - heading "《我死后，仙界开始颤抖》" [level=3] [ref=f2e1050]
+            - paragraph [ref=f2e1051]: 寿尽少年楚归把毕生修为炼成一枚道种，本想赠予妹妹，道种却寄生在她体内。为找出姐姐体内的东西，他以残魂之身闯入十方禁地。
+          - generic [ref=f2e1052]:
+            - radio "10 《请仙君入局》 现代社畜沈观棋穿越成棋盘上的残魂，得知飞升者皆被上古仙君收割；他执黑子落下第一步，诱使九位仙君入场，与他们赌上三界气运。" [ref=f2e1053]
+            - text: "10"
+            - heading "《请仙君入局》" [level=3] [ref=f2e1054]
+            - paragraph [ref=f2e1055]: 现代社畜沈观棋穿越成棋盘上的残魂，得知飞升者皆被上古仙君收割；他执黑子落下第一步，诱使九位仙君入场，与他们赌上三界气运。
+          - generic [ref=f2e1056]:
+            - radio "11 《长生从给反派送机缘开始》 秦墨穿成仙侠小说里注定早亡的反派师兄，为改变结局，他不断给未来大反派送机缘、助其成长，最终发现这些所谓的天命之子都来自同一处。" [ref=f2e1057]
+            - text: "11"
+            - heading "《长生从给反派送机缘开始》" [level=3] [ref=f2e1058]
+            - paragraph [ref=f2e1059]: 秦墨穿成仙侠小说里注定早亡的反派师兄，为改变结局，他不断给未来大反派送机缘、助其成长，最终发现这些所谓的天命之子都来自同一处。
+          - generic [ref=f2e1060]:
+            - radio "12 《山神是怎样炼成的》 守山少女阿宁误吞一枚废弃神印，获得把凡物炼成灵物的能力。为救将被山洪吞没的故乡，她与 encroaching 的仙宗争夺山川气运，最终挑战天外执法者。" [ref=f2e1061]
+            - text: "12"
+            - heading "《山神是怎样炼成的》" [level=3] [ref=f2e1062]
+            - paragraph [ref=f2e1063]: 守山少女阿宁误吞一枚废弃神印，获得把凡物炼成灵物的能力。为救将被山洪吞没的故乡，她与 encroaching 的仙宗争夺山川气运，最终挑战天外执法者。
+      - generic [ref=f2e28]:
+        - heading "写作设置" [level=2] [ref=f2e29]
+        - generic [ref=f2e30]:
+          - generic [ref=f2e31]:
+            - text: 写手
+            - combobox "写手" [ref=f2e32]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f2e33]:
+            - text: 单书预算上限
+            - spinbutton "单书预算上限" [ref=f2e34]: "0.23"
+          - generic [ref=f2e35]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f2e36]: "2"
+        - paragraph [ref=f2e37]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - generic [ref=f2e38]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f2e39]
+          - text: 开启去 AI 润色 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f2e1521]
+        - status [ref=f2e1522]: 已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。
+    - generic [ref=f2e41]:
+      - generic [ref=f2e42]:
+        - generic [ref=f2e43]:
+          - paragraph [ref=f2e44]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f2e45]
+        - button "刷新书库" [ref=f2e46]
+      - status [ref=f2e48]: 每 3 秒更新 · 最近同步 16:50:39
+      - generic [ref=f2e49]:
+        - article [ref=f2e1523]:
+          - text: 写作中
+          - button "《我的宠物正在弑神》" [ref=f2e1524]
+          - paragraph [ref=f2e1525]: 0 / 10 章 · 0 字 · 费用 0.00976785 · 待确认 1
+          - paragraph [ref=f2e1526]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f2e1527]
+          - button "暂停" [ref=f2e1529]
+        - article [ref=f2e1530]:
+          - text: 已完成
+          - button "《一口空势夺全场》" [ref=f2e1531]
+          - paragraph [ref=f2e1532]: 20 / 20 章 · 50367 字 · 费用 0.122658 · 待确认 0
+          - paragraph [ref=f2e1533]: complete
+          - progressbar "章节进度" [ref=f2e1534]
+          - generic [ref=f2e1535]: 只读书籍
+        - article [ref=f2e1536]:
+          - text: 已完成
+          - button "雪停之前，请别下索道" [ref=f2e1537]
+          - paragraph [ref=f2e1538]: 20 / 20 章 · 48287 字 · 费用 0.10832205 · 待确认 0
+          - paragraph [ref=f2e1539]: complete
+          - progressbar "章节进度" [ref=f2e1540]
+          - generic [ref=f2e1541]: 只读书籍
+        - article [ref=f2e1542]:
+          - text: 已完成
+          - button "《没人记得她来过》" [ref=f2e1543]
+          - paragraph [ref=f2e1544]: 20 / 20 章 · 51249 字 · 费用 0.1370052 · 待确认 1
+          - paragraph [ref=f2e1545]: complete
+          - progressbar "章节进度" [ref=f2e1546]
+          - generic [ref=f2e1547]: 只读书籍
+        - article [ref=f2e1548]:
+          - text: 已完成
+          - button "《别人修阵，我拆阵成主》" [ref=f2e1549]
+          - paragraph [ref=f2e1550]: 20 / 20 章 · 56315 字 · 费用 0.1222896 · 待确认 1
+          - paragraph [ref=f2e1551]: complete
+          - progressbar "章节进度" [ref=f2e1552]
+          - generic [ref=f2e1553]: 只读书籍
+        - article [ref=f2e1554]:
+          - text: 已完成
+          - button "《我能斩断力量契约》" [ref=f2e1555]
+          - paragraph [ref=f2e1556]: 50 / 50 章 · 127397 字 · 费用 0.5090664 · 待确认 3
+          - paragraph [ref=f2e1557]: complete
+          - progressbar "章节进度" [ref=f2e1558]
+          - generic [ref=f2e1559]: 只读书籍
+        - article [ref=f2e1560]:
+          - text: stopped
+          - button "全镇都参加过那场婚礼" [ref=f2e1561]
+          - paragraph [ref=f2e1562]: 50 / 50 章 · 123658 字 · 费用 0.47609415 · 待确认 0
+          - paragraph [ref=f2e1563]: rolling 50 chapters average=138.28s failure_rate=0.0079; limit=110s/0.1
+          - progressbar "章节进度" [ref=f2e1564]
+          - generic [ref=f2e1565]: 只读书籍
+        - article [ref=f2e1566]:
+          - text: 已完成
+          - button "《封我天赋，替我出手》" [ref=f2e1567]
+          - paragraph [ref=f2e1568]: 30 / 30 章 · 74435 字 · 费用 0.3048249 · 待确认 0
+          - paragraph [ref=f2e1569]: complete
+          - progressbar "章节进度" [ref=f2e1570]
+          - generic [ref=f2e1571]: 只读书籍
+        - article [ref=f2e1572]:
+          - text: 已完成
+          - button "《我已经死了，所以规则怕我》" [ref=f2e1573]
+          - paragraph [ref=f2e1574]: 130 / 130 章 · 338777 字 · 费用 1.07181855 · 待确认 0
+          - paragraph [ref=f2e1575]: complete
+          - progressbar "章节进度" [ref=f2e1576]
+          - generic [ref=f2e1577]: 只读书籍
+        - article [ref=f2e1578]:
+          - text: 已完成
+          - button "听见十秒之后" [ref=f2e1579]
+          - paragraph [ref=f2e1580]: 100 / 100 章 · 242806 字 · 费用 0.64094025 · 待确认 2
+          - paragraph [ref=f2e1581]: complete
+          - progressbar "章节进度" [ref=f2e1582]
+          - generic [ref=f2e1583]: 只读书籍
+        - article [ref=f2e1584]:
+          - text: 已完成
+          - button "《借雪兽生》" [ref=f2e1585]
+          - paragraph [ref=f2e1586]: 100 / 100 章 · 234261 字 · 费用 0.7275408 · 待确认 4
+          - paragraph [ref=f2e1587]: complete
+          - progressbar "章节进度" [ref=f2e1588]
+          - generic [ref=f2e1589]: 只读书籍
+        - article [ref=f2e1590]:
+          - text: 已完成
+          - button "回声之下" [ref=f2e1591]
+          - paragraph [ref=f2e1592]: 100 / 100 章 · 236522 字 · 费用 0.661881 · 待确认 3
+          - paragraph [ref=f2e1593]: complete
+          - progressbar "章节进度" [ref=f2e1594]
+          - generic [ref=f2e1595]: 只读书籍
+        - article [ref=f2e1596]:
+          - text: 已完成
+          - button "《借火记暖》" [ref=f2e1597]
+          - paragraph [ref=f2e1598]: 5 / 5 章 · 11273 字 · 费用 0.05995335 · 待确认 0
+          - paragraph [ref=f2e1599]: complete
+          - progressbar "章节进度" [ref=f2e1600]
+          - generic [ref=f2e1601]: 只读书籍
+        - article [ref=f2e1602]:
+          - text: 已完成
+          - button "entertainment-10" [ref=f2e1603]
+          - paragraph [ref=f2e1604]: 10 / 10 章 · 23033 字 · 费用 0.06736425 · 待确认 0
+          - paragraph [ref=f2e1605]: complete
+          - progressbar "章节进度" [ref=f2e1606]
+          - generic [ref=f2e1607]: 只读书籍
+        - article [ref=f2e1608]:
+          - text: 已完成
+          - button "wuxia-10" [ref=f2e1609]
+          - paragraph [ref=f2e1610]: 10 / 10 章 · 22971 字 · 费用 0.0808371 · 待确认 0
+          - paragraph [ref=f2e1611]: complete
+          - progressbar "章节进度" [ref=f2e1612]
+          - generic [ref=f2e1613]: 只读书籍
+        - article [ref=f2e1614]:
+          - text: 已完成
+          - button "cozy-10" [ref=f2e1615]
+          - paragraph [ref=f2e1616]: 10 / 10 章 · 22561 字 · 费用 0.1230768 · 待确认 1
+          - paragraph [ref=f2e1617]: complete
+          - progressbar "章节进度" [ref=f2e1618]
+          - generic [ref=f2e1619]: 只读书籍
+        - article [ref=f2e1620]:
+          - text: 已完成
+          - button "esport-10" [ref=f2e1621]
+          - paragraph [ref=f2e1622]: 10 / 10 章 · 21700 字 · 费用 0.1390338 · 待确认 5
+          - paragraph [ref=f2e1623]: resume chapters=1, average_s=92.4, failure_rate=0.000
+          - progressbar "章节进度" [ref=f2e1624]
+          - generic [ref=f2e1625]: 只读书籍
+        - article [ref=f2e1626]:
+          - text: 已完成
+          - button "history-10" [ref=f2e1627]
+          - paragraph [ref=f2e1628]: 10 / 10 章 · 23666 字 · 费用 0.12751905 · 待确认 1
+          - paragraph [ref=f2e1629]: complete
+          - progressbar "章节进度" [ref=f2e1630]
+          - generic [ref=f2e1631]: 只读书籍
+        - article [ref=f2e1632]:
+          - text: 已完成
+          - button "romance-10" [ref=f2e1633]
+          - paragraph [ref=f2e1634]: 10 / 10 章 · 22130 字 · 费用 0.14282115 · 待确认 1
+          - paragraph [ref=f2e1635]: complete
+          - progressbar "章节进度" [ref=f2e1636]
+          - generic [ref=f2e1637]: 只读书籍
+        - article [ref=f2e1638]:
+          - text: 已完成
+          - button "urban-300" [ref=f2e1639]
+          - paragraph [ref=f2e1640]: 300 / 300 章 · 674475 字 · 费用 1.66474935 · 待确认 2
+          - paragraph [ref=f2e1641]: complete
+          - progressbar "章节进度" [ref=f2e1642]
+          - generic [ref=f2e1643]: 只读书籍
+        - article [ref=f2e1644]:
+          - text: 已完成
+          - button "s4" [ref=f2e1645]
+          - paragraph [ref=f2e1646]: 100 / 100 章 · 228908 字 · 费用 1.07974095 · 待确认 2
+          - paragraph [ref=f2e1647]: complete
+          - progressbar "章节进度" [ref=f2e1648]
+          - generic [ref=f2e1649]: 只读书籍
+        - article [ref=f2e1650]:
+          - text: 已完成
+          - button "xuanhuan-10" [ref=f2e1651]
+          - paragraph [ref=f2e1652]: 10 / 10 章 · 24325 字 · 费用 0.14881815 · 待确认 0
+          - paragraph [ref=f2e1653]: complete
+          - progressbar "章节进度" [ref=f2e1654]
+          - generic [ref=f2e1655]: 只读书籍
+        - article [ref=f2e1656]:
+          - text: 已完成
+          - button "suspense-10" [ref=f2e1657]
+          - paragraph [ref=f2e1658]: 10 / 10 章 · 23328 字 · 费用 0.1974009 · 待确认 1
+          - paragraph [ref=f2e1659]: complete
+          - progressbar "章节进度" [ref=f2e1660]
+          - generic [ref=f2e1661]: 只读书籍
+        - article [ref=f2e1662]:
+          - text: 已完成
+          - button "realistic-10" [ref=f2e1663]
+          - paragraph [ref=f2e1664]: 10 / 10 章 · 22063 字 · 费用 0.1881093 · 待确认 3
+          - paragraph [ref=f2e1665]: complete
+          - progressbar "章节进度" [ref=f2e1666]
+          - generic [ref=f2e1667]: 只读书籍
+        - article [ref=f2e1668]:
+          - text: 已完成
+          - button "xuanhuan-5" [ref=f2e1669]
+          - paragraph [ref=f2e1670]: 5 / 5 章 · 12412 字 · 费用 0.11662755 · 待确认 1
+          - paragraph [ref=f2e1671]: complete
+          - progressbar "章节进度" [ref=f2e1672]
+          - generic [ref=f2e1673]: 只读书籍
+        - article [ref=f2e1674]:
+          - text: 已完成
+          - button "suspense-5" [ref=f2e1675]
+          - paragraph [ref=f2e1676]: 5 / 5 章 · 11851 字 · 费用 0.11604585 · 待确认 1
+          - paragraph [ref=f2e1677]: complete
+          - progressbar "章节进度" [ref=f2e1678]
+          - generic [ref=f2e1679]: 只读书籍
+        - article [ref=f2e1680]:
+          - text: 已完成
+          - button "realistic-5" [ref=f2e1681]
+          - paragraph [ref=f2e1682]: 5 / 5 章 · 11850 字 · 费用 0.1080117 · 待确认 1
+          - paragraph [ref=f2e1683]: complete
+          - progressbar "章节进度" [ref=f2e1684]
+          - generic [ref=f2e1685]: 只读书籍
+        - article [ref=f2e1686]:
+          - text: 已完成
+          - button "xuanhuan-10" [ref=f2e1687]
+          - paragraph [ref=f2e1688]: 10 / 10 章 · 28400 字 · 费用 0.1193265 · 待确认 0
+          - paragraph [ref=f2e1689]: complete
+          - progressbar "章节进度" [ref=f2e1690]
+          - generic [ref=f2e1691]: 只读书籍
+        - article [ref=f2e1692]:
+          - text: 已完成
+          - button "realistic-5" [ref=f2e1693]
+          - paragraph [ref=f2e1694]: 5 / 5 章 · 13586 字 · 费用 0.0472131 · 待确认 0
+          - paragraph [ref=f2e1695]: complete
+          - progressbar "章节进度" [ref=f2e1696]
+          - generic [ref=f2e1697]: 只读书籍
+        - article [ref=f2e1698]:
+          - text: 已完成
+          - button "realistic-10" [ref=f2e1699]
+          - paragraph [ref=f2e1700]: 10 / 10 章 · 30424 字 · 费用 0.1093509 · 待确认 0
+          - paragraph [ref=f2e1701]: complete
+          - progressbar "章节进度" [ref=f2e1702]
+          - generic [ref=f2e1703]: 只读书籍
+        - article [ref=f2e1704]:
+          - text: 已完成
+          - button "suspense-10" [ref=f2e1705]
+          - paragraph [ref=f2e1706]: 10 / 10 章 · 26058 字 · 费用 0.16328025 · 待确认 0
+          - paragraph [ref=f2e1707]: complete
+          - progressbar "章节进度" [ref=f2e1708]
+          - generic [ref=f2e1709]: 只读书籍
+        - article [ref=f2e1710]:
+          - text: 已完成
+          - button "suspense-5" [ref=f2e1711]
+          - paragraph [ref=f2e1712]: 5 / 5 章 · 13564 字 · 费用 0.07130415 · 待确认 0
+          - paragraph [ref=f2e1713]: complete
+          - progressbar "章节进度" [ref=f2e1714]
+          - generic [ref=f2e1715]: 只读书籍
+        - article [ref=f2e1716]:
+          - text: 已完成
+          - button "xuanhuan-5" [ref=f2e1717]
+          - paragraph [ref=f2e1718]: 5 / 5 章 · 16482 字 · 费用 0.07015755 · 待确认 0
+          - paragraph [ref=f2e1719]: complete
+          - progressbar "章节进度" [ref=f2e1720]
+          - generic [ref=f2e1721]: 只读书籍
+        - article [ref=f2e1722]:
+          - text: 已完成
+          - button "s1-realistic-life-v6" [ref=f2e1723]
+          - paragraph [ref=f2e1724]: 5 / 5 章 · 14626 字 · 费用 0.04796715 · 待确认 0
+          - paragraph [ref=f2e1725]: complete
+          - progressbar "章节进度" [ref=f2e1726]
+          - generic [ref=f2e1727]: 只读书籍
+        - article [ref=f2e1728]:
+          - text: 写作中
+          - button "s1-realistic-life-v5" [ref=f2e1729]
+          - paragraph [ref=f2e1730]: 0 / 5 章 · 0 字 · 费用 0.08472075 · 待确认 4
+          - paragraph [ref=f2e1731]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f2e1732]
+          - generic [ref=f2e1733]: 只读书籍
+        - article [ref=f2e1734]:
+          - text: 写作中
+          - button "s1-realistic-life-v4" [ref=f2e1735]
+          - paragraph [ref=f2e1736]: 0 / 5 章 · 0 字 · 费用 0.02537685 · 待确认 1
+          - paragraph [ref=f2e1737]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f2e1738]
+          - generic [ref=f2e1739]: 只读书籍
+        - article [ref=f2e1740]:
+          - text: 已完成
+          - button "s1-realistic-life-v3" [ref=f2e1741]
+          - paragraph [ref=f2e1742]: 5 / 5 章 · 16636 字 · 费用 0.06581595 · 待确认 0
+          - paragraph [ref=f2e1743]: complete
+          - progressbar "章节进度" [ref=f2e1744]
+          - generic [ref=f2e1745]: 只读书籍
+        - article [ref=f2e1746]:
+          - text: 已完成
+          - button "s1-realistic-life-v2" [ref=f2e1747]
+          - paragraph [ref=f2e1748]: 5 / 5 章 · 13414 字 · 费用 0.06364515 · 待确认 0
+          - paragraph [ref=f2e1749]: complete
+          - progressbar "章节进度" [ref=f2e1750]
+          - generic [ref=f2e1751]: 只读书籍
+        - article [ref=f2e1752]:
+          - text: 写作中
+          - button "s1-realistic-life" [ref=f2e1753]
+          - paragraph [ref=f2e1754]: 0 / 5 章 · 0 字 · 费用 0.0898932 · 待确认 5
+          - paragraph [ref=f2e1755]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f2e1756]
+          - generic [ref=f2e1757]: 只读书籍
+  - contentinfo [ref=f2e47]: 留一点耐心，给正在长成的故事。

@@ -1,0 +1,8 @@
+bookengine_lines=4984 (limit=5000)
+deai_lines=674 (limit=800)
+webui_lines=0 (limit=1200)
+max_file_lines=365 (bookengine/batch.py)
+imports_bestseller=no
+cross_imports=none
+forbidden_keywords=none
+PASS: package limits and independence

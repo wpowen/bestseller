@@ -1,0 +1,498 @@
+- generic [active] [ref=f4e1]:
+  - banner [ref=f4e2]:
+    - link "书房 BestSeller · B" [ref=f4e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f4e4]:
+      - link "开一本新书" [ref=f4e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f4e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f4e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f4e8]:
+    - generic [ref=f4e9]:
+      - paragraph [ref=f4e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f4e11]
+      - paragraph [ref=f4e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f4e13]:
+        - button "悬疑 · 5章" [ref=f4e14] [cursor=pointer]
+        - button "玄幻 · 10章" [ref=f4e15] [cursor=pointer]
+      - group [ref=f4e16]:
+        - generic "恢复已有选题 · 不重复生成" [ref=f4e17] [cursor=pointer]
+        - option "选择已保存的选题" [selected]
+        - option "悬疑推理 · 5章 · 8db1548c-0b26-4ad9-8144-ab37260e958b"
+      - generic [ref=f4e18]:
+        - generic [ref=f4e19]:
+          - generic [ref=f4e20]:
+            - text: 题材
+            - combobox "题材" [ref=f4e21]:
+              - option "悬疑推理" [selected]
+              - option "玄幻爽文"
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f4e22]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f4e23]:
+              - option "短篇 · 5章" [selected]
+              - option "短篇 · 10章"
+              - option "中篇 · 50章"
+              - option "长篇 · 1000章"
+              - option "长篇 · 2000章"
+              - option "自定章数"
+          - generic [ref=f4e24]:
+            - text: 章数
+            - spinbutton "章数" [ref=f4e25]: "5"
+        - generic [ref=f4e26]:
+          - text: 故事想法
+          - generic [ref=f4e27]: 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f4e28]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f4e29] [cursor=pointer]
+        - status [ref=f4e30]: 已连接。已有选题可从上方恢复，不必再次生成。
+      - generic [ref=f4e31]:
+        - heading "写作设置" [level=2] [ref=f4e32]
+        - generic [ref=f4e33]:
+          - generic [ref=f4e34]:
+            - text: 写手
+            - combobox "写手" [ref=f4e35]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f4e36]:
+            - text: 单书预算上限（美元 $）
+            - spinbutton "单书预算上限（美元 $）" [ref=f4e37]: "0.23"
+          - generic [ref=f4e38]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f4e39]: "2"
+        - paragraph [ref=f4e40]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - paragraph [ref=f4e41]: 总预算上限 $0.5 · 预留 $0.03；提交前请核对单书预算。
+        - generic [ref=f4e42]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f4e43]
+          - text: 开启去 AI 润色
+          - generic [ref=f4e44]: 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f4e45]
+        - status [ref=f4e46]
+    - generic [ref=f4e47]:
+      - generic [ref=f4e48]:
+        - generic [ref=f4e49]:
+          - paragraph [ref=f4e50]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f4e51]
+        - button "刷新书库" [ref=f4e52] [cursor=pointer]
+      - status [ref=f4e53]:
+        - generic [ref=f4e54]: 本轮总预算
+        - strong [ref=f4e55]: $0.0748 已占用 / $0.50 上限
+        - generic [ref=f4e499]: 剩余 $0.4252 · 以服务端回读为准
+      - status [ref=f4e56]: 40 本作品 · 当前任务优先 · 每 3 秒更新 · 最近同步 17:03:45
+      - generic [ref=f4e58]:
+        - article [ref=f4e59]:
+          - generic [ref=f4e60]: 已完成
+          - button "《证词里，我是凶手》" [ref=f4e61] [cursor=pointer]
+          - paragraph [ref=f4e62]: 悬疑推理 · 2026/11/4 16:52:12 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e63]: 5 / 5 章 · 11,772 字 · 已知 $0.033271 + Unknown 上界 $0.00 · 预算占用 $0.033271
+          - paragraph [ref=f4e64]: 写作 — · 后处理 — · 调用 16 次 · Token 94,495 · Unknown 0 次 · 单书预算 $0.23 · 去 AI：关闭
+          - paragraph [ref=f4e65]: complete
+          - progressbar "章节进度" [ref=f4e66]
+          - button "运行去AI后处理 · 《证词里，我是凶手》" [ref=f4e69] [cursor=pointer]: 运行去AI后处理
+        - article [ref=f4e70]:
+          - generic [ref=f4e71]: 写作中
+          - button "《猫尾巴里养着一尊伪神》" [ref=f4e72] [cursor=pointer]
+          - paragraph [ref=f4e73]: 玄幻爽文 · 2026/11/4 16:50:37 · 检测评分：暂无 · 预计剩余 1102 秒
+          - paragraph [ref=f4e74]: 4 / 10 章 · 9,693 字 · 已知 $0.035599 + Unknown 上界 $0.005029 · 预算占用 $0.040628
+          - paragraph [ref=f4e75]: 写作 — · 后处理 — · 调用 15 次 · Token 95,229 · Unknown 1 次 · 单书预算 $0.23 · 去 AI：关闭
+          - paragraph [ref=f4e76]: 正文
+          - progressbar "章节进度" [ref=f4e77]
+          - button "暂停 · 《猫尾巴里养着一尊伪神》" [ref=f4e80] [cursor=pointer]: 暂停
+        - article [ref=f4e81]:
+          - generic [ref=f4e82]: 已完成
+          - button "《一口空势夺全场》" [ref=f4e83] [cursor=pointer]
+          - paragraph [ref=f4e84]: 玄幻爽文 · 2026/11/3 14:24:31 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e85]: 20 / 20 章 · 50,367 字 · 已知 $0.122658 + Unknown 上界 $0.00 · 预算占用 $0.122658
+          - paragraph [ref=f4e86]: 写作 — · 后处理 — · 调用 56 次 · Token 353,326 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e87]: complete
+          - progressbar "章节进度" [ref=f4e88]
+          - generic [ref=f4e89]: 历史书籍 · 只读
+        - article [ref=f4e92]:
+          - generic [ref=f4e93]: 已完成
+          - button "雪停之前，请别下索道" [ref=f4e94] [cursor=pointer]
+          - paragraph [ref=f4e95]: 悬疑推理 · 2026/11/3 14:24:31 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e96]: 20 / 20 章 · 48,287 字 · 已知 $0.108322 + Unknown 上界 $0.00 · 预算占用 $0.108322
+          - paragraph [ref=f4e97]: 写作 — · 后处理 — · 调用 56 次 · Token 324,671 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e98]: complete
+          - progressbar "章节进度" [ref=f4e99]
+          - generic [ref=f4e100]: 历史书籍 · 只读
+        - article [ref=f4e103]:
+          - generic [ref=f4e104]: 已完成
+          - button "《没人记得她来过》" [ref=f4e105] [cursor=pointer]
+          - paragraph [ref=f4e106]: 悬疑推理 · 2026/11/2 23:43:19 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e107]: 20 / 20 章 · 51,249 字 · 已知 $0.128402 + Unknown 上界 $0.008603 · 预算占用 $0.137005
+          - paragraph [ref=f4e108]: 写作 — · 后处理 — · 调用 60 次 · Token 366,913 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e109]: complete
+          - progressbar "章节进度" [ref=f4e110]
+          - generic [ref=f4e111]: 历史书籍 · 只读
+        - article [ref=f4e114]:
+          - generic [ref=f4e115]: 已完成
+          - button "《别人修阵，我拆阵成主》" [ref=f4e116] [cursor=pointer]
+          - paragraph [ref=f4e117]: 玄幻爽文 · 2026/11/2 23:43:19 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e118]: 20 / 20 章 · 56,315 字 · 已知 $0.113117 + Unknown 上界 $0.009173 · 预算占用 $0.12229
+          - paragraph [ref=f4e119]: 写作 — · 后处理 — · 调用 52 次 · Token 325,602 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e120]: complete
+          - progressbar "章节进度" [ref=f4e121]
+          - generic [ref=f4e122]: 历史书籍 · 只读
+        - article [ref=f4e125]:
+          - generic [ref=f4e126]: 已完成
+          - button "《我能斩断力量契约》" [ref=f4e127] [cursor=pointer]
+          - paragraph [ref=f4e128]: 玄幻爽文 · 2026/11/2 16:01:40 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e129]: 50 / 50 章 · 127,397 字 · 已知 $0.489408 + Unknown 上界 $0.019658 · 预算占用 $0.509066
+          - paragraph [ref=f4e130]: 写作 — · 后处理 — · 调用 247 次 · Token 1,547,839 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e131]: complete
+          - progressbar "章节进度" [ref=f4e132]
+          - generic [ref=f4e133]: 历史书籍 · 只读
+        - article [ref=f4e136]:
+          - generic [ref=f4e137]: 已停止
+          - button "全镇都参加过那场婚礼" [ref=f4e138] [cursor=pointer]
+          - paragraph [ref=f4e139]: 悬疑推理 · 2026/11/2 16:01:40 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e140]: 50 / 50 章 · 123,658 字 · 已知 $0.476094 + Unknown 上界 $0.00 · 预算占用 $0.476094
+          - paragraph [ref=f4e141]: 写作 — · 后处理 — · 调用 275 次 · Token 1,561,875 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e142]: rolling 50 chapters average=138.28s failure_rate=0.0079; limit=110s/0.1
+          - progressbar "章节进度" [ref=f4e143]
+          - generic [ref=f4e144]: 历史书籍 · 只读
+        - article [ref=f4e147]:
+          - generic [ref=f4e148]: 已完成
+          - button "《封我天赋，替我出手》" [ref=f4e149] [cursor=pointer]
+          - paragraph [ref=f4e150]: 玄幻爽文 · 2026/11/1 19:37:00 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e151]: 30 / 30 章 · 74,435 字 · 已知 $0.304825 + Unknown 上界 $0.00 · 预算占用 $0.304825
+          - paragraph [ref=f4e152]: 写作 — · 后处理 — · 调用 165 次 · Token 1,028,828 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e153]: complete
+          - progressbar "章节进度" [ref=f4e154]
+          - generic [ref=f4e155]: 历史书籍 · 只读
+        - article [ref=f4e158]:
+          - generic [ref=f4e159]: 已完成
+          - button "《我已经死了，所以规则怕我》" [ref=f4e160] [cursor=pointer]
+          - paragraph [ref=f4e161]: 悬疑推理 · 2026/11/1 19:37:00 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e162]: 130 / 130 章 · 338,777 字 · 已知 $1.071819 + Unknown 上界 $0.00 · 预算占用 $1.071819
+          - paragraph [ref=f4e163]: 写作 — · 后处理 — · 调用 477 次 · Token 3,228,427 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e164]: complete
+          - progressbar "章节进度" [ref=f4e165]
+          - generic [ref=f4e166]: 历史书籍 · 只读
+        - article [ref=f4e169]:
+          - generic [ref=f4e170]: 已完成
+          - button "听见十秒之后" [ref=f4e171] [cursor=pointer]
+          - paragraph [ref=f4e172]: 都市逆袭 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e173]: 100 / 100 章 · 242,806 字 · 已知 $0.625874 + Unknown 上界 $0.015067 · 预算占用 $0.64094
+          - paragraph [ref=f4e174]: 写作 — · 后处理 — · 调用 333 次 · Token 1,921,750 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e175]: complete
+          - progressbar "章节进度" [ref=f4e176]
+          - generic [ref=f4e177]: 历史书籍 · 只读
+        - article [ref=f4e180]:
+          - generic [ref=f4e181]: 已完成
+          - button "《借雪兽生》" [ref=f4e182] [cursor=pointer]
+          - paragraph [ref=f4e183]: 玄幻爽文 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e184]: 100 / 100 章 · 234,261 字 · 已知 $0.696576 + Unknown 上界 $0.030964 · 预算占用 $0.727541
+          - paragraph [ref=f4e185]: 写作 — · 后处理 — · 调用 335 次 · Token 2,137,742 · Unknown 4 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e186]: complete
+          - progressbar "章节进度" [ref=f4e187]
+          - generic [ref=f4e188]: 历史书籍 · 只读
+        - article [ref=f4e191]:
+          - generic [ref=f4e192]: 已完成
+          - button "回声之下" [ref=f4e193] [cursor=pointer]
+          - paragraph [ref=f4e194]: 悬疑推理 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e195]: 100 / 100 章 · 236,522 字 · 已知 $0.639481 + Unknown 上界 $0.0224 · 预算占用 $0.661881
+          - paragraph [ref=f4e196]: 写作 — · 后处理 — · 调用 332 次 · Token 2,002,839 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e197]: complete
+          - progressbar "章节进度" [ref=f4e198]
+          - generic [ref=f4e199]: 历史书籍 · 只读
+        - article [ref=f4e202]:
+          - generic [ref=f4e203]: 已完成
+          - button "《借火记暖》" [ref=f4e204] [cursor=pointer]
+          - paragraph [ref=f4e205]: 玄幻爽文 · 2026/11/1 00:55:10 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e206]: 5 / 5 章 · 11,273 字 · 已知 $0.059953 + Unknown 上界 $0.00 · 预算占用 $0.059953
+          - paragraph [ref=f4e207]: 写作 — · 后处理 — · 调用 24 次 · Token 178,703 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e208]: complete
+          - progressbar "章节进度" [ref=f4e209]
+          - generic [ref=f4e210]: 历史书籍 · 只读
+        - article [ref=f4e213]:
+          - generic [ref=f4e214]: 已完成
+          - button "entertainment-10" [ref=f4e215] [cursor=pointer]
+          - paragraph [ref=f4e216]: entertainment-sweet · 2026/10/31 19:30:41 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e217]: 10 / 10 章 · 23,033 字 · 已知 $0.067364 + Unknown 上界 $0.00 · 预算占用 $0.067364
+          - paragraph [ref=f4e218]: 写作 — · 后处理 — · 调用 31 次 · Token 241,864 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e219]: complete
+          - progressbar "章节进度" [ref=f4e220]
+          - generic [ref=f4e221]: 历史书籍 · 只读
+        - article [ref=f4e224]:
+          - generic [ref=f4e225]: 已完成
+          - button "wuxia-10" [ref=f4e226] [cursor=pointer]
+          - paragraph [ref=f4e227]: wuxia-jianghu-honor · 2026/10/31 19:30:41 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e228]: 10 / 10 章 · 22,971 字 · 已知 $0.080837 + Unknown 上界 $0.00 · 预算占用 $0.080837
+          - paragraph [ref=f4e229]: 写作 — · 后处理 — · 调用 32 次 · Token 267,267 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e230]: complete
+          - progressbar "章节进度" [ref=f4e231]
+          - generic [ref=f4e232]: 历史书籍 · 只读
+        - article [ref=f4e235]:
+          - generic [ref=f4e236]: 已完成
+          - button "cozy-10" [ref=f4e237] [cursor=pointer]
+          - paragraph [ref=f4e238]: 轻推理 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e239]: 10 / 10 章 · 22,561 字 · 已知 $0.115788 + Unknown 上界 $0.007289 · 预算占用 $0.123077
+          - paragraph [ref=f4e240]: 写作 — · 后处理 — · 调用 45 次 · Token 412,525 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e241]: complete
+          - progressbar "章节进度" [ref=f4e242]
+          - generic [ref=f4e243]: 历史书籍 · 只读
+        - article [ref=f4e246]:
+          - generic [ref=f4e247]: 已完成
+          - button "esport-10" [ref=f4e248] [cursor=pointer]
+          - paragraph [ref=f4e249]: game-esport · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e250]: 10 / 10 章 · 21,700 字 · 已知 $0.103492 + Unknown 上界 $0.035542 · 预算占用 $0.139034
+          - paragraph [ref=f4e251]: 写作 — · 后处理 — · 调用 44 次 · Token 340,694 · Unknown 5 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e252]: resume chapters=1, average_s=92.4, failure_rate=0.000
+          - progressbar "章节进度" [ref=f4e253]
+          - generic [ref=f4e254]: 历史书籍 · 只读
+        - article [ref=f4e257]:
+          - generic [ref=f4e258]: 已完成
+          - button "history-10" [ref=f4e259] [cursor=pointer]
+          - paragraph [ref=f4e260]: 历史谋略 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e261]: 10 / 10 章 · 23,666 字 · 已知 $0.120037 + Unknown 上界 $0.007482 · 预算占用 $0.127519
+          - paragraph [ref=f4e262]: 写作 — · 后处理 — · 调用 44 次 · Token 434,331 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e263]: complete
+          - progressbar "章节进度" [ref=f4e264]
+          - generic [ref=f4e265]: 历史书籍 · 只读
+        - article [ref=f4e268]:
+          - generic [ref=f4e269]: 已完成
+          - button "romance-10" [ref=f4e270] [cursor=pointer]
+          - paragraph [ref=f4e271]: romance-tension-growth · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e272]: 10 / 10 章 · 22,130 字 · 已知 $0.134223 + Unknown 上界 $0.008598 · 预算占用 $0.142821
+          - paragraph [ref=f4e273]: 写作 — · 后处理 — · 调用 49 次 · Token 484,889 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e274]: complete
+          - progressbar "章节进度" [ref=f4e275]
+          - generic [ref=f4e276]: 历史书籍 · 只读
+        - article [ref=f4e279]:
+          - generic [ref=f4e280]: 已完成
+          - button "urban-300" [ref=f4e281] [cursor=pointer]
+          - paragraph [ref=f4e282]: 都市逆袭 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e283]: 300 / 300 章 · 674,475 字 · 已知 $1.647311 + Unknown 上界 $0.017439 · 预算占用 $1.664749
+          - paragraph [ref=f4e284]: 写作 — · 后处理 — · 调用 822 次 · Token 6,177,939 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e285]: complete
+          - progressbar "章节进度" [ref=f4e286]
+          - generic [ref=f4e287]: 历史书籍 · 只读
+        - article [ref=f4e290]:
+          - generic [ref=f4e291]: 已完成
+          - button "s4" [ref=f4e292] [cursor=pointer]
+          - paragraph [ref=f4e293]: 玄幻爽文 · 2026/10/31 14:00:36 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e294]: 100 / 100 章 · 228,908 字 · 已知 $1.063832 + Unknown 上界 $0.015909 · 预算占用 $1.079741
+          - paragraph [ref=f4e295]: 写作 — · 后处理 — · 调用 433 次 · Token 4,533,732 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e296]: complete
+          - progressbar "章节进度" [ref=f4e297]
+          - generic [ref=f4e298]: 历史书籍 · 只读
+        - article [ref=f4e301]:
+          - generic [ref=f4e302]: 已完成
+          - button "xuanhuan-10" [ref=f4e303] [cursor=pointer]
+          - paragraph [ref=f4e304]: 玄幻爽文 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e305]: 10 / 10 章 · 24,325 字 · 已知 $0.148818 + Unknown 上界 $0.00 · 预算占用 $0.148818
+          - paragraph [ref=f4e306]: 写作 — · 后处理 — · 调用 56 次 · Token 622,800 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e307]: complete
+          - progressbar "章节进度" [ref=f4e308]
+          - generic [ref=f4e309]: 历史书籍 · 只读
+        - article [ref=f4e312]:
+          - generic [ref=f4e313]: 已完成
+          - button "suspense-10" [ref=f4e314] [cursor=pointer]
+          - paragraph [ref=f4e315]: 悬疑推理 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e316]: 10 / 10 章 · 23,328 字 · 已知 $0.185884 + Unknown 上界 $0.011517 · 预算占用 $0.197401
+          - paragraph [ref=f4e317]: 写作 — · 后处理 — · 调用 63 次 · Token 762,479 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e318]: complete
+          - progressbar "章节进度" [ref=f4e319]
+          - generic [ref=f4e320]: 历史书籍 · 只读
+        - article [ref=f4e323]:
+          - generic [ref=f4e324]: 已完成
+          - button "realistic-10" [ref=f4e325] [cursor=pointer]
+          - paragraph [ref=f4e326]: realistic-life · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e327]: 10 / 10 章 · 22,063 字 · 已知 $0.157636 + Unknown 上界 $0.030473 · 预算占用 $0.188109
+          - paragraph [ref=f4e328]: 写作 — · 后处理 — · 调用 64 次 · Token 607,192 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e329]: complete
+          - progressbar "章节进度" [ref=f4e330]
+          - generic [ref=f4e331]: 历史书籍 · 只读
+        - article [ref=f4e334]:
+          - generic [ref=f4e335]: 已完成
+          - button "xuanhuan-5" [ref=f4e336] [cursor=pointer]
+          - paragraph [ref=f4e337]: 玄幻爽文 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e338]: 5 / 5 章 · 12,412 字 · 已知 $0.100309 + Unknown 上界 $0.016319 · 预算占用 $0.116628
+          - paragraph [ref=f4e339]: 写作 — · 后处理 — · 调用 38 次 · Token 378,648 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e340]: complete
+          - progressbar "章节进度" [ref=f4e341]
+          - generic [ref=f4e342]: 历史书籍 · 只读
+        - article [ref=f4e345]:
+          - generic [ref=f4e346]: 已完成
+          - button "suspense-5" [ref=f4e347] [cursor=pointer]
+          - paragraph [ref=f4e348]: 悬疑推理 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e349]: 5 / 5 章 · 11,851 字 · 已知 $0.104548 + Unknown 上界 $0.011498 · 预算占用 $0.116046
+          - paragraph [ref=f4e350]: 写作 — · 后处理 — · 调用 38 次 · Token 420,302 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e351]: complete
+          - progressbar "章节进度" [ref=f4e352]
+          - generic [ref=f4e353]: 历史书籍 · 只读
+        - article [ref=f4e356]:
+          - generic [ref=f4e357]: 已完成
+          - button "realistic-5" [ref=f4e358] [cursor=pointer]
+          - paragraph [ref=f4e359]: realistic-life · 2026/10/31 12:47:46 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e360]: 5 / 5 章 · 11,850 字 · 已知 $0.093011 + Unknown 上界 $0.015001 · 预算占用 $0.108012
+          - paragraph [ref=f4e361]: 写作 — · 后处理 — · 调用 40 次 · Token 326,836 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e362]: complete
+          - progressbar "章节进度" [ref=f4e363]
+          - generic [ref=f4e364]: 历史书籍 · 只读
+        - article [ref=f4e367]:
+          - generic [ref=f4e368]: 已完成
+          - button "xuanhuan-10" [ref=f4e369] [cursor=pointer]
+          - paragraph [ref=f4e370]: 玄幻爽文 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e371]: 10 / 10 章 · 28,400 字 · 已知 $0.119327 + Unknown 上界 $0.00 · 预算占用 $0.119327
+          - paragraph [ref=f4e372]: 写作 — · 后处理 — · 调用 46 次 · Token 589,743 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e373]: complete
+          - progressbar "章节进度" [ref=f4e374]
+          - generic [ref=f4e375]: 历史书籍 · 只读
+        - article [ref=f4e378]:
+          - generic [ref=f4e379]: 已完成
+          - button "realistic-5" [ref=f4e380] [cursor=pointer]
+          - paragraph [ref=f4e381]: realistic-life · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e382]: 5 / 5 章 · 13,586 字 · 已知 $0.047213 + Unknown 上界 $0.00 · 预算占用 $0.047213
+          - paragraph [ref=f4e383]: 写作 — · 后处理 — · 调用 25 次 · Token 207,273 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e384]: complete
+          - progressbar "章节进度" [ref=f4e385]
+          - generic [ref=f4e386]: 历史书籍 · 只读
+        - article [ref=f4e389]:
+          - generic [ref=f4e390]: 已完成
+          - button "realistic-10" [ref=f4e391] [cursor=pointer]
+          - paragraph [ref=f4e392]: realistic-life · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e393]: 10 / 10 章 · 30,424 字 · 已知 $0.109351 + Unknown 上界 $0.00 · 预算占用 $0.109351
+          - paragraph [ref=f4e394]: 写作 — · 后处理 — · 调用 47 次 · Token 517,824 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e395]: complete
+          - progressbar "章节进度" [ref=f4e396]
+          - generic [ref=f4e397]: 历史书籍 · 只读
+        - article [ref=f4e400]:
+          - generic [ref=f4e401]: 已完成
+          - button "suspense-10" [ref=f4e402] [cursor=pointer]
+          - paragraph [ref=f4e403]: 悬疑推理 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e404]: 10 / 10 章 · 26,058 字 · 已知 $0.16328 + Unknown 上界 $0.00 · 预算占用 $0.16328
+          - paragraph [ref=f4e405]: 写作 — · 后处理 — · 调用 48 次 · Token 791,283 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e406]: complete
+          - progressbar "章节进度" [ref=f4e407]
+          - generic [ref=f4e408]: 历史书籍 · 只读
+        - article [ref=f4e411]:
+          - generic [ref=f4e412]: 已完成
+          - button "suspense-5" [ref=f4e413] [cursor=pointer]
+          - paragraph [ref=f4e414]: 悬疑推理 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e415]: 5 / 5 章 · 13,564 字 · 已知 $0.071304 + Unknown 上界 $0.00 · 预算占用 $0.071304
+          - paragraph [ref=f4e416]: 写作 — · 后处理 — · 调用 28 次 · Token 330,266 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e417]: complete
+          - progressbar "章节进度" [ref=f4e418]
+          - generic [ref=f4e419]: 历史书籍 · 只读
+        - article [ref=f4e422]:
+          - generic [ref=f4e423]: 已完成
+          - button "xuanhuan-5" [ref=f4e424] [cursor=pointer]
+          - paragraph [ref=f4e425]: 玄幻爽文 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e426]: 5 / 5 章 · 16,482 字 · 已知 $0.070158 + Unknown 上界 $0.00 · 预算占用 $0.070158
+          - paragraph [ref=f4e427]: 写作 — · 后处理 — · 调用 26 次 · Token 331,607 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e428]: complete
+          - progressbar "章节进度" [ref=f4e429]
+          - generic [ref=f4e430]: 历史书籍 · 只读
+        - article [ref=f4e433]:
+          - generic [ref=f4e434]: 已完成
+          - button "s1-realistic-life-v6" [ref=f4e435] [cursor=pointer]
+          - paragraph [ref=f4e436]: realistic-life · 2026/10/31 11:37:46 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e437]: 5 / 5 章 · 14,626 字 · 已知 $0.047967 + Unknown 上界 $0.00 · 预算占用 $0.047967
+          - paragraph [ref=f4e438]: 写作 — · 后处理 — · 调用 25 次 · Token 213,266 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e439]: complete
+          - progressbar "章节进度" [ref=f4e440]
+          - generic [ref=f4e441]: 历史书籍 · 只读
+        - article [ref=f4e444]:
+          - generic [ref=f4e445]: 写作中
+          - button "s1-realistic-life-v5" [ref=f4e446] [cursor=pointer]
+          - paragraph [ref=f4e447]: realistic-life · 2026/10/31 10:44:22 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e448]: 0 / 5 章 · 0 字 · 已知 $0.022321 + Unknown 上界 $0.0624 · 预算占用 $0.084721
+          - paragraph [ref=f4e449]: 写作 — · 后处理 — · 调用 16 次 · Token 94,400 · Unknown 4 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e450]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e451]
+          - generic [ref=f4e452]: 历史书籍 · 只读
+        - article [ref=f4e455]:
+          - generic [ref=f4e456]: 写作中
+          - button "s1-realistic-life-v4" [ref=f4e457] [cursor=pointer]
+          - paragraph [ref=f4e458]: realistic-life · 2026/10/31 10:39:03 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e459]: 0 / 5 章 · 0 字 · 已知 $0.009777 + Unknown 上界 $0.0156 · 预算占用 $0.025377
+          - paragraph [ref=f4e460]: 写作 — · 后处理 — · 调用 9 次 · Token 38,269 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e461]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e462]
+          - generic [ref=f4e463]: 历史书籍 · 只读
+        - article [ref=f4e466]:
+          - generic [ref=f4e467]: 已完成
+          - button "s1-realistic-life-v3" [ref=f4e468] [cursor=pointer]
+          - paragraph [ref=f4e469]: realistic-life · 2026/10/31 10:29:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e470]: 5 / 5 章 · 16,636 字 · 已知 $0.065816 + Unknown 上界 $0.00 · 预算占用 $0.065816
+          - paragraph [ref=f4e471]: 写作 — · 后处理 — · 调用 26 次 · Token 297,371 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e472]: complete
+          - progressbar "章节进度" [ref=f4e473]
+          - generic [ref=f4e474]: 历史书籍 · 只读
+        - article [ref=f4e477]:
+          - generic [ref=f4e478]: 已完成
+          - button "s1-realistic-life-v2" [ref=f4e479] [cursor=pointer]
+          - paragraph [ref=f4e480]: realistic-life · 2026/10/31 10:20:08 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e481]: 5 / 5 章 · 13,414 字 · 已知 $0.063645 + Unknown 上界 $0.00 · 预算占用 $0.063645
+          - paragraph [ref=f4e482]: 写作 — · 后处理 — · 调用 27 次 · Token 285,362 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e483]: complete
+          - progressbar "章节进度" [ref=f4e484]
+          - generic [ref=f4e485]: 历史书籍 · 只读
+        - article [ref=f4e488]:
+          - generic [ref=f4e489]: 写作中
+          - button "s1-realistic-life" [ref=f4e490] [cursor=pointer]
+          - paragraph [ref=f4e491]: realistic-life · 2026/10/31 10:12:27 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e492]: 0 / 5 章 · 0 字 · 已知 $0.011893 + Unknown 上界 $0.078 · 预算占用 $0.089893
+          - paragraph [ref=f4e493]: 写作 — · 后处理 — · 调用 10 次 · Token 36,073 · Unknown 5 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e494]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e495]
+          - generic [ref=f4e496]: 历史书籍 · 只读
+    - generic [ref=f4e500]:
+      - generic [ref=f4e501]:
+        - heading "《证词里，我是凶手》" [level=2] [ref=f4e502]
+        - button "收起阅读" [ref=f4e503] [cursor=pointer]
+      - paragraph [ref=f4e504]: 已完成 · 悬疑推理 · 2026/11/4 16:52:12 · 检测评分：暂无 · 预计剩余 0 秒 · 5 / 5 章 · 11,772 字 · 已知 $0.033271 + Unknown 上界 $0.00 · 预算占用 $0.033271 · 写作 — · 后处理 — · 调用 16 次 · Token 94,495 · Unknown 0 次 · 单书预算 $0.23 · 去 AI：关闭
+      - button "运行去AI后处理 · 《证词里，我是凶手》" [ref=f4e507] [cursor=pointer]: 运行去AI后处理
+      - generic [ref=f4e508]:
+        - generic [ref=f4e509]:
+          - text: 章节目录
+          - combobox "章节目录" [ref=f4e510]:
+            - option "第1章 十二份证词" [selected]
+            - option "第2章 雨里的旧脚印"
+            - option "第3章 第十三号房"
+            - option "第4章 错写的人"
+            - option "第5章 最后一份证词"
+        - generic [ref=f4e511]:
+          - text: 阅读模式
+          - combobox "阅读模式" [ref=f4e512]:
+            - option "左右对比"
+            - option "只读草稿" [selected]
+            - option "只读最终稿"
+        - generic [ref=f4e513]:
+          - text: 复制／下载版本
+          - combobox "复制／下载版本" [ref=f4e514]:
+            - option "草稿" [selected]
+            - option "最终稿"
+      - generic [ref=f4e515]:
+        - button "上一章" [disabled] [ref=f4e516]
+        - button "下一章" [ref=f4e517] [cursor=pointer]
+        - button "单章重写（公开CLI暂不支持）" [disabled] [ref=f4e518]
+        - button "复制本章" [ref=f4e519] [cursor=pointer]
+        - button "复制全书" [ref=f4e520] [cursor=pointer]
+        - link "下载 Markdown" [ref=f4e521] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=md&version=draft
+        - link "下载 Word" [ref=f4e522] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=docx&version=draft
+        - link "下载 TXT" [ref=f4e523] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=txt&version=draft
+      - status [ref=f4e524]: 已复制全书草稿，共 5 章。
+      - heading "第1章 十二份证词" [level=3] [ref=f4e525]
+      - article [ref=f4e527]:
+        - heading "草稿" [level=3] [ref=f4e528]
+        - generic [ref=f4e529]: “十二份证词，写的是同一个人。” 沈允禾声音不高，却压住了满廊雨声。 服务台前挤着十二名住客，湿伞滴下的水积在脚边。十二张纸摊在台面上，姓名、房号、落款各不相同，内容却都指向她。 “我在二楼楼梯转角看见沈允禾。” “我看见她从十三号房出来，右手拿刀。” “我听见她承认自己改了名字，冒用死者身份。” 唐安澜指尖压着其中一张：“十二个人，十二份独立证词。你还要说，是巧合？” 高如筝把另一份拍在桌上：“别装了，沈小姐。大家亲眼看见的还能有错？” “我没说自己是被冤枉的。”沈允禾扫过众人，“你们当中，有人不认识我。” 高如筝一怔：“什么意思？” 沈允禾指着证词：“第一份说我在二楼；第二份说我从十三号房出来；第三份说我在后院；第四份说案发时我在一楼。目击位置可以不同，但方向、时间、随身物品，总该有一样能对上。” 唐安澜冷笑：“雨夜昏暗，看错方向也正常。” “正常。”沈允禾点头，“可十二份证词里，没有一个人写出我当晚穿什么。那不是看见，是照着同一个名字填空。” 走廊里响起低语。 沈允禾点了高如筝与唐安澜的两张纸：“高先生的证词写，唐女士将刀塞给我，转身替我掩饰；唐女士的证词却写，高先生亲眼见我行凶。两张纸互相证明，都把另一个人写成了目击者。” 高如筝脸色一变：“你胡说，我从没——” “原稿就在这里。”沈允禾按住两张纸，“我用你们证词里彼此的称谓，换一次人物名位的对调。” 话音落下，纸上的名字竟像被水浸开，无声错位。原本署在高如筝名下的证词里，“唐安澜”换成了“高如筝”；另一张则作了对调。事实没改，指向却乱了。 高如筝扑过去夺纸，唐安澜一把按住他：“别碰！你想毁掉原件？” “是你们先算计我！” 唐安澜尖声道：“你拿我三年前那份事故照片逼我闭嘴时，怎么不说自己被算计？” 走廊霎时静了。 高如筝嘴唇发抖：“那张照片……不是我想拿的。” “够了。”沈允禾冷声打断，“你们当年为保前程，已经互相撕过一次。今天又端出旧账，不觉得可笑吗？” 她答应过替两人压下旧事，如今承诺连同他们最不能见光的怨气被当众摊开。再无人相信他们会替她作证，她也不能再拿“保护你们”当筹码。 周启榆在人群外开口：“名字写错，或许只是誊抄出错。况且这些纸从哪里来？谁能证明不是沈小姐自己安排的？” “证词是谁交的？”沈允禾问。 “住客们自愿交给旅馆。” “原始证词呢？” “自然也由旅馆保管。” 沈允禾看向他的右手。袖口沾着未干的蓝黑墨迹，与证词边缘颜色相同。她没有声张，只将十二张纸依次翻过。 “第三份写于案发后两小时，笔迹与第一份相同；第五份的落款压住第六份的墨水，说明后交的压在先交的上面。十二张纸的顺序全乱了。” 高如筝怔住：“我的纸明明第一个交！” “我也是。”唐安澜盯着证词，“我的应该是第二个。” “有人在你们之后重新抄写、编号，再摆到我们面前。”沈允禾抬起眼，“指向我的不是十二个人，是一个人想让你们相信的十二个人。” 顾冬岚问：“如何证明原始内容不是后来改的？” “墨迹能改，落笔顺序改不了。”沈允禾将台灯斜过来，“纸背有书写压痕。原件若写我的名字，墨迹会渗入纤维；若是后来添上去，纤维先被刮薄，墨会浮在表面。更重要的是，写字的人惯用右手，十二份证词中却有四处向左转折。这是同一个人戴着不合适的手套写的。” 她抽出一沓纸：“原始证词不在台上。收走原件的人，就在刚才这十二个人里。” 走廊后方忽然传来三下敲击。 咚。 声音来自十三号房那面墙后，像有人用指骨缓慢敲击木板。众人齐齐回头。 周启榆笑着扶正装饰画：“老房子的水管响罢了。这里登记在册的住客，一直只有十二人。” “你确定只有十二人？”顾冬岚问。 周启榆笑意淡了一瞬：“当然。” 墙后的敲击又响了一下，这次更轻。 --- 十二名住客被顾冬岚拦在服务台外。周启榆说去取原始证词，趁众人等待，从柜台下拿走一只牛皮纸袋，转身进了后侧储物间。 沈允禾跟了进去。 储物间堆满旧账簿、备用台灯和没拆封的雨衣。门一合，外面的议论声立刻模糊。 周启榆背对她拆开纸袋：“证词若真有假，查出来对谁都没好处。” “谁收了原件？”沈允禾问。 “我。” “谁重抄的？” “我不知道。” “谁把它们排在服务台上，指认我？” 周启榆叹气：“外面雨这么大，谁有闲心做这种事？也许大家害怕，把同一个人看成了所有凶手。” 沈允禾抽出最上面一张，对着门缝透进的灯光侧过纸面，指腹缓缓擦过字迹下方。 “你说证词是住客自愿交给旅馆的。” “没错。” “那为什么要重新誊写？” 周启榆手指一顿：“谁说是重新誊写？” 沈允禾把纸翻到背面。淡蓝复写纸纹路浮出来，墨色浓淡不均，纸纤维被钢笔压出细小凹槽。她又取出一张空白纸，在相同位置写下“沈允禾”，笔画、字距、顿笔几乎分毫不差。 “原件不是这十二张。”她将纸叠在一起，“‘沈’字第一笔先重后轻，是原本就有的旧墨；‘允’字第三笔浮在纸面，是后补的。原件先写的是‘周启榆’，后来才有人用蓝黑墨盖成我的名字。” 周启榆的笑意彻底消失：“你用什么证明？” “指纹。” 沈允禾将十二张证词平铺在桌角。每张右下角都有两组指印，一组来自执笔人，一组来自按印确认的住客。 “写证词时，墨水会沾在书写者右手中指第一关节。可十二张纸上的书写者指印全是左拇指横纹，位置也一样。你拿纸袋时，墨迹留在右拇指与食指之间。你若没碰过原件，为什么每张纸都像从同一个人手里原样抽出，连指纹方向都没变？” 周启榆声音发冷：“纸袋是我拿的，不代表纸是我写的。” “但你说原始证词也由旅馆保管。”沈允禾向前一步，“谁能取走？” 周启榆没有回答。 “十二份证词同时改了我的名字，改写和重排发生在今天早晨。有人造了十二个目击者，再故意让高如筝和唐安澜发现纸上有错，逼他们公开争抢。这样一来，真假反而没人能查。” “你没有证据。” “原件就在旅馆。”沈允禾将纸推到他面前，“能重写名字，说明原件还在这里。你拿走的不是原件，是用来顶替原件的十二张誊本。” 门外传来唐安澜的声音：“顾先生，里面怎么了？” 周启榆迅速浮起苦笑：“账本被雨泡坏了，沈小姐正帮忙整理。” 沈允禾扬声道：“顾先生，进来。” 顾冬岚推门而入，目光从周启榆身上扫到桌面证词。 周启榆摊手：“旅馆丢了原始证词，沈小姐却认定我拿走了。我只负责保管住客亲手交来的纸。” “你否认见过原始证词？”沈允禾问。 “自然没见过。”周启榆答得干脆，“若早知道它们是假的，我何必把纸留在旅馆？” 沈允禾盯了他两秒，忽然收起桌上的誊本：“那就请周先生把保管登记簿拿来。上面应有每次取纸的时间、经手人和归还印。少一页，也算失职。” 顾冬岚立即道：“我去取。” 周启榆向前半步，又停住：“登记簿在经理办公室，门锁着。” “那就等雨停，请经理来开。”沈允禾站在门边，“真相查清前，谁也别离开。” 众人重新聚到走廊。她当众说明誊本上的旧墨、新墨与指纹不符，又指出十二人的称谓错位。没人再提所谓十二份独立目击。高如筝垂着头，唐安澜脸色难看，却都未再反驳。 雨声渐渐小了。有人回房，有人仍守在服务台前等经理。 顾冬岚走在最后。经过周启榆身边时，沈允禾忽然停下：“你方才说自己没碰过原始证词。” “是。” “那口袋里那张呢？” 周启榆衣摆微微一僵。 沈允禾没有当场揭穿，只看着他：“你否认得越快，就越值得查。” 她与顾冬岚离开走廊。身后的门悄无声息地合上。周启榆等脚步声彻底消失，才转身进入储物间。他从牛皮纸袋最底层抽出一张纸——那不是十二份誊本之一，墨迹尚新，右下角按着鲜红的指印。 纸上只有三个字。 沈允禾。 周启榆两指一折，将纸塞进左袖口。
+      - group [ref=f4e533]:
+        - generic "本章检测" [ref=f4e534] [cursor=pointer]
+      - group [ref=f4e535]:
+        - generic "人物圣经" [ref=f4e536] [cursor=pointer]
+      - group [ref=f4e537]:
+        - generic "全书章纲" [ref=f4e538] [cursor=pointer]
+  - contentinfo [ref=f4e57]: 留一点耐心，给正在长成的故事。

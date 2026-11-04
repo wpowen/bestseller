@@ -1,0 +1,482 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - link "书房 BestSeller · B" [ref=f3e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f3e4]:
+      - link "开一本新书" [ref=f3e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f3e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f3e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f3e8]:
+    - generic [ref=f3e9]:
+      - paragraph [ref=f3e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f3e11]
+      - paragraph [ref=f3e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f3e13]:
+        - button "悬疑 · 5章" [ref=f3e14] [cursor=pointer]
+        - button "玄幻 · 10章" [ref=f3e15] [cursor=pointer]
+      - group [ref=f3e16]:
+        - generic "恢复已有选题 · 不重复生成" [ref=f3e17] [cursor=pointer]
+        - generic [ref=f3e18]:
+          - generic [ref=f3e19]:
+            - text: 已有选题 UUID
+            - textbox "已有选题 UUID" [ref=f3e20]:
+              - /placeholder: 粘贴上一次返回的 topic id
+              - text: 8db1548c-0b26-4ad9-8144-ab37260e958b
+          - generic [ref=f3e21]:
+            - text: 本地最近选题
+            - combobox "本地最近选题" [ref=f3e22]:
+              - option "选择已保存的选题" [selected]
+              - option "悬疑推理 · 5章 · 8db1548c-0b26-4ad9-8144-ab37260e958b"
+        - generic [ref=f3e23]:
+          - button "读取已有选题（免费查询）" [ref=f3e24] [cursor=pointer]
+          - button "恢复本地选题" [ref=f3e25] [cursor=pointer]
+        - status [ref=f3e26]: 已恢复。请重新点击一个候选，再点“开始写作”。
+      - generic [ref=f3e27]:
+        - generic [ref=f3e28]:
+          - generic [ref=f3e29]:
+            - text: 题材
+            - combobox "题材" [ref=f3e30]:
+              - option "悬疑推理" [selected]
+              - option "玄幻爽文"
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f3e31]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f3e32]:
+              - option "短篇 · 5章" [selected]
+              - option "短篇 · 10章"
+              - option "中篇 · 50章"
+              - option "长篇 · 1000章"
+              - option "长篇 · 2000章"
+              - option "自定章数"
+          - generic [ref=f3e33]:
+            - text: 章数
+            - spinbutton "章数" [ref=f3e34]: "5"
+        - generic [ref=f3e35]:
+          - text: 故事想法
+          - generic [ref=f3e36]: 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f3e37]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f3e38] [cursor=pointer]
+        - status [ref=f3e39]: 已收到 12 个候选，请点击选择。
+      - generic [ref=f3e63]:
+        - heading "选择你的故事" [level=2] [ref=f3e64]
+        - paragraph [ref=f3e65]: 共 12 个候选 · 请亲自点选一个，不会默认选择。
+        - radiogroup "故事候选" [ref=f3e66]:
+          - generic [ref=f3e67] [cursor=pointer]:
+            - radio "01 末班地铁 实习法医深夜乘末班地铁时，发现车厢里少了一个人；监控却显示那人从未上车。" [ref=f3e68]
+            - text: "01"
+            - heading "末班地铁" [level=3] [ref=f3e69]
+            - paragraph [ref=f3e70]: 实习法医深夜乘末班地铁时，发现车厢里少了一个人；监控却显示那人从未上车。
+          - generic [ref=f3e71] [cursor=pointer]:
+            - radio "02 完美不在场证明 企业家遇害时，三名嫌疑者都在直播做饭；死者却在镜头前发送了一条加密遗言。" [ref=f3e72]
+            - text: "02"
+            - heading "完美不在场证明" [level=3] [ref=f3e73]
+            - paragraph [ref=f3e74]: 企业家遇害时，三名嫌疑者都在直播做饭；死者却在镜头前发送了一条加密遗言。
+          - generic [ref=f3e75] [cursor=pointer]:
+            - radio "03 第七位客人 心理咨询师受邀参加七人晚宴，却发现名单上只有六人；失踪者留下的日记正记载着今晚。" [ref=f3e76]
+            - text: "03"
+            - heading "第七位客人" [level=3] [ref=f3e77]
+            - paragraph [ref=f3e78]: 心理咨询师受邀参加七人晚宴，却发现名单上只有六人；失踪者留下的日记正记载着今晚。
+          - generic [ref=f3e79] [cursor=pointer]:
+            - radio "04 静默楼层 女管理员被困停电大楼，逐一拨打住户电话求援；接电话的人竟都是已经遇害的住户。" [ref=f3e80]
+            - text: "04"
+            - heading "静默楼层" [level=3] [ref=f3e81]
+            - paragraph [ref=f3e82]: 女管理员被困停电大楼，逐一拨打住户电话求援；接电话的人竟都是已经遇害的住户。
+          - generic [ref=f3e83] [cursor=pointer]:
+            - radio "05 归还 古董店老板收到一只寄回自己的失窃戒指，附言要求午夜赴约；他想弄清谁在操控记忆。" [ref=f3e84]
+            - text: "05"
+            - heading "归还" [level=3] [ref=f3e85]
+            - paragraph [ref=f3e86]: 古董店老板收到一只寄回自己的失窃戒指，附言要求午夜赴约；他想弄清谁在操控记忆。
+          - generic [ref=f3e87] [cursor=pointer]:
+            - radio "06 雨夜证词 暴雨困住山村旅馆，客人轮流讲述案发夜经历；每份证词都只有微妙差异。" [ref=f3e88]
+            - text: "06"
+            - heading "雨夜证词" [level=3] [ref=f3e89]
+            - paragraph [ref=f3e90]: 暴雨困住山村旅馆，客人轮流讲述案发夜经历；每份证词都只有微妙差异。
+          - generic [ref=f3e91] [cursor=pointer]:
+            - radio "07 遗嘱上的死人 继承人为巨额遗产守候病逝父亲，老人却突然醒来，指认继承人是杀害自己的凶手。" [ref=f3e92]
+            - text: "07"
+            - heading "遗嘱上的死人" [level=3] [ref=f3e93]
+            - paragraph [ref=f3e94]: 继承人为巨额遗产守候病逝父亲，老人却突然醒来，指认继承人是杀害自己的凶手。
+          - generic [ref=f3e95] [cursor=pointer]:
+            - radio "08 失踪的园丁 庄园主花园中的尸体每天更换姿势，却无人见过园丁；园丁日记暗示凶手藏于宅中。" [ref=f3e96]
+            - text: "08"
+            - heading "失踪的园丁" [level=3] [ref=f3e97]
+            - paragraph [ref=f3e98]: 庄园主花园中的尸体每天更换姿势，却无人见过园丁；园丁日记暗示凶手藏于宅中。
+          - generic [ref=f3e99] [cursor=pointer]:
+            - radio "09 第二个我 独居女子报警称自己被跟踪，警方到场却发现两名相貌相同的她同时声称是受害者。" [ref=f3e100]
+            - text: "09"
+            - heading "第二个我" [level=3] [ref=f3e101]
+            - paragraph [ref=f3e102]: 独居女子报警称自己被跟踪，警方到场却发现两名相貌相同的她同时声称是受害者。
+          - generic [ref=f3e103] [cursor=pointer]:
+            - radio "10 未发送的语音 女孩整理母亲遗物时收到一段定时短信；语音中母亲警告她千万别相信父亲。" [ref=f3e104]
+            - text: "10"
+            - heading "未发送的语音" [level=3] [ref=f3e105]
+            - paragraph [ref=f3e106]: 女孩整理母亲遗物时收到一段定时短信；语音中母亲警告她千万别相信父亲。
+          - generic [ref=f3e107] [cursor=pointer]:
+            - radio "11 空座 刑警重返十年前未破的列车劫案现场，发现同一节车厢里每天都多出一个陌生乘客。" [ref=f3e108]
+            - text: "11"
+            - heading "空座" [level=3] [ref=f3e109]
+            - paragraph [ref=f3e110]: 刑警重返十年前未破的列车劫案现场，发现同一节车厢里每天都多出一个陌生乘客。
+          - generic [ref=f3e111] [cursor=pointer]:
+            - radio "12 钟表匠 钟表匠接到修表订单，委托者要求复原停摆的凶案现场时钟；零件来自失踪者。" [ref=f3e112]
+            - text: "12"
+            - heading "钟表匠" [level=3] [ref=f3e113]
+            - paragraph [ref=f3e114]: 钟表匠接到修表订单，委托者要求复原停摆的凶案现场时钟；零件来自失踪者。
+      - generic [ref=f3e40]:
+        - heading "写作设置" [level=2] [ref=f3e41]
+        - generic [ref=f3e42]:
+          - generic [ref=f3e43]:
+            - text: 写手
+            - combobox "写手" [ref=f3e44]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f3e45]:
+            - text: 单书预算上限
+            - spinbutton "单书预算上限" [ref=f3e46]: "0.23"
+          - generic [ref=f3e47]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f3e48]: "2"
+        - paragraph [ref=f3e49]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - generic [ref=f3e50]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f3e51]
+          - text: 开启去 AI 润色
+          - generic [ref=f3e52]: 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f3e741]
+        - status [ref=f3e54]: 已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。
+    - generic [ref=f3e55]:
+      - generic [ref=f3e56]:
+        - generic [ref=f3e57]:
+          - paragraph [ref=f3e58]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f3e59]
+        - button "刷新书库" [ref=f3e60] [cursor=pointer]
+      - status [ref=f3e61]: 每 3 秒更新 · 最近同步 16:58:13
+      - generic [ref=f3e115]:
+        - article [ref=f3e2022]:
+          - generic [ref=f3e2023]: 写作中
+          - button "《证词里，我是凶手》" [ref=f3e2024] [cursor=pointer]
+          - paragraph [ref=f3e2025]: 3 / 5 章 · 6788 字 · 费用 0.03040845 · 待确认 1
+          - paragraph [ref=f3e2026]: 正文 · 预计 232
+          - progressbar "章节进度" [ref=f3e2027]
+          - button "暂停" [ref=f3e2029] [cursor=pointer]
+        - article [ref=f3e2030]:
+          - generic [ref=f3e2031]: 写作中
+          - button "《猫尾巴里养着一尊伪神》" [ref=f3e2032] [cursor=pointer]
+          - paragraph [ref=f3e2033]: 0 / 10 章 · 0 字 · 费用 0.02599125 · 待确认 1
+          - paragraph [ref=f3e2034]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f3e2035]
+          - button "暂停" [ref=f3e2037] [cursor=pointer]
+        - article [ref=f3e2038]:
+          - generic [ref=f3e2039]: 已完成
+          - button "《一口空势夺全场》" [ref=f3e2040] [cursor=pointer]
+          - paragraph [ref=f3e2041]: 20 / 20 章 · 50367 字 · 费用 0.122658 · 待确认 0
+          - paragraph [ref=f3e2042]: complete
+          - progressbar "章节进度" [ref=f3e2043]
+          - generic [ref=f3e2044]: 只读书籍
+        - article [ref=f3e2046]:
+          - generic [ref=f3e2047]: 已完成
+          - button "雪停之前，请别下索道" [ref=f3e2048] [cursor=pointer]
+          - paragraph [ref=f3e2049]: 20 / 20 章 · 48287 字 · 费用 0.10832205 · 待确认 0
+          - paragraph [ref=f3e2050]: complete
+          - progressbar "章节进度" [ref=f3e2051]
+          - generic [ref=f3e2052]: 只读书籍
+        - article [ref=f3e2054]:
+          - generic [ref=f3e2055]: 已完成
+          - button "《没人记得她来过》" [ref=f3e2056] [cursor=pointer]
+          - paragraph [ref=f3e2057]: 20 / 20 章 · 51249 字 · 费用 0.1370052 · 待确认 1
+          - paragraph [ref=f3e2058]: complete
+          - progressbar "章节进度" [ref=f3e2059]
+          - generic [ref=f3e2060]: 只读书籍
+        - article [ref=f3e2062]:
+          - generic [ref=f3e2063]: 已完成
+          - button "《别人修阵，我拆阵成主》" [ref=f3e2064] [cursor=pointer]
+          - paragraph [ref=f3e2065]: 20 / 20 章 · 56315 字 · 费用 0.1222896 · 待确认 1
+          - paragraph [ref=f3e2066]: complete
+          - progressbar "章节进度" [ref=f3e2067]
+          - generic [ref=f3e2068]: 只读书籍
+        - article [ref=f3e2070]:
+          - generic [ref=f3e2071]: 已完成
+          - button "《我能斩断力量契约》" [ref=f3e2072] [cursor=pointer]
+          - paragraph [ref=f3e2073]: 50 / 50 章 · 127397 字 · 费用 0.5090664 · 待确认 3
+          - paragraph [ref=f3e2074]: complete
+          - progressbar "章节进度" [ref=f3e2075]
+          - generic [ref=f3e2076]: 只读书籍
+        - article [ref=f3e2078]:
+          - generic [ref=f3e2079]: stopped
+          - button "全镇都参加过那场婚礼" [ref=f3e2080] [cursor=pointer]
+          - paragraph [ref=f3e2081]: 50 / 50 章 · 123658 字 · 费用 0.47609415 · 待确认 0
+          - paragraph [ref=f3e2082]: rolling 50 chapters average=138.28s failure_rate=0.0079; limit=110s/0.1
+          - progressbar "章节进度" [ref=f3e2083]
+          - generic [ref=f3e2084]: 只读书籍
+        - article [ref=f3e2086]:
+          - generic [ref=f3e2087]: 已完成
+          - button "《封我天赋，替我出手》" [ref=f3e2088] [cursor=pointer]
+          - paragraph [ref=f3e2089]: 30 / 30 章 · 74435 字 · 费用 0.3048249 · 待确认 0
+          - paragraph [ref=f3e2090]: complete
+          - progressbar "章节进度" [ref=f3e2091]
+          - generic [ref=f3e2092]: 只读书籍
+        - article [ref=f3e2094]:
+          - generic [ref=f3e2095]: 已完成
+          - button "《我已经死了，所以规则怕我》" [ref=f3e2096] [cursor=pointer]
+          - paragraph [ref=f3e2097]: 130 / 130 章 · 338777 字 · 费用 1.07181855 · 待确认 0
+          - paragraph [ref=f3e2098]: complete
+          - progressbar "章节进度" [ref=f3e2099]
+          - generic [ref=f3e2100]: 只读书籍
+        - article [ref=f3e2102]:
+          - generic [ref=f3e2103]: 已完成
+          - button "听见十秒之后" [ref=f3e2104] [cursor=pointer]
+          - paragraph [ref=f3e2105]: 100 / 100 章 · 242806 字 · 费用 0.64094025 · 待确认 2
+          - paragraph [ref=f3e2106]: complete
+          - progressbar "章节进度" [ref=f3e2107]
+          - generic [ref=f3e2108]: 只读书籍
+        - article [ref=f3e2110]:
+          - generic [ref=f3e2111]: 已完成
+          - button "《借雪兽生》" [ref=f3e2112] [cursor=pointer]
+          - paragraph [ref=f3e2113]: 100 / 100 章 · 234261 字 · 费用 0.7275408 · 待确认 4
+          - paragraph [ref=f3e2114]: complete
+          - progressbar "章节进度" [ref=f3e2115]
+          - generic [ref=f3e2116]: 只读书籍
+        - article [ref=f3e2118]:
+          - generic [ref=f3e2119]: 已完成
+          - button "回声之下" [ref=f3e2120] [cursor=pointer]
+          - paragraph [ref=f3e2121]: 100 / 100 章 · 236522 字 · 费用 0.661881 · 待确认 3
+          - paragraph [ref=f3e2122]: complete
+          - progressbar "章节进度" [ref=f3e2123]
+          - generic [ref=f3e2124]: 只读书籍
+        - article [ref=f3e2126]:
+          - generic [ref=f3e2127]: 已完成
+          - button "《借火记暖》" [ref=f3e2128] [cursor=pointer]
+          - paragraph [ref=f3e2129]: 5 / 5 章 · 11273 字 · 费用 0.05995335 · 待确认 0
+          - paragraph [ref=f3e2130]: complete
+          - progressbar "章节进度" [ref=f3e2131]
+          - generic [ref=f3e2132]: 只读书籍
+        - article [ref=f3e2134]:
+          - generic [ref=f3e2135]: 已完成
+          - button "entertainment-10" [ref=f3e2136] [cursor=pointer]
+          - paragraph [ref=f3e2137]: 10 / 10 章 · 23033 字 · 费用 0.06736425 · 待确认 0
+          - paragraph [ref=f3e2138]: complete
+          - progressbar "章节进度" [ref=f3e2139]
+          - generic [ref=f3e2140]: 只读书籍
+        - article [ref=f3e2142]:
+          - generic [ref=f3e2143]: 已完成
+          - button "wuxia-10" [ref=f3e2144] [cursor=pointer]
+          - paragraph [ref=f3e2145]: 10 / 10 章 · 22971 字 · 费用 0.0808371 · 待确认 0
+          - paragraph [ref=f3e2146]: complete
+          - progressbar "章节进度" [ref=f3e2147]
+          - generic [ref=f3e2148]: 只读书籍
+        - article [ref=f3e2150]:
+          - generic [ref=f3e2151]: 已完成
+          - button "cozy-10" [ref=f3e2152] [cursor=pointer]
+          - paragraph [ref=f3e2153]: 10 / 10 章 · 22561 字 · 费用 0.1230768 · 待确认 1
+          - paragraph [ref=f3e2154]: complete
+          - progressbar "章节进度" [ref=f3e2155]
+          - generic [ref=f3e2156]: 只读书籍
+        - article [ref=f3e2158]:
+          - generic [ref=f3e2159]: 已完成
+          - button "esport-10" [ref=f3e2160] [cursor=pointer]
+          - paragraph [ref=f3e2161]: 10 / 10 章 · 21700 字 · 费用 0.1390338 · 待确认 5
+          - paragraph [ref=f3e2162]: resume chapters=1, average_s=92.4, failure_rate=0.000
+          - progressbar "章节进度" [ref=f3e2163]
+          - generic [ref=f3e2164]: 只读书籍
+        - article [ref=f3e2166]:
+          - generic [ref=f3e2167]: 已完成
+          - button "history-10" [ref=f3e2168] [cursor=pointer]
+          - paragraph [ref=f3e2169]: 10 / 10 章 · 23666 字 · 费用 0.12751905 · 待确认 1
+          - paragraph [ref=f3e2170]: complete
+          - progressbar "章节进度" [ref=f3e2171]
+          - generic [ref=f3e2172]: 只读书籍
+        - article [ref=f3e2174]:
+          - generic [ref=f3e2175]: 已完成
+          - button "romance-10" [ref=f3e2176] [cursor=pointer]
+          - paragraph [ref=f3e2177]: 10 / 10 章 · 22130 字 · 费用 0.14282115 · 待确认 1
+          - paragraph [ref=f3e2178]: complete
+          - progressbar "章节进度" [ref=f3e2179]
+          - generic [ref=f3e2180]: 只读书籍
+        - article [ref=f3e2182]:
+          - generic [ref=f3e2183]: 已完成
+          - button "urban-300" [ref=f3e2184] [cursor=pointer]
+          - paragraph [ref=f3e2185]: 300 / 300 章 · 674475 字 · 费用 1.66474935 · 待确认 2
+          - paragraph [ref=f3e2186]: complete
+          - progressbar "章节进度" [ref=f3e2187]
+          - generic [ref=f3e2188]: 只读书籍
+        - article [ref=f3e2190]:
+          - generic [ref=f3e2191]: 已完成
+          - button "s4" [ref=f3e2192] [cursor=pointer]
+          - paragraph [ref=f3e2193]: 100 / 100 章 · 228908 字 · 费用 1.07974095 · 待确认 2
+          - paragraph [ref=f3e2194]: complete
+          - progressbar "章节进度" [ref=f3e2195]
+          - generic [ref=f3e2196]: 只读书籍
+        - article [ref=f3e2198]:
+          - generic [ref=f3e2199]: 已完成
+          - button "xuanhuan-10" [ref=f3e2200] [cursor=pointer]
+          - paragraph [ref=f3e2201]: 10 / 10 章 · 24325 字 · 费用 0.14881815 · 待确认 0
+          - paragraph [ref=f3e2202]: complete
+          - progressbar "章节进度" [ref=f3e2203]
+          - generic [ref=f3e2204]: 只读书籍
+        - article [ref=f3e2206]:
+          - generic [ref=f3e2207]: 已完成
+          - button "suspense-10" [ref=f3e2208] [cursor=pointer]
+          - paragraph [ref=f3e2209]: 10 / 10 章 · 23328 字 · 费用 0.1974009 · 待确认 1
+          - paragraph [ref=f3e2210]: complete
+          - progressbar "章节进度" [ref=f3e2211]
+          - generic [ref=f3e2212]: 只读书籍
+        - article [ref=f3e2214]:
+          - generic [ref=f3e2215]: 已完成
+          - button "realistic-10" [ref=f3e2216] [cursor=pointer]
+          - paragraph [ref=f3e2217]: 10 / 10 章 · 22063 字 · 费用 0.1881093 · 待确认 3
+          - paragraph [ref=f3e2218]: complete
+          - progressbar "章节进度" [ref=f3e2219]
+          - generic [ref=f3e2220]: 只读书籍
+        - article [ref=f3e2222]:
+          - generic [ref=f3e2223]: 已完成
+          - button "xuanhuan-5" [ref=f3e2224] [cursor=pointer]
+          - paragraph [ref=f3e2225]: 5 / 5 章 · 12412 字 · 费用 0.11662755 · 待确认 1
+          - paragraph [ref=f3e2226]: complete
+          - progressbar "章节进度" [ref=f3e2227]
+          - generic [ref=f3e2228]: 只读书籍
+        - article [ref=f3e2230]:
+          - generic [ref=f3e2231]: 已完成
+          - button "suspense-5" [ref=f3e2232] [cursor=pointer]
+          - paragraph [ref=f3e2233]: 5 / 5 章 · 11851 字 · 费用 0.11604585 · 待确认 1
+          - paragraph [ref=f3e2234]: complete
+          - progressbar "章节进度" [ref=f3e2235]
+          - generic [ref=f3e2236]: 只读书籍
+        - article [ref=f3e2238]:
+          - generic [ref=f3e2239]: 已完成
+          - button "realistic-5" [ref=f3e2240] [cursor=pointer]
+          - paragraph [ref=f3e2241]: 5 / 5 章 · 11850 字 · 费用 0.1080117 · 待确认 1
+          - paragraph [ref=f3e2242]: complete
+          - progressbar "章节进度" [ref=f3e2243]
+          - generic [ref=f3e2244]: 只读书籍
+        - article [ref=f3e2246]:
+          - generic [ref=f3e2247]: 已完成
+          - button "xuanhuan-10" [ref=f3e2248] [cursor=pointer]
+          - paragraph [ref=f3e2249]: 10 / 10 章 · 28400 字 · 费用 0.1193265 · 待确认 0
+          - paragraph [ref=f3e2250]: complete
+          - progressbar "章节进度" [ref=f3e2251]
+          - generic [ref=f3e2252]: 只读书籍
+        - article [ref=f3e2254]:
+          - generic [ref=f3e2255]: 已完成
+          - button "realistic-5" [ref=f3e2256] [cursor=pointer]
+          - paragraph [ref=f3e2257]: 5 / 5 章 · 13586 字 · 费用 0.0472131 · 待确认 0
+          - paragraph [ref=f3e2258]: complete
+          - progressbar "章节进度" [ref=f3e2259]
+          - generic [ref=f3e2260]: 只读书籍
+        - article [ref=f3e2262]:
+          - generic [ref=f3e2263]: 已完成
+          - button "realistic-10" [ref=f3e2264] [cursor=pointer]
+          - paragraph [ref=f3e2265]: 10 / 10 章 · 30424 字 · 费用 0.1093509 · 待确认 0
+          - paragraph [ref=f3e2266]: complete
+          - progressbar "章节进度" [ref=f3e2267]
+          - generic [ref=f3e2268]: 只读书籍
+        - article [ref=f3e2270]:
+          - generic [ref=f3e2271]: 已完成
+          - button "suspense-10" [ref=f3e2272] [cursor=pointer]
+          - paragraph [ref=f3e2273]: 10 / 10 章 · 26058 字 · 费用 0.16328025 · 待确认 0
+          - paragraph [ref=f3e2274]: complete
+          - progressbar "章节进度" [ref=f3e2275]
+          - generic [ref=f3e2276]: 只读书籍
+        - article [ref=f3e2278]:
+          - generic [ref=f3e2279]: 已完成
+          - button "suspense-5" [ref=f3e2280] [cursor=pointer]
+          - paragraph [ref=f3e2281]: 5 / 5 章 · 13564 字 · 费用 0.07130415 · 待确认 0
+          - paragraph [ref=f3e2282]: complete
+          - progressbar "章节进度" [ref=f3e2283]
+          - generic [ref=f3e2284]: 只读书籍
+        - article [ref=f3e2286]:
+          - generic [ref=f3e2287]: 已完成
+          - button "xuanhuan-5" [ref=f3e2288] [cursor=pointer]
+          - paragraph [ref=f3e2289]: 5 / 5 章 · 16482 字 · 费用 0.07015755 · 待确认 0
+          - paragraph [ref=f3e2290]: complete
+          - progressbar "章节进度" [ref=f3e2291]
+          - generic [ref=f3e2292]: 只读书籍
+        - article [ref=f3e2294]:
+          - generic [ref=f3e2295]: 已完成
+          - button "s1-realistic-life-v6" [ref=f3e2296] [cursor=pointer]
+          - paragraph [ref=f3e2297]: 5 / 5 章 · 14626 字 · 费用 0.04796715 · 待确认 0
+          - paragraph [ref=f3e2298]: complete
+          - progressbar "章节进度" [ref=f3e2299]
+          - generic [ref=f3e2300]: 只读书籍
+        - article [ref=f3e2302]:
+          - generic [ref=f3e2303]: 写作中
+          - button "s1-realistic-life-v5" [ref=f3e2304] [cursor=pointer]
+          - paragraph [ref=f3e2305]: 0 / 5 章 · 0 字 · 费用 0.08472075 · 待确认 4
+          - paragraph [ref=f3e2306]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f3e2307]
+          - generic [ref=f3e2308]: 只读书籍
+        - article [ref=f3e2310]:
+          - generic [ref=f3e2311]: 写作中
+          - button "s1-realistic-life-v4" [ref=f3e2312] [cursor=pointer]
+          - paragraph [ref=f3e2313]: 0 / 5 章 · 0 字 · 费用 0.02537685 · 待确认 1
+          - paragraph [ref=f3e2314]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f3e2315]
+          - generic [ref=f3e2316]: 只读书籍
+        - article [ref=f3e2318]:
+          - generic [ref=f3e2319]: 已完成
+          - button "s1-realistic-life-v3" [ref=f3e2320] [cursor=pointer]
+          - paragraph [ref=f3e2321]: 5 / 5 章 · 16636 字 · 费用 0.06581595 · 待确认 0
+          - paragraph [ref=f3e2322]: complete
+          - progressbar "章节进度" [ref=f3e2323]
+          - generic [ref=f3e2324]: 只读书籍
+        - article [ref=f3e2326]:
+          - generic [ref=f3e2327]: 已完成
+          - button "s1-realistic-life-v2" [ref=f3e2328] [cursor=pointer]
+          - paragraph [ref=f3e2329]: 5 / 5 章 · 13414 字 · 费用 0.06364515 · 待确认 0
+          - paragraph [ref=f3e2330]: complete
+          - progressbar "章节进度" [ref=f3e2331]
+          - generic [ref=f3e2332]: 只读书籍
+        - article [ref=f3e2334]:
+          - generic [ref=f3e2335]: 写作中
+          - button "s1-realistic-life" [ref=f3e2336] [cursor=pointer]
+          - paragraph [ref=f3e2337]: 0 / 5 章 · 0 字 · 费用 0.0898932 · 待确认 5
+          - paragraph [ref=f3e2338]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f3e2339]
+          - generic [ref=f3e2340]: 只读书籍
+    - generic [ref=f3e2342]:
+      - generic [ref=f3e2343]:
+        - heading "《证词里，我是凶手》" [level=2] [ref=f3e2344]
+        - button "收起阅读" [ref=f3e2345] [cursor=pointer]
+      - paragraph [ref=f3e2346]: 3 / 5 章 · 6788 字 · 费用 0.03040845 · 待确认 1
+      - button "暂停" [ref=f3e2349] [cursor=pointer]
+      - generic [ref=f3e2350]:
+        - generic [ref=f3e2351]:
+          - text: 章节目录
+          - combobox "章节目录" [ref=f3e2352]:
+            - option "第1章 十二份证词" [selected]
+            - option "第2章 雨里的旧脚印"
+            - option "第3章 第十三号房"
+        - generic [ref=f3e2353]:
+          - text: 复制／下载版本
+          - combobox "复制／下载版本" [ref=f3e2354]:
+            - option "草稿" [selected]
+            - option "最终稿"
+      - generic [ref=f3e2355]:
+        - button "复制本章" [ref=f3e2356] [cursor=pointer]
+        - button "复制全书" [ref=f3e2357] [cursor=pointer]
+        - link "下载 Markdown" [ref=f3e2358] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=md&version=draft
+        - link "下载 Word" [ref=f3e2359] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=docx&version=draft
+        - link "下载 TXT" [ref=f3e2360] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=txt&version=draft
+      - status [ref=f3e2361]: 阅读内容每 3 秒同步。
+      - generic [ref=f3e2362]:
+        - article [ref=f3e2363]:
+          - heading "草稿" [level=3] [ref=f3e2364]
+          - generic [ref=f3e2365]: “十二份证词，写的是同一个人。” 沈允禾声音不高，却压住了满廊雨声。 服务台前挤着十二名住客，湿伞滴下的水积在脚边。十二张纸摊在台面上，姓名、房号、落款各不相同，内容却都指向她。 “我在二楼楼梯转角看见沈允禾。” “我看见她从十三号房出来，右手拿刀。” “我听见她承认自己改了名字，冒用死者身份。” 唐安澜指尖压着其中一张：“十二个人，十二份独立证词。你还要说，是巧合？” 高如筝把另一份拍在桌上：“别装了，沈小姐。大家亲眼看见的还能有错？” “我没说自己是被冤枉的。”沈允禾扫过众人，“你们当中，有人不认识我。” 高如筝一怔：“什么意思？” 沈允禾指着证词：“第一份说我在二楼；第二份说我从十三号房出来；第三份说我在后院；第四份说案发时我在一楼。目击位置可以不同，但方向、时间、随身物品，总该有一样能对上。” 唐安澜冷笑：“雨夜昏暗，看错方向也正常。” “正常。”沈允禾点头，“可十二份证词里，没有一个人写出我当晚穿什么。那不是看见，是照着同一个名字填空。” 走廊里响起低语。 沈允禾点了高如筝与唐安澜的两张纸：“高先生的证词写，唐女士将刀塞给我，转身替我掩饰；唐女士的证词却写，高先生亲眼见我行凶。两张纸互相证明，都把另一个人写成了目击者。” 高如筝脸色一变：“你胡说，我从没——” “原稿就在这里。”沈允禾按住两张纸，“我用你们证词里彼此的称谓，换一次人物名位的对调。” 话音落下，纸上的名字竟像被水浸开，无声错位。原本署在高如筝名下的证词里，“唐安澜”换成了“高如筝”；另一张则作了对调。事实没改，指向却乱了。 高如筝扑过去夺纸，唐安澜一把按住他：“别碰！你想毁掉原件？” “是你们先算计我！” 唐安澜尖声道：“你拿我三年前那份事故照片逼我闭嘴时，怎么不说自己被算计？” 走廊霎时静了。 高如筝嘴唇发抖：“那张照片……不是我想拿的。” “够了。”沈允禾冷声打断，“你们当年为保前程，已经互相撕过一次。今天又端出旧账，不觉得可笑吗？” 她答应过替两人压下旧事，如今承诺连同他们最不能见光的怨气被当众摊开。再无人相信他们会替她作证，她也不能再拿“保护你们”当筹码。 周启榆在人群外开口：“名字写错，或许只是誊抄出错。况且这些纸从哪里来？谁能证明不是沈小姐自己安排的？” “证词是谁交的？”沈允禾问。 “住客们自愿交给旅馆。” “原始证词呢？” “自然也由旅馆保管。” 沈允禾看向他的右手。袖口沾着未干的蓝黑墨迹，与证词边缘颜色相同。她没有声张，只将十二张纸依次翻过。 “第三份写于案发后两小时，笔迹与第一份相同；第五份的落款压住第六份的墨水，说明后交的压在先交的上面。十二张纸的顺序全乱了。” 高如筝怔住：“我的纸明明第一个交！” “我也是。”唐安澜盯着证词，“我的应该是第二个。” “有人在你们之后重新抄写、编号，再摆到我们面前。”沈允禾抬起眼，“指向我的不是十二个人，是一个人想让你们相信的十二个人。” 顾冬岚问：“如何证明原始内容不是后来改的？” “墨迹能改，落笔顺序改不了。”沈允禾将台灯斜过来，“纸背有书写压痕。原件若写我的名字，墨迹会渗入纤维；若是后来添上去，纤维先被刮薄，墨会浮在表面。更重要的是，写字的人惯用右手，十二份证词中却有四处向左转折。这是同一个人戴着不合适的手套写的。” 她抽出一沓纸：“原始证词不在台上。收走原件的人，就在刚才这十二个人里。” 走廊后方忽然传来三下敲击。 咚。 声音来自十三号房那面墙后，像有人用指骨缓慢敲击木板。众人齐齐回头。 周启榆笑着扶正装饰画：“老房子的水管响罢了。这里登记在册的住客，一直只有十二人。” “你确定只有十二人？”顾冬岚问。 周启榆笑意淡了一瞬：“当然。” 墙后的敲击又响了一下，这次更轻。 --- 十二名住客被顾冬岚拦在服务台外。周启榆说去取原始证词，趁众人等待，从柜台下拿走一只牛皮纸袋，转身进了后侧储物间。 沈允禾跟了进去。 储物间堆满旧账簿、备用台灯和没拆封的雨衣。门一合，外面的议论声立刻模糊。 周启榆背对她拆开纸袋：“证词若真有假，查出来对谁都没好处。” “谁收了原件？”沈允禾问。 “我。” “谁重抄的？” “我不知道。” “谁把它们排在服务台上，指认我？” 周启榆叹气：“外面雨这么大，谁有闲心做这种事？也许大家害怕，把同一个人看成了所有凶手。” 沈允禾抽出最上面一张，对着门缝透进的灯光侧过纸面，指腹缓缓擦过字迹下方。 “你说证词是住客自愿交给旅馆的。” “没错。” “那为什么要重新誊写？” 周启榆手指一顿：“谁说是重新誊写？” 沈允禾把纸翻到背面。淡蓝复写纸纹路浮出来，墨色浓淡不均，纸纤维被钢笔压出细小凹槽。她又取出一张空白纸，在相同位置写下“沈允禾”，笔画、字距、顿笔几乎分毫不差。 “原件不是这十二张。”她将纸叠在一起，“‘沈’字第一笔先重后轻，是原本就有的旧墨；‘允’字第三笔浮在纸面，是后补的。原件先写的是‘周启榆’，后来才有人用蓝黑墨盖成我的名字。” 周启榆的笑意彻底消失：“你用什么证明？” “指纹。” 沈允禾将十二张证词平铺在桌角。每张右下角都有两组指印，一组来自执笔人，一组来自按印确认的住客。 “写证词时，墨水会沾在书写者右手中指第一关节。可十二张纸上的书写者指印全是左拇指横纹，位置也一样。你拿纸袋时，墨迹留在右拇指与食指之间。你若没碰过原件，为什么每张纸都像从同一个人手里原样抽出，连指纹方向都没变？” 周启榆声音发冷：“纸袋是我拿的，不代表纸是我写的。” “但你说原始证词也由旅馆保管。”沈允禾向前一步，“谁能取走？” 周启榆没有回答。 “十二份证词同时改了我的名字，改写和重排发生在今天早晨。有人造了十二个目击者，再故意让高如筝和唐安澜发现纸上有错，逼他们公开争抢。这样一来，真假反而没人能查。” “你没有证据。” “原件就在旅馆。”沈允禾将纸推到他面前，“能重写名字，说明原件还在这里。你拿走的不是原件，是用来顶替原件的十二张誊本。” 门外传来唐安澜的声音：“顾先生，里面怎么了？” 周启榆迅速浮起苦笑：“账本被雨泡坏了，沈小姐正帮忙整理。” 沈允禾扬声道：“顾先生，进来。” 顾冬岚推门而入，目光从周启榆身上扫到桌面证词。 周启榆摊手：“旅馆丢了原始证词，沈小姐却认定我拿走了。我只负责保管住客亲手交来的纸。” “你否认见过原始证词？”沈允禾问。 “自然没见过。”周启榆答得干脆，“若早知道它们是假的，我何必把纸留在旅馆？” 沈允禾盯了他两秒，忽然收起桌上的誊本：“那就请周先生把保管登记簿拿来。上面应有每次取纸的时间、经手人和归还印。少一页，也算失职。” 顾冬岚立即道：“我去取。” 周启榆向前半步，又停住：“登记簿在经理办公室，门锁着。” “那就等雨停，请经理来开。”沈允禾站在门边，“真相查清前，谁也别离开。” 众人重新聚到走廊。她当众说明誊本上的旧墨、新墨与指纹不符，又指出十二人的称谓错位。没人再提所谓十二份独立目击。高如筝垂着头，唐安澜脸色难看，却都未再反驳。 雨声渐渐小了。有人回房，有人仍守在服务台前等经理。 顾冬岚走在最后。经过周启榆身边时，沈允禾忽然停下：“你方才说自己没碰过原始证词。” “是。” “那口袋里那张呢？” 周启榆衣摆微微一僵。 沈允禾没有当场揭穿，只看着他：“你否认得越快，就越值得查。” 她与顾冬岚离开走廊。身后的门悄无声息地合上。周启榆等脚步声彻底消失，才转身进入储物间。他从牛皮纸袋最底层抽出一张纸——那不是十二份誊本之一，墨迹尚新，右下角按着鲜红的指印。 纸上只有三个字。 沈允禾。 周启榆两指一折，将纸塞进左袖口。
+        - article [ref=f3e2366]:
+          - heading "最终稿" [level=3] [ref=f3e2367]
+          - generic [ref=f3e2368]: 最终稿尚未生成；去 AI 关闭时请阅读草稿。
+      - group [ref=f3e2369]:
+        - generic "本章检测" [ref=f3e2370] [cursor=pointer]
+      - group [ref=f3e2371]:
+        - generic "人物圣经" [ref=f3e2372] [cursor=pointer]
+      - group [ref=f3e2373]:
+        - generic "全书章纲" [ref=f3e2374] [cursor=pointer]
+  - contentinfo [ref=f3e62]: 留一点耐心，给正在长成的故事。

@@ -1,0 +1,13 @@
+{
+  "python_lines": 532,
+  "limit": 1200,
+  "max_file_lines": 218,
+  "max_file_limit": 500,
+  "files": {
+    "engine/tools/webui.py": 8,
+    "engine/tools/webui/server.py": 130,
+    "engine/tools/webui/library.py": 176,
+    "engine/tools/webui/jobs.py": 218
+  },
+  "forbidden_imports": []
+}

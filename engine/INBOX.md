@@ -636,7 +636,7 @@
 
 ## 2026-11-04-25：书房网页改版——书库/开新书/详情/全屏阅读器分开（用户 2026-11-04 23:10 反馈“都挤在一页、看书不方便、没有目录、要宽屏”，监工设计）
 
-状态：待执行（等第 22、24 条都合并进 main 后再开始；本条几乎重写整个前端，提前做必然与 22/24 冲突）
+状态：待执行（用户 2026-11-04 要求立即单独开任务并行做：在独立工作树 `scratch/ui-worktree`、分支 `feat/bookweb-ui` 上开发；22 在 main、24 在 feat/ideation 也在改 webui，合并与冲突由监工处理。为减少冲突：新前端尽量写成新文件，后端只加 archive/restore/delete/archive 列表与章节状态，不改 22 已动的预算字段逻辑；向导第 2 步先接现有 /api/topics，留好位置给第 24 条的选题卡片）
 
 设计在 [reports/ui-redesign-20261104/DESIGN.md](reports/ui-redesign-20261104/DESIGN.md)，可点击原型 [prototype.html](reports/ui-redesign-20261104/prototype.html)（浏览器直接打开）。按设计第 2–6 节实现与验收。要点：
 1. 四个视图，用 URL 路由：书库 `#/library`、开新书三步向导 `#/new`、书籍详情 `#/book/<id>`、全屏阅读器 `#/read/<id>/<n>`。

@@ -28,6 +28,7 @@ async function loadConfig() {
   const config = await api('/api/config'); state.config = config;
   $('genre').replaceChildren();
   for (const genre of config.genres || []) { const option = el('option', genre.name); option.value = genre.id; $('genre').append(option); }
+  genreTags();
   $('channel').replaceChildren(el('option', '不限')); $('channel').firstChild.value = '';
   for (const name of config.channels || ['男频','女频']) { const option = el('option', name); option.value = name; $('channel').append(option); }
   $('model').replaceChildren();
@@ -70,6 +71,7 @@ async function restoreTopic(id, entry) {
   $('genre').value = input.genre; $('chapters').value = input.chapters; $('idea').value = input.idea || ''; $('channel').value = input.channel || '';
   $('length').value = [...$('length').options].some(o => o.value === String(input.chapters)) ? String(input.chapters) : 'custom';
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(id), 2000);
+  step(2);
   text('restore-status', '已恢复。请重新点击一个候选，再点“开始写作”。'); $('candidate-section').scrollIntoView({behavior:'smooth', block:'start'});
  } catch (error) { text('restore-status', error.message); updateCreate(); }
  finally { $('restore-topic').disabled = false; }
@@ -79,7 +81,7 @@ $('restore-recent').addEventListener('click', () => { const entry = savedTopics(
 refreshRecent();
 function invalidateTopic() {
  if (state.creating) return;
- clearTimeout(state.topicTimer); state.topicEpoch++; state.topic = null; state.candidate = null; state.topicInput = null; state.topicReady = false; state.topicRenderKey = null; state.candidates = []; state.edits = {};
+ clearTimeout(state.topicTimer); state.topicEpoch++; state.topic = null; state.candidate = null; state.topicInput = null; state.topicReady = false; state.topicRenderKey = null; state.candidates = []; state.edits = {}; $('to-settings').disabled = true;
  $('candidates').replaceChildren(); $('candidate-section').hidden = true; updateCreate();
 }
 const cardFields = {title:'书名', hook:'一句话钩子', tags:'卖点标签（用顿号分隔）', premise:'人物与冲突', golden_finger_rule:'金手指规则', opening:'开场画面', engine:'长篇引擎'};
@@ -104,7 +106,7 @@ function editorFor(candidate, index) {
 function selectCandidate(index) {
  state.candidate = index;
  $('candidates').querySelectorAll('.candidate').forEach((node, i) => { node.classList.toggle('selected', i === index); node.querySelector('input[type=radio]').checked = i === index; });
- updateCreate();
+ updateCreate(); $('to-settings').disabled = false;
 }
 function renderTopics(data) {
  if (data.id) state.topic = data.id;
@@ -179,6 +181,7 @@ async function submitTopics(direction) {
    return;
   }
   state.topic = data.id; state.topicInput = input; state.candidate = null; state.topicReady = false; state.topicRenderKey = null;
+  step(2);
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(data.id), 2000);
  } catch (error) { if (state.topicEpoch === epoch) { text('topic-status', error.message + ' · 不会自动重复提交。'); $('generate-topics').disabled = false; } }
  finally { state.topicSubmitting = false; updateCreate(); }
@@ -208,7 +211,7 @@ $('book-form').addEventListener('submit', async event => {
   if (!result.id) throw new Error('服务没有返回书籍 ID，请先查看书库再决定是否重试。');
   text('book-status', '已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。');
   state.candidate = null; $('candidates').querySelectorAll('input[type=radio]').forEach(r => { r.checked = false; r.closest('.candidate').classList.remove('selected'); });
-  await refreshBooks();
+  await refreshBooks(); location.hash = '#/book/' + encodeURIComponent(result.id);
  } catch (error) { text('book-status', error.message + ' 如提交结果不明，请先检查书库，避免重复开书。'); }
  finally { state.creating = false; updateCreate(); }
 });
@@ -245,7 +248,7 @@ async function action(id, name) {
   const result = await api('/api/action', { id, action: name });
   const detail = printable(result.message || result.status);
   text('action-status', (name === 'postprocess' ? '后处理请求已提交，最终稿与检测回执将随阅读区同步。' : '操作已提交。') + (detail ? ' ' + detail : ''));
-  await refreshBooks(); if (state.readerId === id) await refreshReader();
+  await refreshBooks(); if (state.readerId === id) await route();
  } catch (error) { text('action-status', error.message + ' · 未自动重试，请先核对任务状态。'); }
  finally { state.pendingActions.delete(id); updateActionControls(); }
 }
@@ -274,118 +277,190 @@ function syncActions(container, book) {
  if (container.dataset.signature !== signature) { container.dataset.signature = signature; container.replaceChildren(actionButtons(book)); }
  updateActionControls();
 }
-function renderBookCard(book) {
- const id = String(book.id); let entry = state.bookCards.get(id);
- if (!entry) {
-  const card = el('article', null, 'book-card'); card.dataset.bookId = id;
-  const badge = el('span', null, 'badge'); const open = el('button', null, 'book-title'); open.type = 'button'; open.dataset.bookId = id;
-  open.addEventListener('click', () => openBook(id));
-  const details = el('p', null, 'book-details'); const stats = el('p', null, 'book-stats'); const usage = el('p', null, 'muted');
-  const step = el('p', null, 'book-step'); const progress = document.createElement('progress'); progress.setAttribute('aria-label', '章节进度');
-  const controls = el('div'); card.append(badge, open, details, stats, usage, step, progress, controls);
-  entry = { card, badge, open, details, stats, usage, step, progress, controls }; state.bookCards.set(id, entry);
+const link = (label, hash, cls) => { const a = el('a', label, cls); a.href = hash; return a; };
+const button = (label, run, cls) => { const b = el('button', label, cls); b.type = 'button'; b.onclick = run; return b; };
+const bookURL = id => '#/book/' + encodeURIComponent(id);
+const readURL = (id, n = 1) => '#/read/' + encodeURIComponent(id) + '/' + n;
+const stored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+const persist = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+let books = [], archived = [], filter = 'all', tab = '目录', routeEpoch = 0, undoId, managed;
+let prefs = {...{width:'medium',size:19,line:2,bg:'paper',mode:'final'}, ...stored('bookweb-reader', {})};
+function notify(message) { text('action-status', message); $('toast').hidden = false; }
+function step(n) {
+ if (n === 3 && state.candidate === null) return;
+ document.querySelectorAll('[data-pane]').forEach(p => { p.hidden = Number(p.dataset.pane) !== n; });
+ document.querySelectorAll('#steps button').forEach(b => b.classList.toggle('on', Number(b.dataset.step) === n));
+ text('picked', currentCard(state.candidate)?.title || '请先选定故事');
+ text('estimate', `费用预估：本批选题最多 $0.05；写作独立上限 ${money($('budget').value)}${$('polish').checked ? ' + 去 AI ' + money($('deai-budget').value) : ''}。实际费用按回执累计。`);
+}
+function genreTags() {
+ for (const group of ['男频','女频','其他']) {
+  const row = el('div', null, 'genre-group'); row.append(el('span', group));
+  for (const g of state.config.genres.filter(g => (/romance|lovers|harem|romantasy|villainess/.test(g.id) ? '女频' : /xuanhuan|xianxia|urban|history|suspense/.test(g.id) ? '男频' : '其他') === group)) {
+   row.append(button(g.name, () => { $('genre').value = g.id; $('channel').value = group === '其他' ? '' : group; $('genre').dispatchEvent(new Event('input')); }));
+  }
+  $('genre-tags').append(row);
  }
- const setText = (node, value) => { const next = String(value); if (node.textContent !== next) node.textContent = next; };
- setText(entry.badge, statusLabel(book)); entry.badge.dataset.status = String(book.status || '');
- setText(entry.open, book.title || '未命名作品'); setText(entry.details, bookDetails(book)); setText(entry.stats, bookStats(book));
- setText(entry.usage, bookUsage(book)); setText(entry.step, book.step || '等待阶段更新');
- entry.progress.max = Math.max(1, Number(book.total) || 1); entry.progress.value = Math.max(0, Number(book.chapters) || 0);
- entry.progress.setAttribute('aria-valuetext', `${book.chapters ?? 0} / ${book.total ?? '—'} 章`);
- syncActions(entry.controls, { ...book, id }); return entry.card;
+}
+function renderLibrary() {
+ const visible = books.filter(b => (filter === 'all' || (filter === 'complete' ? isComplete(b) : filter === 'paused' ? /paused/.test(b.status) : /running|polishing|queued/.test(b.status))) && (b.title+b.genre).includes($('search').value));
+ visible.sort((a,b) => $('sort').value === 'title' ? a.title.localeCompare(b.title, 'zh') : $('sort').value === 'chapters' ? b.chapters-b.chapters : (b.created||'').localeCompare(a.created||''));
+ $('books').replaceChildren(...visible.map(b => {
+  const card = el('article', null, 'book-card'); const cover = link('', bookURL(b.id), 'cover');
+  cover.dataset.genre = b.genre; cover.append(el('small', b.genre), el('h2', b.title));
+  const body = el('div', null, 'book-body'); const badge = el('span', statusLabel(b), 'badge'); badge.dataset.status = b.status;
+  const progress = el('progress'); progress.max = Math.max(1, b.total); progress.value = b.chapters; progress.setAttribute('aria-label', '章节进度');
+  const actions = actionButtons(b); actions.prepend(link('阅读', readURL(b.id, stored('chapter:'+b.id, 1)), 'primary button'));
+  const menu = el('details', null, 'more'); menu.append(el('summary', '⋯'));
+  menu.append(link('书籍详情', bookURL(b.id)), link('导出', bookURL(b.id)+'?tab=导出'));
+  if (b.owned) for (const [name,label] of [['rename','重命名'],['archive','移到归档（可恢复）'],['delete','永久删除…']]) menu.append(button(label, () => manage(b, name), name === 'delete' ? 'danger' : 'ghost'));
+  actions.append(menu); body.append(badge, progress, el('p', `${b.chapters}/${b.total} 章 · ${count(b.words)} 字 · ${money(b.cost)}`, 'muted'), actions);
+  card.append(cover, body); return card;
+ }), link('＋\n开一本新书', '#/new', 'new-tile'));
+ $('archives').replaceChildren(...archived.map(b => { const row = el('article', null, 'panel'); row.append(el('h3', b.title), button('恢复到书库', () => manage(b, 'restore')), button('永久删除…', () => manage(b, 'delete'), 'danger')); return row; }));
+ text('archive-toggle', `已归档 ${archived.length} 本`);
 }
 async function refreshBooks() {
  if (state.booksBusy) return; state.booksBusy = true;
  try {
-  const result = await api('/api/books');
-  const books = (Array.isArray(result.books) ? result.books : []).slice().sort((a, b) => Number(b.owned === true) - Number(a.owned === true) || (new Date(b.created).getTime() || 0) - (new Date(a.created).getTime() || 0));
-  const ids = new Set(books.map(book => String(book.id)));
-  for (const [id, entry] of state.bookCards) { if (!ids.has(id)) { entry.card.remove(); state.bookCards.delete(id); } }
-  books.forEach((book, index) => { const card = renderBookCard(book); const current = $('books').children[index]; if (current !== card) $('books').insertBefore(card, current || null); });
-  text('spending-value', `${money(result.spending)} 已占用 / ${money(result.limit)} 上限`);
-  text('spending-note', number(result.limit) !== null && number(result.spending) !== null ? `剩余 ${money(Math.max(0, result.limit - result.spending))} · 以服务端回读为准` : '等待预算回读');
-  $('spending-summary').classList.toggle('budget-tight', number(result.limit) !== null && number(result.spending) !== null && result.spending >= result.limit);
-  text('library-status', books.length ? `${books.length} 本作品 · 当前任务优先 · 每 3 秒更新 · 最近同步 ${new Date().toLocaleTimeString('zh-CN')}` : '书架还空着。选定一个故事，第一本书就从这里开始。');
- } catch (error) { text('library-status', error.message + ' · 3 秒后重试，保留上次书库内容。'); }
+  const [result, archive] = await Promise.all([api('/api/books'), api('/api/archive')]);
+  books = result.books; archived = archive.books;
+  text('spending-value', `${money(result.spending)} / ${money(result.limit)}`);
+  $('spending-meter').max = Math.max(.01, result.limit); $('spending-meter').value = result.spending;
+  text('library-status', `${books.length} 本故事 · ${books.filter(isComplete).length} 本已完成`); renderLibrary();
+ } catch (error) { text('library-status', error.message); }
  finally { state.booksBusy = false; }
 }
-function clearReader() {
- state.book = null; $('chapter-select').replaceChildren(); delete $('chapter-select').dataset.signature; text('reader-title', '正在打开…');
- for (const id of ['reader-meta', 'draft', 'final', 'bible', 'outline', 'report', 'chapter-title']) text(id, '');
- $('reader-actions').replaceChildren(); delete $('reader-actions').dataset.signature; updateDownloads();
-}
-async function openBook(id) {
- state.readerId = String(id); clearReader(); $('reader').hidden = false; text('reader-status', '正在读取书籍…');
- await refreshReader(); $('reader').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-async function refreshReader() {
- if (!state.readerId || state.readerBusy) return; state.readerBusy = true; const id = state.readerId;
+async function manage(book, name, title) {
+ if (name === 'delete' || name === 'rename') {
+  managed = {book, name}; text('dialog-title', name === 'delete' ? '永久删除这本书？' : '重命名');
+  text('dialog-hint', name === 'delete' ? `此操作不可撤销。请输入完整书名：${book.title}。运行中或仍有进程的书会被拒绝。` : '输入新的书名。');
+  $('confirm-title').value = name === 'rename' ? book.title : ''; text('dialog-status', ''); $('manage-dialog').showModal(); return;
+ }
  try {
-  const book = await api('/api/book?id=' + encodeURIComponent(id)); if (state.readerId !== id) return;
-  const selected = $('chapter-select').value;
-  const chapters = (Array.isArray(book.chapters) ? book.chapters : []).slice().sort((a, b) => Number(a.number) - Number(b.number));
-  book.chapters = chapters; state.book = book;
-  text('reader-title', book.meta?.title || '未命名作品'); text('reader-meta', [statusLabel(book.meta || {}), bookDetails(book.meta || {}), bookStats(book.meta || {}), bookUsage(book.meta || {})].join(' · '));
-  syncActions($('reader-actions'), { ...book.meta, id });
-  const chapterSignature = JSON.stringify(chapters.map(chapter => [chapter.number, chapter.title]));
-  if ($('chapter-select').dataset.signature !== chapterSignature) {
-   $('chapter-select').dataset.signature = chapterSignature; $('chapter-select').replaceChildren();
-   for (const chapter of chapters) { const option = el('option', `第${chapter.number}章 ${chapter.title || ''}`); option.value = String(chapter.number); $('chapter-select').append(option); }
-   if ([...$('chapter-select').options].some(option => option.value === selected)) $('chapter-select').value = selected;
-  }
-  text('bible', printable(book.bible) || '人物圣经尚未生成。'); text('outline', printable(book.outline) || '章纲尚未生成。');
-  renderChapter(); updateDownloads();
-  if (!$('reader-status').dataset.transient) text('reader-status', '阅读内容每 3 秒同步；缺失的最终稿会明确保留空缺。');
- } catch (error) { readerMessage(error.message); }
- finally { state.readerBusy = false; }
+  await api('/api/action', {id:book.id, action:name, ...(title === undefined ? {} : {title})});
+  undoId = name === 'archive' ? book.id : null; $('undo').hidden = !undoId;
+  notify(name === 'archive' ? '已移到归档，可撤销。' : '操作已完成。'); await refreshBooks();
+ } catch (error) { notify(error.message); }
 }
-function selectedChapter() { return state.book?.chapters?.find(chapter => String(chapter.number) === $('chapter-select').value); }
-function renderChapter() {
- const chapter = selectedChapter();
- text('chapter-title', chapter ? `第${chapter.number}章 ${chapter.title || ''}` : '章节正在写作中');
- text('draft', chapter?.draft || '草稿尚未生成。'); text('final', chapter?.final || '最终稿尚未生成。去 AI 关闭时，请先阅读草稿；完成后可另行后处理。');
- text('report', printable(chapter?.report) || '暂无检测回执。');
- const chapters = state.book?.chapters || []; const index = chapters.indexOf(chapter);
- $('prev-chapter').disabled = index <= 0; $('next-chapter').disabled = index < 0 || index >= chapters.length - 1;
- $('copy-chapter').disabled = !chapter?.[$('version').value]?.trim();
- $('copy-book').disabled = !chapters.length;
+function chapters() {
+ const map = new Map((state.book?.chapters || []).map(c => [c.number, c]));
+ return Array.from({length:state.book?.meta.total || 0}, (_,i) => map.get(i+1) || {number:i+1,title:'尚未写作',draft:'',final:''});
 }
-function updateDownloads() {
- const version = $('version').value;
- const hasContent = (state.book?.chapters || []).some(chapter => typeof chapter[version] === 'string' && chapter[version].trim());
- for (const format of ['md', 'docx', 'txt', 'epub', 'fanqie']) {
-  const link = $('download-' + format); link.setAttribute('download', ''); link.setAttribute('aria-disabled', String(!hasContent));
-  if (hasContent && state.readerId) link.href = '/download?id=' + encodeURIComponent(state.readerId) + '&format=' + format + '&version=' + version;
-  else link.removeAttribute('href');
+function renderDetail() {
+ const b = state.book.meta; const last = Math.min(b.chapters || 1, stored('chapter:'+b.id, 1));
+ const cover = el('div', null, 'cover'); cover.dataset.genre = b.genre; cover.append(el('small', b.genre), el('h2', b.title));
+ const info = el('div'); info.append(el('span', statusLabel(b), 'badge'), el('h1', b.title), el('p', b.synopsis || '故事简介尚未生成。', 'muted'), el('p', `${b.chapters}/${b.total} 章　${count(b.words)} 字　${money(b.cost)}　${creationDate(b.created)}`, 'stats'), link(`继续阅读 · 第 ${last} 章`, readURL(b.id, last), 'primary button'), actionButtons(b), el('p', bookUsage(b), 'muted'));
+ $('book-hero').replaceChildren(cover, info);
+ $('book-tabs').replaceChildren(...['目录','故事圣经','章纲','检测报告（参考）','导出'].map(t => button(t, () => { tab=t; renderDetail(); }, t===tab?'on':'')));
+ const content = $('book-content'); content.replaceChildren();
+ if (tab === '目录') {
+  const grid = el('div', null, 'chapter-grid');
+  for (const c of chapters()) { const a = c.draft ? link(`第 ${c.number} 章　${c.title}`, readURL(b.id,c.number)) : el('span', `第 ${c.number} 章　${c.title}`, 'muted'); a.append(el('small', `${c.final?'终稿':c.draft?'草稿':'未写'} · ${(c.final||c.draft||'').replace(/[^\u3400-\u9fff]/g,'').length} 字`)); grid.append(a); }
+  content.append(grid);
+ } else if (tab === '导出') {
+  const select = el('select'); select.id = 'export-version'; select.setAttribute('aria-label','导出版本');
+  for (const [v,t] of [['draft','草稿'],['final','终稿']]) { const o = el('option',t); o.value=v; select.append(o); }
+  const links = el('div',null,'toolbar'); const update = () => links.replaceChildren(...['md','docx','txt','epub','fanqie'].map((f,i) => link(['Markdown','Word','TXT','EPUB','番茄分章 ZIP'][i], '/download?id='+encodeURIComponent(b.id)+'&format='+f+'&version='+select.value,'button')));
+  select.onchange=update; update(); content.append(select, links, button('复制全书', () => copyBook(select.value)));
+ } else if (tab === '故事圣经') {
+  const grid = el('div',null,'chapter-grid');
+  for (const c of state.book.characters || []) { const card = el('article',null,'panel'); card.append(el('h3',c.name || '人物'), el('pre',printable(c))); grid.append(card); }
+  content.append(grid, el('pre',state.book.bible || '故事圣经尚未生成。'));
+ } else content.append(el('pre', tab === '章纲' ? state.book.outline || '章纲尚未生成。' : printable(state.book.chapters.map(c => ({number:c.number,report:c.report})))));
+}
+async function route() {
+ const epoch = ++routeEpoch; const match = location.hash.match(/^#\/(book|read)\/(.+?)(?:\?(.*))?$/);
+ const reading = match?.[1] === 'read'; const view = match ? reading?'reader':'detail' : location.hash.startsWith('#/new')?'create':'library';
+ for (const id of ['library','create','detail','reader']) $(id).hidden = id !== view;
+ $('top').hidden = reading; document.body.classList.toggle('reading', reading);
+ if (!match) { state.readerId = null; return; }
+ try {
+  const tail = match[2]; const cut = reading ? tail.lastIndexOf('/') : -1;
+  const id = decodeURIComponent(reading ? tail.slice(0,cut) : tail); state.readerId = id;
+  const book = await api('/api/book?id='+encodeURIComponent(id)); if (epoch !== routeEpoch) return; state.book=book;
+  if (reading) { state.chapter=Number(tail.slice(cut+1)); renderChapter(); $('read-scroll').scrollTop=0; }
+  else { tab = new URLSearchParams(match[3]).get('tab') || '目录'; renderDetail(); }
+ } catch (error) { notify(error.message); }
+}
+function renderTOC() {
+ const nav = $('toc-links'); nav.replaceChildren(); let volume;
+ for (const c of chapters().filter(c => `${c.number} ${c.title}`.includes($('toc-search').value))) {
+  const v = c.volume || Math.ceil(c.number/25); if (v !== volume) { nav.append(el('h4',`第 ${v} 卷`)); volume=v; }
+  const a = c.draft ? link(`第 ${c.number} 章　${c.title}`,readURL(state.readerId,c.number),c.number===state.chapter?'on':'') : el('span',`第 ${c.number} 章　未写`,'muted');
+  a.setAttribute('aria-current',c.number===state.chapter?'page':'false'); nav.append(a);
  }
 }
-function readerMessage(message) { text('reader-status', message); $('reader-status').dataset.transient = 'true'; }
-async function copyText(value, message = '已复制。') {
- if (!value) { readerMessage('所选版本还没有正文。'); return; }
- try { await navigator.clipboard.writeText(value); readerMessage(message); }
- catch { readerMessage('浏览器未允许剪贴板访问，请直接选中正文复制。'); }
+function prose(node, value, original) {
+ node.replaceChildren(); const previous = new Set((original || '').split(/\n+/));
+ for (const line of (value || '这个版本尚未生成。').split(/\n+/).filter(Boolean)) {
+  if (/^#/.test(line)) continue;
+  const p = el('p'); p.append(el(original && !previous.has(line) ? 'mark' : 'span',line)); node.append(p);
+ }
 }
-$('copy-chapter').addEventListener('click', () => {
- const chapter = selectedChapter(); const body = chapter?.[$('version').value];
- copyText(typeof body === 'string' && body.trim() ? `第${chapter.number}章 ${chapter.title || ''}\n\n${body}` : '');
-});
-$('copy-book').addEventListener('click', () => {
- const chapters = state.book?.chapters || []; const version = $('version').value; const total = number(state.book?.meta?.total);
- if (!total || !Number.isInteger(total) || total < 1) { readerMessage('全书目标章数尚未确认，无法复制为全书。'); return; }
- const byNumber = new Map(chapters.map(chapter => [Number(chapter.number), chapter])); let missing = 0;
- for (let index = 1; index <= total; index++) { const body = byNumber.get(index)?.[version]; if (typeof body !== 'string' || !body.trim()) missing++; }
- if (missing) { readerMessage(`${version === 'final' ? '最终稿' : '草稿'}缺少 ${missing} / ${total} 章，已拒绝复制全书。请等待生成完成；当前可复制已有单章。`); return; }
- const ordered = Array.from({ length: total }, (_, index) => byNumber.get(index + 1));
- copyText(`${state.book.meta.title || '未命名作品'}\n\n` + ordered.map(chapter => `第${chapter.number}章 ${chapter.title || ''}\n\n${chapter[version]}`).join('\n\n'), `已复制全书${version === 'final' ? '最终稿' : '草稿'}，共 ${total} 章。`);
-});
-function changeChapter(delta) {
- const chapters = state.book?.chapters || []; const index = chapters.indexOf(selectedChapter()); const next = chapters[index + delta];
- if (!next) return; $('chapter-select').value = String(next.number); renderChapter();
+function renderChapter() {
+ const c = chapters().find(c => c.number===state.chapter); const b = state.book.meta;
+ text('reader-title',`${b.title} · ${c?.title || '章节未生成'}`); $('close-reader').href=bookURL(b.id);
+ text('chapter-title',`第 ${state.chapter} 章　${c?.title || ''}`); text('chapter-meta',b.title+' · '+(prefs.mode==='compare'?'草稿 / 终稿对照':'静下来，读一个故事'));
+ prose($('draft'), c?.draft); prose($('final'), c?.final, prefs.mode==='compare'?c?.draft:null);
+ $('comparison').dataset.mode=prefs.mode; $('reading-progress').max=Math.max(1,b.total); $('reading-progress').value=state.chapter;
+ $('prev-chapter').disabled=state.chapter<=1; $('next-chapter').disabled=!chapters().find(n => n.number===state.chapter+1)?.draft;
+ $('copy-chapter').disabled=!(prefs.mode==='draft'?c?.draft:c?.final);
+ if (c?.draft) persist('chapter:'+b.id,state.chapter); renderTOC(); applyPrefs();
 }
-$('prev-chapter').addEventListener('click', () => changeChapter(-1)); $('next-chapter').addEventListener('click', () => changeChapter(1));
-$('chapter-select').addEventListener('change', renderChapter);
-$('version').addEventListener('change', () => { renderChapter(); updateDownloads(); });
-$('read-mode').addEventListener('change', () => { $('comparison').dataset.view = $('read-mode').value; });
-$('close-reader').addEventListener('click', () => { state.readerId = null; $('reader').hidden = true; });
-$('refresh-books').addEventListener('click', refreshBooks);
-loadConfig(); refreshBooks(); setInterval(() => { refreshBooks(); refreshReader(); }, 3000);
+function applyPrefs() {
+ const r=$('reader'); r.style.setProperty('--width',({narrow:'640px',medium:'820px',wide:'1080px',full:'100%'})[prefs.width]);
+ r.style.setProperty('--font-size',prefs.size+'px'); r.style.setProperty('--leading',prefs.line); r.dataset.background=prefs.bg;
+ document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on',b.dataset.mode===prefs.mode));
+ document.querySelectorAll('[data-pref]').forEach(b => b.classList.toggle('on',String(prefs[b.dataset.pref])===b.dataset.value)); persist('bookweb-reader',prefs);
+}
+function toggleSide() { $('reader').classList.toggle('noside'); $('side-toggle').setAttribute('aria-expanded',String(!$('reader').classList.contains('noside'))); }
+function flip(delta) { const n=state.chapter+delta; if (chapters().find(c => c.number===n)?.draft) location.hash=readURL(state.readerId,n); }
+async function copyText(value) {
+ try { if (!value) throw Error('所选版本尚未生成。'); await navigator.clipboard.writeText(value); text('reader-status','已复制。'); }
+ catch (e) { notify(e.message || '剪贴板访问失败，请选中正文复制。'); }
+}
+function copyBook(version) {
+ const rows=chapters(); if (!rows.length || rows.some(c => !c[version])) return notify('所选版本缺章，不能复制为全书。');
+ copyText(state.book.meta.title+'\n\n'+rows.map(c => `第 ${c.number} 章 ${c.title}\n\n${c[version]}`).join('\n\n'));
+}
+for (const [key,label,options] of [['size','字号',[[17,'小'],[19,'中'],[22,'大'],[25,'特大']]],['width','版心宽度',[['narrow','窄'],['medium','适中'],['wide','宽'],['full','铺满']]],['line','行距',[[1.6,'紧凑'],[2,'舒适'],[2.4,'宽松']]],['bg','背景',[['paper','纸'],['eye','护眼'],['night','夜间']]]]) {
+ const group=el('div',null,'setting-group'); group.append(el('p',label));
+ for (const [value,name] of options) { const b=button(name, () => { prefs[key]=value; applyPrefs(); }); b.dataset.pref=key; b.dataset.value=value; group.append(b); }
+ $('setting-groups').append(group);
+}
+document.querySelectorAll('[data-step]').forEach(b => b.onclick=() => step(Number(b.dataset.step)));
+for (const id of ['budget','deai-budget','polish']) $(id).addEventListener('input',() => step(3));
+$('filters').onclick=e => { if (e.target.dataset.filter) { filter=e.target.dataset.filter; [...$('filters').children].forEach(b => b.classList.toggle('on',b===e.target)); renderLibrary(); } };
+$('search').oninput=renderLibrary; $('sort').onchange=renderLibrary; $('refresh-books').onclick=refreshBooks;
+$('archive-toggle').onclick=() => { $('archives').hidden=!$('archives').hidden; };
+$('undo').onclick=() => { if (undoId) manage({id:undoId},'restore'); };
+$('dialog-cancel').onclick=() => $('manage-dialog').close();
+$('manage-form').onsubmit=async e => {
+ e.preventDefault(); const {book,name}=managed; const title=$('confirm-title').value;
+ if (name==='delete' && title!==book.title) return text('dialog-status','书名不匹配，请输入完整书名。');
+ $('dialog-confirm').disabled=true;
+ try { await api('/api/action',{id:book.id,action:name,title}); $('manage-dialog').close(); notify('操作已完成。'); await refreshBooks(); }
+ catch (error) { text('dialog-status',error.message); }
+ finally { $('dialog-confirm').disabled=false; }
+};
+$('read-modes').onclick=e => { if (e.target.dataset.mode) { prefs.mode=e.target.dataset.mode; renderChapter(); } };
+$('aa').onclick=() => { $('read-settings').hidden=!$('read-settings').hidden; $('aa').setAttribute('aria-expanded',String(!$('read-settings').hidden)); };
+$('settings-close').onclick=() => { $('read-settings').hidden=true; $('aa').setAttribute('aria-expanded','false'); };
+$('side-toggle').onclick=toggleSide; $('drawer-mask').onclick=toggleSide; $('chapter-directory').onclick=toggleSide; $('toc-search').oninput=renderTOC;
+$('prev-chapter').onclick=() => flip(-1); $('next-chapter').onclick=() => flip(1);
+$('copy-chapter').onclick=() => copyText(chapters().find(c => c.number===state.chapter)?.[prefs.mode==='draft'?'draft':'final']);
+document.addEventListener('keydown',e => {
+ if ($('reader').hidden || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+ if (e.key==='ArrowLeft' || e.key==='ArrowRight') { e.preventDefault(); flip(e.key==='ArrowLeft'?-1:1); }
+ if (e.key.toLowerCase()==='t') toggleSide();
+ if (e.key==='Escape') { if (!$('read-settings').hidden) $('settings-close').click(); else location.hash=bookURL(state.readerId); }
+});
+$('theme').onclick=() => { document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'':'dark'; persist('bookweb-theme',document.documentElement.dataset.theme); };
+document.documentElement.dataset.theme=stored('bookweb-theme','');
+$('reader').classList.toggle('noside',matchMedia('(max-width:899px)').matches);
+window.addEventListener('hashchange',route);
+if (!location.hash) history.replaceState(null,'','#/library');
+loadConfig(); refreshBooks(); route();
+setInterval(async () => { await refreshBooks(); if (state.readerId && !$('detail').hidden) await route(); },3000);
 })();

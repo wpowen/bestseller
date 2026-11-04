@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>书房 · 交互原型</title>
+<style>
+/* 原型只演示布局与交互，数据为静态样例。正式实现沿用这些 token。 */
+:root{
+  --paper:#f6f3ec;--card:#fffefa;--ink:#24302a;--muted:#77837b;--line:#e2dfd4;--line-strong:#cfcabb;
+  --green:#2f5a46;--green-ink:#fff;--soft:#eaefe7;--gold:#a0804d;--warn:#b5662f;--danger:#a3402f;
+  --read-bg:#fbf8f1;--read-ink:#2b2a26;--shadow:0 1px 2px rgba(40,50,45,.06),0 8px 24px rgba(40,50,45,.06);
+  --serif:"Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --paper:#171b19;--card:#1f2421;--ink:#e3e6e1;--muted:#97a29b;--line:#2d3430;--line-strong:#3a433e;
+  --green:#7fb79a;--green-ink:#10140f;--soft:#26302b;--gold:#c9a66b;--read-bg:#1b1f1d;--read-ink:#d9dcd5;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);color-scheme:dark;
+}
+:root[data-theme="sepia"]{--read-bg:#f3e9d2;--read-ink:#3b3226}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--green);text-decoration:none}
+
+/* ---------- 顶栏 ---------- */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1440px;margin:auto;height:60px;padding:0 28px;display:flex;align-items:center;gap:28px}
+.brand{font-family:var(--serif);font-size:22px;letter-spacing:2px;color:var(--ink)}
+.brand small{font-family:var(--sans);font-size:10px;letter-spacing:2px;color:var(--muted);margin-left:8px}
+.nav{display:flex;gap:4px}
+.nav a{padding:8px 14px;border-radius:999px;color:var(--muted);font-size:14px}
+.nav a.on{background:var(--soft);color:var(--ink);font-weight:600}
+.spend{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.meter{width:96px;height:6px;border-radius:9px;background:var(--line);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--green)}
+.icon-btn{border:1px solid var(--line);background:var(--card);border-radius:10px;height:34px;min-width:34px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:13px}
+.icon-btn:hover{border-color:var(--line-strong)}
+.btn{border:1px solid var(--line-strong);background:var(--card);border-radius:10px;padding:9px 16px;font-size:14px}
+.btn.primary{background:var(--green);border-color:var(--green);color:var(--green-ink);font-weight:600}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+.page{max-width:1440px;margin:auto;padding:36px 28px 80px}
+.view{display:none}.view.on{display:block}
+.eyebrow{color:var(--gold);font-size:12px;letter-spacing:3px}
+h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:6px 0 4px}
+h2{font-family:var(--serif);font-weight:600;font-size:22px;margin:0}
+.sub{color:var(--muted);font-size:14px;margin:0}
+.head-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+
+/* ---------- 书库 ---------- */
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+.seg{display:inline-flex;background:var(--soft);border-radius:10px;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 14px;border-radius:8px;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow);font-weight:600}
+.search{flex:0 1 260px;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 12px;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:22px}
+.book{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;transition:transform .15s}
+.book:hover{transform:translateY(-2px)}
+.cover{height:150px;padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;position:relative;cursor:pointer}
+.cover .g{font-size:11px;letter-spacing:2px;opacity:.85}
+.cover .t{font-family:var(--serif);font-size:21px;line-height:1.35;text-shadow:0 1px 8px rgba(0,0,0,.18)}
+.c1{background:linear-gradient(135deg,#3d5f50,#1f3a30)}.c2{background:linear-gradient(135deg,#b07a3d,#6e4422)}
+.c3{background:linear-gradient(135deg,#3f4b6b,#202942)}.c4{background:linear-gradient(135deg,#7a3f4b,#3f1d27)}
+.book-body{padding:14px 18px 16px;display:flex;flex-direction:column;gap:10px;flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--ink);width:max-content}
+.chip.run::before,.chip.pause::before,.chip.done::before,.chip.bad::before{content:"";width:7px;height:7px;border-radius:50%}
+.chip.run::before{background:#3c8a5f;animation:pulse 1.4s infinite}.chip.done::before{background:var(--green)}
+.chip.pause::before{background:var(--gold)}.chip.bad::before{background:var(--warn)}
+@keyframes pulse{50%{opacity:.3}}
+.prog{height:5px;border-radius:9px;background:var(--line);overflow:hidden}.prog i{display:block;height:100%;background:var(--green)}
+.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.book-act{display:flex;gap:8px;margin-top:auto}
+.book-act .btn{padding:7px 12px;font-size:13px}
+.more{position:relative;margin-left:auto}
+.menu{position:absolute;right:0;bottom:40px;min-width:170px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:none;z-index:5}
+.menu.open{display:block}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font-size:13px}
+.menu button:hover{background:var(--soft)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px}
+.menu .del{color:var(--danger)}
+.new-tile{border:1.5px dashed var(--line-strong);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);min-height:300px;cursor:pointer;background:transparent}
+.new-tile b{font-size:34px;font-weight:300;color:var(--green)}
+
+/* ---------- 开新书 ---------- */
+.wizard{display:grid;grid-template-columns:220px 1fr;gap:40px}
+.steps{position:sticky;top:90px;align-self:start;display:flex;flex-direction:column;gap:4px}
+.step{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:10px;color:var(--muted);font-size:14px;border:0;background:none;text-align:left}
+.step i{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line-strong);display:grid;place-items:center;font-style:normal;font-size:12px}
+.step.on{background:var(--soft);color:var(--ink);font-weight:600}.step.on i{background:var(--green);border-color:var(--green);color:var(--green-ink)}
+.step.ok i{background:var(--soft);border-color:var(--green);color:var(--green)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 30px;box-shadow:var(--shadow)}
+.pane{display:none}.pane.on{display:block}
+.label{font-size:13px;color:var(--muted);margin:22px 0 10px}
+.genres{display:flex;flex-wrap:wrap;gap:8px}
+.genres button{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:7px 14px;font-size:13px}
+.genres button.on{background:var(--green);border-color:var(--green);color:var(--green-ink)}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.field{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.field input,.field select,textarea{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--ink)}
+textarea{width:100%;min-height:84px;resize:vertical}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.cost{font-size:12px;color:var(--muted)}
+.ideas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:16px}
+.idea{border:1.5px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--paper);cursor:pointer;display:flex;flex-direction:column;gap:8px;transition:border-color .15s}
+.idea:hover{border-color:var(--line-strong)}.idea.on{border-color:var(--green);background:color-mix(in srgb,var(--green) 6%,var(--paper))}
+.idea h3{font-family:var(--serif);font-size:18px;margin:0}
+.idea .hook{font-size:14px;color:var(--ink)}
+.idea .tags{font-size:12px;color:var(--gold)}
+.idea p{font-size:13px;color:var(--muted);margin:0;line-height:1.7}
+.idea .scores{display:flex;gap:10px;font-size:11px;color:var(--muted)}
+.idea .ia{display:flex;gap:6px;margin-top:4px}
+.idea .ia button{border:0;background:var(--soft);border-radius:8px;padding:5px 9px;font-size:12px}
+.toggle{display:flex;align-items:center;gap:10px;font-size:14px;margin-top:18px}
+
+/* ---------- 书籍详情 ---------- */
+.hero{display:grid;grid-template-columns:200px 1fr auto;gap:28px;align-items:end;margin-bottom:28px}
+.hero .cover{height:260px;border-radius:14px;box-shadow:var(--shadow)}
+.hero h1{font-size:34px}
+.stats{display:flex;gap:26px;margin-top:14px;font-size:13px;color:var(--muted)}
+.stats b{display:block;font-size:20px;color:var(--ink);font-weight:600;font-family:var(--serif)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.tabs button{border:0;background:none;padding:12px 16px;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--ink);border-color:var(--green);font-weight:600}
+.toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:2px 28px}
+.toc a{display:flex;align-items:center;gap:12px;padding:12px 8px;border-bottom:1px solid var(--line);color:var(--ink);font-size:15px}
+.toc a:hover{background:var(--soft)}
+.toc .n{color:var(--muted);font-size:12px;width:52px}
+.toc .s{margin-left:auto;font-size:11px;color:var(--muted)}
+.toc .s.f{color:var(--green)}
+.toc a.dim{color:var(--muted)}
+.exports{display:flex;gap:10px;flex-wrap:wrap}
+
+/* ---------- 阅读器 ---------- */
+.reader{display:none;position:fixed;inset:0;z-index:30;background:var(--read-bg);color:var(--read-ink)}
+.reader.on{display:grid;grid-template-columns:var(--side,300px) 1fr;grid-template-rows:56px 1fr}
+.reader.noside{--side:0px}
+.rbar{grid-column:1/3;display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--read-bg) 92%,transparent);backdrop-filter:blur(8px)}
+.rbar .title{font-family:var(--serif);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rbar .title span{color:var(--muted);margin-left:8px;font-size:13px}
+.rbar .sp{flex:1}
+.rprog{position:absolute;left:0;top:55px;height:2px;background:var(--green);width:24%}
+.side{border-right:1px solid var(--line);overflow:auto;padding:14px 10px 40px;background:color-mix(in srgb,var(--read-bg) 70%,var(--paper))}
+.reader.noside .side{display:none}
+.side input{width:100%;border:1px solid var(--line);background:var(--card);border-radius:9px;padding:8px 10px;font-size:13px;margin-bottom:10px}
+.side h4{font-size:11px;letter-spacing:2px;color:var(--muted);margin:14px 8px 6px;font-weight:500}
+.side a{display:flex;gap:10px;padding:8px 10px;border-radius:8px;color:inherit;font-size:14px;line-height:1.45}
+.side a .n{color:var(--muted);font-size:12px;min-width:44px}
+.side a.on{background:var(--soft);font-weight:600}
+.side a.on .n{color:var(--green)}
+.rmain{overflow:auto;scroll-behavior:smooth}
+.col{margin:0 auto;padding:56px 40px 120px;max-width:var(--w,46em)}
+.col h2{font-size:28px;text-align:center;margin-bottom:6px}
+.col .cm{text-align:center;font-size:12px;color:var(--muted);margin-bottom:40px}
+.prose{font-family:var(--serif);font-size:var(--fs,19px);line-height:var(--lh,2);letter-spacing:.02em}
+.prose p{margin:0 0 1em;text-indent:2em}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:48px}
+.duo h5{font-family:var(--sans);font-size:12px;letter-spacing:2px;color:var(--muted);margin:0 0 16px;font-weight:500}
+.duo .prose{font-size:calc(var(--fs,19px) - 2px)}
+mark.chg{background:color-mix(in srgb,var(--gold) 22%,transparent);color:inherit;border-radius:3px;padding:0 2px}
+.pager{display:flex;justify-content:space-between;margin-top:56px;padding-top:24px;border-top:1px solid var(--line)}
+.pop{position:absolute;right:18px;top:60px;width:280px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px;display:none;z-index:40}
+.pop.open{display:block}
+.pop .label{margin:12px 0 8px}
+.pop .label:first-child{margin-top:0}
+.swatch{display:flex;gap:8px}
+.swatch button{flex:1;height:34px;border-radius:9px;border:1.5px solid var(--line);font-size:12px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;z-index:60;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.modal{position:fixed;inset:0;background:rgba(20,25,22,.45);display:none;place-items:center;z-index:70}
+.modal.open{display:grid}
+.dialog{background:var(--card);border-radius:16px;padding:24px 26px;width:min(440px,92vw);box-shadow:var(--shadow)}
+.dialog p{color:var(--muted);font-size:14px;line-height:1.7}
+.dialog input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:9px 11px;margin:6px 0 18px}
+
+@media (max-width:900px){
+  .wizard{grid-template-columns:1fr}.steps{position:static;flex-direction:row;overflow:auto}
+  .hero{grid-template-columns:120px 1fr}.hero .cover{height:160px}.hero>div:last-child{grid-column:1/3}
+  .reader.on{grid-template-columns:1fr}.side{position:fixed;top:56px;bottom:0;left:0;width:82vw;z-index:35;box-shadow:var(--shadow)}
+  .reader.noside .side{display:none}.col{padding:32px 20px 100px}.duo{grid-template-columns:1fr}
+  .top-in{padding:0 16px;gap:12px}.spend .meter{display:none}.page{padding:24px 16px 60px}
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <div class="brand">书房<small>BESTSELLER</small></div>
+  <nav class="nav"><a href="#/library" data-nav="library">书库</a><a href="#/new" data-nav="new">开新书</a></nav>
+  <div class="spend" title="网页所有书累计花费 / 总预算">已用 $0.40 / $20<span class="meter"><i style="width:2%"></i></span></div>
+  <button class="icon-btn" id="theme" title="切换深浅色">◐</button>
+</div></header>
+
+<main class="page">
+<!-- ===== 书库 ===== -->
+<section class="view" id="v-library">
+  <div class="head-row">
+    <div><div class="eyebrow">MY LIBRARY</div><h1>我的书库</h1><p class="sub">4 本书 · 写作中 1 · 已完成 2 · 暂停 1</p></div>
+    <a class="btn primary" href="#/new">＋ 开新书</a>
+  </div>
+  <div class="toolbar">
+    <div class="seg"><button class="on">全部</button><button>写作中</button><button>已完成</button><button>已暂停</button></div>
+    <input class="search" placeholder="搜索书名或题材">
+    <div style="margin-left:auto" class="seg"><button class="on">最近更新</button><button>创建时间</button></div>
+  </div>
+  <div class="grid" id="shelf"></div>
+</section>
+
+<!-- ===== 开新书 ===== -->
+<section class="view" id="v-new">
+  <div class="head-row"><div><div class="eyebrow">NEW BOOK</div><h1>今天，写一个怎样的故事？</h1><p class="sub">三步：定方向 → 挑选题 → 设预算。每一步都能回头改。</p></div></div>
+  <div class="wizard">
+    <div class="steps">
+      <button class="step on" data-step="0"><i>1</i>方向</button>
+      <button class="step" data-step="1"><i>2</i>选题</button>
+      <button class="step" data-step="2"><i>3</i>写作设置</button>
+    </div>
+    <div class="panel">
+      <div class="pane on" data-pane="0">
+        <h2>想写什么类型？</h2>
+        <div class="label">男频</div>
+        <div class="genres" data-g><button class="on">玄幻爽文</button><button>仙侠升级</button><button>都市逆袭</button><button>历史谋略</button><button>悬疑推理</button><button>末日系统</button><button>游戏电竞</button><button>武侠江湖</button></div>
+        <div class="label">女频</div>
+        <div class="genres" data-g><button>宫斗宅斗</button><button>娱乐圈甜宠</button><button>宿敌相恋</button><button>反派女配重生</button><button>奇幻言情</button><button>感情拉扯成长</button></div>
+        <div class="label">其他</div>
+        <div class="genres" data-g><button>轻推理</button><button>治愈系奇幻</button><button>现实生活</button><button>心理惊悚</button><button>太空歌剧</button></div>
+        <div class="row" style="margin-top:24px">
+          <label class="field">篇幅<select><option>短篇 · 5 章</option><option selected>中篇 · 30 章</option><option>长篇 · 100 章</option><option>超长 · 500 章</option><option>自定义</option></select></label>
+          <label class="field">每章字数<select><option>约 2200 字</option><option>约 3000 字</option></select></label>
+        </div>
+        <div class="label">一句话想法（可空，越具体越不撞车）</div>
+        <textarea placeholder="例如：一个只会做饭的厨子，被拉进修仙宗门当伙夫"></textarea>
+        <div class="foot"><span class="cost">生成一批选题约 $0.03–0.05</span><button class="btn primary" data-go="1">生成选题 →</button></div>
+      </div>
+      <div class="pane" data-pane="1">
+        <div class="head-row" style="margin-bottom:0">
+          <div><h2>挑一个故事</h2><p class="sub">玄幻爽文 · 30 章 · 第 2 批（已排除前一批相似的 12 个）</p></div>
+          <div style="display:flex;gap:8px"><button class="btn" id="reroll">↻ 换一批</button><button class="btn ghost" data-go="0">← 改方向</button></div>
+        </div>
+        <div class="ideas" id="ideas"></div>
+        <div class="foot"><span class="cost" id="picked">还没选</span><button class="btn primary" data-go="2" id="to-set" disabled>用这个故事 →</button></div>
+      </div>
+      <div class="pane" data-pane="2">
+        <h2>写作设置</h2>
+        <p class="sub" id="picked2" style="margin-top:6px"></p>
+        <div class="row" style="margin-top:20px">
+          <label class="field">写手模型<select><option>MiniMax M3.1 Flash</option></select></label>
+          <label class="field">写作预算上限（$）<input value="1.50"></label>
+          <label class="field">去 AI 预算上限（$）<input value="0.50"></label>
+          <label class="field">并发章数<input value="2"></label>
+        </div>
+        <label class="toggle"><input type="checkbox" checked> 写完后自动去 AI 味（单独计费，不占写作预算）</label>
+        <div class="foot"><span class="cost">预计：写作 ≈ $1.2 · 去 AI ≈ $0.4 · 用完自动暂停，可随时续写</span><a class="btn primary" href="#/book">开始写作</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 书籍详情 ===== -->
+<section class="view" id="v-book">
+  <a href="#/library" class="sub">← 书库</a>
+  <div class="hero" style="margin-top:14px">
+    <div class="cover c2"><span class="g">治愈系奇幻</span><span class="t">南瓜箱里藏了一座会滚的城</span></div>
+    <div>
+      <span class="chip pause">预算暂停 · 去 AI 3/5</span>
+      <h1>南瓜箱里藏了一座会滚的城</h1>
+      <p class="sub">米娅·初棠在南街摊位上开箱，滚出来的不是南瓜，而是一座想逃跑的城……</p>
+      <div class="stats"><div><b>5 / 5</b>章节</div><div><b>1.29 万</b>字</div><div><b>$0.26</b>花费</div><div><b>11-04</b>创建</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <a class="btn primary" href="#/read/3">继续阅读 · 第 3 章</a>
+      <button class="btn">▶ 继续去 AI</button>
+    </div>
+  </div>
+  <div class="tabs" id="btabs"><button class="on" data-t="toc">目录</button><button data-t="bible">故事圣经</button><button data-t="outline">章纲</button><button data-t="check">检测报告</button><button data-t="export">导出</button></div>
+  <div data-tp="toc"><div class="toc" id="toc"></div></div>
+  <div data-tp="bible" hidden><p class="sub">人物卡（米娅·初棠 / 阿宜秋 / 灰鬃念慈……）、世界规则、势力——按卡片网格展示，每张可展开。</p></div>
+  <div data-tp="outline" hidden><p class="sub">逐章章纲：目标、冲突、结尾钩子；与正文同章联动，点“去读”直接跳阅读器。</p></div>
+  <div data-tp="check" hidden><p class="sub">每章一致性检查与去 AI 命中统计；只作参考，不代替读者判断。</p></div>
+  <div data-tp="export" hidden><div class="exports"><button class="btn">Markdown</button><button class="btn">Word</button><button class="btn">TXT</button><button class="btn">EPUB</button><button class="btn">番茄分章 ZIP</button></div><p class="sub" style="margin-top:12px">版本：<select><option>终稿（缺终稿的章用草稿补）</option><option>草稿</option></select></p></div>
+</section>
+</main>
+
+<!-- ===== 阅读器（全屏） ===== -->
+<div class="reader" id="reader">
+  <div class="rbar">
+    <button class="icon-btn" id="side-t" title="目录 (T)">☰</button>
+    <a class="icon-btn" href="#/book" title="返回书籍">←</a>
+    <div class="title">南瓜箱里藏了一座会滚的城<span id="rch">第 3 章</span></div>
+    <div class="sp"></div>
+    <div class="seg" id="ver"><button class="on" data-v="final">终稿</button><button data-v="draft">草稿</button><button data-v="duo">对照</button></div>
+    <button class="icon-btn" id="copy">复制本章</button>
+    <button class="icon-btn" id="aa" title="阅读设置">Aa</button>
+  </div>
+  <div class="rprog" id="rprog"></div>
+  <aside class="side"><input placeholder="搜索章节"><h4>第一卷 · 5 章</h4><div id="side"></div></aside>
+  <div class="rmain" id="rmain"><div class="col" id="col"></div></div>
+  <div class="pop" id="pop">
+    <div class="label">字号</div><div class="swatch" data-set="fs"><button data-v="16px">小</button><button data-v="19px">中</button><button data-v="22px">大</button><button data-v="25px">特大</button></div>
+    <div class="label">版心宽度</div><div class="swatch" data-set="w"><button data-v="36em">窄</button><button data-v="46em">适中</button><button data-v="64em">宽</button><button data-v="96%">铺满</button></div>
+    <div class="label">行距</div><div class="swatch" data-set="lh"><button data-v="1.8">紧</button><button data-v="2">中</button><button data-v="2.3">松</button></div>
+    <div class="label">背景</div><div class="swatch" data-set="bg"><button data-v="light" style="background:#fbf8f1">纸</button><button data-v="sepia" style="background:#f3e9d2">护眼</button><button data-v="dark" style="background:#1b1f1d;color:#ddd">夜</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="dialog">
+  <h2 id="m-title">删除这本书？</h2>
+  <p id="m-text"></p>
+  <input id="m-input" placeholder="输入书名确认">
+  <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" id="m-cancel">取消</button><button class="btn danger" id="m-ok" disabled>永久删除</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const toast=t=>{const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1800)};
+const books=[
+ {t:'一掌镇乾坤',g:'玄幻爽文',c:'c1',st:'run',sl:'写作中 · 7/50 章',p:14,w:'1.6 万字',cost:'$0.31',act:'暂停'},
+ {t:'南瓜箱里藏了一座会滚的城',g:'治愈系奇幻',c:'c2',st:'pause',sl:'预算暂停 · 去 AI 3/5',p:100,w:'1.3 万字',cost:'$0.26',act:'继续'},
+ {t:'证词里，我是凶手',g:'悬疑推理',c:'c3',st:'done',sl:'已完成',p:100,w:'1.2 万字',cost:'$0.24'},
+ {t:'猫尾巴里养着一尊伪神',g:'玄幻爽文',c:'c4',st:'done',sl:'已完成',p:100,w:'2.4 万字',cost:'$0.37'}];
+$('#shelf').innerHTML=books.map((b,i)=>`<article class="book"><div class="cover ${b.c}" onclick="nav('#/book')"><span class="g">${b.g}</span><span class="t">${b.t}</span></div>
+<div class="book-body"><span class="chip ${b.st}">${b.sl}</span><div class="prog"><i style="width:${b.p}%"></i></div>
+<div class="meta"><span>${b.w}</span><span>${b.cost}</span></div>
+<div class="book-act"><a class="btn primary" href="#/read/1">阅读</a>${b.act?`<button class="btn">${b.act}</button>`:''}
+<div class="more"><button class="btn ghost" data-menu="${i}">⋯</button><div class="menu" id="menu${i}"><button>书籍详情</button><button>导出…</button><button>重命名</button><hr><button data-archive="${i}">移到归档（可恢复）</button><button class="del" data-del="${i}">永久删除…</button></div></div></div></div></article>`).join('')+`<button class="new-tile" onclick="nav('#/new')"><b>＋</b>开一本新书</button>`;
+document.addEventListener('click',e=>{
+  const m=e.target.closest('[data-menu]');$$('.menu').forEach(x=>{if(!m||x.id!=='menu'+m.dataset.menu)x.classList.remove('open')});
+  if(m){$('#menu'+m.dataset.menu).classList.toggle('open');return}
+  const a=e.target.closest('[data-archive]');if(a){toast(`《${books[a.dataset.archive].t}》已移到归档 · 撤销`);return}
+  const d=e.target.closest('[data-del]');if(d){const b=books[d.dataset.del];$('#m-text').textContent=`《${b.t}》的正文、检查点和调用记录会从磁盘删除，无法恢复。正在写作的书需先暂停。`;$('#m-input').value='';$('#m-ok').disabled=true;$('#m-input').dataset.t=b.t;$('#modal').classList.add('open')}
+  if(!e.target.closest('#pop')&&!e.target.closest('#aa'))$('#pop').classList.remove('open');
+});
+$('#m-input').oninput=e=>$('#m-ok').disabled=e.target.value.trim()!==e.target.dataset.t;
+$('#m-cancel').onclick=()=>$('#modal').classList.remove('open');
+$('#m-ok').onclick=()=>{$('#modal').classList.remove('open');toast('已永久删除')};
+
+/* 开新书 */
+$$('[data-g] button').forEach(b=>b.onclick=()=>{$$('[data-g] button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
+const ideas=[
+ ['修仙，每次挨打都结算十倍','被宗门当沙包的杂役，每挨一次打，第二天按十倍返还给出手的人。','挨打返还+扮猪吃虎+宗门打脸','进度条：挨打对象从外门到掌门；问题梯：谁在暗中挨我的打？'],
+ ['我给山神当会计，账本能改天命','山神庙穷得揭不开锅，新来的账房发现记一笔香火，就能改一笔因果。','经营+改命+轻松','进度条：庙从野庙到天庭直属；问题梯：谁做了三百年假账？'],
+ ['剑灵觉醒，可它只会炒菜','逃婚世子的本命剑灵是个厨子，偏偏一盘菜就能顶一年修为。','反差+美食+升级','进度条：菜谱品阶；问题梯：上一任剑主为何饿死？'],
+ ['开局继承魔尊，但要还贷','穿成魔尊继承人，魔宫负债九亿灵石，债主是整个正道。','反差+经营+打脸','进度条：还清每一家债主；问题梯：魔尊当年借钱做了什么？'],
+ ['宗门大比，我只负责解说','解说员嘴开过光，说谁赢谁就真的赢。','玩梗+言出法随','进度条：解说规格从宗门到天下；问题梯：谁在收买解说？'],
+ ['我养的鸡，全是上古神兽','乡下修士的养鸡场里，每只鸡都是神兽转世，还都欠我一顿饭。','种田+团宠+无敌','进度条：鸡场扩建；问题梯：神兽为何集体投胎鸡窝？']];
+$('#ideas').innerHTML=ideas.map((x,i)=>`<div class="idea" data-i="${i}"><h3>${x[0]}</h3><div class="hook">${x[1]}</div><div class="tags">【${x[2].replaceAll('+','｜')}】</div><p>${x[3]}</p><div class="scores"><span>新鲜 8</span><span>点击 7</span><span>长篇 8</span><span>好懂 9</span><span>· 参考</span></div><div class="ia"><button onclick="event.stopPropagation();toast('保留“修仙”壳，换新变量，再出 6 个')">沿这个方向</button><button onclick="event.stopPropagation();toast('打开编辑：书名/钩子/卖点/梗概')">改一改</button></div></div>`).join('');
+$$('.idea').forEach(c=>c.onclick=()=>{$$('.idea').forEach(x=>x.classList.remove('on'));c.classList.add('on');const t=ideas[c.dataset.i][0];$('#picked').textContent='已选：'+t;$('#picked2').textContent='选题：'+t+' · 玄幻爽文 · 30 章';$('#to-set').disabled=false});
+$('#reroll').onclick=()=>toast('正在换一批（排除已看过的 12 个）…');
+function step(n){$$('.step').forEach((s,i)=>{s.classList.toggle('on',i==n);s.classList.toggle('ok',i<n)});$$('.pane').forEach((p,i)=>p.classList.toggle('on',i==n))}
+$$('[data-go]').forEach(b=>b.onclick=()=>step(+b.dataset.go));$$('.step').forEach(s=>s.onclick=()=>step(+s.dataset.step));
+
+/* 详情 */
+const chs=['滚出箱子的南瓜','水巷的三处火光','会偷懒的轮子','灰鬃商会的价码','这座城不卖'];
+$('#toc').innerHTML=chs.map((c,i)=>`<a href="#/read/${i+1}"><span class="n">第 ${i+1} 章</span>${c}<span class="s ${i<3?'f':''}">${i<3?'终稿':'草稿'} · 2.5k</span></a>`).join('');
+$$('#btabs button').forEach(b=>b.onclick=()=>{$$('#btabs button').forEach(x=>x.classList.toggle('on',x===b));$$('[data-tp]').forEach(p=>p.hidden=p.dataset.tp!==b.dataset.t)});
+
+/* 阅读器 */
+const draft=['摊位前的木箱忽然响了一声。','喀啦。','箱盖弹起半寸，一枚圆滚滚的橙色南瓜滚了出来。它撞翻青萝卜，压扁两只纸碗，径直冲向整筐南瓜。','“南瓜！”铁锅岑溪嗓门比锅盖砸落还响，“哪个胆大的南瓜敢在我摊上撒野！”','她抄起长柄木铲去拦，那南瓜却滑得邪门，身子一矮，从铲底钻过，撞得筐架东倒西歪。十几枚南瓜骨碌碌滚出，彼此一碰，竟排成歪斜一列。','最外侧木架失去平衡，轰然向石阶倾斜。','阿宜秋俯身捡起滚到脚边的萝卜，放回筐里，又将倾倒的南瓜逐一扶正：“开箱前箱中应有十二枚南瓜。现在少了一枚。”','“它自己跑出来的！”'];
+const fin=draft.map((p,i)=>i==3?'“南瓜！”铁锅岑溪一嗓子比锅盖砸地还响，“<mark class="chg">谁家的瓜</mark>敢在我摊上撒野！”':i==4?'她抄起木铲去拦。那南瓜滑得邪门，<mark class="chg">一缩身</mark>从铲底钻过去，筐架被撞得东倒西歪。':p);
+let cur=3,ver='final';
+const P=a=>a.map(p=>`<p>${p}</p>`).join('');
+function render(){
+  $('#rch').textContent=`第 ${cur} 章 · ${chs[cur-1]}`;
+  $('#side').innerHTML=chs.map((c,i)=>`<a href="#/read/${i+1}" class="${i+1==cur?'on':''}"><span class="n">${i+1}</span>${c}</a>`).join('');
+  const body=ver==='duo'?`<div class="duo"><div><h5>草稿</h5><div class="prose">${P(draft)}</div></div><div><h5>终稿 · 2 处修改</h5><div class="prose">${P(fin)}</div></div></div>`:`<div class="prose">${P(ver==='draft'?draft:fin).repeat(3)}</div>`;
+  $('#col').innerHTML=`<h2>第${cur}章　${chs[cur-1]}</h2><div class="cm">${ver==='draft'?'草稿':'终稿'} · 2,563 字 · 约 6 分钟</div>${body}<div class="pager"><a class="btn" href="#/read/${Math.max(1,cur-1)}">← 上一章</a><a class="btn" href="#/book">目录</a><a class="btn primary" href="#/read/${Math.min(5,cur+1)}">下一章 →</a></div>`;
+  $('#col').style.setProperty('--w',ver==='duo'?'96%':getComputedStyle(document.documentElement).getPropertyValue('--w')||'46em');
+  $('#rmain').scrollTop=0;$('#rprog').style.width=(cur/chs.length*100)+'%';
+}
+$$('#ver button').forEach(b=>b.onclick=()=>{ver=b.dataset.v;$$('#ver button').forEach(x=>x.classList.toggle('on',x===b));render()});
+$('#side-t').onclick=()=>$('#reader').classList.toggle('noside');
+$('#aa').onclick=()=>$('#pop').classList.toggle('open');
+$('#copy').onclick=()=>toast('已复制第 '+cur+' 章（终稿）');
+$$('#pop [data-set]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=g.dataset.set,v=b.dataset.v;
+  if(k==='bg'){document.documentElement.dataset.theme=v==='light'?'':v}else{document.documentElement.style.setProperty('--'+k,v)}if(k==='w'&&ver!=='duo')$('#col').style.setProperty('--w',v)}));
+document.addEventListener('keydown',e=>{if(!$('#reader').classList.contains('on'))return;
+  if(e.key==='ArrowRight'&&cur<5)nav('#/read/'+(cur+1));if(e.key==='ArrowLeft'&&cur>1)nav('#/read/'+(cur-1));
+  if(e.key==='t')$('#reader').classList.toggle('noside');if(e.key==='Escape')nav('#/book')});
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'':'dark'};
+
+/* 路由：#/library  #/new  #/book  #/read/N */
+let H=location.hash||'#/library';
+function nav(h){H=h;try{history.pushState(null,'',h)}catch(e){}route()}
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#/"]');if(a){e.preventDefault();nav(a.getAttribute('href'))}});
+addEventListener('popstate',()=>{H=location.hash||'#/library';route()});
+function route(){const h=H,[,v,a]=h.split('/');
+  const reading=v==='read';$('#reader').classList.toggle('on',reading);document.body.style.overflow=reading?'hidden':'';
+  if(reading){cur=+a||1;render();return}
+  $$('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));$$('[data-nav]').forEach(x=>x.classList.toggle('on',x.dataset.nav===v));window.scrollTo(0,0)}
+route();
+</script>
+</body>
+</html>

@@ -623,7 +623,7 @@
 
 ## 2026-11-04-24：选题工坊——市场驱动、抽轴发散、换一批（用户 2026-11-04 22:50 反馈“选题质量一般、每次差不多”，监工设计）
 
-状态：待执行（排在第 22 条之后；22 完成并提交后再开始，两条都改 webui，不要并行）
+状态：待执行（用户 2026-11-04 改为单独任务并行开发：在独立工作树 `scratch/ideation-worktree`、分支 `feat/ideation` 上做，不碰主工作区；完成后由监工在第 22 条提交之后合并回 main，webui 冲突由监工处理）
 
 设计、证据和验收标准都在 [reports/ideation-design-20261104.md](reports/ideation-design-20261104.md)，先通读，按其中第 3–5 节实现。要点：
 1. 新包 `engine/ideation/`（≤600 行，check_scope 加限额），轴池/俗套/题材→番茄分类映射/名字黑名单放 `engine/data/ideation/`。不 import bookengine。

@@ -1,5 +1,5 @@
 """DOCX and EPUB using existing python-docx and the standard library."""
-from hashlib import sha256
+from uuid import NAMESPACE_URL, uuid5
 from html import escape
 from io import BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
@@ -37,7 +37,7 @@ def xhtml(title, content):
 
 def epub_bytes(title, rows):
     title_xml = escape(title)
-    identity = sha256(repr((title, rows)).encode('utf-8')).hexdigest()
+    identity = uuid5(NAMESPACE_URL, repr((title, rows))).hex
     manifest = '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'
     manifest += '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'
     spine, links, points = [], [], []

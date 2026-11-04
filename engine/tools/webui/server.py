@@ -18,7 +18,7 @@ from jobs import Queue, topic_worker
 ASSETS = Path(__file__).resolve().parent
 ENGINE = ASSETS.parents[1]
 REPO = ENGINE.parent
-SHARED = REPO.parent / 'engine-books'
+SHARED = Path(os.environ.get('BOOKS_DIR') or REPO / 'books')
 
 
 def config(env):
@@ -56,8 +56,11 @@ class Handler(BaseHTTPRequestHandler):
         if filename: self.send_header('Content-Disposition', 'attachment; filename="'+filename+'"')
         self.end_headers(); self.wfile.write(data)
 
+    def hosts(self):
+        return getattr(self.server, 'hosts', None) or {self.server.origin.removeprefix('http://')}
+
     def valid_host(self):
-        return self.headers.get('Host') == self.server.origin.removeprefix('http://')
+        return self.headers.get('Host') in self.hosts()
 
     def do_GET(self):
         if not self.valid_host(): self.send({'error':'Host不匹配'}, 403); return
@@ -90,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, OSError, TypeError): self.send({'error':'请求无效或产物尚未就绪'}, 400)
 
     def do_POST(self):
-        if not self.valid_host() or self.headers.get('Origin') != self.server.origin or self.headers.get('Content-Type','').split(';')[0] != 'application/json':
+        if not self.valid_host() or self.headers.get('Origin') not in {'http://'+h for h in self.hosts()} or self.headers.get('Content-Type','').split(';')[0] != 'application/json':
             self.send({'error':'仅接受同源JSON操作'}, 403); return
         try:
             size = int(self.headers.get('Content-Length', '0'))
@@ -108,20 +111,24 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description='127.0.0.1 local book UI')
-    parser.add_argument('--env', type=Path, default=REPO.parent.parent / '.env')
+    parser.add_argument('--env', type=Path, default=Path(os.environ.get('BOOKENGINE_ENV') or REPO / '.env'))
     parser.add_argument('--books', type=Path, default=SHARED)
-    parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--budget', type=float, default=.5)
+    parser.add_argument('--host', default=os.environ.get('BOOKWEB_HOST', '127.0.0.1'))
+    parser.add_argument('--port', type=int, default=int(os.environ.get('BOOKWEB_PORT', 8787)))
+    parser.add_argument('--public-port', type=int, default=int(os.environ.get('BOOKWEB_PUBLIC_PORT', 0)), help='browser-facing port when behind Docker port mapping')
+    parser.add_argument('--budget', type=float, default=float(os.environ.get('BOOKWEB_BUDGET_USD', 20)))
     parser.add_argument('--topic-worker', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(); os.umask(0o077)
     if args.topic_worker: topic_worker(args.topic_worker, args.env); return
-    if args.books.resolve() != SHARED.resolve(): parser.error('只扫描共享 scratch/engine-books')
-    if not 0 < args.budget <= .5: parser.error('本轮总预算须在(0,0.5]')
+    if not 0 < args.budget <= 50: parser.error('总预算须在(0,50]美元')
+    args.books.mkdir(parents=True, exist_ok=True)
     library = Library(args.books)
     queue = Queue(library, args.env.resolve(), ENGINE, args.budget)
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    server.origin = f'http://127.0.0.1:{args.port}'; server.library = library; server.queue = queue
-    server.configuration = config(args.env.resolve()); server.daemon_threads = True
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    public = args.public_port or args.port
+    server.origin = f'http://127.0.0.1:{public}'; server.hosts = {f'127.0.0.1:{public}', f'localhost:{public}'}
+    server.library = library; server.queue = queue
+    server.configuration = config(args.env.resolve()); server.configuration['budgets']['total'] = args.budget; server.daemon_threads = True
     def stop(*_):
         queue.close(); threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)

@@ -1,0 +1,75 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - link "书房 BestSeller · B" [ref=f2e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f2e4]:
+      - link "开一本新书" [ref=f2e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f2e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f2e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f2e8]:
+    - generic [ref=f2e9]:
+      - paragraph [ref=f2e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f2e11]
+      - paragraph [ref=f2e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f2e13]:
+        - button "悬疑 · 5章" [ref=f2e14]
+        - button "玄幻 · 10章" [ref=f2e15]
+      - generic [ref=f2e16]:
+        - generic [ref=f2e17]:
+          - generic [ref=f2e18]:
+            - text: 题材
+            - combobox "题材" [ref=f2e19]:
+              - option "悬疑推理" [selected]
+              - option "玄幻爽文"
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f2e20]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f2e21]:
+              - option "短篇 · 5章" [selected]
+              - option "中篇 · 10章"
+              - option "长篇 · 20章"
+              - option "自定章数"
+          - generic [ref=f2e22]:
+            - text: 章数
+            - spinbutton "章数" [ref=f2e23]: "5"
+        - generic [ref=f2e24]:
+          - text: 故事想法 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f2e25]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f2e26]
+        - status [ref=f2e27]: 已连接。选择题材与章数，即可生成选题。
+      - generic [ref=f2e28]:
+        - heading "写作设置" [level=2] [ref=f2e29]
+        - generic [ref=f2e30]:
+          - generic [ref=f2e31]:
+            - text: 写手
+            - combobox "写手" [ref=f2e32]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f2e33]:
+            - text: 单书预算上限
+            - spinbutton "单书预算上限" [ref=f2e34]: "0.23"
+          - generic [ref=f2e35]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f2e36]: "2"
+        - paragraph [ref=f2e37]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - generic [ref=f2e38]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f2e39]
+          - text: 开启去 AI 润色 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f2e40]
+        - status
+    - generic [ref=f2e41]:
+      - generic [ref=f2e42]:
+        - generic [ref=f2e43]:
+          - paragraph [ref=f2e44]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f2e45]
+        - button "刷新书库" [ref=f2e46]
+      - status
+  - contentinfo [ref=f2e47]: 留一点耐心，给正在长成的故事。

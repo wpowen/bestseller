@@ -1,0 +1,500 @@
+- generic [ref=f4e1]:
+  - banner [ref=f4e2]:
+    - link "书房 BestSeller · B" [ref=f4e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f4e4]:
+      - link "开一本新书" [ref=f4e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f4e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f4e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f4e8]:
+    - generic [ref=f4e9]:
+      - paragraph [ref=f4e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f4e11]
+      - paragraph [ref=f4e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f4e13]:
+        - button "悬疑 · 5章" [ref=f4e14] [cursor=pointer]
+        - button "玄幻 · 10章" [ref=f4e15] [cursor=pointer]
+      - group [ref=f4e16]:
+        - generic "恢复已有选题 · 不重复生成" [ref=f4e17] [cursor=pointer]
+        - option "选择已保存的选题" [selected]
+        - option "悬疑推理 · 5章 · 8db1548c-0b26-4ad9-8144-ab37260e958b"
+      - generic [ref=f4e18]:
+        - generic [ref=f4e19]:
+          - generic [ref=f4e20]:
+            - text: 题材
+            - combobox "题材" [ref=f4e21]:
+              - option "悬疑推理" [selected]
+              - option "玄幻爽文"
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f4e22]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f4e23]:
+              - option "短篇 · 5章" [selected]
+              - option "短篇 · 10章"
+              - option "中篇 · 50章"
+              - option "长篇 · 1000章"
+              - option "长篇 · 2000章"
+              - option "自定章数"
+          - generic [ref=f4e24]:
+            - text: 章数
+            - spinbutton "章数" [ref=f4e25]: "5"
+        - generic [ref=f4e26]:
+          - text: 故事想法
+          - generic [ref=f4e27]: 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f4e28]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f4e29] [cursor=pointer]
+        - status [ref=f4e30]: 已连接。已有选题可从上方恢复，不必再次生成。
+      - generic [ref=f4e31]:
+        - heading "写作设置" [level=2] [ref=f4e32]
+        - generic [ref=f4e33]:
+          - generic [ref=f4e34]:
+            - text: 写手
+            - combobox "写手" [ref=f4e35]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f4e36]:
+            - text: 单书预算上限（美元 $）
+            - spinbutton "单书预算上限（美元 $）" [ref=f4e37]: "0.23"
+          - generic [ref=f4e38]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f4e39]: "2"
+        - paragraph [ref=f4e40]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - paragraph [ref=f4e41]: 总预算上限 $0.5 · 预留 $0.03；提交前请核对单书预算。
+        - generic [ref=f4e42]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f4e43]
+          - text: 开启去 AI 润色
+          - generic [ref=f4e44]: 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f4e45]
+        - status [ref=f4e46]
+    - generic [ref=f4e47]:
+      - generic [ref=f4e48]:
+        - generic [ref=f4e49]:
+          - paragraph [ref=f4e50]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f4e51]
+        - button "刷新书库" [ref=f4e52] [cursor=pointer]
+      - status [ref=f4e53]:
+        - generic [ref=f4e54]: 本轮总预算
+        - strong [ref=f4e55]: $0.089402 已占用 / $0.50 上限
+        - generic [ref=f4e499]: 剩余 $0.410599 · 以服务端回读为准
+      - status [ref=f4e56]: 40 本作品 · 当前任务优先 · 每 3 秒更新 · 最近同步 17:07:39
+      - generic [ref=f4e58]:
+        - article [ref=f4e59]:
+          - generic [ref=f4e60]: 已完成
+          - button "《证词里，我是凶手》" [ref=f4e61] [cursor=pointer]
+          - paragraph [ref=f4e62]: 悬疑推理 · 2026/11/4 16:52:12 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e63]: 5 / 5 章 · 11,772 字 · 已知 $0.033271 + Unknown 上界 $0.00 · 预算占用 $0.033271
+          - paragraph [ref=f4e64]: 写作 — · 后处理 — · 调用 16 次 · Token 94,495 · Unknown 0 次 · 单书预算 $0.23 · 去 AI：关闭
+          - paragraph [ref=f4e65]: complete
+          - progressbar "章节进度" [ref=f4e66]
+          - button "运行去AI后处理 · 《证词里，我是凶手》" [ref=f4e69] [cursor=pointer]: 运行去AI后处理
+        - article [ref=f4e70]:
+          - generic [ref=f4e71]: 写作中
+          - button "《猫尾巴里养着一尊伪神》" [ref=f4e72] [cursor=pointer]
+          - paragraph [ref=f4e73]: 玄幻爽文 · 2026/11/4 16:50:37 · 检测评分：暂无 · 预计剩余 438 秒
+          - paragraph [ref=f4e74]: 7 / 10 章 · 17,318 字 · 已知 $0.050111 + Unknown 上界 $0.005119 · 预算占用 $0.05523
+          - paragraph [ref=f4e75]: 写作 — · 后处理 — · 调用 22 次 · Token 139,332 · Unknown 1 次 · 单书预算 $0.23 · 去 AI：关闭
+          - paragraph [ref=f4e76]: 正文
+          - progressbar "章节进度" [ref=f4e77]
+          - button "暂停 · 《猫尾巴里养着一尊伪神》" [ref=f4e80] [cursor=pointer]: 暂停
+        - article [ref=f4e81]:
+          - generic [ref=f4e82]: 已完成
+          - button "《一口空势夺全场》" [ref=f4e83] [cursor=pointer]
+          - paragraph [ref=f4e84]: 玄幻爽文 · 2026/11/3 14:24:31 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e85]: 20 / 20 章 · 50,367 字 · 已知 $0.122658 + Unknown 上界 $0.00 · 预算占用 $0.122658
+          - paragraph [ref=f4e86]: 写作 — · 后处理 — · 调用 56 次 · Token 353,326 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e87]: complete
+          - progressbar "章节进度" [ref=f4e88]
+          - generic [ref=f4e89]: 历史书籍 · 只读
+        - article [ref=f4e92]:
+          - generic [ref=f4e93]: 已完成
+          - button "雪停之前，请别下索道" [ref=f4e94] [cursor=pointer]
+          - paragraph [ref=f4e95]: 悬疑推理 · 2026/11/3 14:24:31 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e96]: 20 / 20 章 · 48,287 字 · 已知 $0.108322 + Unknown 上界 $0.00 · 预算占用 $0.108322
+          - paragraph [ref=f4e97]: 写作 — · 后处理 — · 调用 56 次 · Token 324,671 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e98]: complete
+          - progressbar "章节进度" [ref=f4e99]
+          - generic [ref=f4e100]: 历史书籍 · 只读
+        - article [ref=f4e103]:
+          - generic [ref=f4e104]: 已完成
+          - button "《没人记得她来过》" [ref=f4e105] [cursor=pointer]
+          - paragraph [ref=f4e106]: 悬疑推理 · 2026/11/2 23:43:19 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e107]: 20 / 20 章 · 51,249 字 · 已知 $0.128402 + Unknown 上界 $0.008603 · 预算占用 $0.137005
+          - paragraph [ref=f4e108]: 写作 — · 后处理 — · 调用 60 次 · Token 366,913 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e109]: complete
+          - progressbar "章节进度" [ref=f4e110]
+          - generic [ref=f4e111]: 历史书籍 · 只读
+        - article [ref=f4e114]:
+          - generic [ref=f4e115]: 已完成
+          - button "《别人修阵，我拆阵成主》" [ref=f4e116] [cursor=pointer]
+          - paragraph [ref=f4e117]: 玄幻爽文 · 2026/11/2 23:43:19 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e118]: 20 / 20 章 · 56,315 字 · 已知 $0.113117 + Unknown 上界 $0.009173 · 预算占用 $0.12229
+          - paragraph [ref=f4e119]: 写作 — · 后处理 — · 调用 52 次 · Token 325,602 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e120]: complete
+          - progressbar "章节进度" [ref=f4e121]
+          - generic [ref=f4e122]: 历史书籍 · 只读
+        - article [ref=f4e125]:
+          - generic [ref=f4e126]: 已完成
+          - button "《我能斩断力量契约》" [ref=f4e127] [cursor=pointer]
+          - paragraph [ref=f4e128]: 玄幻爽文 · 2026/11/2 16:01:40 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e129]: 50 / 50 章 · 127,397 字 · 已知 $0.489408 + Unknown 上界 $0.019658 · 预算占用 $0.509066
+          - paragraph [ref=f4e130]: 写作 — · 后处理 — · 调用 247 次 · Token 1,547,839 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e131]: complete
+          - progressbar "章节进度" [ref=f4e132]
+          - generic [ref=f4e133]: 历史书籍 · 只读
+        - article [ref=f4e136]:
+          - generic [ref=f4e137]: 已停止
+          - button "全镇都参加过那场婚礼" [ref=f4e138] [cursor=pointer]
+          - paragraph [ref=f4e139]: 悬疑推理 · 2026/11/2 16:01:40 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e140]: 50 / 50 章 · 123,658 字 · 已知 $0.476094 + Unknown 上界 $0.00 · 预算占用 $0.476094
+          - paragraph [ref=f4e141]: 写作 — · 后处理 — · 调用 275 次 · Token 1,561,875 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e142]: rolling 50 chapters average=138.28s failure_rate=0.0079; limit=110s/0.1
+          - progressbar "章节进度" [ref=f4e143]
+          - generic [ref=f4e144]: 历史书籍 · 只读
+        - article [ref=f4e147]:
+          - generic [ref=f4e148]: 已完成
+          - button "《封我天赋，替我出手》" [ref=f4e149] [cursor=pointer]
+          - paragraph [ref=f4e150]: 玄幻爽文 · 2026/11/1 19:37:00 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e151]: 30 / 30 章 · 74,435 字 · 已知 $0.304825 + Unknown 上界 $0.00 · 预算占用 $0.304825
+          - paragraph [ref=f4e152]: 写作 — · 后处理 — · 调用 165 次 · Token 1,028,828 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e153]: complete
+          - progressbar "章节进度" [ref=f4e154]
+          - generic [ref=f4e155]: 历史书籍 · 只读
+        - article [ref=f4e158]:
+          - generic [ref=f4e159]: 已完成
+          - button "《我已经死了，所以规则怕我》" [ref=f4e160] [cursor=pointer]
+          - paragraph [ref=f4e161]: 悬疑推理 · 2026/11/1 19:37:00 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e162]: 130 / 130 章 · 338,777 字 · 已知 $1.071819 + Unknown 上界 $0.00 · 预算占用 $1.071819
+          - paragraph [ref=f4e163]: 写作 — · 后处理 — · 调用 477 次 · Token 3,228,427 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e164]: complete
+          - progressbar "章节进度" [ref=f4e165]
+          - generic [ref=f4e166]: 历史书籍 · 只读
+        - article [ref=f4e169]:
+          - generic [ref=f4e170]: 已完成
+          - button "听见十秒之后" [ref=f4e171] [cursor=pointer]
+          - paragraph [ref=f4e172]: 都市逆袭 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e173]: 100 / 100 章 · 242,806 字 · 已知 $0.625874 + Unknown 上界 $0.015067 · 预算占用 $0.64094
+          - paragraph [ref=f4e174]: 写作 — · 后处理 — · 调用 333 次 · Token 1,921,750 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e175]: complete
+          - progressbar "章节进度" [ref=f4e176]
+          - generic [ref=f4e177]: 历史书籍 · 只读
+        - article [ref=f4e180]:
+          - generic [ref=f4e181]: 已完成
+          - button "《借雪兽生》" [ref=f4e182] [cursor=pointer]
+          - paragraph [ref=f4e183]: 玄幻爽文 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e184]: 100 / 100 章 · 234,261 字 · 已知 $0.696576 + Unknown 上界 $0.030964 · 预算占用 $0.727541
+          - paragraph [ref=f4e185]: 写作 — · 后处理 — · 调用 335 次 · Token 2,137,742 · Unknown 4 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e186]: complete
+          - progressbar "章节进度" [ref=f4e187]
+          - generic [ref=f4e188]: 历史书籍 · 只读
+        - article [ref=f4e191]:
+          - generic [ref=f4e192]: 已完成
+          - button "回声之下" [ref=f4e193] [cursor=pointer]
+          - paragraph [ref=f4e194]: 悬疑推理 · 2026/11/1 01:23:37 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e195]: 100 / 100 章 · 236,522 字 · 已知 $0.639481 + Unknown 上界 $0.0224 · 预算占用 $0.661881
+          - paragraph [ref=f4e196]: 写作 — · 后处理 — · 调用 332 次 · Token 2,002,839 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e197]: complete
+          - progressbar "章节进度" [ref=f4e198]
+          - generic [ref=f4e199]: 历史书籍 · 只读
+        - article [ref=f4e202]:
+          - generic [ref=f4e203]: 已完成
+          - button "《借火记暖》" [ref=f4e204] [cursor=pointer]
+          - paragraph [ref=f4e205]: 玄幻爽文 · 2026/11/1 00:55:10 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e206]: 5 / 5 章 · 11,273 字 · 已知 $0.059953 + Unknown 上界 $0.00 · 预算占用 $0.059953
+          - paragraph [ref=f4e207]: 写作 — · 后处理 — · 调用 24 次 · Token 178,703 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e208]: complete
+          - progressbar "章节进度" [ref=f4e209]
+          - generic [ref=f4e210]: 历史书籍 · 只读
+        - article [ref=f4e213]:
+          - generic [ref=f4e214]: 已完成
+          - button "entertainment-10" [ref=f4e215] [cursor=pointer]
+          - paragraph [ref=f4e216]: entertainment-sweet · 2026/10/31 19:30:41 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e217]: 10 / 10 章 · 23,033 字 · 已知 $0.067364 + Unknown 上界 $0.00 · 预算占用 $0.067364
+          - paragraph [ref=f4e218]: 写作 — · 后处理 — · 调用 31 次 · Token 241,864 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e219]: complete
+          - progressbar "章节进度" [ref=f4e220]
+          - generic [ref=f4e221]: 历史书籍 · 只读
+        - article [ref=f4e224]:
+          - generic [ref=f4e225]: 已完成
+          - button "wuxia-10" [ref=f4e226] [cursor=pointer]
+          - paragraph [ref=f4e227]: wuxia-jianghu-honor · 2026/10/31 19:30:41 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e228]: 10 / 10 章 · 22,971 字 · 已知 $0.080837 + Unknown 上界 $0.00 · 预算占用 $0.080837
+          - paragraph [ref=f4e229]: 写作 — · 后处理 — · 调用 32 次 · Token 267,267 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e230]: complete
+          - progressbar "章节进度" [ref=f4e231]
+          - generic [ref=f4e232]: 历史书籍 · 只读
+        - article [ref=f4e235]:
+          - generic [ref=f4e236]: 已完成
+          - button "cozy-10" [ref=f4e237] [cursor=pointer]
+          - paragraph [ref=f4e238]: 轻推理 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e239]: 10 / 10 章 · 22,561 字 · 已知 $0.115788 + Unknown 上界 $0.007289 · 预算占用 $0.123077
+          - paragraph [ref=f4e240]: 写作 — · 后处理 — · 调用 45 次 · Token 412,525 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e241]: complete
+          - progressbar "章节进度" [ref=f4e242]
+          - generic [ref=f4e243]: 历史书籍 · 只读
+        - article [ref=f4e246]:
+          - generic [ref=f4e247]: 已完成
+          - button "esport-10" [ref=f4e248] [cursor=pointer]
+          - paragraph [ref=f4e249]: game-esport · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e250]: 10 / 10 章 · 21,700 字 · 已知 $0.103492 + Unknown 上界 $0.035542 · 预算占用 $0.139034
+          - paragraph [ref=f4e251]: 写作 — · 后处理 — · 调用 44 次 · Token 340,694 · Unknown 5 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e252]: resume chapters=1, average_s=92.4, failure_rate=0.000
+          - progressbar "章节进度" [ref=f4e253]
+          - generic [ref=f4e254]: 历史书籍 · 只读
+        - article [ref=f4e257]:
+          - generic [ref=f4e258]: 已完成
+          - button "history-10" [ref=f4e259] [cursor=pointer]
+          - paragraph [ref=f4e260]: 历史谋略 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e261]: 10 / 10 章 · 23,666 字 · 已知 $0.120037 + Unknown 上界 $0.007482 · 预算占用 $0.127519
+          - paragraph [ref=f4e262]: 写作 — · 后处理 — · 调用 44 次 · Token 434,331 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e263]: complete
+          - progressbar "章节进度" [ref=f4e264]
+          - generic [ref=f4e265]: 历史书籍 · 只读
+        - article [ref=f4e268]:
+          - generic [ref=f4e269]: 已完成
+          - button "romance-10" [ref=f4e270] [cursor=pointer]
+          - paragraph [ref=f4e271]: romance-tension-growth · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e272]: 10 / 10 章 · 22,130 字 · 已知 $0.134223 + Unknown 上界 $0.008598 · 预算占用 $0.142821
+          - paragraph [ref=f4e273]: 写作 — · 后处理 — · 调用 49 次 · Token 484,889 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e274]: complete
+          - progressbar "章节进度" [ref=f4e275]
+          - generic [ref=f4e276]: 历史书籍 · 只读
+        - article [ref=f4e279]:
+          - generic [ref=f4e280]: 已完成
+          - button "urban-300" [ref=f4e281] [cursor=pointer]
+          - paragraph [ref=f4e282]: 都市逆袭 · 2026/10/31 17:30:52 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e283]: 300 / 300 章 · 674,475 字 · 已知 $1.647311 + Unknown 上界 $0.017439 · 预算占用 $1.664749
+          - paragraph [ref=f4e284]: 写作 — · 后处理 — · 调用 822 次 · Token 6,177,939 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e285]: complete
+          - progressbar "章节进度" [ref=f4e286]
+          - generic [ref=f4e287]: 历史书籍 · 只读
+        - article [ref=f4e290]:
+          - generic [ref=f4e291]: 已完成
+          - button "s4" [ref=f4e292] [cursor=pointer]
+          - paragraph [ref=f4e293]: 玄幻爽文 · 2026/10/31 14:00:36 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e294]: 100 / 100 章 · 228,908 字 · 已知 $1.063832 + Unknown 上界 $0.015909 · 预算占用 $1.079741
+          - paragraph [ref=f4e295]: 写作 — · 后处理 — · 调用 433 次 · Token 4,533,732 · Unknown 2 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e296]: complete
+          - progressbar "章节进度" [ref=f4e297]
+          - generic [ref=f4e298]: 历史书籍 · 只读
+        - article [ref=f4e301]:
+          - generic [ref=f4e302]: 已完成
+          - button "xuanhuan-10" [ref=f4e303] [cursor=pointer]
+          - paragraph [ref=f4e304]: 玄幻爽文 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e305]: 10 / 10 章 · 24,325 字 · 已知 $0.148818 + Unknown 上界 $0.00 · 预算占用 $0.148818
+          - paragraph [ref=f4e306]: 写作 — · 后处理 — · 调用 56 次 · Token 622,800 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e307]: complete
+          - progressbar "章节进度" [ref=f4e308]
+          - generic [ref=f4e309]: 历史书籍 · 只读
+        - article [ref=f4e312]:
+          - generic [ref=f4e313]: 已完成
+          - button "suspense-10" [ref=f4e314] [cursor=pointer]
+          - paragraph [ref=f4e315]: 悬疑推理 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e316]: 10 / 10 章 · 23,328 字 · 已知 $0.185884 + Unknown 上界 $0.011517 · 预算占用 $0.197401
+          - paragraph [ref=f4e317]: 写作 — · 后处理 — · 调用 63 次 · Token 762,479 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e318]: complete
+          - progressbar "章节进度" [ref=f4e319]
+          - generic [ref=f4e320]: 历史书籍 · 只读
+        - article [ref=f4e323]:
+          - generic [ref=f4e324]: 已完成
+          - button "realistic-10" [ref=f4e325] [cursor=pointer]
+          - paragraph [ref=f4e326]: realistic-life · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e327]: 10 / 10 章 · 22,063 字 · 已知 $0.157636 + Unknown 上界 $0.030473 · 预算占用 $0.188109
+          - paragraph [ref=f4e328]: 写作 — · 后处理 — · 调用 64 次 · Token 607,192 · Unknown 3 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e329]: complete
+          - progressbar "章节进度" [ref=f4e330]
+          - generic [ref=f4e331]: 历史书籍 · 只读
+        - article [ref=f4e334]:
+          - generic [ref=f4e335]: 已完成
+          - button "xuanhuan-5" [ref=f4e336] [cursor=pointer]
+          - paragraph [ref=f4e337]: 玄幻爽文 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e338]: 5 / 5 章 · 12,412 字 · 已知 $0.100309 + Unknown 上界 $0.016319 · 预算占用 $0.116628
+          - paragraph [ref=f4e339]: 写作 — · 后处理 — · 调用 38 次 · Token 378,648 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e340]: complete
+          - progressbar "章节进度" [ref=f4e341]
+          - generic [ref=f4e342]: 历史书籍 · 只读
+        - article [ref=f4e345]:
+          - generic [ref=f4e346]: 已完成
+          - button "suspense-5" [ref=f4e347] [cursor=pointer]
+          - paragraph [ref=f4e348]: 悬疑推理 · 2026/10/31 12:47:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e349]: 5 / 5 章 · 11,851 字 · 已知 $0.104548 + Unknown 上界 $0.011498 · 预算占用 $0.116046
+          - paragraph [ref=f4e350]: 写作 — · 后处理 — · 调用 38 次 · Token 420,302 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e351]: complete
+          - progressbar "章节进度" [ref=f4e352]
+          - generic [ref=f4e353]: 历史书籍 · 只读
+        - article [ref=f4e356]:
+          - generic [ref=f4e357]: 已完成
+          - button "realistic-5" [ref=f4e358] [cursor=pointer]
+          - paragraph [ref=f4e359]: realistic-life · 2026/10/31 12:47:46 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e360]: 5 / 5 章 · 11,850 字 · 已知 $0.093011 + Unknown 上界 $0.015001 · 预算占用 $0.108012
+          - paragraph [ref=f4e361]: 写作 — · 后处理 — · 调用 40 次 · Token 326,836 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e362]: complete
+          - progressbar "章节进度" [ref=f4e363]
+          - generic [ref=f4e364]: 历史书籍 · 只读
+        - article [ref=f4e367]:
+          - generic [ref=f4e368]: 已完成
+          - button "xuanhuan-10" [ref=f4e369] [cursor=pointer]
+          - paragraph [ref=f4e370]: 玄幻爽文 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e371]: 10 / 10 章 · 28,400 字 · 已知 $0.119327 + Unknown 上界 $0.00 · 预算占用 $0.119327
+          - paragraph [ref=f4e372]: 写作 — · 后处理 — · 调用 46 次 · Token 589,743 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e373]: complete
+          - progressbar "章节进度" [ref=f4e374]
+          - generic [ref=f4e375]: 历史书籍 · 只读
+        - article [ref=f4e378]:
+          - generic [ref=f4e379]: 已完成
+          - button "realistic-5" [ref=f4e380] [cursor=pointer]
+          - paragraph [ref=f4e381]: realistic-life · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e382]: 5 / 5 章 · 13,586 字 · 已知 $0.047213 + Unknown 上界 $0.00 · 预算占用 $0.047213
+          - paragraph [ref=f4e383]: 写作 — · 后处理 — · 调用 25 次 · Token 207,273 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e384]: complete
+          - progressbar "章节进度" [ref=f4e385]
+          - generic [ref=f4e386]: 历史书籍 · 只读
+        - article [ref=f4e389]:
+          - generic [ref=f4e390]: 已完成
+          - button "realistic-10" [ref=f4e391] [cursor=pointer]
+          - paragraph [ref=f4e392]: realistic-life · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e393]: 10 / 10 章 · 30,424 字 · 已知 $0.109351 + Unknown 上界 $0.00 · 预算占用 $0.109351
+          - paragraph [ref=f4e394]: 写作 — · 后处理 — · 调用 47 次 · Token 517,824 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e395]: complete
+          - progressbar "章节进度" [ref=f4e396]
+          - generic [ref=f4e397]: 历史书籍 · 只读
+        - article [ref=f4e400]:
+          - generic [ref=f4e401]: 已完成
+          - button "suspense-10" [ref=f4e402] [cursor=pointer]
+          - paragraph [ref=f4e403]: 悬疑推理 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e404]: 10 / 10 章 · 26,058 字 · 已知 $0.16328 + Unknown 上界 $0.00 · 预算占用 $0.16328
+          - paragraph [ref=f4e405]: 写作 — · 后处理 — · 调用 48 次 · Token 791,283 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e406]: complete
+          - progressbar "章节进度" [ref=f4e407]
+          - generic [ref=f4e408]: 历史书籍 · 只读
+        - article [ref=f4e411]:
+          - generic [ref=f4e412]: 已完成
+          - button "suspense-5" [ref=f4e413] [cursor=pointer]
+          - paragraph [ref=f4e414]: 悬疑推理 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e415]: 5 / 5 章 · 13,564 字 · 已知 $0.071304 + Unknown 上界 $0.00 · 预算占用 $0.071304
+          - paragraph [ref=f4e416]: 写作 — · 后处理 — · 调用 28 次 · Token 330,266 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e417]: complete
+          - progressbar "章节进度" [ref=f4e418]
+          - generic [ref=f4e419]: 历史书籍 · 只读
+        - article [ref=f4e422]:
+          - generic [ref=f4e423]: 已完成
+          - button "xuanhuan-5" [ref=f4e424] [cursor=pointer]
+          - paragraph [ref=f4e425]: 玄幻爽文 · 2026/10/31 12:05:02 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e426]: 5 / 5 章 · 16,482 字 · 已知 $0.070158 + Unknown 上界 $0.00 · 预算占用 $0.070158
+          - paragraph [ref=f4e427]: 写作 — · 后处理 — · 调用 26 次 · Token 331,607 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e428]: complete
+          - progressbar "章节进度" [ref=f4e429]
+          - generic [ref=f4e430]: 历史书籍 · 只读
+        - article [ref=f4e433]:
+          - generic [ref=f4e434]: 已完成
+          - button "s1-realistic-life-v6" [ref=f4e435] [cursor=pointer]
+          - paragraph [ref=f4e436]: realistic-life · 2026/10/31 11:37:46 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e437]: 5 / 5 章 · 14,626 字 · 已知 $0.047967 + Unknown 上界 $0.00 · 预算占用 $0.047967
+          - paragraph [ref=f4e438]: 写作 — · 后处理 — · 调用 25 次 · Token 213,266 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e439]: complete
+          - progressbar "章节进度" [ref=f4e440]
+          - generic [ref=f4e441]: 历史书籍 · 只读
+        - article [ref=f4e444]:
+          - generic [ref=f4e445]: 写作中
+          - button "s1-realistic-life-v5" [ref=f4e446] [cursor=pointer]
+          - paragraph [ref=f4e447]: realistic-life · 2026/10/31 10:44:22 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e448]: 0 / 5 章 · 0 字 · 已知 $0.022321 + Unknown 上界 $0.0624 · 预算占用 $0.084721
+          - paragraph [ref=f4e449]: 写作 — · 后处理 — · 调用 16 次 · Token 94,400 · Unknown 4 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e450]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e451]
+          - generic [ref=f4e452]: 历史书籍 · 只读
+        - article [ref=f4e455]:
+          - generic [ref=f4e456]: 写作中
+          - button "s1-realistic-life-v4" [ref=f4e457] [cursor=pointer]
+          - paragraph [ref=f4e458]: realistic-life · 2026/10/31 10:39:03 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e459]: 0 / 5 章 · 0 字 · 已知 $0.009777 + Unknown 上界 $0.0156 · 预算占用 $0.025377
+          - paragraph [ref=f4e460]: 写作 — · 后处理 — · 调用 9 次 · Token 38,269 · Unknown 1 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e461]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e462]
+          - generic [ref=f4e463]: 历史书籍 · 只读
+        - article [ref=f4e466]:
+          - generic [ref=f4e467]: 已完成
+          - button "s1-realistic-life-v3" [ref=f4e468] [cursor=pointer]
+          - paragraph [ref=f4e469]: realistic-life · 2026/10/31 10:29:47 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e470]: 5 / 5 章 · 16,636 字 · 已知 $0.065816 + Unknown 上界 $0.00 · 预算占用 $0.065816
+          - paragraph [ref=f4e471]: 写作 — · 后处理 — · 调用 26 次 · Token 297,371 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e472]: complete
+          - progressbar "章节进度" [ref=f4e473]
+          - generic [ref=f4e474]: 历史书籍 · 只读
+        - article [ref=f4e477]:
+          - generic [ref=f4e478]: 已完成
+          - button "s1-realistic-life-v2" [ref=f4e479] [cursor=pointer]
+          - paragraph [ref=f4e480]: realistic-life · 2026/10/31 10:20:08 · 检测评分：暂无 · 预计剩余 0 秒
+          - paragraph [ref=f4e481]: 5 / 5 章 · 13,414 字 · 已知 $0.063645 + Unknown 上界 $0.00 · 预算占用 $0.063645
+          - paragraph [ref=f4e482]: 写作 — · 后处理 — · 调用 27 次 · Token 285,362 · Unknown 0 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e483]: complete
+          - progressbar "章节进度" [ref=f4e484]
+          - generic [ref=f4e485]: 历史书籍 · 只读
+        - article [ref=f4e488]:
+          - generic [ref=f4e489]: 写作中
+          - button "s1-realistic-life" [ref=f4e490] [cursor=pointer]
+          - paragraph [ref=f4e491]: realistic-life · 2026/10/31 10:12:27 · 检测评分：暂无 · 预计剩余时间待估算
+          - paragraph [ref=f4e492]: 0 / 5 章 · 0 字 · 已知 $0.011893 + Unknown 上界 $0.078 · 预算占用 $0.089893
+          - paragraph [ref=f4e493]: 写作 — · 后处理 — · 调用 10 次 · Token 36,073 · Unknown 5 次 · 单书预算 — · 去 AI：关闭
+          - paragraph [ref=f4e494]: 圣经 / 排期
+          - progressbar "章节进度" [ref=f4e495]
+          - generic [ref=f4e496]: 历史书籍 · 只读
+    - generic [ref=f4e500]:
+      - generic [ref=f4e501]:
+        - heading "《证词里，我是凶手》" [level=2] [ref=f4e502]
+        - button "收起阅读" [ref=f4e503] [cursor=pointer]
+      - paragraph [ref=f4e504]: 已完成 · 悬疑推理 · 2026/11/4 16:52:12 · 检测评分：暂无 · 预计剩余 0 秒 · 5 / 5 章 · 11,772 字 · 已知 $0.033271 + Unknown 上界 $0.00 · 预算占用 $0.033271 · 写作 — · 后处理 — · 调用 16 次 · Token 94,495 · Unknown 0 次 · 单书预算 $0.23 · 去 AI：关闭
+      - button "运行去AI后处理 · 《证词里，我是凶手》" [ref=f4e507] [cursor=pointer]: 运行去AI后处理
+      - generic [ref=f4e508]:
+        - generic [ref=f4e509]:
+          - text: 章节目录
+          - combobox "章节目录" [ref=f4e510]:
+            - option "第1章 十二份证词"
+            - option "第2章 雨里的旧脚印"
+            - option "第3章 第十三号房"
+            - option "第4章 错写的人"
+            - option "第5章 最后一份证词" [selected]
+        - generic [ref=f4e511]:
+          - text: 阅读模式
+          - combobox "阅读模式" [ref=f4e512]:
+            - option "左右对比"
+            - option "只读草稿" [selected]
+            - option "只读最终稿"
+        - generic [ref=f4e513]:
+          - text: 复制／下载版本
+          - combobox "复制／下载版本" [ref=f4e514]:
+            - option "草稿" [selected]
+            - option "最终稿"
+      - generic [ref=f4e515]:
+        - button "上一章" [ref=f4e516] [cursor=pointer]
+        - button "下一章" [disabled] [ref=f4e517]
+        - button "单章重写（公开CLI暂不支持）" [disabled] [ref=f4e518]
+        - button "复制本章" [ref=f4e519] [cursor=pointer]
+        - button "复制全书" [ref=f4e520] [cursor=pointer]
+        - link "下载 Markdown" [ref=f4e521] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=md&version=draft
+        - link "下载 Word" [ref=f4e522] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=docx&version=draft
+        - link "下载 TXT" [ref=f4e523] [cursor=pointer]:
+          - /url: /download?id=webui%2Fe9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4&format=txt&version=draft
+      - status [ref=f4e524]: 已复制全书草稿，共 5 章。
+      - heading "第5章 最后一份证词" [level=3] [ref=f4e539]
+      - article [ref=f4e527]:
+        - heading "草稿" [level=3] [ref=f4e528]
+        - generic [ref=f4e529]: 雨将停时，檐下只剩断断续续的水声。 沈允禾站在锁死的房门前，手里捏着一张被雨气洇软的便条。上面只有一句话：最后一份证词，在十三号房。 “又是十三号。”高如筝咬着牙，“这地方是不是专门跟人过不去？” “便条谁送来的？”唐安澜问。 “没人看见。”顾冬岚道，“餐厅的人都盯着封存单，能把它塞进门缝的，只有一直待在这层的人。” 林夏珩忽然伸手去扯门锁。她力气不大，金属锁扣却在她掌下抖得厉害。 “里面有阿岸的名字。”她低声说，“我听见了。” 沈允禾按住她的手腕：“你只听见名字，便认定那是你儿子？” “他活着的时候，别人都叫他林岸。”林夏珩抬起浑浊的眼睛，“十几年了，只有我这么叫。” 唐安澜冷笑：“也可能是有人故意拿死人做饵。” “纸拿出来，你们慢慢争。”林婆婆甩开沈允禾，从衣襟里摸出一截铁丝。她把铁丝探进锁孔，手背青筋根根绷起，“我儿子若真在这里留过话，我得看。” 铁丝刚进去，门锁便咔地一响，像有什么从里面顶住了。 “别硬撬。”沈允禾道，“旧锁和别的锁不一样。门框里有机关，锁芯转错，里面会落闸。” “说得像你很熟。”高如筝道。 “我不熟。”沈允禾看向顾冬岚，“但有人熟。” 顾冬岚沉默地取下领带，绕住门边凸起的铁栓：“我固定门，你动锁。” 沈允禾没有拒绝。她将铁丝折成更细的钩，顺着锁孔探了两下，听着里面的动静向左轻旋。林夏珩贴近门缝，替他们数着锁齿。第三下时，她低声道：“阿岸从前也这样数。他说数错一个，门就再也开不了。” 锁芯突然向内一沉。 顾冬岚手臂一紧，低声道：“现在。” 沈允禾猛地回拧。 咔哒。 门锁松开，门栓却没有弹起。顾冬岚将铁栓往上托，沈允禾同时压下锁柄。两人的手隔着一扇旧木门几乎抵在一起，谁都没有后退。 “进去以后，”沈允禾说，“谁也不许再替谁开脱。” 顾冬岚看着她：“包括你？” “包括我。” 林夏珩把铁丝攥进掌心：“我要实话。哪怕实话叫我儿子也做过坏事。” 门开了。 屋里没有灯，只有一股封存多年的霉味。墙角堆着旧被褥，桌上摊着一本受潮的住客登记簿。十二张证词压在登记簿下面，纸张颜色深浅不一，右下角却都盖着同一枚褪色的红章。 最上面另有一只牛皮纸封套，封口没有拆，旁边压着一张折成四折的旧纸。 林夏珩刚碰到那张纸，手指便剧烈地颤了一下。 “阿岸……” 沈允禾按住纸角，没有抢走，只把它慢慢展开。 纸上是一份未写完的证词。字迹被水汽晕开，仍能辨出几行： “林岸，男，二十五岁。案发那夜，我在十三号房后窗看见周启榆取走短刀。沈家女儿随后赶到，挡在我身前。林夏珩若见到此纸，不要替任何人隐瞒……” 下面还有一行： “我的血落在周启榆的袖扣上。沈家女儿手上的伤，是替我挨的。她没有拿刀。” 林夏珩低下头，肩膀轻轻发抖。她没有哭，只反复用手掌擦去纸上的水痕，仿佛擦得慢一些，那些字就会消失。 唐安澜蹲到桌边，从登记簿中抽出一张夹页。上面有半枚铜钥匙牌，刻着“林岸”；旁边是一只带暗褐色斑痕的袖扣，登记时间正是旧案发生的前一夜。 “他来过。”林夏珩喃喃道，“东西也是他的。” “所以所有东西都指向他。”高如筝看着那份证词，声音发紧，“刀、钥匙、血，全是他的。” 沈允禾却盯着十二张证词：“不只他的。” 她将纸张一张张摊开。每份证词的字迹不同，叙述的时辰、天气和看见的细节也不同，可每张末尾都出现同一个称谓——沈家女儿。有人看见她从后廊经过，有人说她拾起短刀，有人说她追着林岸去了十三号房。 十二个互不相识的人，证词却像出自同一只执笔的手。 “这不是证人说的。”沈允禾道。 “字迹不是。”唐安澜道，“事情总得有人写吧？” “写事情的人，未必知道事情。” 门外传来脚步声。 周启榆撑着伞站在门口，衣摆滴水，脸上的笑仍像往常一样妥帖：“诸位找到想要的证词了？” 沈允禾抬眼：“你知道它在这里。” “雨夜旅馆，哪件东西不是先被雨找到？”他道，“何况第十三号房向来有点古怪。” 顾冬岚将门钥匙收进口袋：“这间房今晚没有住客。” “没有住客，才适合放旧东西。” 周启榆走进来，目光从林夏珩手中的纸上一掠而过。那一瞬很短，沈允禾还是看见了。 “你认得林岸。”她说。 “不认得。” “你认得沈家。” 周启榆笑容不变：“沈家的案子传得广，附近谁不知道？” “十二份证词都把不同的人换成了沈家女儿。”沈允禾指向铺开的纸，“你不知道他们各自经历过什么，却知道该让他们共同指向谁。” 高如筝立刻问：“谁？” 沈允禾没有回答。她把登记簿转向周启榆，手指点在住宿记录上：“十二名住客失踪后，姓名全被划掉，只留姓氏和‘沈家’两个字。你的笔迹不在上面，因为不是你划的，是印上去的。封存单能换名字，证词也能。有人把所有人的家属都引向沈家，再让所有人相信，十二次指认只是雨夜规矩重复生效。” 林夏珩猛地抬头：“阿岸呢？” “他的名字没有被换掉。”沈允禾看着她，“因为一旦连你也改掉，最后这份证词就不会有人认得。周启榆留下林岸的名字，是为了让整件事更可信。可他没想到，林婆婆只听一次，就永远不会忘。” 周启榆脸上的笑淡了。 “沈小姐，你总算开始往好处想了。” “我没往好处想。”沈允禾抬起最后那份证词，“我只是在倒着查。谁从‘所有证词都指认沈家’里获利，谁就有机会改掉十二份证词。” 顾冬岚看向周启榆：“不是沈允禾获利。十二名失踪住客的家人找不到真正该恨的人，只能恨一个已经被旧案磨得够耐磨的人。而你，仍能躲在旅馆老板和‘启榆’后面，继续选人、收证词、决定谁该被指认。” “你们总喜欢把所有事想得很有用处。”周启榆道。 “那就请你解释，”沈允禾说，“林岸为什么死在十三号房？” 林夏珩身体一晃，扶住桌沿。高如筝下意识伸手，却被唐安澜拉住。 周启榆盯着她：“你怎么知道是‘死’？” 沈允禾翻过纸背。那里还有几行被折痕遮住的字： “周启榆发现我藏在后廊，拿刀刺来。挣扎时，我撞伤后脑，倒在十三号房外。替他挡下第二刀的人，是沈家女儿。” “证词到此中断，是因为我没能再写下去。”沈允禾道，“可你怕它留下，所以封进这间房；又故意把林岸的旧物放在登记簿里，等着林婆婆找到后，以为儿子才是当年持刀的人。” 林夏珩的眼泪终于落下来。她却把那张证词按在胸口，一字一句道：“我不再替他开脱，也不替自己开脱。” 周启榆向后退了一步：“你们没有证据。” “证词在你准备销毁它的房间里。”唐安澜道，“登记簿上有你的章，旧物上有林岸的血。你刚才还承认他知道林岸藏在后廊。” “你没有承认。”沈允禾提醒。 唐安澜抿了抿唇：“……反应倒是承认了。” 高如筝转向周启榆：“所以那些抽签、封存、十二个住客失踪，都是你做的？你让所有人以为雨夜会随机选中谁，其实每次都是你决定？” 周启榆没有再否认。他慢慢收起笑容，眼神冷下来：“我只是让他们看到自己想看的答案。沈家旧案已经死过人，家属还在找凶手。与其让十二个陌生人彼此猜忌，不如给他们一个共同的仇人。” “共同的仇人是我？”沈允禾问。 “是你。”周启榆看着她，“你父亲当年做过什么，你知道多少？你为什么偏偏能进十三号房？只要所有人的恨都落在沈家，就没人再查这座旅馆。” 沈允禾将证词折好，放进自己的证物袋：“现在他们查了。” 周启榆盯着她，忽然朝门外冲去。 顾冬岚早已挡住门。他肩膀撞上门板，闷响一声，旧灯从梁上晃落。顾冬岚扣住他的手臂，唐安澜拉开门闩，高如筝随即上前压住另一边。林夏珩站在桌旁，看着儿子用过的袖扣，没有再避开，也没有再替任何人说话。 “周启榆，”沈允禾站在原处，声音很冷，“旧案里拿刀的人是谁，十二份证词为何指向沈家，林夏珩的儿子为何留在十三号房，如今都由这份证词和你的话接上了。” 周启榆挣了一下，没能挣开。 沈允禾继续道：“从现在起，没人替别人认罪，也没人替别人作证。” 林夏珩擦干眼泪，将那半枚刻着“林岸”的钥匙牌攥在掌心：“我叫了阿岸一辈子，不想再叫错了人。” 灯彻底亮起时，六个人都留在十三号房内。桌上的证词摊在白炽灯下，每一处指认都清楚，再没有模糊的称谓。
+      - group [ref=f4e533]:
+        - generic "本章检测" [ref=f4e534] [cursor=pointer]
+      - group [ref=f4e535]:
+        - generic "人物圣经" [ref=f4e536] [cursor=pointer]
+        - generic [ref=f4e540]: "characters: - name: 沈允禾 role: protagonist desire: 夺回被伪造的清白，并让所有人承认真正的凶手。 fear: 变成自己最厌恶的幕后操纵者。 flaw: 习惯把求助视为软弱，低估人际关系的反噬。 bottom_line: 不伤害无辜者，不让无辜者替自己承担罪名。 voice: 冷静短促，先指出矛盾，再逼人选择。 growth_end: 从自保者成长为能承担代价的真相调度者。 goal: 查清十二份证词为何都指向自己，并带众人逃出旅馆。 exit_volume: 1 attraction: '' obstacle: '' relationship_stages: [] ladder_volume: 0 gender: 女 address: 沈小姐 active_desire: 证明自己无罪，同时逼真凶在众人面前自曝旧案。 personality_tags: - 理性 - 锋利 - 不服从 - 危机感强 catchphrase: 证词会撒谎，人会露馅。 never_do: - 把无辜者推出去顶罪 - 主动销毁证据 - 向未知力量低头 - name: 顾冬岚 role: romance desire: 确认沈允禾是否仍值得信任，查出她隐瞒的规则。 fear: 再次相信错误的人，害死同伴。 flaw: 凡事求证，习惯把感情藏进调查流程。 bottom_line: 不在没有退路时抛下同行者。 voice: 克制，语速慢，常用反问试探。 growth_end: 从旁观怀疑转为并肩承担沈允禾的选择。 goal: 查清旅馆启榆、失踪住客与证词之间的关系。 exit_volume: 1 attraction: 她在高压中仍能抓住真正矛盾，且不肯拿无辜者换命。 obstacle: 沈允禾拒绝共享全部规则，顾冬岚也无法确认她是否会成为下一个操纵者。 relationship_stages: - 互相试探 - 共同设局 - 被迫信任 - 并肩破局 ladder_volume: 0 gender: 男 address: 顾先生 active_desire: '' personality_tags: - 谨慎 - 执着 - 克制 catchphrase: 别替我决定什么该知道。 never_do: [] - name: 周启榆 role: antagonist desire: 让旅馆继续维持‘雨夜随机抽选’的规矩，保住启榆身份。 fear: 十二名住客的证词重新拼回他操控全场的证据链。 flaw: 沉迷掌控叙事，无法容忍意外。 bottom_line: 不亲手承认自己制造了证词循环。 voice: 圆滑含混，先安抚，再把责任推给天气或运气。 growth_end: 在沈允禾的逼问下失去遮掩空间，被迫承认关键旧案。 goal: 阻止众人离开旅馆，并找出最容易被牺牲的替罪者。 exit_volume: 1 attraction: '' obstacle: '' relationship_stages: [] ladder_volume: 1 gender: 男 address: 周启榆 active_desire: '' personality_tags: - 圆滑 - 控制欲强 - 善于伪饰 catchphrase: 雨夜留下的人，都是被随机选中的。 never_do: [] - name: 林夏珩 role: support desire: 找出失踪多年的儿子，确认他是否曾来过旅馆。 fear: 再次因一纸旧证词失去家人。 flaw: 固执守旧，不愿相信官方解释。 bottom_line: 不拿活人的命去换死人的清白。 voice: 带方言的低声絮语，关键处极清醒。 growth_end: 从沉默守秘到主动交出能改变局面的一件旧物。 goal: 从住客名单中确认失踪者的踪迹。 exit_volume: 1 attraction: '' obstacle: '' relationship_stages: [] ladder_volume: 0 gender: 女 address: 林婆婆 active_desire: '' personality_tags: - 固执 - 温厚 - 记忆敏锐 catchphrase: 死人不会改口，活人才会。 never_do: [] - name: 高如筝 role: support desire: 活着离开旅馆，并保住自己的职业清白。 fear: 被所有人认定就是案发夜持刀的人。 flaw: 急于摆脱嫌疑，容易被挑拨。 bottom_line: 不承认自己没做过的事。 voice: 急躁直白，语速快，常重复关键词。 growth_end: 从被动的嫌疑人成长为敢于指认真凶的证人。 goal: 找出自己那段证词里被替换的细节。 exit_volume: 1 attraction: '' obstacle: '' relationship_stages: [] ladder_volume: 0 gender: 男 address: 高先生 active_desire: '' personality_tags: - 急躁 - 敏感 - 嘴硬 catchphrase: 我说过的话，一个字都没改。 never_do: [] - name: 唐安澜 role: support desire: 让所有人看清周启榆如何借规矩操纵众人。 fear: 自己的旧身份被公开，成为真正的替罪者。 flaw: 过于在意体面，常延迟关键行动。 bottom_line: 不让无辜者因她的沉默受罚。 voice: 尖刻利落，善用反讽掩饰不安。 growth_end: 从自保型聪明人变成敢当众撕破伪证的行动者。 goal: 诱使周启榆在自己的证词里露出矛盾。 exit_volume: 1 attraction: '' obstacle: '' relationship_stages: [] ladder_volume: 0 gender: 女 address: 唐女士 active_desire: '' personality_tags: - 聪明 - 讽刺 - 怕丢脸 catchphrase: 别急着定罪，先看看谁在安排座位。 never_do: [] title: 《证词里，我是凶手》 premise: 暴雨封锁山村旅馆，十二名住客轮流讲述同一夜的经历。每份证词都只差一个称谓，却都恰好把沈允禾写成凶手。沈允禾发现自己能交换两份证词中的人物称谓，于是决定先把自己从证词中换出去，再让真凶在众人面前成为自己的共犯。 reader_expectation: 前三章建立十二证词、称谓交换和‘越洗越像凶手’的诡异机制；每章留下新的不可解释细节。读者期待沈允禾以行动拆穿证词循环，同时发现旅馆启榆与一桩旧案相连。 selling_points: - 每份证词只差一个称谓，却共同拼出不可能的罪责。 - 主角不靠辩解洗白，而是主动篡改证词顺序。 - 每次交换都公开两人之间最强烈的私人恩怨，阵营即时改变。 - 雨夜旅馆的封闭空间与连续追问制造持续压迫感。 - 线索、规则、动机互相咬合，真相分三层揭开。 power: cost: 每次交换都会公开两名当事人之间最强烈的私人恩怨；关系恶化、阵营分裂，交换无法还原。连续使用会让沈允禾失去他人的信任，并把自己的罪责推给无辜者。 limit: 只能交换任意两份证词中的人物称谓，不能改写事实内容；一次只能交换两份，不能凭空创造证词。每次公开恩怨都会使旁观者获得新的怀疑方向。 world: rules: - 旅馆在暴雨封山期间只开放一层客房，住客不得离开。 - 案发夜共有十二份证词，所有证词都必须由当事人亲自说出。 - 十二份证词在细节上互相吻合，但关键人物称谓存在一处可替换差异。 - 称谓交换只能改变证词指向的主体，不能改变动作、时间或现场物证。 - 每次交换都会公开两人之间最强烈的私人恩怨，且无法撤销。 - 当多数证词把同一人指向罪名时，旅馆会将其视为‘最可能的凶手’，并把该人留在核心位置。 levels: - 辨认异常 - 独立调查 - 核实线索 - 重建现场 - 识破复杂诡计 - 破解连环谜局 - 统合跨案真相 factions: - name: 旅馆住客 interest: 尽快确认凶手、打开山门并避免被集体指认。 - name: 周启榆一方 interest: 维持随机抽选的表象，让十二份证词继续把责任导向同一人。 - name: 林夏珩与旧案家属 interest: 找回失踪者的记录，揭开旅馆过去如何制造替罪者。 - name: 顾冬岚 interest: 查清证词交换的来源，在不牺牲同行者的前提下带众人逃生。 - name: 山村旧邻 interest: 保护村落名声，同时隐瞒旅馆封山和失踪住客的旧事。 stages: - volume: 1 stage: 暴雨山村旅馆 truth_layers: - layer: 1 truth: 十二份证词并非自然形成，而是由周启榆利用住客之间的旧怨预先拼合。 reveal_not_before: 2 - layer: 2 truth: 沈允禾的称谓交换能力并非诅咒，而是旅馆旧规则留下的反制入口；它会公开被隐藏的私人恩怨。 reveal_not_before: 3 - layer: 3 truth: 周启榆曾用同样的证词循环替一名旧案凶手脱罪，并把另一名无辜者留在旅馆；林夏珩的儿子正是上一轮的替罪者。 reveal_not_before: 5 main_foreshadows: - id: F1 description: 林夏珩保存的旧住客名单缺少一个人的名字，却留着沈允禾母亲使用过的称谓。 close_volume: 1 - id: F2 description: 周启榆每次说‘随机抽选’时都会先看墙上第十三枚房牌。 close_volume: 1 - id: F3 description: 高如筝证词里的雨声节拍与旅馆旧钟声完全重合。 close_volume: 1 - id: F4 description: 沈允禾交换证词时短暂看见母亲留下的划痕，像在提醒她不要相信第十三号房。 close_volume: 1 summary: 暴雨封山之夜，山村旅馆的十二名住客轮流讲述同一晚的案发经过。所有证词只差一个称谓，却都恰好证明沈允禾是凶手。她不先辩解，而是利用能交换两份证词中人物称谓的能力，把自己从嫌疑位置换出，再把责任引向真正的操纵者。每次交换都会公开两人最深的私人恩怨，令住客互相猜疑并暴露旧案。沈允禾必须在证词彻底闭合前找出周启榆的布局，同时判断顾冬岚究竟是同行者还是下一名替罪者。五章内，旅馆、十二名住客与一场雨夜旧案将被逼到同一张桌面上。 initial_dashboard: strength: 辨认异常 wealth: 3200元 status: 普通当事人 affiliation: 旅馆住客 stage: 暴雨山村旅馆 volumes: - number: 1 start: 1 end: 5 stage: 暴雨山村旅馆 goal: 让沈允禾从十二份证词共同指向的凶手位置上脱身，并逼出真正操纵证词的人。 change: 众人从互相指认转为被迫站到沈允禾一边；沈允禾从被动辨证转为主动改写证词的行动者。 cost: 第一次称谓交换公开了她与顾冬岚未解释的旧怨，旅馆内部阵营裂开；周启榆开始把她视为必须留下的核心嫌疑人。 canon: ladder: strength: - 辨认异常 - 独立调查 - 核实线索 - 重建现场 - 识破复杂诡计 - 破解连环谜局 - 统合跨案真相 wealth_unit: 元 status: - 普通当事人 - 可靠协查者 - 独立调查者 - 地方名探 - 跨区顾问 - 领域权威 genre_kind: 悬疑 payoff_menu: - 解谜 - 证据落地 - 推翻判断 - 反转 solution_menu: - 证词排伪 - 物证鉴别 - 时序还原 - 实验复现 - 逆向归因 - 信息欺骗 - 隐蔽绕行 - 追踪定位 - 利益分化 - 对价交换 - 公开解胁 - 隔离封存 - 反馈抑制 - 替代依赖 - 主体归位 - 断源制停 - 耗竭制胜 - 脱域避险 - 触发反用 - 弱点克制 - 通路重构 - 实力压制 - 夺取控制 - 外援协同 - 弃权止损 - 断链脱控 - 修复故障 - 资源重配 - 履约修复 - 群体表态 hook_types: - 人物当场隐瞒 - 证词矛盾 - 错误判断后果 - 关系破裂 - 新势力登场 - 反转揭示 - clue - 新事实推翻旧判断 - 眼前危险逼近 - 关键行动悬停 - 熟人身份改观 - 两条路各有代价 - 异常物件待解释 - 截止时刻将到 - 誓言或威吓落地 - 人物物件无故失踪 - 话中漏洞露端倪 - 旧意象发生变化 - 首尾照面生新义 - 留下未答的反应 solution_aliases: 假目标分追: 信息欺骗 引敌换地: 信息欺骗 诱敌: 信息欺骗 伪装混入: 信息欺骗 事前掉包: 信息欺骗 放出假目标分散追兵: 信息欺骗 引敌离开熟悉地形再交战: 信息欺骗 换装混入敌方队伍穿过关口: 信息欺骗 预先掉包使敌方夺到无效物: 信息欺骗 诱导敌方火力击毁自身屏障: 信息欺骗 预设伏击在敌方返程截获目标: 信息欺骗 共同表态: 群体表态 齐声喊名: 群体表态 众人齐声喊名: 群体表态 群体表态: 群体表态 齐声: 群体表态 众人作证: 群体表态 众人齐声: 群体表态 众人共同拒绝: 群体表态 共同喊名: 群体表态 集体认同: 集体认同 断开外部供能使敌方装置停机: 断源制停 截断运输补给迫使围困者撤走: 断源制停 耗尽敌方有限弹药后反攻: 耗竭制胜 坚守既有防线拖过敌方有效时限: 耗竭制胜 搭建临时桥梁撤出被困者: 通路重构 破坏承重结构阻断追击路线: 通路重构 缴械制服施害者终止攻击: 实力压制 夺取控制器解除远程威胁: 夺取控制 沿观察盲区穿过封锁: 隐蔽绕行 绕开正面守军从侧路夺取关键物: 隐蔽绕行 切断已知追踪媒介后隐蔽转移: 断链脱控 分化敌方利益使其联盟瓦解: 利益分化 交换对方急需资源换回被扣物: 对价交换 抵押自有资产换取急需周转资源: 对价交换 主动放弃敌方控制的奖励退出陷阱: 弃权止损 当事人主动解除依附关系终止操纵: 弃权止损 建立备用供给摆脱独家供货钳制: 替代依赖 seed: 《证词里，我是凶手》 scheduling: upgrade_gap: - 4 - 8 setup_lead_chapters: 1 seed_source: canon.seed policy: 逐书可复现升级日历；前章蓄势；其余爽点在连续与十章覆盖约束下逐章随机，不按最少计数固定轮换。"
+      - group [ref=f4e537]:
+        - generic "全书章纲" [active] [ref=f4e538] [cursor=pointer]
+        - generic [ref=f4e541]: "{ \"number\": 1, \"title\": \"十二份证词\", \"structure\": \"对峙谈判\", \"required_event\": \"\", \"type\": \"揭秘\", \"payoff\": \"沈允禾以十二份证词完成第一次称谓排伪，当众证明文字认的是“凶手位置”而非说话者身份。\", \"hook_type\": \"人物当场隐瞒\", \"hook\": \"周启榆当众否认见过原始证词，却趁人散去时把一张写有“沈允禾”的纸塞进袖口。\", \"scenes\": [ { \"where\": \"旅馆一楼走廊\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"高如筝\", \"唐安澜\", \"周启榆\" ], \"goal\": \"当众拆穿十二份证词的共同指向\", \"obstacle\": \"住客认定沈允禾改名换姓\", \"choice\": \"沈允禾承担失信代价交换两名证人称谓\", \"emotion\": \"冷静受压\", \"kind\": \"action\" }, { \"where\": \"一楼服务台后\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"周启榆\" ], \"goal\": \"追回十二份证词原件\", \"obstacle\": \"周启榆先一步收走纸张\", \"choice\": \"沈允禾用墨迹与指印证明原件被动过\", \"emotion\": \"逼近锋利\", \"kind\": \"action\" } ], \"threads\": [ \"main\", \"dark\" ], \"opening_conflict\": \"十二份证词同时指认沈允禾，住客堵住服务台，她必须在第一句反驳前拆出矛盾。\", \"callback_events\": [], \"solution_type\": \"证词排伪\", \"payoff_due\": true, \"payoff_type\": \"解谜\", \"structure_rewrite\": \"指定结构对峙谈判优先覆盖冲突旧场景，必须围绕它重新设计行动后果。\", \"solution_avoid\": [], \"group_allowed\": true, \"growth_obligation\": { \"level\": \"辨认异常\", \"upgrade_at\": null, \"display_by\": null, \"display_required\": false, \"display_before_upgrade\": false, \"required_action\": null }, \"growth_setup\": false, \"upgrade_due\": false, \"next_upgrade\": null, \"deferred_payoff\": null, \"group_history_unknown\": 0, \"payoff_criterion\": null, \"injury_limit\": 1, \"ending\": false, \"growth_target\": { \"strength\": \"独立调查\", \"wealth\": \"3200元\", \"status\": \"可靠协查者\", \"affiliation\": \"旅馆住客组成的临时追查同盟\", \"stage\": \"暴雨山村旅馆及锁死的第十三号房外廊\" } } { \"number\": 2, \"title\": \"雨里的旧脚印\", \"structure\": \"追逐\", \"required_event\": \"\", \"type\": \"对抗\", \"payoff\": \"无兑现\", \"hook_type\": \"人物当场隐瞒\", \"hook\": \"被追回的证词写着雨停前见证，可纸背压痕显示它写于雨停之后。\", \"scenes\": [ { \"where\": \"旅馆厨房与后院\", \"characters\": [ \"沈允禾\", \"周启榆\", \"高如筝\" ], \"goal\": \"截住携证词逃离的周启榆\", \"obstacle\": \"后院积水冲淡脚印\", \"choice\": \"沈允禾用称谓交换逼他叫出原称\", \"emotion\": \"紧迫克制\", \"kind\": \"action\" }, { \"where\": \"后院柴棚\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"周启榆\" ], \"goal\": \"辨认证词何时被人改写\", \"obstacle\": \"周启榆声称纸页一直未动\", \"choice\": \"沈允禾比对墨迹灰粉与纸背压痕\", \"emotion\": \"怀疑转笃定\", \"kind\": \"action\" } ], \"threads\": [ \"main\", \"hidden\" ], \"opening_conflict\": \"周启榆抱着证词冲出后门，沈允禾若不能在雨水抹掉痕迹前追上，所有指认都会坐实。\", \"callback_events\": [], \"solution_type\": \"物证鉴别\", \"payoff_due\": false, \"payoff_type\": \"无兑现\", \"structure_rewrite\": \"指定结构追逐优先覆盖冲突旧场景，必须围绕它重新设计行动后果。\", \"solution_avoid\": [ \"证词排伪\" ], \"group_allowed\": true, \"growth_obligation\": { \"level\": \"辨认异常\", \"upgrade_at\": null, \"display_by\": null, \"display_required\": false, \"display_before_upgrade\": false, \"required_action\": null }, \"growth_setup\": false, \"upgrade_due\": false, \"next_upgrade\": null, \"deferred_payoff\": \"无兑现\", \"group_history_unknown\": 0, \"payoff_criterion\": null, \"injury_limit\": 1, \"ending\": false, \"growth_target\": { \"strength\": \"独立调查\", \"wealth\": \"3200元\", \"status\": \"可靠协查者\", \"affiliation\": \"旅馆住客组成的临时追查同盟\", \"stage\": \"暴雨山村旅馆及锁死的第十三号房外廊\" } } { \"number\": 3, \"title\": \"第十三号房\", \"structure\": \"潜入\", \"required_event\": \"\", \"type\": \"谋划\", \"payoff\": \"沈允禾以时序还原推翻当前判断，证明现场痕迹属于更早的旧案，并非沈允禾昨夜行凶。\", \"hook_type\": \"人物当场隐瞒\", \"hook\": \"林夏珩听错门后年轻男人的旧名，误闯藏证词处，门外住客反而认定他在替沈允禾销毁证据。\", \"scenes\": [ { \"where\": \"外廊尽头\", \"characters\": [ \"沈允禾\", \"顾冬岚\" ], \"goal\": \"潜入第十三号房复原先后\", \"obstacle\": \"门锁与雨声遮住房牌\", \"choice\": \"沈允禾让顾冬岚守住外廊，自己撬开旧锁\", \"emotion\": \"冒险专注\", \"kind\": \"action\" }, { \"where\": \"第十三号房内\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"周启榆\" ], \"goal\": \"证明旧案痕迹并非新案\", \"obstacle\": \"旧血层与新证词混杂\", \"choice\": \"沈允禾按灰尘破裂和纸张压痕排定次序\", \"emotion\": \"锋利惊愕\", \"kind\": \"action\" } ], \"threads\": [ \"main\", \"romance\" ], \"opening_conflict\": \"第十三号房近在门后，却正被雨声掩盖的脚步逼近，沈允禾必须抢在证词再次被整理前进入。\", \"callback_events\": [], \"solution_type\": \"时序还原\", \"payoff_due\": true, \"payoff_type\": \"推翻判断\", \"structure_rewrite\": \"指定结构潜入优先覆盖冲突旧场景，必须围绕它重新设计行动后果。\", \"solution_avoid\": [ \"物证鉴别\", \"证词排伪\" ], \"group_allowed\": true, \"growth_obligation\": { \"level\": \"辨认异常\", \"upgrade_at\": null, \"display_by\": null, \"display_required\": false, \"display_before_upgrade\": false, \"required_action\": null }, \"growth_setup\": false, \"upgrade_due\": false, \"next_upgrade\": null, \"deferred_payoff\": null, \"group_history_unknown\": 0, \"payoff_criterion\": null, \"injury_limit\": 1, \"ending\": false, \"growth_target\": { \"strength\": \"独立调查\", \"wealth\": \"3200元\", \"status\": \"可靠协查者\", \"affiliation\": \"旅馆住客组成的临时追查同盟\", \"stage\": \"暴雨山村旅馆及锁死的第十三号房外廊\" } } { \"number\": 4, \"title\": \"错写的人\", \"structure\": \"日常喘息里藏冲突\", \"required_event\": \"\", \"type\": \"日常\", \"payoff\": \"无兑现\", \"hook_type\": \"人物当场隐瞒\", \"hook\": \"顾冬岚承认早知旧案，却拒绝说明自己为何认得沈家旧证词，并收回替沈允禾挡下住客的承诺。\", \"scenes\": [ { \"where\": \"旅馆餐厅\", \"characters\": [ \"沈允禾\", \"高如筝\", \"唐安澜\", \"周启榆\" ], \"goal\": \"复现称谓交换的错认\", \"obstacle\": \"周启榆混在用餐者中\", \"choice\": \"沈允禾用三只碗和两张签复现旧证词\", \"emotion\": \"紧绷中带讥诮\", \"kind\": \"action\" }, { \"where\": \"餐厅侧廊\", \"characters\": [ \"沈允禾\", \"顾冬岚\" ], \"goal\": \"追问旧案知情范围\", \"obstacle\": \"顾冬岚隐瞒沈家旧事\", \"choice\": \"沈允禾把逃生选择权交给他判断\", \"emotion\": \"失望克制\", \"kind\": \"action\" } ], \"threads\": [ \"main\", \"growth\" ], \"opening_conflict\": \"周启榆把一场复现实验说成闹剧，高如筝当众要求沈允禾证明自己不是在制造新噱头。\", \"callback_events\": [], \"solution_type\": \"实验复现\", \"payoff_due\": false, \"payoff_type\": \"无兑现\", \"structure_rewrite\": \"指定结构日常喘息里藏冲突优先覆盖冲突旧场景，必须围绕它重新设计行动后果。\", \"solution_avoid\": [ \"时序还原\", \"物证鉴别\", \"证词排伪\" ], \"group_allowed\": true, \"growth_obligation\": { \"level\": \"辨认异常\", \"upgrade_at\": null, \"display_by\": null, \"display_required\": false, \"display_before_upgrade\": false, \"required_action\": null }, \"growth_setup\": false, \"upgrade_due\": false, \"next_upgrade\": null, \"deferred_payoff\": \"无兑现\", \"group_history_unknown\": 0, \"payoff_criterion\": null, \"injury_limit\": 1, \"ending\": false, \"growth_target\": { \"strength\": \"独立调查\", \"wealth\": \"3200元\", \"status\": \"可靠协查者\", \"affiliation\": \"旅馆住客组成的临时追查同盟\", \"stage\": \"暴雨山村旅馆及锁死的第十三号房外廊\" } } { \"number\": 5, \"title\": \"最后一份证词\", \"structure\": \"误判后果\", \"required_event\": \"\", \"type\": \"情感\", \"payoff\": \"沈允禾完成逆向归因，查明周启榆借称谓交换反复推举替罪者，并让最后一份证词无法再指向她母亲。\", \"hook_type\": \"人物当场隐瞒\", \"hook\": \"末章只结清本书已有冲突，常规悬念钩子作废；不得留下新身份、物件来源或追查任务。以既有人物行动或对白收笔。\", \"scenes\": [ { \"where\": \"锁死的第十三号房外\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"林夏珩\" ], \"goal\": \"取到最后一份证词\", \"obstacle\": \"门锁与旧案物证纠缠\", \"choice\": \"两人共同开门并约定不再替彼此开脱\", \"emotion\": \"决绝并肩\", \"kind\": \"action\" }, { \"where\": \"第十三号房内\", \"characters\": [ \"沈允禾\", \"顾冬岚\", \"林夏珩\", \"周启榆\", \"高如筝\", \"唐安澜\" ], \"goal\": \"查清证词为何反复指向沈家\", \"obstacle\": \"旧物与失踪记录指向林夏珩之子\", \"choice\": \"沈允禾反向追查谁从指认中获利\", \"emotion\": \"真相逼近\", \"kind\": \"action\" } ], \"threads\": [ \"main\", \"support\" ], \"opening_conflict\": \"雨将停，最后一份证词却塞进锁死的第十三号房，林夏珩听见儿子的旧名后失控，沈允禾必须同时保住证词与他的判断。\", \"callback_events\": [], \"solution_type\": \"逆向归因\", \"payoff_due\": true, \"payoff_type\": \"解谜\", \"structure_rewrite\": \"指定结构误判后果优先覆盖冲突旧场景，必须围绕它重新设计行动后果。\", \"solution_avoid\": [ \"实验复现\", \"时序还原\", \"物证鉴别\", \"证词排伪\" ], \"group_allowed\": true, \"growth_obligation\": { \"level\": \"辨认异常\", \"upgrade_at\": null, \"display_by\": null, \"display_required\": false, \"display_before_upgrade\": false, \"required_action\": null }, \"growth_setup\": false, \"upgrade_due\": false, \"next_upgrade\": null, \"deferred_payoff\": null, \"group_history_unknown\": 0, \"payoff_criterion\": null, \"injury_limit\": 1, \"ending\": true, \"growth_target\": { \"strength\": \"独立调查\", \"wealth\": \"3200元\", \"status\": \"可靠协查者\", \"affiliation\": \"旅馆住客组成的临时追查同盟\", \"stage\": \"暴雨山村旅馆及锁死的第十三号房外廊\" } }"
+  - contentinfo [ref=f4e57]: 留一点耐心，给正在长成的故事。

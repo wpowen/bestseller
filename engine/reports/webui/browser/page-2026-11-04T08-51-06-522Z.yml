@@ -1,0 +1,94 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - link "书房 BestSeller · B" [ref=f3e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f3e4]:
+      - link "开一本新书" [ref=f3e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f3e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f3e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f3e8]:
+    - generic [ref=f3e9]:
+      - paragraph [ref=f3e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f3e11]
+      - paragraph [ref=f3e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f3e13]:
+        - button "悬疑 · 5章" [ref=f3e14] [cursor=pointer]
+        - button "玄幻 · 10章" [ref=f3e15] [cursor=pointer]
+      - group [ref=f3e16]:
+        - generic "恢复已有选题 · 不重复生成" [ref=f3e17] [cursor=pointer]
+        - generic [ref=f3e18]:
+          - generic [ref=f3e19]:
+            - text: 已有选题 UUID
+            - textbox "已有选题 UUID" [ref=f3e20]:
+              - /placeholder: 粘贴上一次返回的 topic id
+          - generic [ref=f3e21]:
+            - text: 本地最近选题
+            - combobox "本地最近选题" [ref=f3e22]:
+              - option "选择已保存的选题" [selected]
+        - generic [ref=f3e23]:
+          - button "读取已有选题（免费查询）" [ref=f3e24] [cursor=pointer]
+          - button "恢复本地选题" [ref=f3e25] [cursor=pointer]
+        - status [ref=f3e26]
+      - generic [ref=f3e27]:
+        - generic [ref=f3e28]:
+          - generic [ref=f3e29]:
+            - text: 题材
+            - combobox "题材" [ref=f3e30]:
+              - option "悬疑推理" [selected]
+              - option "玄幻爽文"
+              - option "仙侠升级"
+              - option "都市逆袭"
+              - option "轻推理"
+              - option "历史谋略"
+          - generic [ref=f3e31]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f3e32]:
+              - option "短篇 · 5章" [selected]
+              - option "短篇 · 10章"
+              - option "中篇 · 50章"
+              - option "长篇 · 1000章"
+              - option "长篇 · 2000章"
+              - option "自定章数"
+          - generic [ref=f3e33]:
+            - text: 章数
+            - spinbutton "章数" [ref=f3e34]: "5"
+        - generic [ref=f3e35]:
+          - text: 故事想法
+          - generic [ref=f3e36]: 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f3e37]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [ref=f3e38] [cursor=pointer]
+        - status [ref=f3e39]: 已连接。选择题材与章数，即可生成选题。
+      - generic [ref=f3e40]:
+        - heading "写作设置" [level=2] [ref=f3e41]
+        - generic [ref=f3e42]:
+          - generic [ref=f3e43]:
+            - text: 写手
+            - combobox "写手" [ref=f3e44]:
+              - option "MiniMax M3.1 Flash — 公开CLI固定模型" [selected]
+              - option "MiniMax M3 · 不可用 — 公开CLI无模型切换参数" [disabled]
+              - option "Claude · 不可用 — 未配置；公开CLI不支持" [disabled]
+          - generic [ref=f3e45]:
+            - text: 单书预算上限
+            - spinbutton "单书预算上限" [ref=f3e46]: "0.23"
+          - generic [ref=f3e47]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f3e48]: "2"
+        - paragraph [ref=f3e49]: MiniMax M3.1 Flash · 公开CLI固定模型
+        - generic [ref=f3e50]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f3e51]
+          - text: 开启去 AI 润色
+          - generic [ref=f3e52]: 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f3e53]
+        - status [ref=f3e54]
+    - generic [ref=f3e55]:
+      - generic [ref=f3e56]:
+        - generic [ref=f3e57]:
+          - paragraph [ref=f3e58]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f3e59]
+        - button "刷新书库" [ref=f3e60] [cursor=pointer]
+      - status [ref=f3e61]
+  - contentinfo [ref=f3e62]: 留一点耐心，给正在长成的故事。

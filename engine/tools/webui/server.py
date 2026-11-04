@@ -1,0 +1,130 @@
+"""Loopback HTTP interface. Mutations require JSON and same Origin."""
+import argparse
+import fcntl
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
+import json
+import os
+from pathlib import Path
+import signal
+import sys
+import threading
+from urllib.parse import parse_qs, urlparse
+import zipfile
+from xml.sax.saxutils import escape
+from library import GENRES, Library, read, text
+from jobs import Queue, topic_worker
+
+ASSETS = Path(__file__).resolve().parent
+ENGINE = ASSETS.parents[1]
+REPO = ENGINE.parent
+SHARED = REPO.parent / 'engine-books'
+
+
+def config(env):
+    values = {}
+    for line in env.read_text('utf-8').splitlines():
+        if '=' in line and not line.lstrip().startswith('#'):
+            k, v = line.removeprefix('export ').split('=', 1); values[k.strip()] = v.strip().strip('\"\'')
+    configured = bool(values.get(values.get('BESTSELLER__LLM__WRITER__API_KEY_ENV', 'MINIMAX_API_KEY')))
+    return dict(genres=[dict(id=k, name=v) for k, v in GENRES.items()], models=[
+        dict(id='flash', name='MiniMax M3.1 Flash', enabled=configured, configured=configured, reason='公开CLI固定模型' if configured else '未配置'),
+        dict(id='m3', name='MiniMax M3', enabled=False, configured=configured, reason=('已配置密钥；' if configured else '未配置；')+'公开CLI无模型切换参数'),
+        dict(id='claude', name='Claude', enabled=False, reason=('已配置；' if values.get('ANTHROPIC_API_KEY') else '未配置；')+'公开CLI不支持')],
+        budgets=dict(total=.5, reserve=.03), limitations=['stopped检查点暂无公开恢复命令', '单章重写暂无公开命令；重试从检查点续跑'])
+
+
+def docx(markdown):
+    paragraphs = ''.join('<w:p><w:r><w:t xml:space="preserve">'+escape(line)+'</w:t></w:r></w:p>' for line in markdown.splitlines())
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+        z.writestr('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        z.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'+paragraphs+'</w:body></w:document>')
+    return buf.getvalue()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_): pass
+
+    def send(self, data, code=200, mime='application/json; charset=utf-8', filename=None):
+        if not isinstance(data, bytes):
+            data = (json.dumps(data, ensure_ascii=False) if mime.startswith('application/json') else data).encode('utf-8')
+        self.send_response(code); self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(data))); self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Cache-Control', 'no-store'); self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+        if filename: self.send_header('Content-Disposition', 'attachment; filename="'+filename+'"')
+        self.end_headers(); self.wfile.write(data)
+
+    def valid_host(self):
+        return self.headers.get('Host') == self.server.origin.removeprefix('http://')
+
+    def do_GET(self):
+        if not self.valid_host(): self.send({'error':'Host不匹配'}, 403); return
+        query = urlparse(self.path); args = parse_qs(query.query)
+        get = lambda k, default='': args.get(k, [default])[0]
+        try:
+            lib = self.server.library; path = query.path
+            if path == '/api/config': self.send(self.server.configuration)
+            elif path == '/api/books': self.send(dict(books=lib.listing(), spending=self.server.queue.spending(), limit=self.server.queue.limit))
+            elif path == '/api/topics': self.send(self.server.queue.get_topic(get('id')))
+            elif path == '/api/book': self.send(lib.detail(get('id')))
+            elif path == '/LIBRARY.html': self.send(lib.static(), mime='text/html; charset=utf-8')
+            elif path == '/download':
+                folder = lib.folder(get('id')); fmt = get('format'); version = get('version', 'draft')
+                if fmt not in ('md','docx','txt') or version not in ('draft','final'): raise ValueError('格式无效')
+                if version == 'draft' and fmt in ('md','docx'):
+                    output = lib.safe(folder / ('book.'+fmt))
+                    if not output.exists(): raise ValueError('公开CLI尚未导出，请等待完成')
+                    body = output.read_bytes()
+                else:
+                    detail = lib.detail(get('id')); rows = detail['chapters']
+                    if version == 'final' and (not rows or len(rows) != detail['meta']['total'] or any(not r['final'] for r in rows)): raise ValueError('后处理尚未完成，不能伪装最终稿')
+                    body = '# '+detail['meta']['title']+'\n\n'+'\n\n'.join(f"## 第{r['number']}章 {r['title']}\n\n"+r[version] for r in rows)
+                    body = docx(body) if fmt == 'docx' else body.encode('utf-8')
+                self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8'}[fmt], filename='book-'+version+'.'+fmt)
+            elif path in ('/', '/index.html', '/app.js', '/style.css'):
+                name = 'index.html' if path == '/' else path[1:]
+                self.send((ASSETS/name).read_bytes(), mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[name.rsplit('.',1)[1]])
+            else: self.send({'error':'未找到'}, 404)
+        except (ValueError, KeyError, OSError, TypeError): self.send({'error':'请求无效或产物尚未就绪'}, 400)
+
+    def do_POST(self):
+        if not self.valid_host() or self.headers.get('Origin') != self.server.origin or self.headers.get('Content-Type','').split(';')[0] != 'application/json':
+            self.send({'error':'仅接受同源JSON操作'}, 403); return
+        try:
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= 16384: raise ValueError('请求大小无效')
+            data = json.loads(self.rfile.read(size))
+            if not isinstance(data, dict): raise ValueError('需要JSON对象')
+            if self.path == '/api/topics': result = self.server.queue.topic(data)
+            elif self.path == '/api/books': result = self.server.queue.create(data)
+            elif self.path == '/api/action': result = self.server.queue.action(data['id'], data['action'])
+            else: self.send({'error':'未找到'},404); return
+            self.send(result)
+        except ValueError as exc: self.send({'error': str(exc)[:240]},400)
+        except (KeyError, TypeError, OSError): self.send({'error':'请求无效'},400)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='127.0.0.1 local book UI')
+    parser.add_argument('--env', type=Path, default=REPO.parent.parent / '.env')
+    parser.add_argument('--books', type=Path, default=SHARED)
+    parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--budget', type=float, default=.5)
+    parser.add_argument('--topic-worker', type=Path, help=argparse.SUPPRESS)
+    args = parser.parse_args(); os.umask(0o077)
+    if args.topic_worker: topic_worker(args.topic_worker, args.env); return
+    if args.books.resolve() != SHARED.resolve(): parser.error('只扫描共享 scratch/engine-books')
+    if not 0 < args.budget <= .5: parser.error('本轮总预算须在(0,0.5]')
+    library = Library(args.books)
+    queue = Queue(library, args.env.resolve(), ENGINE, args.budget)
+    server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    server.origin = f'http://127.0.0.1:{args.port}'; server.library = library; server.queue = queue
+    server.configuration = config(args.env.resolve()); server.daemon_threads = True
+    def stop(*_):
+        queue.close(); threading.Thread(target=server.shutdown, daemon=True).start()
+    signal.signal(signal.SIGINT, stop); signal.signal(signal.SIGTERM, stop)
+    print(f'webui pid={os.getpid()} {server.origin}', flush=True)
+    try: server.serve_forever()
+    finally: queue.close(); server.server_close()

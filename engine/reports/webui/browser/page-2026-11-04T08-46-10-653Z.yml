@@ -1,0 +1,68 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - link "书房 BestSeller · B" [ref=f1e3] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f1e4]:
+      - link "开一本新书" [ref=f1e5] [cursor=pointer]:
+        - /url: "#create"
+      - link "我的书库" [ref=f1e6] [cursor=pointer]:
+        - /url: "#library"
+      - link "完整书库 ↗" [ref=f1e7] [cursor=pointer]:
+        - /url: /LIBRARY.html
+  - main [ref=f1e8]:
+    - generic [ref=f1e9]:
+      - paragraph [ref=f1e10]: 从一个念头，写到故事深处
+      - heading "今天，写一个怎样的故事？" [level=1] [ref=f1e11]
+      - paragraph [ref=f1e12]: 先选题，再开书。十二个故事方向，由你亲自选定。
+      - generic [ref=f1e13]:
+        - button "悬疑 · 5章" [ref=f1e14]
+        - button "玄幻 · 10章" [ref=f1e15]
+      - generic [ref=f1e16]:
+        - generic [ref=f1e17]:
+          - generic [ref=f1e18]:
+            - text: 题材
+            - combobox "题材" [ref=f1e19]:
+              - option "正在读取题材…" [selected]
+          - generic [ref=f1e20]:
+            - text: 篇幅
+            - combobox "篇幅" [ref=f1e21]:
+              - option "短篇 · 5章" [selected]
+              - option "中篇 · 10章"
+              - option "长篇 · 20章"
+              - option "自定章数"
+          - generic [ref=f1e22]:
+            - text: 章数
+            - spinbutton "章数" [ref=f1e23]: "5"
+        - generic [ref=f1e24]:
+          - text: 故事想法 可留空，让灵感先来
+          - textbox "故事想法 可留空，让灵感先来" [ref=f1e25]:
+            - /placeholder: 一个人、一桩旧事，或一个你始终忘不掉的画面…
+        - button "生成 12 个选题" [disabled] [ref=f1e26]
+        - status [ref=f1e27]: 正在连接服务…
+      - generic [ref=f1e28]:
+        - heading "写作设置" [level=2] [ref=f1e29]
+        - generic [ref=f1e30]:
+          - generic [ref=f1e31]:
+            - text: 写手
+            - combobox "写手" [ref=f1e32]:
+              - option "正在读取真实能力…" [selected]
+          - generic [ref=f1e33]:
+            - text: 单书预算上限
+            - spinbutton "单书预算上限" [ref=f1e34]: "0.23"
+          - generic [ref=f1e35]:
+            - text: 并发数
+            - spinbutton "并发数" [ref=f1e36]: "2"
+        - paragraph
+        - generic [ref=f1e37]:
+          - checkbox "开启去 AI 润色 默认关闭" [ref=f1e38]
+          - text: 开启去 AI 润色 默认关闭
+        - button "选定故事后，开始写作" [disabled] [ref=f1e39]
+        - status
+    - generic [ref=f1e40]:
+      - generic [ref=f1e41]:
+        - generic [ref=f1e42]:
+          - paragraph [ref=f1e43]: 故事正在发生
+          - heading "我的书库" [level=2] [ref=f1e44]
+        - button "刷新书库" [ref=f1e45]
+      - status
+  - contentinfo [ref=f1e46]: 留一点耐心，给正在长成的故事。

@@ -1,0 +1,86 @@
+{
+  "viewport": 1440,
+  "checks": {
+    "budget_visible": true,
+    "empty_library_has_new_tile": true,
+    "twelve_topic_cards": true,
+    "new_batch_id": true,
+    "independent_budget_estimate": true,
+    "created_from_edited_card": true,
+    "separate_budgets_reach_backend": true,
+    "character_cards": true,
+    "detail_tab_survives_reload": true,
+    "full_at_least_1200": true,
+    "both_columns_at_least_560": true,
+    "sentence_level_highlight": true,
+    "unchanged_sentences_unmarked": true,
+    "preferences_survive_reload": true,
+    "full_survives_reload": true,
+    "back_forward_reload_reader": true,
+    "refresh_does_not_cancel_navigation": true,
+    "T_toggles_toc": true,
+    "Esc_returns_detail": true,
+    "direct_reload_library": true,
+    "direct_reload_new": true,
+    "direct_reload_book/webui%2Fsample": true,
+    "direct_reload_read/webui%2Fsample/1": true,
+    "mobile_no_horizontal_library": true,
+    "mobile_no_horizontal_new": true,
+    "mobile_no_horizontal_book/webui%2Fsample": true,
+    "mobile_no_horizontal_read/webui%2Fsample/1": true,
+    "mobile_drawer": true,
+    "mobile_compare_stacked": true
+  },
+  "shots": [
+    "01-library.png",
+    "02-wizard-direction.png",
+    "03-wizard-topics.png",
+    "04-wizard-settings.png",
+    "05-book-detail.png",
+    "06-character-cards.png",
+    "07-reader-medium.png",
+    "08-reader-full.png",
+    "09-reader-compare.png",
+    "10-reader-night.png",
+    "11-mobile-reader.png",
+    "12-mobile-drawer.png",
+    "13-mobile-compare.png"
+  ],
+  "medium": 756,
+  "full": 1376,
+  "compare": [
+    672,
+    672
+  ],
+  "highlights": [
+    "林舟推开吱呀作响的木门。"
+  ],
+  "full_after_reload": 1376,
+  "mobile": {
+    "library": {
+      "viewport": 375,
+      "doc": 375,
+      "reader": 0
+    },
+    "new": {
+      "viewport": 375,
+      "doc": 375,
+      "reader": 0
+    },
+    "book/webui%2Fsample": {
+      "viewport": 375,
+      "doc": 375,
+      "reader": 0
+    },
+    "read/webui%2Fsample/1": {
+      "viewport": 375,
+      "doc": 375,
+      "reader": 375
+    }
+  },
+  "drawer": {
+    "position": "fixed",
+    "width": 307.5,
+    "visible": "visible"
+  }
+}

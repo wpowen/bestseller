@@ -1,0 +1,14 @@
+{
+  "before": {
+    "chapter": 3,
+    "scroll": 500
+  },
+  "after": {
+    "url": "http://127.0.0.1:18789/#/read/webui%2Fsample/3",
+    "scroll": 500,
+    "title": "第 3 章　渡口的第3盏灯",
+    "progress": "6",
+    "chapter_count": 6,
+    "final_updated": true
+  }
+}

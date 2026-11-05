@@ -44,6 +44,14 @@ def text(path):
         return ''
 
 
+def bible_data(path):
+    try:
+        data = yaml.safe_load(text(path))
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
+
+
 def save(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,10 +161,7 @@ class Library:
     def meta(self, folder):
         run = read(self.safe(folder / 'run.json'), {}); web = read(self.safe(folder / 'web.json'), {})
         rows = self.chapters(folder); book = run.get('book', {})
-        try:
-            bible = yaml.safe_load(text(self.safe(folder / 'story_bible.yaml'))) or {}
-        except yaml.YAMLError:
-            bible = {}
+        bible = bible_data(self.safe(folder / 'story_bible.yaml'))
         title = web.get('title') or bible.get('title') or folder.name
         total = book.get('chapters', web.get('chapters', len(rows)))
         owned = folder.parent in (self.own, self.own / '.archive') and bool(web)
@@ -201,7 +206,13 @@ class Library:
 
     def detail(self, key):
         folder = self.folder(key)
+        characters = bible_data(self.safe(folder / 'story_bible.yaml')).get('characters', [])
+        if isinstance(characters, dict):
+            characters = [dict(value, name=value.get('name', name)) for name, value in characters.items() if isinstance(value, dict)]
+        if not isinstance(characters, list):
+            characters = []
         return dict(meta=self.meta(folder), chapters=self.chapters(folder),
+                    characters=[c for c in characters if isinstance(c, dict)],
                     bible=text(self.safe(folder / 'story_bible.yaml')),
                     outline='\n\n'.join(text(self.safe(p)) for p in sorted(folder.glob('writing_outlines/*.json'))))
 

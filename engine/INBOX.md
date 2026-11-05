@@ -638,7 +638,7 @@
 
 ## 2026-11-04-25：书房网页改版——书库/开新书/详情/全屏阅读器分开（用户 2026-11-04 23:10 反馈“都挤在一页、看书不方便、没有目录、要宽屏”，监工设计）
 
-状态：待执行（2026-11-05 第二轮：用户已定行数口径，见第 6 条；接着 1e0c511de 的草稿做完。上一轮触发行数止损：webui 全部源码 1256/1200 行，未完成；部分实现与回归已保留，页面与截图未验收，报告见 [REPORT.md](reports/ui-redesign-20261104/REPORT.md)。用户 2026-11-04 要求立即单独开任务并行做：在独立工作树 `scratch/ui-worktree`、分支 `feat/bookweb-ui` 上开发；第 22、24 条已于 2026-11-05 合并进 main（a8e3e1fa7），本工作树已快进到合并后的 main，可直接在现有 webui 上重构：保留 22 的独立去 AI 预算与 24 的选题卡片/换一批/方向/改一改，把它们搬进新视图，不要重写其逻辑）
+状态：已执行，待验收（2026-11-05 第二轮：接续 1e0c511de 完成前端按视图拆分、四项缺口与浏览器实测；Python 729/1200、前端 1487/1500，check_scope PASS，579 项测试及 844 子测试通过。仅本地分支 feat/bookweb-ui；截图与 Evidence / Inference / Unknown 见 [REPORT.md](reports/ui-redesign-20261104/REPORT.md)。未调用模型，未动 Docker、8787 或真实书稿，未 push，等待用户验收。）
 
 设计在 [reports/ui-redesign-20261104/DESIGN.md](reports/ui-redesign-20261104/DESIGN.md)，可点击原型 [prototype.html](reports/ui-redesign-20261104/prototype.html)（浏览器直接打开）。按设计第 2–6 节实现与验收。要点：
 1. 四个视图，用 URL 路由：书库 `#/library`、开新书三步向导 `#/new`、书籍详情 `#/book/<id>`、全屏阅读器 `#/read/<id>/<n>`。

@@ -74,6 +74,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             lib = self.server.library; path = query.path
             if path == '/api/config': self.send(self.server.configuration)
+            elif path == '/favicon.ico': self.send(b'', code=204, mime='image/x-icon')
             elif path == '/api/books': self.send(dict(books=lib.listing(), spending=lib.spending(), limit=self.server.configuration.get('budgets', {}).get('total', .5), read_only=lib.read_only))
             elif path == '/api/archive': self.send(dict(books=lib.archive()))
             elif path == '/api/topics': self.send(self.server.queue.get_topic(get('id')))
@@ -92,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
                     if fmt in ('epub','fanqie') and (not rows or len(rows)!=detail['meta']['total']): raise ValueError('整书尚未完成')
                     body = export_bytes(detail, version, fmt)
                 self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8','epub':'application/epub+zip','fanqie':'application/zip'}[fmt], filename='book-'+version+'.'+('zip' if fmt=='fanqie' else fmt))
-            elif path in ('/', '/index.html', '/app.js', '/style.css'):
+            elif path in ('/', '/index.html', '/app.js', '/shared.js', '/library.js', '/wizard.js', '/book.js', '/reader.js', '/style.css'):
                 name = 'index.html' if path == '/' else path[1:]
                 self.send((ASSETS/name).read_bytes(), mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[name.rsplit('.',1)[1]])
             else: self.send({'error':'未找到'}, 404)

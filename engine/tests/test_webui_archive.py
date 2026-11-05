@@ -172,9 +172,32 @@ class ArchiveTests(WebFixture):
         detail = self.lib.detail('webui/story')
         self.assertEqual(detail['meta']['synopsis'], '摆渡人寻找乘客。')
         self.assertIn('name: 林舟', detail['bible'])
+        self.assertEqual(detail['characters'][0]['name'], '林舟')
         self.assertEqual([c['status'] for c in detail['meta']['chapter_info']], ['final', 'draft', 'pending'])
         self.assertTrue(all(c['words'] > 0 for c in detail['chapters']))
         self.assertEqual(detail['meta']['chapter_info'][2]['words'], 0)
+
+    def test_characters_accept_named_mapping_and_damaged_bible(self):
+        folder = self.book(status='complete')
+        for source, expected in [
+            ('characters:\n  林舟:\n    role: 主角\n', [{'name': '林舟', 'role': '主角'}]),
+            ('characters: [林舟, null, 2]\n', []),
+            ('[broken', []), ('- invalid root', []),
+        ]:
+            put(folder / 'story_bible.yaml', source)
+            with self.subTest(source=source):
+                code, _, body = self.request('/api/book?id=webui/story')
+                self.assertEqual(code, 200)
+                self.assertEqual(json.loads(body)['characters'], expected)
+
+    def test_frontend_modules_are_served_without_path_traversal(self):
+        for asset in ('shared.js', 'library.js', 'wizard.js', 'book.js', 'reader.js'):
+            with self.subTest(asset=asset):
+                code, headers, body = self.request('/' + asset)
+                self.assertEqual(code, 200)
+                self.assertIn('javascript', headers['Content-Type'])
+                self.assertTrue(body)
+        self.assertEqual(self.request('/../jobs.py')[0], 404)
 
 
 class ReadOnlyTests(WebFixture):

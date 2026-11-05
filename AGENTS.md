@@ -15,3 +15,10 @@
 - 测试命令：`cd engine && PYTHONPATH=.:tools python -m pytest -q --no-cov tests/`。
 - 写书不设金额预算（用户 2026-11-05 定）：书一旦开写就要写完。只有三种情况可以停：项目本身出错；模型账户额度或 token 用尽；接口限流或排队（这时等待重试，不算停）。花费照常记账、照常显示。千章级任务开跑前仍先告诉用户。
 - 不要覆盖用户已有的改动，也不要删除 `books/` 里的书稿。没有用户要求不 push。
+
+当前模块边界：
+- `bookengine/q1.py` 只负责整书调度；单章逻辑在 `q1_chapter.py`，上下文与提取在 `q1_extract.py`，设计/规划/schema 在 `q1_prepare.py`、`q1_plan.py`、`q1_schema.py`。
+- CLI 只接受显式 `--q1 --style b`，保留 `--extend-to` 和 Q1 `--batch`；不得恢复已删除的非 Q1 管线或 legacy 文风入口。
+- `tools/runtime_support.py`、`tools/chapter_outputs.py` 提供共享协议，不反向依赖 bookengine/deai；`tools/webui/` 后端与 JS/HTML/CSS 分开维护，书库缓存只是派生视图，文件仍为恢复依据。
+- 当前待办只在 `engine/INBOX.md`；已结束或被取代的指令原文见 `engine/reports/inbox-archive-2026-11.md`，历史 PLAN 和报告不能覆盖当前约定。
+- Python 用 Ruff、行宽 120：`cd engine && python -m ruff format --check .`；历史 reports 保持原样，不参与格式化。

@@ -3,6 +3,7 @@
 import re
 
 from .text import _paragraph_spans
+from .stage_transition import stage_transition
 
 
 def boundary_facts(raw, text):
@@ -76,19 +77,30 @@ def opening_patch(text, raw):
 
 def repair_opening(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     facts = boundary_facts(raw, text)
-    issue = opening_issue(state, facts, text)
+    transition = stage_transition(bible, outline.get("number"), text, state.get("end_location"), outline=outline)
+    issue = transition if transition and transition["issue"] else opening_issue(state, facts, text)
+    if transition and transition["status"] == "present":
+        issue = None
+    known = bool(facts.get("opening_location") and state.get("end_location")) or (
+        transition and transition["status"] != "unknown"
+    )
     note = dict(
-        status="unknown" if not facts.get("opening_location") or not state.get("end_location") else "checked",
+        status="checked" if known else "unknown",
         issue=issue,
     )
+    if transition:
+        note["transition"] = transition
     if not issue:
         return text, raw, failed, facts, note
     spans = _paragraph_spans(text)
+    if not spans:
+        return text, raw, failed, facts, dict(note, status="rolled_back")
     opening = text[: spans[min(1, len(spans) - 1)][1]]
     patch = ask(
         client,
         prefix + "-opening-repair",
-        "只重写开头一到两段，paragraphs条数必须等于replace_count。先承接上章地点和在场人物，再补上移动。"
+        "只重写开头一到两段，paragraphs条数必须等于replace_count。先承接上章地点和在场人物，"
+        "在开头300字内补上移动、时间流逝或明确场景切换。"
         "不得改变或复述后文，不改变人物事实、时序和冲突结果。返回JSON。",
         [
             ("断裂与上章约束", str(issue)),
@@ -105,13 +117,19 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             client, prefix + "-opening-recheck", candidate, state, bible, outline, [], final=True
         )
         observed = boundary_facts(checked, candidate)
+        rechecked = stage_transition(
+            bible, outline.get("number"), candidate, state.get("end_location"), outline=outline
+        )
         from .checks import high_confidence
 
-        if (
-            not invalid
-            and observed.get("opening_location")
-            and not opening_issue(state, observed, candidate)
-            and not high_confidence(state, checked.get("events", []), candidate)
-        ):
-            return candidate, checked, False, observed, dict(note, status="repaired")
+        continuous = (
+            rechecked["status"] == "present"
+            if transition and transition["status"] == "missing" and rechecked
+            else bool(observed.get("opening_location")) and not opening_issue(state, observed, candidate)
+        )
+        if not invalid and continuous and not high_confidence(state, checked.get("events", []), candidate):
+            repaired = dict(note, status="repaired")
+            if rechecked:
+                repaired["transition"] = rechecked
+            return candidate, checked, False, observed, repaired
     return text, raw, failed, facts, dict(note, status="rolled_back")

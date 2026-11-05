@@ -6,11 +6,10 @@ import re
 from pathlib import Path
 import yaml
 
-from bookengine.text import _paragraph_spans
+from bookengine.text import _paragraph_spans, _sentences
 
 
 _CATEGORIES = ("summary", "epiphany", "poetic")
-_STOP = re.compile(r'[。！？!?]+[”」』"’\']*|…{2,}[”」』"’\']*')
 _BODY = r"[^。！？!?]"
 
 
@@ -32,22 +31,6 @@ _ENDING = re.compile(
     r"这(?:就|才)是" + _BODY + r"{0,12}(?:意义|代价|命运)"
 )
 _BORROWED = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/borrowed_style.yaml").read_text())
-
-
-def _sentences(text):
-    sentences = []
-    for left, right in _paragraph_spans(text):
-        start = left
-        for end in [m.end() for m in _STOP.finditer(text, left, right)] + [right]:
-            a, b = start, end
-            while a < b and text[a].isspace():
-                a += 1
-            while b > a and text[b - 1].isspace():
-                b -= 1
-            if a < b:
-                sentences.append((a, b))
-            start = end
-    return sentences
 
 
 def locate(text) -> list[dict]:

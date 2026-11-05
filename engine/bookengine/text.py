@@ -109,6 +109,25 @@ def _paragraph_spans(text):
     return result
 
 
+_SENTENCE_STOP = re.compile(r'[。！？!?]+[”」』"’\']*|…{2,}[”」』"’\']*')
+
+
+def _sentences(text):
+    sentences = []
+    for left, right in _paragraph_spans(text):
+        start = left
+        for end in [m.end() for m in _SENTENCE_STOP.finditer(text, left, right)] + [right]:
+            a, b = start, end
+            while a < b and text[a].isspace():
+                a += 1
+            while b > a and text[b - 1].isspace():
+                b -= 1
+            if a < b:
+                sentences.append((a, b))
+            start = end
+    return sentences
+
+
 def _replace_spans(text, replacements):
     for start, end, replacement in sorted(replacements, reverse=True):
         text = text[:start] + replacement + text[end:]

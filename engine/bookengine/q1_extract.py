@@ -11,7 +11,7 @@ from .endings import ending_candidates, scene_context, english_hits
 from .identity import name_hits
 from .precision import locate, _sentences
 from .polish_checks import scan
-from .serial_checks import adjacent, catch_hits
+from .serial_checks import catch_hits
 from .longutil import ask as raw_ask, recover_fields, long_context
 from .q1_plan import beat_slice
 from .storage import save

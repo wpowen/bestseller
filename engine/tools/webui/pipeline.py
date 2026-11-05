@@ -101,6 +101,10 @@ def items(queue, folder):
 
 def spawn(queue, folder, data, stage):
     states = data.setdefault("pipeline", {})
+    # Finals can arrive after start() checked, before this process is launched.
+    if stage == "polish" and finished(folder):
+        states[stage] = dict(status="complete")
+        return
     runtime = runtime_folder(folder, stage)
     save(runtime / "runtime.json", {})
     env = queue.child_env()

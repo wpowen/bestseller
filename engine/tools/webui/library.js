@@ -143,7 +143,7 @@ async function manage(book, name, title) {
   managed = { book, name };
   closeOverlays();
   text('dialog-title', name === 'delete' ? `永久删除《${book.title.replace(/^《|》$/g, "")}》？不可撤销` : '重命名');
-  text('dialog-hint', name === 'delete' ? '运行中或仍有进程的书会被拒绝。' : '输入新的书名。');
+  text('dialog-hint', name === 'delete' ? '本书的去 AI 处理会先结束；写作仍在运行时不可删除。' : '输入新的书名。');
   $('confirm-title').parentElement.hidden = name === 'delete';
   $('confirm-title').required = name === 'rename';
   text('dialog-confirm', name === 'delete' ? '删除' : '保存');

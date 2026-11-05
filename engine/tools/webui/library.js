@@ -1,17 +1,17 @@
 import {
- $, state, text, printable, api, el, money, count, statusLabel, isComplete, runtimeInfo, link, button, bookURL, readURL, stored, notify
+ $, state, text, api, el, money, count, statusLabel, isComplete, runtimeInfo, link, button, bookURL, readURL, stored, notify
 } from './shared.js';
 import { closeOverlays } from './overlays.js';
 async function action(id, name) {
  if (state.pendingActions.has(id)) return;
  state.pendingActions.add(id);
  updateActionControls();
- notify(name === 'postprocess' ? '正在提交后处理，请勿重复点击…' : '正在提交操作…');
+ notify(name === 'postprocess' ? '正在提交润色，请勿重复点击…' : '正在提交操作…');
  try {
-  const result = await api('/api/action', { id, action: name });
-  const detail = printable(result.message || result.status);
+  await api('/api/action', { id, action: name });
+
   notify(
-   (name === 'postprocess' ? '后处理请求已提交，最终稿与检测回执将随阅读区同步。' : '操作已提交。') + (detail ? ' ' + detail : ''),
+   name === 'postprocess' ? '润色请求已提交，终稿将随阅读区同步。' : '操作已提交。',
   );
   await refreshBooks();
   if (state.readerId === id) window.dispatchEvent(new Event('book-changed'));
@@ -33,10 +33,10 @@ function actionButtons(book) {
  if (isComplete(book)) choices = book.chapters < book.total ? [['resume', '继续生成终稿']] : [];
  else if (/^(paused|budget_paused|quota_exhausted)$/.test(status)) choices = [['resume', '继续当前阶段']];
  else if (/^(failed|error|blocked|interrupted|postprocess_failed|orphaned|stopped|budget_exceeded)$/.test(status))
-  choices = [['retry', '从检查点重试']];
+  choices = [['retry', '从保存的进度重试']];
  else if (/^(running|waiting|writing|planning|queued|queued_polish|pending|polishing|postprocessing|postprocess_running)$/.test(status))
   choices = [['pause', '暂停']];
- else wrapper.append(el('span', status === 'unknown' ? '结果待确认，请先核对回执' : '暂无可用操作', 'muted'));
+ else wrapper.append(el('span', status === 'unknown' ? '结果待确认，请刷新书库' : '暂无可用操作', 'muted'));
  for (const [name, label] of choices) {
   const button = el('button', label);
   button.type = 'button';
@@ -195,6 +195,36 @@ $('manage-form').onsubmit = async (e) => {
   text('dialog-status', error.message);
  } finally {
   $('dialog-confirm').disabled = false;
+ }
+};
+$('library-settings').onclick = async () => {
+ closeOverlays();
+ text('library-settings-status', '正在读取设置…');
+ $('library-settings-save').disabled = true;
+ $('library-settings-dialog').showModal();
+ try {
+  const settings = await api('/api/settings');
+  if (settings.jobs == null) throw new Error('当前书库为只读模式。');
+  $('jobs').value = settings.jobs;
+  text('library-settings-status', '');
+  $('library-settings-save').disabled = false;
+ } catch (error) {
+  text('library-settings-status', error.message);
+ }
+};
+$('library-settings-cancel').onclick = () => $('library-settings-dialog').close();
+$('library-settings-form').onsubmit = async (event) => {
+ event.preventDefault();
+ if (!$('library-settings-form').reportValidity()) return;
+ $('library-settings-save').disabled = true;
+ try {
+  await api('/api/settings', { jobs: Number($('jobs').value) });
+  $('library-settings-dialog').close();
+  notify('已保存书库设置。');
+ } catch (error) {
+  text('library-settings-status', error.message);
+ } finally {
+  $('library-settings-save').disabled = false;
  }
 };
 export { refreshBooks, actionButtons, manage };

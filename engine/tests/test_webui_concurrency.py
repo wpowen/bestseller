@@ -130,7 +130,7 @@ class ConcurrencyTests(WebFixture):
         self.assertLessEqual(sum(not item["paused"] for item in self.queue.processes.values()), 1)
 
     def test_successful_creation_persists_jobs_and_fresh_queue_reads_setting(self):
-        self.assertEqual(self.queue.jobs, 2)
+        self.assertEqual(self.queue.jobs, 3)
         self.create_with_jobs(1)
         settings = self.lib.own / ".queue.json"
         self.assertEqual(library.read(settings), {"jobs": 1})

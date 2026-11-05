@@ -29,7 +29,8 @@ document.addEventListener('click', (event) => {
  }
  const summary = event.target.closest('summary');
  if (summary) closeOverlays(summary.parentElement);
- else if (!event.target.closest('#read-settings, #aa, #toc-side, #side-toggle, #chapter-directory')) closeOverlays();
+ else if (!event.target.closest('#read-settings, #aa, #toc-side, #side-toggle, #chapter-directory'))
+  closeOverlays(event.target.closest('details'));
 }, true);
 document.addEventListener('keydown', (event) => {
  if (event.key !== 'Escape') return;

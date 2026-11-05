@@ -15,7 +15,7 @@ import uuid
 from library import GENRES, costs, now, read, save, stage_costs
 from run_status import auto_deai, recover, runtime_view
 import pipeline
-from job_inputs import finite, check_card
+from job_inputs import finite, whole, check_card
 
 
 class Queue:
@@ -26,7 +26,7 @@ class Queue:
         self.lock = threading.RLock()
         self.processes = {}
         self.closed = False
-        self.jobs = int(finite(read(library.own / ".queue.json", {}).get("jobs", 2), 1, 4))
+        self.jobs = int(finite(read(library.own / ".queue.json", {}).get("jobs", 3), 1, 4))
         self.exclusive = (library.own / ".service.lock").open("a")
         fcntl.flock(self.exclusive, fcntl.LOCK_EX | fcntl.LOCK_NB)
         recover(library)
@@ -54,7 +54,7 @@ class Queue:
 
     def topic(self, data):
         genre = data.get("genre")
-        chapters = int(finite(data.get("chapters", 5), 1, 2000))
+        chapters = whole(data.get("chapters", 50), 20, 2000, "章数")
         idea = data.get("idea", "")
         channel = data.get("channel", "")
         if genre not in GENRES or not isinstance(idea, str) or len(idea) > 3000:
@@ -152,7 +152,8 @@ class Queue:
             chapters = int(finite(data.get("chapters", topic["chapters"]), 1, 2000))
             if chapters != topic["chapters"] or data.get("genre") != topic["genre"]:
                 raise ValueError("请按新题材/章数重新选题")
-            jobs = int(finite(data.get("jobs", 2), 1, 4))
+            jobs = whole(data.get("jobs", self.jobs), 1, 4, "同时写作的书数")
+            words = whole(data.get("words_per_chapter", 2300), 1500, 4000, "每章字数")
             candidate = topic["candidates"][index]
             if "candidate_edit" in data:
                 edited = data["candidate_edit"]
@@ -175,7 +176,7 @@ class Queue:
             settings = dict(
                 prompt_pack=topic["genre"],
                 chapters=chapters,
-                words_per_chapter=2200,
+                words_per_chapter=words,
                 user_input=json.dumps(candidate, ensure_ascii=False),
             )
             save(folder / "book.yaml", settings)  # JSON is a YAML subset, no YAML dependency.

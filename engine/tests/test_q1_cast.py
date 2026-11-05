@@ -80,3 +80,16 @@ def test_writer_rolls_back_cast_edit_when_final_fact_check_fails():
         assert row["polish"]["cast_repair"] == "rolled_back"
     finally:
         fixture.doCleanups()
+
+
+def test_null_edit_list_does_not_turn_optional_cast_repair_into_project_error():
+    from support_minimal_b import MinimalBTests, CaptureClient, body
+
+    fixture = MinimalBTests()
+    fixture.setUp()
+    try:
+        client = CaptureClient(fixture.out, [body(60)], {"r2-ch2-finish": fixture.extraction(edits=None)})
+        row = fixture.run_chapter(client)
+        assert row["status"] == "complete"
+    finally:
+        fixture.doCleanups()

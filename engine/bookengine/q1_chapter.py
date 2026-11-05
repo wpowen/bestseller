@@ -153,7 +153,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         for h in prose_hits(original, bible, state)
         if h.get("kind") in ("missing_introduction", "unregistered_alias")
     }
-    cast_repaired = any(isinstance(e, dict) and e.get("id") in cast_target_ids for e in raw.get("edits", []))
+    cast_edits = raw.get("edits") if isinstance(raw.get("edits"), list) else []
+    cast_repaired = any(isinstance(e, dict) and e.get("id") in cast_target_ids for e in cast_edits)
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)

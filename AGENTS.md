@@ -22,3 +22,4 @@
 - `tools/runtime_support.py`、`tools/chapter_outputs.py` 提供共享协议，不反向依赖 bookengine/deai；`tools/webui/` 后端与 JS/HTML/CSS 分开维护，书库缓存只是派生视图，文件仍为恢复依据。
 - 当前待办只在 `engine/INBOX.md`；已结束或被取代的指令原文见 `engine/reports/inbox-archive-2026-11.md`，历史 PLAN 和报告不能覆盖当前约定。
 - Python 用 Ruff、行宽 120：`cd engine && python -m ruff format --check .`；历史 reports 保持原样，不参与格式化。
+- 应用发布版本唯一来源是 `engine/tools/version.py`，包元数据、bookengine 与网页共用；去 AI 的规则/缓存版本独立保留，不作发布版本使用。

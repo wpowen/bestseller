@@ -1,3 +1,3 @@
 """bookengine: a small independent book writer."""
 
-__version__ = "0.1.0"
+from tools.version import __version__

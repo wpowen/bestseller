@@ -177,3 +177,6 @@ h1{font-size:28px}
 .pager{gap:4px}
 .pager button{padding:8px}
 }
+
+.app-footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+.reading .app-footer{display:none}

@@ -27,7 +27,7 @@
 
 ## 2026-11-05-29：整理一版 v1.0——删旧代码、拆压缩行、提速书库、收拢文档、打本地版本号（用户 2026-11-05：“把旧代码修改更新一波，提交一个版本”）
 
-状态：待执行。在独立工作树 `scratch/v1-worktree`、分支 `chore/v1-cleanup` 上做。8787 上有书正在跑，不要动生产容器和 `books/`。监工验收、合并后，等正在跑的书完成再部署。
+状态：开发完成，待监工验收。第 1–6 步已在 `scratch/v1-worktree`、分支 `chore/v1-cleanup` 分别本地提交；报告见 [reports/v1-cleanup-20261105.md](reports/v1-cleanup-20261105.md)。未调用真实模型、未部署、未 push、未打标签。监工验收、合并后，等正在跑的书完成再部署。
 
 现状（监工 2026-11-05 普查，Evidence）：
 - 生产路径只有一条：网页调用 `python -m bookengine <book.yaml> --q1 --style b`，加上 `deai run --watch --pipeline`。从 `q1` 出发能 import 到的 bookengine 模块共 22 个。

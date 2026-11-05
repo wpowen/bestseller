@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import zipfile
 from library import GENRES, Library, read, text
 from jobs import Queue, topic_worker
+from tools.version import __version__
 
 ASSETS = Path(__file__).resolve().parent
 ENGINE = ASSETS.parents[1]
@@ -28,6 +29,7 @@ def config(env):
             values[k.strip()] = v.strip().strip("\"'")
     configured = bool(values.get(values.get("BESTSELLER__LLM__WRITER__API_KEY_ENV", "MINIMAX_API_KEY")))
     return dict(
+        version=__version__,
         genres=[dict(id=k, name=v) for k, v in GENRES.items()],
         models=[
             dict(

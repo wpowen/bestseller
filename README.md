@@ -62,4 +62,4 @@ PYTHONPATH=.:tools /Volumes/MACSSD/owen-home/Documents/workspace/bestseller/.ven
 
 各包总行数不限；单 Python 文件不超过 500 行，前端单文件不超过 800 行、每行不超过 160 字符。Python 按 120 列格式化，超限按职责拆文件。禁止 import `bestseller`；bookengine 与 deai 互不导入。`check_scope.py` 保留独立性和禁用词检查。
 
-当前待办见 [engine/INBOX.md](engine/INBOX.md)，历史指令保存在 [指令归档](engine/reports/inbox-archive-2026-11.md)，实测证据见 [engine/reports/](engine/reports/)。旧框架只保存在 `legacy-final-20261104` 标签和 `legacy` 分支；当前代码不依赖它。千章级任务开始前须告知用户。
+用户可见更新见 [CHANGELOG.md](CHANGELOG.md)。当前待办见 [engine/INBOX.md](engine/INBOX.md)，历史指令保存在 [指令归档](engine/reports/inbox-archive-2026-11.md)，实测证据见 [engine/reports/](engine/reports/)。旧框架只保存在 `legacy-final-20261104` 标签和 `legacy` 分支；当前代码不依赖它。千章级任务开始前须告知用户。

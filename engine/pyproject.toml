@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bookengine"
-version = "0.1.0"
+dynamic = ["version"]
 requires-python = ">=3.9"
 dependencies = ["PyYAML>=6", "python-docx>=1"]
 
@@ -14,6 +14,9 @@ deai = "deai.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["bookengine*", "deai*", "exporter*", "ideation*", "tools"]
+
+[tool.setuptools.dynamic]
+version = {attr = "tools.version.__version__"}
 
 [tool.setuptools.package-data]
 deai = ["data/*.yaml"]

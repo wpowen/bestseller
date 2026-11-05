@@ -126,5 +126,22 @@
       "cold_definition": "Fresh Library; OS page cache not flushed"
     },
     "canonical_response_sha256": "32856a5a2917845b3d719884cbf6dd005fe13d30eecee88771c25757382e1607"
+  },
+  "release": {
+    "version": "1.0.0",
+    "source": "engine/tools/version.py",
+    "wheel_metadata": true,
+    "http_config": true,
+    "native_chrome_footer": true,
+    "preview_origin": "http://127.0.0.1:58726",
+    "preview_read_only": true,
+    "queue_started": false
+  },
+  "final_validation": {
+    "tests_passed": 719,
+    "subtests_passed": 749,
+    "seconds": 24.28,
+    "formatted_python_files": 124,
+    "scope": "PASS"
   }
 }

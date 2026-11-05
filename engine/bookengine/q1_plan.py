@@ -18,6 +18,7 @@ from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .retired_opponents import stage_constraints
 from .outline_diversity import (
+    STRUCTURE_CHECKS_VERSION,
     historical_outlines,
     terminal_window,
     used_vocabulary,
@@ -213,7 +214,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
     superseded = bool(
         cached
-        and not cached.get("structure_checks_version")
+        and cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
         and (
             opponent_presence_issues(bible, cached["chapters"]) + planning_transition_issues(bible, cached["chapters"])
         )
@@ -302,7 +303,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             client,
             "outlines",
             f"chapters-{start}-{end}-diversity"
-            + ("-structure35" if superseded else "")
+            + (f"-structure35v{STRUCTURE_CHECKS_VERSION}" if superseded else "")
             + (f"-user{redo}" if redo else ""),
             [
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
@@ -323,7 +324,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
-        key += "-redo-structure35"
+        key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}"
     repaired = (
         cached["chapters"]
         if cached

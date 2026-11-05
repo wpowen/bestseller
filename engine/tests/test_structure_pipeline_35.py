@@ -1,6 +1,7 @@
 """Planning, writer context and diagnostics use the same stage rules."""
 
 import json
+import pytest
 
 from bookengine import q1_plan
 from bookengine.q1_extract import context
@@ -42,13 +43,15 @@ def test_checkup_reports_stage_jump_without_grounded_metadata(tmp_path):
     assert report["stage_transitions"]["missing"] == [[10, 11]]
 
 
-def test_cached_future_window_cannot_bypass_new_stage_constraints(tmp_path, monkeypatch):
+@pytest.mark.parametrize("version", [0, 1])
+def test_cached_future_window_cannot_bypass_new_stage_constraints(tmp_path, monkeypatch, version):
     folder = tmp_path / "outline-diversity"
     folder.mkdir()
     (folder / "011-011.json").write_text(
         json.dumps(
             dict(
                 status="passed",
+                structure_checks_version=version,
                 planned_chapters=[dict(number=11, title="新程", conflict="石远封城", scenes=[])],
                 chapters=[dict(number=11, title="新程", conflict="石远封城", scenes=[])],
             )

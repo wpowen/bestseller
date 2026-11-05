@@ -54,3 +54,54 @@ def test_checkup_counts_repetition_without_cleaning_source(tmp_path):
     assert path.read_text() == text
     assert report["repetition"]["sentence_repetitions"] == 1
     assert report["repetition"]["chapters"][0]["chapter"] == 26
+
+
+def test_large_retirement_metadata_cannot_displace_chapter_scenes():
+    from bookengine.q1_extract import context
+
+    bible = dict(
+        volumes=[dict(number=1, start=1, end=2000, location="港口")],
+        antagonists=[dict(name=f"旧对手{i}", exit=i) for i in range(1, 150)],
+    )
+    sections = context(
+        bible, {}, {"number": 1}, {"number": 170, "scenes": [{"action": "场景必须保留"}]}, {}, [], [], ""
+    )
+    assert "场景必须保留" in sections[0][1]
+
+
+def test_new_dependent_repetition_gets_one_bounded_repair_and_recheck():
+    from bookengine.q1_repetition import repair_repetitions
+
+    duplicate = "何晏要的是我身上那把已经断裂的旧剑。"
+    text = duplicate + "\n\n城里的钟声响了。\n\n" + duplicate + "他转身走了。"
+    requests = []
+
+    def ask(*args, **kwargs):
+        requests.append(args[1])
+        return {"edits": [{"id": 3, "text": "何晏伸手抓住了剑柄。"}]}
+
+    def extract(*args, **kwargs):
+        requests.append(args[1])
+        return {"events": []}, False, 0
+
+    changed, _, _, note = repair_repetitions(None, "ch11", text, {}, False, {}, {}, {"number": 11}, extract, ask)
+    assert changed.count(duplicate) == 1
+    assert note["status"] == "repaired"
+    assert requests == ["ch11-repetition-repair", "ch11-repetition-recheck"]
+
+
+def test_repetition_repair_rolls_back_if_it_revives_a_retired_opponent():
+    from bookengine.q1_repetition import repair_repetitions
+    from test_retired_opponents_35 import design
+
+    duplicate = "何晏要的是我身上那把已经断裂的旧剑。"
+    text = duplicate + "\n\n城楼静悄悄。\n\n" + duplicate
+    raw = {"events": []}
+
+    def ask(*args, **kwargs):
+        return {"edits": [{"id": 3, "text": "石远派人堵住山城。"}]}
+
+    actual, _, _, note = repair_repetitions(
+        None, "ch11", text, raw, False, {}, design(), {"number": 11}, lambda *a, **kw: ({"events": []}, False, 0), ask
+    )
+    assert actual == text and note["status"] == "rolled_back"

@@ -164,7 +164,13 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
-    outline = {"阶段退场约束": stage_constraints(bible, chapter["number"]), **outline}
+    constraints = stage_constraints(bible, chapter["number"])
+    constraints["omitted_retired"] = 0
+    constraints["omitted_locations"] = 0
+    while len(pack(constraints)) > 1200 and (constraints["retired"] or constraints["departed_locations"]):
+        field = "retired" if constraints["retired"] else "departed_locations"
+        constraints[field].pop(0)
+        constraints["omitted_retired" if field == "retired" else "omitted_locations"] += 1
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),
@@ -173,7 +179,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
-        ("本章章纲", pack(outline)[:2500]),
+        ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),

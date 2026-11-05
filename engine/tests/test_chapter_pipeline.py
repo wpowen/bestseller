@@ -44,6 +44,7 @@ class PipelineTests(WebFixture):
         self.assertEqual([c[2] for c in commands], ['bookengine', 'deai'])
         self.assertIn('--watch', commands[1])
         self.assertIn('--pipeline', commands[1])
+        self.assertEqual(commands[1][commands[1].index('--jobs') + 1], '3')
 
     def test_pending_finals_never_count_as_readable_words(self):
         self.pipeline_book()

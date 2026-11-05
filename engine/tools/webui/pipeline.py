@@ -8,6 +8,9 @@ import time
 from library import costs, read, save
 from tools.chapter_outputs import finished
 
+# Chapters de-AI'd at once when finished drafts pile up; deai accepts 1-4.
+POLISH_CHAPTER_JOBS = 3
+
 TERMINAL = {'error', 'quota_exhausted'}
 
 
@@ -97,7 +100,8 @@ def spawn(queue, folder, data, stage):
         command = [sys.executable, '-m', 'bookengine', str(folder / 'book.yaml'),
                    '--q1', '--style', 'b', '--env', str(queue.env), '--out', str(folder)]
     else:
-        command = [sys.executable, '-m', 'deai', 'run', str(folder), '--env', str(queue.env), '--watch', '--pipeline']
+        command = [sys.executable, '-m', 'deai', 'run', str(folder), '--env', str(queue.env), '--watch', '--pipeline',
+                   '--jobs', str(POLISH_CHAPTER_JOBS)]
         env['DEAI_RUNTIME_DIR'] = str(runtime)
         if not (data.get('auto_deai') is True or data.get('polish') is True):
             command.append('--original')

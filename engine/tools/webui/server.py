@@ -15,6 +15,7 @@ from library import GENRES, Library, read, text, save
 from job_inputs import whole
 from jobs import Queue, topic_worker
 from tools.version import __version__
+from tools.books_guard import check_test_root
 
 ASSETS = Path(__file__).resolve().parent
 ENGINE = ASSETS.parents[1]
@@ -250,6 +251,7 @@ def main():
     )
     parser.add_argument("--topic-worker", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    check_test_root(args.books)
     os.umask(0o077)
     if args.topic_worker:
         topic_worker(args.topic_worker, args.env)

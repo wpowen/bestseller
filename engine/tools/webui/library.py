@@ -11,6 +11,7 @@ import tempfile
 import yaml
 from book_cache import BookCache
 from tools.chapter_outputs import committed, finalized
+from tools.books_guard import check_test_root
 
 GENRES = {
     "suspense-mystery": "悬疑推理",
@@ -143,6 +144,7 @@ def stage_costs(folder, web):
 
 class Library:
     def __init__(self, root, read_only=False):
+        check_test_root(root)
         self.read_only = read_only
         self.root = Path(root).resolve()
         self.own = self.root / "webui"

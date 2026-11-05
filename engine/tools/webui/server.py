@@ -29,7 +29,7 @@ def config(env):
         dict(id='flash', name='MiniMax M3.1 Flash', enabled=configured, configured=configured, reason='公开CLI固定模型' if configured else '未配置'),
         dict(id='m3', name='MiniMax M3', enabled=False, configured=configured, reason=('已配置密钥；' if configured else '未配置；')+'公开CLI无模型切换参数'),
         dict(id='claude', name='Claude', enabled=False, reason=('已配置；' if values.get('ANTHROPIC_API_KEY') else '未配置；')+'公开CLI不支持')],
-        channels=['男频', '女频'], budgets=dict(total=.5, reserve=.03, topic=.05), limitations=['stopped检查点暂无公开恢复命令', '单章重写暂无公开命令；重试从检查点续跑'])
+        channels=['男频', '女频'], limitations=['单章重写暂无公开命令；重试从检查点续跑'])
 
 
 def docx(markdown):
@@ -75,7 +75,8 @@ class Handler(BaseHTTPRequestHandler):
             lib = self.server.library; path = query.path
             if path == '/api/config': self.send(self.server.configuration)
             elif path == '/favicon.ico': self.send(b'', code=204, mime='image/x-icon')
-            elif path == '/api/books': self.send(dict(books=lib.listing(), spending=lib.spending(), limit=self.server.configuration.get('budgets', {}).get('total', .5), read_only=lib.read_only))
+            elif path == '/api/books':
+                self.send(dict(books=lib.listing(), spending=lib.spending(), read_only=lib.read_only))
             elif path == '/api/archive': self.send(dict(books=lib.archive()))
             elif path == '/api/topics': self.send(self.server.queue.get_topic(get('id')))
             elif path == '/api/book': self.send(lib.detail(get('id')))
@@ -127,18 +128,17 @@ def main():
     parser.add_argument('--host', default=os.environ.get('BOOKWEB_HOST', '127.0.0.1'))
     parser.add_argument('--port', type=int, default=int(os.environ.get('BOOKWEB_PORT', 8787)))
     parser.add_argument('--public-port', type=int, default=int(os.environ.get('BOOKWEB_PUBLIC_PORT', 0)), help='browser-facing port when behind Docker port mapping')
-    parser.add_argument('--budget', type=float, default=float(os.environ.get('BOOKWEB_BUDGET_USD', 20)))
     parser.add_argument('--topic-worker', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(); os.umask(0o077)
     if args.topic_worker: topic_worker(args.topic_worker, args.env); return
-    if not 0 < args.budget <= 50: parser.error('总预算须在(0,50]美元')
     library = Library(args.books, read_only=args.read_only)
-    queue = None if args.read_only else Queue(library, args.env.resolve(), ENGINE, args.budget)
+    queue = None if args.read_only else Queue(library, args.env.resolve(), ENGINE)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     public = args.public_port or args.port
     server.origin = f'http://127.0.0.1:{public}'; server.hosts = {f'127.0.0.1:{public}', f'localhost:{public}'}
     server.library = library; server.queue = queue
-    server.configuration = config(args.env.resolve()); server.configuration['budgets']['total'] = args.budget; server.daemon_threads = True
+    server.configuration = config(args.env.resolve())
+    server.daemon_threads = True
     def stop(*_):
         if queue:
             queue.close()

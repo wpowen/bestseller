@@ -9,6 +9,7 @@ import unittest
 import yaml
 
 from bookengine import q1, q1_plan
+from tools.runtime_support import QuotaExhausted
 from bookengine.client import Client
 from bookengine.config import Book
 from bookengine.storage import load, save
@@ -322,7 +323,7 @@ class MinimalBTests(unittest.TestCase):
         self.assertIn('## 上章失败顺带补提',finish)
         self.assertLess(len(finish),10000)
         self.assertTrue(load(self.out/'steps/r2-ch2-finish.json')['_previous_complete'])
-        recovered=load(self.out/'chapters/001.json')
+        recovered=load(self.out/'chapters/001.recovery.json')
         self.assertTrue(recovered['carry_attempted'])
         self.assertTrue(recovered['state_recovered'])
         self.assertTrue(recovered['state_failed'])  # Original failure remains visible.
@@ -332,7 +333,7 @@ class MinimalBTests(unittest.TestCase):
         self.assert_saved(second,current)
         self.assertEqual((self.out/'chapter-001.body.md').read_text(),previous)
 
-    def test_budget_exceptions_do_not_become_format_retries(self):
+    def test_quota_exceptions_do_not_become_format_retries(self):
         for stage in ('r2-ch2-draft','r2-ch2-finish','r2-ch2-final-state'):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
                 self.out = Path(directory)
@@ -340,9 +341,9 @@ class MinimalBTests(unittest.TestCase):
                 old={'continuity':{'balances':{'寿命':{'amount':2,'unit':'天'}}}}
                 before=deepcopy(old)
                 replies={'r2-ch2-finish':self.extraction(patch={'after':1,'text':'她拿起钥匙。'}),
-                         stage:RuntimeError('budget reached')}
+                         stage:QuotaExhausted('account quota exhausted')}
                 client=CaptureClient(self.out,[body(60)],replies)
-                with self.assertRaisesRegex(RuntimeError,'budget'):
+                with self.assertRaisesRegex(QuotaExhausted,'quota'):
                     self.run_chapter(client,state=old)
                 expected=['r2-ch2-draft','r2-ch2-finish','r2-ch2-final-state']
                 self.assert_calls(client,expected[:expected.index(stage)+1])

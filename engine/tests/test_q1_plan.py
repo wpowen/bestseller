@@ -186,7 +186,7 @@ class StageInterfaceTests(unittest.TestCase):
         self.assertEqual(value[1]['payoff'], '')
         self.assertEqual(value[0]['scenes'][0]['obstacle'], '')
         self.assertEqual(value[2]['payoff'], '夺回机会')
-        self.assertEqual(fixture.calls[0][2]['max_attempts'], 1)
+        self.assertEqual(fixture.calls[0][2]['max_attempts'], 6)
 
     def test_model_parser_distinguishes_empty_defaults_from_broken_format(self):
         self.assertEqual(q1.model_value('{}'),{})

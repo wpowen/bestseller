@@ -83,7 +83,7 @@ class WebFixture(unittest.TestCase):
         self.child = mock.Mock(pid=812345, returncode=None)
         self.child.poll.return_value = None
         self.spawn.return_value = self.child
-        self.queue = jobs.Queue(self.lib, self.env, ENGINE, limit=.5)
+        self.queue = jobs.Queue(self.lib, self.env, ENGINE)
         self.addCleanup(self.queue.exclusive.close)
         self.origin = 'http://127.0.0.1:18765'
         self.http = SimpleNamespace(library=self.lib, queue=self.queue,
@@ -179,7 +179,7 @@ runpy.run_path(sys.argv[0], run_name='__main__')
                                  str(WEBUI), str(ENGINE / 'tools/webui.py')],
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('--budget', result.stdout)
+        self.assertNotIn('--budget', result.stdout)
 
 
 class LibraryTests(WebFixture):
@@ -308,12 +308,13 @@ class HttpTests(WebFixture):
                 self.assertEqual(status, 400)
         self.spawn.assert_not_called()
 
-    def test_nonfinite_budget_is_rejected_through_http(self):
-        data = self.topic()
+    def test_obsolete_budget_input_is_ignored_through_http(self):
         for value in [float('nan'), float('inf'), -float('inf'), 'NaN']:
             with self.subTest(value=value):
-                status, _, _ = self.request('/api/books', method='POST', data=dict(data, budget=value))
-                self.assertEqual(status, 400)
+                status, _, body = self.request('/api/books', method='POST', data=dict(self.topic(), budget=value))
+                self.assertEqual(status, 200)
+                folder = self.lib.folder(json.loads(body)['id'])
+                self.assertNotIn('budget', library.read(folder / 'web.json'))
         self.spawn.assert_not_called()
 
     def test_get_rejects_host_rebinding(self):
@@ -440,15 +441,17 @@ class HttpTests(WebFixture):
         self.assertIn('定稿1：她听见潮声。<灯> & 船。', text)
         self.assertNotIn('草稿', text)
 
-    def test_http_stopped_resume_rejection_preserves_run_and_state(self):
+    def test_http_legacy_stopped_resume_preserves_run_and_state(self):
         folder = self.book(status='budget_paused')
         put(folder / 'run.json', {'status': 'stopped', 'stop_reason': 'budget'})
         put(folder / 'state.json', {'checkpoint': 1})
         before = snapshot(folder)
         status, _, _ = self.request('/api/action', method='POST',
                                      data={'id': 'webui/story', 'action': 'resume'})
-        self.assertEqual(status, 400)
-        self.assertEqual(snapshot(folder), before)
+        self.assertEqual(status, 200)
+        self.assertEqual({k: v for k, v in snapshot(folder).items() if k != 'web.json'},
+                         {k: v for k, v in before.items() if k != 'web.json'})
+        self.assertEqual(library.read(folder / 'web.json')['status'], 'queued')
         self.spawn.assert_not_called()
 
 

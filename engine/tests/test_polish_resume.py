@@ -393,8 +393,8 @@ class PolishResumeTests(unittest.TestCase):
         self.assertEqual(export.call_args.args[3], [BODY])
         return result, row, chapter
 
-    def test_growth_stage_names_reach_fifty_and_keep_cumulative_stop_time(self):
-        for seconds,expected in ((0,'complete'),(6000,'stopped')):
+    def test_growth_stage_names_reach_fifty_and_keep_time_without_speed_stop(self):
+        for seconds,expected in ((0,'complete'),(6000,'complete')):
             with self.subTest(seconds=seconds):
                 book=replace(self.book,chapters=50)
                 self.bible['initial_dashboard']={'strength':'辨认异常','wealth':'3200元'}
@@ -427,7 +427,7 @@ class PolishResumeTests(unittest.TestCase):
                 self.assertNotIn('scores',memory)
                 self.assertEqual(client.calls,[])
                 self.assertGreaterEqual(result['execution_seconds'],seconds)
-                if seconds:self.assertIn('average=',result['stop_reason'])
+                if seconds:self.assertGreater(result['warnings'][-1]['average_seconds'],100)
                 self.assertEqual(self.files[self.out/'chapter-001.body.md'],BODY)
 
     def test_unsettled_cached_last_chapter_repairs_missing_and_stale_accounting(self):
@@ -462,6 +462,7 @@ class PolishResumeTests(unittest.TestCase):
     def test_run_carries_previous_delta_in_current_finish_preserving_old_body(self):
         for paid in (True,False):
             with self.subTest(recovered_paid=paid):
+                self.files.pop(self.out / 'chapters/001.recovery.json', None)
                 book=replace(self.book,chapters=2)
                 kind=self.bible['canon']['payoff_menu'][0]
                 old=self.cached_row()
@@ -497,7 +498,7 @@ class PolishResumeTests(unittest.TestCase):
                 self.assertEqual(stages,['r2-ch2-draft','r2-ch2-finish'])
                 self.assertIn('## 上章失败顺带补提\n',client.calls[-1]['prompt'])
                 self.assertIn(json.dumps(BODY,ensure_ascii=False),client.calls[-1]['prompt'])
-                recovered=self.get(self.out/'chapters/001.json')
+                recovered=self.get(self.out/'chapters/001.recovery.json')
                 next_row=self.get(self.out/'chapters/002.json')
                 self.assertTrue(recovered['state_recovered'])
                 self.assertTrue(recovered['carry_attempted'])

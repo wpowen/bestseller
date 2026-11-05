@@ -1,4 +1,5 @@
 """S4 chapter drafting, combined review/edit, compact state and bounded failures."""
+from tools.runtime_support import QuotaExhausted, ProjectError
 from .checks import check_events, high_confidence, length_band, text_issues
 from .longmemory import compact_state, extract_summary
 from .length import correct_length
@@ -86,6 +87,8 @@ def write_chapter(client, book, chapter, volume, canon, previous_end, state, sum
     if not low <= count <= high:
         try:
             draft = correct_length(client, name + '-length', draft, chapter, book.words_per_chapter)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             warnings.append(dict(stage='length', reason=str(exc)))
     save(out / f'chapter-{idx:03d}.draft.md', draft)
@@ -104,6 +107,8 @@ def write_chapter(client, book, chapter, volume, canon, previous_end, state, sum
                      + sections, REVIEW_SCHEMA, cap=8000, max_attempts=2,
                      normalize=lambda v: review_value(v, draft),
                      validate=lambda v: require(isinstance(v.get('edits'), list)))
+    except (QuotaExhausted, ProjectError):
+        raise
     except (RuntimeError, ValueError) as exc:
         warnings.append(dict(stage='review', reason=str(exc)))
         review = dict(edits=[], events=[])
@@ -135,6 +140,8 @@ def write_chapter(client, book, chapter, volume, canon, previous_end, state, sum
                       REVIEW_SCHEMA, cap=8000, max_attempts=2, validate=validate_fix,
                       normalize=lambda v: review_value(v, final, allowed))
             final, events = apply_fix(final, events, fix)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             warnings.append(dict(stage='fix', reason=str(exc)))
     if not length_attempted and not low <= chinese_count(final) <= high:
@@ -142,6 +149,8 @@ def write_chapter(client, book, chapter, volume, canon, previous_end, state, sum
             final = correct_length(client, name + '-length', final, chapter, book.words_per_chapter,
                                    {e['paragraph'] for e in events if type(e.get('paragraph')) is int})
             events = anchor_events(dict(events=events), final)['events']
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             warnings.append(dict(stage='length', reason=str(exc)))
     remaining = observations(state, events, final, banned, previous_texts)
@@ -166,6 +175,8 @@ def write_chapter(client, book, chapter, volume, canon, previous_end, state, sum
                     STATE_SCHEMA, cap=4500, max_attempts=2, validate=valid_state,
                     cumulative_output_failures=True)
         state, summary = state_result(value, state)
+    except (QuotaExhausted, ProjectError):
+        raise
     except (RuntimeError, ValueError) as exc:
         warnings.append(dict(stage='state', reason=str(exc), fallback='previous'))
         summary = f'第{idx}章摘要提取失败，参照本章大纲：' + str(chapter.get('ending_hook', ''))

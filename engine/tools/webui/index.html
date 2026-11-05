@@ -15,7 +15,6 @@
    </nav>
    <div class="spend">
     <span id="spending-value">正在连接…</span>
-    <progress id="spending-meter" max="1" value="0" aria-label="总花费"></progress>
    </div>
    <button id="theme" aria-label="深浅色切换">◐</button>
   </header>
@@ -118,13 +117,10 @@
         <p id="picked" class="muted"></p>
         <div class="fields">
          <label>写手<select id="model" required></select></label>
-         <label>写作预算上限（美元 $）<input id="budget" type="number" min="0.04" step="0.01" value="0.23" required></label>
-         <label>去 AI 预算上限（美元 $）<input id="deai-budget" type="number" min="0.01" step="0.01" value="0.50" required></label>
          <label>并发数<input id="jobs" type="number" min="1" max="4" value="2" required></label>
         </div>
         <p id="model-info" class="muted"></p>
         <p id="estimate" class="muted"></p>
-        <p id="budget-info" class="muted"></p>
         <label class="check"><input id="polish" type="checkbox">自动去 AI 润色</label>
         <div class="toolbar">
          <button type="button" data-step="2">← 返回选题</button>

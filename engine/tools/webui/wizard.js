@@ -1,4 +1,4 @@
-import { $, state, text, printable, api, el, money, button } from './shared.js';
+import { $, state, text, printable, api, el, money, button, statusLabel, runtimeInfo } from './shared.js';
 function updateCreate() {
  const busy = state.topicSubmitting || state.creating || (!!state.topic && !state.topicReady && $('generate-topics').disabled);
  $('refresh-topics').disabled = busy || !state.topic;
@@ -43,12 +43,6 @@ async function loadConfig() {
   $('model').value = preferred?.id || '';
   $('generate-topics').disabled = !(config.genres || []).length;
   text('topic-status', '已连接。每次生成都会抽取新方向；已有选题可从上方恢复。');
-  text(
-   'budget-info',
-   config.budgets
-    ? `总预算上限 $${config.budgets.total ?? '—'} · 预留 $${config.budgets.reserve ?? '—'}；写作与去 AI 分别限额，开启润色时同时预留两份预算。`
-    : '预算以服务端配置为准。',
-  );
   updateCreate();
  } catch (error) {
   text('topic-status', error.message + ' 刷新页面可重试。');
@@ -264,21 +258,21 @@ function renderTopics(data) {
   $('candidates').append(notes);
  }
  const status = String(data.status || '').toLowerCase();
- const failed = /failed|error|cancelled/.test(status);
+ const failed = /failed|error|cancelled|quota_exhausted/.test(status);
  const done = /^(ready|complete|completed|done|success|succeeded)$/.test(status);
  state.topicReady = done && !failed && candidates.length > 0;
  text(
   'topic-status',
   failed
-   ? printable(data.error || data.message || '选题生成失败，原始记录已保留。')
+   ? [statusLabel(data), runtimeInfo(data) || printable(data.message || '选题生成失败，原始记录已保留。')].join(' · ')
    : done
      ? `实际展示 ${candidates.length} 个候选。${data.notice || ''}`
-     : '选题正在构思中，每 2 秒更新…',
+     : status === 'waiting' ? `等待接口 · ${runtimeInfo(data)}` : '选题正在构思中，每 2 秒更新…',
  );
  const usage = data.usage || {};
  text(
   'topic-cost',
-  `本批 ${money(data.cost_usd ?? usage.cost ?? data.cost)} · 上限 $0.05` +
+  `本批已花费 ${money(data.cost_usd ?? usage.cost ?? data.cost)}` +
    (usage.unknown ? ` · Unknown ${usage.unknown} 次，上界 ${money(usage.unknown_bound)}` : ''),
  );
  text('topic-notes', [data.judge_status, data.market?.status].filter(Boolean).join(' · '));
@@ -405,8 +399,6 @@ $('book-form').addEventListener('submit', async (event) => {
    chapters: state.topicInput.chapters,
    model: $('model').value,
    polish: $('polish').checked,
-   budget: Number($('budget').value),
-   deai_budget: Number($('deai-budget').value),
    jobs: Number($('jobs').value),
   });
   if (!result.id) throw new Error('服务没有返回书籍 ID，请先查看书库再决定是否重试。');
@@ -436,7 +428,7 @@ function step(n) {
  text('picked', currentCard(state.candidate)?.title || '请先选定故事');
  text(
   'estimate',
-  `费用预估：本批选题最多 $0.05；写作独立上限 ${money($('budget').value)}${$('polish').checked ? ' + 去 AI ' + money($('deai-budget').value) : ''}。实际费用按回执累计。`,
+  `费用按调用记录累计显示。正文完成后${$('polish').checked ? '自动继续去 AI 润色' : '保留草稿，可随时手动去 AI'}。`,
  );
 }
 function genreTags() {
@@ -460,5 +452,5 @@ function genreTags() {
  }
 }
 document.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => step(Number(b.dataset.step))));
-for (const id of ['budget', 'deai-budget', 'polish']) $(id).addEventListener('input', () => step(3));
+$('polish').addEventListener('input', () => step(3));
 export { loadConfig };

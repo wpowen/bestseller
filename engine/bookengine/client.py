@@ -14,6 +14,8 @@ import urllib.request
 from .storage import load, now, save
 from .text import parse_json
 from .retries import next_network_wait
+from tools.runtime_support import (QuotaExhausted, ProjectError, classify_api_error,
+                             extract_api_error)
 
 MODEL = 'MiniMax-M3.1-Flash'
 SYSTEM = ('你是一位中文小说作者和编辑。直接交付当前任务，不解释工作过程。'
@@ -41,6 +43,10 @@ def content_of(result):
     if isinstance(text, list):
         text = ''.join(p.get('text', '') for p in text if isinstance(p, dict))
     return re.sub(r'<think>.*?</think>', '', text, flags=re.S).strip()
+
+
+def write_runtime(out, kind, stage='', **fields):
+    save(Path(out) / 'runtime.json', dict(kind=kind, stage=stage, updated=time.time(), **fields))
 
 
 class Retryable(ValueError):
@@ -119,35 +125,49 @@ class Client:
             entry['model'] = result.get('model')
             entry['finish_reason'] = (result.get('choices') or [{}])[0].get('finish_reason')
             save(self.out / 'responses' / f'{entry["seq"]:03d}.json', result)
-            if not content_of(result) and not getattr(self, 'relaxed', False):
+            code, message = extract_api_error(result)
+            if code not in (None, 0) or result.get('error'):
+                message = message.replace(self._key, '[redacted]')
+                entry.update(provider_code=code, provider_message=message)
+                kind = classify_api_error(code, message)
+                if kind == 'quota':
+                    entry['status'] = 'quota_exhausted'
+                    raise QuotaExhausted(f'{stage}: MiniMax {code}: {message}')
+                if kind == 'waiting':
+                    entry['status'] = 'provider_wait'
+                    raise NetworkRetry(f'MiniMax {code}: {message}')
+                raise ProjectError(f'{stage}: MiniMax {code}: {message}')
+            if not content_of(result):
                 raise Retryable('empty_return')
-            if entry['finish_reason'] == 'length' and not getattr(self, 'relaxed', False):
+            if entry['finish_reason'] == 'length':
                 raise Retryable('truncated_return')
             entry['status'] = 'ok'
             return content_of(result)
         except urllib.error.HTTPError as exc:
             entry['status'], entry['http_status'] = 'http_error', exc.code
-            if exc.code == 422:
-                try:
-                    error = json.loads(exc.read())
-                    details = error.get('detail', error.get('error', {}))
-                    if isinstance(details, list):
-                        entry['parameter_error'] = [{'field': x.get('loc'), 'type': x.get('type'),
-                                                     'message': x.get('msg')} for x in details if isinstance(x, dict)]
-                    elif isinstance(details, dict):
-                        entry['parameter_error'] = str(details.get('message', details.get('type', '')))[:600].replace(self._key, '[redacted]')
-                except (ValueError, TypeError, AttributeError):
-                    pass
-            if exc.code in (408, 429) or 500 <= exc.code < 600:
-                delay = exc.headers.get('Retry-After', '0')
-                raise NetworkRetry(f'http_{exc.code}', retry_after(delay)) from None
-            raise RuntimeError(f'HTTP {exc.code}; request stopped') from None
+            try:
+                error = json.loads(exc.read())
+            except (ValueError, TypeError):
+                error = {}
+            code, message = extract_api_error(error)
+            message = message.replace(self._key, '[redacted]')
+            entry.update(provider_code=code, provider_message=message)
+            kind = classify_api_error(code, message)
+            if kind == 'quota':
+                entry['status'] = 'quota_exhausted'
+                raise QuotaExhausted(f'{stage}: MiniMax {code}: {message}') from None
+            if kind == 'waiting' or exc.code in (408, 429) or 500 <= exc.code < 600:
+                delay = (exc.headers or {}).get('Retry-After', '0')
+                raise NetworkRetry(f'http_{exc.code}: {message}', retry_after(delay)) from None
+            raise ProjectError(f'{stage}: HTTP {exc.code}; {message}') from None
         except (socket.timeout, TimeoutError, urllib.error.URLError, ConnectionError, HTTPException) as exc:
             entry['status'] = 'transport_error'
             detail = exc.reason if isinstance(exc, urllib.error.URLError) else exc
             entry['error_type'] = type(detail).__name__
             entry['error_number'] = getattr(detail, 'errno', None)
             raise NetworkRetry('timeout_or_connection_error') from None
+        except NetworkRetry:
+            raise
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             entry['status'] = 'invalid_output'
             raise Retryable(str(exc) if isinstance(exc, Retryable) else 'invalid_response') from None
@@ -164,7 +184,7 @@ class Client:
         print(f'waiting {name}: network backoff until {state["not_before"]}', flush=True)
         while True:
             if getattr(self, 'stop_requested', lambda: False)():
-                raise RuntimeError('Interrupted during network backoff: ' + name)
+                raise InterruptedError('Interrupted during network backoff: ' + name)
             remaining = (dt.datetime.fromisoformat(state['not_before'])
                          - dt.datetime.now(dt.timezone.utc)).total_seconds()
             if remaining <= 0:
@@ -175,49 +195,44 @@ class Client:
         save(path, state)
 
     def stage(self, name, prompt, schema=None, validate=None, cap=10000, effort='low', normalize=None,
-              max_attempts=3, parser=None, cumulative_output_failures=False):
+              max_attempts=6, parser=None, cumulative_output_failures=False):
+        max_attempts = max(6, max_attempts)
         target = self.out / 'steps' / (name + ('.json' if schema else '.md'))
 
         def convert(raw):
-            try:
-                value = (parser or parse_json)(raw) if schema else raw.strip()
-                if getattr(value,'recovered_output',False) and self.calls:
-                    self.calls[-1]['recovered_output']=True
-                    save(self.history_path,self.calls)
-            except (ValueError, TypeError, AttributeError):
-                if not getattr(self, 'relaxed', False):
-                    raise
-                value = {} if schema else ''
-                if self.calls and self.calls[-1]['stage'] == name:
-                    self.calls[-1].update(status='degraded', degradation='unparseable_output')
-                    save(self.history_path, self.calls)
+            value = (parser or parse_json)(raw) if schema else raw.strip()
+            if not value and not schema:
+                raise Retryable('empty_return')
+            if getattr(value, 'recovered_output', False) and self.calls:
+                self.calls[-1]['recovered_output'] = True
+                save(self.history_path, self.calls)
             if normalize:
-                try:
-                    value = normalize(value)
-                except (ValueError, KeyError, TypeError, AttributeError):
-                    if not getattr(self, 'relaxed', False):
-                        raise
-            if validate and not getattr(self, 'relaxed', False):
-                validate(value)
+                value = normalize(value)
+            if validate and validate(value) is False:
+                raise ValueError('stage validation returned false')
             return value
 
+        repaired = target.with_name(target.stem + '.recovered' + target.suffix)
+        if repaired.exists():
+            target = repaired
+        cache_error = ''
         if target.exists():
             try:
                 value = load(target) if schema else target.read_text(encoding='utf-8')
-            except (ValueError, TypeError):
-                if not getattr(self, 'relaxed', False):
-                    raise
-                value = {} if schema else ''
-            if normalize:
-                try:
+                if not schema and not value.strip():
+                    raise ValueError('empty saved output')
+                if normalize:
                     value = normalize(value)
-                except (ValueError, KeyError, TypeError, AttributeError):
-                    if not getattr(self, 'relaxed', False):
-                        raise
-            if validate and not getattr(self, 'relaxed', False):
-                validate(value)
-            print(f'resume {name}', flush=True)
-            return value
+                if validate and validate(value) is False:
+                    raise ValueError('stage validation returned false')
+                print(f'resume {name}', flush=True)
+                return value
+            except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                if target == repaired:
+                    raise ProjectError(f'{name}: invalid recovered checkpoint: {exc}') from None
+                cache_error = str(exc)[:180]
+                target = repaired
+        write_runtime(self.out, 'running', name)
         full = self.prefix + '\n\n' + prompt
         if schema:
             full += '\n只返回完整JSON，结构：\n' + schema
@@ -226,6 +241,8 @@ class Client:
                 full = full[:max(0, self.context_limit - len(SYSTEM) - 256)]
             else:
                 raise RuntimeError('Context exceeds configured character limit: ' + name)
+        if cache_error:
+            full += '\n上次保存的输出无效：' + cache_error + '。请完整输出，旧文件将保留。'
         base_full = full
         previous = [c for c in self.calls if c['stage'] == name]
         # Recover a saved HTTP response if termination preceded its stage checkpoint.
@@ -234,7 +251,7 @@ class Client:
             if path.exists():
                 try:
                     result = load(path)
-                    if (result.get('choices') or [{}])[0].get('finish_reason') == 'length' and not getattr(self, 'relaxed', False):
+                    if (result.get('choices') or [{}])[0].get('finish_reason') == 'length':
                         continue
                     value = convert(content_of(result))
                     entry.update(reused_response=True, usage=result.get('usage') or {},
@@ -250,35 +267,38 @@ class Client:
         output_failures = sum(c.get('status') in ('invalid_stage_output', 'invalid_output')
                               for c in previous) if cumulative_output_failures else 0
         attempt = len(previous)
+        max_attempts += output_failures
+        detail = 'invalid output'
         while output_failures < max_attempts:
             attempt += 1
             try:
                 retry_cap = max(cap, 16000) if output_failures and self.calls[-1].get('finish_reason') == 'length' else cap
+                write_runtime(self.out, 'running', name)
                 raw = self.request(name, full, retry_cap,
                                    effort if not output_failures else 'low', attempt)
                 value = convert(raw)
                 save(target, value)
+                write_runtime(self.out, 'running', name)
                 return value
             except NetworkRetry as exc:
                 network['failures'] += 1
                 delay = next_network_wait(network['failures'], network['waited'], exc.delay)
-                if delay is None:
-                    save(retry_path, network)
-                    raise RuntimeError('Network failed after at least 15 minutes of backoff: ' + name) from None
                 network.update(delay=delay, not_before=(dt.datetime.now(dt.timezone.utc)
                                + dt.timedelta(seconds=delay)).isoformat())
                 save(retry_path, network)
+                write_runtime(self.out, 'waiting', name, retry=network['failures'],
+                              next_retry_at=time.time() + delay, error=str(exc))
                 self.wait_network(name, network, retry_path)
+            except (QuotaExhausted, ProjectError) as exc:
+                kind = 'quota_exhausted' if isinstance(exc, QuotaExhausted) else 'error'
+                write_runtime(self.out, kind, name, error=str(exc))
+                raise
             except (ValueError, KeyError, TypeError, AttributeError) as exc:
-                if getattr(self, 'relaxed', False):
-                    self.calls[-1].update(status='degraded', degradation=type(exc).__name__)
-                    save(self.history_path, self.calls)
-                    value = {} if schema else ''
-                    save(target, value)
-                    return value
                 output_failures += 1
                 self.calls[-1]['status'] = 'invalid_stage_output'
                 save(self.history_path, self.calls)
-                detail = str(exc).replace(self._key, '[redacted]')[:180]
+                detail = str(exc).replace(getattr(self, '_key', ''), '[redacted]')[:180] if getattr(self, '_key', '') else str(exc)[:180]
                 full = base_full + '\n上次输出无效：' + detail + '。请完整输出，段落编号须来自输入，逐字引用须准确。'
-        raise RuntimeError(f'Stage failed after {max_attempts} attempts: ' + name)
+        message = f'Stage {name} failed after {max_attempts} attempts: {detail}'
+        write_runtime(self.out, 'error', name, error=message)
+        raise ProjectError(message)

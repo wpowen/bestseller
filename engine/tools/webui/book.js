@@ -1,5 +1,5 @@
 import {
- $, state, el, money, count, statusLabel, creationDate, bookUsage, link, button, bookURL, readURL, stored, printable, notify
+ $, state, el, money, count, statusLabel, creationDate, bookUsage, runtimeInfo, link, button, bookURL, readURL, stored, printable, notify
 } from './shared.js';
 import { actionButtons } from './library.js';
 import { chapters, copyText } from './reader.js';
@@ -20,6 +20,7 @@ function renderDetail(selected = tab) {
   link(`继续阅读 · 第 ${last} 章`, readURL(b.id, last), 'primary button'),
   actionButtons(b),
   el('p', bookUsage(b), 'muted'),
+  el('p', runtimeInfo(b), 'muted'),
  );
  $('book-hero').replaceChildren(cover, info);
  $('book-tabs').replaceChildren(
@@ -84,7 +85,8 @@ function renderDetail(selected = tab) {
   content.append(
    el(
     'pre',
-    tab === '章纲' ? state.book.outline || '章纲尚未生成。' : printable(state.book.chapters.map((c) => ({ number: c.number, report: c.report }))),
+    tab === '章纲' ? state.book.outline || '章纲尚未生成。'
+     : printable(state.book.chapters.map((c) => ({ number: c.number, checks: c.checks, report: c.report }))),
    ),
   );
 }

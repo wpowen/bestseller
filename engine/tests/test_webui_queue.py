@@ -14,7 +14,7 @@ THREAD_START = threading.Thread.start
 
 
 class QueueTests(WebFixture):
-    def test_book_and_polish_spawn_public_clis_with_budget_and_original_output(self):
+    def test_book_and_polish_spawn_public_clis_without_budget_and_with_original_output(self):
         for kind, module in [('book', 'bookengine'), ('polish', 'deai')]:
             with self.subTest(kind=kind):
                 folder = self.book('webui/' + kind)
@@ -30,16 +30,9 @@ class QueueTests(WebFixture):
                 self.assertIn(str(self.env), command)
                 self.assertFalse(kwargs.get('shell', False))
                 self.assertTrue(kwargs['start_new_session'])
-                if kind == 'book':
-                    self.assertEqual(kwargs['env']['BOOKENGINE_BUDGET_ROOT'], str(folder))
-                    cap = float(kwargs['env']['BOOKENGINE_BUDGET_USD'])
-                else:
-                    self.assertFalse(any(k.startswith('BOOKENGINE_BUDGET_') for k in kwargs['env']))
-                    self.assertEqual(command[command.index('--budget-root')+1], str(folder / 'final'))
-                    cap = float(command[command.index('--budget')+1])
-                self.assertTrue(math.isfinite(cap))
-                self.assertGreater(cap, 0)
-                self.assertLessEqual(cap, .2)
+                self.assertFalse(any('_BUDGET_' in k for k in kwargs['env']))
+                self.assertNotIn('--budget-root', command)
+                self.assertNotIn('--budget', command)
                 self.assertEqual((folder / 'run.json').read_bytes(), before_run)
 
     def test_topic_spawns_authorized_isolated_worker(self):
@@ -77,14 +70,14 @@ class QueueTests(WebFixture):
                 library.save(folder / 'http/ledger.json', ledger)
                 library.save(folder / 'http' / (stage+'.text'), payload)
                 return payload
-        client = mock.Mock(side_effect=respond)
+        client = mock.Mock(side_effect=respond, model='MiniMax-M3.1-Flash')
         client.estimate.side_effect = lambda: library.costs(folder)['cost']
         with mock.patch('deai.client.MiniMax', return_value=client) as factory, \
                 mock.patch('ideation.run', wraps=run) as pipeline, \
                 mock.patch.object(threading.Thread, 'start', THREAD_START), \
                 mock.patch('ideation.snapshot', side_effect=AssertionError('offline snapshot only')) as market:
             jobs.topic_worker(folder, self.env)
-        factory.assert_called_once_with(folder, self.env, budget=.05)
+        factory.assert_called_once_with(folder, self.env)
         pipeline.assert_called_once_with(folder, client, self.lib.root)
         market.assert_not_called(); self.spawn.assert_not_called()
         stages = [call.kwargs['stage'] for call in client.call_args_list]
@@ -130,26 +123,26 @@ class QueueTests(WebFixture):
         self.assertEqual({p.stem for p in (folder / 'steps').glob('*.json')},
                          {'generate-0','generate-1','generate-2','judge'})
 
-    def test_topic_worker_malformed_generation_fails_without_retry_and_keeps_calls(self):
+    def test_topic_worker_malformed_generation_uses_six_attempts_and_keeps_calls(self):
         for reply in ['not json', '{"wrong":"object"}', json.dumps([{}]*7)]:
             with self.subTest(reply=reply):
                 topic, folder, client = self.run_topic_worker(reply)
-                self.assertEqual(topic['status'], 'failed')
+                self.assertEqual(topic['status'], 'error')
                 self.assertEqual(topic['candidates'], [])
                 # map may cancel generation tasks that have not started after an error.
-                self.assertGreaterEqual(client.call_count, 1)
-                self.assertLessEqual(client.call_count, 3)
+                self.assertGreaterEqual(client.call_count, 6)
+                self.assertLessEqual(client.call_count, 18)
                 stages = [call.kwargs['stage'] for call in client.call_args_list]
-                self.assertTrue(set(stages) <= {'generate-0', 'generate-1', 'generate-2'})
+                self.assertTrue(all(stage.startswith(('generate-0', 'generate-1', 'generate-2')) for stage in stages))
                 self.assertEqual(len(stages), len(set(stages)))
-                self.assertIn('ValueError', topic['error'])
+                self.assertIn('StepFormatError', topic['error'])
                 self.assertEqual(topic['seed'], 17)
                 self.assertEqual(len(library.read(folder / 'http/ledger.json')), client.call_count)
                 self.assertGreater(library.costs(folder)['cost'], 0)
                 self.assertEqual(len(list((folder / 'http').glob('*.text'))), client.call_count)
 
     def test_topic_worker_empty_or_missing_fields_reports_actual_count_after_one_refill(self):
-        for reply in ['[]', json.dumps([{'title':'缺字段'}]*6)]:
+        for reply in [json.dumps([{}]*6), json.dumps([{'title':'缺字段'}]*6)]:
             with self.subTest(reply=reply):
                 topic, folder, client = self.run_topic_worker(reply)
                 self.assertEqual(topic['status'], 'complete', topic.get('error'))
@@ -157,27 +150,35 @@ class QueueTests(WebFixture):
                 self.assertEqual(client.call_count, 4)
                 self.assertIn('实际展示0个', topic['notice'])
                 self.assertNotIn('judge', [c.kwargs['stage'] for c in client.call_args_list])
-                if reply != '[]':
-                    self.assertEqual(len(library.read(folder / 'rejected.json')), 24)
+                self.assertEqual(len(library.read(folder / 'rejected.json')), 24)
 
-    def test_topic_worker_real_transport_budget_refuses_requests_preserving_ledger(self):
+    def test_topic_worker_large_previous_cost_does_not_block_fake_requests_or_erase_ledger(self):
         from deai.client import MiniMax
         folder = self.topic_worker_folder()
         put(self.env, 'MINIMAX_API_KEY=offline-test-placeholder\n')
         ledger = [dict(stage='previous', model='MiniMax-M3.1-Flash', status='ok',
                        usage=dict(prompt_tokens=1000000, completion_tokens=0))]
         put(folder / 'http/ledger.json', ledger)
+        lock = threading.Lock()
+        def request(messages, **options):
+            with lock:
+                rows = library.read(folder / 'http/ledger.json')
+                rows.append(dict(stage=options['stage'], status='ok', usage=dict(prompt_tokens=100, completion_tokens=0)))
+                library.save(folder / 'http/ledger.json', rows)
+            return json.dumps([{}]*6)
         with mock.patch('deai.client.MiniMax', wraps=MiniMax) as factory, \
+                mock.patch.object(MiniMax, 'request', side_effect=request) as fake_request, \
                 mock.patch.object(threading.Thread, 'start', THREAD_START), \
                 mock.patch('urllib.request.urlopen', side_effect=AssertionError('no network')) as network:
             jobs.topic_worker(folder, self.env)
-        factory.assert_called_once_with(folder, self.env, budget=.05)
+        factory.assert_called_once_with(folder, self.env)
         network.assert_not_called()
-        self.assertEqual(library.read(folder / 'http/ledger.json'), ledger)
+        self.assertEqual(library.read(folder / 'http/ledger.json')[0], ledger[0])
+        self.assertEqual(fake_request.call_count, 4)
         topic = library.read(folder / 'topic.json')
-        self.assertEqual(topic['status'], 'failed'); self.assertIn('LLMError', topic['error'])
+        self.assertEqual(topic['status'], 'complete', topic.get('error'))
         self.assertEqual(topic['seed'], 17)
-        self.assertAlmostEqual(library.costs(folder)['cost'], .15)
+        self.assertGreater(library.costs(folder)['cost'], .15)
 
     def test_pause_and_resume_signal_same_process_without_rewriting_checkpoint(self):
         folder = self.book(status='running')
@@ -194,15 +195,16 @@ class QueueTests(WebFixture):
         self.spawn.assert_not_called()
         self.assertEqual({n: (folder / n).read_bytes() for n in before}, before)
 
-    def test_stopped_resume_and_retry_leave_every_file_unchanged(self):
+    def test_stopped_resume_and_retry_leave_engine_files_unchanged(self):
         folder = self.book(status='budget_paused')
         put(folder / 'run.json', {'status': 'stopped', 'stop_reason': 'budget', 'checkpoint': 17})
         put(folder / 'state.json', {'chapter': 1, 'ledger': {'unknown': 1}})
         before = snapshot(folder)
         for action in ['resume', 'retry']:
-            with self.subTest(action=action), self.assertRaises(ValueError):
+            with self.subTest(action=action):
                 self.queue.action('webui/story', action)
-            self.assertEqual(snapshot(folder), before)
+            self.assertEqual({k: v for k, v in snapshot(folder).items() if k != 'web.json'},
+                             {k: v for k, v in before.items() if k != 'web.json'})
         self.spawn.assert_not_called()
         self.killpg.assert_not_called()
 
@@ -216,25 +218,25 @@ class QueueTests(WebFixture):
         self.queue.tick()
         self.assertEqual({n: (folder / n).read_bytes() for n in protected}, before)
 
-    def test_unknown_spending_blocks_resume_without_losing_receipt(self):
+    def test_unknown_spending_allows_resume_without_losing_receipt(self):
         folder = self.book(status='paused', budget=.04)
         put(folder / 'calls.json', [{'usage': None, 'input_bytes': 100000,
                                     'output_token_cap': 10000}])
         before = snapshot(folder)
-        with self.assertRaises(ValueError):
-            self.queue.action('webui/story', 'resume')
-        self.assertEqual(snapshot(folder), before)
+        self.queue.action('webui/story', 'resume')
+        self.assertEqual({k: v for k, v in snapshot(folder).items() if k != 'web.json'},
+                         {k: v for k, v in before.items() if k != 'web.json'})
         self.spawn.assert_not_called()
 
-    def test_budget_tick_freezes_inflight_instead_of_restarting(self):
+    def test_tick_keeps_expensive_inflight_running_without_restarting(self):
         folder = self.book(status='running', budget=.04)
         put(folder / 'calls.json', [{'usage': None, 'input_bytes': 100000,
                                     'output_token_cap': 10000, 'status': 'inflight'}])
         self.queue.processes['webui/story'] = dict(p=self.child, kind='book', folder=folder, paused=False)
         receipt = (folder / 'calls.json').read_bytes()
         self.queue.tick()
-        self.killpg.assert_called_once_with(self.child.pid, signal.SIGSTOP)
-        self.assertEqual(library.read(folder / 'web.json')['status'], 'budget_paused')
+        self.killpg.assert_not_called()
+        self.assertEqual(library.read(folder / 'web.json')['status'], 'running')
         self.assertEqual((folder / 'calls.json').read_bytes(), receipt)
         self.spawn.assert_not_called()
 
@@ -246,44 +248,37 @@ class QueueTests(WebFixture):
                 self.queue.action('shared', action)
         self.assertEqual(snapshot(folder), before)
 
-    def test_create_rejects_nonfinite_budget_and_preserves_topic(self):
-        data = self.topic()
-        before = snapshot(self.lib.own)
+    def test_create_discards_obsolete_budget_fields(self):
         for value in [float('nan'), float('inf'), -float('inf'), 'NaN', 'Infinity', -.01, .51]:
-            with self.subTest(value=value), self.assertRaises((ValueError, TypeError)):
-                self.queue.create(dict(data, budget=value))
-        self.assertEqual(snapshot(self.lib.own), before)
+            with self.subTest(value=value):
+                result = self.queue.create(dict(self.topic(), budget=value))
+                self.assertNotIn('budget', library.read(self.lib.folder(result['id']) / 'web.json'))
         self.spawn.assert_not_called()
 
-    def test_create_reserves_budget_and_duplicate_click_cannot_create_second_book(self):
+    def test_create_without_budget_and_duplicate_click_cannot_create_second_book(self):
         data = self.topic()
         result = self.queue.create(data)
         folder = self.lib.folder(result['id'])
         self.assertEqual(library.read(folder / 'web.json')['status'], 'queued')
-        self.assertEqual(library.read(folder / 'web.json')['budget'], .2)
+        self.assertNotIn('budget', library.read(folder / 'web.json'))
         self.assertEqual(library.read(folder / 'book.yaml')['chapters'], 2)
         with self.assertRaises(ValueError):
             self.queue.create(data)
         self.assertEqual(len(list(self.lib.own.glob('*/web.json'))), 1)
         self.spawn.assert_not_called()
 
-    def test_committed_budget_blocks_new_book_before_any_files_change(self):
+    def test_other_books_old_budget_does_not_block_new_book(self):
         self.book('webui/reserved', budget=.4)
         data = self.topic()
-        before = snapshot(self.lib.own)
-        self.assertGreaterEqual(self.queue.committed(), .4)
-        with self.assertRaises(ValueError):
-            self.queue.create(dict(data, budget=.2))
-        self.assertEqual(snapshot(self.lib.own), before)
+        result = self.queue.create(dict(data, budget=.2))
+        self.assertTrue(self.lib.folder(result['id']).exists())
         self.spawn.assert_not_called()
 
-    def test_committed_budget_blocks_topic_without_spawning_or_receipt_creation(self):
+    def test_other_books_old_budget_does_not_block_topic(self):
         self.book('webui/reserved', budget=.49)
-        before = snapshot(self.lib.own)
-        with self.assertRaises(ValueError):
-            self.queue.topic({'genre': 'cozy-mystery', 'chapters': 2})
-        self.assertEqual(snapshot(self.lib.own), before)
-        self.spawn.assert_not_called()
+        result = self.queue.topic({'genre': 'cozy-mystery', 'chapters': 2})
+        self.assertEqual(result['status'], 'running')
+        self.spawn.assert_called_once()
 
 
 

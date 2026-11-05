@@ -155,7 +155,7 @@ class ArchiveTests(WebFixture):
         paid = library.read(self.lib.own / '.spent.json')['webui/story']
         self.assertEqual(paid['unknown'], 2)
         self.assertGreater(paid['unknown_bound'], 0)
-        self.assertAlmostEqual(self.queue.committed(), original)
+        self.assertAlmostEqual(self.queue.spending(), original)
         with self.assertRaises(ValueError):
             self.action('delete', 'webui/.archive/story', '潮汐 <归途>')
         self.assertAlmostEqual(self.queue.spending(), original)

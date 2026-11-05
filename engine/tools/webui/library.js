@@ -1,5 +1,5 @@
 import {
- $, state, text, printable, api, el, money, count, statusLabel, isComplete, link, button, bookURL, readURL, stored, notify
+ $, state, text, printable, api, el, money, count, statusLabel, isComplete, runtimeInfo, link, button, bookURL, readURL, stored, notify
 } from './shared.js';
 async function action(id, name) {
  if (state.pendingActions.has(id)) return;
@@ -30,10 +30,10 @@ function actionButtons(book) {
  const status = String(book.status || '').toLowerCase();
  let choices = [];
  if (isComplete(book)) choices = [['postprocess', '运行去AI后处理']];
- else if (status === 'paused' || status === 'budget_paused') choices = [['resume', '继续当前阶段']];
+ else if (/^(paused|budget_paused|quota_exhausted)$/.test(status)) choices = [['resume', '继续当前阶段']];
  else if (/^(failed|error|blocked|interrupted|postprocess_failed|orphaned|stopped|budget_exceeded)$/.test(status))
   choices = [['retry', '从检查点重试']];
- else if (/^(running|writing|planning|queued|queued_polish|pending|polishing|postprocessing|postprocess_running)$/.test(status))
+ else if (/^(running|waiting|writing|planning|queued|queued_polish|pending|polishing|postprocessing|postprocess_running)$/.test(status))
   choices = [['pause', '暂停']];
  else wrapper.append(el('span', status === 'unknown' ? '结果待确认，请先核对回执' : '暂无可用操作', 'muted'));
  for (const [name, label] of choices) {
@@ -63,7 +63,8 @@ function renderLibrary() {
  const visible = books.filter(
   (b) =>
    (filter === 'all' ||
-    (filter === 'complete' ? isComplete(b) : filter === 'paused' ? /paused/.test(b.status) : /running|polishing|queued/.test(b.status))) &&
+    (filter === 'complete' ? isComplete(b) : filter === 'paused'
+     ? /paused|quota_exhausted|error/.test(b.status) : /running|waiting|polishing|queued/.test(b.status))) &&
    (b.title + b.genre).includes($('search').value),
  );
  visible.sort((a, b) =>
@@ -95,7 +96,8 @@ function renderLibrary() {
     for (const [name, label] of [ ['rename', '重命名'], ['archive', '移到归档（可恢复）'], ['delete', '永久删除…'], ])
      menu.append(button(label, () => manage(b, name), name === 'delete' ? 'danger' : 'ghost'));
    actions.append(menu);
-   body.append(badge, progress, el('p', `${b.chapters}/${b.total} 章 · ${count(b.words)} 字 · ${money(b.cost)}`, 'muted'), actions);
+   body.append(badge, progress, el('p', `${b.chapters}/${b.total} 章 · ${count(b.words)} 字 · ${money(b.cost)}`, 'muted'),
+    el('p', runtimeInfo(b), 'muted'), actions);
    card.append(cover, body);
    return card;
   }),
@@ -122,9 +124,7 @@ async function refreshBooks() {
   const changed = !$('books').children.length || JSON.stringify([books, archived]) !== JSON.stringify([result.books, archive.books]);
   books = result.books;
   archived = archive.books;
-  text('spending-value', `${money(result.spending)} / ${money(result.limit)}`);
-  $('spending-meter').max = Math.max(0.01, result.limit);
-  $('spending-meter').value = result.spending;
+  text('spending-value', `已花费 ${money(result.spending)}`);
   text('library-status', `${books.length} 本故事 · ${books.filter(isComplete).length} 本已完成`);
   if (changed) renderLibrary();
  } catch (error) {

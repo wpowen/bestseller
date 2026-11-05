@@ -3,55 +3,14 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 import fcntl
 import json
-import os
 from pathlib import Path
 import random
 import secrets
-import tempfile
 from .filters import FIELDS, load, rotate, screen, shape
 from .market import snapshot, features
+from .recovery import StepFormatError, parse, read, save, step
 
 SCORES = ('不可补全', '点击欲', '长篇引擎', '好懂')
-
-
-def read(path, default=None):
-    return json.loads(Path(path).read_text('utf-8')) if Path(path).exists() else default
-
-
-def save(path, value):
-    path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent)
-    try:
-        with os.fdopen(fd,'w',encoding='utf-8') as out: json.dump(value,out,ensure_ascii=False,indent=2)
-        os.replace(tmp,path)
-    finally:
-        if os.path.exists(tmp): os.unlink(tmp)
-
-
-def parse(raw):
-    for i, char in enumerate(raw):
-        if char in '[{':
-            try: return json.JSONDecoder().raw_decode(raw[i:])[0]
-            except ValueError: pass
-    raise ValueError('无有效JSON')
-
-
-def step(folder, name, prompt, client, tokens):
-    """Completed requests replay locally; uncertain requests require reconciliation."""
-    target = folder/'steps'/(name+'.json')
-    if target.exists(): return read(target)
-    rows = read(folder/'http/ledger.json', [])
-    prior = [r for r in rows if r['stage'] == name]
-    messages=[dict(role='user',content=prompt)]
-    if prior:
-        latest=prior[-1]
-        if latest.get('status') != 'ok':
-            raise RuntimeError('请求结果未知或失败，保留费用；禁止自动重复调用:'+name)
-        request=read(folder/'http'/latest['request'],{})
-        if request.get('messages')!=messages or request.get('max_completion_tokens')!=tokens or request.get('model')!=getattr(client,'model','MiniMax-M3.1-Flash'):
-            raise RuntimeError('步骤输入变化，保留原记录；请使用新批次目录:'+name)
-    raw = client(messages,stage=name,max_tokens=tokens)
-    result = parse(raw); save(target,result); return result
 
 
 def axes_for(data, market):
@@ -107,15 +66,23 @@ def generation_prompt(data, axes, market):
 
 def judge(folder, cards, anchors, data, client, name='judge'):
     prompt = '你是选题判官，只评分不删候选。用不可补全、点击欲、长篇引擎、好懂四轴各0至10分。返回JSON数组，每项{id,scores:{四轴中文名:数字}}，覆盖全部id。'+json.dumps(dict(章数=data['chapters'],候选=[dict(id=i,**{k:c.get(k,'') for k in FIELDS}) for i,c in enumerate(cards)],同类市场锚点=anchors[:6]),ensure_ascii=False)
-    rows = step(folder,name,prompt,client,1800)
-    if not isinstance(rows,list) or len(rows)!=len(cards): raise ValueError('判官未覆盖全部候选')
-    scores = {}
-    for row in rows:
-        index=row['id']; values=row['scores']
-        if type(index) is not int or not 0<=index<len(cards) or index in scores or set(values)!=set(SCORES): raise ValueError('判官字段')
-        if any(type(v) not in (int,float) or not 0<=v<=10 for v in values.values()): raise ValueError('判官分数')
-        scores[index]=values
-    return [dict(c, scores=scores[i]) for i,c in enumerate(cards)]
+    def validate(rows):
+        if not isinstance(rows, list) or len(rows) != len(cards):
+            raise ValueError('判官未覆盖全部候选')
+        seen = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError('判官字段')
+            index, values = row.get('id'), row.get('scores')
+            if (type(index) is not int or not 0 <= index < len(cards) or index in seen
+                    or not isinstance(values, dict) or set(values) != set(SCORES)):
+                raise ValueError('判官字段')
+            if any(type(value) not in (int, float) or not 0 <= value <= 10 for value in values.values()):
+                raise ValueError('判官分数')
+            seen.add(index)
+    rows = step(folder, name, prompt, client, 1800, validate)
+    scores = {row['id']: row['scores'] for row in rows}
+    return [dict(candidate, scores=scores[index]) for index, candidate in enumerate(cards)]
 
 
 def run(folder, client, market_root):
@@ -135,12 +102,19 @@ def run(folder, client, market_root):
                 if old.get('status')=='complete' and old.get('genre')==data['genre']: previous.append((p.stat().st_mtime,old))
             data['history']=[c for _,old in sorted(previous,reverse=True)[:5] for c in old.get('candidates',[])]
             data['axes']=axes_for(data,data['features']); save(folder/'topic.json',data)
-        raw=[]
+        raw = []
+
         def generate(n):
-            axes=data['axes'][n*6:(n+1)*6]
-            result=step(folder,f'generate-{n}',generation_prompt(data,axes,data['features']),client,4200)
-            if not isinstance(result,list) or len(result)>6: raise ValueError('候选数组无效')
-            return [dict(c,axes=axis) if isinstance(c,dict) else c for c,axis in zip(result,axes)]
+            axes = data['axes'][n * 6:(n + 1) * 6]
+
+            def validate(result):
+                if not isinstance(result, list) or not 1 <= len(result) <= 6:
+                    raise ValueError('候选数组无效：须返回1至6项')
+
+            result = step(folder, f'generate-{n}', generation_prompt(data, axes, data['features']), client, 4200, validate)
+            return [dict(candidate, axes=axis) if isinstance(candidate, dict) else candidate
+                    for candidate, axis in zip(result, axes)]
+
         with ThreadPoolExecutor(max_workers=3) as pool:
             for batch in pool.map(generate,range(3)): raw.extend(batch)
         cards,rejected=screen(raw,data['chapters'],data['genre'],data['history'],data['market'].get('books',[]))
@@ -154,8 +128,9 @@ def run(folder, client, market_root):
             if calibration.get('valid') and calibration.get('date')==data['market'].get('date'):
                 cards=select(sorted(ranked,key=lambda c:(bool(c.get('cliche')),-sum(c['scores'].values()))),data,True); status='已校准，分数仍为参考'
             else: cards=select(ranked,data); status='参考；尺子未通过或无当日校准，按多样性轮转'
-        except (ValueError,KeyError,TypeError,RuntimeError):
-            cards=select(cards,data,True); status='判官失败，按生成顺序展示'
+        except StepFormatError:
+            cards = select(cards, data, True)
+            status = '判官格式失败，评分参考未知，按生成顺序展示'
         for card in cards:
             shell=card['axes']['shell']; count=data['features'].get('shell_counts',{}).get(shell)
             card['market_note']=f"熟壳：{shell}；同壳新书：{count if count is not None else '未知'}"

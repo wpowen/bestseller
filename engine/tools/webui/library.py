@@ -149,7 +149,9 @@ class Library:
             final = text(self.safe(folder / f'final/chapter-{n}.md'))
             valid_final = report.get('status') in ('polished', 'unchanged') and report.get('complete', True) is True
             result.append(dict(number=number, title=row.get('title', f'第{number}章'),
-                draft=text(self.safe(source)), final=final if valid_final else '', report=report))
+                draft=text(self.safe(source)), final=final if valid_final else '', report=report,
+                checks={k: row[k] for k in ('within_band', 'hard_conflicts', 'remaining', 'warnings',
+                                          'state_issues', 'quality_issues') if k in row}))
         if not result:
             for source in sorted(folder.glob('chapter-*.md')):
                 m = re.fullmatch(r'chapter-(\d{3,})\.md', source.name)
@@ -159,6 +161,7 @@ class Library:
         return result
 
     def meta(self, folder):
+        from run_status import auto_deai, runtime_view
         run = read(self.safe(folder / 'run.json'), {}); web = read(self.safe(folder / 'web.json'), {})
         rows = self.chapters(folder); book = run.get('book', {})
         bible = bible_data(self.safe(folder / 'story_bible.yaml'))
@@ -166,21 +169,31 @@ class Library:
         total = book.get('chapters', web.get('chapters', len(rows)))
         owned = folder.parent in (self.own, self.own / '.archive') and bool(web)
         state = web.get('status', run.get('status', 'unknown')) if owned else run.get('status', 'unknown')
+        if state == 'budget_paused':
+            state = 'paused'
+        runtime = runtime_view(self.safe(folder), state)
+        if runtime.get('kind') in ('waiting', 'quota_exhausted', 'error'):
+            state = runtime['kind']
         elapsed = run.get('execution_seconds', run.get('wall_seconds', 0)) or 0
         stat = costs(folder)
         writer, deai = stage_costs(folder, web)
         scores = [r['report'].get('after_score') for r in rows if isinstance(r.get('report'), dict)]
         scores = [x for x in scores if isinstance(x, (int, float)) and math.isfinite(x)]
         info = {r['number']: {k: r[k] for k in ('number', 'title', 'status', 'words')} for r in rows}
+        findings = [dict(number=r['number'], **r['checks']) for r in rows if r.get('checks') and (
+            r['checks'].get('within_band') is False or r['checks'].get('hard_conflicts') or
+            any(r['checks'].get(k) for k in ('remaining', 'warnings', 'state_issues', 'quality_issues')))]
         return dict(id=str(folder.relative_to(self.root)), title=title, synopsis=bible.get('premise', ''),
+                    quality_issues=findings,
                     chapter_info=[info.get(n, dict(number=n, title=f'第{n}章', status='pending', words=0)) for n in range(1, total+1)],
                     genre=GENRES.get(book.get('prompt_pack', web.get('genre')), book.get('prompt_pack', '未知')),
                     chapters=len(rows), total=total, words=sum(len(re.findall(r'[\u3400-\u9fff]', r['draft'])) for r in rows),
                     status=state, created=web.get('created', run.get('started', '')), owned=owned,
-                    polish=web.get('polish', False), budget=web.get('budget'), deai_budget=web.get('deai_budget', .5) if owned else None,
-                    writer_remaining=round(max(0, web['budget']-writer), 9) if owned else None,
-                    deai_cost=deai, deai_remaining=round(max(0, web.get('deai_budget', .5)-deai), 9) if owned else None,
-                    step=web.get('reason') or run.get('stop_reason') or (('正文' if rows else '圣经 / 排期') if state == 'running' else state),
+                    polish=web.get('polish', False), auto_deai=auto_deai(web), deai_cost=deai,
+                    stage=runtime.get('stage', ''), retry=runtime.get('retry', 0),
+                    next_retry_at=runtime.get('next_retry_at'), error=runtime.get('error', ''),
+                    step=runtime.get('error') or web.get('reason') or run.get('stop_reason') or (
+                        ('正文' if rows else '圣经 / 排期') if state == 'running' else state),
                     score=round(sum(scores)/len(scores), 3) if scores else None,
                     writer_cost=writer, postprocess_cost=round(stat['cost']-writer,9),
                     eta=round(elapsed / len(rows) * max(0, total-len(rows))) if rows else None, **stat)

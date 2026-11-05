@@ -173,7 +173,7 @@ class ArchiveTests(WebFixture):
         folder = self.book(status="complete")
         put(folder / "calls.json", [{"usage": None}])
         original = self.queue.spending()
-        with mock.patch("jobs.shutil.rmtree", side_effect=OSError("interrupted")):
+        with mock.patch("management.Path.rename", side_effect=OSError("interrupted")):
             with self.assertRaises(OSError):
                 self.action("delete", title="潮汐 <归途>")
         self.assertAlmostEqual(self.queue.spending(), original)

@@ -15,7 +15,8 @@ const printable = (value) => (typeof value === 'string' ? value : value == null 
 async function api(path, body) {
  const response = await fetch(
   path,
-  body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+  body === undefined ? { cache: 'no-store' } : {
+   method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Bookweb-Source': 'web' }, body: JSON.stringify(body) },
  );
  const raw = await response.text();
  let data;

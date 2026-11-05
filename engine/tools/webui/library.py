@@ -337,6 +337,22 @@ class Library:
             if not p.name.startswith(".") and p.is_dir()
         ]
 
+    def trash(self):
+        from management import trash_parts
+
+        rows = []
+        for folder in self.safe(self.own / ".trash").glob("*"):
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            try:
+                deleted, original = trash_parts(folder.name)
+            except ValueError:
+                continue
+            rows.append(
+                dict(self.meta(self.safe(folder)), deleted_at=deleted.isoformat(), original_id="webui/" + original)
+            )
+        return sorted(rows, key=lambda row: row["deleted_at"], reverse=True)
+
     def spending(self):
         paid = read(self.safe(self.own / ".spent.json"), {})
         if not isinstance(paid, dict):

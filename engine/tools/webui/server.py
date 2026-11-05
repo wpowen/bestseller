@@ -138,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(dict(books=lib.listing(), spending=lib.spending(), read_only=lib.read_only))
             elif path == "/api/archive":
                 self.send(dict(books=lib.archive()))
+            elif path == "/api/trash":
+                self.send(dict(books=lib.trash()))
             elif path == "/api/topics":
                 self.send(self.server.queue.get_topic(get("id")))
             elif path == "/api/book":
@@ -225,7 +227,16 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/books":
                 result = self.server.queue.create(data)
             elif self.path == "/api/action":
-                result = self.server.queue.action(data["id"], data["action"], title=data.get("title"))
+                result = self.server.queue.action(
+                    data["id"],
+                    data["action"],
+                    title=data.get("title"),
+                    origin_info=dict(
+                        source="web" if self.headers.get("X-Bookweb-Source") == "web" else "api",
+                        user_agent=self.headers.get("User-Agent", "")[:512],
+                        client=self.client_address[0],
+                    ),
+                )
             else:
                 self.send({"error": "未找到"}, 404)
                 return

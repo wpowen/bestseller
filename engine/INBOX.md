@@ -304,7 +304,7 @@
 
 ## 2026-11-05-35：修第 33 条遗留——退场对手复活、阶段交接无过渡、章内整句复述；顺手修偶发失败测试（用户 2026-11-05 确认）
 
-状态：待执行。在独立工作树 `scratch/f35-worktree`、分支 `fix/structure-leftovers` 上做。
+状态：开发完成，待监工验收。在独立工作树 `scratch/f35-worktree`、分支 `fix/structure-leftovers` 上完成，未 push。报告见 [structure-leftovers-35.md](reports/structure-leftovers-35.md)。30 章已交付 `books/eval-35/`；最终 HEAD 全套十连通过。真实样本仍有第 21 章退场后在场、第 8/11 章复述，未宣称质量达标。
 
 文件归属：
 - **可改**：`engine/bookengine/`、`engine/tools/book_checkup.py`、`engine/tests/`、`config/prompt_packs/`。

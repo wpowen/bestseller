@@ -187,12 +187,12 @@ def prepare(client, book, out, assets, design=False):
             if card
             else ("用户要求", vars(book)),
             ("书籍篇幅要求", dict(chapters=book.chapters, words_per_chapter=book.words_per_chapter)),
+            ("本书固定阶段边界，threads.volume是阶段号", stages or "已有旧书，保留原25章边界"),
             ("固定成长阶梯", profile["canon"]["ladder"]),
             ("题材", book.prompt_pack),
             ("选定高概念", selected),
             ("读者承诺", source.get("writing_profile_overrides", {})),
             ("已有只读设计", values),
-            ("本书固定阶段边界，threads.volume是阶段号", stages or "已有旧书，保留原25章边界"),
         ]
         previous_error = ""
         alignment = []

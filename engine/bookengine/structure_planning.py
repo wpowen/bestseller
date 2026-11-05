@@ -121,8 +121,8 @@ def repair_structure(bible, threads, total, ask, out):
             "structure",
             [
                 ("指定阶段边界", stage_ranges(total)),
-                ("当前结构", current),
                 ("逐项错误清单，只重生volumes/antagonists/threads，不改人物和用户锁定事实", issues),
+                ("当前结构", current),
             ],
             retry + 1,
         )
@@ -142,3 +142,44 @@ def repair_structure(bible, threads, total, ask, out):
     ]
     current["structure_version"] = 1
     return current, lines
+
+
+def opponent_presence_issues(bible, batch):
+    """Only check explicit planned presence, allowing background mentions after exit."""
+    issues = []
+    for chapter in batch:
+        number = integer(chapter.get("number"))
+        present = set()
+        for scene in [chapter, *rows(chapter.get("scenes"))]:
+            people = scene.get("characters")
+            if isinstance(people, list):
+                present.update(n for n in people if isinstance(n, str))
+        for opponent in rows(bible.get("antagonists")):
+            name, exit_at = opponent.get("name"), integer(opponent.get("exit"))
+            stage = next(
+                (s for s in rows(bible.get("volumes")) if integer(s.get("number")) == integer(opponent.get("stage"))),
+                {},
+            )
+            card = next((c for c in rows(bible.get("characters")) if c.get("name") == name), {})
+            labels = (
+                [name, card.get("address"), *card.get("aliases", [])]
+                if isinstance(card.get("aliases", []), list)
+                else [name]
+            )
+            if (
+                any(n in present for n in labels if isinstance(n, str))
+                and stage
+                and (number < integer(stage.get("start")) or number > exit_at)
+            ):
+                issues.append(
+                    dict(
+                        kind="opponent_scope",
+                        name=name,
+                        stage=opponent.get("stage"),
+                        exit=exit_at,
+                        labels=[n for n in labels if isinstance(n, str) and n],
+                        chapters=[number],
+                        targets=[number],
+                    )
+                )
+    return issues

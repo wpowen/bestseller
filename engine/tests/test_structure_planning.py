@@ -149,3 +149,30 @@ def test_expanded_stage_plan_cannot_override_fixed_stage_contract(tmp_path):
     stage = q1_plan.volume(client, bible, {}, 2, 50, {}, [], [])
     assert (stage["number"], stage["start"], stage["end"]) == (2, 11, 20)
     assert stage["location"] == "地点2" and stage["antagonist"] == "对手2"
+
+
+def test_progress_uses_stage_number_for_reveal_and_stage_end_for_overdue():
+    from bookengine.q1_quality import progress
+
+    bible = design()
+    threads = dict(
+        threads=[
+            dict(id="secret", kind="hidden", reveal_volume=2, beats=[dict(id="truth", volume=2, reveal_not_before=11)])
+        ]
+    )
+    review = dict(advances=[dict(thread="secret", beat="truth", event="揭开真相", reveal=True)])
+    _, issues = progress({}, review, dict(number=11, volume=1), bible, threads, {})
+    assert not any("提前reveal" in issue for issue in issues)
+    _, issues = progress({}, {}, 20, bible, threads, {})
+    assert any("本卷节拍未完" in issue for issue in issues)
+    _, issues = progress({}, {}, 25, bible, threads, {})
+    assert not any("本卷节拍未完" in issue for issue in issues)
+
+
+def test_progress_new_thread_gap_starts_at_its_actual_stage_start():
+    from bookengine.q1_quality import progress
+
+    threads = dict(threads=[dict(id="late", kind="dark", start_volume=3, beats=[dict(id="a", volume=3)])])
+    state, issues = progress({}, {}, 25, design(), threads, {})
+    assert state["ledger"]["late"]["max_gap"] == 5
+    assert not any("断更" in issue for issue in issues)

@@ -199,3 +199,44 @@ def test_bounded_prompt_keeps_repeated_terms_first_and_persists_complete_vocabul
     assert compact["omitted"]["title_keywords"] > 0
     assert len(json.dumps(compact, ensure_ascii=False)) < 1400
     assert used == before
+
+
+def test_resume_from_second_chapter_reuses_exhausted_complete_window_without_calls(tmp_path):
+    batch = [outline(n, "闸", "资源争夺") for n in range(1, 11)]
+    original_client = Fixture(tmp_path, [dict(chapters=batch)] + [{}] * 3)
+    original = plan(original_client, 1, 10)
+    assert len(original_client.calls) == 4
+    save(tmp_path / "chapters/001.json", dict(original[0], fact_source="final_body"))
+    path = tmp_path / "outline-diversity/001-010.json"
+    assert json.loads(path.read_text())["status"] == "failed_continued"
+    before = path.read_bytes(), path.stat().st_mtime_ns
+    resumed_client = Fixture(tmp_path, [])
+    resumed = plan(resumed_client, 2, 11, [original[0]])
+    assert resumed_client.calls == []
+    assert resumed == original[1:]
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert not (tmp_path / "outline-diversity/002-011.json").exists()
+
+
+def test_existing_raw_terminal_window_is_reused_and_next_window_is_generated(tmp_path):
+    batch = [outline(n, chr(0x4E30 + n), str(n)) for n in range(1, 11)]
+    path = tmp_path / "outline-diversity/001-010.json"
+    save(path, dict(status="passed", chapters=batch, attempts=[dict(regeneration=0)], issues=[], used={}))
+    before = path.read_bytes()
+    resumed_client = Fixture(tmp_path, [])
+    remaining = plan(resumed_client, 2, 11)
+    assert [r["number"] for r in remaining] == list(range(2, 11))
+    assert [r["title"] for r in remaining] == [r["title"] for r in batch[1:]]
+    assert resumed_client.calls == [] and path.read_bytes() == before
+    next_client = Fixture(tmp_path, [dict(chapters=[outline(11, "晴空", "关系决裂")])])
+    next_batch = plan(next_client, 11, 11)
+    assert next_batch[0]["number"] == 11 and len(next_client.calls) == 1
+    assert path.read_bytes() == before
+
+
+def test_nonterminal_or_unrelated_windows_are_not_used_for_resume(tmp_path):
+    save(tmp_path / "outline-diversity/001-010.json", dict(status="passed", chapters=[outline(1, "旧岸")]))
+    save(tmp_path / "outline-diversity/011-020.json", dict(status="repairing", chapters=[outline(11, "未定")]))
+    client = Fixture(tmp_path, [dict(chapters=[outline(11, "新路", "关系决裂")])])
+    result = plan(client, 11, 11)
+    assert result[0]["title"] == "新路" and len(client.calls) == 1

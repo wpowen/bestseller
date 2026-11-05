@@ -128,6 +128,30 @@ def historical_outlines(out, start, recent=()):
     return [merged[n] for n in sorted(merged)]
 
 
+def terminal_window(out, start, end):
+    """Reuse a complete final window covering start, including exhausted repairs."""
+    if out is None:
+        return None
+    paths = (Path(out) / "outline-diversity").glob("*.json")
+    for path in sorted(paths, key=lambda p: p.stat().st_mtime_ns, reverse=True):
+        bounds = re.fullmatch(r"(\d+)-(\d+)(?:-redo.+)?", path.stem)
+        if not bounds or not int(bounds[1]) <= start <= int(bounds[2]):
+            continue
+        report = json.loads(path.read_text())
+        if report.get("status") not in ("passed", "failed_continued"):
+            continue
+        normalized = isinstance(report.get("planned_chapters"), list)
+        source = report["planned_chapters"] if normalized else report.get("chapters")
+        chapters = rows(source)
+        mapped = {integer(row.get("number")): row for row in chapters}
+        expected = set(range(int(bounds[1]), int(bounds[2]) + 1))
+        if set(mapped) != expected or len(chapters) != len(expected):
+            continue
+        stop = min(end, int(bounds[2]))
+        return dict(chapters=[deepcopy(mapped[n]) for n in range(start, stop + 1)], normalized=normalized, end=stop)
+    return None
+
+
 def repair_batch(out, key, history, batch, rewrite, bible=None):
     """Only replace offending current chapters; persist decisions for no-call recovery."""
     path = Path(out) / "outline-diversity" / (key + ".json") if out is not None else None

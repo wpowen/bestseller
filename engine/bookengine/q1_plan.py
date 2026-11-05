@@ -17,6 +17,7 @@ from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number
 from .outline_diversity import (
     historical_outlines,
+    terminal_window,
     used_vocabulary,
     prompt_vocabulary,
     repair_batch,
@@ -207,6 +208,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     end = min(end, start + 9, integer(volume.get("end"), end))
     if end < start:
         return []
+    cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
+    if cached:
+        if cached["normalized"]:
+            return cached["chapters"]
+        end = cached["end"]
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(start, end, profile, recent, state)
@@ -269,7 +275,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("能力", bible.get("power", {})),
         ("实际状态及近章", [state, {r.get("number"): r.get("summary") for r in recent[-5:]}]),
     ]
-    raw = _ask(client, "outlines", f"chapters-{start}-{end}", sections, redo)
+    raw = cached if cached else _ask(client, "outlines", f"chapters-{start}-{end}", sections, redo)
     source = rows(raw.get("chapters")) if isinstance(raw, dict) else rows(raw)
     mapped = {}
     for i, item in enumerate(source):
@@ -293,13 +299,17 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         )
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
-    repaired = repair_batch(
-        getattr(client, "out", None),
-        key,
-        prior,
-        [dict(mapped.get(slot["number"], {}), number=slot["number"]) for slot in rhythm],
-        rewrite,
-        bible=bible,
+    repaired = (
+        cached["chapters"]
+        if cached
+        else repair_batch(
+            getattr(client, "out", None),
+            key,
+            prior,
+            [dict(mapped.get(slot["number"], {}), number=slot["number"]) for slot in rhythm],
+            rewrite,
+            bible=bible,
+        )
     )
     mapped = {r["number"]: r for r in repaired}
     result = []
@@ -336,4 +346,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ]
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
+    if not cached and getattr(client, "out", None):
+        path = Path(client.out) / "outline-diversity" / (key + ".json")
+        report = json.loads(path.read_text())
+        save(path, dict(report, planned_chapters=result))
     return result

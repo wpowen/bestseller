@@ -18,6 +18,7 @@ from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
 from .q1_cast import cast_hits, cast_findings
 from .retired_opponents import stage_constraints
+from .prose_repetition import clean_repetitions
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -38,7 +39,7 @@ def ask(client, *args, **kwargs):
 
 
 def clean(text):
-    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(text)).strip()
+    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", text).strip()
 
 
 def body_of(value, client, cleaning=None):
@@ -264,6 +265,12 @@ def ground(raw, text):
 def prose_hits(text, bible, state):
     hits = name_hits(text, bible)
     hits += cast_hits(text, bible, state)
+    pending = clean_repetitions(text)["needs_repair"]
+    hits += [
+        dict(id=i, start=a, end=b, kind="prose_repetition", text=text[a:b])
+        for i, (a, b) in enumerate(_sentences(text), 1)
+        if any(a < r["end"] and b > r["start"] for r in pending)
+    ]
     hits += [
         dict(id=i, start=a, end=b, kind="english_or_injury", text=text[a:b])
         for i, (a, b) in enumerate(_sentences(text), 1)
@@ -355,6 +362,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     )
     if not final:
         prompt += (
+            "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
             "\n人物首次出现需一句与卡片一致的身份或来历。missing_introduction/unregistered_alias与其他问题在本轮"
             "统一用edits修复，id用候选句的S编号；补身份只在该句自然交代，卡外外号或自称改为卡片name/address/aliases。"
             "未知身份不编造，不把英语role当身份。"

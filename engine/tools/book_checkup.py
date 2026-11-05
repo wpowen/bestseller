@@ -368,6 +368,7 @@ def check_book(book, *, source="final"):
     stages = _stage_stats(bible, chapters)
     from bookengine.retired_opponents import location_regression
     from bookengine.stage_transition import stage_transition
+    from bookengine.prose_repetition import clean_repetitions
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     by_number = {c["number"]: c for c in chapters}
@@ -384,6 +385,17 @@ def check_book(book, *, source="final"):
         )
     ]
     residue = [dict(chapter=c["number"], **clean_prose(c["text"])[1]) for c in chapters]
+    repetitions = [
+        dict(
+            chapter=c["number"],
+            **{
+                k: v
+                for k, v in clean_repetitions(clean_prose(c["text"])[0], remove_safe=False).items()
+                if k in ("counts", "records")
+            },
+        )
+        for c in chapters
+    ]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
@@ -402,6 +414,11 @@ def check_book(book, *, source="final"):
             checks=transitions,
             missing=[r["chapters"] for r in transitions if r["status"] == "missing"],
             unknown=[r["chapters"] for r in transitions if r["status"] == "unknown"],
+        ),
+        repetition=dict(
+            sentence_repetitions=sum(r["counts"]["sentence_repetitions"] for r in repetitions),
+            adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
+            chapters=[r for r in repetitions if r["records"]],
         ),
         format_residue=dict(
             total=sum(c["total"] for c in residue),

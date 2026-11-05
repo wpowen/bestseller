@@ -23,6 +23,8 @@ def _ask(client, kind, key, sections, redo=False):
             validate_bible(bible)
 
     template = DATA["schemas"][kind]
+    if kind == "outlines":
+        template = dict(template, chapters=[dict(template["chapters"][0], conflict="", opponent="", transition="")])
     if kind == "prepare" and any(k == "用户锁定事实，只可扩写不可替换" for k, _ in sections):
         selection = next(v for k, v in sections if k == "用户锁定事实，只可扩写不可替换")
         fixed, locked = selection["card"], selection["facts"]

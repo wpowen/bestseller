@@ -16,6 +16,7 @@ from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
 from .structure_planning import final_stage_start
 from .retired_opponents import repair_retired
+from .prose_repetition import clean_repetitions
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from tools.book_checkup import clean_prose
@@ -138,6 +139,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         )
     finally:
         client.prefix = saved
+    repetition = dict(draft=clean_repetitions(text))
+    text = clean(repetition["draft"].pop("cleaned"))
     save(out / f"chapter-{idx:03d}.r2.draft.md", text)
     outline.update(
         actual_chars=chinese_count(text),
@@ -159,6 +162,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)
     cast_repaired = any(e["id"] in cast_target_ids for e in notes.get("edits", []))
+    repetition_ids = {h["id"] for h in prose_hits(original, bible, state) if h.get("kind") == "prose_repetition"}
+    repetition_repaired = any(e["id"] in repetition_ids for e in notes.get("edits", []))
     cleaning["repair_body"] = notes.get("body_cleaning", {}) if notes.get("body_adopted") else {}
     patched = notes["patch"]
     for old, new in (raw.get("rename") if isinstance(raw.get("rename"), dict) else {}).items():
@@ -174,6 +179,19 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     failed = failed or bool((raw.get("scene") or raw.get("body")) and not changed)
     if changed:
         raw, failed, _ = extract_state(client, prefix + "-final-state", text, state, bible, outline, [], final=True)
+    before_repetition = clean_repetitions(original, remove_safe=False)["counts"]
+    after_repetition = clean_repetitions(text, remove_safe=False)["counts"]
+    if repetition_repaired and (
+        failed
+        or not (
+            after_repetition["sentence_repetitions"] + after_repetition["adjacent_paragraph_pairs"]
+            < before_repetition["sentence_repetitions"] + before_repetition["adjacent_paragraph_pairs"]
+        )
+    ):
+        text, raw, failed = original, original_raw, initial_failed
+        notes["repetition_repair"] = "rolled_back"
+    elif repetition_repaired:
+        notes["repetition_repair"] = "rechecked"
     if cast_repaired and (
         failed
         or not remaining_cast_problems(cast_findings(text, bible, state, outline))
@@ -195,6 +213,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
 
     boundaries = boundary_facts(raw, text)
     cleaned, cleaning["final"] = clean_prose(text)
+    repetition["final"] = clean_repetitions(cleaned)
+    cleaned = repetition["final"].pop("cleaned")
     if cleaned != text:
         text = clean(cleaned)
         raw, failed, _ = extract_state(client, prefix + "-clean-state", text, state, bible, outline, [], final=True)
@@ -300,6 +320,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         opponent_repair=opponent_repair,
         cast_findings=cast_findings(text, bible, state, outline),
         cleaning=cleaning,
+        repetition=dict(repetition, remaining=clean_repetitions(text, remove_safe=False)["counts"]),
     )
     row.update(
         name_drift_before=len(name_hits(original, bible)), name_drift=name_hits(text, bible), english=english_hits(text)

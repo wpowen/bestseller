@@ -44,6 +44,7 @@ from .q1_extract import (
 )
 from .q1_chapter import REVISION, supplement, amend, chapter_record, chapter
 from .structure_planning import stage_for_chapter, final_stage_start
+from tools.book_checkup import write_checkup
 
 
 class QClient(Client):
@@ -121,6 +122,8 @@ def _run(book, out, env, assets, timeout, style, stop):
     if meta.get("mode") != "Q1" or Book(**meta["book"]).record() != book.record() or meta.get("style") != style:
         raise ValueError("Q1 checkpoint settings changed")
     if meta["status"] == "complete":
+        if not (out / "book_checkup.json").exists():
+            write_checkup(out, source="draft")
         return meta
     if meta.get("revision", {}).get("name") != REVISION:
         meta.setdefault("previous_runs", []).append(
@@ -296,4 +299,5 @@ def _run(book, out, env, assets, timeout, style, stop):
         acceptance=meta["quality"],
     )
     save(path, meta)
+    write_checkup(out, source="draft")
     return meta

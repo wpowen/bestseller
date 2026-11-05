@@ -623,7 +623,7 @@
 
 ## 2026-11-04-24：选题工坊——市场驱动、抽轴发散、换一批（用户 2026-11-04 22:50 反馈“选题质量一般、每次差不多”，监工设计）
 
-状态：已执行，待验收（用户 2026-11-04 改为单独任务并行开发：在独立工作树 `scratch/ideation-worktree`、分支 `feat/ideation` 上做，不碰主工作区；完成后由监工在第 22 条提交之后合并回 main，webui 冲突由监工处理）
+状态：已验收，已合并进 main（a8e3e1fa7）。真机盲选 `books/blind-ideation/BLIND.md` 待用户。判官锚点测试未达标，判官分只作参考。
 
 设计、证据和验收标准都在 [reports/ideation-design-20261104.md](reports/ideation-design-20261104.md)，先通读，按其中第 3–5 节实现。要点：
 1. 新包 `engine/ideation/`（≤600 行，check_scope 加限额），轴池/俗套/题材→番茄分类映射/名字黑名单放 `engine/data/ideation/`。不 import bookengine。
@@ -638,7 +638,7 @@
 
 ## 2026-11-04-25：书房网页改版——书库/开新书/详情/全屏阅读器分开（用户 2026-11-04 23:10 反馈“都挤在一页、看书不方便、没有目录、要宽屏”，监工设计）
 
-状态：已执行，待验收（2026-11-05 第二轮：接续 1e0c511de 完成前端按视图拆分、四项缺口与浏览器实测；Python 729/1200、前端 1487/1500，check_scope PASS，579 项测试及 844 子测试通过。仅本地分支 feat/bookweb-ui；截图与 Evidence / Inference / Unknown 见 [REPORT.md](reports/ui-redesign-20261104/REPORT.md)。未调用模型，未动 Docker、8787 或真实书稿，未 push，等待用户验收。）
+状态：已验收，已合并进 main（c028af129），8787 已于 2026-11-05 重新部署。监工用真书只读复验时补修了两处：① 没有终稿的章，阅读器显示“尚未生成”，改为回退显示草稿；② 书名显示把建书时的选题卡名排在故事圣经书名前面，改为“用户重命名 → 故事圣经 → 选题卡”（重命名单独写 display_title，提交 23825707a）。前端 1488/1500 已接近上限，下次扩前端要先精简。
 
 设计在 [reports/ui-redesign-20261104/DESIGN.md](reports/ui-redesign-20261104/DESIGN.md)，可点击原型 [prototype.html](reports/ui-redesign-20261104/prototype.html)（浏览器直接打开）。按设计第 2–6 节实现与验收。要点：
 1. 四个视图，用 URL 路由：书库 `#/library`、开新书三步向导 `#/new`、书籍详情 `#/book/<id>`、全屏阅读器 `#/read/<id>/<n>`。

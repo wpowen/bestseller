@@ -43,9 +43,10 @@ def facts(client, card):
         keywords = value.get("keywords", {})
         for key in ("identity", "setting", "object", "rule"):
             terms = keywords.get(key)
+            required = bool(value.get(key)) if key != "rule" else bool(card.get("golden_finger_rule"))
             if (
                 not isinstance(terms, list)
-                or not terms
+                or (required and not terms)
                 or any(not isinstance(t, str) or not t or compact(t) not in canonical for t in terms)
             ):
                 raise ValueError("每组关键词须为卡片原文的非空词组：" + key)
@@ -53,7 +54,7 @@ def facts(client, card):
     return client.stage(
         "selected-card-facts",
         RULE + "逐字提取主角姓名name（没有姓名留空，后续允许命名）、职业identity、开场地点setting、核心物件object。"
-        "未说明的字段留空，不编造。keywords给身份、地点、物件、规则各1至4个关键原文词组；无该项时用卡上“无”或对应原文。"
+        "未说明的字段留空，不编造。keywords给身份、地点、物件、规则各1至4个关键原文词组；卡片未说明该项时keywords用空数组；写明“无”时使用“无”。"
         "规则词组必须覆盖能力、限制和代价。只返回JSON。卡片：" + source,
         json.dumps(schema, ensure_ascii=False),
         parser=model_value,

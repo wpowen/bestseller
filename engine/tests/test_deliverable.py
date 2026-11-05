@@ -220,3 +220,13 @@ def test_selected_facts_allow_whitespace_changes_in_copied_keywords(tmp_path):
     client = ScriptedClient(tmp_path, [json.dumps(expected, ensure_ascii=False)])
     assert facts(client, selected) == expected
     assert len(client.calls) == 1
+
+
+def test_unspecified_legacy_card_facts_are_not_invented(tmp_path):
+    from bookengine.selected_card import facts
+
+    selected = dict(title="一家人", premise="她想让姐姐回家。")
+    expected = dict(
+        name="", identity="", setting="", object="", keywords={k: [] for k in ["identity", "setting", "object", "rule"]}
+    )
+    assert facts(ScriptedClient(tmp_path, [json.dumps(expected)]), selected) == expected

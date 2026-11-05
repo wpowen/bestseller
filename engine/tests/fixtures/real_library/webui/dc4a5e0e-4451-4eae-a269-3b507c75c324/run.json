@@ -1,0 +1,15 @@
+{
+  "mode": "Q1",
+  "style": "b",
+  "status": "complete",
+  "started": "2026-11-04T13:35:33.315398+00:00",
+  "finished": "2026-11-04T13:46:17.162675+00:00",
+  "execution_seconds": 643.714341,
+  "wall_seconds": 643.714,
+  "completed_chapters": 5,
+  "book": {
+    "chapters": 5,
+    "prompt_pack": "cozy-fantasy",
+    "words_per_chapter": 2200
+  }
+}

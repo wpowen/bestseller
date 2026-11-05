@@ -253,7 +253,7 @@
 
 ## 2026-11-05-34：工程护栏——真实书库回归、书库写保护、删除可找回、密钥脱敏、评审核对（用户 2026-11-05 同上）
 
-状态：待执行。方案见 [prevention-plan-20261105.md](reports/prevention-plan-20261105.md) 第一节 D 和第二节 2。在独立工作树 `scratch/g34-worktree`、分支 `feat/guardrails` 上做，和第 33 条并行。
+状态：开发完成，待监工验收。报告见 [guardrails-34.md](reports/guardrails-34.md)。方案见 [prevention-plan-20261105.md](reports/prevention-plan-20261105.md) 第一节 D 和第二节 2。在独立工作树 `scratch/g34-worktree`、分支 `feat/guardrails` 上做，和第 33 条并行。
 
 文件归属：
 - **可改**：`engine/tools/webui/`、`engine/tools/` 下新增的护栏脚本、`engine/tests/conftest.py` 和网页相关测试、`README.md`、`docker-compose.yml`。

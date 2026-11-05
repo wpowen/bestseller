@@ -1,0 +1,15 @@
+{
+  "mode": "Q1",
+  "style": "b",
+  "status": "complete",
+  "started": "2026-11-04T08:52:13.109733+00:00",
+  "finished": "2026-11-04T09:00:55.313872+00:00",
+  "execution_seconds": 522.162714,
+  "wall_seconds": 522.163,
+  "completed_chapters": 5,
+  "book": {
+    "chapters": 5,
+    "prompt_pack": "suspense-mystery",
+    "words_per_chapter": 2200
+  }
+}

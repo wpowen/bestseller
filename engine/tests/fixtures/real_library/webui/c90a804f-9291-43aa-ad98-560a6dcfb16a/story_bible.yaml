@@ -1,0 +1,370 @@
+characters:
+- name: 白寄南
+  role: protagonist
+  desire: 在晚年过上不受任何人摆布的安稳日子
+  fear: 自己的记忆和判断被时代彻底抹去
+  flaw: 习惯退让，遇到真正的珍贵之物却总想多管闲事
+  bottom_line: 不拿无辜者的身份和记忆做交易
+  voice: 短句、冷幽默，越害怕越像在说相声
+  growth_end: 主动定义真品，也承担复兴时代留下的责任
+  goal: 查清谁借愿望洗白旧事，并替普通人保住记忆
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages:
+  - 互相试探
+  - 共同追查
+  - 交付后背
+  - 因真相反目
+  - 共同承担代价
+  ladder_volume: 0
+  gender: 男
+  address: 白师傅
+  active_desire: 证明一件旧物被谁定义成赝品，并夺回命名权
+  personality_tags:
+  - 现实受压
+  - 嘴硬
+  - 怕麻烦
+  - 护短
+  - 关键时刻不退
+  catchphrase: 我只擦一件，东西自己说真话。
+  never_do:
+  - 不以无辜者记忆换利益
+  - 不替别人决定一生
+  - 不伪造文物来历
+- name: 沈思萦
+  role: romance
+  desire: 让被时代抹去的家人重新被看见
+  fear: 自己也会成为祖父故事里的错误注脚
+  flaw: 凡事求证，不肯相信无法解释的善意
+  bottom_line: 不拿孩子的身份和记忆做筹码
+  voice: 措辞锋利，追问到底时近乎咄咄逼人
+  growth_end: 承认有些真实无法由单件文物证明，并选择守住白寄南
+  goal: 找出祖父沈铎留下的原始记录
+  exit_volume: 2
+  attraction: 白寄南看似怕事，却总在弱者被推出去时站到前面
+  obstacle: 两人的目标都涉及谁有资格定义真品
+  relationship_stages:
+  - 博物馆初遇
+  - 互相借用
+  - 共同见证
+  - 证词冲突
+  - 并肩收尾
+  ladder_volume: 0
+  gender: 女
+  address: 沈小姐
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 顾曜庭
+  role: support
+  desire: 把博物馆从破产边缘救回来
+  fear: 所有人都只会记住他的妥协
+  flaw: 把保护机构误当成保护所有人
+  bottom_line: 不把展品交给来路不明的人
+  voice: 表面客套，遇到藏品安全时极有威严
+  growth_end: 主动揭穿自己曾参与的错误鉴定
+  goal: 阻止馆藏被拍卖集团吞并
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 男
+  address: 顾馆长
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 阿柯铭
+  role: support
+  desire: 找到失踪的父亲并拿回被夺走的旧相机
+  fear: 记忆里那个父亲其实是别人
+  flaw: 见不得别人受欺负，容易把自己卷进危险
+  bottom_line: 不偷走孩子的家人和名字
+  voice: 语速快，直来直去，带一点市井机灵
+  growth_end: 从追着父亲 remnants 奔跑，转为替活人守住当下
+  goal: 查清父亲留下的照片序列
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 女
+  address: 阿柯铭
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 韩汀蕙
+  role: support
+  desire: 保住手艺人的尊严，让真东西不再被低价拿走
+  fear: 自己的判断被市场永远钉成笑话
+  flaw: 只相信亲眼所见，不肯为陌生人冒险
+  bottom_line: 不碰没有来历的赝品
+  voice: 粗声大气，喜欢用刀削果皮比喻轻重
+  growth_end: 承认一件东西的价值也会因人的选择改变
+  goal: 找到当年替沈家修复铜镜的老匠人
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 男
+  address: 韩师傅
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 赵清越
+  role: antagonist
+  desire: 掌握所有被时代改写的真品，把历史变成自己的筹码
+  fear: 没有见证者，他的伪造也会像真物一样消失
+  flaw: 过度依赖规则，无法容忍意外出现
+  bottom_line: 不承认自己曾经参与过赝品制造
+  voice: 温和而有礼，越平静越显得危险
+  growth_end: 失去洗白资格，被迫交出原始名册
+  goal: 利用愿望复兴市场，抹除旧案证据
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 1
+  gender: 男
+  address: 赵先生
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 秦玉筠
+  role: antagonist
+  desire: 让博物馆成为唯一能改写历史的地方
+  fear: 民间记忆和野史将自己的罪行重新唤醒
+  flaw: 把秩序看得比人命重要
+  bottom_line: 不允许任何人破坏馆藏档案
+  voice: 慢条斯理，喜欢引用旧制度替自己辩护
+  growth_end: 在众人追捕中失去伪造历史的能力
+  goal: 夺取残片并封存所有异常见证
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 2
+  gender: 男
+  address: 秦馆长
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+title: 愿望真能让我回到古物盛世吗？
+premise: 白寄南是暮年博物馆清洁工，只能通过擦拭展品并许愿，让一件物及其相关人物短暂回到最辉煌的年代；被覆盖的人会忘记当下。残片每复原一次，愿望便会从白寄南的记忆中削去一部分。他必须在记忆耗尽前查明，谁正借愿望替旧物和旧人洗白。
+reader_expectation: 看白寄南从只想安静扫地的老人，变成敢与博物馆和市场争夺真伪定义权的主角；每次许愿都带来可见奇观、即时反转和真实损失，读者会追查残片来源、幕后操盘者以及白寄南能否保住记忆。
+selling_points:
+- 清洁工与古物鉴定的强反差
+- 愿望让整段时代覆盖现实的视觉奇观
+- 每次复原都有人物和记忆付出代价
+- 鉴宝打脸与身份反转并行
+- 真品争夺延伸到博物馆、市场和历史真相
+power:
+  cost: 许愿会让愿望对象相关人物暂时忘记现在，并从白寄南身上随机削去一段古物记忆；覆盖越久，遗忘越深
+  limit: 一次只能擦拭并复原一件展品，不能凭空制造物品；愿望必须由白寄南主动说出，强行中断会留下记忆空洞，残片只能认他一人使用
+world:
+  rules:
+  - 白寄南擦拭展品并说出愿望后，展品会回到其最辉煌的一刻。
+  - 被覆盖范围内的人会暂时忘记现在，只保留当时的关系与记忆。
+  - 白寄南可以转移愿望、截取物件或交换见证者，但不能用愿望直接改写人的忠诚。
+  - 每次愿望兑现都会随机削去白寄南一段古物记忆，记忆缺口无法靠普通休息补回。
+  - 被覆盖的年代必须与展品本身的历史相连，愿望越宏大，覆盖范围越大。
+  - 愿望着陆时，展品会回到现实，但相关人物可能永远停留在旧时关系中。
+  levels:
+  - 初醒
+  - 稳定控制
+  - 复合运用
+  - 能力进阶
+  - 领域成形
+  - 领域圆熟
+  - 超域
+  factions:
+  - name: 澄川博物馆
+    interest: 保住馆藏、声誉和公共服务价值
+  - name: 衡古拍卖行
+    interest: 借鉴定结果抬高新古物价格并控制流通
+  - name: 旧城修复会
+    interest: 找回被市场和官方共同抹掉的匠人记录
+  - name: 听钟人网络
+    interest: 收集愿望残片，试验可覆盖现实的历史幻境
+  stages:
+  - volume: 1
+    stage: 澄川博物馆夜间展厅
+  - volume: 2
+    stage: 旧城修表巷与衡古拍卖场
+  truth_layers:
+  - layer: 1
+    truth: 白寄南第一次擦拭青铜镜时，镜面出现战国铸造现场，证明愿望确实能覆盖现实。
+    reveal_not_before: 1
+  - layer: 2
+    truth: 残片并非铸钟匠主动留下的完整神器，而是记录了多名持有者愿望的失败残片。
+    reveal_not_before: 12
+  - layer: 3
+    truth: 听钟人网络正在用愿望复原替权贵洗白的历史；赵清越和秦玉筠分别掌握伪造源头与覆盖媒介。
+    reveal_not_before: 26
+main_foreshadows:
+- id: F1
+  description: 青铜镜背面的匠师印记，与旧城修表巷一扇无门牌木门上的刻痕相同。
+  close_volume: 1
+- id: F2
+  description: 沈思萦祖父留下的原始名册缺失一页，缺失页缝线里藏着残片的铜屑。
+  close_volume: 2
+- id: F3
+  description: 白寄南每次失去的记忆都围绕同一件战国铜器展开。
+  close_volume: 2
+- id: F4
+  description: 阿柯铭父亲失踪前寄出的最后一张照片，拍到一扇本不可能出现在现代展厅的铜门。
+  close_volume: 2
+summary: 白寄南只想在博物馆安静扫地，晚年不再为任何人和事操心。一天，他擦拭被判定为赝品的战国青铜镜，低声说了一句“让我看看它最风光的时候”，展厅瞬间被铸造现场覆盖，消失的匠师与真正主人同时出现。白寄南因此发现，博物馆、市场和拍卖行都藏着借错误鉴定牟利的人。残片能让一件古物回到盛世，也会让相关的人忘记现在，并从白寄南身上削去一段古物记忆。为查清残片与旧案，白寄南被迫和沈思萦、阿柯铭、韩汀蕙等人联手，在夜间展厅、旧城修表巷和衡古拍卖场之间追抢名册与见证者。随着记忆不断剥落，他必须决定：继续替别人寻找真相，还是先为自己守住一段安稳生活。
+initial_dashboard:
+  strength: 初醒
+  wealth: 1200元
+  status: 无名新人
+  affiliation: 澄川博物馆
+  stage: 澄川博物馆夜间展厅
+volumes:
+- number: 1
+  start: 1
+  end: 25
+  stage: 澄川博物馆夜间展厅
+  goal: 确认残片能力，救下被错误鉴定的展品，并找到操控市场的第一条线索。
+  change: 白寄南从躲事清洁工变成敢追查真伪的见证者，初次掌握愿望覆盖。
+  cost: 他失去一段关于青铜器鉴定的童年记忆，博物馆开始有人追查异常复原。
+- number: 2
+  start: 26
+  end: 50
+  stage: 旧城修表巷与衡古拍卖场
+  goal: 在记忆耗尽前抢回原始名册，拆穿借愿望洗白历史的网络。
+  change: 白寄南获得稳定控制并带领同伴反击，最终以自己的见证标准定义真品。
+  cost: 他失去大半古物记忆，只能依靠同伴保存自己真正珍惜的安稳生活。
+canon:
+  ladder:
+    strength:
+    - 初醒
+    - 稳定控制
+    - 复合运用
+    - 能力进阶
+    - 领域成形
+    - 领域圆熟
+    - 超域
+    wealth_unit: 元
+    status:
+    - 无名新人
+    - 独立从业者
+    - 行业骨干
+    - 一城名人
+    - 区域领军者
+    - 全国影响者
+  genre_kind: 爽文
+  payoff_menu:
+  - 升级
+  - 打脸
+  - 收获
+  - 身份抬升
+  - 碾压
+  solution_menu:
+  - 断源制停
+  - 耗竭制胜
+  - 脱域避险
+  - 触发反用
+  - 弱点克制
+  - 通路重构
+  - 实力压制
+  - 夺取控制
+  - 信息欺骗
+  - 隐蔽绕行
+  - 追踪定位
+  - 实验复现
+  - 物证鉴别
+  - 时序还原
+  - 证词排伪
+  - 公开解胁
+  - 利益分化
+  - 对价交换
+  - 外援协同
+  - 替代依赖
+  - 弃权止损
+  - 主体归位
+  - 隔离封存
+  - 反馈抑制
+  - 断链脱控
+  - 修复故障
+  - 资源重配
+  - 履约修复
+  - 逆向归因
+  - 群体表态
+  hook_types:
+  - 人物当场隐瞒
+  - 证词矛盾
+  - 错误判断后果
+  - 关系破裂
+  - 新势力登场
+  - 反转揭示
+  - clue
+  - 新事实推翻旧判断
+  - 眼前危险逼近
+  - 关键行动悬停
+  - 熟人身份改观
+  - 两条路各有代价
+  - 异常物件待解释
+  - 截止时刻将到
+  - 誓言或威吓落地
+  - 人物物件无故失踪
+  - 话中漏洞露端倪
+  - 旧意象发生变化
+  - 首尾照面生新义
+  - 留下未答的反应
+  solution_aliases:
+    假目标分追: 信息欺骗
+    引敌换地: 信息欺骗
+    诱敌: 信息欺骗
+    伪装混入: 信息欺骗
+    事前掉包: 信息欺骗
+    放出假目标分散追兵: 信息欺骗
+    引敌离开熟悉地形再交战: 信息欺骗
+    换装混入敌方队伍穿过关口: 信息欺骗
+    预先掉包使敌方夺到无效物: 信息欺骗
+    诱导敌方火力击毁自身屏障: 信息欺骗
+    预设伏击在敌方返程截获目标: 信息欺骗
+    共同表态: 群体表态
+    齐声喊名: 群体表态
+    众人齐声喊名: 群体表态
+    群体表态: 群体表态
+    齐声: 群体表态
+    众人作证: 群体表态
+    众人齐声: 群体表态
+    众人共同拒绝: 群体表态
+    共同喊名: 群体表态
+    集体认同: 集体认同
+    断开外部供能使敌方装置停机: 断源制停
+    截断运输补给迫使围困者撤走: 断源制停
+    耗尽敌方有限弹药后反攻: 耗竭制胜
+    坚守既有防线拖过敌方有效时限: 耗竭制胜
+    搭建临时桥梁撤出被困者: 通路重构
+    破坏承重结构阻断追击路线: 通路重构
+    缴械制服施害者终止攻击: 实力压制
+    夺取控制器解除远程威胁: 夺取控制
+    沿观察盲区穿过封锁: 隐蔽绕行
+    绕开正面守军从侧路夺取关键物: 隐蔽绕行
+    切断已知追踪媒介后隐蔽转移: 断链脱控
+    分化敌方利益使其联盟瓦解: 利益分化
+    交换对方急需资源换回被扣物: 对价交换
+    抵押自有资产换取急需周转资源: 对价交换
+    主动放弃敌方控制的奖励退出陷阱: 弃权止损
+    当事人主动解除依附关系终止操纵: 弃权止损
+    建立备用供给摆脱独家供货钳制: 替代依赖
+  seed: 愿望真能让我回到古物盛世吗？
+  scheduling:
+    upgrade_gap:
+    - 4
+    - 8
+    setup_lead_chapters: 1
+    seed_source: canon.seed
+    policy: 逐书可复现升级日历；前章蓄势；其余爽点在连续与十章覆盖约束下逐章随机，不按最少计数固定轮换。

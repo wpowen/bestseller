@@ -1,0 +1,161 @@
+{
+  "status": "retained",
+  "complete": false,
+  "processing_complete": true,
+  "before_score": 3.7366,
+  "after_score": 3.7366,
+  "warnings": [
+    {
+      "rollback": "model_response",
+      "stage": "recall22-recheck-verb_mismatch-0",
+      "reason": "JSON incomplete paragraph coverage"
+    }
+  ],
+  "checks": {
+    "failure": {
+      "stage": "recall22-recheck-verb_mismatch-0",
+      "reason": "JSON incomplete paragraph coverage"
+    },
+    "diagnostics": {
+      "status": "unknown"
+    },
+    "entities": [
+      "苏元铮",
+      "沈岳霖",
+      "铁弘策",
+      "柳慕桐",
+      "秦旻泽",
+      "韩晴棣",
+      "姜松筠"
+    ],
+    "metrics_before": {
+      "chars": 2141,
+      "paragraphs": 112,
+      "dialogue_ratio": 0.2279,
+      "average_paragraph_chars": 19.12,
+      "single_sentence_ratio": 0.6339,
+      "sentence_length_variance": 61.933,
+      "paragraph_length_quantiles": {
+        "0.1": 5,
+        "0.25": 7,
+        "0.5": 14,
+        "0.75": 26,
+        "0.9": 45
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 0,
+      "procedural_per_1000": 0.0,
+      "cliche_count": 3,
+      "cliche_per_1000": 1.4012,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "metrics_after": {
+      "chars": 2141,
+      "paragraphs": 112,
+      "dialogue_ratio": 0.2279,
+      "average_paragraph_chars": 19.12,
+      "single_sentence_ratio": 0.6339,
+      "sentence_length_variance": 61.933,
+      "paragraph_length_quantiles": {
+        "0.1": 5,
+        "0.25": 7,
+        "0.5": 14,
+        "0.75": 26,
+        "0.9": 45
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 0,
+      "procedural_per_1000": 0.0,
+      "cliche_count": 3,
+      "cliche_per_1000": 1.4012,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "remaining_hits": [
+      {
+        "sid": "S47",
+        "pid": "P32",
+        "start": 765,
+        "end": 770,
+        "text": "她低声道。",
+        "type": "adverb_dialogue_tag",
+        "rule": "emotional_tag",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S115",
+        "pid": "P79",
+        "start": 1900,
+        "end": 1905,
+        "text": "他冷声道。",
+        "type": "adverb_dialogue_tag",
+        "rule": "emotional_tag",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S80",
+        "pid": "P55",
+        "start": 1313,
+        "end": 1341,
+        "text": "废排口深处传来一声闷响，像某根埋了多年的骨梁被缓缓抽出。",
+        "type": "adverb_density",
+        "rule": "pacing_adverbs",
+        "severity": 1,
+        "source": "rule"
+      },
+      {
+        "sid": "S161",
+        "pid": "P110",
+        "start": 2723,
+        "end": 2734,
+        "text": "苏元铮缓缓握紧总闸印。",
+        "type": "adverb_density",
+        "rule": "pacing_adverbs",
+        "severity": 1,
+        "source": "rule"
+      },
+      {
+        "sid": "S1",
+        "pid": "P1",
+        "start": 0,
+        "end": 35,
+        "text": "旧总闸横在胃壁外廊尽头，门后没有矿道，只有一层层向腹地收束的灰白阵光。",
+        "type": "empty_scene",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "S1至S2连续独立铺设总闸、阵光和水声等环境信息，前两三句内没有人物正在办理的具体事务，也没有明确呈现眼前阻碍；直到P2才让人物姜松筠登场，无法反向消除开头的空镜铺陈。",
+          "开头先连续铺设总闸、阵光等环境信息，未同时交代姜松筠此刻要办理或受阻的事；到下一段人物才出现，开场因此停留在空镜铺陈。"
+        ]
+      }
+    ],
+    "dialogue_mode": "local",
+    "original_chars": 2141,
+    "final_chars": 2141,
+    "programmatic": [],
+    "ending_image": "真正盯上苏母的东西，一直就在这枚印里。",
+    "facts": "original retained",
+    "unknown_usage": 1
+  },
+  "calls": 65,
+  "prompt_tokens": 385390,
+  "completion_tokens": 47628,
+  "seconds": 433.772
+}

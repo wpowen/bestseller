@@ -1,0 +1,15 @@
+{
+  "mode": "Q1",
+  "style": "b",
+  "status": "complete",
+  "started": "2026-11-05T04:48:18.815584+00:00",
+  "finished": "2026-11-05T05:45:28.647959+00:00",
+  "execution_seconds": 3428.996166,
+  "wall_seconds": 3428.996,
+  "completed_chapters": 50,
+  "book": {
+    "chapters": 50,
+    "prompt_pack": "urban-power-reversal",
+    "words_per_chapter": 2200
+  }
+}

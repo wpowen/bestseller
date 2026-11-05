@@ -1,0 +1,17 @@
+{
+  "title": "雨夜证词",
+  "genre": "suspense-mystery",
+  "chapters": 5,
+  "polish": true,
+  "auto_deai": true,
+  "status": "complete",
+  "created": "2026-11-04T08:52:12.401022+00:00",
+  "jobs": 2,
+  "reason": "独立去AI处理完成；正文与原检查点保留",
+  "pipeline_version": 1,
+  "pipeline": {
+    "book": {
+      "status": "complete"
+    }
+  }
+}

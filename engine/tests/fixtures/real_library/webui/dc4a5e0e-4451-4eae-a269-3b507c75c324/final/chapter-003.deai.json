@@ -1,0 +1,271 @@
+{
+  "status": "unchanged",
+  "complete": true,
+  "before_score": 3.367,
+  "after_score": 3.367,
+  "warnings": [
+    {
+      "type": "verb_mismatch",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "verb_mismatch",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "empty_scene",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "empty_scene",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "empty_scene",
+      "error": "LLMError:stage r0-recheck-empty_scene-2: HTTP None: Interrupted"
+    },
+    {
+      "type": "cool_micro_action",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "cool_micro_action",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "cool_micro_action",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "written_dialogue",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "written_dialogue",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "written_dialogue",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "character_label",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "character_label",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "character_label",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "emotion_overload",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "emotion_overload",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "type": "emotion_overload",
+      "error": "InterruptedError:Interrupted"
+    },
+    {
+      "round": 1,
+      "rollback": "recheck_unknown"
+    }
+  ],
+  "checks": {
+    "diagnostics": {
+      "status": "unknown",
+      "error": "InterruptedError"
+    },
+    "entities": [
+      "米娅·初棠",
+      "阿宜秋",
+      "铁锅岑溪",
+      "豆芽庭樾",
+      "灰鬃念慈",
+      "货运广场",
+      "侧门",
+      "盐袋",
+      "风灯",
+      "豆芽庭樾",
+      "滚轮南瓜",
+      "南街邻里会",
+      "龙族",
+      "木牌",
+      "守卫",
+      "风灯",
+      "旧闸",
+      "火把",
+      "米娅·初棠",
+      "嫩绿",
+      "掌心",
+      "货运广场",
+      "侧门",
+      "盐袋",
+      "风灯",
+      "米娅·初棠",
+      "箱带",
+      "南瓜",
+      "竹篮",
+      "箱",
+      "铜皮",
+      "铜扣",
+      "锁孔",
+      "花纹",
+      "守卫",
+      "铜币",
+      "豆沙酥",
+      "南瓜酥",
+      "盐渍脆片",
+      "铁锅岑溪",
+      "铁锅",
+      "南街邻里会",
+      "芝麻街",
+      "避风棚",
+      "阿宜秋",
+      "龙鳞",
+      "豆芽庭樾",
+      "滚轮南瓜",
+      "木凳",
+      "摊架",
+      "酥饼",
+      "油壶",
+      "灰鬃念慈",
+      "短木杆",
+      "菜芽"
+    ],
+    "metrics_before": {
+      "chars": 2673,
+      "paragraphs": 94,
+      "dialogue_ratio": 0.2712,
+      "average_paragraph_chars": 28.44,
+      "single_sentence_ratio": 0.3723,
+      "sentence_length_variance": 103.2,
+      "paragraph_length_quantiles": {
+        "0.1": 4,
+        "0.25": 10,
+        "0.5": 23,
+        "0.75": 45,
+        "0.9": 58
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 1,
+      "procedural_per_1000": 0.3741,
+      "cliche_count": 4,
+      "cliche_per_1000": 1.4964,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "metrics_after": {
+      "chars": 2673,
+      "paragraphs": 94,
+      "dialogue_ratio": 0.2712,
+      "average_paragraph_chars": 28.44,
+      "single_sentence_ratio": 0.3723,
+      "sentence_length_variance": 103.2,
+      "paragraph_length_quantiles": {
+        "0.1": 4,
+        "0.25": 10,
+        "0.5": 23,
+        "0.75": 45,
+        "0.9": 58
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 1,
+      "procedural_per_1000": 0.3741,
+      "cliche_count": 4,
+      "cliche_per_1000": 1.4964,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "remaining_hits": [
+      {
+        "sid": "S9",
+        "pid": "P5",
+        "start": 206,
+        "end": 244,
+        "text": "先前旧闸后的火把声虽然远了，可那声音仍在远处断断续续地追，像被风吹散的火星。",
+        "type": "verb_mismatch",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "“那声音仍在远处断断续续地追”中“追”没有可作用的对象，声音本身无法完成追的动作；后接“像被风吹散的火星”又把静止被吹散的画面当作“追”的比喻，比喻内部逻辑与动作方向相反，读者难以复现出可感的体验。",
+          "“火把声”被比作“被风吹散的火星”，将听觉对象硬接到视觉形态上，读者难以据此复现火把声实际留下的感觉。"
+        ]
+      },
+      {
+        "sid": "S170",
+        "pid": "P94",
+        "start": 3338,
+        "end": 3354,
+        "text": "它朝着她掌心未说完的形状，弯曲。",
+        "type": "verb_mismatch",
+        "severity": 3,
+        "source": "model",
+        "reason": [
+          "“它朝着她掌心未说完的形状，弯曲”把“形状”当作“弯曲”的对象或朝向，弯曲只能趋向方位或方向，不能朝一个“形状”弯曲；同时“掌心未说完的形状”属于硬造的感官表述，读者无法复现任何具体形态或触感。",
+          "“她掌心未说完的形状”没有可辨认的形态，嫩绿无法朝一个抽象而未完成的形状弯曲，读者无法复现这一动作指向的具体感官对象。",
+          "“朝着她掌心未说完的形状弯曲”把掌心动作硬写成可辨认的“形状”，但“未说完”无法转化为读者能够复现的视觉或触觉形态；嫩绿究竟在朝什么弯，动作与所指对象无法明确对应。"
+        ]
+      },
+      {
+        "sid": "S1",
+        "pid": "P1",
+        "start": 0,
+        "end": 36,
+        "text": "货运广场的侧门藏在两排盐袋之间，门楣上挂着半盏风灯，灯罩被风吹得来回晃。",
+        "type": "empty_scene",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "开头仅独立描写货运广场侧门、盐袋和晃动风灯，没有同时交代人物当下要办的事或遇到的阻碍；人物直到后文才登场，因此这段空镜未在开场两三句内转化为行动压力。",
+          "章首先用独立句铺陈侧门、盐袋和晃动的风灯，人物及其当下要办的事到下一句才出现；守卫追查、箱中异响等行动压力尚未落地，后文人物登场也不能追溯性地使这段前置空镜成立。该句很短，问题较轻。"
+        ]
+      },
+      {
+        "sid": "S65",
+        "pid": "P33",
+        "start": 1401,
+        "end": 1443,
+        "text": "豆芽庭樾看向滚来的南瓜，手指按住木牌边缘：“未确认的危险，不交给广场，也不交给龙族。",
+        "type": "written_dialogue",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "台词以对称的抽象判断概括“未确认的危险不能交给任何一方”，更像制度标语或作者代述原则；豆芽庭樾虽有条件化表达习惯，但面对滚来的南瓜时仍直接说出完整原则，书面腔偏重。",
+          "面对滚来的南瓜，这句话像抽象原则或条例口号，只说“不交给”却没有交代当下要采取的具体行动；结合豆芽庭樾试图控场、封存并上报的目标，更像替作者概括立场，而非人物在紧迫现场会自然说出的具体处置要求。"
+        ]
+      }
+    ],
+    "dialogue_mode": "local",
+    "original_chars": 2673,
+    "final_chars": 2673,
+    "programmatic": [],
+    "ending_image": "昏暗避风棚内，箱锁细缝探出嫩绿，弯向米娅未说完的掌心形状。",
+    "facts": "original retained",
+    "unknown_usage": 6
+  },
+  "calls": 36,
+  "prompt_tokens": 125651,
+  "completion_tokens": 21175,
+  "seconds": 1297.801
+}

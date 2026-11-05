@@ -94,7 +94,7 @@ function renderLibrary() {
    menu.append(el('summary', '⋯'));
    menu.append(link('书籍详情', bookURL(b.id)), link('导出', bookURL(b.id) + '?tab=导出'));
    if (b.owned)
-    for (const [name, label] of [ ['rename', '重命名'], ['archive', '移到归档（可恢复）'], ['delete', '永久删除…'], ])
+    for (const [name, label] of [ ['rename', '重命名'], ['archive', '移到归档（可恢复）'], ])
      menu.append(button(label, () => manage(b, name), name === 'delete' ? 'danger' : 'ghost'));
    actions.append(menu);
    if (b.owned) actions.append(button('删除', () => manage(b, 'delete'), 'danger'));
@@ -114,7 +114,7 @@ function renderLibrary() {
    row.append(
     el('h3', b.title),
     button('恢复到书库', () => manage(b, 'restore')),
-    button('永久删除…', () => manage(b, 'delete'), 'danger'),
+    button('删除', () => manage(b, 'delete'), 'danger'),
    );
    return row;
   }),
@@ -142,7 +142,7 @@ async function manage(book, name, title) {
  if (name === 'delete' || name === 'rename') {
   managed = { book, name };
   closeOverlays();
-  text('dialog-title', name === 'delete' ? `永久删除《${book.title}》？不可撤销` : '重命名');
+  text('dialog-title', name === 'delete' ? `永久删除《${book.title.replace(/^《|》$/g, "")}》？不可撤销` : '重命名');
   text('dialog-hint', name === 'delete' ? '运行中或仍有进程的书会被拒绝。' : '输入新的书名。');
   $('confirm-title').parentElement.hidden = name === 'delete';
   $('confirm-title').required = name === 'rename';

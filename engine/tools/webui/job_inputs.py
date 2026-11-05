@@ -11,6 +11,18 @@ def finite(value, low, high):
     return value
 
 
+def whole(value, low, high, label):
+    if isinstance(value, bool):
+        raise ValueError(f"{label}须为 {low}–{high} 的整数")
+    try:
+        number = finite(value, low, high)
+    except (ValueError, TypeError):
+        raise ValueError(f"{label}须为 {low}–{high} 的整数") from None
+    if not number.is_integer():
+        raise ValueError(f"{label}须为 {low}–{high} 的整数")
+    return int(number)
+
+
 def check_card(card, chapters, legacy=False):
     if not isinstance(card, dict) or len(json.dumps(card, ensure_ascii=False)) > 10000:
         raise ValueError("候选字段无效或过长")

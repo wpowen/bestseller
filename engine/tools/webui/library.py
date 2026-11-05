@@ -280,6 +280,12 @@ class Library:
                 or any(r["checks"].get(k) for k in ("remaining", "warnings", "state_issues", "quality_issues"))
             )
         ]
+        finished = web.get("finished") or (run.get("finished") if not web.get("polish") else None)
+        estimated = False
+        if state == "complete" and not finished and total and sum(bool(r["final"]) for r in rows) == total:
+            saved = max(self.safe(folder / f"final/chapter-{r['number']:03d}.md").stat().st_mtime for r in rows)
+            finished = dt.datetime.fromtimestamp(saved, dt.timezone.utc).isoformat()
+            estimated = True
         return dict(
             id=str(folder.relative_to(self.root)),
             title=title,
@@ -288,7 +294,7 @@ class Library:
             chapter_info=[
                 info.get(n, dict(number=n, title=f"第{n}章", status="pending", words=0)) for n in range(1, total + 1)
             ],
-            genre=GENRES.get(book.get("prompt_pack", web.get("genre")), book.get("prompt_pack", "未知")),
+            genre=GENRES.get(book.get("prompt_pack", web.get("genre")), "未分类"),
             chapters=sum(bool(r["final"]) for r in rows),
             total=total,
             words=sum(r["words"] for r in rows),
@@ -297,6 +303,9 @@ class Library:
             and state not in ("paused", "concurrency_paused", "orphaned"),
             status=state,
             created=web.get("created", run.get("started", "")),
+            started=run.get("started", ""),
+            finished=finished if state == "complete" else None,
+            finished_estimated=estimated,
             owned=owned,
             polish=web.get("polish", False),
             auto_deai=auto_deai(web),
@@ -365,6 +374,8 @@ class Library:
             characters=[c for c in characters if isinstance(c, dict)],
             bible=text(self.safe(folder / "story_bible.yaml")),
             selected_card=read(self.safe(folder / "web.json"), {}).get("selected_card"),
+            bible_view=bible_data(self.safe(folder / "story_bible.yaml")),
+            outline_view=[read(self.safe(p), {}) for p in sorted(folder.glob("writing_outlines/*.json"))],
             outline="\n\n".join(text(self.safe(p)) for p in sorted(folder.glob("writing_outlines/*.json"))),
         )
 

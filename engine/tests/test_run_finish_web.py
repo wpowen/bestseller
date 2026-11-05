@@ -346,8 +346,11 @@ const book = {status:'waiting', stage:'ch11-draft', retry:20,
  next_retry_at:1793874900, error:'HTTP 429', writer_cost:30, deai_cost:40};
 if (statusLabel(book) !== '等待接口') throw Error('waiting label');
 const detail = runtimeInfo(book);
-if (!detail.includes('20') || !detail.includes('下次') || !detail.includes('ch11-draft')) throw Error(detail);
+if (!detail.includes('20') || !detail.includes('下次') || !detail.includes('第 11 章 · 正文写作') || detail.includes('ch11-draft')) throw Error(detail);
 if (bookUsage(book).includes('预算')) throw Error('monetary limit shown');
+if (runtimeInfo({status:'complete', step:'complete'})) throw Error('raw completion leaked');
+if (runtimeInfo({status:'paused', step:'独立去AI处理完成；正文与原检查点保留'})) throw Error('internal note leaked');
+if (statusLabel({status:'new_internal_status'}) !== '状态待更新') throw Error('unknown status leaked');
 if (statusLabel({status:'quota_exhausted'}) !== '额度用尽') throw Error('quota label');
 """
         module = self.root / "shared.mjs"

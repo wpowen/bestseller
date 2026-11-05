@@ -11,7 +11,8 @@ import threading
 import tempfile
 from urllib.parse import parse_qs, urlparse
 import zipfile
-from library import GENRES, Library, read, text
+from library import GENRES, Library, read, text, save
+from job_inputs import whole
 from jobs import Queue, topic_worker
 from tools.version import __version__
 
@@ -130,6 +131,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(self.server.configuration)
             elif path == "/favicon.ico":
                 self.send(b"", code=204, mime="image/x-icon")
+            elif path == "/api/settings":
+                self.send(dict(jobs=self.server.queue.jobs if self.server.queue else None))
             elif path == "/api/books":
                 self.send(dict(books=lib.listing(), spending=lib.spending(), read_only=lib.read_only))
             elif path == "/api/archive":
@@ -172,6 +175,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/library.js",
                 "/wizard.js",
                 "/book.js",
+                "/presentation.js",
                 "/reader.js",
                 "/overlays.js",
                 "/style.css",
@@ -210,6 +214,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("需要JSON对象")
             if self.path == "/api/topics":
                 result = self.server.queue.topic(data)
+            elif self.path == "/api/settings":
+                count = whole(data.get("jobs"), 1, 4, "同时写作的书数")
+                queue = self.server.queue
+                with queue.lock:
+                    save(queue.library.own / ".queue.json", dict(jobs=count))
+                    queue.jobs = count
+                result = dict(jobs=count)
             elif self.path == "/api/books":
                 result = self.server.queue.create(data)
             elif self.path == "/api/action":

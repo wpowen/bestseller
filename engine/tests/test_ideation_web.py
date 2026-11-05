@@ -32,9 +32,9 @@ class IdeationWebTests(WebFixture):
         return dict(data, chapters=50), folder
 
     def test_same_input_always_creates_new_batch_retaining_previous_folder(self):
-        first = self.queue.topic(dict(genre="cozy-mystery", chapters=5, idea="渡口", channel="男频"))
+        first = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
         self.child.poll.return_value = 0
-        second = self.queue.topic(dict(genre="cozy-mystery", chapters=5, idea="渡口", channel="男频"))
+        second = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
         self.assertNotEqual(first["id"], second["id"])
         self.assertEqual(second["channel"], "男频")
         self.assertEqual(self.queue.get_topic(first["id"]), first)
@@ -46,7 +46,7 @@ class IdeationWebTests(WebFixture):
             [dict(model="MiniMax-M3.1-Flash", status="inflight", usage=None, input_bytes=10**9, max_tokens=10**9)],
         )
         before = ledger.read_bytes()
-        result = self.queue.topic(dict(genre="cozy-mystery", chapters=5))
+        result = self.queue.topic(dict(genre="cozy-mystery", chapters=50))
         self.assertNotIn("budget", result)
         self.assertFalse(hasattr(self.queue, "limit"))
         self.assertEqual(ledger.read_bytes(), before)
@@ -56,7 +56,7 @@ class IdeationWebTests(WebFixture):
         for channel in (None, [], {}, "其他"):
             before = snapshot(self.lib.own)
             status, _, _ = self.request(
-                "/api/topics", method="POST", data=dict(genre="cozy-mystery", chapters=5, channel=channel)
+                "/api/topics", method="POST", data=dict(genre="cozy-mystery", chapters=50, channel=channel)
             )
             self.assertEqual(status, 400)
             self.assertEqual(snapshot(self.lib.own), before)

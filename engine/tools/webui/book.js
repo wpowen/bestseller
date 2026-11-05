@@ -1,8 +1,9 @@
 import {
- $, state, el, money, count, statusLabel, creationDate, bookUsage, runtimeInfo, link, button, bookURL, readURL, stored, printable, notify
+ $, state, el, money, count, statusLabel, creationDate, bookUsage, runtimeInfo, link, button, bookURL, readURL, stored, notify
 } from './shared.js';
 import { actionButtons, manage } from './library.js';
 import { chapters, copyText } from './reader.js';
+import { planning, checks } from './presentation.js';
 let tab = '目录';
 const selectedOpen = new Set();
 function renderDetail(selected = tab) {
@@ -17,12 +18,16 @@ function renderDetail(selected = tab) {
   el('span', statusLabel(b), 'badge'),
   el('h1', b.title),
   el('p', b.synopsis || '故事简介尚未生成。', 'muted'),
-  el('p', `终稿 ${b.chapters} / 计划 ${b.total} 章　${count(b.words)} 字　${money(b.cost)}　${creationDate(b.created)}`, 'stats'),
+  el('p', `已花费 ${money(b.cost)}　字数 ${count(b.words)}　终稿 ${b.chapters} / 计划 ${b.total} 章`, 'stats'),
+  el('p', `开始时间：${creationDate(b.started)}　完成时间：${b.finished ? creationDate(b.finished) : '尚未完成或未记录'}`, 'muted'),
   link(`继续阅读 · 第 ${last} 章`, readURL(b.id, last), 'primary button'),
   actionButtons(b),
-  el('p', bookUsage(b), 'muted'),
   el('p', runtimeInfo(b), 'muted'),
  );
+ const usage = el('details');
+ usage.append(el('summary', '费用明细'), el('p', bookUsage(b), 'muted'));
+ info.append(usage);
+ if (b.finished_estimated) info.append(el('small', '完成时间按最后一章终稿的保存时间显示。'));
  if (b.owned) info.append(button('删除', () => manage(b, 'delete'), 'danger'));
  const chosen = state.book.selected_card;
  if (chosen) {
@@ -70,21 +75,12 @@ function renderDetail(selected = tab) {
   }
   content.append(links, button('复制全书', () => copyBook('final')));
  } else if (tab === '故事圣经') {
-  const grid = el('div', null, 'chapter-grid');
-  for (const c of state.book.characters || []) {
-   const card = el('article', null, 'panel');
-   card.append(el('h3', c.name || '人物'), el('p', [c.role, c.desire || c.wants, c.voice || c.speech].filter(Boolean).join(' · ')));
-   grid.append(card);
-  }
-  content.append(grid, el('pre', state.book.bible || '故事圣经尚未生成。'));
- } else
-  content.append(
-   el(
-    'pre',
-    tab === '章纲' ? state.book.outline || '章纲尚未生成。'
-     : printable(state.book.chapters.map((c) => ({ number: c.number, checks: c.checks, report: c.report }))),
-   ),
-  );
+  content.append(planning(state.book.bible_view));
+ } else if (tab === '章纲') {
+  content.append(planning(state.book.outline_view));
+ } else {
+  content.append(el('p', '程序检测与评分仅供参考，阅读感受由你判断。', 'muted'), checks(state.book.chapters));
+ }
 }
 function copyBook(version) {
  const rows = chapters();

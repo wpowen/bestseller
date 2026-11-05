@@ -39,7 +39,7 @@ class QueueTests(WebFixture):
                 self.assertEqual((folder / "run.json").read_bytes(), before_run)
 
     def test_topic_spawns_authorized_isolated_worker(self):
-        result = self.queue.topic({"genre": "cozy-mystery", "chapters": 2, "idea": "找回乘客"})
+        result = self.queue.topic({"genre": "cozy-mystery", "chapters": 50, "idea": "找回乘客"})
         command = self.spawn.call_args.args[0]
         self.assertEqual(command[:3], [sys.executable, "-m", "tools.webui"])
         self.assertIn("--topic-worker", command)
@@ -358,7 +358,7 @@ class QueueTests(WebFixture):
 
     def test_other_books_old_budget_does_not_block_topic(self):
         self.book("webui/reserved", budget=0.49)
-        result = self.queue.topic({"genre": "cozy-mystery", "chapters": 2})
+        result = self.queue.topic({"genre": "cozy-mystery", "chapters": 50})
         self.assertEqual(result["status"], "running")
         self.spawn.assert_called_once()
 

@@ -1,0 +1,15 @@
+{
+  "browser": "PASS",
+  "temporary_root": "/var/folders/21/t2f_q3md2ln9l36r_s8j86mw0000gn/T/ui32-browser-iwfcwbgo",
+  "created_book": "d40d69f5-ea22-46b3-938d-be4d48c7ca68",
+  "chapters": 50,
+  "words_per_chapter": 3100,
+  "global_jobs": 4,
+  "deleted_folders_absent": true,
+  "changed_queue_methods": [
+    "__init__",
+    "topic",
+    "create"
+  ],
+  "real_model_calls": 0
+}

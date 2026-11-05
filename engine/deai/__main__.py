@@ -47,6 +47,8 @@ def main(argv=None):
     from . import polish
 
     STOP.clear()
+    if not single and (args.watch or args.pipeline) and finished(args.bookdir):
+        return 0
     previous = signal.signal(signal.SIGINT, lambda *_: STOP.set())
     statuses = {}
     seen = {}
@@ -72,6 +74,8 @@ def main(argv=None):
     try:
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
             while not STOP.is_set():
+                if not single and (args.watch or args.pipeline) and finished(args.bookdir):
+                    break
                 if single:
                     raw = read_text(single)
                     save(args.bookdir, "chapter-001.body.md", raw)

@@ -1,0 +1,93 @@
+// Supplementary acceptance against the same temporary offline fixture.
+async (page) => {
+ const origin = 'http://127.0.0.1:18789';
+ const out = 'engine/reports/ui-redesign-20261104/shots/';
+ const results = {checks:{}, exports:[]};
+ const check = (name, value) => {
+  results.checks[name] = value;
+  if (!value) throw Error(name + ' failed');
+ };
+ const visit = async hash => {
+  await page.goto(origin + '/#/' + hash);
+  await page.locator(hash.startsWith('read') ? '#chapter-title' : hash.startsWith('book') ? '#book-hero h1' : '.book-card').first().waitFor();
+ };
+ const card = title => page.locator('.book-card').filter({has:page.locator('h2').filter({hasText:title})});
+ const menu = async (title, action) => {
+  const item = card(title);
+  await item.locator('summary').click();
+  await item.getByRole('button',{name:action,exact:true}).click();
+ };
+ await page.setViewportSize({width:1440,height:1000});
+ await visit('library');
+ const before = await page.locator('.book-card').count();
+ await menu('渡口归途', '移到归档（可恢复）');
+ await page.waitForFunction(n => document.querySelectorAll('.book-card').length === n, before-1);
+ await page.locator('#undo').click();
+ await page.waitForFunction(n => document.querySelectorAll('.book-card').length === n, before);
+ check('archive_undo_roundtrip', true);
+ await page.locator('#archive-toggle').click();
+ check('archive_empty_after_undo', await page.locator('#archives article').count() === 0);
+ await page.screenshot({path:out+'14-archive-undo.png',fullPage:true});
+ await menu('正在写作', '永久删除…');
+ await page.locator('#confirm-title').fill('正在写作 · 离线验收');
+ await page.locator('#dialog-confirm').click();
+ await page.locator('#dialog-status').filter({hasText:'运行中'}).waitFor();
+ check('running_delete_rejected', await card('正在写作').count() === 1);
+ await page.screenshot({path:out+'15-running-delete-rejected.png',fullPage:true});
+ await page.locator('#dialog-cancel').click();
+ await menu('渡口的新灯', '永久删除…');
+ await page.locator('#confirm-title').fill('错误的书名');
+ await page.locator('#dialog-confirm').click();
+ await page.locator('#dialog-status').filter({hasText:'书名不匹配'}).waitFor();
+ check('wrong_title_rejected', await card('渡口的新灯').count() === 1);
+ await page.screenshot({path:out+'16-delete-confirmation.png',fullPage:true});
+ await page.locator('#confirm-title').fill('渡口的新灯');
+ await page.locator('#dialog-confirm').click();
+ await page.waitForFunction(() => ![...document.querySelectorAll('.book-card h2')].some(e=>e.textContent==='渡口的新灯'));
+ check('correct_title_deletes_temp_book', true);
+ await page.getByRole('button',{name:'暂停 · 正在写作 · 离线验收',exact:true}).click();
+ await card('正在写作').getByRole('button',{name:'继续当前阶段',exact:false}).waitFor();
+ check('pause_button_connected', true);
+ await card('正在写作').getByRole('button',{name:'继续当前阶段',exact:false}).click();
+ await card('正在写作').locator('.badge').filter({hasText:'等待写作'}).waitFor();
+ check('resume_button_connected', true);
+ await card('中断的航程').getByRole('button',{name:'从检查点重试',exact:false}).click();
+ await card('中断的航程').locator('.badge').filter({hasText:'等待写作'}).waitFor();
+ check('retry_button_connected', true);
+ await visit('read/webui%2Fsample/1');
+ await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+ await page.locator('#read-modes [data-mode=final]').click();
+ const final = await page.evaluate(async () => (await (await fetch('/api/book?id=webui/sample')).json()).chapters[0].final);
+ await page.locator('#copy-chapter').click();
+ check('copy_chapter_exact', await page.evaluate(() => navigator.clipboard.readText()) === final);
+ await visit('book/webui%2Fsample?tab=导出');
+ await page.locator('#export-version').waitFor();
+ await page.locator('#export-version').selectOption('final');
+ await page.getByRole('button',{name:'复制全书',exact:true}).click();
+ const copied = await page.evaluate(() => navigator.clipboard.readText());
+ check('copy_book_all_five_chapters', copied.includes('第 5 章') && copied.includes(final));
+ const links = page.locator('#book-content a');
+ check('five_export_links', await links.count() === 5);
+ for (let i=0;i<5;i++) {
+  const pending = page.waitForEvent('download');
+  const label = await links.nth(i).innerText();
+  await links.nth(i).click();
+  const download = await pending;
+  const filename = download.suggestedFilename();
+  await download.saveAs('/tmp/bookweb-ui-downloads/' + filename);
+  results.exports.push({label, filename, failure:await download.failure()});
+ }
+ check('five_downloads_successful', results.exports.every(e=>e.failure===null));
+ await page.screenshot({path:out+'17-exports.png',fullPage:true});
+ await page.locator('#book-tabs button').filter({hasText:'章纲'}).click();
+ await page.locator('#book-content pre').filter({hasText:'寻找乘客'}).waitFor();
+ check('outline_visible', true);
+ await page.locator('#book-tabs button').filter({hasText:'检测报告'}).click();
+ await page.locator('#book-content pre').filter({hasText:'polished'}).waitFor();
+ check('checks_marked_reference', (await page.locator('#book-tabs .on').innerText()).includes('参考'));
+ await page.locator('#book-hero button[data-action=postprocess]').click();
+ await page.locator('#book-hero .badge').filter({hasText:'等待去 AI'}).waitFor();
+ check('postprocess_button_connected', true);
+ console.log('CONTROL_RESULTS=' + JSON.stringify(results));
+ return results;
+}

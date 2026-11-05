@@ -27,6 +27,13 @@ for package,limit in limits.items():
                 if package in ('deai','ideation') and 'bookengine' in mod.split('.') or package=='bookengine' and 'deai' in mod.split('.'):cross.append(f'{package}:{mod}')
     print(f'{package}_lines={count} (limit={limit})')
     if count>limit:errors.append(f'{package} exceeds {limit}')
+assets=sorted(x for x in (root/'tools/webui').rglob('*') if x.suffix in ('.js','.html','.css'))
+front=sum(len(x.read_text().splitlines()) for x in assets);front_max=max([(len(x.read_text().splitlines()),x.name) for x in assets] or [(0,'none')])
+print(f'webui_frontend_lines={front} (limit=1500, max_file={front_max[0]} {front_max[1]})')
+if front>1500:errors.append('webui frontend exceeds 1500')
+if front_max[0]>800:errors.append('frontend file exceeds 800')
+wide=[f'{x.name}:{i}' for x in assets for i,l in enumerate(x.read_text().splitlines(),1) if len(l)>160]
+if wide:errors.append(f'frontend lines over 160 chars: {len(wide)} ({wide[0]})')
 print(f'max_file_lines={maximum[0]} ({maximum[1]})')
 print('imports_bestseller='+(', '.join(imports) or 'no'))
 print('cross_imports='+(', '.join(cross) or 'none'))

@@ -638,7 +638,7 @@
 
 ## 2026-11-04-25：书房网页改版——书库/开新书/详情/全屏阅读器分开（用户 2026-11-04 23:10 反馈“都挤在一页、看书不方便、没有目录、要宽屏”，监工设计）
 
-状态：待执行（用户 2026-11-04 要求立即单独开任务并行做：在独立工作树 `scratch/ui-worktree`、分支 `feat/bookweb-ui` 上开发；22 在 main、24 在 feat/ideation 也在改 webui，合并与冲突由监工处理。为减少冲突：新前端尽量写成新文件，后端只加 archive/restore/delete/archive 列表与章节状态，不改 22 已动的预算字段逻辑；向导第 2 步先接现有 /api/topics，留好位置给第 24 条的选题卡片）
+状态：已执行，待验收（2026-11-05 第二轮：接续 1e0c511de 完成前端按视图拆分、四项缺口与浏览器实测；Python 729/1200、前端 1487/1500，check_scope PASS，579 项测试及 844 子测试通过。仅本地分支 feat/bookweb-ui；截图与 Evidence / Inference / Unknown 见 [REPORT.md](reports/ui-redesign-20261104/REPORT.md)。未调用模型，未动 Docker、8787 或真实书稿，未 push，等待用户验收。）
 
 设计在 [reports/ui-redesign-20261104/DESIGN.md](reports/ui-redesign-20261104/DESIGN.md)，可点击原型 [prototype.html](reports/ui-redesign-20261104/prototype.html)（浏览器直接打开）。按设计第 2–6 节实现与验收。要点：
 1. 四个视图，用 URL 路由：书库 `#/library`、开新书三步向导 `#/new`、书籍详情 `#/book/<id>`、全屏阅读器 `#/read/<id>/<n>`。
@@ -646,6 +646,6 @@
 3. 书库：卡片网格；⋯ 菜单提供归档（可撤销）和永久删除（输入书名确认，运行中的书拒绝删除）。后端新增 archive / restore / delete 三个动作和 `/api/archive`，都要有测试。
 4. 第 24 条的选题卡片嵌入向导第 2 步，不重复实现。
 5. 视觉沿用原型里的 token 和夜间配色；不引入外部字体、CDN 或构建工具。
-6. 约束：webui 总行数 ≤1200，不得把代码压成一行凑行数，写不下就停下报告；bookengine 和 deai 不改；测试与 check_scope 必须通过；按设计第 6 节在浏览器里实际截图；只做本地提交，不 push。报告写 `engine/reports/ui-redesign-20261104/REPORT.md`，完成后把状态改成「已执行，待验收」并停下。
+6. 约束（用户 2026-11-05 定：前后端区分开来分别维护）：webui 的 Python（`tools/webui/*.py` + `tools/webui.py`）≤1200 行；前端 JS/HTML/CSS 另计 ≤1500 行，单个前端文件 ≤800 行，每行 ≤160 字符，均由 `check_scope` 自动检查。现有 CSS/JS 有压缩长行（check_scope 现在会 FAIL），要拆回可读格式：CSS 一条规则或一组声明一行、JS 一条语句一行。高内聚低耦合：前端按视图拆文件（例如 library / wizard / book / reader 各一个 js 加共用的 api/router），后端接口与前端互不内联。写不下仍停下报告；bookengine 和 deai 不改；测试与 check_scope 必须通过；按设计第 6 节在浏览器里实际截图；只做本地提交，不 push。报告写 `engine/reports/ui-redesign-20261104/REPORT.md`，完成后把状态改成「已执行，待验收」并停下。
 
 注：历史验证书 38 本（s1–s5a、q1*、benchmark、growth-payoff*、polish-30、style-ab*，以及运行日志）已由监工按用户 2026-11-04 指示永久删除；书库现在只剩 books/webui 下的 4 本。engine/reports 里引用这些目录的旧报告只作历史记录。

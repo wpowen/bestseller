@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import re
+import subprocess
 import unittest
 
 from bookengine.precision import _sentences
@@ -10,6 +11,10 @@ from bookengine.text import _paragraph_spans
 
 ENGINE = Path(__file__).resolve().parents[1]
 GEMINI = ENGINE.parent / 'books/compare/gemini.md'
+if not GEMINI.exists():
+    # Linked worktrees share the authorized original; never copy or rewrite prose.
+    common = subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ENGINE, text=True).strip()
+    GEMINI = Path(common).parent / 'books/compare/gemini.md'
 
 
 def sentence_rows(text):

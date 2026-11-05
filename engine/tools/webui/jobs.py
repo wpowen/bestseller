@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -34,6 +35,8 @@ def check_card(card, chapters, legacy=False):
 
 class Queue:
     def __init__(self, library, env, engine, limit=.5):
+        if library.read_only:
+            raise ValueError('只读模式禁止启动队列')
         self.library, self.env, self.engine, self.limit = library, env, engine, limit
         self.lock = threading.RLock(); self.processes = {}; self.closed = False; self.jobs = int(finite(read(library.own / '.queue.json', {}).get('jobs', 2), 1, 4))
         self.exclusive = (library.own / '.service.lock').open('a')
@@ -70,8 +73,7 @@ class Queue:
         return min(self.remaining(folder, data, kind), self.limit-self.spending())
 
     def spending(self):
-        folders = [p for p in self.library.own.iterdir() if p.is_dir() and not p.is_symlink()]
-        return sum(self.charge(p) for p in folders) + sum(costs(p)['cost'] for p in (self.library.own / '.topics').glob('*') if p.is_dir())
+        return self.library.spending()
 
     def committed(self):
         total = self.spending()
@@ -176,9 +178,11 @@ class Queue:
         data.update(status='polishing' if kind == 'polish' else 'running', pid=p.pid, reason='')
         save(folder / 'web.json', data)
 
-    def action(self, key, action):
+    def action(self, key, action, title=None):
         with self.lock:
             folder = self.library.folder(key); data = read(folder / 'web.json', {})
+            if action in ('archive', 'restore', 'delete', 'rename'):
+                return self.manage(folder, data, action, title)
             if folder.parent != self.library.own or not data: raise ValueError('共享书籍只读')
             item = self.processes.get(key)
             if action == 'postprocess':
@@ -208,6 +212,54 @@ class Queue:
             else: raise ValueError('未知操作')
             save(folder / 'web.json', data)
             return {'ok': True}
+
+    def manage(self, folder, data, action, title):
+        lib = self.library
+        archive = lib.safe(lib.own / '.archive')
+        log = lib.safe(lib.own / '.ops.log')
+        ledger = lib.safe(lib.own / '.spent.json')
+        if lib.read_only or folder.parent not in (lib.own, archive) or folder.name.startswith('.') or not data:
+            raise ValueError('仅可管理直属网页书籍')
+        for path in folder.rglob('*'):
+            if path.is_symlink():
+                raise ValueError('书目录含符号链接')
+        item = self.processes.get(str(folder.relative_to(lib.root)))
+        if data.get('status') in ('running', 'polishing', 'orphaned') or item and item['p'].poll() is None:
+            raise ValueError('运行中或孤立进程书籍不可操作')
+        if data.get('pid') is not None:
+            try:
+                os.kill(data['pid'], 0)
+            except ProcessLookupError:
+                pass
+            else:
+                raise ValueError('子进程仍存在，请先结束进程')
+        current = lib.meta(folder)['title']
+        if action == 'delete' and title != current:
+            raise ValueError('请输入完整书名确认永久删除')
+        if action == 'rename' and (not isinstance(title, str) or not 1 <= len(title.strip()) <= 80 or any(ord(c) < 32 for c in title)):
+            raise ValueError('书名须为1–80字的单行文字')
+        target = folder
+        if action in ('archive', 'restore'):
+            if (action == 'archive') != (folder.parent == lib.own):
+                raise ValueError('书籍已归档或未归档')
+            target = lib.safe((archive if action == 'archive' else lib.own) / folder.name)
+            if target.exists():
+                raise ValueError('目标已存在，禁止覆盖')
+        with log.open('a', encoding='utf-8') as output:
+            output.write(json.dumps(dict(at=now(), action=action, id=str(folder.relative_to(lib.root)), title=current, new_title=title if action == 'rename' else None), ensure_ascii=False) + '\n')
+            output.flush()
+            os.fsync(output.fileno())
+        if action == 'delete':
+            paid = read(ledger, {})
+            paid['webui/' + folder.name] = dict(costs(folder), charged=self.charge(folder))
+            save(ledger, paid)
+            shutil.rmtree(folder)
+        elif action == 'rename':
+            save(folder / 'web.json', dict(data, title=title.strip()))
+        else:
+            target.parent.mkdir(exist_ok=True)
+            folder.rename(target)
+        return dict(ok=True, id=str(target.relative_to(lib.root)))
 
     def loop(self):
         while not self.closed:

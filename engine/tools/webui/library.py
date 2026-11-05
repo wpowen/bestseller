@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import yaml
 
 GENRES = {'suspense-mystery': '悬疑推理', 'xuanhuan-power-fantasy': '玄幻爽文',
           'xianxia-upgrade-core': '仙侠升级', 'urban-power-reversal': '都市逆袭',
@@ -41,6 +42,14 @@ def text(path):
         return Path(path).read_text('utf-8')
     except OSError:
         return ''
+
+
+def bible_data(path):
+    try:
+        data = yaml.safe_load(text(path))
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
 
 
 def save(path, value):
@@ -96,10 +105,12 @@ def stage_costs(folder, web):
 
 
 class Library:
-    def __init__(self, root):
+    def __init__(self, root, read_only=False):
+        self.read_only = read_only
         self.root = Path(root).resolve()
         self.own = self.root / 'webui'
-        self.own.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            self.safe(self.own).mkdir(parents=True, exist_ok=True)
 
     def safe(self, path):
         path = Path(path)
@@ -143,25 +154,26 @@ class Library:
             for source in sorted(folder.glob('chapter-*.md')):
                 m = re.fullmatch(r'chapter-(\d{3,})\.md', source.name)
                 if m: result.append(dict(number=int(m[1]), title=f'第{int(m[1])}章', draft=text(self.safe(source)), final='', report={}))
+        for row in result:
+            row.update(status='final' if row['final'] else 'draft', words=len(re.findall(r'[\u3400-\u9fff]', row['final'] or row['draft'])))
         return result
 
     def meta(self, folder):
         run = read(self.safe(folder / 'run.json'), {}); web = read(self.safe(folder / 'web.json'), {})
         rows = self.chapters(folder); book = run.get('book', {})
-        title = web.get('title', folder.name)
-        bible = text(self.safe(folder / 'story_bible.yaml'))
-        m = re.search(r'^title:\s*(.+)', bible, re.M)
-        if m: title = m[1].strip('"\'')
+        bible = bible_data(self.safe(folder / 'story_bible.yaml'))
+        title = web.get('title') or bible.get('title') or folder.name
         total = book.get('chapters', web.get('chapters', len(rows)))
-        owned = folder.parent == self.own and bool(web)
+        owned = folder.parent in (self.own, self.own / '.archive') and bool(web)
         state = web.get('status', run.get('status', 'unknown')) if owned else run.get('status', 'unknown')
         elapsed = run.get('execution_seconds', run.get('wall_seconds', 0)) or 0
         stat = costs(folder)
-        writer_cost = costs(folder, include_final=False)['cost']
         writer, deai = stage_costs(folder, web)
         scores = [r['report'].get('after_score') for r in rows if isinstance(r.get('report'), dict)]
         scores = [x for x in scores if isinstance(x, (int, float)) and math.isfinite(x)]
-        return dict(id=str(folder.relative_to(self.root)), title=title,
+        info = {r['number']: {k: r[k] for k in ('number', 'title', 'status', 'words')} for r in rows}
+        return dict(id=str(folder.relative_to(self.root)), title=title, synopsis=bible.get('premise', ''),
+                    chapter_info=[info.get(n, dict(number=n, title=f'第{n}章', status='pending', words=0)) for n in range(1, total+1)],
                     genre=GENRES.get(book.get('prompt_pack', web.get('genre')), book.get('prompt_pack', '未知')),
                     chapters=len(rows), total=total, words=sum(len(re.findall(r'[\u3400-\u9fff]', r['draft'])) for r in rows),
                     status=state, created=web.get('created', run.get('started', '')), owned=owned,
@@ -170,15 +182,37 @@ class Library:
                     deai_cost=deai, deai_remaining=round(max(0, web.get('deai_budget', .5)-deai), 9) if owned else None,
                     step=web.get('reason') or run.get('stop_reason') or (('正文' if rows else '圣经 / 排期') if state == 'running' else state),
                     score=round(sum(scores)/len(scores), 3) if scores else None,
-                    writer_cost=writer_cost, postprocess_cost=round(stat['cost']-writer_cost,9),
+                    writer_cost=writer, postprocess_cost=round(stat['cost']-writer,9),
                     eta=round(elapsed / len(rows) * max(0, total-len(rows))) if rows else None, **stat)
 
     def listing(self):
         return sorted([self.meta(p) for p in self.folders()], key=lambda x: x['created'], reverse=True)
 
+    def archive(self):
+        return [self.meta(self.safe(p)) for p in self.safe(self.own / '.archive').glob('*') if not p.name.startswith('.') and p.is_dir()]
+
+    def spending(self):
+        paid = read(self.safe(self.own / '.spent.json'), {})
+        if not isinstance(paid, dict):
+            raise ValueError('费用汇总损坏')
+        for base in (self.own, self.safe(self.own / '.archive')):
+            for folder in base.glob('*'):
+                if folder.name.startswith('.') or not folder.is_dir() or folder.is_symlink():
+                    continue
+                charge = sum(stage_costs(folder, read(self.safe(folder / 'web.json'), {})))
+                key = 'webui/' + folder.name
+                paid[key] = dict(charged=max(charge, paid.get(key, {}).get('charged', 0)))
+        return sum(r['charged'] for r in paid.values()) + sum(costs(self.safe(p))['cost'] for p in self.safe(self.own / '.topics').glob('*') if p.is_dir())
+
     def detail(self, key):
         folder = self.folder(key)
+        characters = bible_data(self.safe(folder / 'story_bible.yaml')).get('characters', [])
+        if isinstance(characters, dict):
+            characters = [dict(value, name=value.get('name', name)) for name, value in characters.items() if isinstance(value, dict)]
+        if not isinstance(characters, list):
+            characters = []
         return dict(meta=self.meta(folder), chapters=self.chapters(folder),
+                    characters=[c for c in characters if isinstance(c, dict)],
                     bible=text(self.safe(folder / 'story_bible.yaml')),
                     outline='\n\n'.join(text(self.safe(p)) for p in sorted(folder.glob('writing_outlines/*.json'))))
 
@@ -192,5 +226,6 @@ class Library:
                 parts.append('<details><summary>' + html.escape(f"第{row['number']}章 {row['title']}") + '</summary><pre>' + html.escape(row['final'] or row['draft']) + '</pre></details>')
             books.append(''.join(parts))
         page = '<!doctype html><meta charset="utf-8"><title>我的书库</title><style>body{max-width:850px;margin:50px auto;background:#faf7f0;color:#27271f;font:18px serif}pre{white-space:pre-wrap;line-height:2;font:inherit}summary{cursor:pointer;padding:15px}</style><h1>我的书库 · 离线阅读</h1>' + ''.join(books)
-        save(self.own / 'LIBRARY.html', page)
+        if not self.read_only:
+            save(self.safe(self.own / 'LIBRARY.html'), page)
         return page

@@ -1,0 +1,30 @@
+{
+  "running": {
+    "status": "queued",
+    "checkpoint": {
+      "checkpoint": 3,
+      "note": "must survive pause and resume"
+    }
+  },
+  "retry": {
+    "status": "queued",
+    "checkpoint": {
+      "checkpoint": 3,
+      "note": "must survive pause and resume"
+    }
+  },
+  "topic_batches": 3,
+  "direction_mode": "both",
+  "ops": [
+    "archive",
+    "restore",
+    "delete"
+  ],
+  "downloads": {
+    "book-final.docx": 37100,
+    "book-final.epub": 4589,
+    "book-final.md": 8805,
+    "book-final.txt": 8568,
+    "book-final.zip": 1697
+  }
+}

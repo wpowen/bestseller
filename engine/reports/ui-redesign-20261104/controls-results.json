@@ -1,0 +1,46 @@
+{
+  "checks": {
+    "archive_undo_roundtrip": true,
+    "archive_empty_after_undo": true,
+    "running_delete_rejected": true,
+    "wrong_title_rejected": true,
+    "correct_title_deletes_temp_book": true,
+    "pause_button_connected": true,
+    "resume_button_connected": true,
+    "retry_button_connected": true,
+    "copy_chapter_exact": true,
+    "copy_book_all_five_chapters": true,
+    "five_export_links": true,
+    "five_downloads_successful": true,
+    "outline_visible": true,
+    "checks_marked_reference": true,
+    "postprocess_button_connected": true
+  },
+  "exports": [
+    {
+      "label": "Markdown",
+      "filename": "book-final.md",
+      "failure": null
+    },
+    {
+      "label": "Word",
+      "filename": "book-final.docx",
+      "failure": null
+    },
+    {
+      "label": "TXT",
+      "filename": "book-final.txt",
+      "failure": null
+    },
+    {
+      "label": "EPUB",
+      "filename": "book-final.epub",
+      "failure": null
+    },
+    {
+      "label": "番茄分章 ZIP",
+      "filename": "book-final.zip",
+      "failure": null
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+bookengine_lines=4950 (limit=5000)
+deai_lines=786 (limit=800)
+webui_lines=729 (limit=1200)
+exporter_lines=253 (limit=400)
+ideation_lines=400 (limit=600)
+webui_frontend_lines=1487 (limit=1500, max_file=464 wizard.js)
+max_file_lines=365 (bookengine/batch.py)
+imports_bestseller=no
+cross_imports=none
+forbidden_keywords=none
+PASS: package limits and independence

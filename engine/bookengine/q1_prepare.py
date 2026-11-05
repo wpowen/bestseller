@@ -7,6 +7,7 @@ import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
 from .identity import validate_bible
+from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
 from .storage import save
 from .text import pack
@@ -20,7 +21,19 @@ def _ask(client, kind, key, sections, redo=False):
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             validate_bible(bible)
 
-    schema = pack(DATA["schemas"][kind])
+    template = DATA["schemas"][kind]
+    if kind == "prepare" and any(k == "用户锁定事实，只可扩写不可替换" for k, _ in sections):
+        template = dict(
+            template,
+            bible=dict(
+                template["bible"],
+                opening="",
+                hook="",
+                axes={},
+                characters=[dict(template["bible"]["characters"][0], identity="")],
+            ),
+        )
+    schema = pack(template)
     instruction = DATA["rules"] + DATA["instructions"][kind] + FIX["planning"]
     overhead = len(getattr(client, "prefix", "")) + len(SYSTEM) + len(schema) + len(instruction) + 400
     budget = max(0, 10000 - overhead)
@@ -135,9 +148,14 @@ def prepare(client, book, out, assets, design=False):
     if any(x is None for x in values):
         from .benchmarking import concept_design
 
-        selected = concept_design(client, book) if design else {}
+        card = selected_card(book)
+        locked = facts(client, card) if card else {}
+        selected = concept_design(client, book) if design and not card else {}
         sections = [
-            ("用户要求", vars(book)),
+            ("用户锁定事实，只可扩写不可替换", dict(rule=RULE, card=card, facts=locked))
+            if card
+            else ("用户要求", vars(book)),
+            ("书籍篇幅要求", dict(chapters=book.chapters, words_per_chapter=book.words_per_chapter)),
             ("固定成长阶梯", profile["canon"]["ladder"]),
             ("题材", book.prompt_pack),
             ("选定高概念", selected),
@@ -145,7 +163,8 @@ def prepare(client, book, out, assets, design=False):
             ("已有只读设计", values),
         ]
         previous_error = ""
-        for redo in range(6):
+        alignment = []
+        for redo in range(4 if card else 6):
             extra = (
                 [("关键结构重试", previous_error + "。请给完整人物卡，保留 voice/desire，不要默认空卡。")]
                 if redo
@@ -156,10 +175,16 @@ def prepare(client, book, out, assets, design=False):
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             try:
                 validate_bible(bible)
+                if card:
+                    drift = differences(bible, card, locked)
+                    alignment.append(dict(stage="plan-q1-prepare", regeneration=redo, differences=drift))
+                    if drift and redo < 3:
+                        previous_error = "卡片锁定字段不一致：" + ", ".join(drift) + "；以用户卡片为准，不能换故事。"
+                        continue
                 break
             except ValueError as exc:
                 previous_error = str(exc)
-                if redo == 5:
+                if redo == (3 if card else 5):
                     raise
         bible["canon"] = profile["canon"]
         bible["initial_dashboard"].update(
@@ -203,8 +228,14 @@ def prepare(client, book, out, assets, design=False):
             mapping = {}
             for c in bible["characters"]:
                 name = c["name"]
-                if name and (
-                    name[-2:] not in {n[-2:] for n in pool} or name in used or any(name[-2:] == n[-2:] for n in used)
+                if (
+                    name
+                    and not (card and name in json.dumps(card, ensure_ascii=False))
+                    and (
+                        name[-2:] not in {n[-2:] for n in pool}
+                        or name in used
+                        or any(name[-2:] == n[-2:] for n in used)
+                    )
                 ):
                     mapping[name] = (name[:-2] or name[:1]) + next(
                         n[-2:] for n in pool if not any(n[-2:] == u[-2:] for u in used)
@@ -221,6 +252,11 @@ def prepare(client, book, out, assets, design=False):
                         json.dumps(generated, ensure_ascii=False),
                     )
                 )
+        if card:
+            corrected = differences(generated[0], card, locked)
+            generated = list(enforce(*generated, card, locked))
+            generated[0]["canon"]["seed"] = card["title"]
+            record(Path(out), alignment, corrected)
         validate_bible(generated[0])
         for i, path in enumerate(paths):
             if values[i] is None:

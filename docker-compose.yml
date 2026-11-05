@@ -14,7 +14,7 @@ services:
     build:
       context: .
       dockerfile: engine/Dockerfile
-    image: bestseller-bookweb:latest
+    image: ${BOOKWEB_IMAGE:-bestseller-bookweb:latest}
     restart: unless-stopped
     environment:
       BOOKS_DIR: /books

@@ -119,6 +119,7 @@ async function restoreTopic(id, entry) {
   $('idea').value = input.idea || '';
   $('channel').value = input.channel || '';
   $('length').value = [...$('length').options].some((o) => o.value === String(input.chapters)) ? String(input.chapters) : 'custom';
+  lengthEstimate();
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(id), 2000);
   step(2);
   text('restore-status', '已恢复。请重新点击一个候选，再点“开始写作”。');
@@ -205,7 +206,7 @@ function renderTopics(data) {
  saveTopic(data);
  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
  $('candidate-section').hidden = !candidates.length;
- const renderKey = JSON.stringify([candidates, data.collisions || []]);
+ const renderKey = JSON.stringify([candidates.map(({ scores, ...card }) => card), data.collisions || []]);
  if (state.topicRenderKey !== renderKey) {
   state.topicRenderKey = renderKey;
   state.candidates = candidates;
@@ -258,6 +259,13 @@ function renderTopics(data) {
   for (const row of data.collisions) notes.append(el('p', `${row.title} · ${(row.reasons || []).join('；')}（已剔除）`));
   $('candidates').append(notes);
  }
+ candidates.forEach((candidate, index) => {
+  const scores = candidate.scores || {};
+  const node = $('candidates').children[index]?.querySelector('.candidate-scores');
+  if (node) node.textContent = '判官四轴（参考）：' +
+   ['不可补全', '点击欲', '长篇引擎', '好懂'].map((k) => `${k} ${scores[k] ?? '—'}`).join(' · ');
+ });
+ state.candidates = candidates;
  const status = String(data.status || '').toLowerCase();
  const failed = /failed|error|cancelled|quota_exhausted/.test(status);
  const done = /^(ready|complete|completed|done|success|succeeded)$/.test(status);
@@ -267,8 +275,8 @@ function renderTopics(data) {
   failed
    ? [statusLabel(data), runtimeInfo(data) || printable(data.message || '选题生成失败，原始记录已保留。')].join(' · ')
    : done
-     ? `实际展示 ${candidates.length} 个候选。${data.notice || ''}`
-     : status === 'waiting' ? `等待接口 · ${runtimeInfo(data)}` : '选题正在构思中，每 2 秒更新…',
+     ? `实际展示 ${candidates.length} 个候选。${data.progress || ''} · ${data.judge_status || ''}。${data.notice || ''}`
+     : status === 'waiting' ? `等待接口 · ${runtimeInfo(data)}` : `${data.progress || '市场数据'} · 每 2 秒更新…`,
  );
  const usage = data.usage || {};
  text(
@@ -281,7 +289,7 @@ function renderTopics(data) {
  text('candidate-help', `共 ${candidates.length} 个候选 · 请亲自点选一个；参考分不能代替读者判断。`);
  $('generate-topics').disabled = !done && !failed;
  updateCreate();
- return !done && !failed;
+ return status === 'ready' || (!done && !failed);
 }
 async function pollTopic(id) {
  if (state.topic !== id) return;
@@ -333,6 +341,7 @@ async function submitTopics(direction) {
   state.topicReady = false;
   state.topicRenderKey = null;
   step(2);
+  lengthEstimate();
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(data.id), 2000);
  } catch (error) {
   if (state.topicEpoch === epoch) {
@@ -353,11 +362,13 @@ for (const id of ['genre', 'chapters', 'idea', 'channel'])
  $(id).addEventListener('input', () => {
   invalidateTopic();
   $('generate-topics').disabled = !state.config;
+  lengthEstimate();
  });
 $('length').addEventListener('change', () => {
  if ($('length').value !== 'custom') $('chapters').value = $('length').value;
  invalidateTopic();
  $('generate-topics').disabled = !state.config;
+ lengthEstimate();
 });
 $('chapters').addEventListener('input', () => {
  $('length').value = [...$('length').options].some((o) => o.value === $('chapters').value) ? $('chapters').value : 'custom';
@@ -393,7 +404,9 @@ $('book-form').addEventListener('submit', async (event) => {
  text('book-status', '正在创建书籍，请勿重复提交…');
  try {
   const result = await api('/api/books', {
-   ...(state.edits[state.candidate] ? { candidate_edit: state.edits[state.candidate] } : {}),
+   ...(state.edits[state.candidate] ? { candidate_edit: { ...state.candidates[state.candidate],
+    ...Object.fromEntries(Object.keys(cardFields).filter((k) => k in state.edits[state.candidate])
+     .map((k) => [k, state.edits[state.candidate][k]])) } } : {}),
    topic_id: state.topic,
    candidate: state.candidate,
    genre: state.topicInput.genre,
@@ -420,6 +433,17 @@ $('book-form').addEventListener('submit', async (event) => {
   updateCreate();
  }
 });
+function lengthEstimate() {
+ const n = Number($('chapters').value);
+ const ref = state.config?.length_estimate;
+ const message = n >= 1000 && ref
+  ? `尚未完整验证。按已完成 ${ref.chapters} 章记账线性估算：写作约 ${(n * ref.seconds_per_chapter / 3600).toFixed(1)} 小时，` +
+   `费用约 ${money(n * ($('polish').checked ? ref.cost_per_chapter : ref.writer_cost_per_chapter))}。` +
+   '自动去 AI 时另需润色等待；含未知用量上界估计。实际受接口、重试和长篇上下文影响。'
+  : n >= 1000 ? '尚未完整验证；暂无可用记账样本，时长与费用未知。' : '';
+ text('length-notice', message);
+ return message;
+}
 function step(n) {
  if (n === 3 && state.candidate === null) return;
  document.querySelectorAll('[data-pane]').forEach((p) => {
@@ -429,7 +453,7 @@ function step(n) {
  text('picked', currentCard(state.candidate)?.title || '请先选定故事');
  text(
   'estimate',
-  `费用按调用记录累计显示。正文完成后${$('polish').checked ? '自动继续去 AI 润色' : '保留草稿，可随时手动去 AI'}。`,
+  `费用按调用记录累计显示。${$('polish').checked ? '每章写完即自动去 AI' : '原稿直接成为终稿'}。${lengthEstimate()}`,
  );
 }
 function genreTags() {

@@ -16,6 +16,7 @@ from library import GENRES, costs, now, read, save, stage_costs
 from run_status import auto_deai, recover, runtime_view
 import pipeline
 from job_inputs import finite, check_card
+from topic_worker import run_topic
 
 
 class Queue:
@@ -114,6 +115,9 @@ class Queue:
                 "candidates",
                 "notice",
                 "judge_status",
+                "progress",
+                "first_cards_seconds",
+                "ranking",
                 "cost_usd",
                 "calls",
                 "seed",
@@ -133,7 +137,7 @@ class Queue:
         runtime = runtime_view(folder, data.get("status"))
         if runtime:
             public.update({k: runtime[k] for k in ("stage", "retry", "next_retry_at", "error") if k in runtime})
-            if runtime.get("kind") != "running":
+            if runtime.get("kind") != "running" and data.get("status") != "ready":
                 public["status"] = runtime["kind"]
         return public
 
@@ -145,7 +149,7 @@ class Queue:
                 raise ValueError("请先点击选择一个候选题")
             if topic.get("book_id"):
                 raise ValueError("此选题已开书，请到书库继续")
-            if topic.get("status") != "complete":
+            if topic.get("status") not in ("ready", "complete"):
                 raise ValueError("请等待选题完成")
             if data.get("model") != "flash":
                 raise ValueError("公开CLI仅支持 MiniMax Flash")
@@ -183,6 +187,7 @@ class Queue:
                 folder / "web.json",
                 dict(
                     title=candidate["title"],
+                    selected_card=candidate,
                     genre=topic["genre"],
                     chapters=chapters,
                     polish=data.get("polish", True) is True,
@@ -194,7 +199,9 @@ class Queue:
                 ),
             )
             topic["book_id"] = "webui/" + key
-            save(self.library.own / ".topics" / topic["id"] / "topic.json", topic)
+            from ideation.recovery import update_topic
+
+            update_topic(self.library.own / ".topics" / topic["id"], book_id=topic["book_id"])
             return dict(id="webui/" + key)
 
     def launch(self, folder, data, kind="book"):
@@ -455,25 +462,5 @@ class Queue:
 
 def topic_worker(folder, env):
     from deai.client import MiniMax
-    from tools.runtime_support import QuotaExhausted, write_runtime
 
-    folder = Path(folder)
-    data = read(folder / "topic.json")
-    try:
-        from ideation import run
-
-        save(folder / "runtime.json", {})
-        client = MiniMax(folder, env)
-        data = run(folder, client, folder.parents[2])
-    except Exception as exc:
-        data = read(folder / "topic.json", data)
-        runtime = read(folder / "runtime.json", {})
-        kind = "quota_exhausted" if isinstance(exc, QuotaExhausted) else "error"
-        if runtime.get("kind") not in ("quota_exhausted", "error"):
-            message = type(exc).__name__ + "：选题未完成，保留原始调用与费用"
-            write_runtime(folder, kind, runtime.get("stage") or "ideation", error=message)
-            runtime = read(folder / "runtime.json", {})
-        data.update(status=runtime["kind"], error=runtime.get("error", "选题未完成"))
-    else:
-        save(folder / "runtime.json", {})
-    save(folder / "topic.json", data)
+    return run_topic(folder, env, MiniMax)

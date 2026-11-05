@@ -64,6 +64,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     for c in people:
         card = dict(
             name=c["name"],
+            identity=c.get("identity", ""),
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
             address=c.get("address") or c["name"],
@@ -152,6 +153,9 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         if k in chapter
     }
     return [
+        ("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))
+        if bible.get("selected_card")
+        else ("故事", ""),
         ("本章章纲", pack(outline)[:2500]),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),
@@ -302,7 +306,15 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         ("编号正文", number_paragraphs(text)),
         ("旧状态", pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "clock")})[:500]),
         ("候选句S编号", pack(hits)[:1800]),
-        ("固定角色", pack([dict(name=c["name"], role=c.get("role")) for c in bible.get("characters", [])])),
+        (
+            "固定角色",
+            pack(
+                [
+                    dict(name=c["name"], identity=c.get("identity", ""), role=c.get("role"))
+                    for c in bible.get("characters", [])
+                ]
+            ),
+        ),
         (
             "末场可改范围",
             pack({k: v for k, v in scene_context(text).items() if k != "paragraphs"}) if outline.get("ending") else "",

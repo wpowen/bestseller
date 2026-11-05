@@ -1,15 +1,16 @@
 """Resumable topic workshop. Transport is injected by the CLI/web boundary."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 import fcntl
 import json
 from pathlib import Path
 import random
 import secrets
+import time
 from .filters import FIELDS, load, rotate, screen, shape
 from .market import snapshot, features
-from .recovery import StepFormatError, parse, read, save, step
+from .recovery import StepFormatError, parse, read, save, step, update_topic
 
 SCORES = ("不可补全", "点击欲", "长篇引擎", "好懂")
 
@@ -138,6 +139,8 @@ def run(folder, client, market_root):
         data = read(folder / "topic.json")
         if data.get("status") == "complete":
             return data
+        started = time.monotonic()
+        update_topic(folder, progress="市场数据")
         if "seed" not in data:
             data["seed"] = secrets.randbits(63)
             data["market"] = snapshot(market_root)
@@ -169,32 +172,20 @@ def run(folder, client, market_root):
                 for candidate, axis in zip(result, axes)
             ]
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            for batch in pool.map(generate, range(3)):
-                raw.extend(batch)
+        # All four independent groups start together; completion order never changes card order.
+        batches = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(generate, n): n for n in range(4)}
+            update_topic(folder, progress="构思第 0/4 组")
+            for future in as_completed(futures):
+                batches[futures[future]] = future.result()
+                update_topic(folder, progress=f"构思第 {len(batches)}/4 组")
+        raw = [card for n in sorted(batches) for card in batches[n]]
+        update_topic(folder, progress="筛选")
         cards, rejected = screen(raw, data["chapters"], data["genre"], data["history"], data["market"].get("books", []))
-        if len(select(cards, data)) < 12:
-            extra = generate(3)
-            raw.extend(extra)
-            cards, rejected = screen(
-                raw, data["chapters"], data["genre"], data["history"], data["market"].get("books", [])
-            )
         save(folder / "raw.json", raw)
         save(folder / "rejected.json", rejected)
-        calibration = read(Path(market_root) / ".market" / ("judge-" + data["genre"] + ".json"), {})
-        try:
-            ranked = judge(folder, cards, data["features"].get("anchors", []), data, client) if cards else []
-            if calibration.get("valid") and calibration.get("date") == data["market"].get("date"):
-                cards = select(
-                    sorted(ranked, key=lambda c: (bool(c.get("cliche")), -sum(c["scores"].values()))), data, True
-                )
-                status = "已校准，分数仍为参考"
-            else:
-                cards = select(ranked, data)
-                status = "参考；尺子未通过或无当日校准，按多样性轮转"
-        except StepFormatError:
-            cards = select(cards, data, True)
-            status = "判官格式失败，评分参考未知，按生成顺序展示"
+        cards = select(cards, data)
         for card in cards:
             shell = card["axes"]["shell"]
             count = data["features"].get("shell_counts", {}).get(shell)
@@ -207,9 +198,11 @@ def run(folder, client, market_root):
             else ""
         )
         data.update(
-            status="complete",
+            status="ready",
+            progress="排序（卡片已可选择）",
+            first_cards_seconds=round(time.monotonic() - started, 3),
             candidates=cards,
-            judge_status=status,
+            judge_status="排序中，卡片已可选择",
             rejected=rejected,
             cost_usd=client.estimate(),
             calls=len(rows),
@@ -220,5 +213,27 @@ def run(folder, client, market_root):
                 data["market"]["status"], data["market"]["status"]
             ),
         )
-        save(folder / "topic.json", data)
-        return data
+        update_topic(folder, **data)
+        try:
+            ranked = judge(folder, cards, data["features"].get("anchors", []), data, client) if cards else []
+            calibration = read(Path(market_root) / ".market" / ("judge-" + data["genre"] + ".json"), {})
+            calibrated = calibration.get("valid") and calibration.get("date") == data["market"].get("date")
+            ranking = sorted(range(len(ranked)), key=lambda i: -sum(ranked[i]["scores"].values())) if calibrated else []
+            status = "已校准，分数仍为参考" if calibrated else "参考；尺子未通过或无当日校准，按多样性轮转"
+        except StepFormatError:
+            ranked, ranking = cards, []
+            status = "判官格式失败，评分参考未知，按生成顺序展示"
+        except Exception:
+            # Ready cards remain usable if only the optional ranking request failed.
+            update_topic(folder, judge_status="排序未完成，卡片仍可选择", progress="排序未完成")
+            raise
+        return update_topic(
+            folder,
+            status="complete",
+            candidates=ranked,
+            ranking=ranking,
+            judge_status=status,
+            progress="排序完成（分数仅供参考）",
+            cost_usd=client.estimate(),
+            calls=len(read(folder / "http/ledger.json", [])),
+        )

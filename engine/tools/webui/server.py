@@ -30,6 +30,7 @@ def config(env):
     configured = bool(values.get(values.get("BESTSELLER__LLM__WRITER__API_KEY_ENV", "MINIMAX_API_KEY")))
     return dict(
         version=__version__,
+        length_estimate=json.loads((ENGINE / "data/delivery_estimate.json").read_text()),
         genres=[dict(id=k, name=v) for k, v in GENRES.items()],
         models=[
             dict(

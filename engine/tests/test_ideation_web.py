@@ -32,12 +32,19 @@ class IdeationWebTests(WebFixture):
         return dict(data, chapters=50), folder
 
     def test_same_input_always_creates_new_batch_retaining_previous_folder(self):
-        first = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
-        self.child.poll.return_value = 0
-        second = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
-        self.assertNotEqual(first["id"], second["id"])
-        self.assertEqual(second["channel"], "男频")
-        self.assertEqual(self.queue.get_topic(first["id"]), first)
+        # Keep tick() from reconciling the exited fake worker during the snapshot comparison.
+        with self.queue.lock:
+            first = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
+            first_folder = self.lib.own / ".topics" / first["id"]
+            before = snapshot(first_folder)
+            self.child.poll.return_value = 0
+            second = self.queue.topic(dict(genre="cozy-mystery", chapters=50, idea="渡口", channel="男频"))
+            self.assertNotEqual(first["id"], second["id"])
+            self.assertEqual(second["channel"], "男频")
+            self.assertEqual(self.queue.get_topic(first["id"]), first)
+            self.assertEqual(snapshot(first_folder), before)
+            self.assertTrue((self.lib.own / ".topics" / second["id"] / "topic.json").is_file())
+            self.assertEqual(self.spawn.call_count, 2)
 
     def test_topic_has_no_money_cap_and_preserves_old_cost_ledger(self):
         ledger = self.lib.own / ".topics/old/http/ledger.json"

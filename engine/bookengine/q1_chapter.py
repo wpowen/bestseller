@@ -15,6 +15,7 @@ from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
 from .structure_planning import final_stage_start
+from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 
 REVISION = "growth-payoff-3"
 
@@ -81,6 +82,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     started = time.monotonic()
     calls_before = len(getattr(client, "calls", []))
     prefix = f"r2-ch{idx}"
+    state = dict(state, seen_characters=previous_cast(out, idx, bible, state))
     target = book.words_per_chapter
     canon = dict(bible["canon"], final_volume_start=final_stage_start(bible, book.chapters))
     bible = dict(bible, canon=canon)
@@ -108,6 +110,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         else outline.get("hook"),
         growth_target=vol.get("expected_dashboard", {}),
     )
+    outline = chapter_cast(outline, bible, state["seen_characters"])
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
     if book.style_reference:
@@ -140,6 +143,14 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     raw, failed, _ = extract_state(client, prefix + "-finish", text, state, bible, outline, rows)
     initial_failed = failed
     original = text
+    original_raw = deepcopy(raw)
+    cast_before = cast_findings(original, bible, state, outline)
+    cast_target_ids = {
+        h["id"]
+        for h in prose_hits(original, bible, state)
+        if h.get("kind") in ("missing_introduction", "unregistered_alias")
+    }
+    cast_repaired = any(isinstance(e, dict) and e.get("id") in cast_target_ids for e in raw.get("edits", []))
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)
@@ -155,6 +166,15 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     failed = failed or bool((raw.get("scene") or raw.get("body")) and not changed)
     if changed:
         raw, failed, _ = extract_state(client, prefix + "-final-state", text, state, bible, outline, [], final=True)
+    if cast_repaired and (
+        failed
+        or not remaining_cast_problems(cast_findings(text, bible, state, outline))
+        < remaining_cast_problems(cast_before)
+    ):
+        text, raw, failed = original, original_raw, initial_failed
+        notes["cast_repair"] = "rolled_back"
+    elif cast_repaired:
+        notes["cast_repair"] = "rechecked"
     text, raw, failed, boundaries, handoff = repair_opening(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -204,6 +224,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         current["end_location"] = boundaries["end_location"]
     if boundaries["present_status"] == "grounded":
         current["present"] = boundaries["present"]
+    current["seen_characters"] = sorted(set(state["seen_characters"]) | set(seen_in(text, bible.get("characters", []))))
+    if not current["seen_characters"]:
+        current.pop("seen_characters")
     kinds = normalize_scenes(raw.get("scene_types"))
     events = [e for e in raw.get("events", []) or [] if isinstance(e, dict)]
     row = dict(
@@ -247,6 +270,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         opens_new_mainline=raw.get("opens_new_mainline") if outline["ending"] else False,
         **boundaries,
         handoff=handoff,
+        cast_findings=cast_findings(text, bible, state, outline),
     )
     row.update(
         name_drift_before=len(name_hits(original, bible)), name_drift=name_hits(text, bible), english=english_hits(text)

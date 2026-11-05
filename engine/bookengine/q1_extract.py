@@ -16,6 +16,7 @@ from .longutil import ask as raw_ask, recover_fields, long_context
 from .q1_plan import beat_slice
 from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
+from .q1_cast import cast_hits, cast_findings
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
 EXTRACT = yaml.safe_load((DATA.parent / "growth_extract.yaml").read_text())
@@ -68,6 +69,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
             address=c.get("address") or c["name"],
+            aliases=c.get("aliases", []),
         )
         card.update(
             {k: c.get(k) for k in ("active_desire", "personality_tags", "never_do", "desire", "fear") if c.get(k)}
@@ -123,6 +125,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "introductions",
             "payoff_due",
             "payoff_type",
             "payoff_criterion",
@@ -251,6 +254,7 @@ def ground(raw, text):
 
 def prose_hits(text, bible, state):
     hits = name_hits(text, bible)
+    hits += cast_hits(text, bible, state)
     hits += [
         dict(id=i, start=a, end=b, kind="english_or_injury", text=text[a:b])
         for i, (a, b) in enumerate(_sentences(text), 1)
@@ -294,6 +298,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     }
     contract["scene_start"] = scene_context(text)["start"] if outline.get("ending") else None
     sections = [
+        ("登场与称呼问题，合并本次定点修复", pack(cast_findings(text, bible, state, outline))),
         (
             "合法值",
             pack(
@@ -332,6 +337,12 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制结尾原句，"
         "提到但不在场者不列；不从旧状态或章纲推测。"
     )
+    if not final:
+        prompt += (
+            "\n人物首次出现需一句与卡片一致的身份或来历。missing_introduction/unregistered_alias与其他问题在本轮"
+            "统一用edits修复，id用候选句的S编号；补身份只在该句自然交代，卡外外号或自称改为卡片name/address/aliases。"
+            "未知身份不编造，不把英语role当身份。"
+        )
     if (
         not final
         and not outline.get("word_range", [1870, 2700])[0]

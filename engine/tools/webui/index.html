@@ -77,6 +77,7 @@
          <label>每章字数<input id="words" type="number" min="1500" max="4000" value="2300" required aria-describedby="words-hint">
           <small id="words-hint">1500–4000 字，建议 2300 字</small></label>
         </div>
+        <p id="length-notice" role="status" class="muted"></p>
         <label>一句话想法 <span class="muted">可留空</span>
          <textarea id="idea" rows="3" maxlength="3000" placeholder="一个人、一桩旧事，或一个忘不掉的画面…"></textarea></label>
         <button class="primary" id="generate-topics" disabled>生成新选题 →</button>
@@ -100,6 +101,7 @@
        <p id="topic-status" role="status"></p>
        <div id="candidate-section" hidden>
         <p id="candidate-help"></p>
+        <div id="topic-collisions"></div>
         <div id="candidates" class="candidates" role="radiogroup" aria-label="故事候选"></div>
        </div>
        <div class="toolbar">

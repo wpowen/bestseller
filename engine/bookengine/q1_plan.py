@@ -64,6 +64,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
         "volume",
         f"volume-{number}",
         [
+            ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
             ("固定人物卡", bible.get("characters", [])),
             (
                 "成长阶梯/当前仪表盘/收获与解法账本",
@@ -225,6 +226,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         f"chapters-{start}-{end}",
         [
             ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
+            ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
             ("固定人物卡", [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]),
             ("固定成长阶梯与当前仪表盘", [profile.get("canon"), state.get("dashboard")]),
             (

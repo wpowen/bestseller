@@ -373,6 +373,7 @@ class Library:
             chapters=self.chapters(folder),
             characters=[c for c in characters if isinstance(c, dict)],
             bible=text(self.safe(folder / "story_bible.yaml")),
+            selected_card=read(self.safe(folder / "web.json"), {}).get("selected_card"),
             bible_view=bible_data(self.safe(folder / "story_bible.yaml")),
             outline_view=[read(self.safe(p), {}) for p in sorted(folder.glob("writing_outlines/*.json"))],
             outline="\n\n".join(text(self.safe(p)) for p in sorted(folder.glob("writing_outlines/*.json"))),

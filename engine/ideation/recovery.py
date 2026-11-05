@@ -1,5 +1,7 @@
 """Durable, reason-bearing retries without changing prior accounting or steps."""
 
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -138,3 +140,14 @@ def step(folder, name, prompt, client, tokens, validate=None):
         save(path, state)
         return result
     raise StepFormatError(f"{name}: 6次坏返回后仍失败：{attempts[-1]['reason']}")
+
+
+def update_topic(folder, **patch):
+    """Merge worker updates with a simultaneous user's book selection."""
+    folder = Path(folder)
+    with (folder / ".topic.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = read(folder / "topic.json", {})
+        data.update(patch)
+        save(folder / "topic.json", data)
+        return data

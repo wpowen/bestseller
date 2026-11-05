@@ -35,7 +35,7 @@ def check_card(card, chapters, legacy=False):
     else:
         from ideation.filters import validate
 
-        errors = validate(card, chapters)
+        errors = validate(card, chapters, allow_names=True)
         if errors:
             raise ValueError("候选无效：" + "；".join(errors))
     return card

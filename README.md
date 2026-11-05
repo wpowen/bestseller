@@ -63,3 +63,31 @@ PYTHONPATH=.:tools /Volumes/MACSSD/owen-home/Documents/workspace/bestseller/.ven
 各包总行数不限；单 Python 文件不超过 500 行，前端单文件不超过 800 行、每行不超过 160 字符。Python 按 120 列格式化，超限按职责拆文件。禁止 import `bestseller`；bookengine 与 deai 互不导入。`check_scope.py` 保留独立性和禁用词检查。
 
 用户可见更新见 [CHANGELOG.md](CHANGELOG.md)。当前待办见 [engine/INBOX.md](engine/INBOX.md)，历史指令保存在 [指令归档](engine/reports/inbox-archive-2026-11.md)，实测证据见 [engine/reports/](engine/reports/)。旧框架只保存在 `legacy-final-20261104` 标签和 `legacy` 分支；当前代码不依赖它。千章级任务开始前须告知用户。
+
+## 交付体验与独立试跑
+
+按图操作见 [体验指南](docs/体验指南.md)。首次建议 5 章，自动去 AI 保持开启。选题先展示卡片，参考分随后补上；点选后，卡片的书名、人物、身份、场景、规则和开场成为固定事实。详情页“你选的选题”可随时对照。1000/2000 章会显示按历史记账推算的时长和费用，尚未完整验证。
+
+需要在已有 8787 服务旁独立试跑时，先把本仓库克隆到一个新目录并进入该目录，再复制你已配置好的 `.env`：
+
+```sh
+# 在新克隆目录内执行；把路径替换成你自己的已配置文件
+cp /你的配置目录/.env .env
+chmod 400 .env
+mkdir trial-books
+export BOOKWEB_PORT=8788
+export BOOKS_HOST_DIR="$PWD/trial-books"
+export BOOKWEB_IMAGE=bestseller-bookweb:deliver-trial
+docker compose -p bestseller-deliver up -d --build
+open http://127.0.0.1:8788
+```
+
+镜像标签、项目名、端口和书目录均与常用实例分开；不要在旧书仍在写作时重建原实例。网络正常且镜像基础层已有缓存时，首次构建一般需 1–3 分钟。只需 Docker Compose；无需在宿主机安装 Python 依赖。
+
+试跑结束，先下载需要的终稿，然后在同一终端、同一克隆目录执行：
+
+```sh
+docker compose -p bestseller-deliver down --rmi all
+```
+
+确认不再需要试跑书后，可删除整个新克隆目录（含 `.env` 和 `trial-books/`）。此操作不涉及原仓库、原书目录和 8787 服务。普通书房仍按上面的默认启动命令使用。

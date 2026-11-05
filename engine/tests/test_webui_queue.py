@@ -163,25 +163,26 @@ class QueueTests(WebFixture):
 
         def reply(stage):
             if stage == "judge":
-                return json.dumps([dict(id=n, scores=dict.fromkeys(SCORES, 7)) for n in range(18)])
+                return json.dumps([dict(id=n, scores=dict.fromkeys(SCORES, 7)) for n in range(12)])
             n = int(stage.rsplit("-", 1)[1])
-            return json.dumps(cards[n * 6 : (n + 1) * 6], ensure_ascii=False)
+            return json.dumps(cards[(n % 3) * 6 : ((n % 3) + 1) * 6], ensure_ascii=False)
 
         topic, folder, client = self.run_topic_worker(reply)
         self.assertEqual(topic["status"], "complete")
         self.assertEqual(len(topic["candidates"]), 12)
         self.assertEqual(
             Counter(c.kwargs["stage"] for c in client.call_args_list),
-            Counter({"generate-0": 1, "generate-1": 1, "generate-2": 1, "judge": 1}),
+            Counter({"generate-0": 1, "generate-1": 1, "generate-2": 1, "generate-3": 1, "judge": 1}),
         )
-        self.assertEqual(topic["calls"], 4)
-        self.assertAlmostEqual(topic["cost_usd"], 0.0003)
+        self.assertEqual(topic["calls"], 5)
+        self.assertAlmostEqual(topic["cost_usd"], 0.000375)
         for candidate in topic["candidates"]:
             self.assertIn("axes", candidate)
             self.assertEqual(set(candidate["scores"]), set(SCORES))
             self.assertIn("market_note", candidate)
         self.assertEqual(
-            {p.stem for p in (folder / "steps").glob("*.json")}, {"generate-0", "generate-1", "generate-2", "judge"}
+            {p.stem for p in (folder / "steps").glob("*.json")},
+            {"generate-0", "generate-1", "generate-2", "generate-3", "judge"},
         )
 
     def test_topic_worker_malformed_generation_uses_six_attempts_and_keeps_calls(self):
@@ -190,11 +191,13 @@ class QueueTests(WebFixture):
                 topic, folder, client = self.run_topic_worker(reply)
                 self.assertEqual(topic["status"], "error")
                 self.assertEqual(topic["candidates"], [])
-                # map may cancel generation tasks that have not started after an error.
+                # All four independent groups can start before the first format error.
                 self.assertGreaterEqual(client.call_count, 6)
-                self.assertLessEqual(client.call_count, 18)
+                self.assertLessEqual(client.call_count, 24)
                 stages = [call.kwargs["stage"] for call in client.call_args_list]
-                self.assertTrue(all(stage.startswith(("generate-0", "generate-1", "generate-2")) for stage in stages))
+                self.assertTrue(
+                    all(stage.startswith(("generate-0", "generate-1", "generate-2", "generate-3")) for stage in stages)
+                )
                 self.assertEqual(len(stages), len(set(stages)))
                 self.assertIn("StepFormatError", topic["error"])
                 self.assertEqual(topic["seed"], 17)

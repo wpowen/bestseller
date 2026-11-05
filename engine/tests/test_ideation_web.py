@@ -109,6 +109,23 @@ class IdeationWebTests(WebFixture):
         settings = library.read(self.lib.folder(result["id"]) / "book.yaml")
         self.assertEqual(json.loads(settings["user_input"]), original["candidates"][0])
 
+    def test_edited_ready_snapshot_survives_background_scores_and_retains_selected_card(self):
+        data, folder = self.rich_topic()
+        edited = card()
+        edited["title"] = "雨夜渡口"
+        edited["premise"] = "苏小满在渡口找回失踪者。"
+        topic = library.read(folder / "topic.json")
+        topic.update(status="ready")
+        topic["candidates"][0]["scores"] = {"点击欲": 8}
+        put(folder / "topic.json", topic)
+        result = self.queue.create(dict(data, candidate_edit=edited))
+        detail = self.lib.detail(result["id"])
+        selected = detail["selected_card"]
+        self.assertEqual(selected["title"], edited["title"])
+        self.assertEqual(selected["premise"], edited["premise"])
+        self.assertEqual(selected["scores"], {"点击欲": 8})
+        self.assertEqual(library.read(self.lib.folder(result["id"]) / "web.json")["selected_card"], selected)
+
     def test_invalid_edits_rejected_over_http_without_side_effects(self):
         data, _ = self.rich_topic()
         for edit in (

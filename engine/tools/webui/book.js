@@ -5,6 +5,7 @@ import { actionButtons, manage } from './library.js';
 import { chapters, copyText } from './reader.js';
 import { planning, checks } from './presentation.js';
 let tab = '目录';
+const selectedOpen = new Set();
 function renderDetail(selected = tab) {
  tab = selected;
  const b = state.book.meta;
@@ -28,6 +29,17 @@ function renderDetail(selected = tab) {
  info.append(usage);
  if (b.finished_estimated) info.append(el('small', '完成时间按最后一章终稿的保存时间显示。'));
  if (b.owned) info.append(button('删除', () => manage(b, 'delete'), 'danger'));
+ const chosen = state.book.selected_card;
+ if (chosen) {
+  const card = el('details', null, 'panel');
+  card.open = selectedOpen.has(b.id);
+  card.addEventListener('toggle', () => card.open ? selectedOpen.add(b.id) : selectedOpen.delete(b.id));
+  card.append(el('summary', '你选的选题'), el('h3', chosen.title));
+  for (const key of ['hook', 'premise', 'golden_finger_rule', 'opening', 'engine'])
+   if (chosen[key]) card.append(el('p', chosen[key]));
+  if (chosen.axes) card.append(el('p', `熟壳：${chosen.axes.shell} · 新变量：${chosen.axes.variable}`));
+  info.append(card);
+ }
  $('book-hero').replaceChildren(cover, info);
  $('book-tabs').replaceChildren(
   ...['目录', '故事圣经', '章纲', '检测报告（参考）', '导出'].map((t) =>

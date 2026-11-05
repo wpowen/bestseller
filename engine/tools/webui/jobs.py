@@ -255,7 +255,7 @@ class Queue:
             save(ledger, paid)
             shutil.rmtree(folder)
         elif action == 'rename':
-            save(folder / 'web.json', dict(data, title=title.strip()))
+            save(folder / 'web.json', dict(data, display_title=title.strip()))
         else:
             target.parent.mkdir(exist_ok=True)
             folder.rename(target)

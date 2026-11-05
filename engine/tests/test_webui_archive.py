@@ -36,12 +36,12 @@ class ArchiveTests(WebFixture):
         folder = self.book(status='complete')
         put(folder / 'story_bible.yaml', 'title: 圣经旧书名\n')
         before = snapshot(self.lib.root)
-        for title in (None, '', '圣经旧书名', 'wrong'):
+        for title in (None, '', '潮汐 <归途>', 'wrong'):
             with self.subTest(title=title), self.assertRaises(ValueError):
                 self.action('delete', title=title)
             self.assertEqual(snapshot(self.lib.root), before)
         status, _, body = self.request('/api/action', method='POST', data={
-            'id': 'webui/story', 'action': 'delete', 'title': '潮汐 <归途>'})
+            'id': 'webui/story', 'action': 'delete', 'title': '圣经旧书名'})
         self.assertEqual(status, 200, body)
         self.assertFalse(folder.exists())
         self.assertEqual(json.loads((self.lib.own / '.ops.log').read_text())['action'], 'delete')
@@ -86,6 +86,15 @@ class ArchiveTests(WebFixture):
         with self.assertRaises(ValueError):
             self.action('restore', 'webui/.archive/story')
         self.assertEqual(snapshot(self.lib.root), before)
+
+    def test_display_title_prefers_rename_then_bible_then_topic_card(self):
+        folder = self.book(status='complete')
+        self.assertEqual(self.lib.detail('webui/story')['meta']['title'], '潮汐 <归途>')
+        put(folder / 'story_bible.yaml', 'title: 《写作中定下的书名》\n')
+        self.assertEqual(self.lib.detail('webui/story')['meta']['title'], '《写作中定下的书名》')
+        self.action('rename', title='用户改的名')
+        self.assertEqual(self.lib.detail('webui/story')['meta']['title'], '用户改的名')
+        self.assertEqual(json.loads((folder / 'web.json').read_text())['title'], '潮汐 <归途>')
 
     def test_rename_changes_web_title_only_and_checks_length(self):
         folder = self.book(status='complete')

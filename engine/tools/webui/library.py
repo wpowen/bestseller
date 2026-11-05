@@ -162,7 +162,7 @@ class Library:
         run = read(self.safe(folder / 'run.json'), {}); web = read(self.safe(folder / 'web.json'), {})
         rows = self.chapters(folder); book = run.get('book', {})
         bible = bible_data(self.safe(folder / 'story_bible.yaml'))
-        title = web.get('title') or bible.get('title') or folder.name
+        title = web.get('display_title') or bible.get('title') or web.get('title') or folder.name
         total = book.get('chapters', web.get('chapters', len(rows)))
         owned = folder.parent in (self.own, self.own / '.archive') and bool(web)
         state = web.get('status', run.get('status', 'unknown')) if owned else run.get('status', 'unknown')

@@ -23,14 +23,21 @@ def _ask(client, kind, key, sections, redo=False):
 
     template = DATA["schemas"][kind]
     if kind == "prepare" and any(k == "用户锁定事实，只可扩写不可替换" for k, _ in sections):
+        selection = next(v for k, v in sections if k == "用户锁定事实，只可扩写不可替换")
+        fixed, locked = selection["card"], selection["facts"]
         template = dict(
             template,
             bible=dict(
                 template["bible"],
-                opening="",
-                hook="",
-                axes={},
-                characters=[dict(template["bible"]["characters"][0], identity="")],
+                title=fixed["title"],
+                opening=fixed.get("opening", ""),
+                hook=fixed.get("hook", ""),
+                axes=fixed.get("axes", {}),
+                world=dict(template["bible"]["world"], setting=locked["setting"]),
+                power=dict(
+                    template["bible"]["power"], object=locked["object"], rule=fixed.get("golden_finger_rule", "无")
+                ),
+                characters=[dict(template["bible"]["characters"][0], identity=locked["identity"])],
             ),
         )
     schema = pack(template)
@@ -244,8 +251,9 @@ def prepare(client, book, out, assets, design=False):
                         or any(name[-2:] == n[-2:] for n in used)
                     )
                 ):
-                    mapping[name] = (name[:-2] or name[:1]) + next(
-                        n[-2:] for n in pool if not any(n[-2:] == u[-2:] for u in used)
+                    mapping[name] = next(
+                        ((name[:-2] or name[:1]) + n[-2:] for n in pool if not any(n[-2:] == u[-2:] for u in used)),
+                        name,
                     )
                     used.add(mapping[name])
                 else:

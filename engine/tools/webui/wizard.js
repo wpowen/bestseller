@@ -445,7 +445,7 @@ function lengthEstimate() {
  const ref = state.config?.length_estimate;
  const message = n >= 1000 && ref
   ? `尚未完整验证。按已完成 ${ref.chapters} 章记账线性估算：写作约 ${(n * ref.seconds_per_chapter / 3600).toFixed(1)} 小时，` +
-   `费用约 ${money(n * ($('polish').checked ? ref.cost_per_chapter : ref.writer_cost_per_chapter))}。` +
+   `费用约 $${(n * ($('polish').checked ? ref.cost_per_chapter : ref.writer_cost_per_chapter)).toFixed(2)}。` +
    '自动去 AI 时另需润色等待；含未知用量上界估计。实际受接口、重试和长篇上下文影响。'
   : n >= 1000 ? '尚未完整验证；暂无可用记账样本，时长与费用未知。' : '';
  text('length-notice', message);

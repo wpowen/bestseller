@@ -1,6 +1,7 @@
 """User-selected story facts outrank concept tournaments and name suggestions."""
 
 import json
+import re
 from .q1_schema import model_value
 from .storage import save
 
@@ -15,8 +16,13 @@ def selected_card(book):
     return card if isinstance(card, dict) and all(isinstance(card.get(k), str) for k in ("title", "premise")) else {}
 
 
+def compact(text):
+    return re.sub(r"[\s，。；、,:：]+", "", text)
+
+
 def facts(client, card):
     source = json.dumps(card, ensure_ascii=False)
+    canonical = compact(source)
     schema = dict(
         name="",
         identity="",
@@ -30,7 +36,7 @@ def facts(client, card):
             raise ValueError("须返回卡片事实对象")
         for key in ("name", "identity", "setting", "object"):
             text = value.get(key)
-            if not isinstance(text, str) or (text and text not in source):
+            if not isinstance(text, str) or (text and compact(text) not in canonical):
                 raise ValueError("事实必须逐字来自卡片：" + key)
         if len(value.get("name", "")) > 8:
             raise ValueError("只提取姓名，不能把职业并入姓名")
@@ -40,7 +46,7 @@ def facts(client, card):
             if (
                 not isinstance(terms, list)
                 or not terms
-                or any(not isinstance(t, str) or not t or t not in source for t in terms)
+                or any(not isinstance(t, str) or not t or compact(t) not in canonical for t in terms)
             ):
                 raise ValueError("每组关键词须为卡片原文的非空词组：" + key)
 
@@ -66,8 +72,8 @@ def differences(bible, card, locked):
         errors.append("name")
     targets = dict(identity=hero, setting=bible.get("world"), object=bible.get("power"), rule=bible.get("power"))
     for key, target in targets.items():
-        text = json.dumps(target, ensure_ascii=False)
-        if any(term not in text for term in locked["keywords"][key]):
+        text = compact(json.dumps(target, ensure_ascii=False))
+        if any(compact(term) not in text for term in locked["keywords"][key]):
             errors.append(key)
     for key in ("opening", "hook"):
         if card.get(key) and bible.get(key) != card[key]:

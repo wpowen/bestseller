@@ -178,3 +178,45 @@ def test_first_group_is_selectable_before_slowest_generation_finishes(tmp_path):
         finally:
             release.set()
         assert future.result()["candidates"][0]["title"] == early["candidates"][0]["title"]
+
+
+def test_unnamed_card_recovery_uses_the_same_assigned_cast(tmp_path):
+    selected = card(
+        premise="码头修伞匠想找回姐姐。", opening="修伞匠在码头撑开旧伞。", golden_finger_rule="旧伞只能挡一次雨。"
+    )
+    locked = dict(
+        name="",
+        identity="修伞匠",
+        setting="码头",
+        object="旧伞",
+        keywords=dict(identity=["修伞匠"], setting=["码头"], object=["旧伞"], rule=["一次雨"]),
+    )
+    wrong = dict(
+        bible=bible(),
+        threads={"threads": [dict(id="main", kind="main", beats=[dict(volume=1, description="陆惊山救姐姐")])]},
+    )
+    client = ScriptedClient(
+        tmp_path, [json.dumps(locked, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 4
+    )
+    book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
+    saved_bible, saved_threads, _ = prepare(client, book, tmp_path, ROOT / "config")
+    (tmp_path / "threads.yaml").unlink()
+    recovered_bible, recovered_threads, _ = prepare(ScriptedClient(tmp_path, []), book, tmp_path, ROOT / "config")
+    assert recovered_bible == saved_bible
+    assert recovered_threads == saved_threads
+
+
+def test_selected_facts_allow_whitespace_changes_in_copied_keywords(tmp_path):
+    from bookengine.selected_card import facts
+
+    selected = card(premise="糕点师沈禾在老街找哥哥。", golden_finger_rule="铜模只能复原 一种糕点，代价是忘记童年。")
+    expected = dict(
+        name="沈禾",
+        identity="糕点师",
+        setting="老街",
+        object="铜模",
+        keywords=dict(identity=["糕点师"], setting=["老街"], object=["铜模"], rule=["复原一种糕点", "忘记童年"]),
+    )
+    client = ScriptedClient(tmp_path, [json.dumps(expected, ensure_ascii=False)])
+    assert facts(client, selected) == expected
+    assert len(client.calls) == 1

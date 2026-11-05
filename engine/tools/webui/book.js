@@ -4,6 +4,7 @@ import {
 import { actionButtons, manage } from './library.js';
 import { chapters, copyText } from './reader.js';
 let tab = '目录';
+const selectedOpen = new Set();
 function renderDetail(selected = tab) {
  tab = selected;
  const b = state.book.meta;
@@ -26,6 +27,8 @@ function renderDetail(selected = tab) {
  const chosen = state.book.selected_card;
  if (chosen) {
   const card = el('details', null, 'panel');
+  card.open = selectedOpen.has(b.id);
+  card.addEventListener('toggle', () => card.open ? selectedOpen.add(b.id) : selectedOpen.delete(b.id));
   card.append(el('summary', '你选的选题'), el('h3', chosen.title));
   for (const key of ['hook', 'premise', 'golden_finger_rule', 'opening', 'engine'])
    if (chosen[key]) card.append(el('p', chosen[key]));

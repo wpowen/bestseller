@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import tempfile
 import yaml
+from book_cache import BookCache
 from tools.chapter_outputs import committed, finalized
 
 GENRES = {
@@ -145,6 +146,7 @@ class Library:
         self.read_only = read_only
         self.root = Path(root).resolve()
         self.own = self.root / "webui"
+        self._cache = BookCache(self.safe)
         if not read_only:
             self.safe(self.own).mkdir(parents=True, exist_ok=True)
 
@@ -239,7 +241,13 @@ class Library:
             )
         return result
 
+    def _costs(self, folder):
+        return self._cache.get(folder, "costs", lambda: (costs(folder), costs(folder, include_final=False)["cost"]))
+
     def meta(self, folder):
+        return self._cache.get(folder, "meta", lambda: self._meta(folder))
+
+    def _meta(self, folder):
         from run_status import auto_deai, runtime_view
 
         run = read(self.safe(folder / "run.json"), {})
@@ -257,8 +265,8 @@ class Library:
         if runtime.get("kind") in ("waiting", "quota_exhausted", "error"):
             state = runtime["kind"]
         elapsed = run.get("execution_seconds", run.get("wall_seconds", 0)) or 0
-        stat = costs(folder)
-        writer, deai = stage_costs(folder, web)
+        stat, writer = self._costs(folder)
+        deai = round(max(0, stat["cost"] - writer - web.get("external_polish_cost", 0)), 9) if web.get("polish") else 0
         scores = [r["report"].get("after_score") for r in rows if isinstance(r.get("report"), dict)]
         scores = [x for x in scores if isinstance(x, (int, float)) and math.isfinite(x)]
         info = {r["number"]: {k: r[k] for k in ("number", "title", "status", "words")} for r in rows}
@@ -326,11 +334,18 @@ class Library:
             for folder in base.glob("*"):
                 if folder.name.startswith(".") or not folder.is_dir() or folder.is_symlink():
                     continue
-                charge = sum(stage_costs(folder, read(self.safe(folder / "web.json"), {})))
+                web = read(self.safe(folder / "web.json"), {})
+                stat, writer = self._costs(folder)
+                deai = (
+                    round(max(0, stat["cost"] - writer - web.get("external_polish_cost", 0)), 9)
+                    if web.get("polish")
+                    else 0
+                )
+                charge = writer + deai
                 key = "webui/" + folder.name
                 paid[key] = dict(charged=max(charge, paid.get(key, {}).get("charged", 0)))
         return sum(r["charged"] for r in paid.values()) + sum(
-            costs(self.safe(p))["cost"] for p in self.safe(self.own / ".topics").glob("*") if p.is_dir()
+            self._costs(self.safe(p))[0]["cost"] for p in self.safe(self.own / ".topics").glob("*") if p.is_dir()
         )
 
     def detail(self, key):

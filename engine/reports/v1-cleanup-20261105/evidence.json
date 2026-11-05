@@ -1,0 +1,130 @@
+{
+  "replay": {
+    "files": 40,
+    "byte_identical": true,
+    "stage_count": 8,
+    "combined_sha256": "3ff8b7f8a1e8f6fdc1a03b3552df9511ae9dc12702f51e74d4ea4b021d688850"
+  },
+  "unchanged_production_definitions": 321,
+  "api_benchmark": {
+    "before": {
+      "fixture": {
+        "books": 5,
+        "chapters": 150,
+        "body_chars": 2200,
+        "body_cjk_min": 1906,
+        "body_cjk_max": 1907,
+        "final_chapters": 119,
+        "topic_batches": 2,
+        "archived_books": 0,
+        "root_http_ledgers": 5,
+        "final_http_ledgers": 119,
+        "files": 854
+      },
+      "cold": {
+        "samples_ms": [
+          86.567875,
+          123.452958,
+          112.086042
+        ],
+        "count": 3,
+        "mean_ms": 107.36895833333334,
+        "median_ms": 112.086042,
+        "min_ms": 86.567875,
+        "max_ms": 123.452958,
+        "p95_ms": 123.452958
+      },
+      "warm": {
+        "samples_ms": [
+          92.315542,
+          118.957459,
+          91.01575,
+          103.426583,
+          113.724875,
+          121.024167,
+          131.863834,
+          95.878333,
+          98.632125,
+          94.660834,
+          106.124917,
+          87.588708,
+          93.5125,
+          93.889333,
+          91.656125,
+          85.22675,
+          86.323709,
+          85.05675,
+          89.896459,
+          90.867083
+        ],
+        "count": 20,
+        "mean_ms": 98.5820918,
+        "median_ms": 93.7009165,
+        "min_ms": 85.05675,
+        "max_ms": 131.863834,
+        "p95_ms": 121.024167
+      },
+      "cold_definition": "Fresh Library per request; imports and fixture creation excluded; OS page cache not flushed"
+    },
+    "after": {
+      "fixture": {
+        "books": 5,
+        "chapters": 150,
+        "body_chars": 2200,
+        "body_cjk_min": 1906,
+        "body_cjk_max": 1907,
+        "final_chapters": 119,
+        "topic_batches": 2,
+        "archived_books": 0,
+        "root_http_ledgers": 5,
+        "final_http_ledgers": 119,
+        "files": 854
+      },
+      "cold": {
+        "count": 3,
+        "samples_ms": [
+          146.5565,
+          144.771833,
+          160.539209
+        ],
+        "median_ms": 146.5565,
+        "mean_ms": 150.622514,
+        "p95_ms": 160.539209,
+        "min_ms": 144.771833,
+        "max_ms": 160.539209
+      },
+      "warm": {
+        "count": 20,
+        "samples_ms": [
+          32.589625,
+          33.909625,
+          35.50325,
+          34.743959,
+          34.64075,
+          37.061416,
+          31.570375,
+          37.13375,
+          37.270166,
+          38.063208,
+          31.986958,
+          33.306958,
+          34.128208,
+          32.496459,
+          33.44325,
+          33.192084,
+          32.688292,
+          30.387417,
+          32.56025,
+          32.972708
+        ],
+        "median_ms": 33.375104,
+        "mean_ms": 33.9824354,
+        "p95_ms": 37.270166,
+        "min_ms": 30.387417,
+        "max_ms": 38.063208
+      },
+      "cold_definition": "Fresh Library; OS page cache not flushed"
+    },
+    "canonical_response_sha256": "32856a5a2917845b3d719884cbf6dd005fe13d30eecee88771c25757382e1607"
+  }
+}

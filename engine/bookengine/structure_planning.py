@@ -147,6 +147,7 @@ def repair_structure(bible, threads, total, ask, out):
 def opponent_presence_issues(bible, batch):
     """Only check explicit planned presence, allowing background mentions after exit."""
     issues = []
+    canonical_names = {card.get("name") for card in rows(bible.get("characters")) if isinstance(card.get("name"), str)}
     for chapter in batch:
         number = integer(chapter.get("number"))
         present = set()
@@ -161,11 +162,9 @@ def opponent_presence_issues(bible, batch):
                 {},
             )
             card = next((c for c in rows(bible.get("characters")) if c.get("name") == name), {})
-            labels = (
-                [name, card.get("address"), *card.get("aliases", [])]
-                if isinstance(card.get("aliases", []), list)
-                else [name]
-            )
+            aliases = card.get("aliases", [])
+            aliases = [aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else []
+            labels = [name, *[alias for alias in aliases if isinstance(alias, str) and alias not in canonical_names]]
             if (
                 any(n in present for n in labels if isinstance(n, str))
                 and stage

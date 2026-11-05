@@ -176,3 +176,13 @@ def test_progress_new_thread_gap_starts_at_its_actual_stage_start():
     state, issues = progress({}, {}, 25, design(), threads, {})
     assert state["ledger"]["late"]["max_gap"] == 5
     assert not any("断更" in issue for issue in issues)
+
+
+def test_opponent_presence_does_not_treat_an_interlocutor_address_as_own_alias():
+    from bookengine.structure_planning import opponent_presence_issues
+
+    bible = design()
+    bible["characters"] = [dict(name="主角", role="protagonist"), dict(name="对手4", address="主角", aliases=["主角"])]
+    batch = [dict(number=1, scenes=[dict(characters=["主角", "对手1"])])]
+    assert opponent_presence_issues(bible, batch) == []
+    assert opponent_presence_issues(bible, [dict(number=1, scenes=[dict(characters=["对手4"])])])

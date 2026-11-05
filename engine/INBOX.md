@@ -253,7 +253,11 @@
 
 ## 2026-11-05-34：工程护栏——真实书库回归、书库写保护、删除可找回、密钥脱敏、评审核对（用户 2026-11-05 同上）
 
-状态：开发完成，待监工验收。报告见 [guardrails-34.md](reports/guardrails-34.md)。方案见 [prevention-plan-20261105.md](reports/prevention-plan-20261105.md) 第一节 D 和第二节 2。在独立工作树 `scratch/g34-worktree`、分支 `feat/guardrails` 上做，和第 33 条并行。
+状态：已验收，已合并进 main，8787 已部署（2026-11-05）。监工复验结果：
+- 真实书库运行前后快照对比，0 处改动；夹具 928KB，不含任何密钥。
+- 冒烟测试：快照上 4 本书、107 个请求通过；在完整真实书库副本上 287 个请求、110 章阅读器通过，最慢 453ms。
+- verify_review 把两条捏造都核成“找不到”；另外发现第 4 章引文不精确：评审写“退入北废矿道”，原文是“退入北侧的废矿道”，事件属实。
+- 已知小问题：`test_ideation_web.py::test_same_input_always_creates_new_batch_retaining_previous_folder` 跑全套时约 1/5 偶发失败，单独跑稳定，疑似后台线程改写 topic 状态的时序竞争，早于本条就存在，待修。
 
 文件归属：
 - **可改**：`engine/tools/webui/`、`engine/tools/` 下新增的护栏脚本、`engine/tests/conftest.py` 和网页相关测试、`README.md`、`docker-compose.yml`。

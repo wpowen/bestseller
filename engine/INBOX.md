@@ -263,7 +263,7 @@
 1. **真实书库回归集**
    - 把 `books/webui/` 现有 4 本书做成只读快照，存到 `engine/tests/fixtures/real_library/`。
    - 只保留网页读取需要的文件：`web.json`、`run.json`、`story_bible.yaml`、`chapters/`、正文、终稿和 `deai.json`、`calls.json` 摘要。不要 `responses/` 和 `http/` 原始调用；密钥和用量里的敏感字段脱敏。
-   - 体积控制在 20MB 以内；超出就裁到每本前 5 章，加最后一章。
+   - 回归要的是这些书的“形态”，不是全文。每本只保留前 3 章、最后一章，以及能体现各种状态的章（回滚用原稿的章、去 AI 未完成的章），总体积 ≤3MB。
    - 新增 `tools/real_library_smoke.py`：把快照复制到临时目录，起 webui，逐个请求书库 / 详情 / 阅读器每一章 / 五种导出 / 归档 → 恢复 → 删除。
    - 断言：
      - 没有 4xx/5xx；

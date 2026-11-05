@@ -748,7 +748,7 @@
 
 ## 2026-11-05-28：真书跑出来的两处断链——去 AI 单步失败停整本、续跑漏启去 AI（监工 2026-11-05 部署 26/27 后实跑发现）
 
-状态：开发完成，待监工验收。已在独立工作树 `scratch/fix28-worktree`、分支 `fix/pipeline-resume` 完成开发与假客户端回归；报告 [reports/fix28-20261105.md](reports/fix28-20261105.md)。未调用真实模型，未动生产容器、8787 或主仓库 `books/`；仅本地提交，到此停止，待监工验收、合并和部署。
+状态：已验收，已合并进 main，8787 已重新部署（2026-11-05）。监工部署后又发现一处：Docker 绑定挂载下，并发 os.replace 会让 ledger.json 短暂“不存在”，重试时被判成项目出错。已在 deai/io.py 的 read_json 里加短暂重试，并补测试。
 
 Evidence（证据）：
 1. 《我的宠物正在弑神》（`books/webui/403efb30-…`）：去 AI 写完第 1–3 章终稿后，整本停在 `error`。原因是 `polish: stage recall22-recheck-verb_mismatch-0: invalid response after 6 attempts: JSON incomplete paragraph coverage`，见 `web-polish.log`，堆栈在 `deai/flow.py:104/150`。一个规则的复检步骤解析失败，被当成“项目出错”，整本书的去 AI 都停了。

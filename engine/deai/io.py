@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
@@ -43,7 +44,17 @@ def parse_json(text):
 
 
 def read_json(path, default=None):
-    return parse_json(read_text(path)) if Path(path).exists() else default
+    # Docker bind mounts on macOS can briefly hide a file while another thread
+    # os.replace()s it; an existing file that vanishes for a moment is retried.
+    for attempt in range(6):
+        if not Path(path).exists():
+            return default
+        try:
+            return parse_json(read_text(path))
+        except FileNotFoundError:
+            if attempt == 5:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def save(root, name, value):

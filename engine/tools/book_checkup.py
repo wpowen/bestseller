@@ -147,6 +147,8 @@ def _stage_stats(bible, chapters):
 
 
 def _opponents(bible, chapters, stages):
+    from bookengine.retired_opponents import active_opponent_hits
+
     opponents = {
         c["name"]: c
         for c in _rows(bible.get("characters"))
@@ -174,6 +176,12 @@ def _opponents(bible, chapters, stages):
                 after_exit_mentions=[n for n in mentions if isinstance(exit_at, int) and n > exit_at],
                 status="Evidence",
                 active_appearance_status="Unknown",
+                active_after_exit_chapters=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in active_opponent_hits(c["text"], bible, c["number"]))
+                ],
+                active_appearance_basis="surface_agent_or_action; Inference",
             )
         )
     return result
@@ -358,7 +366,36 @@ def check_book(book, *, source="final"):
     bible = _read(book / "story_bible.yaml", unknown)
     chapters = _chapters(book, source, unknown)
     stages = _stage_stats(bible, chapters)
+    from bookengine.retired_opponents import location_regression
+    from bookengine.stage_transition import stage_transition
+    from bookengine.prose_repetition import clean_repetitions
+
+    regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
+    by_number = {c["number"]: c for c in chapters}
+    transitions = [
+        dict(row, chapters=[c["number"] - 1, c["number"]])
+        for c in chapters
+        if (
+            row := stage_transition(
+                bible,
+                c["number"],
+                clean_prose(c["text"])[0],
+                _boundary(by_number[c["number"] - 1], "end")[0] if c["number"] - 1 in by_number else None,
+            )
+        )
+    ]
     residue = [dict(chapter=c["number"], **clean_prose(c["text"])[1]) for c in chapters]
+    repetitions = [
+        dict(
+            chapter=c["number"],
+            **{
+                k: v
+                for k, v in clean_repetitions(clean_prose(c["text"])[0], remove_safe=False).items()
+                if k in ("counts", "records")
+            },
+        )
+        for c in chapters
+    ]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
@@ -372,6 +409,17 @@ def check_book(book, *, source="final"):
         antagonists=_opponents(bible, chapters, stages["distribution"]),
         title_keywords=_keywords(chapters),
         location_breaks=_breaks(chapters),
+        location_regressions=dict(count=len(regressions), issues=regressions),
+        stage_transitions=dict(
+            checks=transitions,
+            missing=[r["chapters"] for r in transitions if r["status"] == "missing"],
+            unknown=[r["chapters"] for r in transitions if r["status"] == "unknown"],
+        ),
+        repetition=dict(
+            sentence_repetitions=sum(r["counts"]["sentence_repetitions"] for r in repetitions),
+            adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
+            chapters=[r for r in repetitions if r["records"]],
+        ),
         format_residue=dict(
             total=sum(c["total"] for c in residue),
             chapters=[c for c in residue if c["total"]],
@@ -382,7 +430,7 @@ def check_book(book, *, source="final"):
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",
-            "Mentions include background references; active appearances are Unknown.",
+            "Active appearances use surface agent/action cues; unrecognized semantics remain Unknown.",
             "Continuity and introduction/alias issues are Inference, not semantic proof.",
             "Unregistered named characters and the meaning of dialogue remain Unknown.",
         ],
@@ -406,6 +454,9 @@ def write_checkup(book, *, source="final"):
 
 
 def main(argv=None):
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     parser = argparse.ArgumentParser(description="整书体检（参考）：只读书稿，仅写 book_checkup.json")
     parser.add_argument("book", type=Path)
     parser.add_argument("--source", choices=("final", "draft"), default="final")

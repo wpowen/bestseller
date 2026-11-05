@@ -9,11 +9,13 @@ import re
 from .q1_schema import integer, rows
 from .storage import save
 from .structure_planning import opponent_presence_issues
+from .stage_transition import planning_transition_issues
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
+STRUCTURE_CHECKS_VERSION = 2
 
 
 def title_terms(title, supplied=()):
@@ -148,7 +150,12 @@ def terminal_window(out, start, end):
         if set(mapped) != expected or len(chapters) != len(expected):
             continue
         stop = min(end, int(bounds[2]))
-        return dict(chapters=[deepcopy(mapped[n]) for n in range(start, stop + 1)], normalized=normalized, end=stop)
+        return dict(
+            chapters=[deepcopy(mapped[n]) for n in range(start, stop + 1)],
+            normalized=normalized,
+            end=stop,
+            structure_checks_version=report.get("structure_checks_version", 0),
+        )
     return None
 
 
@@ -165,7 +172,11 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
         attempts = report["attempts"][:resume]
     used = used_vocabulary(history)
     for retry in range(resume, 4):
-        issues = diversity_issues(history, current) + opponent_presence_issues(bible or {}, current)
+        issues = (
+            diversity_issues(history, current)
+            + opponent_presence_issues(bible or {}, current)
+            + planning_transition_issues(bible or {}, current)
+        )
         targets = sorted({n for issue in issues for n in issue["targets"]})
         attempts.append(dict(regeneration=retry, issues=issues, targets=targets))
         if retry == 3:
@@ -180,6 +191,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
                             scene["characters"] = [n for n in scene["characters"] if n not in issue["labels"]]
                     chapter.setdefault("background_only", []).append(issue["name"])
         report = dict(
+            structure_checks_version=STRUCTURE_CHECKS_VERSION,
             status="passed" if not issues else "failed_continued" if retry == 3 else "repairing",
             used=used,
             attempts=attempts,

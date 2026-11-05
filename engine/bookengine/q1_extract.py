@@ -11,12 +11,14 @@ from .endings import ending_candidates, scene_context, english_hits
 from .identity import name_hits
 from .precision import locate, _sentences
 from .polish_checks import scan
-from .serial_checks import adjacent, catch_hits
+from .serial_checks import catch_hits
 from .longutil import ask as raw_ask, recover_fields, long_context
 from .q1_plan import beat_slice
 from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
 from .q1_cast import cast_hits, cast_findings
+from .retired_opponents import stage_constraints
+from .prose_repetition import clean_repetitions
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -37,7 +39,7 @@ def ask(client, *args, **kwargs):
 
 
 def clean(text):
-    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(text)).strip()
+    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", text).strip()
 
 
 def body_of(value, client, cleaning=None):
@@ -131,6 +133,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "transition",
             "introductions",
             "payoff_due",
             "payoff_type",
@@ -161,6 +164,13 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    constraints = stage_constraints(bible, chapter["number"])
+    constraints["omitted_retired"] = 0
+    constraints["omitted_locations"] = 0
+    while len(pack(constraints)) > 1200 and (constraints["retired"] or constraints["departed_locations"]):
+        field = "retired" if constraints["retired"] else "departed_locations"
+        constraints[field].pop(0)
+        constraints["omitted_retired" if field == "retired" else "omitted_locations"] += 1
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),
@@ -169,7 +179,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
-        ("本章章纲", pack(outline)[:2500]),
+        ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),
@@ -261,6 +271,12 @@ def ground(raw, text):
 def prose_hits(text, bible, state):
     hits = name_hits(text, bible)
     hits += cast_hits(text, bible, state)
+    pending = clean_repetitions(text)["needs_repair"]
+    hits += [
+        dict(id=i, start=a, end=b, kind="prose_repetition", text=text[a:b])
+        for i, (a, b) in enumerate(_sentences(text), 1)
+        if any(a < r["end"] and b > r["start"] for r in pending)
+    ]
     hits += [
         dict(id=i, start=a, end=b, kind="english_or_injury", text=text[a:b])
         for i, (a, b) in enumerate(_sentences(text), 1)
@@ -352,6 +368,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     )
     if not final:
         prompt += (
+            "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
             "\n人物首次出现需一句与卡片一致的身份或来历。missing_introduction/unregistered_alias与其他问题在本轮"
             "统一用edits修复，id用候选句的S编号；补身份只在该句自然交代，卡外外号或自称改为卡片name/address/aliases。"
             "未知身份不编造，不把英语role当身份。"

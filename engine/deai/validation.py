@@ -13,16 +13,22 @@ def records(value, name):
     return rows
 
 
-def coverage(value, parts):
+def coverage(value, parts, partial=False):
     checked = value.get("checked_pids")
     require(isinstance(checked, list), "JSON checked_pids must cover every paragraph")
-    require(set(checked) == {part["pid"] for part in parts}, "JSON incomplete paragraph coverage")
+    expected = {part["pid"] for part in parts}
+    require(set(checked) <= expected if partial else set(checked) == expected, "JSON incomplete paragraph coverage")
 
 
-def validate_response(stage, value, data):
+def validate_response(stage, value, data, *, partial_coverage=False):
     if "paragraphs" in data and "examples" in data:
-        coverage(value, data["paragraphs"])
-        ids = {row["sid"] for part in data["paragraphs"] for row in part["sentences"]}
+        coverage(value, data["paragraphs"], partial=partial_coverage)
+        ids = {
+            row["sid"]
+            for part in data["paragraphs"]
+            if part["pid"] in value["checked_pids"]
+            for row in part["sentences"]
+        }
         for issue in records(value, "issues"):
             require(issue.get("sid") in ids, "JSON issue sid is outside the requested paragraphs")
             require(

@@ -60,7 +60,7 @@ class Session:
         self.warnings = []
         self.failure = None
 
-    def ask(self, stage, prompt, data, cap=4500):
+    def ask(self, stage, prompt, data, cap=4500, partial_coverage=False):
         previous = ""
         for attempt in range(6):
             self.calls += 1
@@ -93,7 +93,7 @@ class Session:
                 value = parse(raw)
                 from .validation import validate_response
 
-                validate_response(stage, value, data)
+                validate_response(stage, value, data, partial_coverage=partial_coverage)
                 return value
             except (ValueError, TypeError, KeyError) as exc:
                 previous = str(exc)
@@ -148,8 +148,13 @@ class Session:
 
             def read(parts, suffix):
                 try:
+                    # Multi-paragraph reads may return a valid subset; the
+                    # missing branch below then re-reads only the gaps.
                     value = self.ask(
-                        stage + "-" + kind + "-" + str(vote) + suffix, prompt, dict(payload, paragraphs=parts)
+                        stage + "-" + kind + "-" + str(vote) + suffix,
+                        prompt,
+                        dict(payload, paragraphs=parts),
+                        partial_coverage=len(parts) > 1,
                     )
                     issues = value.get("issues")
                     if isinstance(issues, list):

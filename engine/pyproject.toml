@@ -17,3 +17,7 @@ include = ["bookengine*", "deai*", "exporter*", "ideation*", "tools"]
 
 [tool.setuptools.package-data]
 deai = ["data/*.yaml"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["reports"]

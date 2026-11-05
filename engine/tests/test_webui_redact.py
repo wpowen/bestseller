@@ -54,10 +54,19 @@ def test_pytest_failure_and_capture_are_scrubbed(tmp_path):
     env = tmp_path / ".env"
     env.write_text("KEY=fake-pytest-secret-123456\n")
     (tmp_path / "test_failure.py").write_text(
-        "def test_failure():\n    print('fake-pytest-secret-123456')\n    raise ValueError('fake-pytest-secret-123456')\n"
+        "import logging\ndef test_failure():\n    logging.warning('fake-pytest-secret-123456')\n    print('fake-pytest-secret-123456')\n    raise ValueError('fake-pytest-secret-123456')\n"
     )
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--no-cov", str(tmp_path / "test_failure.py")],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--no-cov",
+            "--log-file",
+            str(tmp_path / "pytest.log"),
+            str(tmp_path / "test_failure.py"),
+        ],
         capture_output=True,
         text=True,
         timeout=20,
@@ -66,3 +75,4 @@ def test_pytest_failure_and_capture_are_scrubbed(tmp_path):
     assert result.returncode == 1
     assert "fake-pytest-secret-123456" not in result.stdout + result.stderr
     assert "[REDACTED]" in result.stdout
+    assert "fake-pytest-secret-123456" not in (tmp_path / "pytest.log").read_text()

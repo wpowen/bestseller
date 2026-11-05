@@ -15,6 +15,20 @@ _scrub = Redactor(
 )
 
 
+# FileHandler formats immediately, before pytest builds its report. Filter here
+# as well so --log-file and live logging cannot persist an unredacted message.
+import logging
+
+_format = logging.Formatter.format
+
+
+def _safe_format(self, record):
+    return _scrub(_format(self, record))
+
+
+logging.Formatter.format = _safe_format
+
+
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield

@@ -307,6 +307,10 @@ class Queue:
         for path in folder.rglob("*"):
             if path.is_symlink():
                 raise ValueError("书目录含符号链接")
+        if action == "delete":
+            from watcher_cleanup import stop_for_delete
+
+            stop_for_delete(self, folder, data)
         live = [i for i in self.processes.values() if i["folder"] == folder and i["p"].poll() is None]
         if data.get("status") in ("running", "polishing", "orphaned") or live:
             raise ValueError("运行中或孤立进程书籍不可操作")
@@ -354,6 +358,9 @@ class Queue:
             paid["webui/" + folder.name] = dict(costs(folder), charged=self.charge(folder))
             save(ledger, paid)
             shutil.rmtree(folder)
+            for key, item in list(self.processes.items()):
+                if item["folder"] == folder:
+                    del self.processes[key]
         elif action == "rename":
             save(folder / "web.json", dict(data, display_title=title.strip()))
         else:

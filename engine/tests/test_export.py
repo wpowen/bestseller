@@ -35,9 +35,12 @@ class ExportTests(unittest.TestCase):
                        for i in range(1, 11)]
         (self.book / 'run.json').write_text(json.dumps({'status': 'complete', 'book': {'chapters': 10}}))
         (self.book / 'book.md').write_text('# ' + self.title + '\n\n')
+        (self.book / 'final').mkdir()
         for i, (label, body) in enumerate(zip(self.labels, self.bodies), 1):
             (self.book / f'chapter-{i:03d}.md').write_text('## ' + label + '\n\n' + body + '\n\n')
             (self.book / f'chapter-{i:03d}.draft.md').write_text('初稿。\n')
+            (self.book / f'final/chapter-{i:03d}.md').write_text(body)
+            (self.book / f'final/chapter-{i:03d}.deai.json').write_text(json.dumps(dict(status='unchanged', complete=True)))
 
     def cli(self, *args, ok=True):
         result = subprocess.run([sys.executable, '-m', 'exporter', str(self.book), *args],
@@ -102,9 +105,10 @@ class ExportTests(unittest.TestCase):
     def test_draft_is_explicit_and_missing_final_never_falls_back(self):
         self.cli('--formats', 'txt', '--version', 'draft')
         self.assertEqual((self.book / 'exports/draft/book.txt').read_text().count('初稿。'), 10)
-        (self.book / 'chapter-005.md').unlink()
-        self.cli('--formats', 'txt', ok=False)
-        self.assertFalse((self.book / 'exports/final').exists())
+        (self.book / 'final/chapter-005.md').unlink()
+        result = self.cli('--formats', 'txt')
+        self.assertEqual(json.loads(result.stdout)['missing_chapters'], [5])
+        self.assertIn('缺少第 5 章', (self.book / 'exports/final/book.txt').read_text())
         (self.book / 'chapter-003.draft.md').unlink()
         self.cli('--formats', 'txt', '--version', 'draft', ok=False)
 
@@ -119,6 +123,7 @@ class ExportTests(unittest.TestCase):
 
     def test_fanqie_removes_markup_and_keeps_literal_punctuation(self):
         (self.book / 'chapter-001.md').write_text('## 第1章 灯/盐:*?\n\n# 灯\n**粗体**与_斜体_，`盐`。\n> 引用\n---\n[门](https://example.org)\n3 * 5 = 15，x_y，#号。\n\n')
+        (self.book / 'final/chapter-001.md').write_text((self.book / 'chapter-001.md').read_text().split('\n\n', 1)[1][:-2])
         self.cli('--formats', 'fanqie')
         files = sorted((self.book / 'exports/final/fanqie').glob('*.txt'))
         self.assertEqual(len(files), 10)
@@ -136,20 +141,34 @@ class ExportTests(unittest.TestCase):
 
     def test_invalid_formats_and_partial_book_fail_before_output(self):
         self.cli('--formats', 'pdf', ok=False)
-        (self.book / 'chapter-010.md').unlink()
-        self.cli('--formats', 'txt', ok=False)
-        self.assertFalse((self.book / 'exports').exists())
+        (self.book / 'final/chapter-010.md').unlink()
+        result = self.cli('--formats', 'txt')
+        self.assertEqual(json.loads(result.stdout)['missing_chapters'], [10])
 
     def test_polished_export_requires_every_completed_chapter(self):
-        final=self.book/'final';final.mkdir()
+        final=self.book/'final'
         for n in range(1,11):
             (final/f'chapter-{n:03d}.md').write_text(f'润色{n}正文。')
             (final/f'chapter-{n:03d}.deai.json').write_text(json.dumps(dict(status='unchanged',complete=True)))
         self.cli('--version','polished','--formats','txt')
         text=(self.book/'exports/polished/book.txt').read_text();self.assertIn('润色10正文。',text);self.assertNotIn('初稿',text)
         (final/'chapter-010.deai.json').write_text(json.dumps(dict(status='partial',complete=False)))
-        self.cli('--version','polished','--formats','epub',ok=False)
-        self.assertFalse((self.book/'exports/polished/book.epub').exists())
+        result = self.cli('--version','polished','--formats','epub')
+        self.assertEqual(json.loads(result.stdout)['missing_chapters'], [10])
+
+    def test_partial_then_complete_export_removes_obsolete_missing_notice(self):
+        final = self.book / 'final/chapter-010.md'
+        body = final.read_bytes()
+        final.unlink()
+        self.cli('--formats', 'md,fanqie')
+        out = self.book / 'exports/final'
+        self.assertEqual(len(list((out / 'fanqie').glob('*.txt'))), 10)
+        self.assertTrue((out / 'chapter-011.md').exists())
+        final.write_bytes(body)
+        self.cli('--formats', 'md,fanqie')
+        self.assertFalse((out / 'chapter-011.md').exists())
+        self.assertEqual(len(list((out / 'fanqie').glob('*.txt'))), 10)
+        self.assertFalse(any('导出说明' in p.name for p in (out / 'fanqie').glob('*.txt')))
 
 
 if __name__ == '__main__':

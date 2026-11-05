@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import threading
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
+from tools.chapter_outputs import committed, finished, has_final
 from .client import MiniMax, STOP, runtime_root
 from .io import chapters, process, summarize, read_text, read_json, save
 
@@ -31,6 +32,8 @@ def main(argv=None):
     run.add_argument('bookdir', type=Path, help='书目录或单个.md文件')
     run.add_argument('--env', type=Path, default=Path(__file__).resolve().parents[2] / '../../.env')
     run.add_argument('--watch', action='store_true')
+    run.add_argument('--pipeline', action='store_true', help='只读已完成章节，保留已有终稿，整书终稿齐全后退出')
+    run.add_argument('--original', action='store_true', help='不调用模型，已完成原文直接作为终稿')
     run.add_argument('--jobs', '--concurrency', type=int, choices=range(1, 5), default=1)
     run.add_argument('--chapters', type=chapter_range)
     run.add_argument('--model', choices=('MiniMax-M3.1-Flash', 'MiniMax-M3'), default='MiniMax-M3.1-Flash')
@@ -54,7 +57,8 @@ def main(argv=None):
         if STOP.is_set():
             raise InterruptedError('Interrupted')
         try:
-            return process(args.bookdir, number, source, args.env, args.dialogue_mode, polish, MiniMax, args.model)
+            options = dict(preserve=args.pipeline, original=args.original) if args.pipeline or args.original else {}
+            return process(args.bookdir, number, source, args.env, args.dialogue_mode, polish, MiniMax, args.model, **options)
         except (QuotaExhausted, ProjectError) as exc:
             with terminal_lock:
                 if not terminal:
@@ -76,6 +80,8 @@ def main(argv=None):
                 pending = []
                 for number, source in chapters(args.bookdir):
                     if args.chapters and int(number) not in args.chapters:
+                        continue
+                    if args.pipeline and (not committed(args.bookdir, number) or has_final(args.bookdir, number)):
                         continue
                     text = read_text(source)
                     if seen.get(number) == text:
@@ -103,7 +109,7 @@ def main(argv=None):
                                 if name == 'SUMMARY.md'
                                 else value,
                             )
-                if not args.watch:
+                if not args.watch or (args.pipeline and finished(args.bookdir)):
                     break
                 STOP.wait(2)
     except (InterruptedError, ProjectError, QuotaExhausted):

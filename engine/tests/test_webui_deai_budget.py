@@ -132,7 +132,7 @@ class DeaiBudgetTests(WebFixture):
         folder = self.completed(spent=.05, budget=1, deai_budget=.1)
         self.assertAlmostEqual(self.queue.spending(), .05, places=6)
         self.queue.action('webui/story', 'retry')
-        self.assertEqual(library.read(folder / 'web.json')['status'], 'queued_polish')
+        self.assertEqual(library.read(folder / 'web.json')['status'], 'queued')
         self.assertAlmostEqual(self.queue.spending(), .05, places=6)
 
     def test_global_unknown_does_not_block_deai_start_or_running_process(self):

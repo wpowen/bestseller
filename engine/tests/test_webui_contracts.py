@@ -98,7 +98,7 @@ class WebFixture(unittest.TestCase):
         put(folder / 'book.yaml', {'chapters': total})
         for n in range(1, total + 1):
             put(folder / f'chapter-{n:03d}.body.md', f'草稿{n}：她推开门。<script>危险</script> & 灯光。')
-            put(folder / f'chapters/{n:03d}.json', {'title': f'潮声{n}'})
+            put(folder / f'chapters/{n:03d}.json', {'title': f'潮声{n}', 'status': 'complete'})
             if final:
                 put(folder / f'final/chapter-{n:03d}.md', f'定稿{n}：她听见潮声。<灯> & 船。')
                 put(folder / f'final/chapter-{n:03d}.deai.json',
@@ -170,6 +170,7 @@ class DenyEngine(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'bookengine', 'deai', 'bestseller'}:
             raise AssertionError('forbidden engine import: ' + fullname)
 sys.meta_path.insert(0, DenyEngine())
+sys.path.insert(0, str(__import__('pathlib').Path(sys.argv[1]).parents[1]))
 sys.path.insert(0, sys.argv[1])
 import library, jobs, server
 sys.argv = [sys.argv[2], '--help']
@@ -217,16 +218,17 @@ class LibraryTests(WebFixture):
         row, = self.lib.detail('webui/story')['chapters']
         self.assertEqual((row['number'], row['draft']), (3, '旧版第三章正文'))
 
-    def test_offline_library_escapes_text_and_uses_final_with_draft_fallback(self):
+    def test_offline_library_escapes_final_text_without_draft_fallback(self):
         folder = self.book()
         (folder / 'final/chapter-002.md').unlink()
         before = snapshot(folder)
         page = self.lib.static()
         self.assertIn('定稿1', page)
-        self.assertIn('草稿2', page)
+        self.assertNotIn('草稿2', page)
+        self.assertIn('本章正在去 AI，完成后显示', page)
         self.assertNotIn('草稿1', page)
         self.assertNotIn('<script>', page)
-        self.assertIn('&lt;script&gt;', page)
+        self.assertIn('&lt;灯&gt;', page)
         self.assertEqual((self.lib.own / 'LIBRARY.html').read_text('utf-8'), page)
         self.assertEqual(snapshot(folder), before)
 
@@ -346,7 +348,7 @@ class HttpTests(WebFixture):
             (folder / ('book.' + fmt)).symlink_to(secret)
             with self.subTest(fmt=fmt):
                 status, _, body = self.download(fmt=fmt)
-                self.assertEqual(status, 400)
+                self.assertEqual(status, 200)
                 self.assertNotIn(b'OUTSIDE_SENTINEL', body)
 
     def test_chapter_symlink_and_parent_symlink_cannot_leak_text(self):
@@ -380,19 +382,20 @@ class HttpTests(WebFixture):
                 status, _, _ = self.request(path)
                 self.assertIn(status, (400, 404))
 
-    def test_draft_md_and_docx_are_exact_public_cli_exports(self):
+    def test_legacy_draft_query_downloads_only_final_outputs(self):
         folder = self.book()
         for fmt in ['md', 'docx']:
             with self.subTest(fmt=fmt):
                 status, headers, body = self.download(fmt=fmt)
                 self.assertEqual(status, 200)
-                self.assertEqual(body, (folder / ('book.' + fmt)).read_bytes())
-                self.assertIn('book-draft.' + fmt, headers['Content-Disposition'])
+                self.assertNotEqual(body, (folder / ('book.' + fmt)).read_bytes())
+                if fmt == 'md': self.assertIn('定稿1', body.decode())
+                self.assertIn('book-final.' + fmt, headers['Content-Disposition'])
                 self.assertEqual(int(headers['Content-Length']), len(body))
 
     def test_draft_txt_and_final_exports_never_mix_versions(self):
         self.book()
-        for version, expected, excluded in [('draft', '草稿', '定稿'), ('final', '定稿', '草稿')]:
+        for version, expected, excluded in [('draft', '定稿', '草稿'), ('final', '定稿', '草稿')]:
             with self.subTest(version=version):
                 status, _, body = self.download(version=version)
                 self.assertEqual(status, 200)
@@ -407,8 +410,9 @@ class HttpTests(WebFixture):
         (folder / 'final/chapter-002.md').unlink()
         for fmt in ['md', 'txt', 'docx']:
             with self.subTest(fmt=fmt):
-                status, _, _ = self.download(fmt=fmt, version='final')
-                self.assertEqual(status, 400)
+                status, headers, _ = self.download(fmt=fmt, version='final')
+                self.assertEqual(status, 200)
+                self.assertEqual(headers['X-Missing-Chapters'], '2')
 
     def test_retained_or_partial_polish_is_not_published_as_final(self):
         folder = self.book()
@@ -416,8 +420,9 @@ class HttpTests(WebFixture):
                        {'status': 'partial', 'complete': False}, {'status': 'error'}]:
             put(folder / 'final/chapter-001.deai.json', report)
             with self.subTest(report=report):
-                status, _, _ = self.download(version='final')
-                self.assertEqual(status, 400)
+                status, headers, _ = self.download(version='final')
+                self.assertEqual(status, 200)
+                self.assertEqual(headers['X-Missing-Chapters'], '1')
 
     def test_empty_book_cannot_download_fake_complete_final(self):
         self.book(total=0)

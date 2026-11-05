@@ -99,7 +99,7 @@
         <h2>选择你的故事</h2>
         <button id="refresh-topics" disabled>换一批</button>
        </div>
-       <p id="topic-cost" class="muted">单批上限 $0.05</p>
+       <p id="topic-cost" class="muted">选题费用照常记录</p>
        <p id="topic-notes" class="muted"></p>
        <p id="topic-status" role="status"></p>
        <div id="candidate-section" hidden>
@@ -121,7 +121,7 @@
         </div>
         <p id="model-info" class="muted"></p>
         <p id="estimate" class="muted"></p>
-        <label class="check"><input id="polish" type="checkbox">自动去 AI 润色</label>
+        <label class="check"><input id="polish" type="checkbox" checked>自动去 AI 润色</label>
         <div class="toolbar">
          <button type="button" data-step="2">← 返回选题</button>
          <button id="create-book" class="primary" disabled>开始写作</button>
@@ -144,11 +144,6 @@
     <button id="side-toggle" aria-label="开关目录" aria-expanded="true">☰</button>
     <a id="close-reader">← 返回</a>
     <span id="reader-title"></span>
-    <div class="seg" id="read-modes">
-     <button data-mode="final">终稿</button>
-     <button data-mode="draft">草稿</button>
-     <button data-mode="compare">对照</button>
-    </div>
     <button id="copy-chapter">复制本章</button>
     <button id="aa" aria-expanded="false">Aa 阅读设置</button>
    </div>
@@ -184,6 +179,12 @@
     <div class="section-head">
      <h3>阅读设置</h3>
      <button id="settings-close" aria-label="关闭阅读设置">×</button>
+    </div>
+    <p>查看修改对照</p>
+    <div class="seg" id="read-modes">
+     <button data-mode="final">终稿</button>
+     <button data-mode="draft">草稿</button>
+     <button data-mode="compare">对照</button>
     </div>
     <div id="setting-groups"></div>
    </div>

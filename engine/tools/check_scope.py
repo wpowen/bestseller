@@ -21,8 +21,8 @@ BLOCKED_IMPORTS = {
 
 def python_paths(root, package):
     if package == 'shared':
-        shared = root / 'tools/runtime_support.py'
-        return {shared} if shared.is_file() else set()
+        return {p for name in ('runtime_support.py', 'chapter_outputs.py')
+                if (p := root / 'tools' / name).is_file()}
 
     paths = set((root / package).rglob('*.py'))
     if package == 'webui':

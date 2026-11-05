@@ -1,7 +1,7 @@
 import {
  $, state, el, money, count, statusLabel, creationDate, bookUsage, runtimeInfo, link, button, bookURL, readURL, stored, printable, notify
 } from './shared.js';
-import { actionButtons } from './library.js';
+import { actionButtons, manage } from './library.js';
 import { chapters, copyText } from './reader.js';
 let tab = '目录';
 function renderDetail(selected = tab) {
@@ -16,12 +16,13 @@ function renderDetail(selected = tab) {
   el('span', statusLabel(b), 'badge'),
   el('h1', b.title),
   el('p', b.synopsis || '故事简介尚未生成。', 'muted'),
-  el('p', `${b.chapters}/${b.total} 章　${count(b.words)} 字　${money(b.cost)}　${creationDate(b.created)}`, 'stats'),
+  el('p', `终稿 ${b.chapters} / 计划 ${b.total} 章　${count(b.words)} 字　${money(b.cost)}　${creationDate(b.created)}`, 'stats'),
   link(`继续阅读 · 第 ${last} 章`, readURL(b.id, last), 'primary button'),
   actionButtons(b),
   el('p', bookUsage(b), 'muted'),
   el('p', runtimeInfo(b), 'muted'),
  );
+ if (b.owned) info.append(button('删除', () => manage(b, 'delete'), 'danger'));
  $('book-hero').replaceChildren(cover, info);
  $('book-tabs').replaceChildren(
   ...['目录', '故事圣经', '章纲', '检测报告（参考）', '导出'].map((t) =>
@@ -39,40 +40,23 @@ function renderDetail(selected = tab) {
  if (tab === '目录') {
   const grid = el('div', null, 'chapter-grid');
   for (const c of chapters()) {
-   const a = c.draft ? link(`第 ${c.number} 章　${c.title}`, readURL(b.id, c.number)) : el('span', `第 ${c.number} 章　${c.title}`, 'muted');
+   const a = c.final ? link(`第 ${c.number} 章　${c.title}`, readURL(b.id, c.number)) : el('span', `第 ${c.number} 章　${c.title}`, 'muted');
    a.append(
-    el('small', `${c.final ? '终稿' : c.draft ? '草稿' : '未写'} · ${(c.final || c.draft || '').replace(/[^\u3400-\u9fff]/g, '').length} 字`),
+    el('small', `${c.final ? '终稿' : c.draft ? '正在去 AI' : '未写'} · ${(c.final || '').replace(/[^\u3400-\u9fff]/g, '').length} 字`),
    );
    grid.append(a);
   }
   content.append(grid);
  } else if (tab === '导出') {
-  const select = el('select');
-  select.id = 'export-version';
-  select.setAttribute('aria-label', '导出版本');
-  for (const [v, t] of [ ['draft', '草稿'], ['final', '终稿'], ]) {
-   const o = el('option', t);
-   o.value = v;
-   select.append(o);
-  }
+  const missing = chapters().filter((c) => !c.final).map((c) => c.number);
+  content.append(el('p', missing.length ? `仅导出已有终稿，缺少第 ${missing.join('、')} 章。` : '全部终稿已就绪。', 'muted'));
   const links = el('div', null, 'toolbar');
-  const update = () =>
-   links.replaceChildren(
-    ...['md', 'docx', 'txt', 'epub', 'fanqie'].map((f, i) =>
-     link(
-      ['Markdown', 'Word', 'TXT', 'EPUB', '番茄分章 ZIP'][i],
-      '/download?id=' + encodeURIComponent(b.id) + '&format=' + f + '&version=' + select.value,
-      'button',
-     ),
-    ),
-   );
-  select.onchange = update;
-  update();
-  content.append(
-   select,
-   links,
-   button('复制全书', () => copyBook(select.value)),
-  );
+  if (b.chapters) {
+   for (const [format, label] of [['md', 'Markdown'], ['docx', 'Word'], ['txt', 'TXT'], ['epub', 'EPUB'], ['fanqie', '番茄分章 ZIP']]) {
+    links.append(link(label, '/download?id=' + encodeURIComponent(b.id) + '&format=' + format + '&version=final', 'button'));
+   }
+  }
+  content.append(links, button('复制全书', () => copyBook('final')));
  } else if (tab === '故事圣经') {
   const grid = el('div', null, 'chapter-grid');
   for (const c of state.book.characters || []) {

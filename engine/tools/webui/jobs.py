@@ -13,6 +13,7 @@ import time
 import uuid
 from library import GENRES, costs, now, read, save, stage_costs
 from run_status import auto_deai, recover, runtime_view
+import pipeline
 
 
 def finite(value, low, high):
@@ -59,7 +60,7 @@ class Queue:
         env['PYTHONPATH'] = str(self.engine)
         env['PYTHONUNBUFFERED'] = '1'
         for key in list(env):
-            if key in ('BOOKENGINE_PHASE', 'BOOKENGINE_RATE_FILE', 'BOOKWEB_BUDGET_USD') or key.startswith(('BOOKENGINE_BUDGET_','DEAI_BUDGET_')):
+            if key in ('BOOKENGINE_PHASE', 'BOOKENGINE_RATE_FILE', 'BOOKWEB_BUDGET_USD', 'DEAI_RUNTIME_DIR') or key.startswith(('BOOKENGINE_BUDGET_','DEAI_BUDGET_')):
                 env.pop(key, None)
         return env
 
@@ -126,13 +127,15 @@ class Queue:
                             user_input=json.dumps(candidate, ensure_ascii=False))
             save(folder / 'book.yaml', settings)  # JSON is a YAML subset, no YAML dependency.
             save(folder / 'web.json', dict(title=candidate['title'], genre=topic['genre'], chapters=chapters,
-                polish=data.get('polish') is True, auto_deai=data.get('polish') is True,
+                polish=data.get('polish', True) is True, auto_deai=data.get('polish', True) is True, pipeline_version=1,
                 status='queued', created=now(), jobs=self.jobs))
             topic['book_id'] = 'webui/'+key
             save(self.library.own / '.topics' / topic['id'] / 'topic.json', topic)
             return dict(id='webui/'+key)
 
     def launch(self, folder, data, kind='book'):
+        if pipeline.enabled(data):
+            return pipeline.start(self, folder, data)
         if kind == 'polish':
             data = dict(data, polish=True)
         for field in ('budget', 'deai_budget', 'total_budget'):
@@ -165,6 +168,10 @@ class Queue:
             if action in ('archive', 'restore', 'delete', 'rename'):
                 return self.manage(folder, data, action, title)
             if folder.parent != self.library.own or not data: raise ValueError('共享书籍只读')
+            live = any(i['folder'] == folder and i['p'].poll() is None for i in self.processes.values())
+            if pipeline.enabled(data) or (not live and action in ('resume', 'retry')
+                                          and read(folder / 'run.json', {}).get('status') == 'complete'):
+                return pipeline.action(self, folder, data, action)
             item = self.processes.get(key)
             if action == 'postprocess':
                 if item and item['p'].poll() is None: raise ValueError('本书已有运行进程，请勿重复启动')
@@ -202,9 +209,12 @@ class Queue:
         for path in folder.rglob('*'):
             if path.is_symlink():
                 raise ValueError('书目录含符号链接')
-        item = self.processes.get(str(folder.relative_to(lib.root)))
-        if data.get('status') in ('running', 'polishing', 'orphaned') or item and item['p'].poll() is None:
+        live = [i for i in self.processes.values() if i['folder'] == folder and i['p'].poll() is None]
+        if data.get('status') in ('running', 'polishing', 'orphaned') or live:
             raise ValueError('运行中或孤立进程书籍不可操作')
+        from run_status import alive
+        if any(alive(stage.get('pid')) for stage in data.get('pipeline', {}).values()):
+            raise ValueError('写作或去 AI 子进程仍存在，请先结束进程')
         if data.get('pid') is not None:
             try:
                 os.kill(data['pid'], 0)
@@ -213,8 +223,6 @@ class Queue:
             else:
                 raise ValueError('子进程仍存在，请先结束进程')
         current = lib.meta(folder)['title']
-        if action == 'delete' and title != current:
-            raise ValueError('请输入完整书名确认永久删除')
         if action == 'rename' and (not isinstance(title, str) or not 1 <= len(title.strip()) <= 80 or any(ord(c) < 32 for c in title)):
             raise ValueError('书名须为1–80字的单行文字')
         target = folder
@@ -250,13 +258,10 @@ class Queue:
             time.sleep(.5)
 
     def tick(self):
-        active = [x for x in self.processes.values() if x['kind'] != 'topic' and not x['paused'] and x['p'].poll() is None]
-        for item in active[self.jobs:]:
-            os.killpg(item['p'].pid, signal.SIGSTOP); item['paused'] = True
-            data = read(item['folder'] / 'web.json', {})
-            data.update(status='concurrency_paused', reason='并发上限降低，已暂停原子进程，空出位置后自动继续')
-            save(item['folder'] / 'web.json', data)
+        pipeline.tick(self)
         for key, item in list(self.processes.items()):
+            if item.get('pipeline'):
+                continue
             p, folder = item['p'], item['folder']
             if item['kind'] == 'topic':
                 if p.poll() is not None:
@@ -292,18 +297,15 @@ class Queue:
                                                        updated=time.time(), error=reason))
                 save(folder / 'web.json', data)
                 self.library.static()
-        running = sum(x['kind'] != 'topic' and not x['paused'] and x['p'].poll() is None for x in self.processes.values())
-        for item in self.processes.values():
-            if running >= self.jobs: break
-            data = read(item['folder'] / 'web.json', {})
-            if item['paused'] and data.get('status') == 'concurrency_paused':
-                os.killpg(item['p'].pid, signal.SIGCONT); item['paused'] = False; running += 1
-                data.update(status='polishing' if item['kind']=='polish' else 'running', reason='')
-                save(item['folder'] / 'web.json', data)
+        pipeline.schedule(self)
+        running = len({str(x['folder']) for x in self.processes.values()
+                       if x['kind'] != 'topic' and not x['paused'] and x['p'].poll() is None})
         for folder in sorted(self.library.own.iterdir()):
             if running >= self.jobs: break
             if not folder.is_dir() or folder.is_symlink(): continue
             data = read(folder / 'web.json', {})
+            if any(i['folder'] == folder and i['p'].poll() is None for i in self.processes.values()):
+                continue
             if data.get('status') in ('queued', 'queued_polish'):
                 self.launch(folder, data, 'polish' if data['status']=='queued_polish' or read(folder / 'run.json', {}).get('status')=='complete' else 'book')
                 running += 1

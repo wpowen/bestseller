@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import tempfile
 import yaml
+from tools.chapter_outputs import committed, finalized
 
 GENRES = {'suspense-mystery': '悬疑推理', 'xuanhuan-power-fantasy': '玄幻爽文',
           'xianxia-upgrade-core': '仙侠升级', 'urban-power-reversal': '都市逆袭',
@@ -147,7 +148,7 @@ class Library:
             row = read(self.safe(folder / f'chapters/{n}.json'), {})
             report = read(self.safe(folder / f'final/chapter-{n}.deai.json'), row)
             final = text(self.safe(folder / f'final/chapter-{n}.md'))
-            valid_final = report.get('status') in ('polished', 'unchanged') and report.get('complete', True) is True
+            valid_final = finalized(report)
             result.append(dict(number=number, title=row.get('title', f'第{number}章'),
                 draft=text(self.safe(source)), final=final if valid_final else '', report=report,
                 checks={k: row[k] for k in ('within_band', 'hard_conflicts', 'remaining', 'warnings',
@@ -157,7 +158,7 @@ class Library:
                 m = re.fullmatch(r'chapter-(\d{3,})\.md', source.name)
                 if m: result.append(dict(number=int(m[1]), title=f'第{int(m[1])}章', draft=text(self.safe(source)), final='', report={}))
         for row in result:
-            row.update(status='final' if row['final'] else 'draft', words=len(re.findall(r'[\u3400-\u9fff]', row['final'] or row['draft'])))
+            row.update(status='final' if row['final'] else 'draft', words=len(re.findall(r'[\u3400-\u9fff]', row['final'])))
         return result
 
     def meta(self, folder):
@@ -169,7 +170,7 @@ class Library:
         total = book.get('chapters', web.get('chapters', len(rows)))
         owned = folder.parent in (self.own, self.own / '.archive') and bool(web)
         state = web.get('status', run.get('status', 'unknown')) if owned else run.get('status', 'unknown')
-        if state == 'budget_paused':
+        if state == 'budget_paused' or (state == 'complete' and sum(bool(r['final']) for r in rows) < total):
             state = 'paused'
         runtime = runtime_view(self.safe(folder), state)
         if runtime.get('kind') in ('waiting', 'quota_exhausted', 'error'):
@@ -187,7 +188,10 @@ class Library:
                     quality_issues=findings,
                     chapter_info=[info.get(n, dict(number=n, title=f'第{n}章', status='pending', words=0)) for n in range(1, total+1)],
                     genre=GENRES.get(book.get('prompt_pack', web.get('genre')), book.get('prompt_pack', '未知')),
-                    chapters=len(rows), total=total, words=sum(len(re.findall(r'[\u3400-\u9fff]', r['draft'])) for r in rows),
+                    chapters=sum(bool(r['final']) for r in rows), total=total, words=sum(r['words'] for r in rows),
+                    written_chapters=sum(committed(folder, r['number']) for r in rows),
+                    writer_active=web.get('pipeline', {}).get('book', {}).get('status') == 'running'
+                                  and state not in ('paused', 'concurrency_paused', 'orphaned'),
                     status=state, created=web.get('created', run.get('started', '')), owned=owned,
                     polish=web.get('polish', False), auto_deai=auto_deai(web), deai_cost=deai,
                     stage=runtime.get('stage', ''), retry=runtime.get('retry', 0),
@@ -236,7 +240,7 @@ class Library:
             meta = self.meta(folder)
             parts = ['<h2>' + html.escape(meta['title']) + '</h2>']
             for row in self.chapters(folder):
-                parts.append('<details><summary>' + html.escape(f"第{row['number']}章 {row['title']}") + '</summary><pre>' + html.escape(row['final'] or row['draft']) + '</pre></details>')
+                parts.append('<details><summary>' + html.escape(f"第{row['number']}章 {row['title']}") + '</summary><pre>' + html.escape(row['final'] or '本章正在去 AI，完成后显示') + '</pre></details>')
             books.append(''.join(parts))
         page = '<!doctype html><meta charset="utf-8"><title>我的书库</title><style>body{max-width:850px;margin:50px auto;background:#faf7f0;color:#27271f;font:18px serif}pre{white-space:pre-wrap;line-height:2;font:inherit}summary{cursor:pointer;padding:15px}</style><h1>我的书库 · 离线阅读</h1>' + ''.join(books)
         if not self.read_only:

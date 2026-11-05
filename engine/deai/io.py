@@ -1,4 +1,4 @@
-"""Independent disk boundary; no engine state is consumed."""
+"""Independent disk boundary; source and writing checkpoints are never changed."""
 
 import dataclasses
 import datetime as dt
@@ -11,6 +11,7 @@ import tempfile
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
+from tools.chapter_outputs import has_final
 
 
 def safe(root, name):
@@ -152,7 +153,7 @@ def summarize(book, statuses):
     save(book, 'final/book.md', '\n\n'.join(bodies) + '\n')
 
 
-def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1-Flash'):
+def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1-Flash', *, preserve=False, original=False):
     import fcntl
 
     root = Path(book).resolve()
@@ -164,6 +165,8 @@ def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1
     with safe(work, '.chapter.lock').open('a+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         try:
+            if preserve and has_final(root, number):
+                return 'cached'
             text = read_text(source)
             if not text.strip():
                 return 'waiting'
@@ -186,8 +189,13 @@ def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1
                 ctx.setdefault('setting', data.get('world', data.get('setting', data.get('premise'))))
             ctx.update(dialogue_mode=mode, word_range=[math.ceil(size * 0.9), math.floor(size * 1.1)])
             ctx['length_range'] = ctx['word_range']
-            llm = client(work, env, model=model)
-            result = polish(text, ctx, llm)
+            if original:
+                from types import SimpleNamespace
+                llm = SimpleNamespace(calls=[], estimate=lambda: 0)
+                result = SimpleNamespace(text=text, status='original', edits=[])
+            else:
+                llm = client(work, env, model=model)
+                result = polish(text, ctx, llm)
             report = dataclasses.asdict(result) if dataclasses.is_dataclass(result) else vars(result).copy()
             report['deai_version'] = configuration['version']
             calls = getattr(llm, 'calls', [])
@@ -203,9 +211,9 @@ def process(book, number, source, env, mode, polish, client, model='MiniMax-M3.1
             )
             if report.get('status') in ('error', 'failed', 'invalid'):
                 raise ProjectError(f'deai-{number}: polish failed: {report.get("warnings", [])}')
-            if report.get('status') == 'retained':
+            if report.get('status') in ('retained', 'partial'):
                 result.text = text
-                report.update(text=text, complete=False)
+                report.update(text=text, complete=False, edits=[])
             else:
                 report['complete'] = report.get('status') in ('polished', 'unchanged')
             report['processing_complete'] = True

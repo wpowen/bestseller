@@ -182,7 +182,7 @@ class RunFinishWebTests(WebFixture):
         self.kill.side_effect = ProcessLookupError
         self.restart()
         self.queue.tick()
-        self.assertEqual(self.spawn.call_args.args[0][2], 'bookengine')
+        self.assertEqual([c.args[0][2] for c in self.spawn.call_args_list], ['bookengine', 'deai'])
         put(folder / 'run.json', {'status': 'complete'})
         self.child.poll.return_value = 0
         self.child.returncode = 0
@@ -386,7 +386,7 @@ with (folder / 'runner.lock').open('a') as lock:
         self.queue.tick()
         self.assertEqual(children[1].wait(timeout=5), 0)
         self.queue.tick()
-        self.assertEqual(self.lib.meta(folder)['status'], 'complete')
-        self.assertEqual(self.lib.meta(folder)['chapters'], 2)
+        self.assertEqual(self.lib.meta(folder)['status'], 'paused')
+        self.assertEqual(self.lib.meta(folder)['chapters'], 0)
         self.assertEqual((folder / 'chapter-001.body.md').read_bytes(), original)
         self.assertEqual((folder / 'state.json').read_bytes(), original_state)

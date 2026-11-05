@@ -1,5 +1,7 @@
 import { $, state, text, el, link, button, bookURL, readURL, stored, persist, notify } from './shared.js';
+import { closeOverlays, showSettings } from './overlays.js';
 let prefs = { ...{ width: 'medium', size: 19, line: 2, bg: 'paper', mode: 'final' }, ...stored('bookweb-reader', {}) };
+prefs.mode = 'final';
 function chapters() {
  const map = new Map((state.book?.chapters || []).map((c) => [c.number, c]));
  return Array.from({ length: state.book?.meta.total || 0 }, (_, i) => map.get(i + 1) || { number: i + 1, title: '尚未写作', draft: '', final: '' });
@@ -14,9 +16,9 @@ function renderTOC() {
    nav.append(el('h4', `第 ${v} 卷`));
    volume = v;
   }
-  const a = c.draft
+  const a = c.final
    ? link(`第 ${c.number} 章　${c.title}`, readURL(state.readerId, c.number), c.number === state.chapter ? 'on' : '')
-   : el('span', `第 ${c.number} 章　未写`, 'muted');
+   : el('span', `第 ${c.number} 章　${c.draft ? '正在去 AI' : '未写'}`, 'muted');
   a.setAttribute('aria-current', c.number === state.chapter ? 'page' : 'false');
   nav.append(a);
  }
@@ -58,18 +60,18 @@ function prose(node, value, original) {
 function renderChapter() {
  const c = chapters().find((c) => c.number === state.chapter);
  const b = state.book.meta;
- const mode = state.mode = c?.final ? prefs.mode : 'draft';
+ const mode = state.mode = prefs.mode;
  text('reader-title', `${b.title} · ${c?.title || '章节未生成'}`);
  $('close-reader').href = bookURL(b.id);
  text('chapter-title', `第 ${state.chapter} 章　${c?.title || ''}`);
- text('chapter-meta', b.title + ' · ' + (mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章还没有终稿，显示草稿'));
+ text('chapter-meta', b.title + ' · ' + (mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章正在去 AI，完成后显示'));
  prose($('draft'), c?.draft, mode === 'compare' ? c?.final : null);
- prose($('final'), c?.final, mode === 'compare' ? c?.draft : null);
+ prose($('final'), c?.final || '本章正在去 AI，完成后显示', mode === 'compare' ? c?.draft : null);
  $('comparison').dataset.mode = mode;
  $('reading-progress').max = Math.max(1, b.total);
  $('reading-progress').value = state.chapter;
  $('prev-chapter').disabled = state.chapter <= 1;
- $('next-chapter').disabled = !chapters().find((n) => n.number === state.chapter + 1)?.draft;
+ $('next-chapter').disabled = !chapters().find((n) => n.number === state.chapter + 1)?.final;
  $('copy-chapter').disabled = !(mode === 'draft' ? c?.draft : c?.final);
  if (c?.draft) persist('chapter:' + b.id, state.chapter);
  renderTOC();
@@ -86,12 +88,14 @@ function applyPrefs() {
  persist('bookweb-reader', prefs);
 }
 function toggleSide() {
- $('reader').classList.toggle('noside');
+ const opening = $('reader').classList.contains('noside');
+ closeOverlays();
+ $('reader').classList.toggle('noside', !opening);
  $('side-toggle').setAttribute('aria-expanded', String(!$('reader').classList.contains('noside')));
 }
 function flip(delta) {
  const n = state.chapter + delta;
- if (chapters().find((c) => c.number === n)?.draft) location.hash = readURL(state.readerId, n);
+ if (chapters().find((c) => c.number === n)?.final) location.hash = readURL(state.readerId, n);
 }
 async function copyText(value) {
  try {
@@ -136,16 +140,13 @@ function collapseForWidth() {
   $('side-toggle').setAttribute('aria-expanded', 'false');
  }
 }
-$('aa').onclick = () => {
- $('read-settings').hidden = !$('read-settings').hidden;
- $('aa').setAttribute('aria-expanded', String(!$('read-settings').hidden));
-};
+$('aa').onclick = showSettings;
 $('settings-close').onclick = () => {
  $('read-settings').hidden = true;
  $('aa').setAttribute('aria-expanded', 'false');
 };
 $('side-toggle').onclick = toggleSide;
-$('drawer-mask').onclick = toggleSide;
+$('drawer-mask').onclick = () => closeOverlays();
 $('chapter-directory').onclick = toggleSide;
 $('toc-search').oninput = renderTOC;
 $('prev-chapter').onclick = () => flip(-1);

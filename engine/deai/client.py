@@ -45,6 +45,8 @@ class APIError(LLMError):
 
 def runtime_root(out):
     """Chapter and standalone workspaces publish state beside the source book."""
+    if os.environ.get('DEAI_RUNTIME_DIR'):
+        return Path(os.environ['DEAI_RUNTIME_DIR']).resolve()
     out = Path(out).resolve()
     finals = [parent for parent in (out, *out.parents) if parent.name == 'final']
     return finals[-1].parent if finals else out

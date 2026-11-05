@@ -1,6 +1,7 @@
 import {
  $, state, text, printable, api, el, money, count, statusLabel, isComplete, runtimeInfo, link, button, bookURL, readURL, stored, notify
 } from './shared.js';
+import { closeOverlays } from './overlays.js';
 async function action(id, name) {
  if (state.pendingActions.has(id)) return;
  state.pendingActions.add(id);
@@ -29,7 +30,7 @@ function actionButtons(book) {
  }
  const status = String(book.status || '').toLowerCase();
  let choices = [];
- if (isComplete(book)) choices = [['postprocess', '运行去AI后处理']];
+ if (isComplete(book)) choices = book.chapters < book.total ? [['resume', '继续生成终稿']] : [];
  else if (/^(paused|budget_paused|quota_exhausted)$/.test(status)) choices = [['resume', '继续当前阶段']];
  else if (/^(failed|error|blocked|interrupted|postprocess_failed|orphaned|stopped|budget_exceeded)$/.test(status))
   choices = [['retry', '从检查点重试']];
@@ -96,8 +97,12 @@ function renderLibrary() {
     for (const [name, label] of [ ['rename', '重命名'], ['archive', '移到归档（可恢复）'], ['delete', '永久删除…'], ])
      menu.append(button(label, () => manage(b, name), name === 'delete' ? 'danger' : 'ghost'));
    actions.append(menu);
-   body.append(badge, progress, el('p', `${b.chapters}/${b.total} 章 · ${count(b.words)} 字 · ${money(b.cost)}`, 'muted'),
+   if (b.owned) actions.append(button('删除', () => manage(b, 'delete'), 'danger'));
+   body.append(badge, progress, el('p', `终稿 ${b.chapters} / 计划 ${b.total} 章 · ${count(b.words)} 字 · ${money(b.cost)}`, 'muted'),
     el('p', runtimeInfo(b), 'muted'), actions);
+   if (b.writer_active || /running|waiting|queued|polishing/.test(b.status)) {
+    body.insertBefore(el('small', `正文已写到第 ${b.written_chapters || 0} 章`, 'muted'), actions);
+   }
    card.append(cover, body);
    return card;
   }),
@@ -136,8 +141,12 @@ async function refreshBooks() {
 async function manage(book, name, title) {
  if (name === 'delete' || name === 'rename') {
   managed = { book, name };
-  text('dialog-title', name === 'delete' ? '永久删除这本书？' : '重命名');
-  text('dialog-hint', name === 'delete' ? `此操作不可撤销。请输入完整书名：${book.title}。运行中或仍有进程的书会被拒绝。` : '输入新的书名。');
+  closeOverlays();
+  text('dialog-title', name === 'delete' ? `永久删除《${book.title}》？不可撤销` : '重命名');
+  text('dialog-hint', name === 'delete' ? '运行中或仍有进程的书会被拒绝。' : '输入新的书名。');
+  $('confirm-title').parentElement.hidden = name === 'delete';
+  $('confirm-title').required = name === 'rename';
+  text('dialog-confirm', name === 'delete' ? '删除' : '保存');
   $('confirm-title').value = name === 'rename' ? book.title : '';
   text('dialog-status', '');
   $('manage-dialog').showModal();
@@ -174,17 +183,18 @@ $('manage-form').onsubmit = async (e) => {
  e.preventDefault();
  const { book, name } = managed;
  const title = $('confirm-title').value;
- if (name === 'delete' && title !== book.title) return text('dialog-status', '书名不匹配，请输入完整书名。');
  $('dialog-confirm').disabled = true;
  try {
-  await api('/api/action', { id: book.id, action: name, title });
+  await api('/api/action', { id: book.id, action: name, ...(name === 'rename' ? { title } : {}) });
   $('manage-dialog').close();
   notify('操作已完成。');
   await refreshBooks();
+  if (name === 'delete' && state.readerId === book.id) location.hash = '#/library';
+  else if (state.readerId === book.id) window.dispatchEvent(new Event('book-changed'));
  } catch (error) {
   text('dialog-status', error.message);
  } finally {
   $('dialog-confirm').disabled = false;
  }
 };
-export { refreshBooks, actionButtons };
+export { refreshBooks, actionButtons, manage };

@@ -16,6 +16,7 @@ from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
 from .structure_planning import final_stage_start
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
+from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
 
@@ -47,7 +48,7 @@ def amend(text, raw, bible, state, outline):
         changed, accepted = apply_scene(text, raw["scene"])
         return changed, dict(detail, patch=accepted)
     low, high = outline.get("word_range", (1870, 2700))
-    body = body_of(raw.get("body", ""), None)
+    body = body_of(raw.get("body", ""), None, detail.setdefault("body_cleaning", {}))
     count, amount = chinese_count(text), chinese_count(body)
     if body and (count > high and low <= amount < count or count < low and count < amount <= high):
         return body, dict(detail, patch=True)
@@ -117,19 +118,21 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
     saved = client.prefix
     client.prefix = ""
+    cleaning = dict(draft={})
     try:
         text = body_of(
             ask(
                 client,
                 prefix + "-draft",
                 data[style]
-                + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用---分隔；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。",
+                + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。",
                 sections,
                 cap=6500,
                 input_limit=10000,
                 max_attempts=1,
             ),
             client,
+            cleaning["draft"],
         )
     finally:
         client.prefix = saved
@@ -154,6 +157,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)
+    cleaning["repair_body"] = notes.get("body_cleaning", {}) if notes.get("patch") else {}
     patched = notes["patch"]
     for old, new in (raw.get("rename") if isinstance(raw.get("rename"), dict) else {}).items():
         if (
@@ -162,6 +166,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
             and new in {c["name"] for c in bible.get("characters", [])}
         ):
             text = text.replace(old, new)
+    text, cleaning["repair"] = clean_prose(text)
+    text = clean(text)
     changed = text != original
     failed = failed or bool((raw.get("scene") or raw.get("body")) and not changed)
     if changed:
@@ -178,6 +184,14 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, boundaries, handoff = repair_opening(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    cleaned, cleaning["final"] = clean_prose(text)
+    if cleaned != text:
+        text = clean(cleaned)
+        raw, failed, _ = extract_state(client, prefix + "-clean-state", text, state, bible, outline, [], final=True)
+        from .q1_continuity import boundary_facts
+
+        boundaries = boundary_facts(raw, text)
+    cleaning["total"] = sum(counts.get("total", 0) for counts in cleaning.values())
     if rows and rows[-1].get("state_failed") and not rows[-1].get("carry_attempted"):
         last = rows[-1]
         last["carry_attempted"] = True
@@ -271,6 +285,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         **boundaries,
         handoff=handoff,
         cast_findings=cast_findings(text, bible, state, outline),
+        cleaning=cleaning,
     )
     row.update(
         name_drift_before=len(name_hits(original, bible)), name_drift=name_hits(text, bible), english=english_hits(text)

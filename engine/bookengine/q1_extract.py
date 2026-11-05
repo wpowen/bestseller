@@ -17,6 +17,7 @@ from .q1_plan import beat_slice
 from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
 from .q1_cast import cast_hits, cast_findings
+from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
 EXTRACT = yaml.safe_load((DATA.parent / "growth_extract.yaml").read_text())
@@ -36,17 +37,22 @@ def ask(client, *args, **kwargs):
 
 
 def clean(text):
-    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(prose(text))).strip()
+    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(text)).strip()
 
 
-def body_of(value, client):
+def body_of(value, client, cleaning=None):
     if isinstance(value, dict):
         value = value.get("paragraphs", value.get("text", value.get("body", "")))
     if isinstance(value, list):
         value = "\n\n".join(
             p.get("text", "") if isinstance(p, dict) else p for p in value if isinstance(p, (str, dict))
         )
-    return clean(value) if isinstance(value, str) else ""
+    if not isinstance(value, str):
+        return ""
+    value, counts = clean_prose(value)
+    if cleaning is not None:
+        cleaning.update(counts)
+    return clean(value)
 
 
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):

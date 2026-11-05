@@ -51,7 +51,11 @@ def test_only_one_or_two_opening_paragraphs_can_change():
     assert opening_patch(original, dict(paragraphs=["补上移动。", "接续到达。"], replace_count=2)) == (
         "补上移动。\n\n接续到达。\n\n第三段必须逐字保留。"
     )
-    for patch in (dict(paragraphs=["整章。"], replace_count=3), dict(paragraphs=["一。\n\n二。"], replace_count=1)):
+    for patch in (
+        dict(paragraphs=["整章。"], replace_count=3),
+        dict(paragraphs=["一。\n\n二。"], replace_count=1),
+        dict(paragraphs=["一。", "复述下一段。"], replace_count=1),
+    ):
         assert opening_patch(original, patch) == original
 
 

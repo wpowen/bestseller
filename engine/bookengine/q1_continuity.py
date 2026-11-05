@@ -67,7 +67,7 @@ def opening_patch(text, raw):
         type(count) is not int
         or not 1 <= count <= min(2, len(spans))
         or not isinstance(paragraphs, list)
-        or not 1 <= len(paragraphs) <= 2
+        or len(paragraphs) != count
         or any(not isinstance(p, str) or not p.strip() or "\n" in p or "\r" in p or len(p) > 1200 for p in paragraphs)
     ):
         return text
@@ -88,7 +88,8 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     patch = ask(
         client,
         prefix + "-opening-repair",
-        "只重写开头一到两段，先承接上章地点和在场人物，再补上到本章地点的移动。不得改变后文、人物事实、时序和冲突结果。返回JSON。",
+        "只重写开头一到两段，paragraphs条数必须等于replace_count。先承接上章地点和在场人物，再补上移动。"
+        "不得改变或复述后文，不改变人物事实、时序和冲突结果。返回JSON。",
         [
             ("断裂与上章约束", str(issue)),
             ("只可修改的开头", opening),

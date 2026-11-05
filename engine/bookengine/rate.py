@@ -1,4 +1,5 @@
 """Persistent shared rolling-window request reservations."""
+
 import fcntl
 import json
 import math
@@ -24,8 +25,7 @@ def acquire(path, input_tokens, output_tokens, rpm=200, tpm=10000000):
         raise ValueError("Request exceeds token limit")
 
     # No O_TRUNC or O_APPEND: update the locked inode, then truncate the tail.
-    with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0o600), "r+",
-                   encoding="utf-8") as state:
+    with os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT, 0o600), "r+", encoding="utf-8") as state:
         while True:
             fcntl.flock(state, fcntl.LOCK_EX)
             try:
@@ -36,10 +36,15 @@ def acquire(path, input_tokens, output_tokens, rpm=200, tpm=10000000):
                     if type(records) is not list:
                         raise ValueError
                     for row in records:
-                        if (type(row) is not list or len(row) != 2
-                                or type(row[0]) not in (int, float)
-                                or not math.isfinite(row[0]) or row[0] < 0
-                                or type(row[1]) is not int or row[1] < 0):
+                        if (
+                            type(row) is not list
+                            or len(row) != 2
+                            or type(row[0]) not in (int, float)
+                            or not math.isfinite(row[0])
+                            or row[0] < 0
+                            or type(row[1]) is not int
+                            or row[1] < 0
+                        ):
                             raise ValueError
                 except (ValueError, TypeError, OverflowError, RecursionError):
                     raise RuntimeError("Invalid rate limiter state") from None

@@ -1,4 +1,5 @@
 """Drain every worker so a malformed reply never hides another worker's bug."""
+
 from .client import ModelResponseError
 
 

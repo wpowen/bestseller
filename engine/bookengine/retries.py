@@ -10,13 +10,12 @@ from math import isfinite
 
 def _count(value: int) -> None:
     if type(value) is not int or value < 0:
-        raise ValueError('network failures must be a nonnegative integer')
+        raise ValueError("network failures must be a nonnegative integer")
 
 
 def _seconds(value: float) -> None:
-    if (type(value) not in (int, float) or value < 0
-            or (type(value) is float and not isfinite(value))):
-        raise ValueError('seconds must be finite nonnegative numbers')
+    if type(value) not in (int, float) or value < 0 or (type(value) is float and not isfinite(value)):
+        raise ValueError("seconds must be finite nonnegative numbers")
 
 
 def delay(network_failures: int) -> int:
@@ -26,7 +25,9 @@ def delay(network_failures: int) -> int:
 
 
 def next_network_wait(
-    failures: int, waited: float, retry_after: float = 0,
+    failures: int,
+    waited: float,
+    retry_after: float = 0,
 ) -> float | None:
     """Wait indefinitely across failures; individual delays never exceed 600s."""
     _count(failures)

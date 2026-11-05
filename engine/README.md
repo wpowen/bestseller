@@ -1,59 +1,71 @@
-# bookengine · 整本生成与独立去 AI 味
+# bookengine v1
 
-在仓库根目录使用 Python 3.10+（已安装 PyYAML、python-docx）运行，正文草稿和最终版分开保存：
+生产路径为选题 → 故事圣经 → 排期 → 正文 → 检查 → 可选去 AI → 终稿与导出。只有 Q1 / B 写法；旧 runner、long、quality 管线和 legacy 文风入口已删除。启动 8787 和网页开书流程见仓库 [README.md](../README.md)。
+
+## 命令行
+
+Python 3.10+，依赖 PyYAML、python-docx。以下从仓库根目录执行，密钥只从 `.env` 读取：
 
 ```sh
-PYTHONPATH=engine python3 -m bookengine engine/examples/realistic-life.yaml --q1 --style b --env .env --out books/my-book
-PYTHONPATH=engine python3 -m deai run books/my-book --env .env
-# 长篇边写边处理；Ctrl-C 后用同一命令续跑
-PYTHONPATH=engine python3 -m deai run books/my-book --watch --pipeline --concurrency 2 --env .env
-# 单独的Markdown也可处理，源文件保留；结果在同目录的final/
-PYTHONPATH=engine python3 -m deai run chapter.md --env .env
+# 新书；重复同一命令从检查点恢复
+PYTHONPATH=engine python -m bookengine engine/examples/realistic-life.yaml --q1 --style b --env .env --out books/my-book
+# 显式增加原书目标章数，不重写已完成章节；仍用原设定文件
+PYTHONPATH=engine python -m bookengine engine/examples/realistic-life.yaml --q1 --style b --extend-to 50 --env .env --out books/my-book
+# 批量：manifest 中 books 是 id/path 列表，path 相对 manifest 解析
+PYTHONPATH=engine python -m bookengine --q1 --style b --batch engine/examples/q1/batch.yaml --jobs 2 --env .env --out books/my-batch
+# 独立去 AI；也支持单个 Markdown、--chapters 1-10、--model MiniMax-M3
+PYTHONPATH=engine python -m deai run books/my-book --env .env
+# 与写手同时运行，只读已完成检查点，最多并发三章
+PYTHONPATH=engine python -m deai run books/my-book --watch --pipeline --concurrency 3 --env .env
+# CLI 原文写作与独立去 AI 分别运行；关闭去 AI 时网页会直接发布原稿终稿
+# 默认只导出 final/ 的终稿；缺章列入说明，不从草稿补齐
+PYTHONPATH=engine python -m exporter books/my-book
 ```
 
-`deai` 只读章节草稿及可选人物卡，写入 `final/chapter-NNN.md`、逐章 `.deai.json`、
-全书 `final/book.md` 和 `final/SUMMARY.md`。它不导入引擎，也不更新写作状态；`--pipeline` 只读章节完成检查点和整书完成标记，跳过已有终稿，全部完成后自动退出。普通独立处理仍按输入、配置和规则检查缓存。
-数字、实体、段落结构、事实与末场画面须保留，字数为原稿 ±10%；不合格的修改回滚，原文成为该章终稿；回执保留未通过润色的真实状态。
-相同草稿、人物卡、规则版本和模型已完成时直接跳过；可用 `--chapters 1-10`、`--model MiniMax-M3`。
-选题、写作和去 AI 均不设金额预算，费用照常记账和显示；写作与 `final/` 的去 AI 调用记录分别保留，续跑不清零，未知用量仍标为未知。
-书一旦开写就持续写完；项目出错、账户额度或 token 用尽时保留检查点，修复或充值后继续。
-接口限流、排队、超时或连接错误持续退避重试，不设总等待时长上限；千章级任务开跑前仍须告知用户。
-检测分是编辑提示，不能替代人工抽读。故事结构问题列在 SUMMARY，句子润色不能代替补完故事。
-常规处理只改命中句；整场对白与演员法用 `--dialogue-mode scene` / `actor` 显式运行。
+`--batch` 支持 1–6 个并发子进程，书内顺序、书间并发，一本失败不影响其他本；续跑保留旧账、旧正文和检查点。`--q1` 必填，`--style` 仅接受 `b`。
 
-历史 S1–S5 用法已合并到当前入口：书设定 YAML 指定题材、章数、字数和用户输入，`--q1 --style b` 使用圣经、多线排期、卷章规划和极简正文提示；同目录重跑复用检查点，写作草稿与独立去 AI 终稿分开保存。早期各阶段验收及调用、耗时和质量结论保留在 [PLAN.md](PLAN.md)、[INBOX.md](INBOX.md) 和 [reports/](reports/)，不再使用旧 worktree 路径作为启动说明。当前网页、导出和检查命令见仓库 [README.md](../README.md)。
-
-## 选题工坊（第 24 条已合并，真实盲选待用户验收）
-
-网页“生成新选题”和“换一批”均创建新批次；最近选题只在用户主动恢复时读取。
-卡片显示钩子、标签、金手指规则、开场、长篇引擎、市场备注与参考分，可编辑后开书，
-也可保留熟壳或新变量继续发散。“两组各 6 个”同时提供这两种方向。
-选题不设每批金额上限，调用和费用继续记录；市场获取失败使用缓存或明确标记无数据，不阻断选题。
-判官只有当日同题材锚点测试通过后才参与排序，否则多样性轮转；分数不替代读者选择。
+选题工坊独立运行：
 
 ```sh
 PYTHONPATH=engine python -m ideation --env .env --books books --out books/topics/my-batch --genre suspense-mystery --chapters 100 --channel 男频
 ```
 
-同一 `--out` 恢复已完成步骤；换批须使用新目录，历史去重查找同一父目录下最近五批。
-请求结果未知时保留原调用与费用记录；从已完成步骤恢复，后续重试另记，不覆盖旧账。
-生成提示只用类别词与结构要求，榜单原文仅供撞车检查和判官。
-真实对照工具为 `engine/tools/ideation_acceptance.py`，需显式指定 `--env`、`--out` 和 `--blind`；
-原始响应、调用与费用记录、答案均保存在忽略的书目录，不进入 Git。
+同一输出目录恢复已完成步骤，换批使用新目录；最近五批参与去重。榜单获取失败时使用缓存或明确标无数据，判官仅在当日同题材锚点校准通过后参与排序。盲选工具 `engine/tools/ideation_acceptance.py` 须显式指定 `--env`、`--out`、`--blind`；原始调用、响应与答案保存在忽略的书目录，不进 Git。
 
-## 开发检查（第 26 条）
+## 文件与恢复
 
-各包及前端总行数不设上限，代码按职责拆分；单个 Python 文件 ≤500 行，前端单文件 ≤800 行、每行 ≤160 字符。
-`tools/check_scope.py` 保留总行数与最大单文件统计、禁止 import `bestseller`、bookengine 与 deai 互不导入、
-ideation 不导入 bookengine 及禁用词检查；新增或修改的代码保持正常可读格式。
-共享文件 `tools/runtime_support.py` 通过 `tools.runtime_support` 导入，单列 `shared` 行数统计，同样受 Python 单文件 ≤500 行、依赖和禁用词检查约束，不设总量上限；不得反向导入 bookengine 或 deai。
+- `story_bible.yaml`、`threads.yaml`：故事圣经与多线排期；已有设计只读，显式续写另存 continuation。
+- `steps/`、`responses/`、`calls.json`：阶段检查点、原始响应、写作用量，已完成步骤复用，未知用量保持未知。
+- `chapter-NNN.body.md`、`chapters/NNN.json`、`state.json`、`run.json`：正文、完章记录、派生状态和整书进度；正文与完成检查点落盘后，watcher 才处理。
+- `final/chapter-NNN.md` 和 `.deai.json`：有效终稿及去 AI 检查记录；`final/book.md`、`SUMMARY.md` 提供整书结果。已有终稿不重复处理或覆盖。
+- `runtime.json` 与 `.pipeline/polish/runtime.json`：写作、去 AI 各自的等待/错误状态；`web.json` 保存网页队列及流水线状态。
 
-## 第 27 条：逐章终稿与交互
+去 AI 只改命中句，保留数字、实体、事实、段落结构和末场画面，字数在原稿 ±10% 内；不合格回滚。单章模型坏返回耗尽重试时记录失败并用原稿终稿，继续下一章；额度、接口和代码错误按对应状态处理。程序检测分与判官分不能代替人审。
 
-网页默认同时启动写作和去 AI，一个并发名额对应一本书。两阶段的等待、额度和项目错误分别保存，某阶段失败不停止另一阶段；暂停会控制两个进程。旧书点继续只补缺失终稿。书库、详情、默认阅读和五种下载均以终稿为准，导出说明列出缺章；草稿保留在磁盘与阅读设置的修改对照中。
+选题、写作、去 AI 均无金额预算，费用照常记账和显示。书一旦开写便持续写完；接口等待持续退避（最长 10 分钟、无总时限），额度用尽充值后继续，项目错误修复后继续。用户暂停与并发排队保留。服务重启分别恢复两条进程，旧书缺 watcher 时补齐；千章级任务开跑前仍须告知用户。
 
-删除采用一次确认，运行中或仍有写作/去 AI 进程的书拒绝删除；仅可管理 `books/webui/` 下的直属书及其归档，操作和费用日志保留。弹窗、菜单与手机目录支持外部点击、Esc 关闭和单一浮层。
+## 模块与检查
 
-共享完成协议 `tools/chapter_outputs.py` 与 `runtime_support.py` 同受 scope 的文件上限和依赖隔离检查。
+| 路径 | 职责 |
+|---|---|
+| `bookengine/q1.py`、`q1_chapter.py`、`q1_extract.py` | 整书调度、单章生成与修补、上下文及事实提取 |
+| `bookengine/q1_plan.py`、`q1_prepare.py`、`q1_schema.py` | 按需卷章规划、不可覆盖的故事设计、结构归一化 |
+| `bookengine/q1_quality.py`、`contracts.py` 等 | 人物/时间/状态一致性、兑现与成长的程序检查 |
+| `deai/` | 独立检测、局部修复、复检与回滚，不导入 bookengine |
+| `ideation/` | 市场快照、抽轴发散、去重筛选、选题卡与盲选 |
+| `exporter/` | MD、DOCX、TXT、EPUB、番茄分章 ZIP，仅导出终稿 |
+| `tools/webui/` | Python 后端与独立 JS/HTML/CSS，管理队列、阅读与导出 |
+| `tools/runtime_support.py`、`tools/chapter_outputs.py` | 共享重试/运行状态及完章/终稿协议，不反向导入写手或去 AI |
+| `tools/reconcile_q1_state.py` | 从已保存提取重放派生状态，默认 dry-run |
 
-第 28 条修复：去 AI 子步骤的模型返回耗尽六次格式重试后，整章回滚为原稿终稿，记录失败阶段和原因后继续下一章；额度、接口等待和代码错误仍按各自规则处理。旧书只要开启 `polish` 或 `auto_deai`，服务恢复、继续和调度时都会补齐流水线元数据及缺失 watcher，保留活写手、暂停意图和已有终稿。
+在 `engine/` 执行：
+
+```sh
+python tools/check_scope.py
+PYTHONPATH=.:tools python -m pytest -q --no-cov tests/
+python -m ruff format --check .
+```
+
+各包总量不限；单个 Python 文件 ≤500 行，前端单文件 ≤800 行、每行 ≤160 字符。Python 格式化行宽 120；历史 reports 原样保留，不参与格式化。scope 检查依赖隔离和禁用词，禁止 import `bestseller`，bookengine/deai 互不导入，ideation 不导入 bookengine。
+
+待办与人审状态见 [INBOX.md](INBOX.md)，已结束指令原文见 [指令归档](reports/inbox-archive-2026-11.md)，历史阶段设计见 [PLAN.md](PLAN.md)；PLAN 中已被后续指令取代的约束仅作历史记录。每轮报告区分 Evidence / Inference / Unknown。

@@ -6,13 +6,12 @@ from bookengine.retries import delay, next_network_wait
 
 class RetryPolicyTests(unittest.TestCase):
     def test_delay_sequence_and_large_count(self):
-        self.assertEqual([delay(n) for n in range(7)],
-                         [10, 10, 60, 300, 600, 600, 600])
-        self.assertEqual(delay(10 ** 1000), 600)
+        self.assertEqual([delay(n) for n in range(7)], [10, 10, 60, 300, 600, 600, 600])
+        self.assertEqual(delay(10**1000), 600)
 
     def test_mixed_failures_wait_indefinitely(self):
         waited, waits, attempts = 0, [], 0
-        errors = ['RemoteDisconnected', '429', 'timeout', 'connection', '503']
+        errors = ["RemoteDisconnected", "429", "timeout", "connection", "503"]
         for failures, error in enumerate(errors, 1):
             attempts += 1
             with self.subTest(error=error):
@@ -42,8 +41,7 @@ class RetryPolicyTests(unittest.TestCase):
         self.assertEqual(next_network_wait(2, 2000, 3000), 600)
 
     def test_invalid_counts(self):
-        bad = [-1, 0.5, 1.0, True, False, None, '1', float('nan'),
-               float('inf'), -float('inf'), complex(1), Decimal(1)]
+        bad = [-1, 0.5, 1.0, True, False, None, "1", float("nan"), float("inf"), -float("inf"), complex(1), Decimal(1)]
         for value in bad:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 delay(value)
@@ -51,8 +49,7 @@ class RetryPolicyTests(unittest.TestCase):
                 next_network_wait(value, 0)
 
     def test_invalid_seconds_even_when_already_exhausted(self):
-        bad = [-1, -0.1, True, False, None, '1', float('nan'),
-               float('inf'), -float('inf'), complex(1), Decimal(1)]
+        bad = [-1, -0.1, True, False, None, "1", float("nan"), float("inf"), -float("inf"), complex(1), Decimal(1)]
         for value in bad:
             with self.subTest(waited=value), self.assertRaises(ValueError):
                 next_network_wait(1, value)
@@ -62,5 +59,5 @@ class RetryPolicyTests(unittest.TestCase):
                         next_network_wait(1, waited, value)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

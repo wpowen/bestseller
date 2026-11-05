@@ -1,4 +1,5 @@
 """Offline rolling-window tests, including independent processes on one inode."""
+
 import fcntl
 import json
 import multiprocessing
@@ -17,6 +18,7 @@ class WouldWait(Exception):
 
 def contend(path, barrier, results, rpm, tpm, tokens):
     """Use a fixed shared wall clock; report capacity without waiting a minute."""
+
     def stop(seconds):
         raise WouldWait
 
@@ -127,11 +129,24 @@ class RateTests(unittest.TestCase):
 
     def test_corrupt_state_fails_closed_without_echoing_content(self):
         private = "private-payload-must-not-escape"
-        cases = [private, "{", "null", "{}", '[[]]',
-                 json.dumps([[private, 1]]), '[[true, 1]]', '[[1000, true]]',
-                 '[[1000, -1]]', '[[1000, 1.5]]', '[[-1, 1]]',
-                 '[[NaN, 1]]', '[[Infinity, 1]]', '[[1e999, 1]]',
-                 '[[1000, 1, 2]]', b'\xff']
+        cases = [
+            private,
+            "{",
+            "null",
+            "{}",
+            "[[]]",
+            json.dumps([[private, 1]]),
+            "[[true, 1]]",
+            "[[1000, true]]",
+            "[[1000, -1]]",
+            "[[1000, 1.5]]",
+            "[[-1, 1]]",
+            "[[NaN, 1]]",
+            "[[Infinity, 1]]",
+            "[[1e999, 1]]",
+            "[[1000, 1, 2]]",
+            b"\xff",
+        ]
         for content in cases:
             raw = content if isinstance(content, bytes) else content.encode()
             self.path.write_bytes(raw)
@@ -154,8 +169,10 @@ class RateTests(unittest.TestCase):
         context = multiprocessing.get_context("spawn")
         barrier = context.Barrier(workers)
         results = context.Queue()
-        processes = [context.Process(target=contend, args=(
-            str(self.path), barrier, results, rpm, tpm, tokens)) for _ in range(workers)]
+        processes = [
+            context.Process(target=contend, args=(str(self.path), barrier, results, rpm, tpm, tokens))
+            for _ in range(workers)
+        ]
         try:
             for process in processes:
                 process.start()

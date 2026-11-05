@@ -18,6 +18,7 @@ async function loadConfig() {
  try {
   const config = await api('/api/config');
   state.config = config;
+  text('app-version', `v${config.version}`);
   $('genre').replaceChildren();
   for (const genre of config.genres || []) {
    const option = el('option', genre.name);

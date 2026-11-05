@@ -97,6 +97,13 @@ def _chapters(book, source, unknown):
 
 def _stage_stats(bible, chapters):
     stages = _rows(bible.get("volumes", bible.get("stages")))
+    observed, unknown = [], []
+    for chapter in chapters:
+        location, quote = _boundary(chapter, "end")
+        if location:
+            observed.append(dict(chapter=chapter["number"], location=location, quote=quote))
+        else:
+            unknown.append(chapter["number"])
     distribution = []
     for stage in stages:
         start, end = stage.get("start"), stage.get("end", stage.get("exit_chapter"))
@@ -109,6 +116,9 @@ def _stage_stats(bible, chapters):
                 end=end,
                 planned_chapters=end - start + 1 if valid else None,
                 available_chapters=[c["number"] for c in chapters if valid and start <= c["number"] <= end],
+                observed_end_locations=sorted(
+                    {r["location"] for r in observed if valid and start <= r["chapter"] <= end}
+                ),
             )
         )
     locations = sorted({r["location"] for r in distribution if isinstance(r["location"], str) and r["location"]})
@@ -117,6 +127,14 @@ def _stage_stats(bible, chapters):
         location_count=len(locations) if stages else None,
         locations=locations,
         distribution=distribution,
+        observed_locations=dict(
+            count=len({r["location"] for r in observed}),
+            locations=sorted({r["location"] for r in observed}),
+            chapters=observed,
+            unknown_chapters=unknown,
+            basis="grounded_end_state",
+            status="Evidence" if observed else "Unknown",
+        ),
         basis="saved_plan",
         status="Evidence" if stages else "Unknown",
     )

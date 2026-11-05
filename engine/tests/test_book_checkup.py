@@ -64,6 +64,18 @@ def test_structured_book_reports_every_diagnostic_without_writing(tmp_path):
     assert result["aliases"]["issues"] == []
 
 
+def test_planned_locations_are_not_promoted_to_observed_story_locations(tmp_path):
+    sample(tmp_path)
+    put(tmp_path, "chapter-001.body.md", "阮宁停在河桥。")
+    put(tmp_path, "chapters/001.json", dict(end_location="河桥", end_quote="阮宁停在河桥。"))
+    result = check_book(tmp_path)
+    assert result["stages"]["location_count"] == 2
+    observed = result["stages"]["observed_locations"]
+    assert observed["locations"] == ["河桥"] and observed["count"] == 1
+    assert observed["unknown_chapters"] == [2, 3]
+    assert result["stages"]["distribution"][0]["observed_end_locations"] == ["河桥"]
+
+
 def test_explicit_movement_and_ungrounded_metadata_are_not_counted_as_breaks(tmp_path):
     sample(tmp_path)
     put(tmp_path, "chapter-002.body.md", "她从南港走到北城。顾衡站在桥头。")

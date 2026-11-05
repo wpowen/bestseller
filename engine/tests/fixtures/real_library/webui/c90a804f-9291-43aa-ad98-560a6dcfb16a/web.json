@@ -1,0 +1,20 @@
+{
+  "title": "铸钟匠真能实现愿望吗？",
+  "genre": "urban-power-reversal",
+  "chapters": 50,
+  "polish": true,
+  "auto_deai": true,
+  "status": "complete",
+  "created": "2026-11-05T04:48:18.239133+00:00",
+  "jobs": 3,
+  "reason": "",
+  "pipeline_version": 1,
+  "pipeline": {
+    "book": {
+      "status": "complete"
+    },
+    "polish": {
+      "status": "complete"
+    }
+  }
+}

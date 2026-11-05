@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-11-05T09:24:49.082978+00:00",
+  "books": [
+    {
+      "id": "webui/c90a804f-9291-43aa-ad98-560a6dcfb16a",
+      "retained_chapters": [
+        1,
+        2,
+        3,
+        5,
+        29,
+        50
+      ],
+      "source_chapters": 50,
+      "status": "complete",
+      "report_statuses": [
+        "polished",
+        "retained",
+        "unchanged"
+      ]
+    },
+    {
+      "id": "webui/dc4a5e0e-4451-4eae-a269-3b507c75c324",
+      "retained_chapters": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "source_chapters": 5,
+      "status": "complete",
+      "report_statuses": [
+        "polished",
+        "unchanged"
+      ]
+    },
+    {
+      "id": "webui/e0c51513-bf09-43cb-bbf8-6ccc1516500f",
+      "retained_chapters": [
+        1,
+        2,
+        3,
+        14,
+        33,
+        50
+      ],
+      "source_chapters": 50,
+      "status": "complete",
+      "report_statuses": [
+        "polished",
+        "retained",
+        "unchanged"
+      ]
+    },
+    {
+      "id": "webui/e9b3b44e-c77f-453d-a7bb-fe4f0f2d4af4",
+      "retained_chapters": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "source_chapters": 5,
+      "status": "complete",
+      "report_statuses": [
+        "polished"
+      ]
+    }
+  ]
+}

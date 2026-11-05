@@ -257,7 +257,13 @@ class Library:
         rows = self.chapters(folder)
         book = run.get("book", {})
         bible = bible_data(self.safe(folder / "story_bible.yaml"))
-        title = web.get("display_title") or bible.get("title") or web.get("title") or folder.name
+        title = (
+            web.get("display_title")
+            or bible.get("title")
+            or (web.get("selected_card") or {}).get("title")
+            or web.get("title")
+            or folder.name
+        )
         total = book.get("chapters", web.get("chapters", len(rows)))
         owned = folder.parent in (self.own, self.own / ".archive") and bool(web)
         state = web.get("status", run.get("status", "unknown")) if owned else run.get("status", "unknown")
@@ -392,6 +398,7 @@ class Library:
             characters=[c for c in characters if isinstance(c, dict)],
             bible=text(self.safe(folder / "story_bible.yaml")),
             selected_card=read(self.safe(folder / "web.json"), {}).get("selected_card"),
+            checkup=read(self.safe(folder / "book_checkup.json")),
             bible_view=bible_data(self.safe(folder / "story_bible.yaml")),
             outline_view=[read(self.safe(p), {}) for p in sorted(folder.glob("writing_outlines/*.json"))],
             outline="\n\n".join(text(self.safe(p)) for p in sorted(folder.glob("writing_outlines/*.json"))),

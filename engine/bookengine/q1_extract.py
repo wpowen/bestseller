@@ -132,6 +132,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "transition",
             "introductions",
             "payoff_due",
             "payoff_type",

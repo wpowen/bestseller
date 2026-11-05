@@ -126,7 +126,9 @@ def test_long_history_does_not_crowd_out_stage_cast_and_locked_card(tmp_path):
     save(tmp_path / "chapters/040.json", row)
     for n in range(1, 40):
         save(tmp_path / f"chapters/{n:03d}.json", outline(n, f"旧章{n}", str(n)))
-    client = Fixture(tmp_path, [dict(chapters=[outline(41, "晴空", "追逐逃脱")])])
+    client = Fixture(
+        tmp_path, [dict(chapters=[dict(outline(41, "晴空", "追逐逃脱"), transition="离开旧地，一夜后抵达天穹城。")])]
+    )
     q1_plan.outlines(client, bible, {}, DATA["profile"], bible["volumes"][4], 41, 41, {}, [row], [], [])
     prompt = client.calls[0][1]
     assert all(word in prompt for word in ("锁定故事", "天穹城", "对手1", "只能背景", "周远舟", "信任抉择"))

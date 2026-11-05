@@ -367,8 +367,22 @@ def check_book(book, *, source="final"):
     chapters = _chapters(book, source, unknown)
     stages = _stage_stats(bible, chapters)
     from bookengine.retired_opponents import location_regression
+    from bookengine.stage_transition import stage_transition
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
+    by_number = {c["number"]: c for c in chapters}
+    transitions = [
+        dict(row, chapters=[c["number"] - 1, c["number"]])
+        for c in chapters
+        if (
+            row := stage_transition(
+                bible,
+                c["number"],
+                clean_prose(c["text"])[0],
+                _boundary(by_number[c["number"] - 1], "end")[0] if c["number"] - 1 in by_number else None,
+            )
+        )
+    ]
     residue = [dict(chapter=c["number"], **clean_prose(c["text"])[1]) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
@@ -384,6 +398,11 @@ def check_book(book, *, source="final"):
         title_keywords=_keywords(chapters),
         location_breaks=_breaks(chapters),
         location_regressions=dict(count=len(regressions), issues=regressions),
+        stage_transitions=dict(
+            checks=transitions,
+            missing=[r["chapters"] for r in transitions if r["status"] == "missing"],
+            unknown=[r["chapters"] for r in transitions if r["status"] == "unknown"],
+        ),
         format_residue=dict(
             total=sum(c["total"] for c in residue),
             chapters=[c for c in residue if c["total"]],

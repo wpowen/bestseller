@@ -14,7 +14,8 @@ from .storage import save
 from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
-from .structure_planning import stage_by_number
+from .structure_planning import stage_by_number, opponent_presence_issues
+from .stage_transition import planning_transition_issues
 from .retired_opponents import stage_constraints
 from .outline_diversity import (
     historical_outlines,
@@ -210,6 +211,15 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     if end < start:
         return []
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
+    superseded = bool(
+        cached
+        and not cached.get("structure_checks_version")
+        and (
+            opponent_presence_issues(bible, cached["chapters"]) + planning_transition_issues(bible, cached["chapters"])
+        )
+    )
+    if superseded:
+        cached = None
     if cached:
         if cached["normalized"]:
             return cached["chapters"]
@@ -253,6 +263,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
+        (
+            "阶段首章transition必填：一两句交代从上一阶段实际终点到本阶段起点的移动、时间与原因；开头300字落实",
+            dict(start=volume.get("start"), previous_end=state.get("end_location")),
+        ),
         ("已退场对手不能在conflict/opponent中发起冲突；已离开地点不能再作章末舞台", stage_constraints(bible, start)),
         ("对手分级与退场：exit后只能背景提及，禁止列入scene.characters", opponents),
         ("固定人物卡，首次登场须交代identity，称呼仅限name/aliases", cards),
@@ -287,11 +301,17 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         return _ask(
             client,
             "outlines",
-            f"chapters-{start}-{end}-diversity" + (f"-user{redo}" if redo else ""),
+            f"chapters-{start}-{end}-diversity"
+            + ("-structure35" if superseded else "")
+            + (f"-user{redo}" if redo else ""),
             [
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
+                (
+                    "阶段首章必须带transition：从上阶段终点到新阶段的移动、时间与原因，落实于开头300字",
+                    state.get("end_location"),
+                ),
                 ("退场后只作背景，禁止列在场人物", opponents),
                 ("已退场对手与已离开地点约束", stage_constraints(bible, start)),
                 ("已用核心冲突类型与章名关键词", prompt_vocabulary(vocabulary)),
@@ -302,6 +322,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         )
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
+    if superseded:
+        key += "-redo-structure35"
     repaired = (
         cached["chapters"]
         if cached

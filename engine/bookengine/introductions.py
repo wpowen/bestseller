@@ -57,8 +57,12 @@ def _registry(cards):
             continue
         name = card["name"].strip()
         by_name[name] = card
-        for label in [name, *_strings(card.get("aliases")), *_strings(card.get("address"))]:
+        # Legacy address fields can describe how this person addresses another
+        # character. Only explicit aliases establish identity ownership.
+        for label in [name, *_strings(card.get("aliases"))]:
             labels.setdefault(label, set()).add(name)
+    for name in by_name:
+        labels[name] = {name}
     return by_name, labels
 
 
@@ -187,12 +191,14 @@ def check_introductions(text, cards, previously_seen=(), names=()):
     seen = {_canonical(n, labels) for n in _names(previously_seen)}
     expected = list(dict.fromkeys(_canonical(n, labels) for n in _names(names)))
     hits = _mentions(text, labels)
-    firsts, findings = {}, []
+    firsts, findings, ambiguous = {}, [], set()
     for hit in hits:
         if len(labels[hit[2]]) > 1:
-            findings.append(
-                _finding("ambiguous_alias", hit[2], "Unknown", "称呼对应多张人物卡，需核对归属", text, *hit[:2])
-            )
+            if hit[2] not in ambiguous:
+                ambiguous.add(hit[2])
+                findings.append(
+                    _finding("ambiguous_alias", hit[2], "Unknown", "称呼对应多张人物卡，需核对归属", text, *hit[:2])
+                )
             continue
         name = next(iter(labels[hit[2]]))
         firsts.setdefault(name, hit)
@@ -227,10 +233,16 @@ def check_introductions(text, cards, previously_seen=(), names=()):
                 )
             )
     aliases = set()
+    addresses = {s for card in by_name.values() for s in _strings(card.get("address"))}
     for pattern in (_NAMING, _ADDRESS, _VOCATIVE):
         for match in pattern.finditer(text):
             token = match[1]
-            if token in labels or token in aliases or token in {"我", "你", "他", "她", "哥哥", "姐姐", "叔叔", "爷爷"}:
+            if (
+                token in labels
+                or token in addresses
+                or token in aliases
+                or token in {"我", "你", "他", "她", "哥哥", "姐姐", "叔叔", "爷爷"}
+            ):
                 continue
             if pattern in (_ADDRESS, _VOCATIVE) and token.startswith(("我", "你", "他", "她", "亲", "表", "堂")):
                 continue

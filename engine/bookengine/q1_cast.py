@@ -3,20 +3,22 @@
 from .introductions import annotate_introductions, check_introductions
 from .precision import _sentences
 
+CAST_OBSERVATION_VERSION = 2
+
 
 def seen_in(text, cards):
     names = []
     for card in cards:
         aliases = card.get("aliases", [])
         aliases = [aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else []
-        labels = [card.get("name"), card.get("address"), *aliases]
+        labels = [card.get("name"), *aliases]
         if card.get("name") and any(isinstance(label, str) and label and label in text for label in labels):
             names.append(card["name"])
     return names
 
 
 def previous_cast(out, number, bible, state):
-    if "seen_characters" in state:
+    if state.get("cast_observation_version") == CAST_OBSERVATION_VERSION and "seen_characters" in state:
         return state["seen_characters"]
     cards = bible.get("characters", [])
     return sorted(

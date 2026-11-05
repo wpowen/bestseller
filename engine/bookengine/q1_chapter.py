@@ -16,6 +16,7 @@ from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
 from .structure_planning import final_stage_start
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
+from .q1_cast import CAST_OBSERVATION_VERSION
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -43,7 +44,7 @@ def supplement(text, value):
 
 def amend(text, raw, bible, state, outline):
     hits = prose_hits(text, bible, state)
-    detail = dict(edits=[], hits_before=len(hits), adoption_failed=False, remaining=[], patch=False)
+    detail = dict(edits=[], hits_before=len(hits), adoption_failed=False, remaining=[], patch=False, body_adopted=False)
     if outline.get("ending") and raw.get("scene"):
         changed, accepted = apply_scene(text, raw["scene"])
         return changed, dict(detail, patch=accepted)
@@ -51,7 +52,7 @@ def amend(text, raw, bible, state, outline):
     body = body_of(raw.get("body", ""), None, detail.setdefault("body_cleaning", {}))
     count, amount = chinese_count(text), chinese_count(body)
     if body and (count > high and low <= amount < count or count < low and count < amount <= high):
-        return body, dict(detail, patch=True)
+        return body, dict(detail, patch=True, body_adopted=True)
     spans = _sentences(text)
     changed, edits = sentence_edits(
         text,
@@ -153,12 +154,11 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         for h in prose_hits(original, bible, state)
         if h.get("kind") in ("missing_introduction", "unregistered_alias")
     }
-    cast_edits = raw.get("edits") if isinstance(raw.get("edits"), list) else []
-    cast_repaired = any(isinstance(e, dict) and e.get("id") in cast_target_ids for e in cast_edits)
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)
-    cleaning["repair_body"] = notes.get("body_cleaning", {}) if notes.get("patch") else {}
+    cast_repaired = any(e["id"] in cast_target_ids for e in notes.get("edits", []))
+    cleaning["repair_body"] = notes.get("body_cleaning", {}) if notes.get("body_adopted") else {}
     patched = notes["patch"]
     for old, new in (raw.get("rename") if isinstance(raw.get("rename"), dict) else {}).items():
         if (
@@ -180,6 +180,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     ):
         text, raw, failed = original, original_raw, initial_failed
         notes["cast_repair"] = "rolled_back"
+        cleaning["repair_body"] = {}
+        cleaning["repair"] = {}
     elif cast_repaired:
         notes["cast_repair"] = "rechecked"
     text, raw, failed, boundaries, handoff = repair_opening(
@@ -242,6 +244,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     current["seen_characters"] = sorted(set(state["seen_characters"]) | set(seen_in(text, bible.get("characters", []))))
     if not current["seen_characters"]:
         current.pop("seen_characters")
+        current.pop("cast_observation_version", None)
+    else:
+        current["cast_observation_version"] = CAST_OBSERVATION_VERSION
     kinds = normalize_scenes(raw.get("scene_types"))
     events = [e for e in raw.get("events", []) or [] if isinstance(e, dict)]
     row = dict(

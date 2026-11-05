@@ -303,8 +303,13 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         )
     }
     contract["scene_start"] = scene_context(text)["start"] if outline.get("ending") else None
+    findings = [
+        {k: (str(row.get(k, ""))[:180]) for k in ("kind", "name", "status", "message")}
+        for row in cast_findings(text, bible, state, outline)
+        if row.get("status") != "Evidence"
+    ][:12]
     sections = [
-        ("登场与称呼问题，合并本次定点修复", pack(cast_findings(text, bible, state, outline))),
+        ("编号正文", number_paragraphs(text)),
         (
             "合法值",
             pack(
@@ -318,7 +323,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             ),
         ),
         ("本章要求", pack(contract)),
-        ("编号正文", number_paragraphs(text)),
+        ("登场与称呼问题，合并本次定点修复", pack(findings)),
         ("旧状态", pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "clock")})[:500]),
         ("候选句S编号", pack(hits)[:1800]),
         (

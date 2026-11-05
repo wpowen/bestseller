@@ -243,7 +243,7 @@ def _breaks(chapters):
 
 
 def _aliases(card):
-    values = [card.get("name", ""), card.get("address", "")]
+    values = [card.get("name", "")]
     aliases = card.get("aliases", [])
     values.extend([aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else [])
     return [s for s in values if isinstance(s, str) and s]
@@ -252,7 +252,7 @@ def _aliases(card):
 def _cast_stats(bible, chapters):
     cards = _rows(bible.get("characters", bible.get("character_cards")))
     missing, introduced, alias_issues = [], [], []
-    registered = [s for card in cards for s in _aliases(card)]
+    registered = [s for card in cards for s in [*_aliases(card), card.get("address", "")] if isinstance(s, str) and s]
     for card in cards:
         names = _aliases(card)
         occurrence = next(

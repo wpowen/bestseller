@@ -152,6 +152,19 @@ def test_checks_do_not_mutate_cards_or_previous_seen():
     assert (cards, seen) == snapshot
 
 
+def test_canonical_name_cannot_be_claimed_by_another_cards_address():
+    cards = [dict(name="沈照", identity="码头账房"), dict(name="顾衡", address="沈照", identity="药铺掌柜")]
+    rows = check_introductions("码头账房沈照走进门。", cards)
+    assert not any(r["kind"] == "ambiguous_alias" for r in rows)
+    assert any(r["kind"] == "introduction_present" and r["name"] == "沈照" for r in rows)
+
+
+def test_ambiguous_alias_diagnostic_is_reported_once_not_per_mention():
+    cards = [dict(name="沈照", aliases=["小宁"]), dict(name="顾衡", aliases=["小宁"])]
+    rows = check_introductions("小宁回来了。" * 100, cards)
+    assert len([r for r in rows if r["kind"] == "ambiguous_alias"]) == 1
+
+
 @pytest.mark.parametrize("text", ["“铁哥，等等！”", "“我叫夜鸦。”", "“大家叫我夜鸦。”"])
 def test_vocative_and_explicit_self_introduction_are_alias_candidates(text):
     assert any(r["kind"] == "unregistered_alias" for r in check_introductions(text, CARDS))

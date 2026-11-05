@@ -19,3 +19,15 @@ def test_writer_records_all_removed_structure_before_fact_extraction():
         assert "### 第二场" not in finish and "🏼" not in finish
     finally:
         fixture.doCleanups()
+
+
+def test_discarded_body_candidate_does_not_inflate_adopted_prose_cleaning():
+    fixture = MinimalBTests()
+    fixture.setUp()
+    try:
+        first = fixture.extraction(body="丢弃的草稿🏼。", patch=dict(after=1, text="她停下脚步。"))
+        client = CaptureClient(fixture.out, [body(60)], {"r2-ch2-finish": first})
+        row = fixture.run_chapter(client)
+        assert row["cleaning"]["total"] == 0
+    finally:
+        fixture.doCleanups()

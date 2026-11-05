@@ -15,6 +15,10 @@
 - 测试命令：`cd engine && PYTHONPATH=.:tools python -m pytest -q --no-cov tests/`。
 - 写书不设金额预算（用户 2026-11-05 定）：书一旦开写就要写完。只有三种情况可以停：项目本身出错；模型账户额度或 token 用尽；接口限流或排队（这时等待重试，不算停）。花费照常记账、照常显示。千章级任务开跑前仍先告诉用户。
 - 不要覆盖用户已有的改动，也不要删除 `books/` 里的书稿。没有用户要求不 push。
+- 不要往真实书库 `books/` 写测试书。测试和临时实例的书目录放在系统临时目录里。
+- 不要运行会打印进程参数或环境变量的命令（`ps -ef`/`ps aux`/`pgrep -f`/`pgrep -fl`/`env`/`printenv`）。本机别的进程会把密钥写在命令行上。查进程用 `pgrep -x 名称`，或者按 PID 读 `comm`。
+- 网页和运行时相关的改动，验收时除了自造的夹具，还必须在真实书库的只读副本上跑一遍（见 `engine/reports/prevention-plan-20261105.md`）。
+- 外部模型的评审意见，先逐条核对书稿里的引文和章号，再当成需求。
 
 当前模块边界：
 - `bookengine/q1.py` 只负责整书调度；单章逻辑在 `q1_chapter.py`，上下文与提取在 `q1_extract.py`，设计/规划/schema 在 `q1_prepare.py`、`q1_plan.py`、`q1_schema.py`。

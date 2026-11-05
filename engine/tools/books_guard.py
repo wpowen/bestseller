@@ -95,6 +95,16 @@ def install_write_guard():
         elif event == "os.truncate":
             check(args[0])
 
+    original_open = os.open
+
+    def guarded_open(path, flags, mode=0o777, *, dir_fd=None):
+        if dir_fd is not None and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND):
+            check(path, dir_fd)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    os.open = guarded_open
+    if original_open in os.supports_dir_fd:
+        os.supports_dir_fd.add(guarded_open)
     sys.addaudithook(audit)
 
 

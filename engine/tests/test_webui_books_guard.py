@@ -49,3 +49,33 @@ def test_global_audit_blocks_mutations_before_io(tmp_path):
         with pytest.raises(PermissionError, match="真实书库"):
             action()
     assert not path.exists()
+
+
+def test_relative_descriptor_write_is_blocked_in_isolated_child(tmp_path):
+    import subprocess
+    import sys
+
+    engine = Path(__file__).resolve().parents[1]
+    script = """
+import os, sys
+from pathlib import Path
+from tools import books_guard
+root = Path(sys.argv[1])
+books_guard.repository_books = lambda: (root,)
+books_guard.install_write_guard()
+fd = os.open(root, os.O_RDONLY)
+try:
+    try:
+        child = os.open('sentinel', os.O_CREAT | os.O_WRONLY, 0o600, dir_fd=fd)
+    except PermissionError:
+        pass
+    else:
+        os.close(child)
+        raise AssertionError('descriptor write bypassed guard')
+finally:
+    os.close(fd)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)], cwd=engine, capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr

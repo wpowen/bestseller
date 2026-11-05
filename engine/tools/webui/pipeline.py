@@ -3,6 +3,7 @@
 import os
 import signal
 import subprocess
+from process_logs import spawn as spawn_logged
 import sys
 import time
 
@@ -140,10 +141,9 @@ def spawn(queue, folder, data, stage):
         if not (data.get("auto_deai") is True or data.get("polish") is True):
             command.append("--original")
     try:
-        with (folder / f"web-{stage}.log").open("a") as log:
-            child = subprocess.Popen(
-                command, cwd=queue.engine.parent, env=env, stdout=log, stderr=log, start_new_session=True
-            )
+        child = spawn_logged(
+            command, folder / f"web-{stage}.log", queue.env, cwd=queue.engine.parent, env=env, start_new_session=True
+        )
     except OSError:
         states[stage] = dict(status="error", reason="无法启动子进程，可从检查点重试")
         return

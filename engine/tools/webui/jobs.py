@@ -17,6 +17,7 @@ from run_status import auto_deai, recover, runtime_view
 import pipeline
 from job_inputs import finite, whole, check_card
 from topic_worker import run_topic
+from process_logs import spawn
 
 
 class Queue:
@@ -84,15 +85,14 @@ class Queue:
                 topic["direction"] = direction
             save(folder / "topic.json", topic)
             command = [sys.executable, "-m", "tools.webui", "--topic-worker", str(folder), "--env", str(self.env)]
-            with (folder / "worker.log").open("a") as log:
-                p = subprocess.Popen(
-                    command,
-                    cwd=self.engine.parent,
-                    env=self.child_env(),
-                    stdout=log,
-                    stderr=log,
-                    start_new_session=True,
-                )
+            p = spawn(
+                command,
+                folder / "worker.log",
+                self.env,
+                cwd=self.engine.parent,
+                env=self.child_env(),
+                start_new_session=True,
+            )
             self.processes["topic/" + key] = dict(p=p, kind="topic", folder=folder, paused=False)
             return self.get_topic(key)
 
@@ -231,10 +231,9 @@ class Queue:
             command = [sys.executable, "-m", "deai", "run", str(folder), "--env", str(self.env)]
         save(folder / "runtime.json", {})
         try:
-            with (folder / "web-process.log").open("a") as log:
-                p = subprocess.Popen(
-                    command, cwd=self.engine.parent, env=env, stdout=log, stderr=log, start_new_session=True
-                )
+            p = spawn(
+                command, folder / "web-process.log", self.env, cwd=self.engine.parent, env=env, start_new_session=True
+            )
         except OSError as exc:
             reason = type(exc).__name__ + "：无法启动子进程，可从检查点重试"
             data.pop("pid", None)

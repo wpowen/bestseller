@@ -15,6 +15,7 @@ from library import GENRES, Library, read, text, save
 from job_inputs import whole
 from jobs import Queue, topic_worker
 from tools.version import __version__
+from tools.books_guard import check_test_root
 
 ASSETS = Path(__file__).resolve().parent
 ENGINE = ASSETS.parents[1]
@@ -137,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(dict(books=lib.listing(), spending=lib.spending(), read_only=lib.read_only))
             elif path == "/api/archive":
                 self.send(dict(books=lib.archive()))
+            elif path == "/api/trash":
+                self.send(dict(books=lib.trash()))
             elif path == "/api/topics":
                 self.send(self.server.queue.get_topic(get("id")))
             elif path == "/api/book":
@@ -224,7 +227,16 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/books":
                 result = self.server.queue.create(data)
             elif self.path == "/api/action":
-                result = self.server.queue.action(data["id"], data["action"], title=data.get("title"))
+                result = self.server.queue.action(
+                    data["id"],
+                    data["action"],
+                    title=data.get("title"),
+                    origin_info=dict(
+                        source="web" if self.headers.get("X-Bookweb-Source") == "web" else "api",
+                        user_agent=self.headers.get("User-Agent", "")[:512],
+                        client=self.client_address[0],
+                    ),
+                )
             else:
                 self.send({"error": "未找到"}, 404)
                 return
@@ -250,6 +262,7 @@ def main():
     )
     parser.add_argument("--topic-worker", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    check_test_root(args.books)
     os.umask(0o077)
     if args.topic_worker:
         topic_worker(args.topic_worker, args.env)

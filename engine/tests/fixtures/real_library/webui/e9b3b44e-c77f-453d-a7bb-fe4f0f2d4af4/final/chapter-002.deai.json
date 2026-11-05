@@ -1,0 +1,283 @@
+{
+  "status": "polished",
+  "complete": true,
+  "before_score": 6.8349,
+  "after_score": 4.7368,
+  "warnings": [
+    {
+      "rollback": "facts",
+      "paragraphs": [
+        "P26",
+        "P56",
+        "P72"
+      ]
+    }
+  ],
+  "checks": {
+    "diagnostics": {
+      "checked_pids": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "P9",
+        "P10",
+        "P11",
+        "P12",
+        "P13",
+        "P14",
+        "P15",
+        "P16",
+        "P17",
+        "P18",
+        "P19",
+        "P20",
+        "P21",
+        "P22",
+        "P23",
+        "P24",
+        "P25",
+        "P26",
+        "P27",
+        "P28",
+        "P29",
+        "P30",
+        "P31",
+        "P32",
+        "P33",
+        "P34",
+        "P35",
+        "P36",
+        "P37",
+        "P38",
+        "P39",
+        "P40",
+        "P41",
+        "P42",
+        "P43",
+        "P44",
+        "P45",
+        "P46",
+        "P47",
+        "P48",
+        "P49",
+        "P50",
+        "P51",
+        "P52",
+        "P53",
+        "P54",
+        "P55",
+        "P56",
+        "P57",
+        "P58",
+        "P59",
+        "P60",
+        "P61",
+        "P62",
+        "P63",
+        "P64",
+        "P65",
+        "P66",
+        "P67",
+        "P68",
+        "P69",
+        "P70",
+        "P71",
+        "P72",
+        "P73"
+      ],
+      "facts": [],
+      "chapter": {
+        "opening": "",
+        "risks": [
+          {
+            "pid": "P36-P45",
+            "reason": "连续摆放证词、问答封袋人与经理去向，信息推进主要靠解释性对白，节奏趋缓。可压缩重复问答，并让人物动作承载部分信息。"
+          },
+          {
+            "pid": "P49-P65",
+            "reason": "纸背压痕、登记副页、松针灰、湿墨与补签时间连续展开，推理链完整但术语和验证步骤密集，程序说明感偏重。可突出决定性反证，删减次要操作过程，避免削弱对峙张力。"
+          },
+          {
+            "pid": "P67-P73",
+            "reason": "结尾连续重复“证词未被动过”的结论与追问，力度递增有限；最后停在抽象质问，缺少可见的动作或环境收束。建议保留一句质问，并用纸、灰或泥水中的具体细节形成终场画面。"
+          }
+        ],
+        "ending": "",
+        "procedural": "",
+        "revision_route": "none"
+      },
+      "status": "checked"
+    },
+    "entities": [
+      "沈允禾",
+      "顾冬岚",
+      "周启榆",
+      "林夏珩",
+      "高如筝",
+      "唐安澜"
+    ],
+    "metrics_before": {
+      "chars": 1902,
+      "paragraphs": 73,
+      "dialogue_ratio": 0.4059,
+      "average_paragraph_chars": 26.05,
+      "single_sentence_ratio": 0.589,
+      "sentence_length_variance": 70.785,
+      "paragraph_length_quantiles": {
+        "0.1": 7,
+        "0.25": 12,
+        "0.5": 19,
+        "0.75": 37,
+        "0.9": 59
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 10,
+      "procedural_per_1000": 5.2576,
+      "cliche_count": 2,
+      "cliche_per_1000": 1.0515,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "metrics_after": {
+      "chars": 1900,
+      "paragraphs": 73,
+      "dialogue_ratio": 0.4063,
+      "average_paragraph_chars": 26.03,
+      "single_sentence_ratio": 0.589,
+      "sentence_length_variance": 70.507,
+      "paragraph_length_quantiles": {
+        "0.1": 7,
+        "0.25": 12,
+        "0.5": 19,
+        "0.75": 37,
+        "0.9": 59
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 10,
+      "procedural_per_1000": 5.2632,
+      "cliche_count": 2,
+      "cliche_per_1000": 1.0526,
+      "simile_count": 0,
+      "simile_per_1000": 0.0,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "remaining_hits": [
+      {
+        "sid": "S44",
+        "pid": "P26",
+        "start": 886,
+        "end": 905,
+        "text": "顾冬岚看见她指节微微发白：“沈小姐？”",
+        "type": "action_cliche",
+        "rule": "action_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S122",
+        "pid": "P72",
+        "start": 2378,
+        "end": 2395,
+        "text": "她低头看向那行墨字，指尖缓缓收紧。",
+        "type": "action_cliche",
+        "rule": "action_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S95",
+        "pid": "P56",
+        "start": 1833,
+        "end": 1851,
+        "text": "她用指腹轻轻一碾，灰中露出一点暗红。",
+        "type": "adverb_density",
+        "rule": "pacing_adverbs",
+        "severity": 1,
+        "source": "rule"
+      },
+      {
+        "sid": "S122",
+        "pid": "P72",
+        "start": 2378,
+        "end": 2395,
+        "text": "她低头看向那行墨字，指尖缓缓收紧。",
+        "type": "adverb_density",
+        "rule": "pacing_adverbs",
+        "severity": 1,
+        "source": "rule"
+      },
+      {
+        "sid": "S14",
+        "pid": "P8",
+        "start": 306,
+        "end": 332,
+        "text": "沈允禾从另一侧截住，湿透的头发贴在脸侧，呼吸却很稳。",
+        "type": "cool_micro_action",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "在追逐截击的紧迫场面中，以“呼吸却很稳”刻意强调人物镇定；这一状态既不改变躲闪或截住对方的动作结果，也没有身体限制依据，主要承担摆姿态的影视化特写功能。",
+          "“呼吸却很稳”专门用身体状态表现人物在追逐中的刻意镇定，缺少身体限制或实际应对需求支撑，动作本身不改变追逐、截堵或局势。"
+        ]
+      },
+      {
+        "sid": "S122",
+        "pid": "P72",
+        "start": 2378,
+        "end": 2395,
+        "text": "她低头看向那行墨字，指尖缓缓收紧。",
+        "type": "cool_micro_action",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "“指尖缓缓收紧”没有实际用途或操作需求，只是借刻意放慢的细小动作营造压迫感，属于影视化装酷式微动作。",
+          "质问之后又用“指尖缓缓收紧”单独强调克制与怒意，属于为显得沉着而设计的姿态；此处没有操作需要，该动作也未改变对方反应或局面。"
+        ]
+      },
+      {
+        "sid": "S53",
+        "pid": "P32",
+        "start": 1068,
+        "end": 1107,
+        "text": "沈允禾将纸折好收入袖中，“雨、脚印、字迹都能毁，只有纸背留下的东西不会说谎。”",
+        "type": "written_dialogue",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "“雨、脚印、字迹都能毁，只有纸背留下的东西不会说谎”带有格言式的抽象总结，像是替作者点明侦查原则，不像当事人在现场依据纸背痕迹作出判断；前半句也略显刻意地铺陈对仗。",
+          "“只有纸背留下的东西不会说谎”以格言式抽象结论替人物总结证据意义，书面感较重，也不像沈允禾当场用短促的话指出具体矛盾。",
+          "“雨、脚印、字迹都能毁，只有纸背留下的东西不会说谎”以对仗式格言总结证据原则，替作者表达抽象道理，且“留下的东西”指代含混，不如直接点明纸背痕迹能证明什么，更符合沈允禾冷静短促、先指出矛盾的口吻。"
+        ]
+      }
+    ],
+    "dialogue_mode": "local",
+    "original_chars": 1902,
+    "final_chars": 1900,
+    "programmatic": [],
+    "ending_image": "“你还要说，它一直躺在封存袋里吗？”",
+    "facts": "preservation_model_checked",
+    "unknown_usage": 0
+  },
+  "calls": 1,
+  "prompt_tokens": 2020,
+  "completion_tokens": 374,
+  "seconds": 6.525
+}

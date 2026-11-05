@@ -57,6 +57,7 @@ function updateActionControls() {
 }
 let books = [],
  archived = [],
+ trashed = [],
  filter = 'all',
  undoId,
  managed;
@@ -119,16 +120,24 @@ function renderLibrary() {
    return row;
   }),
  );
+ $('trash-books').replaceChildren(...trashed.map((b) => {
+  const row = el('article', null, 'panel');
+  row.append(el('h3', b.title), el('p', '7 天内可在回收站找回', 'muted'),
+   button('恢复到书库', () => manage(b, 'restore')));
+  return row;
+ }));
+ text('trash-toggle', `回收站 ${trashed.length} 本`);
  text('archive-toggle', `已归档 ${archived.length} 本`);
 }
 async function refreshBooks() {
  if (state.booksBusy) return;
  state.booksBusy = true;
  try {
-  const [result, archive] = await Promise.all([api('/api/books'), api('/api/archive')]);
-  const changed = !$('books').children.length || JSON.stringify([books, archived]) !== JSON.stringify([result.books, archive.books]);
+  const [result, archive, trash] = await Promise.all([api('/api/books'), api('/api/archive'), api('/api/trash')]);
+  const changed = !$('books').children.length || JSON.stringify([books, archived, trashed]) !== JSON.stringify([result.books, archive.books, trash.books]);
   books = result.books;
   archived = archive.books;
+  trashed = trash.books;
   text('spending-value', `已花费 ${money(result.spending)}`);
   text('library-status', `${books.length} 本故事 · ${books.filter(isComplete).length} 本已完成`);
   if (changed) renderLibrary();
@@ -142,8 +151,8 @@ async function manage(book, name, title) {
  if (name === 'delete' || name === 'rename') {
   managed = { book, name };
   closeOverlays();
-  text('dialog-title', name === 'delete' ? `永久删除《${book.title.replace(/^《|》$/g, "")}》？不可撤销` : '重命名');
-  text('dialog-hint', name === 'delete' ? '本书的去 AI 处理会先结束；写作仍在运行时不可删除。' : '输入新的书名。');
+  text('dialog-title', name === 'delete' ? `永久删除《${book.title.replace(/^《|》$/g, "")}》？` : '重命名');
+  text('dialog-hint', name === 'delete' ? '7 天内可在回收站找回。本书的去 AI 处理会先结束；写作仍在运行时不可删除。' : '输入新的书名。');
   $('confirm-title').parentElement.hidden = name === 'delete';
   $('confirm-title').required = name === 'rename';
   text('dialog-confirm', name === 'delete' ? '删除' : '保存');
@@ -174,6 +183,9 @@ $('sort').onchange = renderLibrary;
 $('refresh-books').onclick = refreshBooks;
 $('archive-toggle').onclick = () => {
  $('archives').hidden = !$('archives').hidden;
+};
+$('trash-toggle').onclick = () => {
+ $('trash-books').hidden = !$('trash-books').hidden;
 };
 $('undo').onclick = () => {
  if (undoId) manage({ id: undoId }, 'restore');

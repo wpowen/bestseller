@@ -1,0 +1,17 @@
+{
+  "title": "南瓜汤圆大混战",
+  "genre": "cozy-fantasy",
+  "chapters": 5,
+  "polish": true,
+  "auto_deai": true,
+  "status": "complete",
+  "created": "2026-11-04T13:35:33.000725+00:00",
+  "jobs": 1,
+  "reason": "独立去AI处理完成；正文与原检查点保留",
+  "pipeline_version": 1,
+  "pipeline": {
+    "book": {
+      "status": "complete"
+    }
+  }
+}

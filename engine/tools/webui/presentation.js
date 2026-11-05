@@ -69,4 +69,39 @@ function checks(chapters) {
  if (!box.childNodes.length) box.append(el('p', '章节完成后显示检测结果。', 'muted'));
  return box;
 }
-export { planning, checks };
+function checkup(report) {
+ const box = el('section', null, 'panel');
+ box.append(el('h2', '整书体检（参考）'));
+ if (!report || typeof report !== 'object' || Array.isArray(report)) {
+  box.append(el('p', '整书体检尚未生成，结果未知。', 'muted'));
+  return box;
+ }
+ const value = (n) => Number.isFinite(n) ? count(n) : '未知';
+ const length = (rows) => Array.isArray(rows) ? rows.length : undefined;
+ const stages = report.stages || {}, breaks = report.location_breaks || {};
+ box.append(el('p', `已检查 ${value(report.chapter_count)} 章；程序统计不代表读者验收。`, 'muted'));
+ box.append(el('h3', '阶段与地点（证据）'),
+  el('p', `阶段 ${value(stages.count)}；地点 ${Array.isArray(stages.locations) ? stages.locations.join('、') || '未知' : '未知'}`));
+ for (const stage of stages.distribution || []) {
+  box.append(el('p', `第 ${stage.start ?? '?'}–${stage.end ?? '?'} 章：${stage.location || '地点未知'}`));
+ }
+ box.append(el('h3', '对手提及跨度（证据）'), el('p', '提及包含背景叙述，实际出场情况未知。', 'muted'));
+ for (const opponent of report.antagonists || []) {
+  box.append(el('p', `${opponent.name}：第 ${opponent.first ?? '?'}–${opponent.last ?? '?'} 章，提及 ${value(opponent.mention_count)} 章`));
+ }
+ const repeated = report.title_keywords?.repeated;
+ box.append(el('h3', '章名关键词重复（参考）'));
+ if (repeated && typeof repeated === 'object') {
+  const entries = Object.entries(repeated);
+  box.append(el('p', entries.length ? entries.map(([word, ns]) => `${word}：第 ${ns.join('、')} 章`).join('；') : '未检出重复关键词'));
+ } else box.append(el('p', '未知'));
+ box.append(el('h3', '跨章地点衔接（推断）'),
+  el('p', `疑似断裂 ${value(breaks.count)} 处；无法判定 ${value(length(breaks.unknown))} 处`));
+ box.append(el('h3', '格式残留（证据）'), el('p', `${value(report.format_residue?.total)} 处`));
+ box.append(el('h3', '首次登场与称呼（推断）'),
+  el('p', `缺少铺垫 ${value(length(report.introductions?.missing))} 项；称呼疑点 ${value(length(report.aliases?.issues))} 项`),
+  el('p', '人物检查范围由已登记人物卡决定，未登记人物仍需人工核对。', 'muted'),
+  el('p', `缺失或不可读资料 ${value(length(report.unknown))} 项；所有推断需结合正文复核。`, 'muted'));
+ return box;
+}
+export { planning, checks, checkup };

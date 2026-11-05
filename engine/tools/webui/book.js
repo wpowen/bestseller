@@ -3,7 +3,7 @@ import {
 } from './shared.js';
 import { actionButtons, manage } from './library.js';
 import { chapters, copyText } from './reader.js';
-import { planning, checks } from './presentation.js';
+import { planning, checks, checkup } from './presentation.js';
 let tab = '目录';
 const selectedOpen = new Set();
 function renderDetail(selected = tab) {
@@ -79,7 +79,7 @@ function renderDetail(selected = tab) {
  } else if (tab === '章纲') {
   content.append(planning(state.book.outline_view));
  } else {
-  content.append(el('p', '程序检测与评分仅供参考，阅读感受由你判断。', 'muted'), checks(state.book.chapters));
+  content.append(el('p', '程序检测与评分仅供参考，阅读感受由你判断。', 'muted'), checkup(state.book.checkup), checks(state.book.chapters));
  }
 }
 function copyBook(version) {

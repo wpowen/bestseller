@@ -1,0 +1,271 @@
+{
+  "status": "retained",
+  "complete": false,
+  "processing_complete": true,
+  "before_score": 10.9105,
+  "after_score": 10.9105,
+  "warnings": [
+    {
+      "rollback": "model_response",
+      "stage": "recall22-recheck-verb_mismatch-0",
+      "reason": "JSON incomplete paragraph coverage"
+    }
+  ],
+  "checks": {
+    "failure": {
+      "stage": "recall22-recheck-verb_mismatch-0",
+      "reason": "JSON incomplete paragraph coverage"
+    },
+    "diagnostics": {
+      "status": "unknown"
+    },
+    "entities": [
+      "白寄南",
+      "沈思萦",
+      "顾曜庭",
+      "阿柯铭",
+      "韩汀蕙",
+      "赵清越",
+      "秦玉筠"
+    ],
+    "metrics_before": {
+      "chars": 2658,
+      "paragraphs": 108,
+      "dialogue_ratio": 0.3973,
+      "average_paragraph_chars": 24.61,
+      "single_sentence_ratio": 0.4815,
+      "sentence_length_variance": 116.457,
+      "paragraph_length_quantiles": {
+        "0.1": 7,
+        "0.25": 12,
+        "0.5": 20,
+        "0.75": 31,
+        "0.9": 54
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 5,
+      "procedural_per_1000": 1.8811,
+      "cliche_count": 0,
+      "cliche_per_1000": 0.0,
+      "simile_count": 1,
+      "simile_per_1000": 0.3762,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "metrics_after": {
+      "chars": 2658,
+      "paragraphs": 108,
+      "dialogue_ratio": 0.3973,
+      "average_paragraph_chars": 24.61,
+      "single_sentence_ratio": 0.4815,
+      "sentence_length_variance": 116.457,
+      "paragraph_length_quantiles": {
+        "0.1": 7,
+        "0.25": 12,
+        "0.5": 20,
+        "0.75": 31,
+        "0.9": 54
+      },
+      "word_band_pass": true,
+      "dialogue_ratio_note": "quoted Han proxy, not confirmed speaker attribution",
+      "procedural_count": 5,
+      "procedural_per_1000": 1.8811,
+      "cliche_count": 0,
+      "cliche_per_1000": 0.0,
+      "simile_count": 1,
+      "simile_per_1000": 0.3762,
+      "idiom_count": 0,
+      "idiom_per_1000": 0.0,
+      "character_labels_count": 0,
+      "character_labels_per_1000": 0.0,
+      "ominous_count": 0,
+      "ominous_per_1000": 0.0
+    },
+    "remaining_hits": [
+      {
+        "sid": "S6",
+        "pid": "P4",
+        "start": 129,
+        "end": 146,
+        "text": "凉的那面朝下，热的那面朝——街尾。",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S16",
+        "pid": "P9",
+        "start": 340,
+        "end": 373,
+        "text": "是我先入为主，看见旧字就认旧库——毛病，跟我那台旧座钟一个德性。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S25",
+        "pid": "P14",
+        "start": 537,
+        "end": 574,
+        "text": "他不听声音，只听磨痕——每件旧物被搬运时，都会在边角留下一道极细的“响”。",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S57",
+        "pid": "P34",
+        "start": 1171,
+        "end": 1212,
+        "text": "他没吭声，只把手攥了攥，“走快了更烫，慢一点反而凉——说明它是被人攥着走了一段。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S91",
+        "pid": "P55",
+        "start": 1742,
+        "end": 1786,
+        "text": "我这摊上三十六件旧器，都是祖上传下来的，您要这么说，我可得问一句——您这是要砸我饭碗？”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S107",
+        "pid": "P63",
+        "start": 2043,
+        "end": 2081,
+        "text": "这一件锈多，那一件锈少——说明锈多的才是真货，那件亮的，是新打的，冒充老的！",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S131",
+        "pid": "P78",
+        "start": 2436,
+        "end": 2492,
+        "text": "这回韩汀蕙不再犹豫，刀贴着壶肚一抹，铜皮应声而开,底下露出另一层暗沉的旧绿,真正的老锈像年轮一样一圈一圈往里沉。",
+        "type": "cliche_simile",
+        "rule": "deai_cliche_simile",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S138",
+        "pid": "P81",
+        "start": 2587,
+        "end": 2626,
+        "text": "您说不清，它就还是个来路不明的旧壶——按联盟的规矩，来路不明的，谁都不能取。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S141",
+        "pid": "P82",
+        "start": 2644,
+        "end": 2717,
+        "text": "壶底这圈绿锈，是三年内在潮湿铜器上生的；壶口有磕痕，磕在左唇第二道；壶里残着一层没洗掉的药渣，是铜锈清洗剂混樟脑与艾草——这是修表巷后院的味道。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S144",
+        "pid": "P84",
+        "start": 2745,
+        "end": 2803,
+        "text": "白寄南说，“换的时候你用两只新壳套了旧爵，想让我认错，再把我支到旧库去——旧库一封，我人在那边，这壶就过了你的手。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S148",
+        "pid": "P86",
+        "start": 2845,
+        "end": 2872,
+        "text": "而且它烫得比刚才更厉害——因为它离自己主人不到一尺。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S173",
+        "pid": "P101",
+        "start": 3320,
+        "end": 3338,
+        "text": "当众启封、当众验——白师傅，劳驾。”",
+        "type": "ending_template",
+        "rule": "deai_ending_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S124",
+        "pid": "P73",
+        "start": 2310,
+        "end": 2323,
+        "text": "崔三爷脸色一变：“那是……",
+        "type": "expression_cliche",
+        "rule": "expression_template",
+        "severity": 2,
+        "source": "rule"
+      },
+      {
+        "sid": "S165",
+        "pid": "P97",
+        "start": 3150,
+        "end": 3169,
+        "text": "他慢慢说，“是从这块残片上蹭下来的。”",
+        "type": "adverb_density",
+        "rule": "pacing_adverbs",
+        "severity": 1,
+        "source": "rule"
+      },
+      {
+        "sid": "S1",
+        "pid": "P1",
+        "start": 0,
+        "end": 34,
+        "text": "澄川旧货市场的雨棚漏了三处，水从破口串成线，落在门槛前积成一小片浑。",
+        "type": "empty_scene",
+        "severity": 2,
+        "source": "model",
+        "reason": [
+          "开头独立罗列雨棚漏雨、破口串线和门槛积水，句内既无人物正在处理的事，也未说明漏雨对即将发生的行动构成阻碍；P2后文人物登场不能使这段前置空镜成立。漏水仅作为环境细节，尚未直接落到人物行动。",
+          "开头独立铺陈雨棚漏雨、地面积水，前两三句内没有人物正在办理的具体事情，也未让漏雨立即影响人物行动或形成当下阻碍；后文人物登场不能使这段前置空镜成立。"
+        ]
+      }
+    ],
+    "dialogue_mode": "local",
+    "original_chars": 2658,
+    "final_chars": 2658,
+    "programmatic": [],
+    "ending_image": "“顾馆长，”他说，“先别开箱。我这最后一步，还没走完。”我这最后一步,还没走完。”",
+    "facts": "original retained",
+    "unknown_usage": 1
+  },
+  "calls": 69,
+  "prompt_tokens": 437677,
+  "completion_tokens": 52196,
+  "seconds": 134.694
+}

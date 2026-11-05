@@ -1,0 +1,20 @@
+{
+  "title": "《一掌镇乾坤》",
+  "genre": "xuanhuan-power-fantasy",
+  "chapters": 50,
+  "polish": true,
+  "auto_deai": true,
+  "status": "complete",
+  "created": "2026-11-04T14:54:18.586114+00:00",
+  "jobs": 2,
+  "reason": "",
+  "pipeline_version": 1,
+  "pipeline": {
+    "polish": {
+      "status": "complete"
+    },
+    "book": {
+      "status": "complete"
+    }
+  }
+}

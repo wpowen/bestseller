@@ -1,0 +1,1902 @@
+[
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "concept-12",
+    "status": "ok",
+    "input_chars": 6159,
+    "input_bytes": 10504,
+    "output_token_cap": 14000,
+    "usage": {
+      "prompt_tokens": 2865,
+      "completion_tokens": 2870,
+      "total_tokens": 5735
+    },
+    "seconds": 37.353
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-prepare",
+    "status": "ok",
+    "input_chars": 5687,
+    "input_bytes": 10271,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 2485,
+      "completion_tokens": 4849,
+      "total_tokens": 7334
+    },
+    "seconds": 28.372
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-volume-1-growth2",
+    "status": "ok",
+    "input_chars": 9618,
+    "input_bytes": 18016,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4242,
+      "completion_tokens": 5288,
+      "total_tokens": 9530
+    },
+    "seconds": 52.613
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-chapters-1-10-growth2",
+    "status": "ok",
+    "input_chars": 9574,
+    "input_bytes": 18612,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4358,
+      "completion_tokens": 3755,
+      "total_tokens": 8113
+    },
+    "seconds": 27.793
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch1-draft",
+    "status": "ok",
+    "input_chars": 2598,
+    "input_bytes": 4859,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 1259,
+      "completion_tokens": 3100,
+      "total_tokens": 4359
+    },
+    "seconds": 63.366
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch1-finish",
+    "status": "ok",
+    "input_chars": 8696,
+    "input_bytes": 19767,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4955,
+      "completion_tokens": 3357,
+      "total_tokens": 8312
+    },
+    "seconds": 24.893
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch1-final-state",
+    "status": "ok",
+    "input_chars": 6558,
+    "input_bytes": 14698,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 3750,
+      "completion_tokens": 1390,
+      "total_tokens": 5140
+    },
+    "seconds": 10.636
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch2-draft",
+    "status": "ok",
+    "input_chars": 3549,
+    "input_bytes": 7637,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 1891,
+      "completion_tokens": 2280,
+      "total_tokens": 4171
+    },
+    "seconds": 24.977
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch2-finish",
+    "status": "ok",
+    "input_chars": 7233,
+    "input_bytes": 15969,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4025,
+      "completion_tokens": 1152,
+      "total_tokens": 5177
+    },
+    "seconds": 8.304
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch3-draft",
+    "status": "ok",
+    "input_chars": 3603,
+    "input_bytes": 7785,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 1921,
+      "completion_tokens": 2123,
+      "total_tokens": 4044
+    },
+    "seconds": 25.069
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch3-finish",
+    "status": "ok",
+    "input_chars": 7289,
+    "input_bytes": 16463,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4157,
+      "completion_tokens": 1288,
+      "total_tokens": 5445
+    },
+    "seconds": 10.613
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch4-draft",
+    "status": "ok",
+    "input_chars": 3978,
+    "input_bytes": 8537,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2120,
+      "completion_tokens": 2433,
+      "total_tokens": 4553
+    },
+    "seconds": 29.683
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch4-finish",
+    "status": "ok",
+    "input_chars": 8223,
+    "input_bytes": 18555,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4622,
+      "completion_tokens": 2044,
+      "total_tokens": 6666
+    },
+    "seconds": 19.592
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch5-draft",
+    "status": "ok",
+    "input_chars": 3840,
+    "input_bytes": 8270,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2000,
+      "completion_tokens": 3225,
+      "total_tokens": 5225
+    },
+    "seconds": 37.173
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch5-finish",
+    "status": "ok",
+    "input_chars": 8863,
+    "input_bytes": 19864,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4930,
+      "completion_tokens": 4828,
+      "total_tokens": 9758
+    },
+    "seconds": 25.735
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch5-final-state",
+    "status": "ok",
+    "input_chars": 7438,
+    "input_bytes": 16756,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4187,
+      "completion_tokens": 3124,
+      "total_tokens": 7311
+    },
+    "seconds": 27.722
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch6-draft",
+    "status": "ok",
+    "input_chars": 4003,
+    "input_bytes": 8683,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2080,
+      "completion_tokens": 4477,
+      "total_tokens": 6557
+    },
+    "seconds": 47.403
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch6-finish",
+    "status": "ok",
+    "input_chars": 7173,
+    "input_bytes": 15931,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4027,
+      "completion_tokens": 2162,
+      "total_tokens": 6189
+    },
+    "seconds": 15.974
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch6-final-state",
+    "status": "ok",
+    "input_chars": 6131,
+    "input_bytes": 13807,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 3488,
+      "completion_tokens": 1333,
+      "total_tokens": 4821
+    },
+    "seconds": 12.806
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch7-draft",
+    "status": "ok",
+    "input_chars": 3919,
+    "input_bytes": 8511,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2072,
+      "completion_tokens": 2506,
+      "total_tokens": 4578
+    },
+    "seconds": 34.891
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch7-finish",
+    "status": "ok",
+    "input_chars": 7178,
+    "input_bytes": 16294,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4054,
+      "completion_tokens": 1109,
+      "total_tokens": 5163
+    },
+    "seconds": 6.08
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch8-draft",
+    "status": "ok",
+    "input_chars": 3785,
+    "input_bytes": 8296,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2008,
+      "completion_tokens": 2799,
+      "total_tokens": 4807
+    },
+    "seconds": 27.903
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch8-finish",
+    "status": "ok",
+    "input_chars": 9608,
+    "input_bytes": 21988,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5363,
+      "completion_tokens": 3590,
+      "total_tokens": 8953
+    },
+    "seconds": 17.539
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch8-final-state",
+    "status": "ok",
+    "input_chars": 7577,
+    "input_bytes": 17477,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4252,
+      "completion_tokens": 2435,
+      "total_tokens": 6687
+    },
+    "seconds": 16.863
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch9-draft",
+    "status": "ok",
+    "input_chars": 4027,
+    "input_bytes": 8837,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2111,
+      "completion_tokens": 3433,
+      "total_tokens": 5544
+    },
+    "seconds": 49.636
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch9-finish",
+    "status": "ok",
+    "input_chars": 9668,
+    "input_bytes": 22890,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5686,
+      "completion_tokens": 4390,
+      "total_tokens": 10076
+    },
+    "seconds": 22.162
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch9-final-state",
+    "status": "ok",
+    "input_chars": 8626,
+    "input_bytes": 20024,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 5003,
+      "completion_tokens": 1411,
+      "total_tokens": 6414
+    },
+    "seconds": 13.34
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch10-draft",
+    "status": "ok",
+    "input_chars": 4026,
+    "input_bytes": 8900,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2188,
+      "completion_tokens": 2537,
+      "total_tokens": 4725
+    },
+    "seconds": 35.172
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch10-finish",
+    "status": "ok",
+    "input_chars": 7223,
+    "input_bytes": 16248,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4139,
+      "completion_tokens": 1477,
+      "total_tokens": 5616
+    },
+    "seconds": 9.574
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-chapters-11-20-growth2",
+    "status": "ok",
+    "input_chars": 9595,
+    "input_bytes": 18657,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4355,
+      "completion_tokens": 5009,
+      "total_tokens": 9364
+    },
+    "seconds": 32.983
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch11-draft",
+    "status": "ok",
+    "input_chars": 3833,
+    "input_bytes": 8599,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2148,
+      "completion_tokens": 2012,
+      "total_tokens": 4160
+    },
+    "seconds": 25.347
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch11-finish",
+    "status": "ok",
+    "input_chars": 7452,
+    "input_bytes": 16681,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4329,
+      "completion_tokens": 1182,
+      "total_tokens": 5511
+    },
+    "seconds": 6.758
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch12-draft",
+    "status": "ok",
+    "input_chars": 3834,
+    "input_bytes": 8594,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2198,
+      "completion_tokens": 3153,
+      "total_tokens": 5351
+    },
+    "seconds": 32.661
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch12-finish",
+    "status": "ok",
+    "input_chars": 8256,
+    "input_bytes": 18719,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4683,
+      "completion_tokens": 1462,
+      "total_tokens": 6145
+    },
+    "seconds": 11.355
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch13-draft",
+    "status": "ok",
+    "input_chars": 4067,
+    "input_bytes": 9073,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2219,
+      "completion_tokens": 2658,
+      "total_tokens": 4877
+    },
+    "seconds": 32.976
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch13-finish",
+    "status": "ok",
+    "input_chars": 8159,
+    "input_bytes": 18456,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4639,
+      "completion_tokens": 1506,
+      "total_tokens": 6145
+    },
+    "seconds": 14.039
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch14-draft",
+    "status": "ok",
+    "input_chars": 4084,
+    "input_bytes": 9174,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2258,
+      "completion_tokens": 2586,
+      "total_tokens": 4844
+    },
+    "seconds": 47.932
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch14-finish",
+    "status": "ok",
+    "input_chars": 8444,
+    "input_bytes": 18927,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4781,
+      "completion_tokens": 1154,
+      "total_tokens": 5935
+    },
+    "seconds": 8.95
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch14-final-state",
+    "status": "ok",
+    "input_chars": 7391,
+    "input_bytes": 16768,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4231,
+      "completion_tokens": 1335,
+      "total_tokens": 5566
+    },
+    "seconds": 9.218
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch15-draft",
+    "status": "ok",
+    "input_chars": 4078,
+    "input_bytes": 9218,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2275,
+      "completion_tokens": 4552,
+      "total_tokens": 6827
+    },
+    "seconds": 37.048
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch15-finish",
+    "status": "ok",
+    "input_chars": 9663,
+    "input_bytes": 21248,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5220,
+      "completion_tokens": 3797,
+      "total_tokens": 9017
+    },
+    "seconds": 15.657
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch15-final-state",
+    "status": "ok",
+    "input_chars": 7262,
+    "input_bytes": 16669,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4118,
+      "completion_tokens": 1433,
+      "total_tokens": 5551
+    },
+    "seconds": 11.126
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch16-draft",
+    "status": "ok",
+    "input_chars": 4080,
+    "input_bytes": 9276,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2263,
+      "completion_tokens": 1975,
+      "total_tokens": 4238
+    },
+    "seconds": 20.444
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch16-finish",
+    "status": "ok",
+    "input_chars": 7378,
+    "input_bytes": 16569,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4084,
+      "completion_tokens": 1222,
+      "total_tokens": 5306
+    },
+    "seconds": 7.693
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch17-draft",
+    "status": "interrupted",
+    "input_chars": 4097,
+    "input_bytes": 9315,
+    "output_token_cap": 6500
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-chapters-17-25-growth2",
+    "status": "ok",
+    "input_chars": 9590,
+    "input_bytes": 19010,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4447,
+      "completion_tokens": 7521,
+      "total_tokens": 11968
+    },
+    "seconds": 63.041
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch17-draft",
+    "status": "ok",
+    "input_chars": 4104,
+    "input_bytes": 9352,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2300,
+      "completion_tokens": 2845,
+      "total_tokens": 5145
+    },
+    "seconds": 31.871
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch17-finish",
+    "status": "ok",
+    "input_chars": 9381,
+    "input_bytes": 21676,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5357,
+      "completion_tokens": 4735,
+      "total_tokens": 10092
+    },
+    "seconds": 32.981
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch17-final-state",
+    "status": "ok",
+    "input_chars": 7509,
+    "input_bytes": 17293,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4281,
+      "completion_tokens": 842,
+      "total_tokens": 5123
+    },
+    "seconds": 6.028
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch18-draft",
+    "status": "ok",
+    "input_chars": 4101,
+    "input_bytes": 9379,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2301,
+      "completion_tokens": 1961,
+      "total_tokens": 4262
+    },
+    "seconds": 25.326
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch18-finish",
+    "status": "ok",
+    "input_chars": 7384,
+    "input_bytes": 16403,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4159,
+      "completion_tokens": 2432,
+      "total_tokens": 6591
+    },
+    "seconds": 26.182
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch19-draft",
+    "status": "interrupted",
+    "input_chars": 4083,
+    "input_bytes": 9309,
+    "output_token_cap": 6500
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-chapters-19-25-growth2",
+    "status": "ok",
+    "input_chars": 9274,
+    "input_bytes": 18630,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4368,
+      "completion_tokens": 3127,
+      "total_tokens": 7495
+    },
+    "seconds": 21.759
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch19-draft",
+    "status": "ok",
+    "input_chars": 4097,
+    "input_bytes": 9359,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2341,
+      "completion_tokens": 2162,
+      "total_tokens": 4503
+    },
+    "seconds": 31.106
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch19-finish",
+    "status": "ok",
+    "input_chars": 7865,
+    "input_bytes": 17422,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4464,
+      "completion_tokens": 881,
+      "total_tokens": 5345
+    },
+    "seconds": 5.774
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch20-draft",
+    "status": "ok",
+    "input_chars": 4072,
+    "input_bytes": 9370,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2356,
+      "completion_tokens": 2913,
+      "total_tokens": 5269
+    },
+    "seconds": 33.095
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch20-finish",
+    "status": "ok",
+    "input_chars": 9077,
+    "input_bytes": 20767,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5293,
+      "completion_tokens": 5245,
+      "total_tokens": 10538
+    },
+    "seconds": 36.307
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch20-final-state",
+    "status": "ok",
+    "input_chars": 7566,
+    "input_bytes": 17337,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4449,
+      "completion_tokens": 1546,
+      "total_tokens": 5995
+    },
+    "seconds": 10.763
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch21-draft",
+    "status": "ok",
+    "input_chars": 4111,
+    "input_bytes": 9475,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2398,
+      "completion_tokens": 2420,
+      "total_tokens": 4818
+    },
+    "seconds": 28.129
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch21-finish",
+    "status": "ok",
+    "input_chars": 7980,
+    "input_bytes": 18335,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4618,
+      "completion_tokens": 4057,
+      "total_tokens": 8675
+    },
+    "seconds": 25.368
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch21-final-state",
+    "status": "ok",
+    "input_chars": 7223,
+    "input_bytes": 16738,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4188,
+      "completion_tokens": 1617,
+      "total_tokens": 5805
+    },
+    "seconds": 13.352
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch22-draft",
+    "status": "ok",
+    "input_chars": 4251,
+    "input_bytes": 9821,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2449,
+      "completion_tokens": 2945,
+      "total_tokens": 5394
+    },
+    "seconds": 57.813
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch22-finish",
+    "status": "ok",
+    "input_chars": 6974,
+    "input_bytes": 15753,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 3977,
+      "completion_tokens": 1953,
+      "total_tokens": 5930
+    },
+    "seconds": 12.365
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch23-draft",
+    "status": "ok",
+    "input_chars": 4269,
+    "input_bytes": 9871,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2494,
+      "completion_tokens": 1938,
+      "total_tokens": 4432
+    },
+    "seconds": 19.943
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch23-finish",
+    "status": "ok",
+    "input_chars": 7280,
+    "input_bytes": 16208,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4076,
+      "completion_tokens": 3445,
+      "total_tokens": 7521
+    },
+    "seconds": 19.117
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch23-final-state",
+    "status": "ok",
+    "input_chars": 6135,
+    "input_bytes": 14040,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 3519,
+      "completion_tokens": 2695,
+      "total_tokens": 6214
+    },
+    "seconds": 19.822
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch24-draft",
+    "status": "ok",
+    "input_chars": 4327,
+    "input_bytes": 10061,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2533,
+      "completion_tokens": 3494,
+      "total_tokens": 6027
+    },
+    "seconds": 31.1
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch24-finish",
+    "status": "ok",
+    "input_chars": 7457,
+    "input_bytes": 16904,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4374,
+      "completion_tokens": 1031,
+      "total_tokens": 5405
+    },
+    "seconds": 6.294
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch25-draft",
+    "status": "ok",
+    "input_chars": 4592,
+    "input_bytes": 10646,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2709,
+      "completion_tokens": 2666,
+      "total_tokens": 5375
+    },
+    "seconds": 33.417
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch25-finish",
+    "status": "ok",
+    "input_chars": 8267,
+    "input_bytes": 18800,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4846,
+      "completion_tokens": 1769,
+      "total_tokens": 6615
+    },
+    "seconds": 13.909
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-r2-volume-2-growth2",
+    "status": "ok",
+    "input_chars": 9525,
+    "input_bytes": 19063,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4403,
+      "completion_tokens": 6681,
+      "total_tokens": 11084
+    },
+    "seconds": 45.247
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-r2-chapters-26-35-growth2",
+    "status": "ok",
+    "input_chars": 9597,
+    "input_bytes": 18713,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4370,
+      "completion_tokens": 6632,
+      "total_tokens": 11002
+    },
+    "seconds": 54.233
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch26-draft",
+    "status": "ok",
+    "input_chars": 4278,
+    "input_bytes": 10032,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2554,
+      "completion_tokens": 3250,
+      "total_tokens": 5804
+    },
+    "seconds": 42.151
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch26-finish",
+    "status": "ok",
+    "input_chars": 9082,
+    "input_bytes": 20858,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5320,
+      "completion_tokens": 4328,
+      "total_tokens": 9648
+    },
+    "seconds": 21.429
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch26-final-state",
+    "status": "ok",
+    "input_chars": 7076,
+    "input_bytes": 15303,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4159,
+      "completion_tokens": 937,
+      "total_tokens": 5096
+    },
+    "seconds": 6.953
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch27-draft",
+    "status": "ok",
+    "input_chars": 4283,
+    "input_bytes": 9811,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2551,
+      "completion_tokens": 2360,
+      "total_tokens": 4911
+    },
+    "seconds": 33.35
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch27-finish",
+    "status": "ok",
+    "input_chars": 7735,
+    "input_bytes": 17596,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4473,
+      "completion_tokens": 1121,
+      "total_tokens": 5594
+    },
+    "seconds": 6.407
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch28-draft",
+    "status": "ok",
+    "input_chars": 4389,
+    "input_bytes": 10329,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2585,
+      "completion_tokens": 3318,
+      "total_tokens": 5903
+    },
+    "seconds": 39.456
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch28-finish",
+    "status": "ok",
+    "input_chars": 9665,
+    "input_bytes": 22420,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5628,
+      "completion_tokens": 6554,
+      "total_tokens": 12182
+    },
+    "seconds": 52.867
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch28-final-state",
+    "status": "ok",
+    "input_chars": 9066,
+    "input_bytes": 20835,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 5218,
+      "completion_tokens": 1039,
+      "total_tokens": 6257
+    },
+    "seconds": 7.995
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch29-draft",
+    "status": "ok",
+    "input_chars": 4367,
+    "input_bytes": 10305,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2590,
+      "completion_tokens": 2605,
+      "total_tokens": 5195
+    },
+    "seconds": 52.863
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch29-finish",
+    "status": "ok",
+    "input_chars": 8555,
+    "input_bytes": 19387,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4964,
+      "completion_tokens": 1038,
+      "total_tokens": 6002
+    },
+    "seconds": 7.797
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch29-final-state",
+    "status": "ok",
+    "input_chars": 7596,
+    "input_bytes": 17461,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4461,
+      "completion_tokens": 1847,
+      "total_tokens": 6308
+    },
+    "seconds": 14.643
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch30-draft",
+    "status": "ok",
+    "input_chars": 4580,
+    "input_bytes": 10770,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2699,
+      "completion_tokens": 2447,
+      "total_tokens": 5146
+    },
+    "seconds": 22.461
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch30-finish",
+    "status": "ok",
+    "input_chars": 8049,
+    "input_bytes": 18622,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4710,
+      "completion_tokens": 2805,
+      "total_tokens": 7515
+    },
+    "seconds": 21.598
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch31-draft",
+    "status": "ok",
+    "input_chars": 4577,
+    "input_bytes": 10877,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2733,
+      "completion_tokens": 3636,
+      "total_tokens": 6369
+    },
+    "seconds": 33.354
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch31-finish",
+    "status": "ok",
+    "input_chars": 7558,
+    "input_bytes": 16607,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4265,
+      "completion_tokens": 1192,
+      "total_tokens": 5457
+    },
+    "seconds": 8.337
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch31-final-state",
+    "status": "ok",
+    "input_chars": 6314,
+    "input_bytes": 14175,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 3640,
+      "completion_tokens": 1212,
+      "total_tokens": 4852
+    },
+    "seconds": 10.943
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch32-draft",
+    "status": "ok",
+    "input_chars": 4672,
+    "input_bytes": 11130,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2819,
+      "completion_tokens": 2312,
+      "total_tokens": 5131
+    },
+    "seconds": 31.434
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch32-finish",
+    "status": "ok",
+    "input_chars": 8084,
+    "input_bytes": 18334,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4601,
+      "completion_tokens": 1693,
+      "total_tokens": 6294
+    },
+    "seconds": 12.873
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch33-draft",
+    "status": "ok",
+    "input_chars": 4681,
+    "input_bytes": 11113,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2760,
+      "completion_tokens": 2708,
+      "total_tokens": 5468
+    },
+    "seconds": 33.371
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch33-finish",
+    "status": "ok",
+    "input_chars": 7524,
+    "input_bytes": 16641,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4213,
+      "completion_tokens": 2568,
+      "total_tokens": 6781
+    },
+    "seconds": 22.394
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch34-draft",
+    "status": "ok",
+    "input_chars": 4706,
+    "input_bytes": 11228,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2785,
+      "completion_tokens": 2557,
+      "total_tokens": 5342
+    },
+    "seconds": 29.786
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch34-finish",
+    "status": "ok",
+    "input_chars": 8555,
+    "input_bytes": 19705,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4986,
+      "completion_tokens": 2921,
+      "total_tokens": 7907
+    },
+    "seconds": 13.266
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch34-final-state",
+    "status": "ok",
+    "input_chars": 6624,
+    "input_bytes": 15163,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 3844,
+      "completion_tokens": 1293,
+      "total_tokens": 5137
+    },
+    "seconds": 8.493
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch35-draft",
+    "status": "ok",
+    "input_chars": 4693,
+    "input_bytes": 11259,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2829,
+      "completion_tokens": 3031,
+      "total_tokens": 5860
+    },
+    "seconds": 26.82
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch35-finish",
+    "status": "ok",
+    "input_chars": 7271,
+    "input_bytes": 16276,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4199,
+      "completion_tokens": 988,
+      "total_tokens": 5187
+    },
+    "seconds": 6.17
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-r2-chapters-36-45-growth2",
+    "status": "ok",
+    "input_chars": 9613,
+    "input_bytes": 18737,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4378,
+      "completion_tokens": 4302,
+      "total_tokens": 8680
+    },
+    "seconds": 25.261
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch36-draft",
+    "status": "ok",
+    "input_chars": 4838,
+    "input_bytes": 11518,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2913,
+      "completion_tokens": 3052,
+      "total_tokens": 5965
+    },
+    "seconds": 38.482
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch36-finish",
+    "status": "ok",
+    "input_chars": 7865,
+    "input_bytes": 17901,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4588,
+      "completion_tokens": 1284,
+      "total_tokens": 5872
+    },
+    "seconds": 8.686
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch37-draft",
+    "status": "ok",
+    "input_chars": 4957,
+    "input_bytes": 11783,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2966,
+      "completion_tokens": 2613,
+      "total_tokens": 5579
+    },
+    "seconds": 33.158
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch37-finish",
+    "status": "ok",
+    "input_chars": 8183,
+    "input_bytes": 18536,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4702,
+      "completion_tokens": 1609,
+      "total_tokens": 6311
+    },
+    "seconds": 19.904
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch38-draft",
+    "status": "ok",
+    "input_chars": 4948,
+    "input_bytes": 11760,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2931,
+      "completion_tokens": 2575,
+      "total_tokens": 5506
+    },
+    "seconds": 27.206
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch38-finish",
+    "status": "ok",
+    "input_chars": 8933,
+    "input_bytes": 20325,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5146,
+      "completion_tokens": 4858,
+      "total_tokens": 10004
+    },
+    "seconds": 42.595
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch38-final-state",
+    "status": "ok",
+    "input_chars": 7441,
+    "input_bytes": 17208,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4351,
+      "completion_tokens": 1431,
+      "total_tokens": 5782
+    },
+    "seconds": 12.222
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch39-draft",
+    "status": "ok",
+    "input_chars": 4956,
+    "input_bytes": 11772,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2939,
+      "completion_tokens": 2385,
+      "total_tokens": 5324
+    },
+    "seconds": 30.936
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch39-finish",
+    "status": "ok",
+    "input_chars": 8059,
+    "input_bytes": 18268,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4662,
+      "completion_tokens": 1717,
+      "total_tokens": 6379
+    },
+    "seconds": 14.036
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch40-draft",
+    "status": "ok",
+    "input_chars": 4970,
+    "input_bytes": 11798,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2941,
+      "completion_tokens": 2015,
+      "total_tokens": 4956
+    },
+    "seconds": 30.082
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch40-finish",
+    "status": "ok",
+    "input_chars": 7377,
+    "input_bytes": 16537,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4203,
+      "completion_tokens": 1730,
+      "total_tokens": 5933
+    },
+    "seconds": 11.833
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch41-draft",
+    "status": "ok",
+    "input_chars": 5043,
+    "input_bytes": 12035,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3036,
+      "completion_tokens": 2306,
+      "total_tokens": 5342
+    },
+    "seconds": 29.362
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch41-finish",
+    "status": "ok",
+    "input_chars": 8171,
+    "input_bytes": 18556,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4652,
+      "completion_tokens": 2067,
+      "total_tokens": 6719
+    },
+    "seconds": 15.515
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch42-draft",
+    "status": "ok",
+    "input_chars": 5039,
+    "input_bytes": 12075,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 2973,
+      "completion_tokens": 3162,
+      "total_tokens": 6135
+    },
+    "seconds": 35.884
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch42-finish",
+    "status": "ok",
+    "input_chars": 9401,
+    "input_bytes": 21789,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5464,
+      "completion_tokens": 3848,
+      "total_tokens": 9312
+    },
+    "seconds": 22.176
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch42-final-state",
+    "status": "ok",
+    "input_chars": 7451,
+    "input_bytes": 17248,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4333,
+      "completion_tokens": 1721,
+      "total_tokens": 6054
+    },
+    "seconds": 12.83
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch43-draft",
+    "status": "ok",
+    "input_chars": 5115,
+    "input_bytes": 12215,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3052,
+      "completion_tokens": 3547,
+      "total_tokens": 6599
+    },
+    "seconds": 43.452
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch43-finish",
+    "status": "ok",
+    "input_chars": 9668,
+    "input_bytes": 22371,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5646,
+      "completion_tokens": 4273,
+      "total_tokens": 9919
+    },
+    "seconds": 27.921
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch43-final-state",
+    "status": "ok",
+    "input_chars": 8726,
+    "input_bytes": 19957,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 5028,
+      "completion_tokens": 1389,
+      "total_tokens": 6417
+    },
+    "seconds": 10.705
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch44-draft",
+    "status": "ok",
+    "input_chars": 5156,
+    "input_bytes": 12316,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3060,
+      "completion_tokens": 2822,
+      "total_tokens": 5882
+    },
+    "seconds": 36.34
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch44-finish",
+    "status": "ok",
+    "input_chars": 8952,
+    "input_bytes": 20827,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5139,
+      "completion_tokens": 4619,
+      "total_tokens": 9758
+    },
+    "seconds": 29.878
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch44-final-state",
+    "status": "ok",
+    "input_chars": 7246,
+    "input_bytes": 16630,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4165,
+      "completion_tokens": 1946,
+      "total_tokens": 6111
+    },
+    "seconds": 17.016
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch45-draft",
+    "status": "ok",
+    "input_chars": 5205,
+    "input_bytes": 12461,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3098,
+      "completion_tokens": 2150,
+      "total_tokens": 5248
+    },
+    "seconds": 31.06
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch45-finish",
+    "status": "ok",
+    "input_chars": 7522,
+    "input_bytes": 17007,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4272,
+      "completion_tokens": 2022,
+      "total_tokens": 6294
+    },
+    "seconds": 15.275
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-r2-chapters-46-50-growth2",
+    "status": "ok",
+    "input_chars": 9618,
+    "input_bytes": 18946,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4465,
+      "completion_tokens": 5047,
+      "total_tokens": 9512
+    },
+    "seconds": 53.012
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch46-draft",
+    "status": "ok",
+    "input_chars": 5541,
+    "input_bytes": 13307,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3313,
+      "completion_tokens": 3038,
+      "total_tokens": 6351
+    },
+    "seconds": 40.817
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch46-finish",
+    "status": "ok",
+    "input_chars": 9245,
+    "input_bytes": 21137,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5339,
+      "completion_tokens": 4410,
+      "total_tokens": 9749
+    },
+    "seconds": 28.172
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch46-final-state",
+    "status": "ok",
+    "input_chars": 7523,
+    "input_bytes": 17138,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4370,
+      "completion_tokens": 2411,
+      "total_tokens": 6781
+    },
+    "seconds": 18.303
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch47-draft",
+    "status": "ok",
+    "input_chars": 5576,
+    "input_bytes": 13390,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3334,
+      "completion_tokens": 2983,
+      "total_tokens": 6317
+    },
+    "seconds": 36.133
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch47-finish",
+    "status": "ok",
+    "input_chars": 7922,
+    "input_bytes": 18186,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4628,
+      "completion_tokens": 1393,
+      "total_tokens": 6021
+    },
+    "seconds": 10.35
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch48-draft",
+    "status": "ok",
+    "input_chars": 5390,
+    "input_bytes": 13084,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3251,
+      "completion_tokens": 2293,
+      "total_tokens": 5544
+    },
+    "seconds": 42.023
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch48-finish",
+    "status": "ok",
+    "input_chars": 8586,
+    "input_bytes": 19291,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4768,
+      "completion_tokens": 2059,
+      "total_tokens": 6827
+    },
+    "seconds": 28.526
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch49-draft",
+    "status": "interrupted",
+    "input_chars": 5548,
+    "input_bytes": 13361,
+    "output_token_cap": 6500
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "plan-q1-r2-chapters-49-50-growth2",
+    "status": "ok",
+    "input_chars": 9590,
+    "input_bytes": 18922,
+    "output_token_cap": 11000,
+    "usage": {
+      "prompt_tokens": 4498,
+      "completion_tokens": 1414,
+      "total_tokens": 5912
+    },
+    "seconds": 9.726
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch49-draft",
+    "status": "ok",
+    "input_chars": 5529,
+    "input_bytes": 13316,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3278,
+      "completion_tokens": 2953,
+      "total_tokens": 6231
+    },
+    "seconds": 37.807
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch49-finish",
+    "status": "ok",
+    "input_chars": 9668,
+    "input_bytes": 21955,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 5473,
+      "completion_tokens": 4517,
+      "total_tokens": 9990
+    },
+    "seconds": 27.236
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch49-final-state",
+    "status": "ok",
+    "input_chars": 7913,
+    "input_bytes": 18056,
+    "output_token_cap": 6000,
+    "usage": {
+      "prompt_tokens": 4519,
+      "completion_tokens": 1114,
+      "total_tokens": 5633
+    },
+    "seconds": 7.167
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch50-draft",
+    "status": "ok",
+    "input_chars": 5645,
+    "input_bytes": 13571,
+    "output_token_cap": 6500,
+    "usage": {
+      "prompt_tokens": 3362,
+      "completion_tokens": 2904,
+      "total_tokens": 6266
+    },
+    "seconds": 27.872
+  },
+  {
+    "model": "MiniMax-M3.1-Flash",
+    "stage": "r2-ch50-finish",
+    "status": "ok",
+    "input_chars": 8423,
+    "input_bytes": 18799,
+    "output_token_cap": 7000,
+    "usage": {
+      "prompt_tokens": 4779,
+      "completion_tokens": 1847,
+      "total_tokens": 6626
+    },
+    "seconds": 15.023
+  }
+]

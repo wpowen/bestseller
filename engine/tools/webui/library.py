@@ -11,6 +11,7 @@ import tempfile
 import yaml
 from book_cache import BookCache
 from tools.chapter_outputs import committed, finalized
+from tools.books_guard import check_test_root
 
 GENRES = {
     "suspense-mystery": "悬疑推理",
@@ -143,6 +144,7 @@ def stage_costs(folder, web):
 
 class Library:
     def __init__(self, root, read_only=False):
+        check_test_root(root)
         self.read_only = read_only
         self.root = Path(root).resolve()
         self.own = self.root / "webui"
@@ -255,7 +257,13 @@ class Library:
         rows = self.chapters(folder)
         book = run.get("book", {})
         bible = bible_data(self.safe(folder / "story_bible.yaml"))
-        title = web.get("display_title") or bible.get("title") or web.get("title") or folder.name
+        title = (
+            web.get("display_title")
+            or bible.get("title")
+            or (web.get("selected_card") or {}).get("title")
+            or web.get("title")
+            or folder.name
+        )
         total = book.get("chapters", web.get("chapters", len(rows)))
         owned = folder.parent in (self.own, self.own / ".archive") and bool(web)
         state = web.get("status", run.get("status", "unknown")) if owned else run.get("status", "unknown")
@@ -335,6 +343,22 @@ class Library:
             if not p.name.startswith(".") and p.is_dir()
         ]
 
+    def trash(self):
+        from management import trash_parts
+
+        rows = []
+        for folder in self.safe(self.own / ".trash").glob("*"):
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            try:
+                deleted, original = trash_parts(folder.name)
+            except ValueError:
+                continue
+            rows.append(
+                dict(self.meta(self.safe(folder)), deleted_at=deleted.isoformat(), original_id="webui/" + original)
+            )
+        return sorted(rows, key=lambda row: row["deleted_at"], reverse=True)
+
     def spending(self):
         paid = read(self.safe(self.own / ".spent.json"), {})
         if not isinstance(paid, dict):
@@ -374,6 +398,7 @@ class Library:
             characters=[c for c in characters if isinstance(c, dict)],
             bible=text(self.safe(folder / "story_bible.yaml")),
             selected_card=read(self.safe(folder / "web.json"), {}).get("selected_card"),
+            checkup=read(self.safe(folder / "book_checkup.json")),
             bible_view=bible_data(self.safe(folder / "story_bible.yaml")),
             outline_view=[read(self.safe(p), {}) for p in sorted(folder.glob("writing_outlines/*.json"))],
             outline="\n\n".join(text(self.safe(p)) for p in sorted(folder.glob("writing_outlines/*.json"))),

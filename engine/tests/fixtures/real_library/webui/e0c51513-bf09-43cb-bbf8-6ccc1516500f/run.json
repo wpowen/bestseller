@@ -1,0 +1,15 @@
+{
+  "mode": "Q1",
+  "style": "b",
+  "status": "complete",
+  "started": "2026-11-04T14:54:19.348204+00:00",
+  "finished": "2026-11-05T05:01:49.678931+00:00",
+  "execution_seconds": 50849.032021,
+  "wall_seconds": 50849.032,
+  "completed_chapters": 50,
+  "book": {
+    "chapters": 50,
+    "prompt_pack": "xuanhuan-power-fantasy",
+    "words_per_chapter": 2200
+  }
+}

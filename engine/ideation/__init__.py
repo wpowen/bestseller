@@ -172,20 +172,43 @@ def run(folder, client, market_root):
                 for candidate, axis in zip(result, axes)
             ]
 
-        # All four independent groups start together; completion order never changes card order.
-        batches = {}
+        # Publish the first valid group immediately; displayed card indices never change.
+        batches, raw, visible = {}, [], list(data.get("candidates", []))
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(generate, n): n for n in range(4)}
             update_topic(folder, progress="构思第 0/4 组")
             for future in as_completed(futures):
                 batches[futures[future]] = future.result()
-                update_topic(folder, progress=f"构思第 {len(batches)}/4 组")
-        raw = [card for n in sorted(batches) for card in batches[n]]
-        update_topic(folder, progress="筛选")
-        cards, rejected = screen(raw, data["chapters"], data["genre"], data["history"], data["market"].get("books", []))
+                raw = [card for n in sorted(batches) for card in batches[n]]
+                cards, rejected = screen(
+                    raw, data["chapters"], data["genre"], data["history"], data["market"].get("books", [])
+                )
+                for candidate in select(cards, data):
+                    if len(visible) == 12 or any(c["title"] == candidate["title"] for c in visible):
+                        continue
+                    if sum(shape(c["title"]) == shape(candidate["title"]) for c in visible) >= 7:
+                        continue
+                    variant = candidate["axes"].get("variant")
+                    if (
+                        data.get("direction", {}).get("mode") == "both"
+                        and sum(c["axes"].get("variant") == variant for c in visible) >= 6
+                    ):
+                        continue
+                    shell = candidate["axes"]["shell"]
+                    count = data["features"].get("shell_counts", {}).get(shell)
+                    candidate["market_note"] = f"熟壳：{shell}；同壳新书：{count if count is not None else '未知'}"
+                    visible.append(candidate)
+                progress = f"构思第 {len(batches)}/4 组 → 筛选"
+                patch = dict(progress=progress, candidates=visible, rejected=rejected, cost_usd=client.estimate())
+                if visible:
+                    patch.update(status="ready", judge_status="构思与筛选中，卡片已可选择")
+                    if "first_cards_seconds" not in data:
+                        data["first_cards_seconds"] = round(time.monotonic() - started, 3)
+                    patch["first_cards_seconds"] = data["first_cards_seconds"]
+                update_topic(folder, **patch)
         save(folder / "raw.json", raw)
         save(folder / "rejected.json", rejected)
-        cards = select(cards, data)
+        cards = visible
         for card in cards:
             shell = card["axes"]["shell"]
             count = data["features"].get("shell_counts", {}).get(shell)
@@ -193,14 +216,17 @@ def run(folder, client, market_root):
         rows = read(folder / "http/ledger.json", [])
         reasons = dict(Counter(reason for row in rejected for reason in row["reasons"]))
         shortage = (
-            ("；补调用后仍不足目标12个，字段/语言/名字/历史或形态配额限制：" + json.dumps(reasons, ensure_ascii=False))
+            (
+                "；四组筛选后仍不足目标12个，字段/语言/名字/历史或形态配额限制："
+                + json.dumps(reasons, ensure_ascii=False)
+            )
             if len(cards) < 12
             else ""
         )
         data.update(
             status="ready",
             progress="排序（卡片已可选择）",
-            first_cards_seconds=round(time.monotonic() - started, 3),
+            first_cards_seconds=data.get("first_cards_seconds", round(time.monotonic() - started, 3)),
             candidates=cards,
             judge_status="排序中，卡片已可选择",
             rejected=rejected,
@@ -213,6 +239,7 @@ def run(folder, client, market_root):
                 data["market"]["status"], data["market"]["status"]
             ),
         )
+        data.pop("book_id", None)
         update_topic(folder, **data)
         try:
             ranked = judge(folder, cards, data["features"].get("anchors", []), data, client) if cards else []

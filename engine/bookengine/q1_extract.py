@@ -153,9 +153,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         if k in chapter
     }
     return [
-        ("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))
-        if bible.get("selected_card")
-        else ("故事", ""),
+        *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500]),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),

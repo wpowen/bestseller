@@ -23,7 +23,7 @@ def similarity(a, b):
     return len(a & b) / len(a | b) if a and b else 0
 
 
-def validate(card, chapters):
+def validate(card, chapters, allow_names=False):
     if not isinstance(card, dict):
         return ["字段"]
     errors = []
@@ -50,7 +50,7 @@ def validate(card, chapters):
         errors.append("语言")
     if any(c in text for c in names.get("traditional", "")):
         errors.append("繁体")
-    if any(n in text for n in names.get("blacklist", [])):
+    if not allow_names and any(n in text for n in names.get("blacklist", [])):
         errors.append("名字")
     return errors
 

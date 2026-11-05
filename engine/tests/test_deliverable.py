@@ -109,3 +109,72 @@ def test_cards_are_selectable_while_judge_waits_and_indices_stay_stable(tmp_path
     assert final["book_id"] == early["book_id"]
     assert [c["title"] for c in early["candidates"]] == [c["title"] for c in final["candidates"]]
     assert final["status"] == "complete"
+
+
+def test_fallback_removes_conflicting_mechanism_and_resolves_name_collision():
+    from bookengine.selected_card import enforce, differences
+    from bookengine.q1_schema import defaults, DATA
+    from bookengine.identity import validate_bible
+
+    selected = card(
+        title="旧伞渡口",
+        premise="修伞匠赵溪想找姐姐。",
+        opening="赵溪在码头撑开旧伞。",
+        golden_finger_rule="旧伞只能挡一次雨。",
+    )
+    locked = dict(
+        name="赵溪",
+        identity="修伞匠",
+        setting="码头",
+        object="旧伞",
+        keywords=dict(identity=["修伞匠"], setting=["码头"], object=["旧伞"], rule=["一次雨"]),
+    )
+    wrong = defaults(bible(), DATA["schemas"]["prepare"]["bible"])
+    wrong["characters"][1]["name"] = "赵溪"
+    wrong["world"] = dict(rules=["博物馆禁止出门"], levels=[])
+    wrong["power"] = dict(ability="敲钟复原", cost="失去声音", limit="每天三次")
+    fixed, _ = enforce(wrong, {"threads": []}, selected, locked, ["name", "rule", "setting"])
+    validate_bible(fixed)
+    assert differences(fixed, selected, locked) == []
+    assert not any(
+        word in json.dumps(fixed, ensure_ascii=False) for word in ["博物馆", "敲钟复原", "失去声音", "每天三次"]
+    )
+
+
+def test_first_group_is_selectable_before_slowest_generation_finishes(tmp_path):
+    finished, release = threading.Event(), threading.Event()
+
+    class Client:
+        def __call__(self, messages, stage, **opts):
+            if stage == "generate-3":
+                finished.set()
+                assert release.wait(4)
+            if stage.startswith("judge"):
+                return "broken"
+            return json.dumps([card(title="纸上故人", hook="她在雨里等回一封迟到三年的家书")])
+
+        def estimate(self):
+            return 0.01
+
+    save(tmp_path / "topic.json", dict(status="running", genre="suspense-mystery", chapters=5, idea=""))
+    market = dict(status="missing", date="2026-11-05", books=[])
+    import time
+
+    with (
+        patch("ideation.snapshot", return_value=market),
+        patch("ideation.features", return_value={}),
+        ThreadPoolExecutor(1) as pool,
+    ):
+        future = pool.submit(run, tmp_path, Client(), tmp_path)
+        try:
+            assert finished.wait(2)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and read(tmp_path / "topic.json")["status"] != "ready":
+                time.sleep(0.01)
+            early = read(tmp_path / "topic.json")
+            assert early["status"] == "ready"
+            assert early["candidates"]
+            assert not future.done()
+        finally:
+            release.set()
+        assert future.result()["candidates"][0]["title"] == early["candidates"][0]["title"]

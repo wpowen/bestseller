@@ -167,11 +167,12 @@ class Queue:
                     if legacy
                     else {"title", "hook", "tags", "premise", "golden_finger_rule", "opening", "engine"}
                 )
-                if set(edited) != set(candidate) or any(
-                    edited[k] != candidate[k] for k in candidate if k not in editable
+                metadata = set(candidate) - {"scores"}
+                if (set(edited) - {"scores"} != metadata or ("scores" in edited and "scores" not in candidate)) or any(
+                    edited[k] != candidate[k] for k in candidate if k not in editable | {"scores"}
                 ):
                     raise ValueError("仅可编辑卡片内容，不能修改参考分和方向轴")
-                candidate = edited
+                candidate = dict(candidate, **{k: edited[k] for k in editable if k in edited})
             self.jobs = jobs
             save(self.library.own / ".queue.json", dict(jobs=jobs))
             key = str(uuid.uuid4())

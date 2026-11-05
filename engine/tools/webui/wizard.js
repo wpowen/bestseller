@@ -208,12 +208,18 @@ function renderTopics(data) {
  $('candidate-section').hidden = !candidates.length;
  const renderKey = JSON.stringify([candidates.map(({ scores, ...card }) => card), data.collisions || []]);
  if (state.topicRenderKey !== renderKey) {
+  const previousCount = state.candidates.length;
+  const appending = previousCount > 0 && candidates.length >= previousCount &&
+   state.candidates.every((card, i) => card.title === candidates[i]?.title);
   state.topicRenderKey = renderKey;
   state.candidates = candidates;
-  state.edits = {};
-  state.candidate = null;
-  $('candidates').replaceChildren();
+  if (!appending) {
+   state.edits = {};
+   state.candidate = null;
+   $('candidates').replaceChildren();
+  }
   candidates.forEach((candidate, index) => {
+   if (appending && index < previousCount) return;
    const card = el('article', null, 'candidate');
    const label = el('label', null, 'candidate-choice');
    const radio = document.createElement('input');
@@ -262,7 +268,8 @@ function renderTopics(data) {
  candidates.forEach((candidate, index) => {
   const scores = candidate.scores || {};
   const node = $('candidates').children[index]?.querySelector('.candidate-scores');
-  if (node) node.textContent = '判官四轴（参考）：' +
+  const rank = (data.ranking || []).indexOf(index);
+  if (node) node.textContent = (rank >= 0 ? `参考排序第 ${rank + 1} · ` : '') + '判官四轴（参考）：' +
    ['不可补全', '点击欲', '长篇引擎', '好懂'].map((k) => `${k} ${scores[k] ?? '—'}`).join(' · ');
  });
  state.candidates = candidates;

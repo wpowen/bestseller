@@ -148,6 +148,13 @@ def prepare(client, book, out, assets, design=False):
     if any(x is None for x in values):
         from .benchmarking import concept_design
 
+        paired = Path(out) / "prepared-design.json"
+        if paired.exists():
+            generated = json.loads(paired.read_text())
+            for i, path in enumerate(paths):
+                if values[i] is None:
+                    save(path, yaml.safe_dump(generated[i], allow_unicode=True, sort_keys=False))
+            return prepare(client, book, out, assets, design)
         card = selected_card(book)
         locked = facts(client, card) if card else {}
         selected = concept_design(client, book) if design and not card else {}
@@ -254,10 +261,11 @@ def prepare(client, book, out, assets, design=False):
                 )
         if card:
             corrected = differences(generated[0], card, locked)
-            generated = list(enforce(*generated, card, locked))
+            generated = list(enforce(*generated, card, locked, corrected))
             generated[0]["canon"]["seed"] = card["title"]
             record(Path(out), alignment, corrected)
         validate_bible(generated[0])
+        save(Path(out) / "prepared-design.json", generated)
         for i, path in enumerate(paths):
             if values[i] is None:
                 save(path, yaml.safe_dump(generated[i], allow_unicode=True, sort_keys=False))

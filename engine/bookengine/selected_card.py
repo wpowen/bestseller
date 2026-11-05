@@ -77,11 +77,16 @@ def differences(bible, card, locked):
     return errors
 
 
-def enforce(bible, threads, card, locked):
+def enforce(bible, threads, card, locked, drift=()):
     hero = next(c for c in bible["characters"] if c["role"] == "protagonist")
     if locked["name"] and hero["name"] != locked["name"]:
         old = hero["name"]
-        bible, threads = json.loads(json.dumps([bible, threads], ensure_ascii=False).replace(old, locked["name"]))
+        content = json.dumps([bible, threads], ensure_ascii=False)
+        # Swap a colliding supporting name, including references, before assigning the hero.
+        if any(c["name"] == locked["name"] for c in bible["characters"] if c is not hero):
+            content = content.replace(locked["name"], "__support_name__")
+        content = content.replace(old, locked["name"]).replace("__support_name__", old)
+        bible, threads = json.loads(content)
         hero = next(c for c in bible["characters"] if c["role"] == "protagonist")
     hero["identity"] = locked["identity"]
     if locked["identity"]:
@@ -90,8 +95,23 @@ def enforce(bible, threads, card, locked):
     for key in ("opening", "hook", "axes"):
         if key in card:
             bible[key] = card[key]
+    if drift:
+        # Failed designs must not keep a second mechanism or location beside the fixed fields.
+        bible["world"] = dict(levels=bible["world"].get("levels", []), rules=[card["premise"]])
+        bible["power"] = {}
+        hero.update(desire=card["premise"], goal=card["premise"], address=hero["name"])
+        for volume in bible.get("volumes", []):
+            for key in list(volume):
+                if isinstance(volume[key], str):
+                    volume[key] = card["premise"]
+        for line in threads.get("threads", []):
+            for beat in line.get("beats", []):
+                beat["description"] = card.get("engine") or card["premise"]
     bible["world"]["setting"] = locked["setting"]
-    bible["power"].update(object=locked["object"], rule=card.get("golden_finger_rule", "无"))
+    rule = card.get("golden_finger_rule", "无")
+    bible["power"].update(object=locked["object"], rule=rule)
+    if drift:
+        bible["power"].update(ability=rule, cost=rule, limit=rule)
     return bible, threads
 
 

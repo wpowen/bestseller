@@ -152,6 +152,12 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    if state.get("end_location") or state.get("present"):
+        outline["开场必须承接"] = dict(
+            end_location=state.get("end_location"),
+            present=state.get("present", []),
+            rule="开场接续上章地点及在场人物；换地点先交代移动过程，不能瞬移。",
+        )
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500]),
@@ -321,6 +327,11 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         ("上章失败顺带补提", pack(dict(number=previous["number"], text=prior)) if previous else ""),
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
+    prompt += (
+        "\n只据正文抽取边界事实：opening_location/opening_quote限开头两段；end_location/end_quote限结尾两段。"
+        "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制结尾原句，"
+        "提到但不在场者不列；不从旧状态或章纲推测。"
+    )
     if (
         not final
         and not outline.get("word_range", [1870, 2700])[0]
@@ -329,12 +340,20 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     ):
         prompt = EXTRACT["length_first"] + prompt
     schema = pack(
-        {
-            k: v
-            for k, v in EXTRACT["schema"].items()
-            if not final
-            or k not in ("edits", "paragraph_edits", "patch", "body", "scene", "rename", "tail", "previous_delta")
-        }
+        dict(
+            {
+                k: v
+                for k, v in EXTRACT["schema"].items()
+                if not final
+                or k not in ("edits", "paragraph_edits", "patch", "body", "scene", "rename", "tail", "previous_delta")
+            },
+            opening_location=None,
+            opening_quote=None,
+            end_location=None,
+            end_quote=None,
+            present=[],
+            present_quotes={},
+        )
     )
     saved = client.prefix
     client.prefix = ""

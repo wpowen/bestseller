@@ -13,6 +13,7 @@ from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
+from .q1_continuity import repair_opening
 
 REVISION = "growth-payoff-3"
 
@@ -77,6 +78,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     if path.exists() and load(path).get("fact_source") == "final_body":
         return chapter_record(out, idx)
     started = time.monotonic()
+    calls_before = len(getattr(client, "calls", []))
     prefix = f"r2-ch{idx}"
     target = book.words_per_chapter
     canon = dict(bible["canon"], final_volume_start=max(1, ((book.chapters - 1) // 25) * 25 + 1))
@@ -152,6 +154,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     failed = failed or bool((raw.get("scene") or raw.get("body")) and not changed)
     if changed:
         raw, failed, _ = extract_state(client, prefix + "-final-state", text, state, bible, outline, [], final=True)
+    text, raw, failed, boundaries, handoff = repair_opening(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     if rows and rows[-1].get("state_failed") and not rows[-1].get("carry_attempted"):
         last = rows[-1]
         last["carry_attempted"] = True
@@ -192,6 +197,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         issues += thread_issues
     paid = not failed and payoff_ok(raw.get("payoff"), outline["payoff_type"], text, canon["payoff_menu"])
     current["pending_payoff"] = outline["payoff_type"] if outline["payoff_due"] and not paid else None
+    current.pop("end_location", None)
+    current.pop("present", None)
+    if boundaries["end_location"]:
+        current["end_location"] = boundaries["end_location"]
+    if boundaries["present_status"] == "grounded":
+        current["present"] = boundaries["present"]
     kinds = normalize_scenes(raw.get("scene_types"))
     events = [e for e in raw.get("events", []) or [] if isinstance(e, dict)]
     row = dict(
@@ -229,10 +240,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         fact_source="final_body",
         revision=REVISION,
         seconds=round(time.monotonic() - started, 3),
-        outside_calls=1 + int(changed),
+        outside_calls=max(0, len(getattr(client, "calls", [])) - calls_before - 1),
         injuries_count=current.get("injuries_count", 0) if not failed else None,
         ending_candidates=ending_candidates(text, bible, outline) if outline["ending"] else [],
         opens_new_mainline=raw.get("opens_new_mainline") if outline["ending"] else False,
+        **boundaries,
+        handoff=handoff,
     )
     row.update(
         name_drift_before=len(name_hits(original, bible)), name_drift=name_hits(text, bible), english=english_hits(text)

@@ -37,6 +37,16 @@ class InvalidResponse(LLMError):
     error_kind = 'format'
 
 
+class ModelResponseError(ProjectError):
+    """Model output exhausted validation retries; the chapter must use its source."""
+
+    def __init__(self, stage, reason):
+        super().__init__(f'stage {stage}: invalid response after 6 attempts: {reason}')
+        self.stage = stage
+        self.reason = reason
+        self.error_kind = 'format'
+
+
 class APIError(LLMError):
     def __init__(self, code, message):
         super().__init__(f'API {code}: {message}')
@@ -247,15 +257,15 @@ class MiniMax:
                     return self.request(prompt, **opts)
                 except InvalidResponse as exc:
                     previous = self.redact(exc)
-            error = ProjectError(f'stage {stage}: invalid response after 6 attempts: {previous}')
-            error.error_kind = 'format'
-            raise error
+            raise ModelResponseError(stage, previous)
         except InterruptedError:
             write_runtime(self.runtime_out, 'interrupted', stage)
             raise
         except QuotaExhausted as exc:
             exc.stage = stage
             write_runtime(self.runtime_out, 'quota_exhausted', stage, error=self.redact(exc))
+            raise
+        except ModelResponseError:
             raise
         except ProjectError as exc:
             exc.stage = stage

@@ -73,6 +73,7 @@ class PostprocessTests(WebFixture):
 
     def test_postprocess_scheduler_spawns_public_deai_once_after_duplicate_clicks(self):
         folder = self.completed_book()
+        (folder / 'final/chapter-002.md').unlink()  # Only the missing final needs processing.
         before = snapshot(folder)
         for _ in range(2):
             self.assertEqual(self.postprocess()[0], 200)
@@ -220,6 +221,7 @@ class PostprocessTests(WebFixture):
 
     def test_tick_counts_only_b_increment_and_keeps_unknown_inflight_running(self):
         folder = self.completed_book(budget=.05, deai_budget=.04)
+        (folder / 'final/chapter-002.md').unlink()
         self.assertEqual(self.postprocess()[0], 200)
         self.queue.tick()
         self.spawn.assert_called_once()

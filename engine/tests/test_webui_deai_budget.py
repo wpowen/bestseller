@@ -7,7 +7,7 @@ from test_webui_contracts import WebFixture, jobs, library, put, snapshot
 
 class DeaiBudgetTests(WebFixture):
     def completed(self, *, budget=.2, spent=.19, deai_budget=None, polish=True):
-        folder = self.book(status='budget_paused', budget=budget)
+        folder = self.book(status='budget_paused', budget=budget, final=False)
         put(folder / 'run.json', {'status': 'complete', 'book': {'chapters': 2}})
         put(folder / 'calls.json', [self.row(spent)])
         data = library.read(folder / 'web.json')
@@ -26,7 +26,9 @@ class DeaiBudgetTests(WebFixture):
         put(folder / 'final/.deai/001/http/ledger.json', [row])
 
     def protected(self, folder):
-        return {k: v for k, v in snapshot(folder).items() if k not in ('web.json', 'web-process.log', 'runtime.json')}
+        runtime_files = {'web.json', 'web-process.log', 'web-book.log', 'web-polish.log', 'runtime.json',
+                         '.pipeline/polish/runtime.json'}
+        return {k: v for k, v in snapshot(folder).items() if k not in runtime_files}
 
     def test_legacy_exhausted_writer_can_start_deai_without_budget(self):
         folder = self.completed(polish=False)
@@ -78,6 +80,7 @@ class DeaiBudgetTests(WebFixture):
         self.queue.processes['webui/story'] = dict(p=self.child, kind='polish', folder=folder, paused=False)
         self.queue.action('webui/story', 'pause')
         self.queue.action('webui/story', 'resume')
+        self.queue.tick()
         self.assertEqual(self.killpg.call_args, mock.call(self.child.pid, signal.SIGCONT))
         self.killpg.reset_mock()
         self.queue.tick()
@@ -101,7 +104,7 @@ class DeaiBudgetTests(WebFixture):
         self.deai_cost(folder, .2)
         put(folder / 'run.json', {'status': 'running'})
         self.queue.launch(folder, library.read(folder / 'web.json'), 'book')
-        self.spawn.assert_called_once()
+        self.assertEqual([c.args[0][2] for c in self.spawn.call_args_list], ['bookengine', 'deai'])
         self.assertNotIn('BOOKENGINE_BUDGET_USD', self.spawn.call_args.kwargs['env'])
 
     def test_create_discards_default_and_custom_deai_budget(self):

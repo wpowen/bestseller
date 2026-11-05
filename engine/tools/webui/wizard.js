@@ -273,9 +273,9 @@ function renderTopics(data) {
  text(
   'topic-cost',
   `本批已花费 ${money(data.cost_usd ?? usage.cost ?? data.cost)}` +
-   (usage.unknown ? ` · Unknown ${usage.unknown} 次，上界 ${money(usage.unknown_bound)}` : ''),
+   (usage.unknown ? ` · ${usage.unknown} 次调用未返回用量，费用暂按最高可能值估算` : ''),
  );
- text('topic-notes', [data.judge_status, data.market?.status].filter(Boolean).join(' · '));
+ text('topic-notes', data.market?.status === 'stale' ? '市场参考来自缓存，可能不是最新数据。' : '');
  if (state.topic) text('restore-status', '选题 ID：' + state.topic + ' · 可从最近选题恢复。');
  text('candidate-help', `共 ${candidates.length} 个候选 · 请亲自点选一个；参考分不能代替读者判断。`);
  $('generate-topics').disabled = !done && !failed;

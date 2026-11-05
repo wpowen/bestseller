@@ -15,7 +15,7 @@ class ConcurrencyTests(WebFixture):
             child.poll.return_value = None
         self.spawn.side_effect = children
         for index, (kind, budget) in enumerate([('book', .1), (second_kind, second_budget)]):
-            folder = self.book(f'webui/active-{index}', status='queued', budget=budget)
+            folder = self.book(f'webui/active-{index}', status='queued', budget=budget, final=kind != 'polish')
             put(folder / 'state.json', {'checkpoint': index, 'ledger': 'preserve'})
             put(folder / 'calls.json', [])
             if kind == 'polish':

@@ -17,6 +17,7 @@ from .q1_plan import beat_slice
 from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
 from .q1_cast import cast_hits, cast_findings
+from .retired_opponents import stage_constraints
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -161,6 +162,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    outline = {"阶段退场约束": stage_constraints(bible, chapter["number"]), **outline}
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),

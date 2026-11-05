@@ -15,6 +15,7 @@ from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number
+from .retired_opponents import stage_constraints
 from .outline_diversity import (
     historical_outlines,
     terminal_window,
@@ -252,6 +253,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
+        ("已退场对手不能在conflict/opponent中发起冲突；已离开地点不能再作章末舞台", stage_constraints(bible, start)),
         ("对手分级与退场：exit后只能背景提及，禁止列入scene.characters", opponents),
         ("固定人物卡，首次登场须交代identity，称呼仅限name/aliases", cards),
         ("已用核心冲突类型与章名关键词", used),
@@ -291,6 +293,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
                 ("退场后只作背景，禁止列在场人物", opponents),
+                ("已退场对手与已离开地点约束", stage_constraints(bible, start)),
                 ("已用核心冲突类型与章名关键词", prompt_vocabulary(vocabulary)),
                 ("待重写章纲", [r for r in current if r.get("number") in targets]),
                 ("相关节奏要求", [r for r in rhythm if r["number"] in targets]),

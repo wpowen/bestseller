@@ -147,6 +147,8 @@ def _stage_stats(bible, chapters):
 
 
 def _opponents(bible, chapters, stages):
+    from bookengine.retired_opponents import active_opponent_hits
+
     opponents = {
         c["name"]: c
         for c in _rows(bible.get("characters"))
@@ -174,6 +176,12 @@ def _opponents(bible, chapters, stages):
                 after_exit_mentions=[n for n in mentions if isinstance(exit_at, int) and n > exit_at],
                 status="Evidence",
                 active_appearance_status="Unknown",
+                active_after_exit_chapters=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in active_opponent_hits(c["text"], bible, c["number"]))
+                ],
+                active_appearance_basis="surface_agent_or_action; Inference",
             )
         )
     return result
@@ -358,6 +366,9 @@ def check_book(book, *, source="final"):
     bible = _read(book / "story_bible.yaml", unknown)
     chapters = _chapters(book, source, unknown)
     stages = _stage_stats(bible, chapters)
+    from bookengine.retired_opponents import location_regression
+
+    regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     residue = [dict(chapter=c["number"], **clean_prose(c["text"])[1]) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
@@ -372,6 +383,7 @@ def check_book(book, *, source="final"):
         antagonists=_opponents(bible, chapters, stages["distribution"]),
         title_keywords=_keywords(chapters),
         location_breaks=_breaks(chapters),
+        location_regressions=dict(count=len(regressions), issues=regressions),
         format_residue=dict(
             total=sum(c["total"] for c in residue),
             chapters=[c for c in residue if c["total"]],
@@ -382,7 +394,7 @@ def check_book(book, *, source="final"):
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",
-            "Mentions include background references; active appearances are Unknown.",
+            "Active appearances use surface agent/action cues; unrecognized semantics remain Unknown.",
             "Continuity and introduction/alias issues are Inference, not semantic proof.",
             "Unregistered named characters and the meaning of dialogue remain Unknown.",
         ],
@@ -406,6 +418,9 @@ def write_checkup(book, *, source="final"):
 
 
 def main(argv=None):
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     parser = argparse.ArgumentParser(description="整书体检（参考）：只读书稿，仅写 book_checkup.json")
     parser.add_argument("book", type=Path)
     parser.add_argument("--source", choices=("final", "draft"), default="final")

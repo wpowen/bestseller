@@ -146,7 +146,9 @@ def repair_structure(bible, threads, total, ask, out):
 
 def opponent_presence_issues(bible, batch):
     """Only check explicit planned presence, allowing background mentions after exit."""
-    issues = []
+    from .retired_opponents import initiator_issues
+
+    issues = initiator_issues(bible, batch)
     canonical_names = {card.get("name") for card in rows(bible.get("characters")) if isinstance(card.get("name"), str)}
     for chapter in batch:
         number = integer(chapter.get("number"))

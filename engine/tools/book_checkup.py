@@ -28,7 +28,13 @@ def clean_prose(text):
     for private use. Normal paragraphs, punctuation and line endings are retained.
     No filesystem or model calls; safe for both writing and polishing clients.
     """
-    counts = dict(markdown_headings=0, chapter_headings=0, separators=0, emoji=0, private_use=0)
+    counts = dict(markdown_headings=0, chapter_headings=0, separators=0, emoji=0, private_use=0, paragraph_markers=0)
+
+    def strip_markers(match):
+        counts["paragraph_markers"] += len(re.findall(r"\[[PS]\d+\]", match[2], re.I))
+        return match[1]
+
+    text = re.sub(r"^([ \t]*)((?:\[[PS]\d+\][ \t]*)+)", strip_markers, text, flags=re.M | re.I)
     kept = []
     for line in text.splitlines(keepends=True):
         stripped = line.strip()

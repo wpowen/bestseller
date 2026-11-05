@@ -42,7 +42,9 @@ class BookCache:
             "chapters/*.json",
             "final/chapter-*.md",
             "final/chapter-*.deai.json",
-            "final/**/http/ledger.json",
+            # Fixed depth: a recursive walk lists ~200 request files per chapter,
+            # which costs seconds per poll on Docker bind mounts.
+            "final/.deai/*/http/ledger.json",
         ):
             paths.update(folder.glob(pattern))
         # Check each ancestor once, including missing directories. lstat rejects

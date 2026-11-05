@@ -173,16 +173,23 @@ def run(folder, client, market_root):
             ]
 
         # Publish the first valid group immediately; displayed card indices never change.
-        batches, raw, visible = {}, [], list(data.get("candidates", []))
+        batches, raw, visible, rejected = {}, [], list(data.get("candidates", [])), []
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(generate, n): n for n in range(4)}
             update_topic(folder, progress="构思第 0/4 组")
             for future in as_completed(futures):
                 batches[futures[future]] = future.result()
                 raw = [card for n in sorted(batches) for card in batches[n]]
-                cards, rejected = screen(
-                    raw, data["chapters"], data["genre"], data["history"], data["market"].get("books", [])
+                fresh = [
+                    c
+                    for c in batches[futures[future]]
+                    if not isinstance(c, dict)
+                    or not any(all(c.get(k) == old.get(k) for k in FIELDS) for old in visible)
+                ]
+                cards, bad = screen(
+                    fresh, data["chapters"], data["genre"], data["history"] + visible, data["market"].get("books", [])
                 )
+                rejected.extend(bad)
                 for candidate in select(cards, data):
                     if len(visible) == 12 or any(c["title"] == candidate["title"] for c in visible):
                         continue

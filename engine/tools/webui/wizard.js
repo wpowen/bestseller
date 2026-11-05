@@ -97,6 +97,8 @@ async function restoreTopic(id, entry) {
  state.topic = id;
  state.topicReady = false;
  state.topicRenderKey = null;
+ state.candidates = [];
+ state.edits = {};
  $('candidates').replaceChildren();
  updateCreate();
  entry = entry || Object.values(savedTopics()).find((item) => item?.id === id);
@@ -259,15 +261,16 @@ function renderTopics(data) {
    $('candidates').append(card);
   });
  }
- if (Array.isArray(data.collisions) && data.collisions.length && !$('candidates').querySelector('.market-collision')) {
+ $('topic-collisions').replaceChildren();
+ if (Array.isArray(data.collisions) && data.collisions.length) {
   const notes = el('aside', null, 'market-collision');
   notes.append(el('h3', '已避开的榜单撞车'));
   for (const row of data.collisions) notes.append(el('p', `${row.title} · ${(row.reasons || []).join('；')}（已剔除）`));
-  $('candidates').append(notes);
+  $('topic-collisions').append(notes);
  }
  candidates.forEach((candidate, index) => {
   const scores = candidate.scores || {};
-  const node = $('candidates').children[index]?.querySelector('.candidate-scores');
+  const node = $('candidates').querySelectorAll('.candidate')[index]?.querySelector('.candidate-scores');
   const rank = (data.ranking || []).indexOf(index);
   if (node) node.textContent = (rank >= 0 ? `参考排序第 ${rank + 1} · ` : '') + '判官四轴（参考）：' +
    ['不可补全', '点击欲', '长篇引擎', '好懂'].map((k) => `${k} ${scores[k] ?? '—'}`).join(' · ');
@@ -404,7 +407,7 @@ $('model').addEventListener('change', updateCreate);
 $('book-form').addEventListener('submit', async (event) => {
  event.preventDefault();
  if (!$('book-form').reportValidity() || $('create-book').disabled) return;
- const selected = $('candidates').children[state.candidate];
+ const selected = $('candidates').querySelectorAll('.candidate')[state.candidate];
  if ([...selected.querySelectorAll('.candidate-editor input,.candidate-editor textarea')].some((input) => !input.reportValidity())) return;
  state.creating = true;
  updateCreate();

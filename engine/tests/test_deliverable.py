@@ -230,3 +230,43 @@ def test_unspecified_legacy_card_facts_are_not_invented(tmp_path):
         name="", identity="", setting="", object="", keywords={k: [] for k in ["identity", "setting", "object", "rule"]}
     )
     assert facts(ScriptedClient(tmp_path, [json.dumps(expected)]), selected) == expected
+
+
+def test_late_group_is_deduplicated_against_already_published_cards(tmp_path):
+    import ideation
+
+    published = threading.Event()
+    original_update = ideation.update_topic
+
+    def update(folder, **patch):
+        result = original_update(folder, **patch)
+        if result.get("status") == "ready" and result.get("candidates"):
+            published.set()
+        return result
+
+    class Client:
+        def __call__(self, messages, stage, **opts):
+            if stage.startswith("judge"):
+                return "bad"
+            n = int(stage[-1])
+            if n == 0:
+                assert published.wait(3)
+                return json.dumps([card(title="荒村雨夜来客又归来", hook="她用铜钟换回姐姐的一条命")])
+            if n == 1:
+                return json.dumps([card(title="荒村雨夜来客", hook="她用铜钟换回姐姐的一条命")])
+            return "[{}]"
+
+        def estimate(self):
+            return 0.01
+
+    save(tmp_path / "topic.json", dict(status="running", genre="suspense-mystery", chapters=5, idea=""))
+    market = dict(status="missing", date="2026-11-05", books=[])
+    with (
+        patch("ideation.snapshot", return_value=market),
+        patch("ideation.features", return_value={}),
+        patch("ideation.update_topic", side_effect=update),
+    ):
+        result = run(tmp_path, Client(), tmp_path)
+    assert [c["title"] for c in result["candidates"]] == ["荒村雨夜来客"]
+    assert "荒村雨夜来客" not in [c["title"] for c in result["rejected"]]
+    assert "荒村雨夜来客又归来" in [c["title"] for c in result["rejected"]]

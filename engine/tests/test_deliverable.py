@@ -39,7 +39,7 @@ def test_selected_story_survives_tournament_renaming_and_resume(tmp_path, name, 
         keywords=dict(identity=[identity], setting=[setting], object=[obj], rule=["只能", "一次雨"]),
     )
     wrong = dict(bible=bible(), threads=[])
-    responses = [json.dumps(facts, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 4
+    responses = [json.dumps(facts, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 7
     client = ScriptedClient(tmp_path, responses)
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     value, _, _ = prepare(client, book, tmp_path, ROOT / "config", design=True)
@@ -196,7 +196,7 @@ def test_unnamed_card_recovery_uses_the_same_assigned_cast(tmp_path):
         threads={"threads": [dict(id="main", kind="main", beats=[dict(volume=1, description="陆惊山救姐姐")])]},
     )
     client = ScriptedClient(
-        tmp_path, [json.dumps(locked, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 4
+        tmp_path, [json.dumps(locked, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 7
     )
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     saved_bible, saved_threads, _ = prepare(client, book, tmp_path, ROOT / "config")

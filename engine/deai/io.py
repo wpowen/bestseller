@@ -13,6 +13,7 @@ import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
 from tools.chapter_outputs import has_final
+from tools.book_checkup import clean_prose
 
 
 def safe(root, name):
@@ -257,6 +258,8 @@ def process(
                 report["status"] = "source_changed"
                 save(root, f"final/chapter-{number}.deai.json", report)
                 return "source_changed"
+            result.text, report["cleaning"] = clean_prose(result.text)
+            report["text"] = result.text
             save(work, "output.md", result.text)
             save(root, f"final/chapter-{number}.deai.json", report)
             save(root, f"final/chapter-{number}.md", result.text)

@@ -123,9 +123,9 @@ class PrepareIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "book"
             out.mkdir()
-            client = ScriptedClient(out, ["broken: [", raw])
+            client = ScriptedClient(out, ["broken: [", raw] + ["{}"] * 3)
             result = self.prepare(client, out)
-            self.assertEqual(len(client.calls), 2)
+            self.assertEqual(len(client.calls), 5)
             self.assertEqual(len(result[0]["characters"]), 3)
             validate_bible(result[0])
             self.assertEqual(result[0]["canon"]["seed"], "固定人物测试")

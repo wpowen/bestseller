@@ -43,6 +43,8 @@ from .q1_extract import (
     extract_state,
 )
 from .q1_chapter import REVISION, supplement, amend, chapter_record, chapter
+from .structure_planning import stage_for_chapter, final_stage_start
+from tools.book_checkup import write_checkup
 
 
 class QClient(Client):
@@ -120,6 +122,8 @@ def _run(book, out, env, assets, timeout, style, stop):
     if meta.get("mode") != "Q1" or Book(**meta["book"]).record() != book.record() or meta.get("style") != style:
         raise ValueError("Q1 checkpoint settings changed")
     if meta["status"] == "complete":
+        if not (out / "book_checkup.json").exists():
+            write_checkup(out, source="draft")
         return meta
     if meta.get("revision", {}).get("name") != REVISION:
         meta.setdefault("previous_runs", []).append(
@@ -158,7 +162,7 @@ def _run(book, out, env, assets, timeout, style, stop):
         bible["canon"],
         solution_menu=GROWTH["packs"][book.prompt_pack]["solution_menu"],
         solution_aliases=GROWTH.get("solution_aliases", {}),
-        final_volume_start=max(1, ((book.chapters - 1) // 25) * 25 + 1),
+        final_volume_start=final_stage_start(bible, book.chapters),
     )
     bible = dict(bible, canon=canon)
     profile = dict(profile, canon=canon)
@@ -176,7 +180,8 @@ def _run(book, out, env, assets, timeout, style, stop):
     feedback = []
     alerts = []
     for idx in range(1, book.chapters + 1):
-        vn = (idx - 1) // 25 + 1
+        stage = stage_for_chapter(bible, idx, book.chapters)
+        vn = stage["number"]
         saved = out / f"chapters/{idx:03d}.json"
         cached_record = saved.exists() and load(saved).get("fact_source") == "final_body"
         cached = cached_record and idx <= meta.get("completed_chapters", 0)
@@ -189,10 +194,10 @@ def _run(book, out, env, assets, timeout, style, stop):
                 if m.get("end") == idx:
                     history = [h for h in history if h["number"] != m["number"]] + [m]
             continue
-        if not vol or (idx - 1) % 25 == 0:
+        if not vol or vol.get("number") != vn:
             before = deepcopy(
                 next(
-                    (r["state"].get("dashboard", {}) for r in rows if r["number"] == (vn - 1) * 25),
+                    (r["state"].get("dashboard", {}) for r in rows if r["number"] == stage["start"] - 1),
                     bible.get("initial_dashboard", {}) if vn == 1 else state.get("dashboard", {}),
                 )
             )
@@ -200,7 +205,7 @@ def _run(book, out, env, assets, timeout, style, stop):
             if history and history[-1].get("volume_issues"):
                 vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback, redo=True)
         if not batch or not any(c.get("number") == idx for c in batch):
-            end = min(idx + 9, vol.get("end", vn * 25), book.chapters)
+            end = min(idx + 9, vol.get("end", stage["end"]), book.chapters)
             batch = outlines(client, bible, threads, profile, vol, idx, end, state, rows[-29:], history, alerts)
         if rows and not state.get("realm_progress"):
             level = state.get("dashboard", {}).get("strength")
@@ -220,7 +225,7 @@ def _run(book, out, env, assets, timeout, style, stop):
         alerts = row["issues"]
         meta.setdefault("dropped_fields", {})[str(idx)] = row.get("dropped_fields", [])
         save(out / "state.json", state)
-        if idx % 25 == 0 or idx == book.chapters:
+        if idx == vol.get("end") or idx == book.chapters:
             memory_path = out / f"volumes/{vn:02d}-{idx:03d}.json"
             if memory_path.exists() and load(memory_path).get("fact_source") == "final_body":
                 memory = load(memory_path)
@@ -230,7 +235,7 @@ def _run(book, out, env, assets, timeout, style, stop):
                 )
                 memory = dict(
                     number=vn,
-                    start=vol.get("start", (vn - 1) * 25 + 1),
+                    start=vol.get("start", stage["start"]),
                     end=idx,
                     summary="；".join(r["summary"][:60] for r in rows if vol["start"] <= r["number"] <= idx)[-1500:],
                     before_dashboard=before,
@@ -294,4 +299,5 @@ def _run(book, out, env, assets, timeout, style, stop):
         acceptance=meta["quality"],
     )
     save(path, meta)
+    write_checkup(out, source="draft")
     return meta

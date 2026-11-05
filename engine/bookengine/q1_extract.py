@@ -16,6 +16,8 @@ from .longutil import ask as raw_ask, recover_fields, long_context
 from .q1_plan import beat_slice
 from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
+from .q1_cast import cast_hits, cast_findings
+from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
 EXTRACT = yaml.safe_load((DATA.parent / "growth_extract.yaml").read_text())
@@ -35,17 +37,22 @@ def ask(client, *args, **kwargs):
 
 
 def clean(text):
-    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(prose(text))).strip()
+    return re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", adjacent(text)).strip()
 
 
-def body_of(value, client):
+def body_of(value, client, cleaning=None):
     if isinstance(value, dict):
         value = value.get("paragraphs", value.get("text", value.get("body", "")))
     if isinstance(value, list):
         value = "\n\n".join(
             p.get("text", "") if isinstance(p, dict) else p for p in value if isinstance(p, (str, dict))
         )
-    return clean(value) if isinstance(value, str) else ""
+    if not isinstance(value, str):
+        return ""
+    value, counts = clean_prose(value)
+    if cleaning is not None:
+        cleaning.update(counts)
+    return clean(value)
 
 
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
@@ -68,6 +75,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
             address=c.get("address") or c["name"],
+            aliases=c.get("aliases", []),
         )
         card.update(
             {k: c.get(k) for k in ("active_desire", "personality_tags", "never_do", "desire", "fear") if c.get(k)}
@@ -123,6 +131,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "introductions",
             "payoff_due",
             "payoff_type",
             "payoff_criterion",
@@ -152,6 +161,12 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    if state.get("end_location") or state.get("present"):
+        outline["开场必须承接"] = dict(
+            end_location=state.get("end_location"),
+            present=state.get("present", []),
+            rule="开场接续上章地点及在场人物；换地点先交代移动过程，不能瞬移。",
+        )
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500]),
@@ -245,6 +260,7 @@ def ground(raw, text):
 
 def prose_hits(text, bible, state):
     hits = name_hits(text, bible)
+    hits += cast_hits(text, bible, state)
     hits += [
         dict(id=i, start=a, end=b, kind="english_or_injury", text=text[a:b])
         for i, (a, b) in enumerate(_sentences(text), 1)
@@ -287,7 +303,13 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         )
     }
     contract["scene_start"] = scene_context(text)["start"] if outline.get("ending") else None
+    findings = [
+        {k: (str(row.get(k, ""))[:180]) for k in ("kind", "name", "status", "message")}
+        for row in cast_findings(text, bible, state, outline)
+        if row.get("status") != "Evidence"
+    ][:12]
     sections = [
+        ("编号正文", number_paragraphs(text)),
         (
             "合法值",
             pack(
@@ -301,7 +323,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             ),
         ),
         ("本章要求", pack(contract)),
-        ("编号正文", number_paragraphs(text)),
+        ("登场与称呼问题，合并本次定点修复", pack(findings)),
         ("旧状态", pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "clock")})[:500]),
         ("候选句S编号", pack(hits)[:1800]),
         (
@@ -321,6 +343,19 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         ("上章失败顺带补提", pack(dict(number=previous["number"], text=prior)) if previous else ""),
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
+    prompt += (
+        "\n只据正文抽取边界事实：opening_location/opening_quote限开头两段；end_location/end_quote从末尾1200字符内"
+        "能证明最后所在地的叙述句提取，不要只看末尾对白。location必须是quote内连续原文，不拼接、不概括。"
+        "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制末场含其原名的叙述句，"
+        "不能用不含人物名的纯对白，且引文必须在末尾1200字符内。"
+        "提到但不在场者不列；不从旧状态或章纲推测。"
+    )
+    if not final:
+        prompt += (
+            "\n人物首次出现需一句与卡片一致的身份或来历。missing_introduction/unregistered_alias与其他问题在本轮"
+            "统一用edits修复，id用候选句的S编号；补身份只在该句自然交代，卡外外号或自称改为卡片name/address/aliases。"
+            "未知身份不编造，不把英语role当身份。"
+        )
     if (
         not final
         and not outline.get("word_range", [1870, 2700])[0]
@@ -329,12 +364,20 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     ):
         prompt = EXTRACT["length_first"] + prompt
     schema = pack(
-        {
-            k: v
-            for k, v in EXTRACT["schema"].items()
-            if not final
-            or k not in ("edits", "paragraph_edits", "patch", "body", "scene", "rename", "tail", "previous_delta")
-        }
+        dict(
+            {
+                k: v
+                for k, v in EXTRACT["schema"].items()
+                if not final
+                or k not in ("edits", "paragraph_edits", "patch", "body", "scene", "rename", "tail", "previous_delta")
+            },
+            opening_location=None,
+            opening_quote=None,
+            end_location=None,
+            end_quote=None,
+            present=[],
+            present_quotes={},
+        )
     )
     saved = client.prefix
     client.prefix = ""

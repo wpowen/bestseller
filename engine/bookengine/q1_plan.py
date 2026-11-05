@@ -14,6 +14,16 @@ from .storage import save
 from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
+from .structure_planning import stage_by_number
+from .outline_diversity import (
+    historical_outlines,
+    terminal_window,
+    used_vocabulary,
+    prompt_vocabulary,
+    repair_batch,
+    title_terms,
+    conflict_type,
+)
 
 
 def _beats(threads, number, state=None):
@@ -55,6 +65,7 @@ def callbacks(history):
 
 def volume(client, bible, threads, number, total, state, history, feedback, redo=False):
     skeleton = next((x for x in rows(bible.get("volumes")) if integer(x.get("number")) == number), {})
+    boundary = stage_by_number(bible, number, total)
     beats, events = _beats(threads, number, state), callbacks(history)
     ladder = bible.get("canon", {}).get("ladder", {}).get("strength", [])
     old = state.get("dashboard", {}).get("strength")
@@ -66,6 +77,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
         [
             ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
             ("固定人物卡", bible.get("characters", [])),
+            ("对手分级与退场：exit后只能背景提及，不得在场或继续主导冲突", bible.get("antagonists", [])),
             (
                 "成长阶梯/当前仪表盘/收获与解法账本",
                 [
@@ -76,7 +88,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
                 ],
             ),
             ("本卷固定走向与节拍", [skeleton, beats]),
-            ("指定卷范围", dict(number=number, start=(number - 1) * 25 + 1, end=min(number * 25, total))),
+            ("指定卷范围", {k: boundary[k] for k in ("number", "start", "end")}),
             ("反馈", feedback),
             ("已发生历史", events),
             ("实际状态", state),
@@ -85,9 +97,10 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
         redo,
     )
     value = defaults(dict(skeleton, **raw) if isinstance(raw, dict) else skeleton, DATA["schemas"]["volume"])
-    value.update(
-        number=number, start=(number - 1) * 25 + 1, end=min(number * 25, total), beats=beats, feedback=feedback
-    )
+    value.update(number=number, start=boundary["start"], end=boundary["end"], beats=beats, feedback=feedback)
+    if bible.get("structure_version"):
+        value.update({k: skeleton.get(k) for k in ("location", "antagonist", "goal", "climax", "exit_chapter")})
+        value["stage"] = skeleton.get("location", "")
     if target:
         value["expected_dashboard"] = dict(value.get("expected_dashboard") or {}, strength=target)
     value["callback_events"] = events
@@ -195,6 +208,13 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     end = min(end, start + 9, integer(volume.get("end"), end))
     if end < start:
         return []
+    cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
+    if cached:
+        if cached["normalized"]:
+            return cached["chapters"]
+        end = cached["end"]
+    prior = historical_outlines(getattr(client, "out", None), start, recent)
+    used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(start, end, profile, recent, state)
     planned_state = dict(state, ledger={k: dict(v) for k, v in state.get("ledger", {}).items()})
     for slot in rhythm:
@@ -220,37 +240,83 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         if start <= 100 <= end
         else []
     )
-    raw = _ask(
-        client,
-        "outlines",
-        f"chapters-{start}-{end}",
-        [
-            ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
-            ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
-            ("固定人物卡", [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]),
-            ("固定成长阶梯与当前仪表盘", [profile.get("canon"), state.get("dashboard")]),
-            (
-                "稳定节奏排期，每章只执行指定两条线",
-                [{k: r[k] for k in DATA["plan_slot_fields"] if k in r} for r in rhythm],
-            ),
-            ("爽点落实标准", GROWTH.get("payoff_criteria", {})),
-            ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
-            ("本卷与固定节拍", [volume, _beats(threads, integer(volume.get("number")), state)]),
-            ("警报与已用解法", [alerts, state.get("solutions", [])[-29:]]),
-            ("圣经摘要", bible.get("summary", "")[:1800]),
-            ("人物与能力", [bible.get("characters", []), bible.get("power", {})]),
-            ("实际状态及近章", [state, {r.get("number"): r.get("summary") for r in recent[-5:]}]),
-        ],
-        redo,
-    )
+    stage_contract = {
+        k: volume.get(k)
+        for k in ("number", "start", "end", "location", "stage", "antagonist", "goal", "climax", "exit_chapter", "cost")
+    }
+    opponents = [
+        {k: opponent.get(k) for k in ("name", "tier", "stage", "exit")} for opponent in rows(bible.get("antagonists"))
+    ]
+    cards = [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]
+    sections = [
+        ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
+        ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
+        ("阶段地点、对手、目标与收束固定约束", stage_contract),
+        ("对手分级与退场：exit后只能背景提及，禁止列入scene.characters", opponents),
+        ("固定人物卡，首次登场须交代identity，称呼仅限name/aliases", cards),
+        ("已用核心冲突类型与章名关键词", used),
+        (
+            "前四章核心冲突，连续五章不得同型",
+            [
+                dict(number=r["number"], title=str(r.get("title", ""))[:80], conflict_type=conflict_type(r))
+                for r in prior[-4:]
+            ],
+        ),
+        (
+            "稳定节奏排期，每章只执行指定两条线",
+            [{k: r[k] for k in DATA["plan_slot_fields"] if k in r} for r in rhythm],
+        ),
+        ("固定成长阶梯与当前仪表盘", [profile.get("canon"), state.get("dashboard")]),
+        ("本阶段固定节拍", _beats(threads, integer(volume.get("number")), state)),
+        ("爽点落实标准", GROWTH.get("payoff_criteria", {})),
+        ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
+        ("警报与已用解法", [alerts, state.get("solutions", [])[-29:]]),
+        ("圣经摘要", bible.get("summary", "")[:1800]),
+        ("能力", bible.get("power", {})),
+        ("实际状态及近章", [state, {r.get("number"): r.get("summary") for r in recent[-5:]}]),
+    ]
+    raw = cached if cached else _ask(client, "outlines", f"chapters-{start}-{end}", sections, redo)
     source = rows(raw.get("chapters")) if isinstance(raw, dict) else rows(raw)
     mapped = {}
     for i, item in enumerate(source):
         mapped.setdefault(integer(item.get("number"), start + i), item)
+
+    def rewrite(current, issues, targets, vocabulary, attempt):
+        return _ask(
+            client,
+            "outlines",
+            f"chapters-{start}-{end}-diversity" + (f"-user{redo}" if redo else ""),
+            [
+                ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
+                ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
+                ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
+                ("退场后只作背景，禁止列在场人物", opponents),
+                ("已用核心冲突类型与章名关键词", prompt_vocabulary(vocabulary)),
+                ("待重写章纲", [r for r in current if r.get("number") in targets]),
+                ("相关节奏要求", [r for r in rhythm if r["number"] in targets]),
+            ],
+            attempt,
+        )
+
+    key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
+    repaired = (
+        cached["chapters"]
+        if cached
+        else repair_batch(
+            getattr(client, "out", None),
+            key,
+            prior,
+            [dict(mapped.get(slot["number"], {}), number=slot["number"]) for slot in rhythm],
+            rewrite,
+            bible=bible,
+        )
+    )
+    mapped = {r["number"]: r for r in repaired}
     result = []
     for slot in rhythm:
         n = slot["number"]
         chapter = defaults(mapped.get(n), DATA["schemas"]["outlines"]["chapters"][0])
+        chapter["title_keywords"] = title_terms(chapter.get("title"), chapter.get("title_keywords"))
         chapter.update(
             number=n,
             threads=slot["threads"],
@@ -280,4 +346,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ]
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
+    if not cached and getattr(client, "out", None):
+        path = Path(client.out) / "outline-diversity" / (key + ".json")
+        report = json.loads(path.read_text())
+        save(path, dict(report, planned_chapters=result))
     return result

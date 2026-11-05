@@ -13,6 +13,11 @@ from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
+from .q1_continuity import repair_opening
+from .structure_planning import final_stage_start
+from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
+from .q1_cast import CAST_OBSERVATION_VERSION
+from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
 
@@ -39,15 +44,15 @@ def supplement(text, value):
 
 def amend(text, raw, bible, state, outline):
     hits = prose_hits(text, bible, state)
-    detail = dict(edits=[], hits_before=len(hits), adoption_failed=False, remaining=[], patch=False)
+    detail = dict(edits=[], hits_before=len(hits), adoption_failed=False, remaining=[], patch=False, body_adopted=False)
     if outline.get("ending") and raw.get("scene"):
         changed, accepted = apply_scene(text, raw["scene"])
         return changed, dict(detail, patch=accepted)
     low, high = outline.get("word_range", (1870, 2700))
-    body = body_of(raw.get("body", ""), None)
+    body = body_of(raw.get("body", ""), None, detail.setdefault("body_cleaning", {}))
     count, amount = chinese_count(text), chinese_count(body)
     if body and (count > high and low <= amount < count or count < low and count < amount <= high):
-        return body, dict(detail, patch=True)
+        return body, dict(detail, patch=True, body_adopted=True)
     spans = _sentences(text)
     changed, edits = sentence_edits(
         text,
@@ -77,9 +82,11 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     if path.exists() and load(path).get("fact_source") == "final_body":
         return chapter_record(out, idx)
     started = time.monotonic()
+    calls_before = len(getattr(client, "calls", []))
     prefix = f"r2-ch{idx}"
+    state = dict(state, seen_characters=previous_cast(out, idx, bible, state))
     target = book.words_per_chapter
-    canon = dict(bible["canon"], final_volume_start=max(1, ((book.chapters - 1) // 25) * 25 + 1))
+    canon = dict(bible["canon"], final_volume_start=final_stage_start(bible, book.chapters))
     bible = dict(bible, canon=canon)
     low, high = (1870, 2700) if target == 2200 else (round(target * 0.85), round(target * 1.15))
     previous = (out / f"chapter-{idx - 1:03d}.body.md").read_text() if idx > 1 else ""
@@ -105,25 +112,28 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         else outline.get("hook"),
         growth_target=vol.get("expected_dashboard", {}),
     )
+    outline = chapter_cast(outline, bible, state["seen_characters"])
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
     saved = client.prefix
     client.prefix = ""
+    cleaning = dict(draft={})
     try:
         text = body_of(
             ask(
                 client,
                 prefix + "-draft",
                 data[style]
-                + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用---分隔；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。",
+                + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。",
                 sections,
                 cap=6500,
                 input_limit=10000,
                 max_attempts=1,
             ),
             client,
+            cleaning["draft"],
         )
     finally:
         client.prefix = saved
@@ -137,9 +147,18 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     raw, failed, _ = extract_state(client, prefix + "-finish", text, state, bible, outline, rows)
     initial_failed = failed
     original = text
+    original_raw = deepcopy(raw)
+    cast_before = cast_findings(original, bible, state, outline)
+    cast_target_ids = {
+        h["id"]
+        for h in prose_hits(original, bible, state)
+        if h.get("kind") in ("missing_introduction", "unregistered_alias")
+    }
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")
     text, notes = amend(text, raw, bible, state, outline)
+    cast_repaired = any(e["id"] in cast_target_ids for e in notes.get("edits", []))
+    cleaning["repair_body"] = notes.get("body_cleaning", {}) if notes.get("body_adopted") else {}
     patched = notes["patch"]
     for old, new in (raw.get("rename") if isinstance(raw.get("rename"), dict) else {}).items():
         if (
@@ -148,10 +167,34 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
             and new in {c["name"] for c in bible.get("characters", [])}
         ):
             text = text.replace(old, new)
+    text, cleaning["repair"] = clean_prose(text)
+    text = clean(text)
     changed = text != original
     failed = failed or bool((raw.get("scene") or raw.get("body")) and not changed)
     if changed:
         raw, failed, _ = extract_state(client, prefix + "-final-state", text, state, bible, outline, [], final=True)
+    if cast_repaired and (
+        failed
+        or not remaining_cast_problems(cast_findings(text, bible, state, outline))
+        < remaining_cast_problems(cast_before)
+    ):
+        text, raw, failed = original, original_raw, initial_failed
+        notes["cast_repair"] = "rolled_back"
+        cleaning["repair_body"] = {}
+        cleaning["repair"] = {}
+    elif cast_repaired:
+        notes["cast_repair"] = "rechecked"
+    text, raw, failed, boundaries, handoff = repair_opening(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    cleaned, cleaning["final"] = clean_prose(text)
+    if cleaned != text:
+        text = clean(cleaned)
+        raw, failed, _ = extract_state(client, prefix + "-clean-state", text, state, bible, outline, [], final=True)
+        from .q1_continuity import boundary_facts
+
+        boundaries = boundary_facts(raw, text)
+    cleaning["total"] = sum(counts.get("total", 0) for counts in cleaning.values())
     if rows and rows[-1].get("state_failed") and not rows[-1].get("carry_attempted"):
         last = rows[-1]
         last["carry_attempted"] = True
@@ -192,6 +235,18 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         issues += thread_issues
     paid = not failed and payoff_ok(raw.get("payoff"), outline["payoff_type"], text, canon["payoff_menu"])
     current["pending_payoff"] = outline["payoff_type"] if outline["payoff_due"] and not paid else None
+    current.pop("end_location", None)
+    current.pop("present", None)
+    if boundaries["end_location"]:
+        current["end_location"] = boundaries["end_location"]
+    if boundaries["present_status"] == "grounded":
+        current["present"] = boundaries["present"]
+    current["seen_characters"] = sorted(set(state["seen_characters"]) | set(seen_in(text, bible.get("characters", []))))
+    if not current["seen_characters"]:
+        current.pop("seen_characters")
+        current.pop("cast_observation_version", None)
+    else:
+        current["cast_observation_version"] = CAST_OBSERVATION_VERSION
     kinds = normalize_scenes(raw.get("scene_types"))
     events = [e for e in raw.get("events", []) or [] if isinstance(e, dict)]
     row = dict(
@@ -229,10 +284,14 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         fact_source="final_body",
         revision=REVISION,
         seconds=round(time.monotonic() - started, 3),
-        outside_calls=1 + int(changed),
+        outside_calls=max(0, len(getattr(client, "calls", [])) - calls_before - 1),
         injuries_count=current.get("injuries_count", 0) if not failed else None,
         ending_candidates=ending_candidates(text, bible, outline) if outline["ending"] else [],
         opens_new_mainline=raw.get("opens_new_mainline") if outline["ending"] else False,
+        **boundaries,
+        handoff=handoff,
+        cast_findings=cast_findings(text, bible, state, outline),
+        cleaning=cleaning,
     )
     row.update(
         name_drift_before=len(name_hits(original, bible)), name_drift=name_hits(text, bible), english=english_hits(text)

@@ -144,6 +144,8 @@ class PolishResumeTests(unittest.TestCase):
         # These are tested separately; this suite exercises adoption, not screening.
         self.stack.enter_context(patch.object(q1_extract, "scan", return_value=[]))
         self.stack.enter_context(patch.object(q1_extract, "locate", return_value=[]))
+        # Checkup's real filesystem boundary is covered by test_book_checkup_finish.
+        self.stack.enter_context(patch.object(q1, "write_checkup", return_value={}))
 
     def put(self, path, value):
         self.files[Path(path)] = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)

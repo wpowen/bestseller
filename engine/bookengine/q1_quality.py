@@ -3,6 +3,7 @@ Only observed advances refresh attendance; prose metrics describe, not gate.
 """
 
 from copy import deepcopy
+from .structure_planning import stage_for_chapter, stage_by_number
 from pathlib import Path
 import re
 
@@ -187,6 +188,9 @@ def progress(state, review, chapter, bible, threads, profile):
         info.get("total", bible.get("chapters", bible.get("total_chapters"))),
         max((_int(v.get("end")) for v in _rows(bible.get("volumes"))), default=0),
     )
+    stage = stage_for_chapter(bible, max(1, number), max(total, number, 1)) if bible.get("structure_version") else None
+    if stage:
+        volume = stage["number"]
     ledger = state["ledger"] = _dict(state.get("ledger"))
     issues = []
     for thread in _rows(_dict(threads).get("threads", threads)):
@@ -236,14 +240,17 @@ def progress(state, review, chapter, bible, threads, profile):
             if kind in ("感情线", "romance")
             else 0
         )
-        gap = max(0, number - max(last, (start - 1) * size))
+        start_before = (
+            stage_by_number(bible, start, max(total, number, 1))["start"] - 1 if stage else (start - 1) * size
+        )
+        gap = max(0, number - max(last, start_before))
         if volume >= start and (not expected or expected - set(done) or record["last"] == number):
             record["max_gap"] = max(record["max_gap"], gap)
             if limit > 0 and gap > limit:
                 issues.append(f"{key}: {kind}断更{gap}章，上限{limit}")
         if total > 0 and number >= total and (expected - set(done) or not beats and not done):
             issues.append(f"{key}: 结尾未走完 {sorted(expected - set(done))}")
-        elif number % 25 == 0:
+        elif (number == stage["end"]) if stage else (number % 25 == 0):
             overdue = {str(b.get("id")) for b in beats if _int(b.get("volume")) <= volume} - set(done)
             if overdue:
                 issues.append(f"{key}: 本卷节拍未完 {sorted(overdue)}")

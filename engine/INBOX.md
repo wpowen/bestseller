@@ -764,3 +764,52 @@ Evidence（证据）：
    - 旧书（`polish=True`、没有 pipeline 字段、写手进程活着）在服务启动时，被补拉起去 AI watcher；
    - 已有终稿不重复处理。
 5. **约束**：不调用真实模型；不动 `books/`、Docker 和 8787；不 push。报告写 `engine/reports/fix28-20261105.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。监工合并、重新部署后，三本书会从检查点续跑。
+
+## 2026-11-05-29：整理一版 v1.0——删旧代码、拆压缩行、提速书库、收拢文档、打本地版本号（用户 2026-11-05：“把旧代码修改更新一波，提交一个版本”）
+
+状态：待执行。在独立工作树 `scratch/v1-worktree`、分支 `chore/v1-cleanup` 上做。8787 上有书正在跑，不要动生产容器和 `books/`。监工验收、合并后，等正在跑的书完成再部署。
+
+现状（监工 2026-11-05 普查，Evidence）：
+- 生产路径只有一条：网页调用 `python -m bookengine <book.yaml> --q1 --style b`，加上 `deai run --watch --pipeline`。从 `q1` 出发能 import 到的 bookengine 模块共 22 个。
+- 另有 11 个模块共 1978 行，只服务旧的非 Q1 模式：`--long`、不带 `--q1` 的 `runner`、`--quality`。它们是 `context`、`length`、`longchapter`、`longform`、`longplan`、`longrepair`、`quality`、`repair`、`runner`、`serialchapter`、`serialstate`。此外还有 `--style legacy`。
+- `engine/tools/` 下有约 25 个一次性实验脚本，生产代码里没有任何引用。例如：
+  - `run_growth2/3`、`growth*_report`、`ab2_*`、`style_experiment`；
+  - `voice_scene_*`、`polish_30`、`polish_report`、`q15_verify`、`fix100_report`、`benchmark_finish`；
+  - `deai_experiment`、`deai_recall_22`、`recover_*`、`verify_deai_book`、`deai_validate_outputs`、`growth3_english`。
+- 为了凑行数上限而压缩的代码（行数上限已取消）：
+  - `q1.py` 有 54 行用分号串了多条语句，45 行超过 160 字符；
+  - `q1_plan.py`、`contracts.py`、`q1_quality.py`、`deai/dialogue.py`、`deai/rules.py`、`webui/jobs.py`、`server.py` 也有同样情况。
+- `/api/books` 每次耗时 2.6–3.3 秒，网页每 3 秒轮询一次。每次请求都重新扫描所有书目录、重算费用。
+- `INBOX.md` 已有 700 多行，混着很多已完成或已作废的条目，例如：
+  - 第 1-2、1-3 条（Q1 到 100 章 / Q2 千章）；
+  - 第 8 条；
+  - 第 20 条（已被 23、25 取代）。
+
+要做（每一步单独提交，提交信息写清楚）：
+1. **删掉旧的非 Q1 管线**
+   - 删除上面 11 个模块，以及 CLI 里的 `--long`、`--quality`、`--style legacy`、不带 `--q1` 的运行方式。只保留网页实际在用的这一条路径，外加 `--extend-to` 和 `--batch`（如果 batch 只服务 Q1 就保留）。
+   - 删除前先用 import 图和 grep 证明没有生产代码依赖这些模块，报告里列出证据。
+   - 只测这些模块的测试一起删；顺带测到生产路径的测试，改写成测生产路径。
+2. **删掉一次性实验脚本**
+   - 逐个确认没有被生产代码（bookengine、deai、ideation、exporter、`tools/webui`、`runtime_support`、`chapter_outputs`、`check_scope`）或 Docker 引用，确认后删除。
+   - `complete_book.py`、`deai_calibrate.py`、`dialogue_*` 这类还可能有用的，判断后决定留或删，报告里逐个说明理由。
+   - `engine/reports/` 和 `books/` 里的历史产物一律不动。
+3. **拆开压缩代码**
+   - 用 `ruff format`（或 black，行宽 120）统一格式化 `engine/` 下全部 Python。分号串起来的语句拆成多行。
+   - 格式化后单文件超过 500 行的，按职责拆成多个模块，做到高内聚低耦合，不要为了压行数去改写逻辑。
+   - 这一步只能改格式、拆文件，不改行为：格式化前后全套测试都要通过。另外，用假客户端跑一本 3 章的书，格式化前后的产物（正文、检查点、`calls.json` 里的阶段序列）必须逐字节一致。
+4. **书库接口提速**
+   - `/api/books` 按书缓存，以 `web.json`、`run.json`、`runtime.json`、`final/`、`calls.json` 等关键文件的修改时间作为缓存键，没变就直接返回缓存。
+   - 目标：在 5 本书、约 150 章的数据上，单次请求 <300ms。要写测试证明文件一变缓存就失效，进度不会显示旧数据。
+5. **收拢文档**
+   - `INBOX.md` 只保留还要执行或等用户的条目，即第 17、18 条和本条。其余条目原样移到 `engine/reports/inbox-archive-2026-11.md`，已作废的注明被哪条取代。
+   - `README.md` 和 `engine/README.md` 按现状重写：怎么启动 8787、开书流程、边写边去 AI、三种停止原因、断点续写、导出、没有预算，以及测试命令。删掉过时的说法。
+   - `AGENTS.md` 里的模块说明跟着更新。
+6. **版本**
+   - 新建 `CHANGELOG.md`，写 v1.0.0：从 2026-11-04 新引擎上线到本条为止的用户可见变化，按“写书 / 去 AI / 选题 / 网页 / 运维”分组，每条一句话。
+   - 版本号写在一个地方（例如 `engine/VERSION`），网页页脚显示出来。
+   - 打本地标签 `v1.0.0`，打在合并后的 main 上，由监工来打。你这边只准备好内容，不打标签。
+7. **约束**
+   - 不调用真实模型；不动 `books/`、Docker 和 8787；不 push。
+   - 第 26–28 条的行为不能退化：三种停止原因、边写边去 AI（3 章并发）、断点续写、只出终稿、删除和弹窗交互。
+   - 报告写 `engine/reports/v1-cleanup-20261105.md`，列出删了什么（文件、行数）、留了什么及理由、格式化前后一致性的证据、接口提速前后耗时，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。

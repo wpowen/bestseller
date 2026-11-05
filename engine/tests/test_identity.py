@@ -10,6 +10,7 @@ import unittest
 import yaml
 
 from bookengine.client import Client
+from tools.runtime_support import ProjectError
 from bookengine.config import Book
 from bookengine.identity import name_hits, validate_bible
 from bookengine import q1_plan
@@ -90,17 +91,17 @@ class PrepareIdentityTests(unittest.TestCase):
             return q1_plan.prepare(client, Book('xuanhuan-power-fantasy', 20, 2200, '固定人物'),
                                    out, ROOT / 'config')
 
-    def test_two_bad_responses_stop_without_writing_a_bible_or_threads(self):
+    def test_six_bad_responses_stop_without_writing_a_bible_or_threads(self):
         for raw in ('broken: [', json.dumps({'bible': {'title': '缺卡', 'characters': []}}),
                     json.dumps({'bible': dict(bible(), characters=CAST[:2])}, ensure_ascii=False)):
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as directory:
                 out = Path(directory) / 'book'
                 out.mkdir()
-                client = ScriptedClient(out, [raw, raw])
-                with self.assertRaises(ValueError):
+                client = ScriptedClient(out, [raw] * 6)
+                with self.assertRaises(ProjectError):
                     self.prepare(client, out)
                 self.assertEqual([c['stage'] for c in client.calls],
-                                 ['plan-q1-prepare', 'plan-q1-prepare-redo'])
+                                 ['plan-q1-prepare'] * 6)
                 self.assertFalse((out / 'story_bible.yaml').exists())
                 self.assertFalse((out / 'threads.yaml').exists())
                 self.assertFalse(client.relaxed)

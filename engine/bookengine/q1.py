@@ -15,6 +15,7 @@ import yaml
 from .batch import usage_report
 from .checks import high_confidence, roll_day
 from .client import Client, SYSTEM
+from tools.runtime_support import QuotaExhausted, ProjectError, write_runtime
 from .config import Book
 from .contracts import TYPES,choose_contract,valid_extract,payoff_ok,observations,reduce_growth,growth_warnings
 from .export import export
@@ -39,23 +40,14 @@ def pack(value):
 
 def ask(client,*args,**kwargs):
     try: return raw_ask(client,*args,**kwargs)
-    except (ValueError,TypeError,RuntimeError) as exc:
-        if 'budget' in str(exc): raise
+    except (QuotaExhausted, ProjectError):
+        raise
+    except (ValueError, TypeError) as exc:
         return {}
 
 
 class QClient(Client):
-    def request(self,*args,**kwargs):
-        base=Path(os.environ.get('BOOKENGINE_BUDGET_ROOT',self.out.parent.parent))
-        folders=[base] if os.environ.get('BOOKENGINE_BUDGET_ROOT') else [base/name for name in ('q1','q1-smoke','q1-5','benchmark','polish-30')]
-        if not any(p.exists() for p in folders): folders=[self.out.parent]
-        def cost(path,start=0):
-            usage=usage_report(load(path)[start:])
-            return usage['estimated_usd']['no_cache_discount']+sum(x['unknown_upper_bound'] if x.get('unknown_upper_bound') is not None else .02 for x in usage['missing_usage'])
-        phase=load(os.environ['BOOKENGINE_PHASE']) if os.environ.get('BOOKENGINE_PHASE') else None
-        spent=sum(cost(Path(p)/'calls.json',n) for p,n in phase['base_calls'].items() if (Path(p)/'calls.json').exists()) if phase else sum(cost(p) for folder in folders for p in folder.rglob('calls.json'))
-        if spent+.03>float(os.environ.get('BOOKENGINE_BUDGET_USD',4)):raise RuntimeError('Book batch public-price budget reached')
-        return super().request(*args,**kwargs)
+    """Production writer retains the shared transport and cost ledger."""
 
 
 def clean(text):
@@ -160,9 +152,14 @@ def amend(text,raw,bible,state,outline):
     return changed,dict(detail,edits=[] if bad else edits,adoption_failed=bad,patch=patched)
 
 
+def chapter_record(out, number):
+    recovered = out / f'chapters/{number:03d}.recovery.json'
+    return load(recovered if recovered.exists() else out / f'chapters/{number:03d}.json')
+
+
 def chapter(client,book,bible,threads,profile,vol,outline,state,history,rows,out,style,data):
     idx=outline['number'];path=out/f'chapters/{idx:03d}.json'
-    if path.exists() and load(path).get('fact_source')=='final_body':return load(path)
+    if path.exists() and load(path).get('fact_source')=='final_body':return chapter_record(out, idx)
     started=time.monotonic();prefix=f'r2-ch{idx}';target=book.words_per_chapter;canon=dict(bible['canon'],final_volume_start=max(1,((book.chapters-1)//25)*25+1));bible=dict(bible,canon=canon)
     low,high=(1870,2700) if target==2200 else (round(target*.85),round(target*1.15));previous=(out/f'chapter-{idx-1:03d}.body.md').read_text() if idx>1 else '';drops=[]
     contract=choose_contract(canon,rows,idx,state.get('pending_payoff') or outline.get('payoff_type'),state,canon['final_volume_start'])
@@ -183,7 +180,7 @@ def chapter(client,book,bible,threads,profile,vol,outline,state,history,rows,out
     if rows and rows[-1].get('state_failed') and not rows[-1].get('carry_attempted'):
         last=rows[-1];last['carry_attempted']=True;prior=(out/f"chapter-{last['number']:03d}.body.md").read_text();delta=ground(carry,prior)
         if carry_full and valid_extract(delta,prior,canon['hook_types'],canon['payoff_menu']):state,_=reduce_growth(state,delta,bible,prior,last['number'],base=merge_state(state,{k:v for k,v in delta['state'].items() if v is not None},bible,last['number']));last.update(state=state,state_recovered=True,payoff_fulfilled=payoff_ok(delta.get('payoff'),last.get('payoff_type'),prior,canon['payoff_menu']),**{k:delta[k] for k in ('type','hook_type','payoff')},**observations(delta,prior,last['number']))
-        save(out/f"chapters/{last['number']:03d}.json",last)
+        save(out/f"chapters/{last['number']:03d}.recovery.json",last)
     current=deepcopy(state);issues=[]
     if not failed:
         current,issues=reduce_growth(state,raw,bible,text,idx,base=merge_state(state,{k:v for k,v in raw['state'].items() if v is not None},bible,idx));current['clock']=roll_day(state.get('clock'),current.get('clock'),text[-1200:],text)
@@ -218,9 +215,15 @@ def run_q1(book_path,out,env,assets,timeout=180,style='b',extend_to=None):
                 if replace(old,chapters=book.chapters).record()!=book.record() or extend_to<old.chapters:raise ValueError('extension requires the original book and a larger chapter target')
                 if extend_to>old.chapters:meta.update(book=replace(old,chapters=extend_to).record(),status='interrupted');save(out/'run.json',meta)
             return _run(replace(book,chapters=extend_to) if extend_to else book,out,env,Path(assets),timeout,style,lambda:stopped[0])
-        except RuntimeError as exc:
-            if 'budget' not in str(exc): raise
-            meta=load(out/'run.json');meta.update(status='stopped',stop_reason=str(exc));save(out/'run.json',meta);return meta
+        except (ValueError, RuntimeError) as exc:
+            kind = 'quota_exhausted' if isinstance(exc, QuotaExhausted) else 'error'
+            runtime = load(out / 'runtime.json') if (out / 'runtime.json').exists() else {}
+            write_runtime(out, kind, runtime.get('stage', 'run-q1'), error=str(exc))
+            if (out / 'run.json').exists():
+                meta = load(out / 'run.json')
+                meta.update(status=kind, stop_reason=str(exc))
+                save(out / 'run.json', meta)
+            raise
         finally:
             for s,h in handlers.items(): signal.signal(s,h)
 
@@ -228,7 +231,7 @@ def run_q1(book_path,out,env,assets,timeout=180,style='b',extend_to=None):
 def _run(book,out,env,assets,timeout,style,stop):
     path=out/'run.json';meta=load(path) if path.exists() else dict(mode='Q1',book=book.record(),started=now(),style=style,status='running')
     if meta.get('mode')!='Q1' or Book(**meta['book']).record()!=book.record() or meta.get('style')!=style: raise ValueError('Q1 checkpoint settings changed')
-    if meta['status']=='complete' or meta['status']=='stopped' and meta.get('revision',{}).get('name')==REVISION: return meta
+    if meta['status']=='complete': return meta
     if meta.get('revision',{}).get('name')!=REVISION:
         meta.setdefault('previous_runs',[]).append(dict(status=meta['status'],stop_reason=meta.get('stop_reason'),wall_seconds=meta.get('wall_seconds',0)))
         meta['revision']=dict(name=REVISION,started=now(),base_chapters=meta.get('completed_chapters',0),base_seconds=meta.get('execution_seconds',meta.get('wall_seconds',0)))
@@ -239,8 +242,10 @@ def _run(book,out,env,assets,timeout,style,stop):
     save(path,meta);data=yaml.safe_load(DATA.read_text());client=QClient(out,env,'',timeout)
     client.context_limit=10000;client.clip_context=True;client.relaxed=True;client.style_b=False;client.minimal_prose=True;client.stop_requested=stop
     try:bible,threads,profile=prepare(client,book,out,assets,design=True)
+    except (QuotaExhausted, ProjectError):
+        raise
     except (ValueError,RuntimeError) as exc:
-        meta.update(status='stopped' if 'budget' in str(exc) else 'failed',stop_reason=str(exc),usage=usage_report(client.calls));save(path,meta);raise
+        meta.update(status='failed',stop_reason=str(exc),usage=usage_report(client.calls));save(path,meta);raise
     canon=dict(bible['canon'],solution_menu=GROWTH['packs'][book.prompt_pack]['solution_menu'],solution_aliases=GROWTH.get('solution_aliases',{}),final_volume_start=max(1,((book.chapters-1)//25)*25+1));bible=dict(bible,canon=canon);profile=dict(profile,canon=canon)
     client.glossary=bible.get('glossary',{});client.plan_suffix='-growth2'
     client.prefix=pack(dict(reader_expectation=bible.get('reader_expectation'),anti_patterns=profile.get('anti_patterns',[])))[:650]
@@ -248,9 +253,10 @@ def _run(book,out,env,assets,timeout,style,stop):
     for idx in range(1,book.chapters+1):
         vn=(idx-1)//25+1
         saved=out/f'chapters/{idx:03d}.json'
-        cached=saved.exists() and load(saved).get('fact_source')=='final_body' and idx<=meta.get('completed_chapters',0)
+        cached_record = saved.exists() and load(saved).get('fact_source') == 'final_body'
+        cached = cached_record and idx <= meta.get('completed_chapters', 0)
         if cached:
-            row=load(saved);rows.append(row);state=row['state']
+            row=chapter_record(out, idx);rows.append(row);state=row['state']
             for p in (out/'volumes').glob('*.json'):
                 m=load(p)
                 if m.get('end')==idx:history=[h for h in history if h['number']!=m['number']]+[m]
@@ -266,11 +272,7 @@ def _run(book,out,env,assets,timeout,style,stop):
         if rows and not state.get('realm_progress'):
             level=state.get('dashboard',{}).get('strength');at=next((r['number'] for r in reversed(rows) if r['state'].get('dashboard',{}).get('strength')!=level),0)+1;state['realm_progress']=dict(level=level,upgrade_at=at,displayed_at=None)
         outline=next((c for c in batch if c.get('number')==idx),dict(number=idx,title=f'第{idx}章',scenes=[],threads=[]))
-        try: row=chapter(client,book,bible,threads,profile,vol,outline,state,history,rows,out,style,data)
-        except RuntimeError as exc:
-            if 'budget' in str(exc):
-                meta.update(status='stopped',stop_reason=str(exc));save(path,meta);return meta
-            raise
+        row=chapter(client,book,bible,threads,profile,vol,outline,state,history,rows,out,style,data)
         rows.append(row);state=row['state'];alerts=row['issues'];meta.setdefault('dropped_fields',{})[str(idx)]=row.get('dropped_fields',[]);save(out/'state.json',state)
         if idx%25==0 or idx==book.chapters:
             memory_path=out/f'volumes/{vn:02d}-{idx:03d}.json'
@@ -283,20 +285,23 @@ def _run(book,out,env,assets,timeout,style,stop):
         summary=acceptance(rows,history,client,bible,threads,profile,revision['base_chapters'])
         revision['seconds']=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(revision['started'])).total_seconds()
         seconds=revision['base_seconds']+revision['seconds'];meta['execution_seconds']=seconds
-        row['run_elapsed']=seconds;save(out/f'chapters/{idx:03d}.json',row)
+        if not cached_record:
+            row['run_elapsed'] = seconds
+            save(out / f'chapters/{idx:03d}.json', row)
         recent=[r for r in rows if r['number']>revision['base_chapters']]
         if len(recent)>=50:
             average=sum(r['seconds'] for r in recent[-50:])/50
             calls=[c for c in client.calls if c['stage'].startswith('r2-ch') and int(re.findall(r'\d+',c['stage'])[0])>=idx-49]
             rate=sum(c['status'] not in ('ok','pending') for c in calls)/max(1,len(calls))
-            if average>100 or rate>.1:meta.update(status='stopped',stop_reason=f'rolling 50 chapters average={average:.2f}s failure_rate={rate:.4f}; limit=100s/0.1')
+            if average>100 or rate>.1:
+                meta.setdefault('warnings', []).append(dict(chapter=idx, average_seconds=average, failure_rate=rate))
         meta.update(completed_chapters=sum(r['status']=='complete' for r in rows),wall_seconds=round(seconds,3),usage=usage_report(client.calls),quality=summary,updated=now())
         save(path,meta)
         print(f"chapter={idx} chars={row['chars']} dialogue={row['style']['dialogue_ratio']:.3f} elapsed={seconds:.1f}s",flush=True)
         if idx%25==0 and idx>revision['base_chapters']:
             log=out/'progress.log';save(log,(log.read_text() if log.exists() else '')+f"chapter={idx} seconds={seconds:.1f} cost_usd={meta['usage']['estimated_usd']['conservative_total']} input_chars={max((c['input_chars'] for c in client.calls if c['stage']==f'g-ch{idx}-draft'),default=0)} active_lines={sum(bool(v.get('last')) for v in state.get('ledger',{}).values())} format_rate={summary['format_failures']/max(1,len(client.calls)):.4f}\n")
-        if meta['status']=='stopped' or stop():
-            if meta['status']!='stopped':meta['status']='interrupted';save(path,meta)
+        if stop():
+            meta['status']='interrupted';save(path,meta)
             return meta
     meta['quality']=acceptance(rows,history,client,bible,threads,profile,revision['base_chapters'])
     export(out,bible.get('title','Q1'),rows,[(out/f"chapter-{r['number']:03d}.body.md").read_text() for r in rows])

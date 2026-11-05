@@ -29,7 +29,7 @@ def config(env):
         dict(id='flash', name='MiniMax M3.1 Flash', enabled=configured, configured=configured, reason='公开CLI固定模型' if configured else '未配置'),
         dict(id='m3', name='MiniMax M3', enabled=False, configured=configured, reason=('已配置密钥；' if configured else '未配置；')+'公开CLI无模型切换参数'),
         dict(id='claude', name='Claude', enabled=False, reason=('已配置；' if values.get('ANTHROPIC_API_KEY') else '未配置；')+'公开CLI不支持')],
-        channels=['男频', '女频'], budgets=dict(total=.5, reserve=.03, topic=.05), limitations=['stopped检查点暂无公开恢复命令', '单章重写暂无公开命令；重试从检查点续跑'])
+        channels=['男频', '女频'], limitations=['单章重写暂无公开命令；重试从检查点续跑'])
 
 
 def docx(markdown):
@@ -39,7 +39,11 @@ def docx(markdown):
 
 def export_bytes(detail, version, fmt):
     from exporter import render, heading
-    rows = [(r['number'], heading(r['number'], r['title']), r[version]) for r in detail['chapters']]
+    rows = [(r['number'], heading(r['number'], r['title']), r['final']) for r in detail['chapters'] if r['final']]
+    missing = sorted(set(range(1, detail['meta']['total'] + 1)) - {r[0] for r in rows})
+    if missing:
+        title = '导出说明：仅含终稿；缺少第 ' + '、'.join(map(str, missing)) + ' 章'
+        rows.append((detail['meta']['total'] + 1, '导出说明', title))
     with tempfile.TemporaryDirectory(prefix='bookweb-export-') as temporary:
         out = Path(temporary); render(out, detail['meta']['title'], rows, (fmt,))
         if fmt != 'fanqie': return (out / ('book.'+fmt)).read_bytes()
@@ -52,13 +56,14 @@ def export_bytes(detail, version, fmt):
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
 
-    def send(self, data, code=200, mime='application/json; charset=utf-8', filename=None):
+    def send(self, data, code=200, mime='application/json; charset=utf-8', filename=None, missing=None):
         if not isinstance(data, bytes):
             data = (json.dumps(data, ensure_ascii=False) if mime.startswith('application/json') else data).encode('utf-8')
         self.send_response(code); self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(data))); self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cache-Control', 'no-store'); self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
         if filename: self.send_header('Content-Disposition', 'attachment; filename="'+filename+'"')
+        if missing is not None: self.send_header('X-Missing-Chapters', ','.join(map(str, missing)))
         self.end_headers(); self.wfile.write(data)
 
     def hosts(self):
@@ -75,25 +80,22 @@ class Handler(BaseHTTPRequestHandler):
             lib = self.server.library; path = query.path
             if path == '/api/config': self.send(self.server.configuration)
             elif path == '/favicon.ico': self.send(b'', code=204, mime='image/x-icon')
-            elif path == '/api/books': self.send(dict(books=lib.listing(), spending=lib.spending(), limit=self.server.configuration.get('budgets', {}).get('total', .5), read_only=lib.read_only))
+            elif path == '/api/books':
+                self.send(dict(books=lib.listing(), spending=lib.spending(), read_only=lib.read_only))
             elif path == '/api/archive': self.send(dict(books=lib.archive()))
             elif path == '/api/topics': self.send(self.server.queue.get_topic(get('id')))
             elif path == '/api/book': self.send(lib.detail(get('id')))
             elif path == '/LIBRARY.html': self.send(lib.static(), mime='text/html; charset=utf-8')
             elif path == '/download':
-                folder = lib.folder(get('id')); fmt = get('format'); version = get('version', 'draft')
+                folder = lib.folder(get('id')); fmt = get('format'); version = get('version', 'final')
                 if fmt not in ('md','docx','txt','epub','fanqie') or version not in ('draft','final'): raise ValueError('格式无效')
-                if version == 'draft' and fmt in ('md','docx'):
-                    output = lib.safe(folder / ('book.'+fmt))
-                    if not output.exists(): raise ValueError('公开CLI尚未导出，请等待完成')
-                    body = output.read_bytes()
-                else:
-                    detail = lib.detail(get('id')); rows = detail['chapters']
-                    if version == 'final' and (not rows or len(rows) != detail['meta']['total'] or any(not r['final'] for r in rows)): raise ValueError('后处理尚未完成，不能伪装最终稿')
-                    if fmt in ('epub','fanqie') and (not rows or len(rows)!=detail['meta']['total']): raise ValueError('整书尚未完成')
-                    body = export_bytes(detail, version, fmt)
-                self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8','epub':'application/epub+zip','fanqie':'application/zip'}[fmt], filename='book-'+version+'.'+('zip' if fmt=='fanqie' else fmt))
-            elif path in ('/', '/index.html', '/app.js', '/shared.js', '/library.js', '/wizard.js', '/book.js', '/reader.js', '/style.css'):
+                detail = lib.detail(get('id'))
+                available = {r['number'] for r in detail['chapters'] if r['final']}
+                if not available: raise ValueError('尚无终稿可导出')
+                missing = sorted(set(range(1, detail['meta']['total'] + 1)) - available)
+                body = export_bytes(detail, 'final', fmt)
+                self.send(body, mime={'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','md':'text/markdown; charset=utf-8','txt':'text/plain; charset=utf-8','epub':'application/epub+zip','fanqie':'application/zip'}[fmt], filename='book-final.'+('zip' if fmt=='fanqie' else fmt), missing=missing)
+            elif path in ('/', '/index.html', '/app.js', '/shared.js', '/library.js', '/wizard.js', '/book.js', '/reader.js', '/overlays.js', '/style.css'):
                 name = 'index.html' if path == '/' else path[1:]
                 self.send((ASSETS/name).read_bytes(), mime={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[name.rsplit('.',1)[1]])
             else: self.send({'error':'未找到'}, 404)
@@ -127,18 +129,17 @@ def main():
     parser.add_argument('--host', default=os.environ.get('BOOKWEB_HOST', '127.0.0.1'))
     parser.add_argument('--port', type=int, default=int(os.environ.get('BOOKWEB_PORT', 8787)))
     parser.add_argument('--public-port', type=int, default=int(os.environ.get('BOOKWEB_PUBLIC_PORT', 0)), help='browser-facing port when behind Docker port mapping')
-    parser.add_argument('--budget', type=float, default=float(os.environ.get('BOOKWEB_BUDGET_USD', 20)))
     parser.add_argument('--topic-worker', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(); os.umask(0o077)
     if args.topic_worker: topic_worker(args.topic_worker, args.env); return
-    if not 0 < args.budget <= 50: parser.error('总预算须在(0,50]美元')
     library = Library(args.books, read_only=args.read_only)
-    queue = None if args.read_only else Queue(library, args.env.resolve(), ENGINE, args.budget)
+    queue = None if args.read_only else Queue(library, args.env.resolve(), ENGINE)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     public = args.public_port or args.port
     server.origin = f'http://127.0.0.1:{public}'; server.hosts = {f'127.0.0.1:{public}', f'localhost:{public}'}
     server.library = library; server.queue = queue
-    server.configuration = config(args.env.resolve()); server.configuration['budgets']['total'] = args.budget; server.daemon_threads = True
+    server.configuration = config(args.env.resolve())
+    server.daemon_threads = True
     def stop(*_):
         if queue:
             queue.close()

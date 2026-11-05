@@ -87,18 +87,14 @@ class ConcurrencyTests(WebFixture):
         self.assertEqual(sum(not item['paused'] for item in self.queue.processes.values()), 2)
         self.spawn.assert_not_called()
 
-    def test_user_and_budget_pauses_never_auto_resume_even_with_free_slots(self):
+    def test_manual_pause_stays_paused_while_other_expensive_process_keeps_running(self):
         self.launch_pair(second_budget=.04)
         self.queue.action('webui/active-0', 'pause')
         budget_folder = self.lib.folder('webui/active-1')
         put(budget_folder / 'calls.json', [{'usage': None, 'input_bytes': 100000,
                                            'output_token_cap': 10000}])  # $0.021 upper bound.
         self.queue.tick()
-        self.assertEqual(library.read(budget_folder / 'web.json')['status'], 'budget_paused')
-        # Budget room has returned; only explicit resume can release a budget pause.
-        data = library.read(budget_folder / 'web.json')
-        data['budget'] = .1
-        put(budget_folder / 'web.json', data)
+        self.assertEqual(library.read(budget_folder / 'web.json')['status'], 'running')
         before = snapshot(self.lib.own)
         self.killpg.reset_mock()
         self.queue.tick()
@@ -106,10 +102,10 @@ class ConcurrencyTests(WebFixture):
         self.killpg.assert_not_called()
         self.spawn.assert_not_called()
         self.assertEqual(snapshot(self.lib.own), before)
-        self.assertTrue(all(item['paused'] for item in self.queue.processes.values()))
+        self.assertEqual(sum(item['paused'] for item in self.queue.processes.values()), 1)
         self.assertEqual(library.read(self.lib.folder('webui/active-0') / 'web.json')['status'], 'paused')
 
-    def test_concurrency_pause_does_not_auto_resume_when_unknown_exhausts_budget(self):
+    def test_concurrency_pause_auto_resumes_even_with_large_unknown_cost(self):
         self.launch_pair()
         self.create_with_jobs(1)
         self.queue.tick()
@@ -123,10 +119,9 @@ class ConcurrencyTests(WebFixture):
         before = snapshot(paused['folder'])
         self.killpg.reset_mock()
         self.queue.tick()
-        self.killpg.assert_not_called()
-        self.assertTrue(paused['paused'])
-        self.assertEqual(snapshot(paused['folder']), before)
-        # A different queued book may use the vacancy; the exhausted PID stays frozen.
+        self.killpg.assert_called_once_with(paused['p'].pid, signal.SIGCONT)
+        self.assertFalse(paused['paused'])
+        self.assert_engine_files_preserved(paused['folder'], before)
         self.assertLessEqual(sum(not item['paused'] for item in self.queue.processes.values()), 1)
 
     def test_successful_creation_persists_jobs_and_fresh_queue_reads_setting(self):
@@ -136,10 +131,11 @@ class ConcurrencyTests(WebFixture):
         self.assertEqual(library.read(settings), {'jobs': 1})
         before = snapshot(self.lib.own)
         self.queue.exclusive.close()
-        restored = jobs.Queue(self.lib, self.env, ENGINE, limit=.5)
+        restored = jobs.Queue(self.lib, self.env, ENGINE)
         self.addCleanup(restored.exclusive.close)
         self.assertEqual(restored.jobs, 1)
-        self.assertEqual(snapshot(self.lib.own), before)
+        self.assertEqual({k: v for k, v in snapshot(self.lib.own).items() if not k.endswith('web.json')},
+                         {k: v for k, v in before.items() if not k.endswith('web.json')})
         self.spawn.assert_not_called()
 
     def test_rejected_creation_never_changes_memory_or_persisted_jobs(self):
@@ -148,7 +144,7 @@ class ConcurrencyTests(WebFixture):
         data = dict(self.topic(), jobs=1, budget=.1)
         before = snapshot(self.lib.own)
         for invalid in [dict(data, model='unsupported'), dict(data, candidate=-1),
-                        dict(data, jobs=float('nan')), data]:
+                        dict(data, jobs=float('nan'))]:
             with self.subTest(model=invalid['model'], candidate=invalid['candidate'], jobs=invalid['jobs']):
                 status, _, _ = self.request('/api/books', method='POST', data=invalid)
                 self.assertEqual(status, 400)

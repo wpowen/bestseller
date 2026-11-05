@@ -1,4 +1,5 @@
 """Two-call serial chapters: prose, then combined review and final state."""
+from tools.runtime_support import QuotaExhausted, ProjectError
 from .checks import high_confidence, length_band, text_issues, roll_day
 from .length import correct_length
 from .longchapter import apply_fix, review_value
@@ -73,6 +74,8 @@ def write_serial(client, book, chapter, volume, canon, previous_end, state,
     if length_used:
         try:
             text = correct_length(client, name + '-length', text, chapter, book.words_per_chapter)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             warnings.append(dict(stage='length', reason=str(exc)))
     save(out / f'chapter-{idx:03d}.draft.md', text)
@@ -90,6 +93,8 @@ def write_serial(client, book, chapter, volume, canon, previous_end, state,
             + thread_rule,
             [('本章正文', number_paragraphs(text))] + sections,
             schema, cap=6500, effort='low', max_attempts=1)
+    except (QuotaExhausted, ProjectError):
+        raise
     except (RuntimeError, ValueError, KeyError, TypeError) as exc:
         warnings.append(dict(stage='review_state', reason=str(exc), fallback='previous'))
         review = {}
@@ -112,6 +117,8 @@ def write_serial(client, book, chapter, volume, canon, previous_end, state,
             fix = review_value(fix if isinstance(fix,dict) else {}, final,
                                {i['paragraph'] for i in found if i.get('hard')})
             final, events = apply_fix(final, events, fix)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError, KeyError, TypeError):
             warnings.append(dict(stage='fix', fallback='keep_text'))
     if not length_used and not low <= chinese_count(final) <= high:
@@ -119,6 +126,8 @@ def write_serial(client, book, chapter, volume, canon, previous_end, state,
             final = correct_length(client, name + '-length', final, chapter, book.words_per_chapter,
                                    {e['paragraph'] for e in events if type(e.get('paragraph')) is int})
             events = anchor_events(dict(events=events), final)['events']
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             warnings.append(dict(stage='length', reason=str(exc)))
     raw_state = review.get('state', review)

@@ -1,4 +1,5 @@
-"""Resumable serial writing with a rolling fifty-chapter stop."""
+"""Resumable serial writing with observable rolling progress warnings."""
+from tools.runtime_support import QuotaExhausted, ProjectError
 from collections import Counter
 import datetime as dt
 import fcntl
@@ -70,6 +71,8 @@ def finish(meta, client, rows, plan, out, banned):
         from .longrepair import final_quality
         try:
             rows = final_quality(client, Book(**meta['book']), rows, plan, out, banned)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError) as exc:
             meta['closing_error'] = str(exc)
     complete = [r for r in rows if r['status'] == 'complete']
@@ -144,9 +147,6 @@ def _run(book, out, env, assets, timeout, stop_requested=lambda: False):
         meta = load(manifest)
         if Book(**meta['book']).record() != book.record() or meta.get('mode') not in ('S4', 'S5a'):
             raise ValueError('Use the original S4 YAML and output directory')
-        if meta['status'] == 'stopped' and meta.get('revision',{}).get('name') == REVISION:
-            print('Stopped by current limit: ' + meta['stop_reason'], flush=True)
-            return meta
         if meta['status'] == 'complete':
             return meta
     else:
@@ -185,6 +185,8 @@ def _run(book, out, env, assets, timeout, stop_requested=lambda: False):
         if (idx - 1) % 10 == 0:
             try:
                 outlines, volumes = chapter_window(client, plan, idx, book.chapters, state, rolling, thread_view())
+            except (QuotaExhausted, ProjectError):
+                raise
             except (RuntimeError, ValueError, KeyError, TypeError, AttributeError) as exc:
                 # A failed planning window is explicitly marked; later windows still run.
                 outlines = []
@@ -204,6 +206,8 @@ def _run(book, out, env, assets, timeout, stop_requested=lambda: False):
                 row = write_chapter(client, book, chapter, volume, plan['canon'],
                                 previous[-1][-1400:] if previous else '', state, summaries, rolling,
                                 banned, previous, out)
+        except (QuotaExhausted, ProjectError):
+            raise
         except (RuntimeError, ValueError, KeyError, TypeError) as exc:
             body = (out/f'chapter-{idx:03d}.draft.md').read_text() if (out/f'chapter-{idx:03d}.draft.md').exists() else ''
             save(out/f'chapter-{idx:03d}.body.md', body)
@@ -276,6 +280,8 @@ def _run(book, out, env, assets, timeout, stop_requested=lambda: False):
                               [('这十章摘要', pack(summaries[-10:])), ('旧滚动记忆', rolling),
                                ('当前状态', pack(state)[:4500])], cap=2200, max_attempts=2)
                     rolling = rolling[:900]
+            except (QuotaExhausted, ProjectError):
+                raise
             except (RuntimeError, ValueError, KeyError, TypeError, AttributeError) as exc:
                 meta.setdefault('memory_errors', []).append(dict(chapter=idx, reason=str(exc)))
                 rolling = ('\n'.join(x['summary'] for x in summaries[-5:]))[:900]
@@ -294,9 +300,10 @@ def _run(book, out, env, assets, timeout, stop_requested=lambda: False):
         window = client.calls[first.get('resume_calls',revision['start_calls']):]
         window_failures = sum(c['status'] not in ('ok','pending') for c in window)
         if serial_mode and resume_stop(len(new_rows), seconds-first.get('resume_seconds',0), window_failures, len(window), book.chapters):
-            meta.update(status='stopped',stop_reason=f"resume chapters={len(new_rows)}, window50_average_s={(seconds-first.get('resume_seconds',0))/50:.1f}, failure_rate={window_failures/max(1,len(window)):.3f}")
-            save(manifest,meta)
-            return meta
+            meta.setdefault('warnings', []).append(dict(chapter=idx,
+                window50_average_s=(seconds-first.get('resume_seconds',0))/50,
+                failure_rate=window_failures/max(1,len(window))))
+            save(manifest, meta)
         if idx % 25 == 0 and not cached:
             emit_progress(meta, client, row, out)
     finish(meta, client, rows, plan, out, banned)

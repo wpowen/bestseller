@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 from .runner import run
+from tools.runtime_support import QuotaExhausted, write_runtime
 
 
 def main():
@@ -46,10 +47,21 @@ def main():
                 run_long(args.book, out, args.env, args.assets, args.timeout)
             else:
                 run(args.book, out, args.env, args.assets, args.timeout, quality=args.quality)
+    except InterruptedError:
+        if args.out and not args.batch:
+            write_runtime(args.out, 'interrupted', 'network-backoff')
+        raise SystemExit(130) from None
     except (ValueError, RuntimeError) as exc:
+        if args.out and not args.batch:
+            from .storage import load
+            runtime = load(args.out / 'runtime.json') if (args.out / 'runtime.json').exists() else {}
+            kind = 'quota_exhausted' if isinstance(exc, QuotaExhausted) else 'error'
+            write_runtime(args.out, kind, runtime.get('stage', 'startup'), error=str(exc))
         print('Stopped: ' + str(exc), file=sys.stderr)
         raise SystemExit(1) from None
     except Exception as exc:
+        if args.out and not args.batch:
+            write_runtime(args.out, 'error', 'runtime', error=type(exc).__name__)
         print('Stopped: ' + type(exc).__name__, file=sys.stderr)
         raise SystemExit(1) from None
 

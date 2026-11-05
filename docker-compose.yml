@@ -22,7 +22,6 @@ services:
       BOOKWEB_HOST: 0.0.0.0
       BOOKWEB_PORT: "8787"
       BOOKWEB_PUBLIC_PORT: ${BOOKWEB_PORT:-8787}
-      BOOKWEB_BUDGET_USD: ${BOOKWEB_BUDGET_USD:-20}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
       - "127.0.0.1:${BOOKWEB_PORT:-8787}:8787"

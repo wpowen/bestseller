@@ -1,0 +1,21 @@
+pytest: 754 passed, 850 subtests passed in 19.18s
+
+bookengine_lines=5032
+deai_lines=1553
+webui_lines=817
+exporter_lines=253
+ideation_lines=510
+shared_lines=79
+webui_frontend_lines=1492 (max_file=456 wizard.js)
+max_file_lines=466 (deai/flow.py)
+imports_bestseller=no
+cross_imports=none
+forbidden_keywords=none
+PASS: file limits and independence
+
+git diff --check: PASS
+Browser: offline fixture 127.0.0.1:18791, inspected library and settings
+Console: 0 Errors, 0 Warnings
+Real model calls: 0
+Production books writes: 0
+Docker/8787 operations: 0

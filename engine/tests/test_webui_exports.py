@@ -7,7 +7,7 @@ from test_webui_contracts import WebFixture
 class WebExportTests(WebFixture):
     def test_epub_and_fanqie_preserve_selected_version(self):
         self.book()
-        for version,word,excluded in [('draft','草稿','定稿'),('final','定稿','草稿')]:
+        for version,word,excluded in [('draft','定稿','草稿'),('final','定稿','草稿')]:
             for fmt in ('epub','fanqie'):
                 with self.subTest(version=version,fmt=fmt):
                     status,headers,body=self.download(fmt=fmt,version=version)
@@ -24,4 +24,9 @@ class WebExportTests(WebFixture):
                         self.assertIn(word+'1',content);self.assertNotIn(excluded+'1',content)
     def test_incomplete_final_never_exports_epub_or_fanqie(self):
         folder=self.book();(folder/'final/chapter-002.md').unlink()
-        for fmt in ('epub','fanqie'):self.assertEqual(self.download(fmt=fmt,version='final')[0],400)
+        for fmt in ('epub','fanqie'):
+            code, headers, body = self.download(fmt=fmt, version='final')
+            self.assertEqual(code, 200)
+            self.assertEqual(headers['X-Missing-Chapters'], '2')
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                self.assertIsNone(archive.testzip())

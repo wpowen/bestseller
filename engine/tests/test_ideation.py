@@ -67,15 +67,17 @@ class IdeationContracts(unittest.TestCase):
         chosen=rotate(cards)
         self.assertEqual(len({c['axes']['shell'] for c in chosen}),6)
 
-    def test_steps_do_not_recall_completed_or_uncertain(self):
+    def test_steps_replay_completed_and_retry_uncertain_without_erasing_accounting(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); calls=[]
             def client(*args,**opts):calls.append(opts['stage']);return '[1]'
             self.assertEqual(step(root,'gen','prompt',client,10),[1])
             self.assertEqual(step(root,'gen','prompt',client,10),[1]);self.assertEqual(calls,['gen'])
             save(root/'http/ledger.json',[dict(stage='unknown',status='inflight')])
-            with self.assertRaisesRegex(RuntimeError,'禁止自动重复'):step(root,'unknown','prompt',client,10)
-            self.assertEqual(calls,['gen'])
+            before = (root/'http/ledger.json').read_bytes()
+            self.assertEqual(step(root,'unknown','prompt',client,10), [1])
+            self.assertEqual(calls,['gen', 'unknown-retry-1'])
+            self.assertEqual((root/'http/ledger.json').read_bytes(), before)
 
     def test_real_process_kill_reuses_completed_step(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -110,7 +112,7 @@ step(root,'second','same',client,10)
             def __init__(self):self.calls=[]
             def __call__(self,messages,**opts):
                 self.calls.append(opts['stage'])
-                if opts['stage']=='judge':raise RuntimeError('offline judge timeout')
+                if opts['stage'].startswith('judge'):return 'truncated ['
                 n=int(opts['stage'][-1]);values=[card(title=t+('？' if i%3==0 else '，归来' if i%3==1 else ''),hook=t) for i,t in enumerate(titles[n*6:n*6+6])]
                 if n==0:values=[{} for _ in values]
                 if n==1:values[0]={}
@@ -124,10 +126,11 @@ step(root,'second','same',client,10)
             with patch('ideation.snapshot',return_value=market),patch('ideation.features',return_value={}):
                 result=run(folder,client,root)
                 self.assertEqual(len(result['candidates']),12)
-                self.assertEqual(set(client.calls),{'generate-0','generate-1','generate-2','generate-3','judge'})
-                self.assertIn('判官失败',result['judge_status']);self.assertIn('无市场数据',result['notice'])
+                self.assertEqual(set(client.calls), {'generate-0','generate-1','generate-2','generate-3','judge',
+                                                   *(f'judge-retry-{n}' for n in range(1,6))})
+                self.assertIn('判官格式失败',result['judge_status']);self.assertIn('无市场数据',result['notice'])
                 run(folder,client,root)
-                self.assertEqual(len(client.calls),5)
+                self.assertEqual(len(client.calls),10)
 
     def test_shape_cap_and_direction_groups_survive_ranking(self):
         from ideation import select
@@ -154,8 +157,10 @@ step(root,'second','same',client,10)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);calls=[]
             def client(*args,**kwargs):calls.append(kwargs);return '[1]'
-            save(root/'http/ledger.json',[dict(stage='gen',status='ok'),dict(stage='gen',status='inflight')])
-            with self.assertRaisesRegex(RuntimeError,'禁止自动重复'):step(root,'gen','new input',client,10)
+            save(root/'http/old.request.json',dict(model='MiniMax-M3.1-Flash',messages=[dict(role='user',content='old input')],max_completion_tokens=10))
+            save(root/'http/ledger.json',[dict(stage='gen',status='ok',request='old.request.json'),
+                                          dict(stage='gen',status='inflight',request='old.request.json')])
+            with self.assertRaisesRegex(RuntimeError,'输入变化'):step(root,'gen','new input',client,10)
             self.assertEqual(calls,[])
             save(root/'http/old.request.json',dict(model='MiniMax-M3.1-Flash',messages=[dict(role='user',content='old input')],max_completion_tokens=10))
             save(root/'http/ledger.json',[dict(stage='gen',status='ok',request='old.request.json')])

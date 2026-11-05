@@ -6,6 +6,7 @@ import re
 import yaml
 
 from .client import SYSTEM
+from tools.runtime_support import ProjectError, QuotaExhausted
 from .contracts import choose_contract
 from .identity import validate_bible
 from .longmemory import long_context
@@ -64,19 +65,29 @@ def defaults(value, template):
 
 
 def _ask(client, kind, key, sections, redo=False):
+    def validate(value):
+        if kind == 'prepare':
+            raw = value if isinstance(value, dict) else {}
+            bible = defaults(raw.get('bible', raw.get('story_bible', raw)), DATA['schemas']['prepare']['bible'])
+            validate_bible(bible)
     schema = pack(DATA['schemas'][kind])
     instruction = DATA['rules'] + DATA['instructions'][kind] + FIX['planning']
-    budget = max(0, 10000 - len(getattr(client, 'prefix', '')) - len(SYSTEM) - len(schema) - len(instruction) - 400)
-    prompt = instruction + '\n' + long_context([(k, json.dumps(v, ensure_ascii=False, separators=(',', ':'))) for k, v in sections], budget)
+    overhead = len(getattr(client, 'prefix', '')) + len(SYSTEM) + len(schema) + len(instruction) + 400
+    budget = max(0, 10000 - overhead)
+    packed = [(key, json.dumps(value, ensure_ascii=False, separators=(',', ':'))) for key, value in sections]
+    prompt = instruction + '\n' + long_context(packed, budget)
     old = getattr(client, 'relaxed', False)
-    client.relaxed = True
+    client.relaxed = False
     try:
-        r2 = kind!='prepare' and integer(re.findall(r'\d+',key)[0]) >= (2 if kind=='volume' else 26)
-        return parse(client.stage(('plan-q1-r2-' if r2 else 'plan-q1-') + key + getattr(client,'plan_suffix','') + ('-redo' if redo else ''), prompt,
-                                 schema, parser=model_value, max_attempts=1, cap=11000))
-    except (ValueError, TypeError, RuntimeError) as exc:
-        if 'budget' in str(exc):
-            raise
+        r2 = kind != 'prepare' and integer(re.findall(r'\d+', key)[0]) >= (2 if kind == 'volume' else 26)
+        stage = ('plan-q1-r2-' if r2 else 'plan-q1-') + key + getattr(client, 'plan_suffix', '')
+        if redo:
+            stage += '-redo' + (str(redo) if redo != 1 else '')
+        return parse(client.stage(stage, prompt, schema, parser=model_value, validate=validate,
+                                  max_attempts=6, cap=11000))
+    except (QuotaExhausted, ProjectError):
+        raise
+    except (ValueError, TypeError):
         return {}
     finally:
         client.relaxed = old
@@ -165,12 +176,19 @@ def prepare(client, book, out, assets, design=False):
         from .benchmarking import concept_design
         selected=concept_design(client,book) if design else {}
         sections=[('用户要求',vars(book)),('固定成长阶梯',profile['canon']['ladder']),('题材',book.prompt_pack),('选定高概念',selected),('读者承诺',source.get('writing_profile_overrides',{})),('已有只读设计',values)]
-        for redo in (False,True):
-            raw=_ask(client,'prepare','prepare',sections+([('关键结构重试','人物卡缺失或无效。先给完整characters，voice/desire用无英文双引号的短句，其余字段压短；不得再给默认空卡。')] if redo else []),redo);raw=raw if isinstance(raw,dict) else {}
-            bible=defaults(raw.get('bible',raw.get('story_bible',raw)),DATA['schemas']['prepare']['bible'])
-            try:validate_bible(bible);break
-            except ValueError:
-                if redo:raise
+        previous_error = ''
+        for redo in range(6):
+            extra = [('关键结构重试', previous_error + '。请给完整人物卡，保留 voice/desire，不要默认空卡。')] if redo else []
+            raw = _ask(client, 'prepare', 'prepare', sections + extra, redo)
+            raw = raw if isinstance(raw, dict) else {}
+            bible = defaults(raw.get('bible', raw.get('story_bible', raw)), DATA['schemas']['prepare']['bible'])
+            try:
+                validate_bible(bible)
+                break
+            except ValueError as exc:
+                previous_error = str(exc)
+                if redo == 5:
+                    raise
         bible['canon']=profile['canon'];bible['initial_dashboard'].update(strength=bible['initial_dashboard']['strength'] if bible['initial_dashboard']['strength'] in profile['canon']['ladder']['strength'] else profile['canon']['ladder']['strength'][0],wealth=bible['initial_dashboard']['wealth'] if str(bible['initial_dashboard']['wealth']).endswith(profile['canon']['ladder']['wealth_unit']) else '0'+profile['canon']['ladder']['wealth_unit'],status=bible['initial_dashboard']['status'] if bible['initial_dashboard']['status'] in profile['canon']['ladder']['status'] else profile['canon']['ladder']['status'][0])
         if selected:bible['title']=selected['titles'][0]
         bible['canon'].update(seed=bible['title'],scheduling=GROWTH.get('scheduling',{}))

@@ -32,19 +32,16 @@ class ArchiveTests(WebFixture):
         self.assertEqual([r['action'] for r in entries], ['archive', 'restore'])
         self.spawn.assert_not_called()
 
-    def test_delete_requires_current_display_title_and_logs(self):
+    def test_delete_needs_no_title_and_logs_current_title(self):
         folder = self.book(status='complete')
         put(folder / 'story_bible.yaml', 'title: 圣经旧书名\n')
-        before = snapshot(self.lib.root)
-        for title in (None, '', '潮汐 <归途>', 'wrong'):
-            with self.subTest(title=title), self.assertRaises(ValueError):
-                self.action('delete', title=title)
-            self.assertEqual(snapshot(self.lib.root), before)
         status, _, body = self.request('/api/action', method='POST', data={
-            'id': 'webui/story', 'action': 'delete', 'title': '圣经旧书名'})
+            'id': 'webui/story', 'action': 'delete'})
         self.assertEqual(status, 200, body)
         self.assertFalse(folder.exists())
-        self.assertEqual(json.loads((self.lib.own / '.ops.log').read_text())['action'], 'delete')
+        entry = json.loads((self.lib.own / '.ops.log').read_text())
+        self.assertEqual(entry['action'], 'delete')
+        self.assertEqual(entry['title'], '圣经旧书名')
 
     def test_all_mutations_reject_shared_nested_or_unmanaged_books(self):
         for key in ('shared', 'webui/nested/book', 'webui/.archive/nested/book'):
@@ -108,9 +105,7 @@ class ArchiveTests(WebFixture):
         after = snapshot(folder)
         self.assertEqual({k: v for k, v in after.items() if k != 'web.json'},
                          {k: v for k, v in before.items() if k != 'web.json'})
-        with self.assertRaises(ValueError):
-            self.action('delete', title='潮汐 <归途>')
-        self.action('delete', title='新书名')
+        self.action('delete')
 
     def test_symlinks_and_paths_cannot_escape_or_modify_targets(self):
         folder = self.book(status='complete')
@@ -155,7 +150,7 @@ class ArchiveTests(WebFixture):
         paid = library.read(self.lib.own / '.spent.json')['webui/story']
         self.assertEqual(paid['unknown'], 2)
         self.assertGreater(paid['unknown_bound'], 0)
-        self.assertAlmostEqual(self.queue.committed(), original)
+        self.assertAlmostEqual(self.queue.spending(), original)
         with self.assertRaises(ValueError):
             self.action('delete', 'webui/.archive/story', '潮汐 <归途>')
         self.assertAlmostEqual(self.queue.spending(), original)
@@ -183,7 +178,8 @@ class ArchiveTests(WebFixture):
         self.assertIn('name: 林舟', detail['bible'])
         self.assertEqual(detail['characters'][0]['name'], '林舟')
         self.assertEqual([c['status'] for c in detail['meta']['chapter_info']], ['final', 'draft', 'pending'])
-        self.assertTrue(all(c['words'] > 0 for c in detail['chapters']))
+        self.assertGreater(detail['chapters'][0]['words'], 0)
+        self.assertEqual(detail['chapters'][1]['words'], 0)
         self.assertEqual(detail['meta']['chapter_info'][2]['words'], 0)
 
     def test_characters_accept_named_mapping_and_damaged_bible(self):

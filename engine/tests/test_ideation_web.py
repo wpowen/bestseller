@@ -32,12 +32,16 @@ class IdeationWebTests(WebFixture):
         self.assertEqual(second['channel'], '男频')
         self.assertEqual(self.queue.get_topic(first['id']), first)
 
-    def test_topic_reserves_five_cents_before_spawning(self):
-        self.queue.limit = .049
-        before = snapshot(self.lib.own)
-        with self.assertRaises(ValueError): self.queue.topic(dict(genre='cozy-mystery', chapters=5))
-        self.assertEqual(snapshot(self.lib.own), before)
-        self.spawn.assert_not_called()
+    def test_topic_has_no_money_cap_and_preserves_old_cost_ledger(self):
+        ledger = self.lib.own / '.topics/old/http/ledger.json'
+        put(ledger, [dict(model='MiniMax-M3.1-Flash', status='inflight', usage=None,
+                          input_bytes=10**9, max_tokens=10**9)])
+        before = ledger.read_bytes()
+        result = self.queue.topic(dict(genre='cozy-mystery', chapters=5))
+        self.assertNotIn('budget', result)
+        self.assertFalse(hasattr(self.queue, 'limit'))
+        self.assertEqual(ledger.read_bytes(), before)
+        self.spawn.assert_called_once()
 
     def test_invalid_channel_cannot_launch_or_write_batch(self):
         for channel in (None, [], {}, '其他'):
@@ -114,7 +118,7 @@ class IdeationWebTests(WebFixture):
         package.run = mock.Mock(return_value=expected)
         with mock.patch.dict(sys.modules, ideation=package), mock.patch('deai.client.MiniMax') as factory:
             jobs.topic_worker(folder, self.env)
-            factory.assert_called_once_with(folder, self.env, budget=.05)
+            factory.assert_called_once_with(folder, self.env)
             package.run.assert_called_once_with(folder, factory.return_value, self.lib.root)
             self.assertEqual(library.read(folder / 'topic.json'), expected)
             def fail(*_):
@@ -124,7 +128,7 @@ class IdeationWebTests(WebFixture):
             package.run.side_effect = fail
             jobs.topic_worker(folder, self.env)
         failed = library.read(folder / 'topic.json')
-        self.assertEqual(failed['status'], 'failed')
+        self.assertEqual(failed['status'], 'error')
         self.assertEqual(failed['seed'], 18)
         self.assertEqual(failed['steps'], {'axes': 'done'})
         self.assertNotIn('sensitive', failed['error'])
@@ -150,10 +154,10 @@ class IdeationWebTests(WebFixture):
         self.assertEqual(public['candidates'][0]['axes'], card()['axes'])
         self.assertEqual(library.read(folder / 'topic.json'), internal)
 
-    def test_server_configuration_exposes_channels_and_batch_cap(self):
+    def test_server_configuration_exposes_channels_without_money_limits(self):
         config = server.config(self.env)
         self.assertEqual(config['channels'], ['男频', '女频'])
-        self.assertEqual(config['budgets']['topic'], .05)
+        self.assertNotIn('budgets', config)
 
 
 class CollisionReadbackTests(WebFixture):

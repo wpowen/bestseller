@@ -58,18 +58,19 @@ function prose(node, value, original) {
 function renderChapter() {
  const c = chapters().find((c) => c.number === state.chapter);
  const b = state.book.meta;
+ const mode = state.mode = c?.final ? prefs.mode : 'draft';
  text('reader-title', `${b.title} · ${c?.title || '章节未生成'}`);
  $('close-reader').href = bookURL(b.id);
  text('chapter-title', `第 ${state.chapter} 章　${c?.title || ''}`);
- text('chapter-meta', b.title + ' · ' + (prefs.mode === 'compare' ? '草稿 / 终稿对照' : '静下来，读一个故事'));
- prose($('draft'), c?.draft, prefs.mode === 'compare' ? c?.final : null);
- prose($('final'), c?.final, prefs.mode === 'compare' ? c?.draft : null);
- $('comparison').dataset.mode = prefs.mode;
+ text('chapter-meta', b.title + ' · ' + (mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章还没有终稿，显示草稿'));
+ prose($('draft'), c?.draft, mode === 'compare' ? c?.final : null);
+ prose($('final'), c?.final, mode === 'compare' ? c?.draft : null);
+ $('comparison').dataset.mode = mode;
  $('reading-progress').max = Math.max(1, b.total);
  $('reading-progress').value = state.chapter;
  $('prev-chapter').disabled = state.chapter <= 1;
  $('next-chapter').disabled = !chapters().find((n) => n.number === state.chapter + 1)?.draft;
- $('copy-chapter').disabled = !(prefs.mode === 'draft' ? c?.draft : c?.final);
+ $('copy-chapter').disabled = !(mode === 'draft' ? c?.draft : c?.final);
  if (c?.draft) persist('chapter:' + b.id, state.chapter);
  renderTOC();
  applyPrefs();
@@ -80,7 +81,7 @@ function applyPrefs() {
  r.style.setProperty('--font-size', prefs.size + 'px');
  r.style.setProperty('--leading', prefs.line);
  r.dataset.background = prefs.bg;
- document.querySelectorAll('#read-modes [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === prefs.mode));
+ document.querySelectorAll('#read-modes [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === (state.mode || prefs.mode)));
  document.querySelectorAll('[data-pref]').forEach((b) => b.classList.toggle('on', String(prefs[b.dataset.pref]) === b.dataset.value));
  persist('bookweb-reader', prefs);
 }
@@ -149,7 +150,7 @@ $('chapter-directory').onclick = toggleSide;
 $('toc-search').oninput = renderTOC;
 $('prev-chapter').onclick = () => flip(-1);
 $('next-chapter').onclick = () => flip(1);
-$('copy-chapter').onclick = () => copyText(chapters().find((c) => c.number === state.chapter)?.[prefs.mode === 'draft' ? 'draft' : 'final']);
+$('copy-chapter').onclick = () => copyText(chapters().find((c) => c.number === state.chapter)?.[state.mode === 'draft' ? 'draft' : 'final']);
 document.addEventListener('keydown', (e) => {
  if ($('reader').hidden || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {

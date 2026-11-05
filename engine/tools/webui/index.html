@@ -22,7 +22,7 @@
    <section id="library" class="page" hidden>
     <div class="section-head">
      <div>
-      <p class="eyebrow">MY LIBRARY</p>
+      <p class="eyebrow">我的故事</p>
       <h1>我的书库</h1>
       <p id="library-status" class="muted" role="status"></p>
      </div>
@@ -42,13 +42,14 @@
       <option value="chapters">章节进度</option>
      </select>
      <button id="refresh-books">刷新</button>
+     <button id="library-settings" aria-label="书库设置">⚙ 设置</button>
     </div>
     <div id="books" class="books"></div>
     <button id="archive-toggle" class="ghost">已归档 0 本</button>
     <div id="archives" class="books" hidden></div>
    </section>
    <section id="create" class="page" hidden>
-    <p class="eyebrow">A NEW STORY</p>
+    <p class="eyebrow">新的故事</p>
     <h1>开一本新书</h1>
     <p class="muted">从一个念头，写到故事深处。</p>
     <div class="wizard">
@@ -60,26 +61,21 @@
      <div>
       <div data-pane="1" class="panel">
        <h2>先找到故事的方向</h2>
-       <div class="quick">
-        <button id="quick-suspense">悬疑 · 5章</button>
-        <button id="quick-fantasy">玄幻 · 10章</button>
-       </div>
        <form id="topic-form">
         <div id="genre-tags"></div>
         <div class="fields">
-         <label>题材<select id="genre" required></select></label>
+         <input id="genre" type="hidden">
          <label>频道<select id="channel"></select></label>
          <label>篇幅<select id="length">
-           <option value="5">短篇 · 5章</option>
-           <option value="10">短篇 · 10章</option>
-           <option value="50">中篇 · 50章</option>
+           <option value="50" selected>中篇 · 50章</option>
+           <option value="100">长篇 · 100章（已验证到 50 章）</option>
            <option value="1000">长篇 · 1000章</option>
            <option value="2000">长篇 · 2000章</option>
            <option value="custom">自定章数</option>
           </select></label>
-         <label>章数<input id="chapters" type="number" min="1" max="2000" value="5" required></label>
-         <label>每章字数<input value="2200" readonly aria-label="每章字数">
-          <small>沿用当前写作配置</small></label>
+         <label id="custom-chapters" hidden>章数<input id="chapters" type="number" min="20" max="2000" value="50" required></label>
+         <label>每章字数<input id="words" type="number" min="1500" max="4000" value="2300" required aria-describedby="words-hint">
+          <small id="words-hint">1500–4000 字，建议 2300 字</small></label>
         </div>
         <label>一句话想法 <span class="muted">可留空</span>
          <textarea id="idea" rows="3" maxlength="3000" placeholder="一个人、一桩旧事，或一个忘不掉的画面…"></textarea></label>
@@ -87,9 +83,9 @@
        </form>
        <details id="saved-topics">
         <summary>恢复已有选题</summary>
-        <label>已有选题 UUID<input id="topic-id"></label>
+        <label>选题编号<input id="topic-id"></label>
         <label>本地最近选题<select id="recent-topics"></select></label>
-        <button id="restore-topic">读取已有选题（免费查询）</button>
+        <button id="restore-topic">读取已有选题（不产生费用）</button>
         <button id="restore-recent">恢复本地选题</button>
         <p id="restore-status" role="status"></p>
        </details>
@@ -115,13 +111,14 @@
        <form id="book-form">
         <h2>写作设置</h2>
         <p id="picked" class="muted"></p>
-        <div class="fields">
-         <label>写手<select id="model" required></select></label>
-         <label>并发数<input id="jobs" type="number" min="1" max="4" value="2" required></label>
-        </div>
+        <label id="model-select" hidden>写手<select id="model"></select></label>
         <p id="model-info" class="muted"></p>
         <p id="estimate" class="muted"></p>
-        <label class="check"><input id="polish" type="checkbox" checked>自动去 AI 润色</label>
+        <details>
+         <summary>高级</summary>
+         <label class="check"><input id="polish" type="checkbox" checked>自动去 AI 润色</label>
+         <p class="muted">关闭后终稿直接使用正文原稿</p>
+        </details>
         <div class="toolbar">
          <button type="button" data-step="2">← 返回选题</button>
          <button id="create-book" class="primary" disabled>开始写作</button>
@@ -194,6 +191,18 @@
    <span id="action-status"></span>
    <button id="undo" hidden>撤销</button>
   </div>
+  <dialog id="library-settings-dialog">
+   <form id="library-settings-form">
+    <h2>书库设置</h2>
+    <label>同时写作的书数<input id="jobs" type="number" min="1" max="4" value="3" required></label>
+    <p class="muted">默认 3，范围 1–4。此设置适用于整个书库。</p>
+    <p id="library-settings-status" role="status"></p>
+    <div class="toolbar">
+     <button id="library-settings-cancel" type="button">取消</button>
+     <button id="library-settings-save" class="primary">保存</button>
+    </div>
+   </form>
+  </dialog>
   <dialog id="manage-dialog">
    <form id="manage-form">
     <h2 id="dialog-title"></h2>

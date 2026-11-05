@@ -180,3 +180,7 @@ h1{font-size:28px}
 
 .app-footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
 .reading .app-footer{display:none}
+.genre-group button[aria-pressed=true]{border-color:var(--green);box-shadow:0 0 0 1px var(--green)}
+.planning-item{border-bottom:1px solid var(--line);padding:12px 0}
+.planning-view section{margin-left:12px}
+@media(max-width:599px){.fields label:has(#words){grid-column:1/-1}}

@@ -12,19 +12,14 @@ function updateCreate() {
  $('create-book').disabled = state.creating || state.topicSubmitting || state.candidate === null || !state.topic || !state.topicReady || !enabled;
  text('create-book', state.creating ? '正在创建，请稍候…' : state.candidate === null ? '选定故事后，开始写作' : '以这个故事，开始写作');
  const model = state.config?.models?.find((m) => String(m.id) === $('model').value);
- text('model-info', model ? `${model.name}${model.reason ? ' · ' + model.reason : ''}` : '没有可用写手时，无法开书。');
+ text('model-info', model?.enabled ? `写手：${model.name}` : '尚未配置可用写手，请完成服务配置后重试。');
 }
 async function loadConfig() {
  try {
   const config = await api('/api/config');
   state.config = config;
   text('app-version', `v${config.version}`);
-  $('genre').replaceChildren();
-  for (const genre of config.genres || []) {
-   const option = el('option', genre.name);
-   option.value = genre.id;
-   $('genre').append(option);
-  }
+  $('genre').value = config.genres?.[0]?.id || '';
   genreTags();
   $('channel').replaceChildren(el('option', '不限'));
   $('channel').firstChild.value = '';
@@ -34,14 +29,15 @@ async function loadConfig() {
    $('channel').append(option);
   }
   $('model').replaceChildren();
-  for (const model of config.models || []) {
-   const option = el('option', `${model.name}${model.enabled === true ? '' : ' · 不可用'}${model.reason ? ' — ' + model.reason : ''}`);
+  for (const model of (config.models || []).filter((m) => m.enabled === true)) {
+   const option = el('option', model.name);
    option.value = model.id;
    option.disabled = model.enabled !== true;
    $('model').append(option);
   }
   const preferred = config.models?.find((m) => m.id === 'flash' && m.enabled === true) || config.models?.find((m) => m.enabled === true);
   $('model').value = preferred?.id || '';
+  $('model-select').hidden = $('model').options.length <= 1;
   $('generate-topics').disabled = !(config.genres || []).length;
   text('topic-status', '已连接。每次生成都会抽取新方向；已有选题可从上方恢复。');
   updateCreate();
@@ -66,7 +62,7 @@ function refreshRecent() {
  select.firstChild.value = '';
  for (const [key, entry] of Object.entries(savedTopics()).sort((a, b) => (b[1].saved || 0) - (a[1].saved || 0))) {
   if (!entry?.id) continue;
-  const option = el('option', `${entry.genreName || entry.input?.genre || '已有选题'} · ${entry.input?.chapters || '—'}章 · ${entry.id}`);
+  const option = el('option', `${entry.genreName || '已有选题'} · ${entry.input?.chapters || '—'}章 · ${entry.id}`);
   option.value = key;
   select.append(option);
  }
@@ -81,13 +77,13 @@ function saveTopic(data) {
   localStorage.setItem(topicStorageKey, JSON.stringify(saved));
   refreshRecent();
  } catch {
-  text('restore-status', '浏览器未允许本地保存，请记下选题 ID：' + state.topic);
+  text('restore-status', '浏览器未允许本地保存，请记下选题编号：' + state.topic);
  }
  if ($('topic-id')) $('topic-id').value = state.topic;
 }
 async function restoreTopic(id, entry) {
  if (!id || state.creating) {
-  text('restore-status', '请先输入已有的选题 UUID。');
+  text('restore-status', '请先输入已有的选题编号。');
   return;
  }
  clearTimeout(state.topicTimer);
@@ -119,6 +115,9 @@ async function restoreTopic(id, entry) {
   $('idea').value = input.idea || '';
   $('channel').value = input.channel || '';
   $('length').value = [...$('length').options].some((o) => o.value === String(input.chapters)) ? String(input.chapters) : 'custom';
+  syncLength();
+  highlightGenre();
+  $('words').value = input.words_per_chapter || 2300;
   if (renderTopics(data)) state.topicTimer = setTimeout(() => pollTopic(id), 2000);
   step(2);
   text('restore-status', '已恢复。请重新点击一个候选，再点“开始写作”。');
@@ -232,13 +231,15 @@ function renderTopics(data) {
    }
    card.append(fields);
    const scores = candidate.scores || {};
-   card.append(
-    el('p', '判官四轴（参考）：' + ['不可补全', '点击欲', '长篇引擎', '好懂'].map((k) => `${k} ${scores[k] ?? '—'}`).join(' · '), 'candidate-scores'),
-   );
-   card.append(el('p', candidate.market_note || `熟壳：${candidate.axes?.shell || '未知'}；今日同壳新书：未知`, 'candidate-market'));
+   const scoreDetails = el('details', null, 'candidate-scores');
+   scoreDetails.append(el('summary', '选题评分（仅供参考）'));
+   const scoreNames = { 不可补全: '新鲜感', 点击欲: '吸引力', 长篇引擎: '持续展开', 好懂: '易懂程度' };
+   scoreDetails.append(el('p', Object.entries(scoreNames).map(([key, name]) => `${name} ${scores[key] ?? '—'}`).join(' · ')));
+   card.append(scoreDetails);
+   if (candidate.market_note) card.append(el('p', candidate.market_note, 'candidate-market'));
    const actions = el('div', null, 'candidate-actions');
    if (candidate.axes?.shell && candidate.axes?.variable)
-    for (const [mode, name] of [ ['both', '沿这个方向再来 · 两组各6个'], ['shell', '保留熟壳，换新变量'], ['variable', '保留新变量，换熟壳'], ]) {
+    for (const [mode, name] of [ ['both', '沿这个方向再来 · 两组各6个'], ['shell', '保留故事类型，换新意'], ['variable', '保留新意，换故事类型'], ]) {
      const button = el('button', name);
      button.type = 'button';
      button.dataset.direction = mode;
@@ -277,7 +278,7 @@ function renderTopics(data) {
    (usage.unknown ? ` · ${usage.unknown} 次调用未返回用量，费用暂按最高可能值估算` : ''),
  );
  text('topic-notes', data.market?.status === 'stale' ? '市场参考来自缓存，可能不是最新数据。' : '');
- if (state.topic) text('restore-status', '选题 ID：' + state.topic + ' · 可从最近选题恢复。');
+ if (state.topic) text('restore-status', '选题编号：' + state.topic + ' · 可从最近选题恢复。');
  text('candidate-help', `共 ${candidates.length} 个候选 · 请亲自点选一个；参考分不能代替读者判断。`);
  $('generate-topics').disabled = !done && !failed;
  updateCreate();
@@ -304,7 +305,10 @@ async function pollTopic(id) {
 }
 async function submitTopics(direction) {
  if (state.topicSubmitting || state.creating || !$('topic-form').reportValidity()) return;
- const input = { genre: $('genre').value, idea: $('idea').value.trim(), chapters: Number($('chapters').value), channel: $('channel').value };
+ const input = {
+  genre: $('genre').value, idea: $('idea').value.trim(), chapters: Number($('chapters').value), channel: $('channel').value,
+  words_per_chapter: Number($('words').value),
+ };
  if (direction) input.direction = direction;
  clearTimeout(state.topicTimer);
  state.topicEpoch++;
@@ -315,7 +319,7 @@ async function submitTopics(direction) {
  text('topic-status', direction ? '正在沿选定方向抽取新组合…' : '正在提交新批次，不读取旧批次缓存…');
  try {
   const data = await api('/api/topics', input);
-  if (!data.id) throw new Error('服务没有返回选题 ID。');
+  if (!data.id) throw new Error('服务没有返回选题编号。');
   if (state.topicEpoch !== epoch) {
    const saved = savedTopics();
    saved[data.id] = { id: data.id, input, saved: Date.now() };
@@ -323,7 +327,7 @@ async function submitTopics(direction) {
     localStorage.setItem(topicStorageKey, JSON.stringify(saved));
     refreshRecent();
    } catch {
-    text('restore-status', '请记下已有选题 ID：' + data.id);
+    text('restore-status', '请记下已有选题编号：' + data.id);
    }
    return;
   }
@@ -349,39 +353,25 @@ $('topic-form').addEventListener('submit', (event) => {
  submitTopics();
 });
 $('refresh-topics').addEventListener('click', () => submitTopics(state.topicInput?.direction));
-for (const id of ['genre', 'chapters', 'idea', 'channel'])
+for (const id of ['genre', 'chapters', 'idea', 'channel', 'words'])
  $(id).addEventListener('input', () => {
   invalidateTopic();
   $('generate-topics').disabled = !state.config;
  });
 $('length').addEventListener('change', () => {
- if ($('length').value !== 'custom') $('chapters').value = $('length').value;
+ syncLength();
  invalidateTopic();
  $('generate-topics').disabled = !state.config;
 });
-$('chapters').addEventListener('input', () => {
- $('length').value = [...$('length').options].some((o) => o.value === $('chapters').value) ? $('chapters').value : 'custom';
-});
-function quickGenre(pattern, chapters) {
- if (state.creating) {
-  text('topic-status', '书籍正在提交，请稍候再切换题材。');
-  return;
- }
- const genre = state.config?.genres?.find((g) => pattern.test(g.name) || pattern.test(g.id));
- if (!genre) {
-  text('topic-status', '配置中暂未找到该题材，请从题材列表选择。');
-  return;
- }
- $('genre').value = genre.id;
- $('chapters').value = String(chapters);
- $('length').value = String(chapters);
- invalidateTopic();
- $('generate-topics').disabled = false;
- text('topic-status', `已选择${genre.name} · ${chapters}章。点击生成选题开始。`);
- $('generate-topics').focus();
+function syncLength() {
+ const custom = $('length').value === 'custom';
+ $('custom-chapters').hidden = !custom;
+ if (!custom) $('chapters').value = $('length').value;
 }
-$('quick-suspense').addEventListener('click', () => quickGenre(/悬疑|suspense|mystery/i, 5));
-$('quick-fantasy').addEventListener('click', () => quickGenre(/玄幻|xuanhuan|fantasy/i, 10));
+$('words').addEventListener('input', () => {
+ const valid = $('words').checkValidity();
+ text('words-hint', valid ? '1500–4000 字，建议 2300 字' : '请输入 1500–4000 之间的整数字数');
+});
 $('model').addEventListener('change', updateCreate);
 $('book-form').addEventListener('submit', async (event) => {
  event.preventDefault();
@@ -400,7 +390,7 @@ $('book-form').addEventListener('submit', async (event) => {
    chapters: state.topicInput.chapters,
    model: $('model').value,
    polish: $('polish').checked,
-   jobs: Number($('jobs').value),
+   words_per_chapter: state.topicInput.words_per_chapter || 2300,
   });
   if (!result.id) throw new Error('服务没有返回书籍 ID，请先查看书库再决定是否重试。');
   text('book-status', '已开书，写作任务已提交。可继续开下一本，书库每 3 秒更新。');
@@ -429,10 +419,18 @@ function step(n) {
  text('picked', currentCard(state.candidate)?.title || '请先选定故事');
  text(
   'estimate',
-  `费用按调用记录累计显示。正文完成后${$('polish').checked ? '自动继续去 AI 润色' : '保留草稿，可随时手动去 AI'}。`,
+  `费用按调用记录累计显示。正文完成后${$('polish').checked ? '自动继续去 AI 润色' : '终稿直接使用正文原稿'}。`,
  );
 }
+function highlightGenre() {
+ document.querySelectorAll('[data-genre-choice]').forEach((b) => {
+  const selected = b.dataset.genreChoice === $('genre').value;
+  b.classList.toggle('on', selected);
+  b.setAttribute('aria-pressed', String(selected));
+ });
+}
 function genreTags() {
+ $('genre-tags').replaceChildren();
  for (const group of ['男频', '女频', '其他']) {
   const row = el('div', null, 'genre-group');
   row.append(el('span', group));
@@ -441,16 +439,18 @@ function genreTags() {
     (/romance|lovers|harem|romantasy|villainess/.test(g.id) ? '女频' : /xuanhuan|xianxia|urban|history|suspense/.test(g.id) ? '男频' : '其他') ===
     group,
   )) {
-   row.append(
-    button(g.name, () => {
-     $('genre').value = g.id;
-     $('channel').value = group === '其他' ? '' : group;
-     $('genre').dispatchEvent(new Event('input'));
-    }),
-   );
+   const choice = button(g.name, () => {
+    $('genre').value = g.id;
+    $('channel').value = group === '其他' ? '' : group;
+    $('genre').dispatchEvent(new Event('input'));
+    highlightGenre();
+   });
+   choice.dataset.genreChoice = g.id;
+   row.append(choice);
   }
   $('genre-tags').append(row);
  }
+ highlightGenre();
 }
 document.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => step(Number(b.dataset.step))));
 $('polish').addEventListener('input', () => step(3));

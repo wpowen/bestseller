@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import re
 from .text import paragraphs,replace,invariant
+from .parallel import collect
 
 QUOTES=re.compile(r'“([^”]*)”|「([^」]*)」|"([^"\n]*)"')
 
@@ -58,7 +59,7 @@ def rewrite(session,text,inventory,ctx,mode,entities):
         items=[dict(id=c['id'],before=dict(speaker=owners[c['slot']['id']]['speaker'],line=c['slot']['text'],context=c['slot']['context']),after=dict(speaker=owners[c['slot']['id']]['speaker'],line=c['replacement'])) for c in packet]
         return _factcheck(session,'dialogue-linefacts-'+str(index),items,ctx)
     with ThreadPoolExecutor(max_workers=3) as pool:
-        for value in pool.map(check,enumerate(packets)):checks.update(value)
+        for value in collect([pool.submit(check,pair) for pair in enumerate(packets)]):checks.update(value)
     proposals=[]
     for i in range(len(variants)):
         edits=[]

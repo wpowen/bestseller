@@ -10,9 +10,10 @@ import time
 import yaml
 from .text import paragraphs, sentences, count, parse, replace, invariant, distance, rollback_invalid
 from .rules import detect, features, merge_hits, carry_hits, RECALL, neutral_tags
-from .client import STOP
+from .client import STOP, ModelResponseError
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
+from .parallel import collect
 
 DATA = Path(__file__).resolve().parent / 'data'
 RULES = yaml.safe_load((DATA / 'deai_rules.yaml').read_text())
@@ -77,6 +78,8 @@ class Session:
                     stage=stage + (f'-format{attempt}' if attempt else ''),
                     max_tokens=min(max(cap * 2, 8000), 12000) if attempt else cap,
                 )
+            except ModelResponseError:
+                raise
             except (ProjectError, QuotaExhausted) as exc:
                 self.failure = self.failure or exc
                 STOP.set()
@@ -94,14 +97,12 @@ class Session:
                 return value
             except (ValueError, TypeError, KeyError) as exc:
                 previous = str(exc)
-        error = ProjectError(f'stage {stage}: invalid response after 6 attempts: {previous}')
-        error.error_kind = 'format'
-        error.stage = stage
+        raise ModelResponseError(stage, previous)
+
+    def terminal(self, error):
         self.failure = self.failure or error
-        if hasattr(self.llm, 'runtime_out'):
-            write_runtime(self.llm.runtime_out, 'error', stage, error=str(error))
         STOP.set()
-        raise error
+        return error
 
     def classify(self, text, stage, only=None):
         rows = sentences(text)
@@ -189,15 +190,17 @@ class Session:
 
             try:
                 return kind, read(ps, ''), None
-            except (QuotaExhausted, ProjectError, InterruptedError):
+            except (ModelResponseError, InterruptedError):
                 raise
+            except (QuotaExhausted, ProjectError) as exc:
+                raise self.terminal(exc)
             except Exception as exc:
-                raise ProjectError(f'stage {stage}-{kind}-{vote}: {exc}') from exc
+                raise self.terminal(ProjectError(f'stage {stage}-{kind}-{vote}: {exc}')) from exc
 
         votes = {}
         unknown = []
         with ThreadPoolExecutor(max_workers=6) as pool:
-            for kind, issues, error in pool.map(one, jobs):
+            for kind, issues, error in collect([pool.submit(one, job) for job in jobs]):
                 if error:
                     unknown.append(dict(type=kind, error=error))
                 else:
@@ -240,10 +243,12 @@ class Session:
                 else 'incomplete'
             )
             return data
-        except (QuotaExhausted, ProjectError, InterruptedError):
+        except (ModelResponseError, InterruptedError):
             raise
+        except (QuotaExhausted, ProjectError) as exc:
+            raise self.terminal(exc)
         except Exception as exc:
-            raise ProjectError(f'stage diagnostics: {exc}') from exc
+            raise self.terminal(ProjectError(f'stage diagnostics: {exc}')) from exc
 
 
 def score(hits, text):
@@ -334,7 +339,7 @@ def polish(text, ctx, llm):
             )
 
         with ThreadPoolExecutor(max_workers=3) as pool:
-            for data in pool.map(propose, enumerate(packets)):
+            for data in collect([pool.submit(propose, pair) for pair in enumerate(packets)]):
                 raw.extend(data.get('candidates', []))
         edits = []
         for hit in targets:
@@ -393,6 +398,7 @@ def polish(text, ctx, llm):
             facts = pool.submit(_factcheck, session, 'recall22-facts', fact_items, ctx) if edits else None
             review = pool.submit(session.classify, revised, 'recall22-recheck') if edits else None
             diagnostic = pool.submit(session.diagnostics, original)
+            collect([f for f in (facts, review, diagnostic) if f is not None])
             checks = facts.result() if facts else {}
             after, unknown = review.result() if review else (before, [])
             diagnostics = diagnostic.result()
@@ -426,6 +432,20 @@ def polish(text, ctx, llm):
                 if not voice_unknown and score(voice_hits, voiced) <= score(current_hits, accepted):
                     accepted, all_edits, current_hits = voiced, all_edits + voice_edits, voice_hits
         result.status = 'polished' if accepted != original else 'unchanged'
+    except ModelResponseError as exc:
+        # All workers have joined at this point. A parallel terminal error wins.
+        if session.failure is not None:
+            raise session.failure
+        if STOP.is_set():
+            raise InterruptedError('Interrupted')
+        accepted, all_edits, current_hits = original, [], result.hits
+        result.status = 'retained'
+        failure = dict(stage=exc.stage, reason=exc.reason)
+        result.checks['failure'] = failure
+        result.warnings.append(dict(rollback='model_response', **failure))
+        diagnostics = dict(status='unknown')
+        if hasattr(llm, 'runtime_out'):
+            write_runtime(llm.runtime_out, 'running', exc.stage)
     except (QuotaExhausted, ProjectError, InterruptedError):
         raise
     except QualityRejected as exc:
@@ -441,7 +461,7 @@ def polish(text, ctx, llm):
     result.text = accepted
     result.edits = all_edits
     result.after_score = score(current_hits, accepted) if result.before_score is not None else None
-    result.checks = dict(
+    result.checks.update(
         diagnostics=diagnostics,
         entities=entities,
         metrics_before=features(original),

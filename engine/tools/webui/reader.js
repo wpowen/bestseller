@@ -64,7 +64,8 @@ function renderChapter() {
  text('reader-title', `${b.title} · ${c?.title || '章节未生成'}`);
  $('close-reader').href = bookURL(b.id);
  text('chapter-title', `第 ${state.chapter} 章　${c?.title || ''}`);
- text('chapter-meta', b.title + ' · ' + (mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章正在去 AI，完成后显示'));
+ const note = mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章正在去 AI，完成后显示';
+ text('chapter-meta', [b.title, note, c?.deai_notice].filter(Boolean).join(' · '));
  prose($('draft'), c?.draft, mode === 'compare' ? c?.final : null);
  prose($('final'), c?.final || '本章正在去 AI，完成后显示', mode === 'compare' ? c?.draft : null);
  $('comparison').dataset.mode = mode;

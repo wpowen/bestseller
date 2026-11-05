@@ -159,6 +159,8 @@ class Library:
                 if m: result.append(dict(number=int(m[1]), title=f'第{int(m[1])}章', draft=text(self.safe(source)), final='', report={}))
         for row in result:
             row.update(status='final' if row['final'] else 'draft', words=len(re.findall(r'[\u3400-\u9fff]', row['final'])))
+            row['deai_notice'] = ('去 AI 未完成，使用原稿' if row['final'] and
+                                  row['report'].get('status') in ('retained', 'partial') else '')
         return result
 
     def meta(self, folder):

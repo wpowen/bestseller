@@ -12,7 +12,72 @@ TERMINAL = {'error', 'quota_exhausted'}
 
 
 def enabled(data):
-    return data.get('pipeline_version') == 1 or data.get('auto_deai') is True
+    return data.get('pipeline_version') == 1 or data.get('auto_deai') is True or data.get('polish') is True
+
+
+def migrate(folder, data):
+    """Upgrade only Web metadata, preserving prose, checkpoints and failed stages."""
+    if not enabled(data) or (data.get('pipeline_version') == 1 and data.get('pipeline')):
+        return
+    run = read(folder / 'run.json', {})
+    state = data.get('status')
+    after_writing = run.get('status') == 'complete' and state in TERMINAL
+    stage = 'polish' if state in ('polishing', 'queued_polish') or after_writing else 'book'
+    states = data.setdefault('pipeline', {})
+    pid = data.get('pid') or (run.get('pid') if stage == 'book' else None)
+    if pid is not None:
+        states.setdefault(stage, dict(status='running', pid=pid))
+    if run.get('status') == 'complete':
+        states['book'] = dict(status='complete')
+    else:
+        states.setdefault('book', dict(status='queued'))
+    runtime = read(folder / 'runtime.json', {})
+    if runtime.get('kind') in TERMINAL and states.get(stage, {}).get('status') != 'complete':
+        states[stage] = dict(states.get(stage, {}), status=runtime['kind'], reason=runtime.get('error', ''))
+    automatic = data.get('auto_deai') is True or data.get('polish') is True
+    data.update(pipeline_version=1, auto_deai=automatic, polish=automatic)
+    save(folder / 'web.json', data)
+
+
+class ExistingWriter:
+    """Monitor a surviving writer without starting it again or inferring exit success."""
+    def __init__(self, folder, pid):
+        self.folder, self.pid, self.returncode = folder, pid, None
+
+    def poll(self):
+        from run_status import alive
+        if self.returncode is None and not alive(self.pid):
+            self.returncode = 0 if read(self.folder / 'run.json', {}).get('status') == 'complete' else 1
+        return self.returncode
+
+
+def reconcile(queue):
+    """Enroll legacy owned writers and monitor surviving writers before scheduling."""
+    from run_status import ACTIVE, alive
+    for folder in queue.library.own.iterdir():
+        if not folder.is_dir() or folder.is_symlink() or folder.name.startswith('.'):
+            continue
+        data = read(folder / 'web.json', {})
+        if not enabled(data):
+            continue
+        migrate(folder, data)
+        if data.get('status') == 'complete' and not finished(folder):
+            data['status'] = 'queued'
+            save(folder / 'web.json', data)
+        live = [i for i in queue.processes.values() if i['folder'] == folder and i['p'].poll() is None]
+        states = data.setdefault('pipeline', {})
+        for item in live:
+            item['pipeline'] = True
+            states[item['kind']] = dict(status='running', pid=item['p'].pid)
+        book = states.get('book', {})
+        owned_writer = any(i['folder'] == folder and i['kind'] == 'book' for i in queue.processes.values())
+        if data.get('status') in ACTIVE | {'paused', 'budget_paused'} and not owned_writer and alive(book.get('pid')):
+            key = str(folder.relative_to(queue.library.root))
+            queue.processes[key] = dict(p=ExistingWriter(folder, book['pid']), kind='book', folder=folder,
+                                        paused=data.get('status') in ('paused', 'budget_paused', 'concurrency_paused'),
+                                        pipeline=True)
+        if live and read(folder / 'web.json', {}) != data:
+            save(folder / 'web.json', data)
 
 
 def runtime_folder(folder, stage):
@@ -34,7 +99,7 @@ def spawn(queue, folder, data, stage):
     else:
         command = [sys.executable, '-m', 'deai', 'run', str(folder), '--env', str(queue.env), '--watch', '--pipeline']
         env['DEAI_RUNTIME_DIR'] = str(runtime)
-        if not data.get('auto_deai', data.get('polish', False)):
+        if not (data.get('auto_deai') is True or data.get('polish') is True):
             command.append('--original')
     try:
         with (folder / f'web-{stage}.log').open('a') as log:
@@ -49,6 +114,7 @@ def spawn(queue, folder, data, stage):
 
 
 def start(queue, folder, data):
+    migrate(folder, data)
     data['pipeline_version'] = 1
     if data.get('auto_deai') is True:
         data['polish'] = True
@@ -57,6 +123,10 @@ def start(queue, folder, data):
     states = data.setdefault('pipeline', {})
     if read(folder / 'run.json', {}).get('status') == 'complete':
         states['book'] = dict(status='complete')
+    if finished(folder):
+        states['polish'] = dict(status='complete')
+    elif states.get('polish', {}).get('status') == 'complete':
+        states['polish'] = dict(status='queued')
     for stage in ('book', 'polish'):
         if states.get(stage, {}).get('status') not in ('complete', *TERMINAL):
             if not any(i['kind'] == stage and i['p'].poll() is None for i in items(queue, folder)):
@@ -83,6 +153,7 @@ def update(folder, data):
 
 
 def tick(queue):
+    reconcile(queue)
     folders = {i['folder'] for i in queue.processes.values() if i.get('pipeline')}
     for folder in folders:
         data = read(folder / 'web.json', {})
@@ -106,14 +177,16 @@ def tick(queue):
         if data.get('status') == 'queued':
             if not any(i['paused'] for i in items(queue, folder)):
                 start(queue, folder, data)
-        elif data.get('status') not in ('paused', 'concurrency_paused'):
+        elif data.get('status') not in ('paused', 'budget_paused', 'concurrency_paused', 'orphaned'):
             previous = data.get('status')
-            update(folder, data)
+            start(queue, folder, data)
             if previous != 'complete' and data.get('status') == 'complete':
                 queue.library.static()
 
 
 def action(queue, folder, data, name):
+    reconcile(queue)
+    data = read(folder / 'web.json', data)
     live = [i for i in queue.processes.values() if i['folder'] == folder and i['p'].poll() is None]
     from run_status import alive
     owned_pids = {i['p'].pid for i in live}

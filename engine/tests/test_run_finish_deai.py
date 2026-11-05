@@ -193,14 +193,15 @@ def test_five_bad_responses_then_success_include_previous_error(http, bad):
         assert any(word in request['messages'][-1]['content'] for word in ('completion', 'JSON'))
 
 
-def test_six_bad_responses_are_project_error_with_stage(http):
+def test_six_bad_responses_are_chapter_response_error_with_stage(http):
     http.replies.extend(completion('{broken') for _ in range(6))
-    with pytest.raises(RuntimeError) as caught:
+    with pytest.raises(transport.ModelResponseError) as caught:
         Session(transport.MiniMax(http.work, http.env), {}).ask('facts', 'Return JSON', {})
     assert 'facts' in str(caught.value)
     assert len(http.requests) == 6
     state = read_json(http.book / 'runtime.json')
-    assert state['kind'] == 'error'
+    assert state['kind'] == 'running'
+    assert not transport.STOP.is_set()
     assert 'facts' in state['stage']
     assert getattr(caught.value, 'error_kind', '') == 'format'
 

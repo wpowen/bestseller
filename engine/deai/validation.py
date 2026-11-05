@@ -55,8 +55,15 @@ def validate_response(stage, value, data):
             'JSON candidate choices must be strings',
         )
     elif stage == 'inventory':
-        for name in ('entities', 'paragraphs', 'scenes'):
-            require(isinstance(value.get(name), list), f'JSON inventory {name} must be a list')
+        entities = value.get('entities')
+        require(isinstance(entities, list) and all(isinstance(e, str) for e in entities),
+                'JSON inventory entities must be strings')
+        records(value, 'paragraphs')
+        ids = {p['pid'] for p in data['paragraphs']}
+        for scene in records(value, 'scenes'):
+            pids = scene.get('pids')
+            require(isinstance(pids, list) and all(isinstance(p, str) and p in ids for p in pids),
+                    'JSON scene pids must be paragraph identifiers')
     elif stage == 'dialogue-cast':
         rows = records(value, 'slots')
         require(

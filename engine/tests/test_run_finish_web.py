@@ -143,7 +143,8 @@ class RunFinishWebTests(WebFixture):
             folder = self.lib.own / status
             self.assertFalse((folder / 'runner.lock').exists())
             data = library.read(folder / 'web.json')
-            self.assertEqual(data['status'], 'queued_polish' if status == 'polishing' else 'queued')
+            self.assertEqual(data['status'], 'queued')
+            self.assertEqual(data['pipeline_version'], 1)
             self.assertTrue(data['auto_deai'])
             self.assertNotIn('pid', data)
         for name, contents in before.items():
@@ -249,7 +250,8 @@ class RunFinishWebTests(WebFixture):
         data.update(auto_deai=False, polish=True)
         put(folder / 'web.json', data)
         self.restart()
-        self.assertEqual(library.read(folder / 'web.json')['status'], 'queued_polish')
+        self.assertEqual(library.read(folder / 'web.json')['status'], 'queued')
+        self.assertTrue(library.read(folder / 'web.json')['auto_deai'])
 
     def test_chapter_check_findings_survive_polishing_and_are_visible_in_detail(self):
         folder = self.book(status='running')

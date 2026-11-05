@@ -22,7 +22,7 @@ PRICE = dict(input=0.15, output=0.60, cached_input=0.015)
 PRICE_SOURCE = 'https://platform.minimax.io/docs/pricing/overview'
 TOKEN_KEYS = ('prompt_tokens', 'completion_tokens', 'total_tokens')
 
-def read_manifest(manifest, long=False):
+def read_manifest(manifest):
     """Resolve book paths relative to the manifest, validating before launch."""
     manifest = Path(manifest).resolve()
     value = yaml.safe_load(manifest.read_text(encoding='utf-8'))
@@ -41,8 +41,6 @@ def read_manifest(manifest, long=False):
         if not path.is_file():
             raise ValueError('book path must be a file')
         book = Book.read(path)
-        if book.chapters > 10 and not long:
-            raise ValueError('Batch currently supports up to 10 chapters; use --long for a serial')
         books.append(dict(id=key, path=path, book=book.record()))
         seen.add(key)
     return books
@@ -149,31 +147,21 @@ def read_report(entry, out, state=None, at=None):
         elapsed=meta['execution_seconds']
         if status=='running' and meta.get('revision',{}).get('started'):elapsed=meta['revision']['base_seconds']+max(0,(dt.datetime.fromisoformat(at)-dt.datetime.fromisoformat(meta['revision']['started'])).total_seconds())
     counts = []
-    saved = meta.get('chapter_chinese_chars', [])
-    long_mode = bool(meta.get('mode'))
     for number in range(1, entry['book']['chapters'] + 1):
-        count = saved[number - 1] if number <= len(saved) else None
-        suffixes = ('.md', '.draft.md')
-        if long_mode:
-            name = f'chapters/{number:03d}.json'
-            chapter = read(name, {})
-            if not isinstance(chapter, dict):
-                errors.append(name)
-                chapter = {}
-            if chapter.get('status') != 'complete':
-                counts.append(None)
-                continue
-            count, suffixes = None, ('.body.md',)
-        if count is None:
-            for suffix in suffixes:
-                path = folder / f'chapter-{number:03d}{suffix}'
-                try:
-                    count = chinese_count(prose(path.read_text(encoding='utf-8')))
-                    break
-                except FileNotFoundError:
-                    continue
-                except OSError:
-                    errors.append(path.name)
+        name = f'chapters/{number:03d}.json'
+        chapter = read(name, {})
+        if not isinstance(chapter, dict):
+            errors.append(name)
+            chapter = {}
+        count = None
+        if chapter.get('status') == 'complete':
+            path = folder / f'chapter-{number:03d}.body.md'
+            try:
+                count = chinese_count(prose(path.read_text(encoding='utf-8')))
+            except FileNotFoundError:
+                pass
+            except OSError:
+                errors.append(path.name)
         counts.append(count)
     steps = [p for p in (folder / 'steps').glob('*')
              if p.suffix in ('.json', '.md') and not p.name.endswith('.retry.json')]
@@ -229,18 +217,19 @@ def write_reading_sample(entries, out):
                      if re.match(r'^#{1,6}\s+\S', line))
         sections.append(title)
         total = entry['book']['chapters']
-        q1 = (folder/'run.json').exists() and json.loads((folder/'run.json').read_text()).get('mode') == 'Q1'
-        numbers = (1,50,51,75,100) if q1 else (1, 100, 200, 299, 300) if total > 10 else (1, total)
+        numbers = (1,50,51,75,100)
         for number in dict.fromkeys(n for n in numbers if n <= total):
             sections.append((folder / f'chapter-{number:03d}.md').read_text(encoding='utf-8').strip())
     path = out / 'READ-ME-FIRST.md'
     save(path, '\n\n'.join(sections) + '\n')
     return path
 
-def run_batch(manifest, out, env, assets, timeout=180, jobs=6, interval=5, quality=False, long=False, q1=False, style='b'):
+def run_batch(manifest, out, env, assets, timeout=180, jobs=6, interval=5, style='b'):
     """Run from the caller's cwd and inherited environment; return batch.json data."""
     validate_options(timeout, jobs, interval)
-    entries, out = read_manifest(manifest, long=long), Path(out).resolve()
+    if style != 'b':
+        raise ValueError('Q1 batch requires style b')
+    entries, out = read_manifest(manifest), Path(out).resolve()
     for entry in entries:
         folder = out / entry['id']
         if folder.is_symlink():
@@ -248,9 +237,9 @@ def run_batch(manifest, out, env, assets, timeout=180, jobs=6, interval=5, quali
     out.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (out / 'batch.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return _run_batch(entries, out, env, assets, timeout, jobs, interval, quality, long, q1, style)
+        return _run_batch(entries, out, env, assets, timeout, jobs, interval, style)
 
-def _run_batch(entries, out, env, assets, timeout, jobs, interval, quality=False, long=False, q1=False, style='b'):
+def _run_batch(entries, out, env, assets, timeout, jobs, interval, style='b'):
     states, pending, active = {}, [], {}
     child_env = os.environ.copy()
     rate_file = child_env.get('BOOKENGINE_RATE_FILE') or str(
@@ -267,11 +256,8 @@ def _run_batch(entries, out, env, assets, timeout, jobs, interval, quality=False
             meta = {}
         if meta and meta.get('book') != entry['book']:
             raise ValueError('book YAML changed; use a new output folder: ' + entry['id'])
-        if meta and (bool(meta.get('mode')) != long):
-            raise ValueError('long mode differs; use a matching output folder: ' + entry['id'])
-        if not long and folder.exists() and any(folder.iterdir()) and (
-                (quality and meta.get('quality_mode') != 3) or (not quality and meta.get('quality_mode') == 3)):
-            raise ValueError('quality mode differs; use a matching output folder: ' + entry['id'])
+        if meta and (meta.get('mode') != 'Q1' or meta.get('style') != style):
+            raise ValueError('Q1 checkpoint settings changed; use a matching output folder: ' + entry['id'])
         done = is_complete(folder, meta)
         states[entry['id']] = dict(status='complete' if done else 'queued',
                                   started=old_rows.get(entry['id'], {}).get('started'))
@@ -312,7 +298,7 @@ def _run_batch(entries, out, env, assets, timeout, jobs, interval, quality=False
                         active[entry['id']] = subprocess.Popen(
                             [sys.executable, '-u', '-m', 'bookengine', str(entry['path']), '--env', str(env),
                              '--assets', str(assets), '--out', str(folder), '--timeout', str(timeout)]
-                            + (['--q1','--style',style] if q1 else ['--long'] if long else ['--quality'] if quality else []),
+                            + ['--q1', '--style', style],
                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=child_env)
                 except OSError as exc:
                     states[entry['id']].update(status='degraded', finished=now(), error=type(exc).__name__)
@@ -360,6 +346,6 @@ def _run_batch(entries, out, env, assets, timeout, jobs, interval, quality=False
     if stopped:
         raise SystemExit(128 + stopped)
     completed = [e for e, row in zip(entries, result['books']) if row['status'] == 'complete']
-    if result['status'] == 'complete' and completed and (long or (quality and len(entries) == 6)):
+    if result['status'] == 'complete' and completed:
         write_reading_sample(completed, out)
     return result

@@ -54,7 +54,7 @@ class BatchTests(unittest.TestCase):
             self.manifest_books([dict(id='x', path='missing.yaml')])
         with self.assertRaises(ValueError):
             self.manifest_books([dict(id='x', path='.')])
-        self.book['chapters'] = 11
+        self.book['chapters'] = 2001
         self.book_path.write_text(yaml.safe_dump(self.book), encoding='utf-8')
         with self.assertRaises(ValueError):
             self.manifest_books([dict(id='x', path='book.yaml')])
@@ -146,7 +146,7 @@ class BatchTests(unittest.TestCase):
             self.assertIsNone(row[key])
             self.assertEqual(usage_report([])[key], 0)
 
-    def test_reading_sample_contains_only_six_titles_and_twelve_exported_chapters(self):
+    def test_reading_sample_contains_only_titles_and_q1_selected_chapters(self):
         entries, expected = [], []
         for i in range(6):
             entry = dict(id=f'book-{i}', book=dict(chapters=3))
@@ -159,7 +159,7 @@ class BatchTests(unittest.TestCase):
             for n in range(1, 4):
                 text = f'## 第{n}章 章节标题 {i}\n\n正文 {i}—{n}。\n\n下一段。'
                 (folder / f'chapter-{n:03d}.md').write_text(text + '\n\n', encoding='utf-8')
-                if n in (1, 3):
+                if n == 1:
                     expected.append(text)
         before = {p for p in self.root.rglob('*') if p.is_file()}
         path = write_reading_sample(entries, self.root)
@@ -186,7 +186,8 @@ class BatchTests(unittest.TestCase):
         self.write('steps/01-ideas.json', {})
         self.write('steps/ch1-state.retry.json', dict(failures=4, waited=970))
         self.write('steps/ch2-draft.retry.json', dict(failures=1, waited=10))
-        (self.folder / 'chapter-001.draft.md').write_text('甲乙，丙丁。ABC123', encoding='utf-8')
+        self.write('chapters/001.json', dict(status='complete'))
+        (self.folder / 'chapter-001.body.md').write_text('甲乙，丙丁。ABC123', encoding='utf-8')
         (self.folder / 'steps/ch2-draft.md').write_text('未完成章节', encoding='utf-8')
         before = {p: p.read_bytes() for p in self.folder.rglob('*') if p.is_file()}
         row = read_report(self.entry, self.root, dict(status='running', started='2026-10-31T00:00:00+00:00'),
@@ -209,6 +210,9 @@ class BatchTests(unittest.TestCase):
         self.write('run.json', dict(started='2026-10-30T00:00:00+00:00',
                                     finished='2026-10-30T00:01:00+00:00', status='complete',
                                     chapter_chinese_chars=[2100, 2201]))
+        for n, count in enumerate((2100, 2201), 1):
+            self.write(f'chapters/{n:03d}.json', dict(status='complete'))
+            (self.folder / f'chapter-{n:03d}.body.md').write_text('甲' * count, encoding='utf-8')
         row = read_report(self.entry, self.root, dict(status='complete', finished='2026-11-01T00:00:00+00:00'),
                           at='2026-11-01T00:00:00+00:00')
         self.assertEqual(row['wall_seconds'], 60)
@@ -216,7 +220,8 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(row['chapter_chinese_chars'], [2100, 2201])
 
     def test_export_counts_exclude_heading_and_corrupt_reads_are_visible(self):
-        (self.folder / 'chapter-001.md').write_text('## 第一章 标题\n\n甲乙\n\n丙丁', encoding='utf-8')
+        self.write('chapters/001.json', dict(status='complete'))
+        (self.folder / 'chapter-001.body.md').write_text('## 第一章 标题\n\n甲乙\n\n丙丁', encoding='utf-8')
         (self.folder / 'calls.json').write_text('{broken', encoding='utf-8')
         row = read_report(self.entry, self.root)
         self.assertEqual(row['chapter_chinese_chars'], [4, None])

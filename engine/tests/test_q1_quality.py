@@ -7,7 +7,6 @@ import yaml
 
 from bookengine.contracts import choose_contract
 from bookengine.q1_quality import merge_state, metrics, progress, volume_issues
-from bookengine.serialstate import manage_state, serialize_state
 
 
 class Q1QualityTests(unittest.TestCase):
@@ -49,24 +48,6 @@ class Q1QualityTests(unittest.TestCase):
         cyclic = merge_state({}, {'objects': {'甲物': '屋'}, 'object_aliases': {'甲物': '乙物', '乙物': '甲物'}}, {})
         self.assertIn('甲物', cyclic['objects'])
         self.assertEqual(merge_state({}, {'objects': {'纸杯': {'location': '桌', 'key': False}}}, {})['objects'], {})
-
-    def test_protected_heroes_survive_absence_and_two_hundred_fifty_items(self):
-        old = dict(characters={'周屿': {'location': '旧屋', 'present': True}, '阿宁': {'location': '院'}})
-        state, meta, _, _ = manage_state(old, {}, {}, 1, 300)
-        items = {f'物{i}': {'location': '长' * 100} for i in range(250)}
-        state, meta, archive, _ = manage_state({'objects': items}, state, meta, 247, 300,
-                                               protected=('周屿', '阿宁'))
-        self.assertEqual(set(state['characters']), {'周屿', '阿宁'})
-        self.assertLessEqual(len(serialize_state(state)), 12000)
-        self.assertTrue(all(a['kind'] == 'objects' for a in archive))
-        self.assertEqual(meta['characters']['周屿']['last_seen'], 1)
-
-    def test_budget_evicts_objects_before_an_unprotected_character(self):
-        value = {'characters': {'甲': {'location': '家', 'present': True}},
-                 'objects': {f'物{i}': {'location': '长' * 100, 'owner': '甲'} for i in range(250)}}
-        state, _, archive, _ = manage_state(value, {}, {}, 1, 300, seen=('甲',))
-        self.assertIn('甲', state['characters'])
-        self.assertTrue(all(a['kind'] == 'objects' for a in archive))
 
     def test_progress_uses_events_not_plans_and_preserves_inputs(self):
         threads = {'threads': [{'id': 'dark', 'kind': 'dark', 'beats': [{'id': 'd1', 'volume': 1}]}]}

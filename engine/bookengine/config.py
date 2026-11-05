@@ -29,7 +29,7 @@ class Book:
         if not re.fullmatch(r'[a-z0-9-]+', book.prompt_pack):
             raise ValueError('Invalid prompt pack key')
         if type(book.chapters) is not int or not 1 <= book.chapters <= 2000:
-            raise ValueError('chapters must be 1–2000; use --long above 10')
+            raise ValueError('chapters must be 1–2000')
         if type(book.words_per_chapter) is not int or not 200 <= book.words_per_chapter <= 6000:
             raise ValueError('words_per_chapter must be 200–6000')
         if not isinstance(book.user_input, str) or not book.user_input.strip():

@@ -41,11 +41,11 @@ for n in range(1, book['chapters'] + 1):
 calls = [dict(stage='ch1-draft', attempt=1, status='transport_error', input_bytes=10, output_token_cap=20),
          dict(stage='ch1-draft', attempt=2, status='ok', usage=dict(prompt_tokens=10, completion_tokens=5, total_tokens=15))]
 (folder / 'calls.json').write_text(json.dumps(calls))
-(folder / 'run.json').write_text(json.dumps(dict(book=book, mode='S4', status='complete')))
+(folder / 'run.json').write_text(json.dumps(dict(book=book, mode='Q1', style='b', status='complete')))
 '''
 
 
-class LongBatchTests(unittest.TestCase):
+class Q1BatchTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -60,25 +60,23 @@ class LongBatchTests(unittest.TestCase):
         self.manifest.write_text(yaml.safe_dump(dict(books=books)))
         self.out = self.root / 'out'
 
-    def test_long_manifest_accepts_mixed_counts_but_short_mode_still_rejects(self):
-        self.assertEqual([e['book']['chapters'] for e in read_manifest(self.manifest, long=True)],
+    def test_q1_manifest_accepts_mixed_counts(self):
+        self.assertEqual([e['book']['chapters'] for e in read_manifest(self.manifest)],
                          [300, 10, 10, 10, 10])
-        with self.assertRaises(ValueError):
-            read_manifest(self.manifest)
 
-    def test_cli_forwards_long_batch_and_jobs(self):
-        with patch.object(sys, 'argv', ['bookengine', '--long', '--batch', str(self.manifest),
+    def test_cli_forwards_q1_batch_and_jobs(self):
+        with patch.object(sys, 'argv', ['bookengine', '--q1', '--batch', str(self.manifest),
                                        '--env', 'unused', '--out', str(self.out), '--jobs', '5']), \
                 patch('bookengine.batch.run_batch', return_value=dict(status='complete')) as run:
             main()
-        self.assertTrue(run.call_args.kwargs['long'])
+        self.assertEqual(run.call_args.kwargs, {'style': 'b'})
         self.assertEqual(run.call_args.args[5], 5)
 
     def execute(self, fail='', shared=None):
         real_popen, launches = subprocess.Popen, []
 
         def launch(command, **kwargs):
-            self.assertIn('--long', command)
+            self.assertEqual(command[-3:], ['--q1', '--style', 'b'])
             self.assertTrue(kwargs['start_new_session'])
             launches.append((command, kwargs['env']['BOOKENGINE_RATE_FILE']))
             return real_popen([sys.executable, '-c', CHILD, *command[4:]], **kwargs)
@@ -91,7 +89,7 @@ class LongBatchTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True), \
                 patch('bookengine.batch.subprocess.Popen', side_effect=launch), \
                 contextlib.redirect_stdout(io.StringIO()):
-            result = run_batch(self.manifest, self.out, 'unused', 'unused', jobs=5, interval=.05, long=True)
+            result = run_batch(self.manifest, self.out, 'unused', 'unused', jobs=5, interval=.05)
             self.assertEqual(os.environ.get('BOOKENGINE_RATE_FILE'), str(shared) if shared else None)
         return result, launches
 
@@ -118,14 +116,33 @@ class LongBatchTests(unittest.TestCase):
         path = launches[0][1]
         self.assertTrue(Path(path).is_absolute())
         self.assertNotIn(str(self.out), path)
+        saved = {p: p.read_bytes() for p in self.out.glob('*/*') if p.is_file()}
         result, resumed = self.execute()
         self.assertEqual((result['completed_books'], resumed), (5, []))
+        self.assertEqual(saved, {p: p.read_bytes() for p in saved})
         self.out = self.root / 'other-out'
         _, second = self.execute()
         self.assertEqual({p for _, p in second}, {path})
 
+    def test_resume_rejects_non_q1_or_changed_style_before_launch(self):
+        entry = read_manifest(self.manifest)[0]
+        folder = self.out / entry['id']
+        folder.mkdir(parents=True)
+        (folder / 'book.md').write_text('# 已有正文')
+        (folder / 'book.docx').write_bytes(b'fixture')
+        for mode, style in ((None, 'b'), ('S4', 'b'), ('Q1', 'legacy')):
+            meta = dict(book=entry['book'], mode=mode, style=style, status='complete')
+            (folder / 'run.json').write_text(json.dumps(meta))
+            saved = {p: p.read_bytes() for p in folder.iterdir()}
+            with self.subTest(mode=mode, style=style), \
+                    patch('bookengine.batch.subprocess.Popen') as launch:
+                with self.assertRaisesRegex(ValueError, 'Q1 checkpoint settings changed'):
+                    run_batch(self.manifest, self.out, 'unused', 'unused')
+                launch.assert_not_called()
+                self.assertEqual(saved, {p: p.read_bytes() for p in saved})
+
     def test_samples_have_only_book_title_and_required_exported_chapters(self):
-        entries = read_manifest(self.manifest, long=True)
+        entries = read_manifest(self.manifest)
         expected = []
         for entry in entries:
             folder = self.out / entry['id']
@@ -136,17 +153,17 @@ class LongBatchTests(unittest.TestCase):
             for n in range(1, entry['book']['chapters'] + 1):
                 body = f'## 第{n}章\n\n{entry["id"]}正文{n}。'
                 (folder / f'chapter-{n:03d}.md').write_text(body + '\n')
-                selected = (1, 100, 200, 299, 300) if entry['book']['chapters'] > 10 else (1, 10)
+                selected = (1, 50, 51, 75, 100)
                 if n in selected:
                     expected.append(body)
         path = write_reading_sample(entries, self.out)
         self.assertEqual(path.read_text(), '\n\n'.join(expected) + '\n')
 
-    def test_long_body_checkpoint_counts_before_export(self):
-        entry = read_manifest(self.manifest, long=True)[1]
+    def test_q1_body_checkpoint_counts_before_export(self):
+        entry = read_manifest(self.manifest)[1]
         folder = self.out / entry['id']
         folder.mkdir(parents=True)
-        (folder / 'run.json').write_text(json.dumps(dict(mode='S5a')))
+        (folder / 'run.json').write_text(json.dumps(dict(mode='Q1', style='b')))
         (folder / 'chapters').mkdir()
         (folder / 'chapters/001.json').write_text(json.dumps(dict(status='complete', chars=999)))
         (folder / 'chapter-001.body.md').write_text('甲乙。丙丁。')
@@ -154,8 +171,8 @@ class LongBatchTests(unittest.TestCase):
         self.assertEqual(row['chapter_chinese_chars'], [4] + [None] * 9)
         self.assertEqual(row['chapter_progress'], dict(complete=1, total=10))
 
-    def test_long_progress_ignores_drafts_exports_and_uncommitted_bodies(self):
-        entry = read_manifest(self.manifest, long=True)[1]
+    def test_q1_progress_ignores_drafts_exports_and_uncommitted_bodies(self):
+        entry = read_manifest(self.manifest)[1]
         folder = self.out / entry['id']
         (folder / 'chapters').mkdir(parents=True)
         for n in range(1, 11):
@@ -168,19 +185,17 @@ class LongBatchTests(unittest.TestCase):
         (folder / 'chapters/006.json').write_text('[]')
         (folder / 'chapters/007.json').write_text(json.dumps(dict(status='complete')))
         (folder / 'chapter-007.body.md').unlink()
-        for mode in ('S4', 'S5a'):
-            (folder / 'run.json').write_text(json.dumps(dict(mode=mode, chapter_chinese_chars=[999] * 10)))
-            before = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}
-            with self.subTest(mode=mode):
-                row = read_report(entry, self.out)
-                self.assertEqual(row['chapter_progress'], dict(complete=1, total=10))
-                self.assertEqual(row['chapter_chinese_chars'], [4] + [None] * 9)
-                self.assertIn('chapters/005.json', row['read_errors'])
-                self.assertIn('chapters/006.json', row['read_errors'])
-                self.assertEqual(before, {p: p.read_bytes() for p in before})
+        (folder / 'run.json').write_text(json.dumps(dict(mode='Q1', chapter_chinese_chars=[999] * 10)))
+        before = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        row = read_report(entry, self.out)
+        self.assertEqual(row['chapter_progress'], dict(complete=1, total=10))
+        self.assertEqual(row['chapter_chinese_chars'], [4] + [None] * 9)
+        self.assertIn('chapters/005.json', row['read_errors'])
+        self.assertIn('chapters/006.json', row['read_errors'])
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
 
-    def test_long_usage_fallback_preserves_failures_retries_and_unknown_cost(self):
-        entry = read_manifest(self.manifest, long=True)[1]
+    def test_q1_usage_fallback_preserves_failures_retries_and_unknown_cost(self):
+        entry = read_manifest(self.manifest)[1]
         folder = self.out / entry['id']
         folder.mkdir(parents=True)
         usage = usage_report([dict(stage='ch1-draft', status='transport_error', attempt=1,
@@ -195,10 +210,10 @@ class LongBatchTests(unittest.TestCase):
         self.assertEqual(row['read_errors'], ['calls.json'])
 
     def test_complete_exports_override_stale_batch_failure(self):
-        entry = read_manifest(self.manifest, long=True)[1]
+        entry = read_manifest(self.manifest)[1]
         folder = self.out / entry['id']
         folder.mkdir(parents=True)
-        meta = dict(mode='S5a', status='complete', started='2026-10-31T00:00:00+00:00',
+        meta = dict(mode='Q1', style='b', status='complete', started='2026-10-31T00:00:00+00:00',
                     finished='2026-10-31T00:01:00+00:00')
         (folder / 'run.json').write_text(json.dumps(meta))
         (folder / 'book.md').write_text('# 书名\n')
@@ -220,7 +235,7 @@ class LongBatchTests(unittest.TestCase):
         self.assertEqual(read_report(entry, self.out, stale)['status'], 'failed')
 
     def test_zero_exit_code_without_complete_metadata_is_degraded(self):
-        incomplete_child = CHILD.replace("mode='S4', status='complete'", "mode='S4', status='incomplete'")
+        incomplete_child = CHILD.replace("mode='Q1', style='b', status='complete'", "mode='Q1', style='b', status='incomplete'")
         with patch(__name__ + '.CHILD', incomplete_child):
             result, _ = self.execute()
         self.assertEqual((result['status'], result['completed_books']), ('degraded', 0))

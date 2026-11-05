@@ -9,7 +9,7 @@ def boundary_facts(raw, text):
     """Missing or ungrounded observations stay unknown, never inherit old facts."""
     spans = _paragraph_spans(text)
     opening = text[: spans[min(1, len(spans) - 1)][1]] if spans else ""
-    ending = text[spans[max(0, len(spans) - 2)][0] :] if spans else ""
+    ending = text[-1200:]
     result = {}
     for side, passage in (("opening", opening), ("end", ending)):
         location, quote = raw.get(side + "_location"), raw.get(side + "_quote")

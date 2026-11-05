@@ -24,6 +24,20 @@ def test_boundary_observations_need_quotes_at_the_correct_end():
     assert raw["present"] == ["林舟", "向导"]
 
 
+def test_ending_dialogue_does_not_hide_grounded_location_in_the_last_scene():
+    text = "开场。\n\n林舟走进驿站，向导也跟了进来。\n\n“坐下。”\n\n“喝口水。”\n\n“多谢。”"
+    facts = boundary_facts(
+        dict(
+            end_location="驿站",
+            end_quote="林舟走进驿站，向导也跟了进来。",
+            present=["林舟"],
+            present_quotes={"林舟": "林舟走进驿站，向导也跟了进来。"},
+        ),
+        text,
+    )
+    assert facts["end_location"] == "驿站" and facts["present"] == ["林舟"]
+
+
 def test_location_jump_requires_movement_from_previous_location():
     previous = dict(end_location="石桥", present=["林舟"])
     assert opening_issue(previous, dict(opening_location="石桥"), "林舟站在石桥。") is None

@@ -181,7 +181,7 @@ def _keywords(chapters):
 def _boundary(chapter, side):
     text = chapter["text"]
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
-    passage = "\n\n".join(paragraphs[:2] if side == "opening" else paragraphs[-2:])
+    passage = "\n\n".join(paragraphs[:2]) if side == "opening" else text[-1200:]
     meta = chapter["meta"]
     for data in (meta, meta.get("state", {}), meta.get("boundary", {})):
         if not isinstance(data, dict):

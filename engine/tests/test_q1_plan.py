@@ -176,7 +176,8 @@ class StageInterfaceTests(unittest.TestCase):
             self.assertEqual(bible["initial_dashboard"]["wealth"], "0" + canon["ladder"]["wealth_unit"])
             self.assertEqual(len(bible["summary"]), 1800)
             self.assertEqual(
-                [(x["start"], x["end"]) for x in bible["volumes"]], [(1, 25), (26, 50), (51, 75), (76, 100)]
+                [(x["start"], x["end"]) for x in bible["volumes"]],
+                [(1, 12), (13, 23), (24, 34), (35, 45), (46, 56), (57, 67), (68, 78), (79, 89), (90, 100)],
             )
             paths = [out / name for name in ("story_bible.yaml", "threads.yaml")]
             self.assertEqual(
@@ -185,14 +186,14 @@ class StageInterfaceTests(unittest.TestCase):
             before = [(p.read_bytes(), p.stat().st_mtime_ns) for p in paths]
             self.assertEqual(q1.prepare(*args), (bible, threads, profile))
             self.assertEqual([(p.read_bytes(), p.stat().st_mtime_ns) for p in paths], before)
-            self.assertEqual(len(fixture.calls), 1)
+            self.assertEqual(len(fixture.calls), 4)
             self.assertEqual(fixture.calls[0][0], "plan-q1-prepare")
             self.assertIn("自定剧情", fixture.calls[0][1])
             self.assertFalse(fixture.relaxed)
             # A partially saved pair reuses the one stage response, preserving the bible.
             paths[1].unlink()
             q1.prepare(*args)
-            self.assertEqual(len(fixture.calls), 1)
+            self.assertEqual(len(fixture.calls), 4)
             self.assertEqual((paths[0].read_bytes(), paths[0].stat().st_mtime_ns), before[0])
 
     def test_volume_has_fixed_range_beats_and_only_historical_callbacks(self):

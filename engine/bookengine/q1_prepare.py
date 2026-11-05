@@ -11,6 +11,7 @@ from .selected_card import selected_card, facts, differences, enforce, record, R
 from .longmemory import long_context
 from .storage import save
 from .text import pack
+from .structure_planning import stage_ranges, stage_for_chapter, repair_structure
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
@@ -49,7 +50,9 @@ def _ask(client, kind, key, sections, redo=False):
     old = getattr(client, "relaxed", False)
     client.relaxed = False
     try:
-        r2 = kind != "prepare" and integer(re.findall(r"\d+", key)[0]) >= (2 if kind == "volume" else 26)
+        r2 = kind in ("volume", "outlines", "continuation") and integer(re.findall(r"\d+", key)[0]) >= (
+            2 if kind == "volume" else 26
+        )
         stage = ("plan-q1-r2-" if r2 else "plan-q1-") + key + getattr(client, "plan_suffix", "")
         if redo:
             stage += "-redo" + (str(redo) if redo != 1 else "")
@@ -72,9 +75,18 @@ def prepare(client, book, out, assets, design=False):
     profile["canon"] = dict(GROWTH["packs"][book.prompt_pack], solution_aliases=GROWTH.get("solution_aliases", {}))
     profile["anti_patterns"] = source.get("anti_patterns", [])
     profile.update(hook_types=DATA["hook_types"], dialogue_notes=BORROWED["dialogue_notes"])
-    count = (book.chapters + 24) // 25
     paths = [Path(out) / name for name in ("story_bible.yaml", "threads.yaml")]
     values = [parse(p.read_text(encoding="utf-8")) if p.exists() else None for p in paths]
+    stages = stage_ranges(book.chapters) if values[0] is None else None
+    if values[0] and values[0].get("structure_version"):
+        stages = rows(values[0].get("volumes"))
+        previous_end = max((integer(s.get("end")) for s in stages), default=0)
+        if book.chapters > previous_end:
+            stages = stages + [
+                dict(number=len(stages) + s["number"], start=previous_end + s["start"], end=previous_end + s["end"])
+                for s in stage_ranges(book.chapters - previous_end)
+            ]
+    count = len(stages) if stages else (book.chapters + 24) // 25
     if values[0] is not None:
         validate_bible(values[0])
     if values[0] and values[0].get("canon"):
@@ -134,6 +146,7 @@ def prepare(client, book, out, assets, design=False):
                     ("现状", {k: state.get(k) for k in ("continuity", "power_status", "dashboard")}),
                     ("已完成单元结尾", ending.read_text()[-1500:] if ending.exists() else ""),
                     ("节拍", lines),
+                    ("只增补未写阶段，保留所有已保存阶段边界", stages or "旧书沿用25章卷"),
                 ],
             )
             raw = defaults(raw, {})
@@ -146,12 +159,16 @@ def prepare(client, book, out, assets, design=False):
         )
         extra_bible["world"] = {**values[0].get("world", {}), **defaults(extra_bible.get("world"), {})}
         values[0] = dict(values[0], **{k: v for k, v in extra_bible.items() if k in ("volumes", "world", "summary")})
-        additions = normalize_threads(patch.get("threads", {}), count, book.chapters, profile)["threads"]
+        additions = normalize_threads(patch.get("threads", {}), count, book.chapters, profile, stages=stages)["threads"]
         for old in rows(values[1].get("threads")):
             new = next((t for t in additions if t.get("id") == old.get("id")), {})
             ids = {b.get("id") for b in rows(old.get("beats"))}
             old["beats"] += [b for b in rows(new.get("beats")) if b.get("id") not in ids]
-            old["resume_after_volume"] = integer(patch.get("resume_after_chapter")) // 25
+            old["resume_after_volume"] = (
+                stage_for_chapter(values[0], integer(patch.get("resume_after_chapter")), book.chapters)["number"]
+                if stages
+                else integer(patch.get("resume_after_chapter")) // 25
+            )
     if any(x is None for x in values):
         from .benchmarking import concept_design
 
@@ -175,6 +192,7 @@ def prepare(client, book, out, assets, design=False):
             ("选定高概念", selected),
             ("读者承诺", source.get("writing_profile_overrides", {})),
             ("已有只读设计", values),
+            ("本书固定阶段边界，threads.volume是阶段号", stages or "已有旧书，保留原25章边界"),
         ]
         previous_error = ""
         alignment = []
@@ -200,6 +218,16 @@ def prepare(client, book, out, assets, design=False):
                 previous_error = str(exc)
                 if redo == (3 if card else 5):
                     raise
+        if values[0] is None:
+            bible, new_threads = repair_structure(
+                bible,
+                raw.get("threads", {}),
+                book.chapters,
+                lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo),
+                Path(out),
+            )
+        else:
+            bible, new_threads = defaults(values[0], DATA["schemas"]["prepare"]["bible"]), raw.get("threads", {})
         bible["canon"] = profile["canon"]
         bible["initial_dashboard"].update(
             strength=bible["initial_dashboard"]["strength"]
@@ -219,20 +247,7 @@ def prepare(client, book, out, assets, design=False):
         bible["characters"] = [
             defaults(x, DATA["schemas"]["prepare"]["bible"]["characters"][0]) for x in rows(bible["characters"])
         ]
-        skeletons = rows(bible["volumes"])
-        bible["volumes"] = [
-            dict(
-                defaults(
-                    next((x for x in skeletons if integer(x.get("number")) == n), {}),
-                    DATA["schemas"]["prepare"]["bible"]["volumes"][0],
-                ),
-                number=n,
-                start=(n - 1) * 25 + 1,
-                end=min(n * 25, book.chapters),
-            )
-            for n in range(1, count + 1)
-        ]
-        generated = [bible, normalize_threads(raw.get("threads", {}), count, book.chapters, profile)]
+        generated = [bible, normalize_threads(new_threads, count, book.chapters, profile, stages=stages)]
         if values[0] is None:
             peers = sorted({Path(out).name, *[p.name for p in Path(out).parent.iterdir() if p.is_dir()]})
             pool = [s + g for s, g in zip(rules["surname"] * 2, rules["given_names"])][
@@ -286,6 +301,6 @@ def prepare(client, book, out, assets, design=False):
     )
     return (
         defaults(values[0], DATA["schemas"]["prepare"]["bible"]),
-        normalize_threads(values[1], count, book.chapters, profile),
+        normalize_threads(values[1], count, book.chapters, profile, stages=stages),
         profile,
     )

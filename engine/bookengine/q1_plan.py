@@ -14,6 +14,7 @@ from .storage import save
 from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
+from .structure_planning import stage_by_number
 
 
 def _beats(threads, number, state=None):
@@ -55,6 +56,7 @@ def callbacks(history):
 
 def volume(client, bible, threads, number, total, state, history, feedback, redo=False):
     skeleton = next((x for x in rows(bible.get("volumes")) if integer(x.get("number")) == number), {})
+    boundary = stage_by_number(bible, number, total)
     beats, events = _beats(threads, number, state), callbacks(history)
     ladder = bible.get("canon", {}).get("ladder", {}).get("strength", [])
     old = state.get("dashboard", {}).get("strength")
@@ -76,7 +78,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
                 ],
             ),
             ("本卷固定走向与节拍", [skeleton, beats]),
-            ("指定卷范围", dict(number=number, start=(number - 1) * 25 + 1, end=min(number * 25, total))),
+            ("指定卷范围", {k: boundary[k] for k in ("number", "start", "end")}),
             ("反馈", feedback),
             ("已发生历史", events),
             ("实际状态", state),
@@ -85,9 +87,10 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
         redo,
     )
     value = defaults(dict(skeleton, **raw) if isinstance(raw, dict) else skeleton, DATA["schemas"]["volume"])
-    value.update(
-        number=number, start=(number - 1) * 25 + 1, end=min(number * 25, total), beats=beats, feedback=feedback
-    )
+    value.update(number=number, start=boundary["start"], end=boundary["end"], beats=beats, feedback=feedback)
+    if bible.get("structure_version"):
+        value.update({k: skeleton.get(k) for k in ("location", "antagonist", "goal", "climax", "exit_chapter")})
+        value["stage"] = skeleton.get("location", "")
     if target:
         value["expected_dashboard"] = dict(value.get("expected_dashboard") or {}, strength=target)
     value["callback_events"] = events

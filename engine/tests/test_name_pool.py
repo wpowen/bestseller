@@ -116,7 +116,7 @@ class NamePoolTests(unittest.TestCase):
                 results = {}
                 for name in order:
                     fixture, result = self.prepare(folders[name])
-                    self.assertEqual(len(fixture.calls), 1)
+                    self.assertEqual(len(fixture.calls), 4)
                     self.assertEqual(fixture.calls[0][0], "plan-q1-prepare")
                     results[name] = result
                 a_names, a_given = self.assert_references_and_assigned(folders["book-a"], results["book-a"])

@@ -14,6 +14,7 @@ from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, 
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
+from .structure_planning import final_stage_start
 
 REVISION = "growth-payoff-3"
 
@@ -81,7 +82,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     calls_before = len(getattr(client, "calls", []))
     prefix = f"r2-ch{idx}"
     target = book.words_per_chapter
-    canon = dict(bible["canon"], final_volume_start=max(1, ((book.chapters - 1) // 25) * 25 + 1))
+    canon = dict(bible["canon"], final_volume_start=final_stage_start(bible, book.chapters))
     bible = dict(bible, canon=canon)
     low, high = (1870, 2700) if target == 2200 else (round(target * 0.85), round(target * 1.15))
     previous = (out / f"chapter-{idx - 1:03d}.body.md").read_text() if idx > 1 else ""

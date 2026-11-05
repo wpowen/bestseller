@@ -61,7 +61,9 @@ def defaults(value, template):
     return value if isinstance(value, type(template)) else template
 
 
-def normalize_threads(value, count, total, profile):
+def normalize_threads(value, count, total, profile, stages=None):
+    boundaries = stages or [dict(number=n, start=(n - 1) * 25 + 1, end=min(n * 25, total)) for n in range(1, count + 1)]
+    count = len(boundaries)
     items = rows(value.get("threads")) if isinstance(value, dict) else rows(value)
     aliases = dict(
         主线="main",
@@ -104,7 +106,8 @@ def normalize_threads(value, count, total, profile):
             selected = [x for x in rows(item.get("beats")) if integer(x.get("volume")) == n]
             if any(x.get("description") for x in selected):
                 selected = [x for x in selected if x.get("description")]
-            minimum = max(2, (min(25, total - (n - 1) * 25) + gap - 1) // gap) if kind in ("dark", "romance") else 1
+            length = boundaries[n - 1]["end"] - boundaries[n - 1]["start"] + 1
+            minimum = max(2, (length + gap - 1) // gap) if kind in ("dark", "romance") else 1
             selected += [{} for _ in range(max(0, minimum - len(selected)))]
             for j, beat in enumerate(selected, 1):
                 beat = defaults(beat, dict(id="", volume=n, description="", reveal_not_before=0))
@@ -114,7 +117,7 @@ def normalize_threads(value, count, total, profile):
                 ids.add(ident)
                 beat.update(id=ident, volume=n)
                 if kind == "hidden" and not beat["reveal_not_before"]:
-                    beat["reveal_not_before"] = (count - 1) * 25 + 1
+                    beat["reveal_not_before"] = boundaries[-1]["start"]
                 beats.append(beat)
         item.update(id=key, kind=kind, max_gap=gap, beats=beats)
     return dict(threads=items)

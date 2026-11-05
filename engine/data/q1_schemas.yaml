@@ -6,7 +6,7 @@ continuation: '用户已明确授权从现有最后一章续到新目标，保�
 
   已完成单元仍已完成，不撤销胜利。按既有机制和关系后果设计续写单元；最后10%收束，末章不新开主线。
 
-  volumes覆盖所有25章卷的走向，保留原卷1；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
+  volumes遵守传入的阶段边界，旧书保留原25章卷边界；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
 
   threads保留原线id、所有旧节拍id与旧description，已完成节拍不得重开；对未写部分和后续卷增补有具体事件的节拍，结束全部回收。
 
@@ -80,7 +80,7 @@ instructions:
 
     已完成单元仍已完成，不撤销胜利。按既有机制和关系后果设计续写单元；最后10%收束，末章不新开主线。
 
-    volumes覆盖所有25章卷的走向，保留原卷1；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
+    volumes遵守传入的阶段边界，旧书保留原25章卷边界；正在写的一卷仅规划未写部分，不重复已写章情节；不列逐章大纲。
 
     threads保留原线id、所有旧节拍id与旧description，已完成节拍不得重开；对未写部分和后续卷增补有具体事件的节拍，结束全部回收。
 
@@ -89,13 +89,17 @@ instructions:
     每卷至少一场不靠打架或开门解决的公开分歧，配角不同方案至少两次改变决策；钩子轮换，避免反复另一个我、又醒了。
 
     '
+  structure: '只返回bible.volumes、bible.antagonists及threads。逐项修复错误清单，使用指定阶段边界。
+    每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
+    每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
+    threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。'
   prepare: 'world.levels严格逐条用固定实力阶梯规范名，initial_dashboard.strength从第一阶开始；不可另创境界。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
 
     initial_dashboard各项用可对账短值，实力写等级，财富写数值和单位，地位/名声写等级，归属和舞台用规范名；禁止把动作情绪写成长句。
 
     开书仅一次生成bible与threads，可同一响应列出全部卷走向，不列100章章纲。
 
-    每卷25章，末卷按总章数截断；每卷换不同舞台，至少两次舞台变化。
+    新书volumes表示阶段，每10–12章一个，末尾不足10章可单独收束；严格覆盖指定阶段边界。每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同。antagonists每个有name/tier/stage/exit，低层对手在所属阶段内退场，之后只能作为背景提及。章数≥30，阶段至少ceil(章数/12)。
 
     圣经含卖点/读者期待、金手指代价与上限、世界规则等级、3—6势力各自利益、三层真相。
 
@@ -117,11 +121,11 @@ instructions:
 
 
     人物每人明确gender/address，主角另有active_desire/personality_tags/catchphrase/never_do。主角主动欲望必须尖锐，不能靠服从团队复核推进；设定必须按选定高概念，不转入救援维保审计档案。'
-  volume: '每卷安排四个真实转折：第4章无法靠打架/开门解决的公开分歧；第9/21章不同配角提出与主角不同且真正改变决策的方案；第16章主角因既有能力代价误判重要关系或行动并付出后果。不能靠开会、核表或讲原则完成。
+  volume: '在指定阶段范围内安排真实转折：公开分歧无法靠打架/开门解决；不同配角提出与主角不同且真正改变决策的方案；主角因既有能力代价误判重要关系或行动并付出后果。不能靠开会、核表或讲原则完成。
 
     每卷必须明确主角赢得的实力、资源、地位或盟友，卷末交代实际所得；代价按卷递增，不逐章加残疾或扣寿。遵守continuity封禁、左右手和余额，不凭空恢复。
 
-    只展开指定25章卷纲，领取本卷固定线索节拍，不改圣经、线索或旧章。
+    只展开指定阶段范围；旧书沿用保存的25章卷纲，领取本卷固定线索节拍，不改圣经、线索或旧章。
 
     写清stage/goal/cost/expected_dashboard、人物进退、beats、callback_events、feedback。
 
@@ -171,11 +175,20 @@ schemas:
   continuation:
     bible:
       summary: ''
+      antagonists:
+      - name: ''
+        tier: 1
+        stage: 1
+        exit: 12
       volumes:
       - number: 1
         start: 1
-        end: 25
+        end: 12
         stage: ''
+        location: ''
+        antagonist: ''
+        climax: ''
+        exit_chapter: 12
         goal: ''
         gain: ''
         cost: ''
@@ -246,11 +259,20 @@ schemas:
         status: ''
         affiliation: ''
         stage: ''
+      antagonists:
+      - name: ''
+        tier: 1
+        stage: 1
+        exit: 12
       volumes:
       - number: 1
         start: 1
-        end: 25
+        end: 12
         stage: ''
+        location: ''
+        antagonist: ''
+        climax: ''
+        exit_chapter: 12
         goal: ''
         change: ''
         cost: ''
@@ -264,10 +286,28 @@ schemas:
           volume: 1
           description: ''
           reveal_not_before: 0
+  structure:
+    bible:
+      volumes:
+      - number: 1
+        start: 1
+        end: 12
+        location: ''
+        antagonist: ''
+        goal: ''
+        climax: ''
+        exit_chapter: 12
+      antagonists:
+      - name: ''
+        tier: 1
+        stage: 1
+        exit: 12
+    threads:
+      threads: []
   volume:
     number: 1
     start: 1
-    end: 25
+    end: 12
     stage: ''
     goal: ''
     cost: ''

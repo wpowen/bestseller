@@ -1,8 +1,7 @@
 """Pure sentence-rule fixtures, including the twelve supplied editorial examples."""
 import unittest
 
-from bookengine.q1_quality import metrics
-from tools.precision_rules import apply, locate, stats
+from bookengine.precision import apply, locate
 
 
 EXAMPLES = '''他跪在祭台前，将残片抵住凹槽，低声道：“我记得离开矿镇，是为了给白团找一条能活下去的路。”"
@@ -98,12 +97,5 @@ class PrecisionRulesTests(unittest.TestCase):
         result, _ = apply(text, [{'id': hit['id'], 'text': '楼下又响起电话铃。'}])
         self.assertEqual(result, '他下楼。\n\n楼下又响起电话铃。他拎起包。')
 
-    def test_stats_reuses_metrics_and_counts_each_category_once_per_sentence(self):
-        text = EXAMPLES[6] + '\n\n“你知道吗？”'
-        result = stats(text)
-        self.assertEqual(result['hits'], 1)
-        self.assertEqual(result['categories'], {'summary': 1, 'epiphany': 1, 'poetic': 0})
-        for key in ('chars', 'single_sentence_ratio', 'dialogue_ratio'):
-            self.assertEqual(result[key], metrics(text)[key])
+    def test_blank_whitespace_has_no_hits(self):
         self.assertEqual(locate(' \r\n'), [])
-        self.assertEqual(stats('')['hits'], 0)

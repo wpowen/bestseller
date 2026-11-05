@@ -1,5 +1,4 @@
 """Offline INBOX19 rule regressions: real prose, synthetic variants, no clients."""
-import importlib.util
 from pathlib import Path
 import re
 import subprocess
@@ -7,6 +6,7 @@ import unittest
 
 from bookengine.precision import _sentences
 from bookengine.text import _paragraph_spans
+from deai import rules as production_rules
 
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -25,11 +25,13 @@ def sentence_rows(text):
 
 
 class DeaiRulesTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        spec = importlib.util.spec_from_file_location('deai_rules_under_test', ENGINE / 'tools/deai_rules.py')
-        cls.rules = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.rules)
+    rules = production_rules
+
+    def test_rules_are_not_discarded_by_empty_model_votes(self):
+        rule = dict(sid='S1', type='cliche_simile', severity=2, source='rule')
+        self.assertEqual(self.rules.merge_hits([rule], []), [rule])
+        fact = dict(rule, type='date_arithmetic', source='model')
+        self.assertEqual(self.rules.merge_hits([rule], [fact]), [rule])
 
     def test_real_gemini_named_phrases_are_counted_and_located(self):
         # Read the authorized original, never a copied fixture or a model response.

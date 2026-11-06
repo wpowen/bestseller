@@ -363,7 +363,7 @@ def check_book(book, *, source="final"):
         )
         for c in chapters
     ]
-    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0])) for c in chapters]
+    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0], bible=bible)) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))

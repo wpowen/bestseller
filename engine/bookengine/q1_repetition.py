@@ -14,8 +14,15 @@ from tools.book_checkup import clean_prose
 
 def repair_repetitions(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     before = clean_repetitions(text, remove_safe=False)
-    similarity = analyze_prose(text)
+    similarity = analyze_prose(text, bible=bible)
     pending = before["needs_repair"] + similarity["needs_repair"]
+    if outline.get("number") == 1:
+        spans = {(row["start"], row["end"]) for row in pending}
+        pending.extend(
+            dict(row, action="repair", reasons=["card_explanation"])
+            for row in similarity["records"]
+            if row["kind"] == "card_explanation" and row["paragraph"] == 1 and (row["start"], row["end"]) not in spans
+        )
     counts_before = dict(before["counts"], **similarity["counts"])
     note = dict(status="checked", before=counts_before, after=counts_before, similarity=similarity)
     if not pending:
@@ -44,7 +51,9 @@ def repair_repetitions(client, prefix, text, raw, failed, state, bible, outline,
         text, patch.get("edits", []) if isinstance(patch, dict) else [], hits, allow_empty=True, allow_style=True
     )
     candidate = clean_prose(candidate)[0]
-    counts = dict(clean_repetitions(candidate, remove_safe=False)["counts"], **analyze_prose(candidate)["counts"])
+    counts = dict(
+        clean_repetitions(candidate, remove_safe=False)["counts"], **analyze_prose(candidate, bible=bible)["counts"]
+    )
     fields = ("sentence_repetitions", "adjacent_paragraph_pairs", "near_paragraph_pairs", "card_explanations")
     reduced = all(counts[k] <= counts_before[k] for k in fields) and any(counts[k] < counts_before[k] for k in fields)
     old_transition = stage_transition(bible, outline.get("number"), text, state.get("end_location"), outline=outline)

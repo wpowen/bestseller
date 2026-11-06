@@ -1,0 +1,55 @@
+{
+  "characters": [
+    {
+      "name": "顾冬岚",
+      "identity": "被逐出驭兽宗的矿镇少年，雪耳的契主"
+    },
+    {
+      "name": "沈夏珩",
+      "identity": "游历矿镇的年轻女药师"
+    },
+    {
+      "name": "顾安澜",
+      "identity": "顾冬岚的妹妹，雪原药民"
+    },
+    {
+      "name": "陆岳霖",
+      "identity": "兽谷独行的猎手"
+    },
+    {
+      "name": "石彦棕",
+      "identity": "矿镇矿工出身的驭兽车掌"
+    },
+    {
+      "name": "白敬原",
+      "identity": "王城流民中的驯雪女"
+    },
+    {
+      "name": "韩晏竹",
+      "identity": "驭兽宗矿镇执事"
+    },
+    {
+      "name": "敖杉予",
+      "identity": "雾骨谷骨牙寨首领"
+    },
+    {
+      "name": "赫欣妍",
+      "identity": "王城猎场首席猎首"
+    },
+    {
+      "name": "裴洛翡",
+      "identity": "驭兽宗王城主事"
+    },
+    {
+      "name": "缄煦阳",
+      "identity": "雪原祖窟深处苏醒的守窟兽灵"
+    }
+  ],
+  "provenance": {
+    "source": "/var/folders/21/t2f_q3md2ln9l36r_s8j86mw0000gn/T/bestseller-f40-b07odolm/trial-50/chapter-001.body.md",
+    "source_sha256": "decccf9489087c9460d8f6f2ed8593f38e424d33f98e0dc8ceb56876941e58ce",
+    "bible": "/var/folders/21/t2f_q3md2ln9l36r_s8j86mw0000gn/T/bestseller-f40-b07odolm/trial-50/story_bible.yaml",
+    "bible_sha256": "a5257dce360e4650db522f5fc5b412326a580794f01c14f1436a43f057969ba3",
+    "judgment": "agent_editorial_not_human"
+  }
+}

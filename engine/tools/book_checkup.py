@@ -147,7 +147,7 @@ def _stage_stats(bible, chapters):
 
 
 def _opponents(bible, chapters, stages):
-    from bookengine.retired_opponents import active_opponent_hits
+    from bookengine.retired_opponents import active_opponent_hits, exit_boundary_hits, opponent_hits
 
     opponents = {
         c["name"]: c
@@ -181,7 +181,17 @@ def _opponents(bible, chapters, stages):
                     for c in chapters
                     if any(h["name"] == name for h in active_opponent_hits(c["text"], bible, c["number"]))
                 ],
-                active_appearance_basis="surface_agent_or_action; Inference",
+                exit_next_chapter_presence=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in exit_boundary_hits(c["text"], bible, c["number"]))
+                ],
+                present_after_exit_chapters=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in opponent_hits(c["text"], bible, c["number"]))
+                ],
+                active_appearance_basis="surface_agent_or_action; exit+1 passive presence; Inference",
             )
         )
     return result
@@ -417,6 +427,8 @@ def check_book(book, *, source="final"):
         ),
         repetition=dict(
             sentence_repetitions=sum(r["counts"]["sentence_repetitions"] for r in repetitions),
+            narrative_repetitions=sum(r["counts"]["narrative_repetitions"] for r in repetitions),
+            dialogue_repetitions=sum(r["counts"]["dialogue_repetitions"] for r in repetitions),
             adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
             chapters=[r for r in repetitions if r["records"]],
         ),

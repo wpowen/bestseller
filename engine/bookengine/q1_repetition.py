@@ -6,7 +6,7 @@ from .checks import high_confidence
 from .precision import _sentences, apply as sentence_edits
 from .prose_repetition import clean_repetitions
 from .q1_continuity import boundary_facts, opening_issue
-from .retired_opponents import active_opponent_hits
+from .retired_opponents import opponent_hits
 from .stage_transition import stage_transition
 from tools.book_checkup import clean_prose
 
@@ -61,7 +61,7 @@ def repair_repetitions(client, prefix, text, raw, failed, state, bible, outline,
         and candidate != text
         and reduced
         and continuous
-        and not active_opponent_hits(candidate, bible, outline.get("number", 0))
+        and not opponent_hits(candidate, bible, outline.get("number", 0))
     ):
         checked, invalid, _ = extract(
             client, prefix + "-repetition-recheck", candidate, state, bible, outline, [], final=True

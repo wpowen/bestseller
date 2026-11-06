@@ -15,7 +15,7 @@ from .stage_transition import planning_transition_issues
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
-STRUCTURE_CHECKS_VERSION = 2
+STRUCTURE_CHECKS_VERSION = 3
 
 
 def title_terms(title, supplied=()):

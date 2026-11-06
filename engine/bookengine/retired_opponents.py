@@ -86,6 +86,55 @@ def active_opponent_hits(text, bible, number):
     return hits
 
 
+# Exit+1 also checks passive presence, independent of an action predicate.
+_PRESENT = re.compile(
+    r"^[，,：:\s]*(?:(?:正|仍|还|又|就|却|也|便)*)(?:坐|蹲|跪|躺|沉默|默不作声|面无表情|守候|等候|没有离开|未曾离开)"
+)
+_LOCATED = re.compile(r"(?:人群中|身旁|身边|门旁|门边|现场|在场的|角落里|座上)(?:还有|有|是|的)?\s*$")
+_MENTION = re.compile(r"提起|提及|谈起|说起|听说|传闻|据说|名字|画像|遗像")
+
+
+def exit_boundary_hits(text, bible, number):
+    opponents = [o for o in retired_opponents(bible, number) if integer(o["exit"]) + 1 == number]
+    names = {o["name"] for o in opponents}
+    hits = [h for h in active_opponent_hits(text, bible, number) if h["name"] in names]
+    found = {(h["id"], h["name"]) for h in hits}
+    for sid, (start, end) in enumerate(_sentences(text), 1):
+        sentence = text[start:end]
+        for opponent in opponents:
+            if (sid, opponent["name"]) in found:
+                continue
+            for label in opponent["labels"]:
+                for match in re.finditer(re.escape(label), sentence):
+                    before, after = sentence[: match.start()], sentence[match.end() :]
+                    if _past_action(before, after) or _MENTION.search(before):
+                        continue
+                    located = _LOCATED.search(before) and re.match(r"^[，,。！？!?\s]*$", after)
+                    if _PRESENT.search(after) or located:
+                        hits.append(
+                            dict(
+                                id=sid,
+                                start=start,
+                                end=end,
+                                text=sentence,
+                                kind="retired_presence",
+                                name=opponent["name"],
+                                exit=opponent["exit"],
+                                status="Inference",
+                            )
+                        )
+                        found.add((sid, opponent["name"]))
+                        break
+                if (sid, opponent["name"]) in found:
+                    break
+    return sorted(hits, key=lambda h: (h["id"], h["name"]))
+
+
+def opponent_hits(text, bible, number):
+    hits = active_opponent_hits(text, bible, number) + exit_boundary_hits(text, bible, number)
+    return list({(h["id"], h["name"]): h for h in hits}.values())
+
+
 def initiator_issues(bible, batch):
     issues = []
     for chapter in batch:
@@ -129,7 +178,7 @@ def stage_constraints(bible, number):
             for s in rows(bible.get("volumes"))
             if 0 < integer(s.get("end")) < integer(stage.get("start"))
         ],
-        rule="已退场对手只可回忆旧事，不得施动、派人或主导冲突；禁止退回已离开的主地点作为章末舞台。",
+        rule="已退场对手只可回忆旧事，不得施动、派人或主导冲突；exit+1禁止列入在场名单；禁止退回已离开的主地点作为章末舞台。",
     )
 
 
@@ -143,19 +192,19 @@ def location_regression(bible, number, location, quote):
     return None
 
 
-def repair_retired(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+def repair_retired(client, prefix, text, raw, failed, state, bible, outline, extract, ask, *, final=False):
     from .precision import apply as sentence_edits
     from .q1_continuity import boundary_facts, opening_issue
     from .stage_transition import stage_transition
 
-    hits = active_opponent_hits(text, bible, integer(outline.get("number")))
+    hits = opponent_hits(text, bible, integer(outline.get("number")))
     note = dict(status="checked", before=hits, after=hits)
     if not hits:
         return text, raw, failed, note
     patch = ask(
         client,
         prefix + "-opponent-repair",
-        "只改候选句的S编号，返回edits。退场对手不能再次主动行动；按当前阶段真实关系改为本阶段对手，"
+        "只改候选句的S编号，返回edits。退场对手不能再次主动行动；exit+1也不能被写成仍在现场，须交代已离场或改成背景提及；按当前阶段真实关系改为本阶段对手，"
         "或自然改为旧事背景，不能机械换名，不得添加新事实。其他句逐字保留。",
         [
             ("阶段约束", json.dumps(stage_constraints(bible, outline["number"]), ensure_ascii=False)),
@@ -169,7 +218,19 @@ def repair_retired(client, prefix, text, raw, failed, state, bible, outline, ext
     candidate, edits = sentence_edits(
         text, patch.get("edits", []) if isinstance(patch, dict) else [], hits, allow_empty=True, allow_style=True
     )
-    if edits and candidate != text and not active_opponent_hits(candidate, bible, outline["number"]):
+    from .prose_repetition import clean_repetitions
+    from tools.book_checkup import clean_prose
+
+    before_counts = clean_repetitions(text, remove_safe=False)["counts"]
+    after_counts = clean_repetitions(candidate, remove_safe=False)["counts"]
+    regression = any(after_counts[k] > before_counts[k] for k in ("sentence_repetitions", "adjacent_paragraph_pairs"))
+    unbalanced = any(
+        abs(candidate.count(a) - candidate.count(b)) > abs(text.count(a) - text.count(b))
+        for a, b in ("“”", "「」", "『』")
+    )
+    if final and regression or unbalanced or clean_prose(candidate)[0] != candidate:
+        return text, raw, failed, dict(note, status="rolled_back", reason="prose_regression")
+    if edits and candidate != text and not opponent_hits(candidate, bible, outline["number"]):
         transition = stage_transition(bible, outline["number"], text, state.get("end_location"), outline=outline)
         rechecked = stage_transition(bible, outline["number"], candidate, state.get("end_location"), outline=outline)
         if transition and transition["status"] == "present" and (not rechecked or rechecked["status"] != "present"):
@@ -188,3 +249,13 @@ def repair_retired(client, prefix, text, raw, failed, state, bible, outline, ext
         if not invalid and not opening_regressed and not high_confidence(state, checked.get("events", []), candidate):
             return candidate, checked, False, dict(note, status="repaired", after=[], edits=edits)
     return text, raw, failed, dict(note, status="rolled_back")
+
+
+def repair_exit_tail(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+    """One final bounded exit+1 repair after all other chapter edits."""
+    hits = exit_boundary_hits(text, bible, integer(outline.get("number")))
+    if not hits:
+        return text, raw, failed, dict(status="checked", before=[], after=[])
+    return repair_retired(
+        client, prefix + "-exit-tail", text, raw, failed, state, bible, outline, extract, ask, final=True
+    )

@@ -23,7 +23,9 @@ def test_safe_duplicate_is_removed_before_extraction_and_counted():
 
 
 def test_unsafe_repetition_uses_existing_sentence_ids_for_repair():
-    text = "阿宁举起那盏已经熄灭的旧油灯。\n\n院子里响起一阵脚步声。\n\n阿宁举起那盏已经熄灭的旧油灯。她转身跑进屋里。"
+    text = (
+        "阿宁举起那盏已经熄灭的旧油灯。\n\n院子里响起一阵脚步声。\n\n阿宁举起那盏，已经熄灭的旧油灯。她转身跑进屋里。"
+    )
     hits = [h for h in prose_hits(text, {}, {}) if h.get("kind") == "prose_repetition"]
     assert hits and hits[0]["id"] == 3
     assert hits[0]["text"] == text[hits[0]["start"] : hits[0]["end"]]
@@ -73,7 +75,7 @@ def test_new_dependent_repetition_gets_one_bounded_repair_and_recheck():
     from bookengine.q1_repetition import repair_repetitions
 
     duplicate = "何晏要的是我身上那把已经断裂的旧剑。"
-    text = duplicate + "\n\n城里的钟声响了。\n\n" + duplicate + "他转身走了。"
+    text = duplicate + "\n\n城里的钟声响了。\n\n" + duplicate.replace("旧剑", "旧，剑") + "他转身走了。"
     requests = []
 
     def ask(*args, **kwargs):
@@ -85,7 +87,7 @@ def test_new_dependent_repetition_gets_one_bounded_repair_and_recheck():
         return {"events": []}, False, 0
 
     changed, _, _, note = repair_repetitions(None, "ch11", text, {}, False, {}, {}, {"number": 11}, extract, ask)
-    assert changed.count(duplicate) == 1
+    assert "何晏伸手抓住了剑柄。" in changed
     assert note["status"] == "repaired"
     assert requests == ["ch11-repetition-repair", "ch11-repetition-recheck"]
 
@@ -95,7 +97,7 @@ def test_repetition_repair_rolls_back_if_it_revives_a_retired_opponent():
     from test_retired_opponents_35 import design
 
     duplicate = "何晏要的是我身上那把已经断裂的旧剑。"
-    text = duplicate + "\n\n城楼静悄悄。\n\n" + duplicate
+    text = duplicate + "\n\n城楼静悄悄。\n\n" + duplicate.replace("旧剑", "旧，剑")
     raw = {"events": []}
 
     def ask(*args, **kwargs):

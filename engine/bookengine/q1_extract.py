@@ -138,6 +138,9 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "type",
+            "rhythm_type",
+            "rhythm_focus",
             "transition",
             "introductions",
             "payoff_due",

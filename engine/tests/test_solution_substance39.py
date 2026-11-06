@@ -75,3 +75,27 @@ def test_new_plan_cannot_evade_cap_by_omitting_substance():
 def test_array_family_excludes_weather_and_injury_words():
     assert solution_nouns({"content": "趁一阵风起，用阵痛诱敌"}) == []
     assert solution_nouns({"method_noun": "阵风"}) == ["阵风"]
+
+
+def test_completed_body_overrides_old_plan_and_unknown_never_uses_plan():
+    history = [
+        dict(
+            number=n,
+            fact_source="final_body",
+            solution_method="账本",
+            solutions=[dict(method_noun="阵钉", content="拆阵")],
+        )
+        for n in range(1, 4)
+    ]
+    assert solution_context(bible(), history, 4)["stage_counts"] == {"阵": 3}
+    assert solution_issues(bible(), history, [dict(number=4, solution_method="阵纹")])
+    assert solution_context(bible(), [dict(history[0], solutions=[])], 4)["stage_counts"] == {}
+
+
+def test_object_distribution_does_not_consume_method_cap_and_method_is_required():
+    history = [
+        dict(number=n, solution_target="铁门", solution_method=method)
+        for n, method in enumerate(["铜秤", "杠杆", "账本"], 1)
+    ]
+    assert not solution_issues(bible(), history, [dict(number=4, solution_target="铁门", solution_method="绳索")])
+    assert solution_issues(dict(bible(), plot_contract_version=1), [], [dict(number=1, solution_target="门锁")])

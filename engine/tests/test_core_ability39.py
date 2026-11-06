@@ -69,3 +69,66 @@ def test_exhausted_application_repair_still_reserves_concrete_scene_plan():
     assert not ability_issues(source, [], planned)
     assert any("复制影主开锁动作" in str(r["scenes"]) for r in planned)
     assert all("core_required" not in r for r in bad)
+
+
+def test_writer_receives_rhythm_and_ability_obligations_before_long_scenes():
+    from bookengine.q1_extract import context
+
+    source = bible()
+    chapter = dict(
+        number=1,
+        type="情感",
+        rhythm_focus="坦白分歧改变信任",
+        core_required=True,
+        core_application="借影识别误会，使同伴重新选择信任",
+        scenes=[{"goal": "很长的场景" * 1000}],
+    )
+    sections = dict(context(source, {}, {"number": 1}, chapter, {}, [], [], ""))
+    prompt = sections["本章章纲"]
+    assert "坦白分歧改变信任" in prompt
+    assert "借影识别误会，使同伴重新选择信任" in prompt
+
+
+def test_failed_ability_and_replacement_tool_are_not_causal_success():
+    text = "他尝试借影复制守卫的开锁动作。借影失败了，他用普通钥匙终于打开铁门。"
+    raw = dict(
+        decisive=True,
+        mechanism="借影",
+        action_quote="他尝试借影复制守卫的开锁动作。",
+        result_quote="借影失败了，他用普通钥匙终于打开铁门。",
+    )
+    assert verify_core_use(raw, text, bible())["status"] == "unknown"
+
+
+def test_application_must_use_current_stage_development_and_scene_action():
+    from bookengine.core_ability import enforce_ability_plan
+
+    source = bible()
+    stale = dict(
+        number=6,
+        core_required=True,
+        core_application="只复制一人影子，沿用一盏灯开门",
+        scenes=[dict(goal="救出同伴", choice="只复制一人影子，沿用一盏灯开门")],
+    )
+    assert ability_issues(source, [], [stale])
+    current = enforce_ability_plan(source, [stale])
+    assert "同时借两人的影子" in str(current[0]["scenes"])
+    assert "须有两盏火光" in str(current[0]["scenes"])
+    assert not ability_issues(source, [], current)
+
+
+def test_development_in_obstacle_cannot_mask_non_use_in_action():
+    source = bible()
+    development = source["volumes"][1]["core_development"]
+    references = "；".join(development.values())
+    stale = dict(
+        number=6,
+        core_required=True,
+        core_application=references,
+        scenes=[dict(obstacle=references, choice="用普通钥匙打开铁门，不使用核心能力")],
+    )
+    assert ability_issues(source, [], [stale])
+
+    from bookengine.core_ability import enforce_ability_plan
+
+    assert not ability_issues(source, [], enforce_ability_plan(source, [stale]))

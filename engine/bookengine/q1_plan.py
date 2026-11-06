@@ -17,8 +17,8 @@ from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
-from .solution_substance import solution_context, solution_issues
-from .core_ability import ability_slots, ability_issues, core_source, RULE as CORE_RULE
+from .solution_substance import solution_context, solution_issues, chapter_nouns
+from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .chapter_rhythm import (
     rhythm_slots,
     rhythm_issues,
@@ -224,10 +224,20 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
+    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r)) for r in prior]
+    plot_stale = bool(
+        cached
+        and (solution_issues(bible, prior, cached["chapters"]) + ability_issues(bible, prior, cached["chapters"]))
+        and cached.get("plot_history") != plot_history
+    )
+    revision_suffix = ""
+    if plot_stale and getattr(client, "out", None):
+        revision_suffix = "-observed" + str(len(list((Path(client.out) / "outline-diversity").glob("*.json"))) + 1)
     superseded = bool(
         cached
         and (
-            rhythm_issues(bible, prior, cached["chapters"])
+            plot_stale
+            or rhythm_issues(bible, prior, cached["chapters"])
             or (
                 cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
                 and (
@@ -338,7 +348,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             "outlines",
             f"chapters-{start}-{end}-diversity"
             + (f"-structure35v{STRUCTURE_CHECKS_VERSION}" if superseded else "")
-            + (f"-user{redo}" if redo else ""),
+            + (f"-user{redo}" if redo else "")
+            + revision_suffix,
             [
                 (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
                 (
@@ -364,7 +375,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
-        key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}"
+        key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
     repaired = (
         cached["chapters"]
         if cached
@@ -415,6 +426,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
     result, final_rhythm_repairs = repair_rhythm(bible, prior, result)
+    result = enforce_ability_plan(bible, result)
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)
     if getattr(client, "out", None) and (not cached or final_rhythm_repairs):
@@ -424,6 +436,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         path = Path(client.out) / "outline-diversity" / (key + ".json")
         report = json.loads(Path(source_path or path).read_text())
         report["rhythm_contract_version"] = RHYTHM_VERSION
+        report["plot_history"] = plot_history
+        report["plot_issues_after"] = solution_issues(bible, prior, result) + ability_issues(bible, prior, result)
         report["rhythm_repairs"] = report.get("rhythm_repairs", []) + final_rhythm_repairs
         if source_path:
             report.update(source_report=source_path, chapters=result)

@@ -9,6 +9,7 @@ from .solution_substance import rows, chapter_nouns, stage_key, observe_solution
 
 def plot_findings(bible, chapters):
     distribution, stage_nouns, noun_chapters = Counter(), defaultdict(lambda: defaultdict(list)), []
+    targets = Counter()
     ability, type_counts, confrontations, current = [], Counter(), [], []
     previous = None
     for chapter in chapters:
@@ -17,6 +18,7 @@ def plot_findings(bible, chapters):
         observed = observe_solutions(dict(solutions=meta.get("solutions", [])), text)
         nouns = chapter_nouns(observed)
         distribution.update(nouns)
+        targets.update({s["target_noun"] for s in observed["solutions"] if s.get("target_noun")})
         stage = stage_key(bible, number)
         for noun in nouns:
             if stage is not None:
@@ -90,6 +92,7 @@ def plot_findings(bible, chapters):
     return dict(
         solution_substance=dict(
             distribution=dict(sorted(distribution.items())),
+            target_distribution=dict(sorted(targets.items())),
             stage_cap=3,
             excess=excess,
             excess_count=sum(len(r["excess_chapters"]) for r in excess),

@@ -161,6 +161,7 @@ def terminal_window(out, start, end):
             end=stop,
             structure_checks_version=report.get("structure_checks_version", 0),
             rhythm_contract_version=report.get("rhythm_contract_version", 0),
+            plot_history=report.get("plot_history"),
             path=str(path),
         )
     return None

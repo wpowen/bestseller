@@ -10,6 +10,7 @@ DEVELOPMENT = ("new_use", "new_cost", "new_limit")
 RULE = (
     "每阶段至少50%章节由核心能力直接解决主要冲突，core_application写操作及决定结果的因果，不能只提能力。"
     "core_development给new_use/new_cost/new_limit，逐阶段至少一项发生具体升级，不能仅换措辞。"
+    "core_application及对应scenes.choice须逐字带入本阶段new_use/new_cost/new_limit的具体内容，写出解决结果。"
 )
 
 
@@ -99,6 +100,23 @@ def repair_development(bible, ask):
     return current, dict(status="failed_continued" if remaining else "passed", issues=remaining, attempts=attempts)
 
 
+def application_valid(row, development):
+    application = row.get("core_application")
+    if row.get("core_required") is not True or not isinstance(application, str) or len(application.strip()) < 8:
+        return False
+    if not development:
+        return True
+    scenes = "；".join(
+        str(scene.get(k) or "") for scene in rows(row.get("scenes")) for k in ("choice", "action", "result")
+    )
+    if re.search(r"不使用|不用核心|未使用|没有使用|改用普通|仅靠普通", application + scenes):
+        return False
+    return all(
+        isinstance(development.get(k), str) and development[k] in application and development[k] in scenes
+        for k in DEVELOPMENT
+    )
+
+
 def ability_issues(bible, history, batch):
     if not core_source(bible):
         return []
@@ -108,11 +126,7 @@ def ability_issues(bible, history, batch):
     slots = ability_slots(bible, min(targets, default=1), max(targets, default=0))
     for slot in slots:
         row = combined.get(slot["number"], {})
-        if slot["core_required"] and (
-            row.get("core_required") is not True
-            or not isinstance(row.get("core_application"), str)
-            or len(row["core_application"].strip()) < 8
-        ):
+        if slot["core_required"] and not application_valid(row, slot.get("core_development", {})):
             issues.append(dict(kind="core_application", targets=[slot["number"]], requirement=RULE))
     return issues
 
@@ -137,7 +151,10 @@ def verify_core_use(raw, text, bible):
     negative = grounded and bool(re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备", action))
     if raw.get("decisive") is False and grounded:
         return dict(result, status="not_decisive", action_quote=action, result_quote=outcome)
-    if raw.get("decisive") is True and named and causal and not negative:
+    ineffective = grounded and bool(
+        re.search(r"失败|失效|无效|未能|没能|毫无作用|不起作用|改用|转而|另用|尝试", action + outcome)
+    )
+    if raw.get("decisive") is True and named and causal and not negative and not ineffective:
         return dict(result, status="verified", action_quote=action, result_quote=outcome, evidence_status="Evidence")
     return dict(result, reason="missing_or_noncausal_verbatim_evidence")
 
@@ -157,7 +174,7 @@ def enforce_ability_plan(bible, batch):
             continue
         row["core_required"] = True
         row["core_development"] = slot.get("core_development", {})
-        if isinstance(row.get("core_application"), str) and len(row["core_application"].strip()) >= 8:
+        if application_valid(row, slot.get("core_development", {})):
             continue
         development = slot.get("core_development", {})
         application = development.get("new_use") or str(core_source(bible).get("name", "核心能力"))
@@ -166,7 +183,7 @@ def enforce_ability_plan(bible, batch):
         goal = scene.get("goal") or row.get("opening_conflict") or "解决本章主要阻碍"
         causal = f"实际运用{application}，使{goal}得以实现；受{development.get('new_limit') or '圣经既有限制'}约束，并付出{development.get('new_cost') or '圣经既定代价'}。"
         row["core_application"] = causal
-        scene["choice"] = causal
+        scene.update(choice=causal, action=causal, result=f"因本阶段能力操作实现{goal}，保留具体代价")
         row["scenes"] = scenes
         row["core_plan_repair"] = dict(status="deterministic_plan_completion", authority="plan_not_observation")
     return result

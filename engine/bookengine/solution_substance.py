@@ -50,8 +50,13 @@ def normalize_noun(noun):
     )
 
 
-def solution_nouns(solution):
-    explicit = [solution.get(k) for k in ("target_noun", "method_noun", "solution_target", "solution_method")]
+def solution_nouns(solution, *, include_target=True):
+    fields = (
+        ("target_noun", "method_noun", "solution_target", "solution_method")
+        if include_target
+        else ("method_noun", "solution_method")
+    )
+    explicit = [solution.get(k) for k in fields]
     explicit = [n.strip() for n in explicit if isinstance(n, str) and 0 < len(n.strip()) <= 16]
     if explicit:
         return sorted({normalize_noun(n) for n in explicit})
@@ -79,13 +84,13 @@ def observe_solutions(raw, text):
 
 
 def chapter_nouns(row):
-    explicit = solution_nouns({k: row.get(k) for k in ("solution_target", "solution_method")})
-    if explicit:
-        return explicit
+    # Completed body observations supersede their old plan, including an Unknown observation.
+    if row.get("fact_source") != "final_body" and "solutions" not in row:
+        return solution_nouns({"solution_method": row.get("solution_method")}, include_target=False)
     solutions = rows(row.get("solutions"))
     primary = [s for s in solutions if s.get("primary") is True]
     chosen = primary[:1] or solutions[:1]
-    return sorted({noun for solution in chosen for noun in solution_nouns(solution)})
+    return sorted({noun for solution in chosen for noun in solution_nouns(solution, include_target=False)})
 
 
 def stage_key(bible, number):
@@ -122,9 +127,17 @@ def solution_issues(bible, history, batch):
         if stage is None:
             continue
         nouns = chapter_nouns(row)
-        if bible.get("plot_contract_version") and number in targets and not nouns:
+        if (
+            bible.get("plot_contract_version")
+            and number in targets
+            and (not row.get("solution_method") or not row.get("solution_target"))
+        ):
             issues.append(
-                dict(kind="solution_substance_missing", targets=[number], requirement="补作用对象和手段核心名词")
+                dict(
+                    kind="solution_substance_missing",
+                    targets=[number],
+                    requirement="分别补solution_target作用对象与solution_method手段核心名词，作用对象不占手段次数",
+                )
             )
         for noun in nouns:
             counts[stage, noun].append(number)

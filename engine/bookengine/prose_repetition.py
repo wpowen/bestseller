@@ -8,12 +8,11 @@ Re-run after any edit before passing positions to another repair/extraction roun
 Sentence IDs count this module's complete sentences, including isolated speech;
 map by span to precision._sentences IDs when using the existing amend protocol.
 
-Normalization is NFKC with whitespace/punctuation ignored; numeric signs and
-decimal points survive. Only complete sentences with >=10 normalized characters
-are grouped. Adjacent paragraphs with >=10 characters and SequenceMatcher ratio
->=0.85 are reported. Similar paragraphs with unique content are never deleted.
-Dependency checks are conservative lexical hints, not a semantic safety proof.
-``needs_repair`` supplies original sentence IDs/spans for the existing amend loop.
+Normalized (NFKC, punctuation-insensitive) repetition remains diagnostic.
+Only whitespace-identical narration is deleted. Speech is report-only; exact
+narration with a dependent following sentence is kept as Unknown. Near paragraph
+matches remain candidates for the bounded amend loop. Positions always refer to
+the original input, including separators removed with empty paragraphs.
 """
 
 from collections import defaultdict
@@ -27,9 +26,7 @@ from .text import _paragraph_spans
 _OPEN = {"“": "”", "「": "」", "『": "』", "‘": "’", '"': '"', "'": "'"}
 _CLOSE = set(_OPEN.values())
 _REFERENCE = re.compile(
-    r"[他她它您你我咱俺]|自己|对方|彼此|前者|后者|此人|那人|这人|"
-    r"[这那此其](?:个|些|位|名|件|枚|把|柄|条|种|一|句话|声音|动作|身影|东西|里|儿|边|处)|"
-    r"刚才|方才|上述|因此|于是|所以|随即|随后|接着|继而|仍然|依旧|又一次"
+    r"^(?:[他她它您你我咱俺这那此其]|自己|对方|彼此|前者|后者|刚才|方才|因此|于是|所以|随即|随后|接着|继而|仍然|依旧|又一次)"
 )
 # An omitted subject is unsafe even without an explicit pronoun. These common
 # action/connective openings are hints; uncertainty is handed to model repair.
@@ -37,9 +34,6 @@ _ELIDED = re.compile(
     r"^(?:抬|低|垂|转|回|侧|点|摇|伸|收|抽|拔|握|抓|拿|取|放|推|拉|踢|踹|走|跑|冲|追|退|躲|避|"
     r"望|看|听|笑|哭|喊|问|答|说|骂|咬|攥|摸|按|捂|抱|翻|掀|掷|跳|跃|扑|蹲|站|坐|起身|"
     r"然后|而后|却|便|就|才|又|也|还|仍|只|正|不禁|立刻|马上|终于|继续)"
-)
-_ATTRIBUTION = re.compile(
-    r"^[^。！？!?\r\n]{0,16}(?:说道?|问道?|答道?|喊道?|低声道|轻声道|提醒|嘀咕|嘟囔)[，,。！？!?]"
 )
 
 
@@ -74,8 +68,9 @@ def _position(text, start, end, paragraph, sentence_id=None):
 def _sentences(text, paragraphs):
     """Separate spoken sentences from attribution; include only balanced quotes."""
     result = []
+    quotes = []
     for paragraph, (left, right) in enumerate(paragraphs, 1):
-        start, i, quotes = left, left, []
+        start, i = left, left
         while i < right:
             char = text[i]
             if char in "'’" and i > left and i + 1 < right and re.fullmatch(r"[A-Za-z]{2}", text[i - 1] + text[i + 1]):
@@ -117,36 +112,27 @@ def _sentences(text, paragraphs):
     return result
 
 
-def _dependency_reasons(text, occurrence, sentences, paragraphs):
-    start, end = occurrence["start"], occurrence["end"]
-    reasons = []
-    neighbors = [node for node in sentences if node["end"] <= start or node["start"] >= end]
-    before = next((node for node in reversed(neighbors) if node["end"] <= start), None)
-    after = next((node for node in neighbors if node["start"] >= end), None)
-    # Also inspect unfinished fragments: they have no sentence ID but may still
-    # depend on the deleted sentence, or contain an attribution before speech.
-    before_gap = text[before["end"] if before else 0 : start].strip()
-    after_gap = text[end : after["start"] if after else len(text)].strip()
-    context = [node["text"] for node in (occurrence, before, after) if node] + [before_gap, after_gap]
-    if any(_REFERENCE.search(value) for value in context):
-        reasons.append("reference_dependency")
-    if after and _ELIDED.search(_normalize(after["text"])) or _ELIDED.search(_normalize(after_gap)):
-        reasons.append("subject_dependency")
-    if _ELIDED.search(_normalize(occurrence["text"])):
-        reasons.append("subject_dependency")
-    # Removing a spoken sentence must not strand its attribution or slice an
-    # ongoing quotation. Keep these for the existing extract/amend round.
-    paragraph_start, paragraph_end = paragraphs[occurrence["paragraph"] - 1]
-    prefix = text[paragraph_start:start].rstrip()
-    if prefix.endswith(("：", ":")) or occurrence.get("quoted") and before_gap:
-        reasons.append("dialogue_attribution")
-    if occurrence.get("whole_quote") and _ATTRIBUTION.search(text[end:paragraph_end].lstrip()):
-        reasons.append("dialogue_attribution")
-    if occurrence.get("quoted") and not occurrence.get("whole_quote"):
-        reasons.append("dialogue_context")
-    if end < len(text) and text[end] in _CLOSE:
-        reasons.append("unbalanced_quote")
-    return list(dict.fromkeys(reasons))
+def _exact(text):
+    return re.sub(r"\s+", "", text)
+
+
+def _dependency_reasons(text, occurrence, sentences, candidates):
+    # Check the next surviving sentence, not an earlier pronoun or the removed
+    # subject. Right-to-left evaluation protects dependencies in deletion chains.
+    end = occurrence["end"]
+    tail = text[end:]
+    for node in reversed(sentences):
+        if node["start"] >= end and (node["start"], node["end"]) in candidates:
+            a, b = node["start"] - end, node["end"] - end
+            tail = tail[:a] + tail[b:]
+    opening = tail.lstrip()
+    if opening and opening[0] in _CLOSE:
+        return ["unbalanced_quote"]
+    if _REFERENCE.search(opening):
+        return ["reference_dependency"]
+    if _ELIDED.search(opening):
+        return ["subject_dependency"]
+    return []
 
 
 def clean_repetitions(text, *, remove_safe=True):
@@ -155,8 +141,8 @@ def clean_repetitions(text, *, remove_safe=True):
     Each record has kind, normalized, count, repetitions and occurrences. Sentence
     counts are groups and excess occurrences; paragraph counts are adjacent pairs,
     so they must NOT be added to sentence counts (the same text can hit both).
-    Actions: reference (first), removed, repair (kept for amend), reported (safe
-    candidate in detection-only mode). ``removed`` contains disjoint original
+    Actions: reference, removed, repair (near match), reported, unknown. Speech
+    is reported only; Unknown exact narration is never handed to model repair. ``removed`` contains disjoint original
     spans only; every character outside those spans is preserved verbatim.
     """
     paragraphs = _paragraph_spans(text)
@@ -165,27 +151,57 @@ def clean_repetitions(text, *, remove_safe=True):
     for node in sentences:
         key = _normalize(node["text"])
         if len(key) >= 10:
-            groups[key].append(node)
+            groups[(key, node["quoted"])].append(node)
     records, candidates = [], []
+    exact_candidates = set()
+    for (_, quoted), nodes in groups.items():
+        seen = set()
+        for node in nodes:
+            key = _exact(node["text"])
+            if key in seen and not quoted:
+                exact_candidates.add((node["start"], node["end"]))
+            seen.add(key)
+    unsafe = {}
+    for node in reversed(sentences):
+        span = (node["start"], node["end"])
+        if span in exact_candidates:
+            reasons = _dependency_reasons(text, node, sentences, exact_candidates)
+            if reasons:
+                unsafe[span] = reasons
+                exact_candidates.remove(span)
 
-    def decide(node, unique=False):
+    def decide(node, *, exact=False, quoted=False, unique=False):
         node = dict(node)
-        reasons = ["unique_content"] if unique else _dependency_reasons(text, node, sentences, paragraphs)
-        node["reasons"] = reasons
-        node["action"] = "repair" if reasons else "removed" if remove_safe else "reported"
+        span = (node["start"], node["end"])
+        reasons = unsafe.get(span, []) if exact else ["unique_content"] if unique else ["non_exact_match"]
+        if quoted:
+            node.update(action="reported", reasons=["对白重复，可能有意"])
+        elif exact and reasons:
+            node.update(action="unknown", status="Unknown", reasons=reasons)
+        elif exact:
+            node.update(action="removed" if remove_safe else "reported", reasons=[])
+        else:
+            node.update(action="repair", reasons=reasons)
         if node["action"] == "removed":
-            candidates.append((node["start"], node["end"]))
+            candidates.append(span)
         return node
 
-    for key, nodes in groups.items():
+    for (key, quoted), nodes in groups.items():
         if len(nodes) > 1:
+            seen = {_exact(nodes[0]["text"])}
+            occurrences = [dict(nodes[0])]
+            for node in nodes[1:]:
+                exact = _exact(node["text"]) in seen
+                occurrences.append(decide(node, exact=exact, quoted=quoted))
+                seen.add(_exact(node["text"]))
             records.append(
                 dict(
                     kind="sentence",
                     normalized=key,
+                    quoted=quoted,
                     count=len(nodes),
                     repetitions=len(nodes) - 1,
-                    occurrences=[dict(nodes[0])] + [decide(node) for node in nodes[1:]],
+                    occurrences=occurrences,
                 )
             )
     for index in range(1, len(paragraphs)):
@@ -204,10 +220,27 @@ def clean_repetitions(text, *, remove_safe=True):
                     repetitions=1,
                     occurrences=[
                         _position(text, *a, index),
-                        decide(_position(text, *b, index + 1), unique=first != second),
+                        dict(_position(text, *b, index + 1), action="reported", reasons=["sentence_checks_only"])
+                        if any(
+                            n.get("quoted") or (n["start"], n["end"]) in unsafe
+                            for n in sentences
+                            if a[0] <= n["start"] < b[1]
+                        )
+                        or _exact(text[a[0] : a[1]]) == _exact(text[b[0] : b[1]])
+                        else decide(_position(text, *b, index + 1), unique=True),
                     ],
                 )
             )
+
+    # Expand actual removal spans to include separators of emptied paragraphs;
+    # surviving paragraphs retain their original bytes.
+    for index, (left, right) in enumerate(paragraphs):
+        rest = text[left:right]
+        for a, b in reversed(sorted(candidates)):
+            if left <= a and b <= right:
+                rest = rest[: a - left] + rest[b - left :]
+        if not rest.strip():
+            candidates.append((left, paragraphs[index + 1][0] if index + 1 < len(paragraphs) else right))
 
     # A paragraph proposal may contain several sentence proposals. Merge ranges
     # once, without ever stripping whitespace or rebuilding untouched paragraphs.
@@ -236,6 +269,9 @@ def clean_repetitions(text, *, remove_safe=True):
         counts=dict(
             repeated_sentences=len(sentence_records),
             sentence_repetitions=sum(record["repetitions"] for record in sentence_records),
+            narrative_repetitions=sum(r["repetitions"] for r in sentence_records if not r["quoted"]),
+            dialogue_repetitions=sum(r["repetitions"] for r in sentence_records if r["quoted"]),
+            unknown_spans=sum(n["action"] == "unknown" for r in sentence_records for n in r["occurrences"]),
             adjacent_paragraph_pairs=len(records) - len(sentence_records),
             removed_spans=len(spans),
             repair_spans=len(pending),

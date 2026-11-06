@@ -74,27 +74,26 @@ def test_embedded_dialogue_is_a_complete_sentence_but_attribution_is_not_deleted
     record = records_of(result, "sentence")[0]
     assert record["count"] == 2
     assert result["cleaned"] == text
-    assert record["occurrences"][1]["action"] == "repair"
-    assert "dialogue_attribution" in record["occurrences"][1]["reasons"]
+    assert record["occurrences"][1]["action"] == "reported"
+    assert "对白重复，可能有意" in record["occurrences"][1]["reasons"]
+    assert not result["needs_repair"]
 
 
 @pytest.mark.parametrize(
     "before,repeated,after",
     [
         ("李青转身走向了帐篷。", "张岚从东侧山谷走回了营地。", "他随即拔刀。"),
-        ("他正站在门外。", "张岚从东侧山谷走回了营地。", "营地的火堆熄了。"),
-        ("营地的火堆熄了。", "他从东侧山谷走回了旧营地。", "张岚抬起头。"),
         ("营地的火堆熄了。", "张岚从东侧山谷走回了营地。", "抬手推开了大门。"),
         ("营地的火堆熄了。", "张岚从东侧山谷走回了营地。", "这句话让李青怔住了。"),
         ("营地的火堆熄了。", "张岚从东侧山谷走回了营地。", "随即拔刀迎了上去。"),
     ],
 )
-def test_subject_or_reference_dependency_is_queued_for_repair(before, repeated, after):
+def test_following_subject_or_reference_dependency_is_unknown(before, repeated, after):
     text = repeated + "\n\n" + before + repeated + after
     result = clean_repetitions(text)
     assert result["cleaned"] == text
-    assert result["needs_repair"]
-    assert records_of(result, "sentence")[0]["occurrences"][1]["action"] == "repair"
+    assert not result["needs_repair"]
+    assert records_of(result, "sentence")[0]["occurrences"][1]["action"] == "unknown"
 
 
 def test_highly_similar_adjacent_paragraphs_keep_unique_content_for_repair():
@@ -114,8 +113,8 @@ def test_exact_adjacent_paragraph_deletion_has_no_overlapping_sentence_edits():
     paragraph = "远处的钟声越过山谷传进营地。河边的篝火燃成了一片暗红。"
     text = paragraph + "\n\n" + paragraph + "\n\n" + paragraph
     result = clean_repetitions(text)
-    assert result["cleaned"] == paragraph + "\n\n\n\n"
-    assert len(result["removed"]) == 2
+    assert result["cleaned"] == paragraph + "\n\n"
+    assert len(result["removed"]) == 1
     assert result["counts"]["sentence_repetitions"] == 4
     assert not result["needs_repair"]
 
@@ -126,11 +125,12 @@ def test_nonadjacent_near_paragraphs_are_not_flagged():
     assert not records_of(clean_repetitions(text), "paragraph")
 
 
-def test_dialogue_quote_pairs_survive_deletion_of_a_safe_standalone_quote():
+def test_standalone_dialogue_remains_report_only():
     quote = "山谷里的那座旧营地已经空了。"
     text = f"“{quote}”\n\n山口的旗帜忽然倒向了东边。\n\n“{quote}”"
     result = clean_repetitions(text)
-    assert result["cleaned"] == f"“{quote}”\n\n山口的旗帜忽然倒向了东边。\n\n"
+    assert result["cleaned"] == text
+    assert not result["needs_repair"]
 
 
 def test_eval_33_opening_shape_detects_both_copied_sentences():
@@ -156,7 +156,7 @@ def test_incomplete_dependencies_and_unpunctuated_attribution_are_kept(later):
     text = "“山谷里的那座旧营地已经空了。”\n\n" + later
     result = clean_repetitions(text)
     assert result["cleaned"] == text
-    assert result["needs_repair"]
+    assert not result["needs_repair"]
 
 
 def test_deletion_ranges_reconstruct_output_and_repeated_runs_are_deterministic():
@@ -177,15 +177,15 @@ def test_other_balanced_quote_styles_are_never_left_dangling(left, right):
     sentence = "山谷里的那座旧营地已经空了。"
     first = left + sentence + right
     text = first + "\n\n山口的旗帜忽然倒向了东边。\n\n" + first
-    assert clean_repetitions(text)["cleaned"] == text[: -len(first)]
+    assert clean_repetitions(text)["cleaned"] == text
 
 
-def test_malformed_closing_quote_is_kept_for_repair():
+def test_malformed_closing_quote_is_kept_as_unknown():
     sentence = "山谷里的那座旧营地已经空了。"
     text = sentence + "\n\n山口的旗帜忽然倒向了东边。\n\n" + sentence + "”"
     result = clean_repetitions(text)
     assert result["cleaned"] == text
-    assert result["needs_repair"]
+    assert not result["needs_repair"]
 
 
 def test_decimal_values_do_not_merge_with_integer_values():

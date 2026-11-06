@@ -417,6 +417,8 @@ def check_book(book, *, source="final"):
         ),
         repetition=dict(
             sentence_repetitions=sum(r["counts"]["sentence_repetitions"] for r in repetitions),
+            narrative_repetitions=sum(r["counts"]["narrative_repetitions"] for r in repetitions),
+            dialogue_repetitions=sum(r["counts"]["dialogue_repetitions"] for r in repetitions),
             adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
             chapters=[r for r in repetitions if r["records"]],
         ),

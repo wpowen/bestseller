@@ -34,6 +34,18 @@ def address_rows(bible):
             yield dict(speaker=card.get("name"), name=target, address=label, origin=origin, known=target in names)
 
 
+# Plain kinship and teacher terms are ordinary speech, not nicknames that need
+# an origin story; an unrelated prefix such as "砚哥" still does.
+_PLAIN_ADDRESSES = frozenset(
+    "哥 哥哥 大哥 二哥 姐 姐姐 大姐 二姐 弟 弟弟 妹 妹妹 爹 娘 爸 妈 父亲 母亲 爷爷 奶奶 叔 伯 舅舅 姑姑 "
+    "师父 师傅 师兄 师姐 师弟 师妹".split()
+)
+
+
+def plain_address(label):
+    return label in _PLAIN_ADDRESSES
+
+
 def derived_address(label, name):
     if not isinstance(name, str) or not name:
         return False
@@ -51,10 +63,13 @@ def address_issues(bible):
     issues = [
         dict(row, kind="address_origin", message="称呼须从目标姓名派生，否则填写address_origin并在首次使用章交代")
         for row in rows
-        if not row["known"] or not derived_address(row["address"], row["name"]) and not _origin(row["origin"])
+        if not row["known"]
+        or not derived_address(row["address"], row["name"])
+        and not plain_address(row["address"])
+        and not _origin(row["origin"])
     ]
     for row in rows:
-        if derived_address(row["address"], row["name"]) or not _origin(row["origin"]):
+        if derived_address(row["address"], row["name"]) or plain_address(row["address"]) or not _origin(row["origin"]):
             continue
         for speaker in _originators(row, bible.get("characters", [])):
             owned = [r for r in rows if r["speaker"] == speaker]
@@ -123,7 +138,7 @@ def _explanation(text, label, origin):
 def _first_use_check(row, corpus, complete):
     label = row["address"]
     first_use = min((n for n, text in corpus.items() if label in text), default=None)
-    if first_use is None or row["known"] and derived_address(label, row["name"]):
+    if first_use is None or row["known"] and (derived_address(label, row["name"]) or plain_address(label)):
         return None
     text = corpus[first_use]
     start = text.index(label)

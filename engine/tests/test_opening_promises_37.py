@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bookengine.opening_promises import opening_contract, review_opening, repair_opening_promises
-from bookengine.address_contracts import address_issues, address_findings, repair_addresses
+from bookengine.address_contracts import address_rows, address_issues, address_findings, repair_addresses
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures/promise37/eval33.json").read_text())
 
@@ -49,6 +49,38 @@ def test_real_eval33_address_must_have_origin_even_if_in_card():
     assert any(i["address"] == "阿砺" for i in issues)
     found = address_findings(FIXTURE["chapter2_address"], bible(), {})
     assert any(i["address"] == "砺哥" and i["status"] != "Evidence" for i in found)
+
+
+@pytest.mark.parametrize("name,label", [("陆以宁", "以宁"), ("赵听禾", "阿禾"), ("王见微", "微姐")])
+def test_implicit_self_derived_address_does_not_inherit_other_character_target(name, label):
+    b = dict(
+        characters=[
+            dict(name="陆亦衡", role="protagonist", address="亦衡"),
+            dict(name=name, role="support", address=label),
+        ]
+    )
+    before = deepcopy(b)
+    row = next(r for r in address_rows(b) if r["speaker"] == name)
+    assert row["name"] == name
+    assert not address_issues(b)
+    assert not address_findings(label + "走了。", b, {})
+    repaired, note = repair_addresses(b, lambda *a: pytest.fail("self-derived address needs no model"))
+    assert repaired == b == before and note["status"] == "passed"
+
+
+def test_explicit_target_wins_and_unrelated_legacy_address_still_targets_lead():
+    b = bible()
+    legacy = next(r for r in address_rows(b) if r["speaker"] == "陆初棠")
+    assert (legacy["name"], legacy["address"]) == ("沈亦衡", "砺哥")
+    assert any(i["speaker"] == "陆初棠" and i["address"] == "砺哥" for i in address_issues(b))
+    b = dict(
+        characters=[
+            dict(name="陆亦衡", role="protagonist"),
+            dict(name="陆以宁", role="support", address="以宁", address_target="陆亦衡"),
+        ]
+    )
+    assert next(r for r in address_rows(b) if r["speaker"] == "陆以宁")["name"] == "陆亦衡"
+    assert address_issues(b)
 
 
 def test_name_derived_and_address_origin_first_use_in_later_chapter():

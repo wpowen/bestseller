@@ -16,9 +16,18 @@ def address_rows(bible):
             label = label.strip()
             if not label:
                 continue
-            # Historical address describes how the speaker addresses the lead;
-            # it must never register the speaker as the owner of that alias.
-            target = card.get("address_target") or (label if label in names else lead or card.get("name"))
+            # Old cards mix a person's own address with their address for the
+            # lead. Prefer self derivation before that legacy lead fallback;
+            # an explicit target always owns the interpretation.
+            target = card.get("address_target")
+            if not target:
+                target = (
+                    card.get("name")
+                    if derived_address(label, card.get("name"))
+                    else label
+                    if label in names
+                    else lead or card.get("name")
+                )
             origin = card.get("address_origin", "")
             origin = origin.get(label, "") if isinstance(origin, dict) else origin
             yield dict(speaker=card.get("name"), name=target, address=label, origin=origin, known=target in names)

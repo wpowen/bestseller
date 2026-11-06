@@ -187,6 +187,8 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),
             present=state.get("present", []),
+            end_pov=state.get("end_pov"),
+            pov_locations=state.get("pov_locations", {}),
             rule=OPENING_RULE,
         )
     return [
@@ -377,6 +379,9 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制末场含其原名的叙述句，"
         "不能用不含人物名的纯对白，且引文必须在末尾1200字符内。"
         "提到但不在场者不列；不从旧状态或章纲推测。"
+        "opening_pov/end_pov抽取开头/结尾的视角人物，opening_pov_quote/end_pov_quote复制对应含姓名的逐字叙述；"
+        "不要把仅被提及者当视角，不确定填null。character_locations只列有逐字引文证明其当前地点的人物，"
+        "每项name/location/quote，按正文时间顺序；回忆、计划和对白中的地点不算。"
     )
     if not final:
         prompt += (
@@ -406,6 +411,11 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             end_quote=None,
             present=[],
             present_quotes={},
+            opening_pov=None,
+            opening_pov_quote=None,
+            end_pov=None,
+            end_pov_quote=None,
+            character_locations=[],
         )
     )
     saved = client.prefix

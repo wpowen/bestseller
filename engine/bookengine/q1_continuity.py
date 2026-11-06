@@ -6,6 +6,7 @@ import re
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
 from .handoff_places import same_place
+from .boundary_state import handoff_reference, advance_boundary_state
 
 
 OPENING_RULE = (
@@ -51,10 +52,37 @@ def boundary_facts(raw, text):
     result["present_status"] = (
         "grounded" if isinstance(present, list) and len(result["present"]) == len(present) else "unknown"
     )
+    for side, passage in (("opening", opening), ("end", ending)):
+        name, quote = raw.get(side + "_pov"), raw.get(side + "_pov_quote")
+        valid = (
+            isinstance(name, str)
+            and bool(name)
+            and isinstance(quote, str)
+            and bool(quote)
+            and name in quote
+            and quote in passage
+        )
+        result[side + "_pov"] = name if valid else None
+        result[side + "_pov_quote"] = quote if valid else None
+    result["character_locations"] = (
+        [
+            row
+            for row in raw.get("character_locations", [])
+            if isinstance(row, dict)
+            and all(isinstance(row.get(k), str) and row[k] for k in ("name", "location", "quote"))
+            and row["name"] in row["quote"]
+            and row["location"] in row["quote"]
+            and row["quote"] in text
+        ]
+        if isinstance(raw.get("character_locations"), list)
+        else []
+    )
     return result
 
 
 def opening_issue(previous, facts, text, bible=None):
+    if previous.get("end_pov") or previous.get("pov_locations"):
+        previous = handoff_reference(previous, facts)
     old, new = previous.get("end_location"), facts.get("opening_location")
     if not old or not new or same_place(old, new, bible, previous.get("known_locations", [])):
         return None
@@ -86,6 +114,26 @@ def opening_patch(text, raw):
     return "\n\n".join(p.strip() for p in paragraphs) + text[spans[count - 1][1] :]
 
 
+def evaluate_handoff(state, facts, text, bible, outline):
+    """Shared repair/diagnostic standard, retaining Unknown rather than inventing a route."""
+    reference = handoff_reference(state, facts)
+    transition = stage_transition(bible, outline.get("number"), text, reference.get("end_location"), outline=outline)
+    issue = opening_issue(reference, facts, text, bible)
+    if transition and transition["issue"]:
+        issue = transition
+    elif transition and transition["status"] == "present":
+        issue = None
+    missing = [k for k in ("opening_location", "end_location") if not facts.get(k)]
+    if outline.get("number", 0) > 1 and not reference.get("end_location"):
+        missing.append("pov_location" if reference["basis"] == "viewpoint_last_location" else "previous_end")
+    if "pov_location" in missing:
+        issue = None
+    note = dict(status="handoff_unknown" if missing else "checked", issue=issue, missing=missing, reference=reference)
+    if transition:
+        note["transition"] = transition
+    return note
+
+
 def repair_opening(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     facts = boundary_facts(raw, text)
     retried = not facts["opening_location"] or not facts["end_location"]
@@ -98,7 +146,9 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
                 client,
                 prefix + "-boundary-reextract",
                 "只重抽开头与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
-                "找不到返回null。present仅列结尾实际在场者并逐人引文。返回JSON。",
+                "找不到返回null。present仅列结尾实际在场者并逐人引文。"
+                "opening_pov/end_pov分别为开头/结尾视角人物，附opening_pov_quote/end_pov_quote逐字引文，"
+                "不把仅被提及者当视角，不确定填null。返回JSON。",
                 [("开头", text[:1200]), ("结尾", text[-1200:])],
                 '{"opening_location":null,"opening_quote":null,"end_location":null,"end_quote":null}',
                 cap=1200,
@@ -116,28 +166,18 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
                     raw.update(
                         {side + "_location": recovered[side + "_location"], side + "_quote": recovered[side + "_quote"]}
                     )
+                if not facts.get(side + "_pov") and recovered.get(side + "_pov"):
+                    raw = dict(
+                        raw,
+                        **{
+                            side + "_pov": recovered[side + "_pov"],
+                            side + "_pov_quote": recovered[side + "_pov_quote"],
+                        },
+                    )
             facts = boundary_facts(raw, text)
-    transition = stage_transition(bible, outline.get("number"), text, state.get("end_location"), outline=outline)
-    issue = transition if transition and transition["issue"] else opening_issue(state, facts, text, bible)
-    if transition and transition["status"] == "present":
-        issue = None
-    known = (
-        bool(facts.get("opening_location") and state.get("end_location"))
-        or (transition and transition["status"] != "unknown")
-        or bool(outline.get("number") == 1 and facts.get("opening_location") and facts.get("end_location"))
-    )
-    note = dict(
-        status="checked" if known else "unknown",
-        issue=issue,
-    )
+    note = evaluate_handoff(state, facts, text, bible, outline)
+    transition, issue = note.get("transition"), note["issue"]
     note["boundary_retried"] = retried
-    note["missing"] = [k for k in ("opening_location", "end_location") if not facts[k]]
-    if outline.get("number", 0) > 1 and not state.get("end_location"):
-        note["missing"].append("previous_end")
-    if note["missing"]:
-        note["status"] = "handoff_unknown"
-    if transition:
-        note["transition"] = transition
     if not issue:
         return text, raw, failed, facts, note
     spans = _paragraph_spans(text)
@@ -157,6 +197,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
                 json.dumps(
                     dict(
                         previous_end=state.get("end_location"),
+                        reference=note["reference"],
                         present=state.get("present", []),
                         opening_location=facts.get("opening_location"),
                     ),
@@ -178,18 +219,19 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             client, prefix + "-opening-recheck", candidate, state, bible, outline, [], final=True
         )
         observed = boundary_facts(checked, candidate)
-        rechecked = stage_transition(
-            bible, outline.get("number"), candidate, state.get("end_location"), outline=outline
-        )
+        assessment = evaluate_handoff(state, observed, candidate, bible, outline)
+        rechecked = assessment.get("transition")
         from .checks import high_confidence
 
         continuous = (
             rechecked["status"] == "present"
             if transition and transition["status"] == "missing" and rechecked
-            else bool(observed.get("opening_location")) and not opening_issue(state, observed, candidate, bible)
+            else bool(observed.get("opening_location"))
+            and not assessment["issue"]
+            and "pov_location" not in assessment["missing"]
         )
         if not invalid and continuous and not high_confidence(state, checked.get("events", []), candidate):
-            repaired = dict(note, status="repaired")
+            repaired = dict(note, status="repaired", recheck=assessment)
             if rechecked:
                 repaired["transition"] = rechecked
             return candidate, checked, False, observed, repaired

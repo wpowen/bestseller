@@ -3,9 +3,10 @@
 from collections import Counter, defaultdict
 import math
 
-from .core_ability import core_source, verify_core_use, development_issues
+from .core_ability import core_source, development_issues
 from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
 from .ability_methods import partition_methods, primary_target
+from .core_evidence import read_core_use
 
 
 def plot_findings(bible, chapters):
@@ -45,7 +46,9 @@ def plot_findings(bible, chapters):
         )
         saved = meta.get("core_use")
         raw = saved.get("raw", {}) if isinstance(saved, dict) else {}
-        ability.append(dict(chapter=number, **verify_core_use(raw, text, bible)))
+        ability.append(
+            dict(chapter=number, **read_core_use(raw, text, bible, chapter.get("core_plan", meta.get("core_plan"))))
+        )
         kind = meta.get("type") if isinstance(meta.get("type"), str) else "Unknown"
         kind = "关系" if kind == "情感" else kind
         type_counts[kind] += 1
@@ -138,6 +141,9 @@ def plot_findings(bible, chapters):
             verified_chapters=verified,
             unknown_chapters=unknown,
             not_decisive_chapters=[r["chapter"] for r in ability if r["status"] == "not_decisive"],
+            unknown_reasons=dict(
+                Counter(r.get("unknown_reason", "unclassified") for r in ability if r["status"] == "unknown")
+            ),
             ratio=len(verified) / len(chapters) if chapters else None,
             stages=ability_stages,
             chapters=ability,

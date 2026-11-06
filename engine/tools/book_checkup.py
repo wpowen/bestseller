@@ -105,6 +105,12 @@ def _chapters(book, source, unknown):
         if observed is not None:
             chapter["meta"] = dict(meta, solutions=observed["solutions"], core_use=observed["core_use"])
             chapter["plot_observation"] = dict(source=observed_source, authority=observed["authority"])
+        outline_path = book / f"writing_outlines/{n:03d}.json"
+        if outline_path.is_file():
+            plan = _read(outline_path, unknown)
+            chapter["core_plan"] = {
+                k: plan[k] for k in ("number", "core_required", "core_application", "core_development") if k in plan
+            }
         result.append(chapter)
     return result
 

@@ -59,7 +59,7 @@ function renderDetail(selected = tab) {
   for (const c of chapters()) {
    const a = c.final ? link(`第 ${c.number} 章　${c.title}`, readURL(b.id, c.number)) : el('span', `第 ${c.number} 章　${c.title}`, 'muted');
    a.append(
-    el('small', `${c.deai_notice || (c.final ? '终稿' : c.draft ? '正在去 AI' : '未写')} · ${count(c.words)} 字`),
+    el('small', `${c.final ? '终稿' : '准备中'} · ${count(c.words)} 字`),
    );
    grid.append(a);
   }

@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from .quote_text import literal_quote
+from .ability_methods import partition_methods, primary_target
 
 # Stable families across genres, extended by explicit quote-grounded extracted nouns.
 FAMILIES = {
@@ -116,20 +117,50 @@ def solution_context(bible, history, start):
         n
         for r in history
         if stage is not None and stage_key(bible, r.get("number", 0)) == stage and r.get("number", 0) < start
-        for n in chapter_nouns(r)
+        for n in partition_methods(bible, chapter_nouns(r))[0]
     )
-    return dict(recent_ten=recent, stage_counts=dict(counts), stage_cap=3)
+    ability_counts = Counter(
+        (primary_target(r), partition_methods(bible, chapter_nouns(r))[1])
+        for r in history
+        if stage is not None
+        and stage_key(bible, r.get("number", 0)) == stage
+        and r.get("number", 0) < start
+        and primary_target(r)
+        and partition_methods(bible, chapter_nouns(r))[1]
+    )
+    return dict(
+        recent_ten=recent,
+        stage_counts=dict(counts),
+        stage_cap=3,
+        ability_cap=2,
+        ability_counts=[dict(target=t, combination=list(c), count=n) for (t, c), n in ability_counts.items()],
+    )
 
 
 def solution_issues(bible, history, batch):
     combined = {r["number"]: r for r in [*history, *batch] if type(r.get("number")) is int}
     targets = {r["number"] for r in batch}
-    counts, issues = defaultdict(list), []
+    counts, ability_counts, issues = defaultdict(list), defaultdict(list), []
     for number, row in sorted(combined.items()):
         stage = stage_key(bible, number)
         if stage is None:
             continue
-        nouns = chapter_nouns(row)
+        nouns, combo = partition_methods(bible, chapter_nouns(row))
+        target = primary_target(row)
+        if combo and target:
+            used = ability_counts[stage, target, combo]
+            used.append(number)
+            if len(used) > 2 and number in targets:
+                issues.append(
+                    dict(
+                        kind="ability_repetition",
+                        stage=stage,
+                        target=target,
+                        combination=list(combo),
+                        chapters=list(used),
+                        targets=[number],
+                    )
+                )
         if (
             bible.get("plot_contract_version")
             and number in targets

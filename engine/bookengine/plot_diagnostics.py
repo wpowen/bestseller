@@ -5,11 +5,13 @@ import math
 
 from .core_ability import core_source, verify_core_use, development_issues
 from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
+from .ability_methods import partition_methods, primary_target
 
 
 def plot_findings(bible, chapters):
     distribution, stage_nouns, noun_chapters = Counter(), defaultdict(lambda: defaultdict(list)), []
     targets = Counter()
+    ability_distribution, ability_groups, ability_applications = Counter(), defaultdict(list), []
     ability, type_counts, confrontations, current = [], Counter(), [], []
     previous = None
     for chapter in chapters:
@@ -17,6 +19,17 @@ def plot_findings(bible, chapters):
         # Deliberately exclude solution_target/method plans from observed statistics.
         observed = observe_solutions(dict(solutions=meta.get("solutions", [])), text)
         nouns = chapter_nouns(observed)
+        nouns, combo = partition_methods(bible, nouns)
+        target = primary_target(observed)
+        ability_distribution.update(combo)
+        if combo:
+            ability_applications.append(
+                dict(
+                    chapter=number, combination=list(combo), target=target, status="Inference" if target else "Unknown"
+                )
+            )
+            if target and stage_key(bible, number) is not None:
+                ability_groups[stage_key(bible, number), target, combo].append(number)
         distribution.update(nouns)
         targets.update({s["target_noun"] for s in observed["solutions"] if s.get("target_noun")})
         stage = stage_key(bible, number)
@@ -101,6 +114,26 @@ def plot_findings(bible, chapters):
             basis="primary solution content and grounded extracted nouns; legacy surface family inference",
         ),
         core_ability=dict(
+            applications=dict(
+                distribution=dict(sorted(ability_distribution.items())),
+                cap=2,
+                chapters=ability_applications,
+                excess=[
+                    dict(
+                        stage=stage,
+                        target=target,
+                        combination=list(combo),
+                        chapters=ns,
+                        excess_chapters=ns[2:],
+                        count=len(ns),
+                        cap=2,
+                        status="Inference",
+                    )
+                    for (stage, target, combo), ns in ability_groups.items()
+                    if len(ns) > 2
+                ],
+                basis="literal declared powers + saved target nouns; target synonyms remain Unknown",
+            ),
             source=core_source(bible),
             verified_chapters=verified,
             unknown_chapters=unknown,

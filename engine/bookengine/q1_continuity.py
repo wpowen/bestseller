@@ -5,7 +5,7 @@ import re
 
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
-from .handoff_places import same_place, location_table
+from .handoff_places import same_place, location_table, mentioned_place, quoted_departure
 from .boundary_state import handoff_reference, with_ending_candidate
 from .boundary_state import advance_boundary_state as advance_boundary_state
 
@@ -13,6 +13,7 @@ from .boundary_state import advance_boundary_state as advance_boundary_state
 OPENING_RULE = (
     "开头300字内：写出从参考地点到本章地点的移动过程；或者写出明确的时间或场景切换并交代本章地点。"
     "如‘抵达本章地点时’的入场时间句也可明确切换场景。同一处地点的不同说法可直接承接。"
+    "同处的上方、门廊下等局部方位可直接承接；从上章末场引文中已有的具体位置起身继续移动也可承接。"
     "不臆造人物曾在上章末场；参考视角位置未知时明确本章地点。"
 )
 
@@ -90,7 +91,11 @@ def opening_issue(previous, facts, text, bible=None):
     quotes = _transition_quotes(opening)
     places = location_table(bible or {}, [old, *previous.get("known_locations", [])])["names"]
     if new in opening and any(
-        any(same_place(old, place, bible) and place in q for place in places)
+        any(
+            same_place(old, place, bible) and mentioned_place(old if old.startswith(place) else place, q)
+            for place in places
+        )
+        or quoted_departure(previous, q)
         or _ELAPSED.search(q)
         or _SCENE.search(q)
         or re.search(r"(?:追进|赶到|抵达|钻进|拐进|回到)" + re.escape(new) + r"时[，,]", q)

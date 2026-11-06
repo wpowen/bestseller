@@ -4,6 +4,7 @@ from collections import Counter
 
 from .address_contracts import address_issues
 from .cost_design import cost_issues
+from .opening_promises import _positive_quote
 
 
 def design_findings(bible, chapters):
@@ -35,6 +36,7 @@ def design_findings(bible, chapters):
                     and isinstance(e.get("quote"), str)
                     and e["quote"].strip()
                     and e["quote"] in corpus.get(e["chapter"], "")
+                    and _positive_quote(e["quote"], item.get("kind"))
                     for e in evidence
                 ):
                     status = "unknown"

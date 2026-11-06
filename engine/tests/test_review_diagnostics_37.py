@@ -35,3 +35,26 @@ def test_saved_promise_notes_remain_reference_with_sources(tmp_path):
     )
     actual = check_book(tmp_path, source="draft")["review_contracts"]["opening_promises"]
     assert actual["counts"] == {"unknown": 1}
+
+
+def test_saved_short_proof_is_not_promoted_after_current_guard_changes(tmp_path):
+    (tmp_path / "chapters").mkdir()
+    (tmp_path / "chapter-001.body.md").write_text("叮。")
+    (tmp_path / "chapters/001.json").write_text(
+        json.dumps(
+            dict(
+                opening_promises=dict(
+                    status="checked",
+                    after=dict(
+                        items=[
+                            dict(
+                                id="core-1", kind="core_use", status="fulfilled", evidence=[dict(chapter=1, quote="叮")]
+                            )
+                        ]
+                    ),
+                )
+            )
+        )
+    )
+    result = check_book(tmp_path, source="draft")["review_contracts"]["opening_promises"]
+    assert result["counts"] == {"unknown": 1}

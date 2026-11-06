@@ -72,20 +72,24 @@ def test_repair_rechecks_and_rolls_back_instead_of_adopting_unchecked_text():
     text = "林舟在驿站吃饭。\n\n第二段。\n\n后文不能变。"
     raw = dict(opening_location="驿站", opening_quote="林舟在驿站吃饭。")
     state = dict(end_location="石桥", present=["林舟"])
-    replacement = "林舟离开石桥，走进驿站吃饭。"
-    patch = dict(replace_count=1, paragraphs=[replacement])
-
-    def ask(*args, **kwargs):
-        return patch
-
     for invalid in (False, True):
+        replacement = "林舟换了一只饭碗。" if invalid else "林舟离开石桥，走进驿站吃饭。"
+
+        def ask(client, name, *args, **kwargs):
+            if name.endswith("-opening-repair"):
+                return dict(replace_count=1, paragraphs=[replacement])
+            if name.endswith("-opening-boundary-recheck"):
+                return dict(opening_location="驿站", opening_quote=replacement)
+            return {}
 
         def extract(*args, **kwargs):
-            return dict(opening_location="驿站", opening_quote=replacement, events=[]), invalid, 0
+            raise AssertionError("Opening recheck must not extract whole-chapter state")
 
         actual, _, _, _, note = repair_opening(None, "ch2", text, raw, False, state, {}, {}, extract, ask)
         assert note["status"] == ("rolled_back" if invalid else "repaired")
         assert actual == (text if invalid else replacement + text[len(text.split("\n\n")[0]) :])
+        if invalid:
+            assert note["rollback_reason"] == "opening_still_disconnected"
 
 
 def test_end_observation_is_saved_from_adopted_body():

@@ -328,6 +328,7 @@ def check_book(book, *, source="final"):
     from bookengine.prose_repetition import clean_repetitions
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
+    from bookengine.plot_diagnostics import plot_findings
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -358,6 +359,7 @@ def check_book(book, *, source="final"):
         source_preference=source,
         chapter_count=len(chapters),
         review_contracts=design_findings(bible, chapters),
+        **plot_findings(bible, chapters),
         sources={str(c["number"]): c["path"] for c in chapters},
         stages=stages,
         antagonists=_opponents(bible, chapters, stages["distribution"]),

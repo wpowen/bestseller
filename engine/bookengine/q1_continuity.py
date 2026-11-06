@@ -189,7 +189,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             facts = boundary_facts(raw, text)
     facts = with_ending_candidate(facts, text, bible, state)
     note = evaluate_handoff(state, facts, text, bible, outline)
-    transition, issue = note.get("transition"), note["issue"]
+    issue = note["issue"]
     note["boundary_retried"] = retried
     if not issue:
         return text, raw, failed, facts, note
@@ -228,43 +228,14 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     candidate = opening_patch(text, patch if isinstance(patch, dict) else {})
     reason = "invalid_or_unchanged_patch"
     if candidate != text:
-        checked, invalid, _ = extract(
-            client, prefix + "-opening-recheck", candidate, state, bible, outline, [], final=True
-        )
-        observed = boundary_facts(checked, candidate)
-        assessment = evaluate_handoff(state, observed, candidate, bible, outline)
-        rechecked = assessment.get("transition")
-        from .checks import high_confidence
-        from .prose_repetition import clean_repetitions
+        from .opening_recheck import recheck_opening
 
-        continuous = (
-            not assessment["issue"]
-            and "pov_location" not in assessment["missing"]
-            and (
-                rechecked["status"] == "present"
-                if transition and transition["status"] == "missing" and rechecked
-                else bool(observed.get("opening_location"))
-            )
+        checked, observed, assessment, reason = recheck_opening(
+            client, prefix, text, candidate, patch, raw, facts, state, bible, outline, note, ask
         )
-        lost = any(facts.get(k) and not observed.get(k) for k in ("opening_location", "end_location"))
-        before = clean_repetitions(text, remove_safe=False)["counts"]
-        after = clean_repetitions(candidate, remove_safe=False)["counts"]
-        repeated = any(after[k] > before[k] for k in before)
-        hard = high_confidence(state, checked.get("events", []), candidate)
-        if not invalid and continuous and not hard and not lost and not repeated:
+        if reason is None:
             repaired = dict(note, status="repaired", recheck=assessment)
-            if rechecked:
-                repaired["transition"] = rechecked
-            return candidate, checked, False, observed, repaired
-        reason = (
-            "invalid_reextraction"
-            if invalid
-            else "opening_still_disconnected"
-            if not continuous
-            else "lost_grounded_boundary"
-            if lost
-            else "introduced_repetition"
-            if repeated
-            else "hard_fact_conflict"
-        )
+            if assessment.get("transition"):
+                repaired["transition"] = assessment["transition"]
+            return candidate, checked, failed, observed, repaired
     return text, raw, failed, facts, dict(note, status="rolled_back", rollback_reason=reason)

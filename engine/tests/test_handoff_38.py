@@ -22,20 +22,26 @@ def test_repair_receives_literal_endpoints_cast_and_accepts_scene_switch():
 
     def ask(client, name, prompt, sections, *args, **kwargs):
         calls.append(name)
+        if name.endswith("-opening-boundary-recheck"):
+            assert sections == [
+                ("开头", replacement + "\n\n林舟留在驿站。"),
+                ("结尾", replacement + "\n\n林舟留在驿站。"),
+            ]
+            return dict(facts(sections[0][1]))
         payload = str(sections)
         assert all(s in payload for s in ("河湾石桥", "驿站", "林舟", "陶青"))
         assert "300" in prompt and "时间" in prompt and "场景" in prompt
         return dict(replace_count=1, paragraphs=[replacement])
 
     def extract(client, name, text, *args, **kwargs):
-        return dict(facts(text), events=[]), False, 0
+        pytest.fail("Opening recheck must not extract whole-chapter state")
 
     actual, _, failed, _, note = repair_opening(
         None, "ch2", original, facts(original), False, state, {}, {"number": 2}, extract, ask
     )
     assert actual == replacement + "\n\n林舟留在驿站。"
     assert note["status"] == "repaired" and not failed
-    assert calls == ["ch2-opening-repair"]
+    assert calls == ["ch2-opening-repair", "ch2-opening-boundary-recheck"]
 
 
 @pytest.mark.parametrize("marker", ["半个时辰后", "次日", "另一边", "与此同时"])
@@ -111,12 +117,19 @@ def test_relaxed_acceptance_retains_boundary_and_repetition_guards(damage):
     replacement = "半个时辰后，林舟站在驿站门外。"
     if damage == "repetition":
         replacement += "车夫把三只破木箱搬到了驿站的墙边。"
+    else:
+        # Lose the actual end quote by replacing the whole short chapter;
+        # a missing extractor field alone no longer erases an unchanged end.
+        text = "林舟站在驿站门外。"
+        replacement = "半个时辰后，林舟抵达驿站。"
 
     def extract(client, name, candidate, *args, **kwargs):
-        raw = dict(facts(candidate), events=[])
-        if damage == "lost_end":
-            raw.pop("end_location")
-        return raw, False, 0
+        pytest.fail("Opening recheck must not extract whole-chapter state")
+
+    def ask(client, name, *args, **kwargs):
+        if name.endswith("-opening-repair"):
+            return dict(replace_count=1, paragraphs=[replacement])
+        return dict(opening_location="驿站", opening_quote=replacement)
 
     actual, _, _, _, note = repair_opening(
         None,
@@ -128,7 +141,7 @@ def test_relaxed_acceptance_retains_boundary_and_repetition_guards(damage):
         {},
         dict(number=2),
         extract,
-        lambda *a, **k: dict(replace_count=1, paragraphs=[replacement]),
+        ask,
     )
     assert actual == text and note["status"] == "rolled_back"
     assert note["rollback_reason"] == ("lost_grounded_boundary" if damage == "lost_end" else "introduced_repetition")

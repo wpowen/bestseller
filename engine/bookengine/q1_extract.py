@@ -21,6 +21,8 @@ from .retired_opponents import stage_constraints
 from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
+from .solution_substance import observe_solutions
+from .core_ability import core_source
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -136,12 +138,20 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         k: chapter[k]
         for k in (
             "number",
+            "type",
+            "rhythm_type",
+            "rhythm_focus",
             "transition",
             "introductions",
             "payoff_due",
             "payoff_type",
             "payoff_criterion",
             "solution_type",
+            "solution_target",
+            "solution_method",
+            "core_required",
+            "core_application",
+            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -287,7 +297,7 @@ def ground(raw, text):
     if type(raw.get("realm_display_pid")) is int and 1 <= raw["realm_display_pid"] <= len(paragraphs):
         a, b = paragraphs[raw["realm_display_pid"] - 1]
         raw["realm_display_quote"] = text[a:b]
-    return raw
+    return observe_solutions(raw, text)
 
 
 def prose_hits(text, bible, state):
@@ -324,6 +334,11 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             "payoff_type",
             "payoff_criterion",
             "solution_type",
+            "solution_target",
+            "solution_method",
+            "core_required",
+            "core_application",
+            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -391,6 +406,15 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "不要把仅被提及者当视角，不确定填null。character_locations只列有逐字引文证明其当前地点的人物，"
         "每项name/location/quote，按正文时间顺序；回忆、计划和对白中的地点不算。"
     )
+    prompt += (
+        "\n抽取core_use：decisive布尔值（能力是否直接决定主要冲突结果），mechanism用圣经中的能力名称，action_quote引用实际使用，result_quote引用含因果及结果的完整原文；仅提及、设想、否定不算。无法证明填null，不编引文。核心来源："
+        + pack(core_source(bible))
+    )
+    prompt += (
+        "\n每条solutions必须保留type（solution_menu合法值）和content（手段→结果短摘要）字段，"
+        "另附target_noun作用对象、method_noun手段核心名词和含两者及结果的连续逐字quote；"
+        "每个名词只填一个原词，不能用顿号合并或拼接引文，primary标主要解法。"
+    )
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
@@ -424,6 +448,8 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             end_pov=None,
             end_pov_quote=None,
             character_locations=[],
+            solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
+            core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
         )
     )
     saved = client.prefix

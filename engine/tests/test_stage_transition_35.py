@@ -32,20 +32,20 @@ def test_stage_jump_repairs_even_without_extracted_opening_location():
 
     def ask(*args, **kwargs):
         calls.append(args[1])
-        return dict(replace_count=1, paragraphs=[replacement])
+        return dict(replace_count=1, paragraphs=[replacement]) if args[1].endswith("-opening-repair") else {}
 
     def extract(*args, **kwargs):
-        calls.append(args[1])
-        return dict(events=[]), False, 0
+        pytest.fail("Opening recheck must not extract whole-chapter state")
 
     actual, raw, failed, facts, note = repair_opening(
         None, "ch11", original, {}, False, state, bible(), {"number": 11}, extract, ask
     )
     assert actual == replacement + original[len(original.split("\n\n")[0]) :]
-    assert calls == ["ch11-boundary-reextract", "ch11-opening-repair", "ch11-opening-recheck"]
+    assert calls == ["ch11-boundary-reextract", "ch11-opening-repair", "ch11-opening-boundary-recheck"]
     assert note["status"] == "repaired" and not failed
     assert facts["opening_location"] is None  # planning never becomes an observed fact
-    assert raw == {"events": []} and state == before
+    assert raw["events"] == [] and raw["opening_location"] is None and state == before
+    assert note["recheck"]["evidence"] == "Inference"
 
 
 @pytest.mark.parametrize(
@@ -157,26 +157,37 @@ def test_stage_plan_requires_nonblank_transition_on_each_later_stage_start():
     assert planning_transition_issues(design, [dict(number=11)])
 
 
-@pytest.mark.parametrize("invalid", [False, True])
-def test_stage_repair_rechecks_body_and_rolls_back_bad_candidates(invalid):
+@pytest.mark.parametrize("hard_conflict", [False, True])
+def test_stage_repair_rechecks_body_and_rolls_back_bad_candidates(hard_conflict):
     original = "林舟伏在城楼背后。\n\n守卫没有发现他。\n\n后文不变。"
     raw = dict(events=[])
-    for replacement in ("林舟换了个姿势。", "三天后，林舟伏在城楼背后。"):
+    for replacement in ("林舟换了个姿势。", "三天后。林舟站在山城。"):
 
         def ask(*args, **kwargs):
-            return dict(replace_count=1, paragraphs=[replacement])
+            return dict(replace_count=1, paragraphs=[replacement]) if args[1].endswith("-opening-repair") else {}
 
         def extract(*args, **kwargs):
-            return dict(events=[]), invalid, 0
+            pytest.fail("Opening recheck must not extract whole-chapter state")
 
         actual, actual_raw, failed, _, note = repair_opening(
-            None, "ch11", original, raw, True, {}, bible(), {"number": 11}, extract, ask
+            None,
+            "ch11",
+            original,
+            raw,
+            True,
+            {"_dead": ["林舟"]} if hard_conflict else {},
+            bible(),
+            {"number": 11},
+            extract,
+            ask,
         )
-        accepted = not invalid and replacement.startswith("三天后")
+        accepted = not hard_conflict and replacement.startswith("三天后")
         assert note["status"] == ("repaired" if accepted else "rolled_back")
         assert actual == (replacement + original[len(original.split("\n\n")[0]) :] if accepted else original)
         if not accepted:
             assert actual_raw is raw and failed is True
+        else:
+            assert failed is True  # boundary-only recheck cannot clear failed state extraction
 
 
 def test_elapsed_time_satisfies_stage_check_without_legacy_location_repair():

@@ -97,7 +97,15 @@ def _chapters(book, source, unknown):
         heading = re.search(r"(?m)^\s*#{1,6}\s+(.+)$", text)
         title = meta.get("title") or (heading[1] if heading else "")
         title = re.sub(r"^第[0-9零〇一二三四五六七八九十百千万两]+章\s*", "", str(title))
-        result.append(dict(number=n, text=text, meta=meta, title=title, path=str(path.relative_to(book))))
+        chapter = dict(number=n, text=text, meta=meta, title=title, path=str(path.relative_to(book)))
+        from bookengine.plot_observations import load_plot_observation
+
+        observed_source = "final" if path.parent == book / "final" else "draft"
+        observed = load_plot_observation(book, chapter, observed_source)
+        if observed is not None:
+            chapter["meta"] = dict(meta, solutions=observed["solutions"], core_use=observed["core_use"])
+            chapter["plot_observation"] = dict(source=observed_source, authority=observed["authority"])
+        result.append(chapter)
     return result
 
 
@@ -328,6 +336,7 @@ def check_book(book, *, source="final"):
     from bookengine.prose_repetition import clean_repetitions
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
+    from bookengine.plot_diagnostics import plot_findings
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -358,6 +367,12 @@ def check_book(book, *, source="final"):
         source_preference=source,
         chapter_count=len(chapters),
         review_contracts=design_findings(bible, chapters),
+        **plot_findings(bible, chapters),
+        plot_observations=dict(
+            applied_chapters=[c["number"] for c in chapters if c.get("plot_observation")],
+            sources={str(c["number"]): c["plot_observation"] for c in chapters if c.get("plot_observation")},
+            authority="agent_editorial_not_human",
+        ),
         sources={str(c["number"]): c["path"] for c in chapters},
         stages=stages,
         antagonists=_opponents(bible, chapters, stages["distribution"]),

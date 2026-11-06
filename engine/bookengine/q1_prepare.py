@@ -15,6 +15,7 @@ from .structure_planning import stage_ranges, stage_for_chapter, repair_structur
 from .address_contracts import repair_addresses, address_issues
 from .opening_promises import opening_contract
 from .cost_design import has_cost_source, repair_costs
+from .core_ability import repair_development, core_source, RULE as CORE_RULE
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
@@ -25,7 +26,11 @@ def _ask(client, kind, key, sections, redo=False):
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             validate_bible(bible)
 
-    template = DATA["schemas"][kind]
+    template = (
+        dict(volumes=[dict(number=1, core_development=dict(new_use="", new_cost="", new_limit=""))])
+        if kind == "core_development"
+        else DATA["schemas"][kind]
+    )
     if kind == "prepare":
         template = dict(
             template,
@@ -37,7 +42,21 @@ def _ask(client, kind, key, sections, redo=False):
         )
     if kind == "outlines":
         template = dict(
-            template, chapters=[dict(template["chapters"][0], conflict="", opponent="", transition="", location="")]
+            template,
+            chapters=[
+                dict(
+                    template["chapters"][0],
+                    conflict="",
+                    opponent="",
+                    transition="",
+                    location="",
+                    solution_target="",
+                    solution_method="",
+                    rhythm_type="",
+                    rhythm_focus="主场景具体行动、人物选择及其后果；情感即人物关系主章",
+                    rhythm_contract_version=6,
+                )
+            ],
         )
     if kind == "prepare" and any(k == "用户锁定事实，只可扩写不可替换" for k, _ in sections):
         selection = next(v for k, v in sections if k == "用户锁定事实，只可扩写不可替换")
@@ -58,7 +77,9 @@ def _ask(client, kind, key, sections, redo=False):
             ),
         )
     schema = pack(template)
-    instruction = DATA["rules"] + DATA["instructions"][kind] + FIX["planning"]
+    instruction = (
+        DATA["rules"] + (CORE_RULE if kind == "core_development" else DATA["instructions"][kind]) + FIX["planning"]
+    )
     if kind == "prepare":
         instruction += (
             "\nreader_expectation和opening_promises逐项列可检查的开篇承诺，别把后期承诺塞进前三章。"
@@ -322,6 +343,12 @@ def prepare(client, book, out, assets, design=False):
                     generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
                 )
                 save(Path(out) / "cost-design.json", cost_note)
+        if values[0] is None and core_source(generated[0]):
+            generated[0], core_note = repair_development(
+                generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
+            )
+            generated[0]["plot_contract_version"] = 1
+            save(Path(out) / "core-development.json", core_note)
         save(Path(out) / "prepared-design.json", generated)
         for i, path in enumerate(paths):
             if values[i] is None:

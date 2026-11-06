@@ -45,6 +45,7 @@ from .q1_extract import (
 from .q1_chapter import REVISION, supplement, amend, chapter_record, chapter
 from .structure_planning import stage_for_chapter, final_stage_start
 from tools.book_checkup import write_checkup
+from .solution_substance import solution_issues
 
 
 class QClient(Client):
@@ -204,7 +205,11 @@ def _run(book, out, env, assets, timeout, style, stop):
             vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback)
             if history and history[-1].get("volume_issues"):
                 vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback, redo=True)
-        if not batch or not any(c.get("number") == idx for c in batch):
+        if (
+            not batch
+            or not any(c.get("number") == idx for c in batch)
+            or solution_issues(bible, rows, [c for c in batch if c.get("number", 0) >= idx])
+        ):
             end = min(idx + 9, vol.get("end", stage["end"]), book.chapters)
             batch = outlines(client, bible, threads, profile, vol, idx, end, state, rows[-29:], history, alerts)
         if rows and not state.get("realm_progress"):

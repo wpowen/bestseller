@@ -356,7 +356,7 @@
 
 ## 2026-11-06-36：收尾第 35 条遗留——完全相同的叙述句确定性删除、对手退场后一章复检（用户 2026-11-06 确认）
 
-状态：开发完成，待监工验收。在独立工作树 `scratch/f36-worktree`、分支 `fix/repeat-exit-tail` 上完成；报告见 `engine/reports/repeat-exit-tail-36.md`。
+状态：已验收，已合并进 main（2026-11-06）。真实书库 0 改动；1027 项测试通过；冒烟测试通过。在 eval-33 和 eval-35 的副本上，叙述重复 2→0，对白重复只报告不删；韩柯铭第 21 章能查出，用假客户端修复后为 0。未用真实模型验证第 2 项。
 
 文件归属：
 - 可改：`engine/bookengine/`、`engine/tools/book_checkup.py`、`engine/tests/`。

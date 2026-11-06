@@ -334,7 +334,16 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         handoff=handoff,
         opening_promises=promise_review,
         core_plan={
-            k: outline[k] for k in ("number", "core_required", "core_application", "core_development") if k in outline
+            k: outline[k]
+            for k in (
+                "number",
+                "core_required",
+                "core_application",
+                "core_development",
+                "solution_target",
+                "solution_method",
+            )
+            if k in outline
         },
         core_use=observe_core_use(raw.get("core_use"), text, bible, outline, client, prefix, ask),
         opponent_repair=opponent_repair,

@@ -109,7 +109,16 @@ def _chapters(book, source, unknown):
         if outline_path.is_file():
             plan = _read(outline_path, unknown)
             chapter["core_plan"] = {
-                k: plan[k] for k in ("number", "core_required", "core_application", "core_development") if k in plan
+                k: plan[k]
+                for k in (
+                    "number",
+                    "core_required",
+                    "core_application",
+                    "core_development",
+                    "solution_target",
+                    "solution_method",
+                )
+                if k in plan
             }
         result.append(chapter)
     return result

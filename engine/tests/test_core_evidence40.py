@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from bookengine.core_evidence import find_core_evidence, observe_core_use
 
 BIBLE = {"power": {"name": "听风", "abilities": ["读影"]}}
-PLAN = {"number": 1, "core_required": True, "core_application": "听风辨明暗道并救出同伴"}
+PLAN = {"number": 1, "core_required": True, "core_application": "听风辨明暗道并救出同伴", "solution_target": "暗道"}
 
 
 def test_plan_guides_search_but_only_literal_action_and_result_count():
@@ -17,7 +17,7 @@ def test_plan_guides_search_but_only_literal_action_and_result_count():
 
 def test_direct_physical_outcome_does_not_need_a_magic_causal_word():
     text = "她借读影辨出了锁芯里的缺口，沿着缺口推开了暗门。"
-    found = find_core_evidence(text, BIBLE, dict(PLAN, core_application="读影辨认锁芯"))
+    found = find_core_evidence(text, BIBLE, dict(PLAN, core_application="读影辨认锁芯", solution_target="锁芯"))
     assert found["status"] == "verified"
     assert found["result_quote"] in text
 
@@ -68,3 +68,14 @@ def test_legacy_and_no_power_chapters_keep_zero_extra_io():
     client = SimpleNamespace()
     assert observe_core_use({}, "他坐在门口休息。", {}, PLAN, client, "legacy", forbidden)["status"] == "unknown"
     assert observe_core_use({}, "他坐在门口休息。", BIBLE, {}, client, "legacy", forbidden)["status"] == "unknown"
+
+
+def test_minor_use_cannot_override_main_conflict_or_explicit_model_nondecisive():
+    from bookengine.core_evidence import read_core_use
+
+    plan = dict(PLAN, solution_target="同伴", core_application="听风救出被困同伴")
+    for text in ["他催动听风，听风让茶杯里的水纹清晰起来。", "他借听风看见落叶，但同伴仍被困。"]:
+        assert find_core_evidence(text, BIBLE, plan)["status"] == "unknown"
+    text = "他催动听风，听风让暗道里的脚步清晰起来。"
+    raw = dict(decisive=False, mechanism="听风", action_quote=text, result_quote=text)
+    assert read_core_use(raw, text, BIBLE, PLAN)["status"] == "not_decisive"

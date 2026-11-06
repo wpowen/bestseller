@@ -7,13 +7,14 @@ from .ability_methods import ability_terms
 from .core_ability import core_source, verify_core_use
 from .promise_io import precise_ask
 from .storage import save
+from .quote_text import literal_quote
 
 # Only local, explicit operations with a result in the same narrative sentence.
 # A plan chooses search terms, never supplies an action, an outcome or causality.
 _OPERATION = r"借用?|运用|动用|使出|施展|发动|催动|激活"
 _OUTCOME = r"撞开|推开|撬开|击退|挡住|救出|斩断|切断|辨出|识破|看清|看见|探出|找出|发现|夺回|挣脱|冲出|清晰|分明"
-_NEGATIVE = r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|失败|失效|无效|未能|没能|改用|转而|另用|尝试|猜测|回忆|当年|曾经|谈起|提及|提到|故事|传说|据说|设想"
-_PLAN_FIELDS = ("number", "core_required", "core_application", "core_development")
+_NEGATIVE = r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|失败|失效|无效|未能|没能|改用|转而|另用|尝试|猜测|回忆|当年|曾经|谈起|提及|提到|故事|传说|据说|设想|仍被|但|却"
+_PLAN_FIELDS = ("number", "core_required", "core_application", "core_development", "solution_target", "solution_method")
 
 
 def find_core_evidence(text, bible, plan=None):
@@ -29,10 +30,18 @@ def find_core_evidence(text, bible, plan=None):
     application = plan.get("core_application")
     if not isinstance(application, str) or not application.strip():
         return dict(result, reason="missing_saved_application")
+    target = plan.get("solution_target")
+    if not isinstance(target, str) or len(target.strip()) < 2:
+        return dict(result, reason="missing_plan_conflict_target")
     terms = sorted((t for t in ability_terms(bible) if t in application), key=lambda t: (-len(t), t))
     for match in re.finditer(r"[^。！？!?\n]+[。！？!?]?", text):
         quote = match.group().strip()
-        if len(quote) < 8 or re.search(_NEGATIVE, quote) or re.search(r'[“”「」『』"？?]', quote):
+        if (
+            target not in quote
+            or len(quote) < 8
+            or re.search(_NEGATIVE, quote)
+            or re.search(r'[“”「」『』"？?]', quote)
+        ):
             continue
         for term in terms:
             # Same-sentence explicit use + concrete result, or the named power as
@@ -59,16 +68,27 @@ def find_core_evidence(text, bible, plan=None):
 
 def read_core_use(raw, text, bible, plan=None):
     found = find_core_evidence(text, bible, plan)
+    saved = verify_core_use(raw, text, bible)
+    if isinstance(raw, dict) and raw.get("decisive") is False:
+        return dict(
+            saved,
+            plan=found["plan"],
+            evidence_method="saved_nondecisive_judgment",
+            **({"unknown_reason": "nondecisive_without_complete_quotes"} if saved["status"] == "unknown" else {}),
+        )
     if found["status"] == "verified":
         return dict(found, raw=raw if isinstance(raw, dict) else {})
-    saved = verify_core_use(raw, text, bible)
     if saved["status"] != "unknown":
         return dict(saved, plan=found["plan"], evidence_method="saved_model_quotes")
     raw = raw if isinstance(raw, dict) else {}
     quotes = [raw.get(k) for k in ("action_quote", "result_quote")]
-    if not raw or not any(isinstance(q, str) and q.strip() and q not in ("Unknown", "unknown") for q in quotes):
+    if not raw:
         reason = "empty_response"
-    elif any(isinstance(q, str) and q.strip() and q not in text for q in quotes):
+    elif not any(isinstance(q, str) and q.strip() and q.lower() != "unknown" for q in quotes):
+        reason = "empty_core_quotes"
+    elif any(not isinstance(q, str) or not q.strip() or q.lower() == "unknown" for q in quotes):
+        reason = "missing_result_or_action_quote"
+    elif any(literal_quote(text, q) is None for q in quotes):
         reason = "quote_mismatch"
     else:
         reason = "unproven_action_or_causality"

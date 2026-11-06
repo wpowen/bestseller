@@ -17,6 +17,7 @@ from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
+from .solution_substance import solution_context, solution_issues
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -216,7 +217,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached
         and cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
         and (
-            opponent_presence_issues(bible, cached["chapters"]) + planning_transition_issues(bible, cached["chapters"])
+            opponent_presence_issues(bible, cached["chapters"])
+            + planning_transition_issues(bible, cached["chapters"])
+            + solution_issues(
+                bible, historical_outlines(getattr(client, "out", None), start, recent), cached["chapters"]
+            )
         )
     )
     if superseded:
@@ -263,6 +268,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     ]
     cards = [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]
     sections = [
+        (
+            "主要解法必须给solution_target作用对象及solution_method手段核心名词；同阶段同名词最多3次，超额换实际手段，不只换标签",
+            solution_context(bible, prior, start),
+        ),
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
@@ -318,6 +327,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 ("退场后只作背景，禁止列在场人物", opponents),
                 ("已退场对手与已离开地点约束", stage_constraints(bible, start)),
                 ("已用核心冲突类型与章名关键词", prompt_vocabulary(vocabulary)),
+                (
+                    "手段名词阶段上限3次；重写实际动作，解法附solution_target/solution_method",
+                    solution_context(bible, prior, start),
+                ),
                 ("待重写章纲", [r for r in current if r.get("number") in targets]),
                 ("相关节奏要求", [r for r in rhythm if r["number"] in targets]),
             ],

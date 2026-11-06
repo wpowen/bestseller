@@ -21,6 +21,7 @@ from .retired_opponents import stage_constraints
 from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
+from .solution_substance import observe_solutions
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -142,6 +143,8 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             "payoff_type",
             "payoff_criterion",
             "solution_type",
+            "solution_target",
+            "solution_method",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -287,7 +290,7 @@ def ground(raw, text):
     if type(raw.get("realm_display_pid")) is int and 1 <= raw["realm_display_pid"] <= len(paragraphs):
         a, b = paragraphs[raw["realm_display_pid"] - 1]
         raw["realm_display_quote"] = text[a:b]
-    return raw
+    return observe_solutions(raw, text)
 
 
 def prose_hits(text, bible, state):
@@ -324,6 +327,8 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             "payoff_type",
             "payoff_criterion",
             "solution_type",
+            "solution_target",
+            "solution_method",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -391,6 +396,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "不要把仅被提及者当视角，不确定填null。character_locations只列有逐字引文证明其当前地点的人物，"
         "每项name/location/quote，按正文时间顺序；回忆、计划和对白中的地点不算。"
     )
+    prompt += "\n每条solutions附target_noun作用对象、method_noun手段核心名词和含两者及结果的逐字quote，primary标主要解法；不以类型标签代替名词。"
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"

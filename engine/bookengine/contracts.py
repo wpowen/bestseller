@@ -177,6 +177,7 @@ def observations(raw, text, number):
                 type=x.get("type") or ("代价" if key == "costs" else x.get("category")),
                 content=x.get("content") or x.get("category"),
                 **({"primary": True} if x.get("primary") is True else {}),
+                **{k: x[k] for k in ("quote", "target_noun", "method_noun", "noun_status") if k in x},
             )
             for x in _map(raw).get(key, [])
             if isinstance(x, dict)

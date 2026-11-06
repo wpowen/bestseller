@@ -200,7 +200,9 @@ class PolishResumeTestsPart1(PolishResumeTests):
             hook_type=q1.PLAN_DATA["hook_types"][0],
             payoff={"type": self.bible["canon"]["payoff_menu"][0], "fulfilled": True, "quote": BODY},
         )
-        client = LocalClient(self.out, {"r2-ch1-draft": BODY, "r2-ch1-finish": extract})
+        client = LocalClient(
+            self.out, {"r2-ch1-draft": BODY, "r2-ch1-finish": extract, "r2-ch1-boundary-reextract": UNKNOWN_BOUNDARY}
+        )
         row = q1.chapter(
             client,
             self.book,
@@ -221,15 +223,26 @@ class PolishResumeTestsPart1(PolishResumeTests):
         self.assertEqual(self.files[self.out / "chapter-001.body.md"], BODY)
         self.assertEqual(self.get(self.out / "chapters/001.json"), row)
         self.assertIsNone(old["continuity"])
-        self.assertEqual([c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish"])
-        self.assertEqual((row["outside_calls"], row["state_retries"]), (1, 0))
+        self.assertEqual(
+            [c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish", "r2-ch1-boundary-reextract"]
+        )
+        self.assertEqual((row["outside_calls"], row["state_retries"]), (2, 0))
+        self.assert_unknown_handoff(row)
 
     def test_body_change_alone_triggers_one_final_state_from_adopted_text(self):
         raw = self.extracted(
             patch={"after": 1, "text": "她在门口停了一下。"}, state={"characters": {"林宁": {"location": "码头"}}}
         )
         final = self.extracted(state={"characters": {"林宁": {"location": "桥"}}}, summary="她在桥上停步。")
-        client = LocalClient(self.out, {"r2-ch1-draft": BODY, "r2-ch1-finish": raw, "r2-ch1-final-state": final})
+        client = LocalClient(
+            self.out,
+            {
+                "r2-ch1-draft": BODY,
+                "r2-ch1-finish": raw,
+                "r2-ch1-final-state": final,
+                "r2-ch1-boundary-reextract": UNKNOWN_BOUNDARY,
+            },
+        )
         row = q1.chapter(
             client,
             self.book,
@@ -247,14 +260,21 @@ class PolishResumeTestsPart1(PolishResumeTests):
         )
         expected = BODY.replace("\n\n", "\n\n她在门口停了一下。\n\n", 1)
         self.assertEqual(self.files[self.out / "chapter-001.body.md"], expected)
-        self.assertEqual([c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish", "r2-ch1-final-state"])
-        self.assertIn("她在门口停了一下。", client.calls[-1]["prompt"])
+        self.assertEqual(
+            [c["stage"] for c in client.calls],
+            ["r2-ch1-draft", "r2-ch1-finish", "r2-ch1-final-state", "r2-ch1-boundary-reextract"],
+        )
+        self.assertIn("她在门口停了一下。", client.calls[2]["prompt"])
+        self.assertIn(expected, client.calls[3]["prompt"])
         self.assertEqual(row["state"]["characters"]["林宁"]["location"], "桥")
-        self.assertEqual((row["outside_calls"], row["state_retries"]), (2, 0))
+        self.assertEqual((row["outside_calls"], row["state_retries"]), (3, 0))
+        self.assert_unknown_handoff(row)
 
     def test_rejected_bundle_keeps_body_and_does_not_extract_final_state(self):
         raw = self.extracted(edits=[dict(id=1, text="“我陪你回家。”"), dict(id=99, text="不存在的句子。")])
-        client = LocalClient(self.out, {"r2-ch1-draft": BODY, "r2-ch1-finish": raw})
+        client = LocalClient(
+            self.out, {"r2-ch1-draft": BODY, "r2-ch1-finish": raw, "r2-ch1-boundary-reextract": UNKNOWN_BOUNDARY}
+        )
         with patch.object(q1_extract, "locate", return_value=[dict(id=1, categories=["quote-fixture"])]):
             row = q1.chapter(
                 client,
@@ -273,8 +293,11 @@ class PolishResumeTestsPart1(PolishResumeTests):
             )
         self.assertEqual(self.files[self.out / "chapter-001.body.md"], BODY)
         self.assertTrue(row["polish"]["adoption_failed"])
-        self.assertEqual([c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish"])
-        self.assertEqual(row["outside_calls"], 1)
+        self.assertEqual(
+            [c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish", "r2-ch1-boundary-reextract"]
+        )
+        self.assertEqual(row["outside_calls"], 2)
+        self.assert_unknown_handoff(row)
 
     def test_failed_finish_carries_old_failure_once_without_recover_or_schema_retry(self):
         old = self.cached_row()
@@ -282,7 +305,13 @@ class PolishResumeTestsPart1(PolishResumeTests):
         self.put(self.out / "chapters/001.json", old)
         self.put(self.out / "chapter-001.body.md", BODY)
         client = LocalClient(
-            self.out, {"r2-ch2-draft": BODY, "r2-ch2-finish": {"state": {}}, "r2-ch3-finish": self.extracted()}
+            self.out,
+            {
+                "r2-ch2-draft": BODY,
+                "r2-ch2-finish": {"state": {}},
+                "r2-ch3-finish": self.extracted(),
+                "r2-ch2-boundary-reextract": UNKNOWN_BOUNDARY,
+            },
         )
         args = (
             client,
@@ -301,16 +330,24 @@ class PolishResumeTestsPart1(PolishResumeTests):
         )
         row = q1.chapter(*args)
         self.assertTrue(row["state_failed"])
-        self.assertEqual((row["state_retries"], row["outside_calls"]), (0, 1))
+        self.assertEqual((row["state_retries"], row["outside_calls"]), (0, 2))
+        self.assert_unknown_handoff(row, previous_missing=True)
         self.assertTrue(old["carry_attempted"])
         self.assertFalse(old.get("state_recovered", False))
         self.assertEqual(row["state"]["continuity"], old["state"]["continuity"])
-        self.assertEqual([c["stage"] for c in client.calls], ["r2-ch2-draft", "r2-ch2-finish"])
-        self.assertIn("## 上章失败顺带补提\n", client.calls[-1]["prompt"])
+        self.assertEqual(
+            [c["stage"] for c in client.calls], ["r2-ch2-draft", "r2-ch2-finish", "r2-ch2-boundary-reextract"]
+        )
+        self.assertIn("## 上章失败顺带补提\n", client.calls[1]["prompt"])
         before = deepcopy((old, self.files))
         self.assertEqual(q1.chapter(*args), row)
         self.assertEqual((old, self.files), before)
+        self.assertEqual(len(client.calls), 3)
         q1.extract_state(client, "r2-ch3-finish", BODY, old["state"], self.bible, {"number": 3}, [old])
         self.assertNotIn("## 上章失败顺带补提\n", client.calls[-1]["prompt"])
+        self.assertEqual(
+            [c["stage"] for c in client.calls],
+            ["r2-ch2-draft", "r2-ch2-finish", "r2-ch2-boundary-reextract", "r2-ch3-finish"],
+        )
         self.assertEqual(self.files[self.out / "chapter-001.body.md"], BODY)
         self.assertEqual(old, before[0])

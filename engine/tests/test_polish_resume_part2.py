@@ -144,7 +144,10 @@ class PolishResumeTestsPart2(PolishResumeTests):
                     payoff={"type": kind, "fulfilled": True, "quote": BODY},
                     previous_delta=recovery,
                 )
-                client = LocalClient(self.out, {"r2-ch2-draft": BODY, "r2-ch2-finish": current})
+                client = LocalClient(
+                    self.out,
+                    {"r2-ch2-draft": BODY, "r2-ch2-finish": current, "r2-ch2-boundary-reextract": UNKNOWN_BOUNDARY},
+                )
                 with ExitStack() as stack, redirect_stdout(io.StringIO()):
                     stack.enter_context(patch.object(q1, "QClient", return_value=client))
                     stack.enter_context(patch.object(q1, "prepare", return_value=(self.bible, {"threads": []}, {})))
@@ -156,9 +159,9 @@ class PolishResumeTestsPart2(PolishResumeTests):
                         stack.enter_context(patch.object(module, "save", writes))
                     q1._run(book, self.out, None, self.out.parent / "assets", 180, "b", lambda: False)
                 stages = [c["stage"] for c in client.calls]
-                self.assertEqual(stages, ["r2-ch2-draft", "r2-ch2-finish"])
-                self.assertIn("## 上章失败顺带补提\n", client.calls[-1]["prompt"])
-                self.assertIn(json.dumps(BODY, ensure_ascii=False), client.calls[-1]["prompt"])
+                self.assertEqual(stages, ["r2-ch2-draft", "r2-ch2-finish", "r2-ch2-boundary-reextract"])
+                self.assertIn("## 上章失败顺带补提\n", client.calls[1]["prompt"])
+                self.assertIn(json.dumps(BODY, ensure_ascii=False), client.calls[1]["prompt"])
                 recovered = self.get(self.out / "chapters/001.recovery.json")
                 next_row = self.get(self.out / "chapters/002.json")
                 self.assertTrue(recovered["state_recovered"])
@@ -166,7 +169,8 @@ class PolishResumeTestsPart2(PolishResumeTests):
                 self.assertEqual(recovered["payoff_fulfilled"], paid)
                 self.assertTrue(next_row["payoff_fulfilled"])
                 self.assertIsNone(next_row["state"]["pending_payoff"])
-                self.assertEqual((next_row["outside_calls"], next_row["state_retries"]), (1, 0))
+                self.assertEqual((next_row["outside_calls"], next_row["state_retries"]), (2, 0))
+                self.assert_unknown_handoff(next_row, previous_missing=True)
                 self.assertEqual(next_row["state"]["continuity"]["balances"]["寿命"], {"amount": 1, "unit": "天"})
                 self.assertEqual(self.files[self.out / "chapter-001.body.md"], BODY)
                 self.assertEqual(self.files[self.out / "chapter-001.draft.md"], "不可重写的旧初稿。")

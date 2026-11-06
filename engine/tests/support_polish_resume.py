@@ -55,6 +55,9 @@ CONTINUITY = {
 }
 
 
+UNKNOWN_BOUNDARY = dict(opening_location=None, opening_quote=None, end_location=None, end_quote=None, present=None)
+
+
 class LocalClient(Client):
     """Bypass credential setup; retain Client.stage and replace only HTTP request."""
 
@@ -90,7 +93,8 @@ class PolishResumeTests(unittest.TestCase):
         self.files = {}
         self.book = Book("suspense-mystery", 1, 200, "本地回归")
         self.bible = dict(
-            title="本地回归",
+            # Runtime/adoption fixture has no creative design; promise pipeline tests cover that contract.
+            title="",
             characters=[dict(name="林宁", role="protagonist")],
             volumes=[dict(number=1, start=1, end=1)],
         )
@@ -164,6 +168,25 @@ class PolishResumeTests(unittest.TestCase):
             ),
             **extra,
         )
+
+    def assert_unknown_handoff(self, row, *, previous_missing=False):
+        missing = ["opening_location", "end_location"] + (["previous_end"] if previous_missing else [])
+        self.assertEqual(
+            row["handoff"],
+            dict(
+                status="handoff_unknown",
+                issue=None,
+                boundary_retried=True,
+                missing=missing,
+                opening_status="handoff_unknown",
+            ),
+        )
+        for key in ("opening_location", "opening_quote", "end_location", "end_quote"):
+            self.assertIsNone(row[key])
+        self.assertEqual(row["present_status"], "unknown")
+        self.assertEqual(row["present"], [])
+        self.assertTrue(row["state"]["handoff_unknown"])
+        self.assertNotIn("end_location", row["state"])
 
     def amend(self, reply, text="林宁留在院里。"):
         client = LocalClient(self.out)

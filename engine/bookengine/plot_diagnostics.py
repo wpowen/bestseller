@@ -5,7 +5,7 @@ import math
 
 from .core_ability import core_source, development_issues
 from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
-from .ability_methods import partition_methods, primary_target
+from .ability_methods import partition_methods, primary_target, target_class
 from .core_evidence import read_core_use
 
 
@@ -30,7 +30,7 @@ def plot_findings(bible, chapters):
                 )
             )
             if target and stage_key(bible, number) is not None:
-                ability_groups[stage_key(bible, number), target, combo].append(number)
+                ability_groups[stage_key(bible, number), target_class(target), combo].append(number)
         distribution.update(nouns)
         targets.update({s["target_noun"] for s in observed["solutions"] if s.get("target_noun")})
         stage = stage_key(bible, number)
@@ -124,7 +124,7 @@ def plot_findings(bible, chapters):
                 excess=[
                     dict(
                         stage=stage,
-                        target=target,
+                        target_class=target,
                         combination=list(combo),
                         chapters=ns,
                         excess_chapters=ns[2:],
@@ -135,7 +135,7 @@ def plot_findings(bible, chapters):
                     for (stage, target, combo), ns in ability_groups.items()
                     if len(ns) > 2
                 ],
-                basis="literal declared powers + saved target nouns; target synonyms remain Unknown",
+                basis="declared powers + grounded target noun suffix classes; unclassified kinds retain literal nouns; Inference",
             ),
             source=core_source(bible),
             verified_chapters=verified,

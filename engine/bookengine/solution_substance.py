@@ -2,7 +2,7 @@
 
 from collections import Counter, defaultdict
 from .quote_text import literal_quote
-from .ability_methods import partition_methods, primary_target, ability_combination
+from .ability_methods import partition_methods, primary_target, ability_combination, target_class
 
 # Stable families across genres, extended by explicit quote-grounded extracted nouns.
 FAMILIES = {
@@ -130,7 +130,7 @@ def solution_context(bible, history, start):
         for n in partition_methods(bible, chapter_nouns(r, bible))[0]
     )
     ability_counts = Counter(
-        (primary_target(r), partition_methods(bible, chapter_nouns(r, bible))[1])
+        (target_class(primary_target(r)), partition_methods(bible, chapter_nouns(r, bible))[1])
         for r in history
         if stage is not None
         and stage_key(bible, r.get("number", 0)) == stage
@@ -143,7 +143,7 @@ def solution_context(bible, history, start):
         stage_counts=dict(counts),
         stage_cap=3,
         ability_cap=2,
-        ability_counts=[dict(target=t, combination=list(c), count=n) for (t, c), n in ability_counts.items()],
+        ability_counts=[dict(target_class=t, combination=list(c), count=n) for (t, c), n in ability_counts.items()],
     )
 
 
@@ -156,7 +156,7 @@ def solution_issues(bible, history, batch):
         if stage is None:
             continue
         nouns, combo = partition_methods(bible, chapter_nouns(row, bible))
-        target = primary_target(row)
+        target = target_class(primary_target(row))
         if combo and target:
             used = ability_counts[stage, target, combo]
             used.append(number)
@@ -165,7 +165,7 @@ def solution_issues(bible, history, batch):
                     dict(
                         kind="ability_repetition",
                         stage=stage,
-                        target=target,
+                        target_class=target,
                         combination=list(combo),
                         chapters=list(used),
                         targets=[number],

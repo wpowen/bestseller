@@ -46,3 +46,21 @@ def primary_target(row):
         primary = next((s for s in candidates if s.get("primary") is True), next(iter(candidates), {}))
         return primary.get("target_noun")
     return row.get("solution_target")
+
+
+def target_class(noun):
+    """Surface object kinds, not guessed identity or geography; unknown kinds keep their literal noun."""
+    if not isinstance(noun, str) or not noun.strip():
+        return None
+    noun = noun.strip()
+    for kind, endings in (
+        ("门", ("门", "门板")),
+        ("石", ("石", "石块")),
+        ("墙", ("墙", "墙壁")),
+        ("绳", ("绳", "绳索")),
+        ("锁", ("锁", "锁链")),
+        ("阵", ("阵", "阵眼", "阵钉")),
+    ):
+        if noun.endswith(endings):
+            return kind
+    return noun

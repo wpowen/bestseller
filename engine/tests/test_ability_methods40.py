@@ -94,3 +94,34 @@ def test_old_plan_cache_rechecks_new_ability_cap_and_preserves_exhaustion(tmp_pa
         == result
     )
     assert not resumed.calls
+
+
+def test_ability_limit_groups_same_kind_of_object_without_renaming_capability():
+    bible = dict(power={"name": "听风"}, volumes=[dict(number=1, start=1, end=5)])
+    batch = [
+        dict(number=n, solution_method="听风", solution_target=target)
+        for n, target in enumerate(["侧门", "木门", "封门"], 1)
+    ]
+    issues = solution_issues(bible, [], batch)
+    assert len(issues) == 1 and issues[0]["kind"] == "ability_repetition"
+    assert issues[0]["target_class"] == "门"
+    assert issues[0]["targets"] == [3]
+    assert not solution_issues(bible, batch[:2], [dict(batch[2], solution_target="账本")])
+
+    chapters = []
+    for row in batch:
+        text = f"他借听风辨明{row['solution_target']}的机关。"
+        chapters.append(
+            dict(
+                number=row["number"],
+                text=text,
+                meta={
+                    "solutions": [
+                        dict(primary=True, method_noun="听风", target_noun=row["solution_target"], quote=text)
+                    ]
+                },
+            )
+        )
+    excess = plot_findings(bible, chapters)["core_ability"]["applications"]["excess"]
+    assert len(excess) == 1 and excess[0]["target_class"] == "门"
+    assert excess[0]["excess_chapters"] == [3]

@@ -8,6 +8,8 @@ from .opening_promises import review_opening
 from .q1_continuity import boundary_facts, opening_issue
 from .retired_opponents import opponent_hits
 from .prose_repetition import clean_repetitions
+from .prose_similarity import analyze_prose
+from tools.book_checkup import clean_prose
 from .q1_cast import cast_findings, remaining_cast_problems
 from .stage_transition import stage_transition
 from .promise_io import precise_ask
@@ -75,6 +77,7 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
             candidate = candidate[:a] + replacement + candidate[b:]
     if not valid or candidate == text:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_or_empty_targeted_edits")
+    candidate = clean_prose(candidate)[0]
     after = review_opening(client, prefix + "-recheck", candidate, bible, number, earlier, ask)
     note["after"] = after
     if after["status"] not in ("checked", "pending"):
@@ -82,12 +85,17 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
     checked, invalid, _ = extract(
         client, prefix + "-promise-final-state", candidate, state, bible, outline, [], final=True
     )
-    old_issue = opening_issue(state, boundary_facts(raw, text), text)
-    new_issue = opening_issue(state, boundary_facts(checked, candidate), candidate)
+    old_facts, new_facts = boundary_facts(raw, text), boundary_facts(checked, candidate)
+    old_issue = opening_issue(state, old_facts, text)
+    new_issue = opening_issue(state, new_facts, candidate)
+    retained_boundaries = all(
+        not old_facts[k] or new_facts[k] == old_facts[k] for k in ("opening_location", "end_location")
+    )
     old_transition = stage_transition(bible, number, text, state.get("end_location"), outline=outline)
     new_transition = stage_transition(bible, number, candidate, state.get("end_location"), outline=outline)
     old_repeats = clean_repetitions(text, remove_safe=False)["counts"]
     new_repeats = clean_repetitions(candidate, remove_safe=False)["counts"]
+    old_similarity, new_similarity = analyze_prose(text)["counts"], analyze_prose(candidate)["counts"]
     regressed = (
         not old_issue
         and bool(new_issue)
@@ -97,6 +105,8 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
     )
     if (
         invalid
+        or not retained_boundaries
+        or any(new_similarity[k] > old_similarity[k] for k in ("near_paragraph_pairs", "card_explanations"))
         or high_confidence(state, checked.get("events", []), candidate)
         or regressed
         or opponent_hits(candidate, bible, number)

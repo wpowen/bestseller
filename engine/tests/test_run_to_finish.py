@@ -184,7 +184,8 @@ def q1_fixture(tmp_path, monkeypatch, chapters=2):
     config = tmp_path / "book.yaml"
     save(config, book.record())
     bible = dict(
-        title="离线续写",
+        # Runtime fixture supplies no creative design; promise behavior has its own pipeline regression.
+        title="",
         characters=[dict(name="阿宁", role="protagonist")],
         canon=deepcopy(q1_plan.GROWTH["packs"][book.prompt_pack]),
     )

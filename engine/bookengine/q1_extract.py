@@ -190,9 +190,15 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             end_location=state.get("end_location"),
             present=state.get("present", []),
             end_pov=state.get("end_pov"),
-            pov_locations=state.get("pov_locations", {}),
+            pov_locations={
+                name: {k: row.get(k) for k in ("location", "status", "chapter")}
+                for name, row in state.get("pov_locations", {}).items()
+                if name in {c.get("name") for c in people}
+            },
             rule=OPENING_RULE,
         )
+    handoff_keys = ("开场必须承接", "上章地点未知", "上章结尾地点候选，仅供参考不当作事实")
+    outline = {**{k: outline[k] for k in handoff_keys if k in outline}, **outline}
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),

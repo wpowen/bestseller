@@ -47,8 +47,12 @@ def _boundary(bible, number, outline):
 
 
 _MOVEMENT = re.compile(
-    "|".join(map(re.escape, MOVEMENT_WORDS)) + r"|从[^。！？\n]{1,40}(?:到|往|去)"
-    r"|沿[^。！？\n]{1,20}(?:走|行|赶)|(?:走|行|赶)了[^。！？\n]{1,12}(?:时辰|小时|天|日|里)"
+    "|".join(
+        r"追(?!问|忆|溯|究|悔|索|查|责|认)" if word == "追" else r"赶(?!紧|忙|巧)" if word == "赶" else re.escape(word)
+        for word in MOVEMENT_WORDS
+    )
+    + r"|从[^。！？\n]{1,40}(?:到|往|去)"
+    + r"|沿[^。！？\n]{1,20}(?:走|行|赶)|(?:走|行|赶)了[^。！？\n]{1,12}(?:时辰|小时|天|日|里)"
 )
 _DURATION = r"(?:[一二两三四五六七八九十百数几半\d]+(?:个)?(?:时辰|小时|分钟|日|天|夜|月|年|刻钟)|一炷香|一盏茶)"
 _ELAPSED = re.compile(

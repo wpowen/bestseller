@@ -132,3 +132,24 @@ def test_relaxed_acceptance_retains_boundary_and_repetition_guards(damage):
     )
     assert actual == text and note["status"] == "rolled_back"
     assert note["rollback_reason"] == ("lost_grounded_boundary" if damage == "lost_end" else "introduced_repetition")
+
+
+def test_handoff_reference_survives_a_long_chapter_outline():
+    from bookengine.q1_extract import context
+
+    sections = context(
+        {},
+        {},
+        dict(number=1),
+        dict(number=2, scenes=[dict(action="情节" * 1800)]),
+        dict(end_location="河湾石桥", present=["陶青"]),
+        [],
+        [],
+        "",
+    )
+    assert "河湾石桥" in sections[0][1] and "开场必须承接" in sections[0][1]
+
+
+@pytest.mark.parametrize("text", ["林舟在石桥追问驿站的来历。", "林舟在石桥赶紧打开驿站的地图。"])
+def test_non_movement_compounds_do_not_prove_transfer(text):
+    assert opening_issue(dict(end_location="石桥"), facts(text), text)

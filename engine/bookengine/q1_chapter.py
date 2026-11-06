@@ -19,7 +19,6 @@ from .structure_planning import final_stage_start
 from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
-from .stage_transition import stage_transition
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from tools.book_checkup import clean_prose

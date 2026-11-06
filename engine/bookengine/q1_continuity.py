@@ -6,7 +6,8 @@ import re
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
 from .handoff_places import same_place
-from .boundary_state import handoff_reference, advance_boundary_state, with_ending_candidate
+from .boundary_state import handoff_reference, with_ending_candidate
+from .boundary_state import advance_boundary_state as advance_boundary_state
 
 
 OPENING_RULE = (

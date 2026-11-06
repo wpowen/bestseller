@@ -179,6 +179,14 @@ class PolishResumeTests(unittest.TestCase):
                 boundary_retried=True,
                 missing=missing,
                 opening_status="handoff_unknown",
+                reference=dict(
+                    end_location=None,
+                    present=[],
+                    end_quote=None,
+                    viewpoint=None,
+                    basis="previous_end",
+                    known_locations=[],
+                ),
             ),
         )
         for key in ("opening_location", "opening_quote", "end_location", "end_quote"):

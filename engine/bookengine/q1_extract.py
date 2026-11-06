@@ -20,6 +20,7 @@ from .q1_cast import cast_hits, cast_findings
 from .retired_opponents import stage_constraints
 from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
+from .q1_continuity import OPENING_RULE
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -182,12 +183,22 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         constraints["omitted_retired" if field == "retired" else "omitted_locations"] += 1
     if state.get("handoff_unknown"):
         outline["上章地点未知"] = "开头必须明确交代当前地点，并从上章尾可确认的处境交代移动或时间；不得臆造上章地点。"
+    if state.get("end_location_candidate"):
+        outline["上章结尾地点候选，仅供参考不当作事实"] = state["end_location_candidate"]
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),
             present=state.get("present", []),
-            rule="开场接续上章地点及在场人物；换地点先交代移动过程，不能瞬移。",
+            end_pov=state.get("end_pov"),
+            pov_locations={
+                name: {k: row.get(k) for k in ("location", "status", "chapter")}
+                for name, row in state.get("pov_locations", {}).items()
+                if name in {c.get("name") for c in people}
+            },
+            rule=OPENING_RULE,
         )
+    handoff_keys = ("开场必须承接", "上章地点未知", "上章结尾地点候选，仅供参考不当作事实")
+    outline = {**{k: outline[k] for k in handoff_keys if k in outline}, **outline}
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
@@ -371,11 +382,14 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
     prompt += (
-        "\n只据正文抽取边界事实：opening_location/opening_quote限开头两段；end_location/end_quote从末尾1200字符内"
+        "\n只据正文抽取边界事实：opening_location/opening_quote限开头300字；end_location/end_quote从末尾1200字符内"
         "能证明最后所在地的叙述句提取，不要只看末尾对白。location必须是quote内连续原文，不拼接、不概括。"
         "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制末场含其原名的叙述句，"
         "不能用不含人物名的纯对白，且引文必须在末尾1200字符内。"
         "提到但不在场者不列；不从旧状态或章纲推测。"
+        "opening_pov/end_pov抽取开头/结尾的视角人物，opening_pov_quote/end_pov_quote复制对应含姓名的逐字叙述；"
+        "不要把仅被提及者当视角，不确定填null。character_locations只列有逐字引文证明其当前地点的人物，"
+        "每项name/location/quote，按正文时间顺序；回忆、计划和对白中的地点不算。"
     )
     if not final:
         prompt += (
@@ -405,6 +419,11 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             end_quote=None,
             present=[],
             present_quotes={},
+            opening_pov=None,
+            opening_pov_quote=None,
+            end_pov=None,
+            end_pov_quote=None,
+            character_locations=[],
         )
     )
     saved = client.prefix

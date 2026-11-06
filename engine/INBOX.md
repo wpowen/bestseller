@@ -438,7 +438,7 @@
 
 ## 2026-11-06-38：跨章衔接修复判定过严，修好的开头被回滚（用户 2026-11-06：“合并并发第38条”）
 
-状态：待执行
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/`、`engine/tools/book_checkup.py`、`engine/tests/`、`engine/reports/`。

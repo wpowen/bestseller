@@ -13,13 +13,12 @@ from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
-from .q1_continuity import repair_opening
+from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .structure_planning import final_stage_start
 from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
-from .stage_transition import stage_transition
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from tools.book_checkup import clean_prose
@@ -234,15 +233,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
     )
     boundaries = boundary_facts(raw, text)
-    handoff["missing"] = [k for k in ("opening_location", "end_location") if not boundaries[k]]
-    if idx > 1 and not state.get("end_location"):
-        handoff["missing"].append("previous_end")
+    boundaries = with_ending_candidate(boundaries, text, bible, state)
+    final_handoff = evaluate_handoff(state, boundaries, text, bible, outline)
+    handoff.update({k: v for k, v in final_handoff.items() if k != "status"})
     if handoff["missing"]:
         handoff["opening_status"] = handoff["status"]
         handoff["status"] = "handoff_unknown"
-    final_transition = stage_transition(bible, idx, text, state.get("end_location"), outline=outline)
-    if final_transition:
-        handoff["transition"] = final_transition
     cleaning["total"] = sum(counts.get("total", 0) for counts in cleaning.values())
     if rows and rows[-1].get("state_failed") and not rows[-1].get("carry_attempted"):
         last = rows[-1]
@@ -285,12 +281,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     paid = not failed and payoff_ok(raw.get("payoff"), outline["payoff_type"], text, canon["payoff_menu"])
     current["pending_payoff"] = outline["payoff_type"] if outline["payoff_due"] and not paid else None
     current["handoff_unknown"] = bool(not boundaries["end_location"] or handoff.get("missing"))
-    current.pop("end_location", None)
-    current.pop("present", None)
-    if boundaries["end_location"]:
-        current["end_location"] = boundaries["end_location"]
-    if boundaries["present_status"] == "grounded":
-        current["present"] = boundaries["present"]
+    current = advance_boundary_state(current, boundaries, idx, text, bible)
     current["seen_characters"] = sorted(set(state["seen_characters"]) | set(seen_in(text, bible.get("characters", []))))
     if not current["seen_characters"]:
         current.pop("seen_characters")

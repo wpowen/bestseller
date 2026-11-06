@@ -18,6 +18,7 @@ from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_context, solution_issues, chapter_nouns
+from .ability_methods import primary_target
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .chapter_rhythm import (
     rhythm_slots,
@@ -224,7 +225,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
-    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r)) for r in prior]
+    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r, bible), target=primary_target(r)) for r in prior]
     plot_stale = bool(
         cached
         and (solution_issues(bible, prior, cached["chapters"]) + ability_issues(bible, prior, cached["chapters"]))

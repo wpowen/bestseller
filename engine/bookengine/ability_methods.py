@@ -22,6 +22,8 @@ def ability_terms(bible):
 
 def ability_combination(bible, noun):
     terms = ability_terms(bible)
+    if noun in terms:
+        return (noun,)
     parts = [p.strip() for p in re.split(r"[、，,+/与及]", noun)]
     return tuple(sorted(set(parts))) if parts and all(p in terms for p in parts) else ()
 

@@ -49,3 +49,48 @@ def test_unknown_target_does_not_fabricate_repeated_ability_or_hide_ordinary_too
         ],
     )
     assert result["solution_substance"]["distribution"] == {"铜秤": 1}
+
+
+def test_ability_names_survive_tool_family_normalization_and_conjunction_characters():
+    bible = dict(power={"name": "破阵", "abilities": ["与影同行"]}, volumes=[dict(number=1, start=1, end=4)])
+    from bookengine.solution_substance import chapter_nouns
+    from bookengine.ability_methods import ability_combination
+
+    assert chapter_nouns(dict(solution_method="破阵"), bible=bible) == ["破阵"]
+    assert not solution_issues(bible, [], [dict(number=n, solution_method="破阵") for n in range(1, 5)])
+    assert ability_combination(bible, "与影同行") == ("与影同行",)
+    assert solution_issues(bible, [], [dict(number=n, solution_method="阵钉") for n in range(1, 5)])
+
+
+def test_old_plan_cache_rechecks_new_ability_cap_and_preserves_exhaustion(tmp_path):
+    from bookengine import q1_plan
+    from bookengine.q1_schema import DATA
+    from bookengine.storage import save, load
+    from test_chapter_rhythm39 import OfflineClient, chapter
+
+    bible = dict(power={"name": "听风"}, volumes=[dict(number=1, start=1, end=5)])
+    rows = [
+        dict(
+            chapter(n, "情感"),
+            solution_method="听风",
+            solution_target="暗门",
+            core_required=True,
+            core_application="运用听风辨认暗门的具体缺口",
+        )
+        for n in range(1, 4)
+    ]
+    save(
+        tmp_path / "outline-diversity/001-003.json",
+        dict(status="passed", structure_checks_version=6, chapters=rows, planned_chapters=rows, plot_history=[]),
+    )
+    client = OfflineClient(tmp_path, [dict(chapters=[dict(rows[2], solution_target="铁窗")])] * 3)
+    result = q1_plan.outlines(client, bible, {}, DATA["profile"], dict(number=1, start=1, end=5), 1, 3, {}, [], [], [])
+    assert client.calls and not solution_issues(bible, [], result)
+    original = load(tmp_path / "outline-diversity/001-003.json")
+    assert original["chapters"] == rows
+    resumed = OfflineClient(tmp_path)
+    assert (
+        q1_plan.outlines(resumed, bible, {}, DATA["profile"], dict(number=1, start=1, end=5), 1, 3, {}, [], [], [])
+        == result
+    )
+    assert not resumed.calls

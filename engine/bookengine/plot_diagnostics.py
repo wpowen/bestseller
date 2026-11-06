@@ -19,7 +19,7 @@ def plot_findings(bible, chapters):
         number, meta, text = chapter["number"], chapter["meta"], chapter["text"]
         # Deliberately exclude solution_target/method plans from observed statistics.
         observed = observe_solutions(dict(solutions=meta.get("solutions", [])), text)
-        nouns = chapter_nouns(observed)
+        nouns = chapter_nouns(observed, bible)
         nouns, combo = partition_methods(bible, nouns)
         target = primary_target(observed)
         ability_distribution.update(combo)

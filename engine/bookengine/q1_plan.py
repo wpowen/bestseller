@@ -18,6 +18,7 @@ from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_context, solution_issues
+from .core_ability import ability_slots, ability_issues, core_source, RULE as CORE_RULE
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -219,6 +220,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         and (
             opponent_presence_issues(bible, cached["chapters"])
             + planning_transition_issues(bible, cached["chapters"])
+            + ability_issues(bible, [], cached["chapters"])
             + solution_issues(
                 bible, historical_outlines(getattr(client, "out", None), start, recent), cached["chapters"]
             )
@@ -235,6 +237,9 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(start, end, profile, recent, state)
+    core_slots = {r["number"]: r for r in ability_slots(bible, start, end)}
+    for slot in rhythm:
+        slot.update(core_slots.get(slot["number"], {}))
     planned_state = dict(state, ledger={k: dict(v) for k, v in state.get("ledger", {}).items()})
     for slot in rhythm:
         selected = beat_slice(threads, volume, slot, planned_state)
@@ -268,6 +273,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     ]
     cards = [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]
     sections = [
+        (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
             "主要解法必须给solution_target作用对象及solution_method手段核心名词；同阶段同名词最多3次，超额换实际手段，不只换标签",
             solution_context(bible, prior, start),
@@ -317,6 +323,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             + (f"-structure35v{STRUCTURE_CHECKS_VERSION}" if superseded else "")
             + (f"-user{redo}" if redo else ""),
             [
+                (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),

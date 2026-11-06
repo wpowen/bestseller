@@ -11,12 +11,13 @@ from .storage import save
 from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
+from .core_ability import ability_issues
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
-STRUCTURE_CHECKS_VERSION = 4
+STRUCTURE_CHECKS_VERSION = 5
 
 
 def title_terms(title, supplied=()):
@@ -178,6 +179,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
             + opponent_presence_issues(bible or {}, current)
             + planning_transition_issues(bible or {}, current)
             + solution_issues(bible or {}, history, current)
+            + ability_issues(bible or {}, history, current)
         )
         targets = sorted({n for issue in issues for n in issue["targets"]})
         attempts.append(dict(regeneration=retry, issues=issues, targets=targets))

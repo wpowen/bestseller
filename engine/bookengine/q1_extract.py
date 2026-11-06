@@ -22,6 +22,7 @@ from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
+from .core_ability import core_source
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -145,6 +146,9 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             "solution_type",
             "solution_target",
             "solution_method",
+            "core_required",
+            "core_application",
+            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -329,6 +333,9 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             "solution_type",
             "solution_target",
             "solution_method",
+            "core_required",
+            "core_application",
+            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -396,6 +403,10 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "不要把仅被提及者当视角，不确定填null。character_locations只列有逐字引文证明其当前地点的人物，"
         "每项name/location/quote，按正文时间顺序；回忆、计划和对白中的地点不算。"
     )
+    prompt += (
+        "\n抽取core_use：decisive布尔值（能力是否直接决定主要冲突结果），mechanism用圣经中的能力名称，action_quote引用实际使用，result_quote引用含因果及结果的完整原文；仅提及、设想、否定不算。无法证明填null，不编引文。核心来源："
+        + pack(core_source(bible))
+    )
     prompt += "\n每条solutions附target_noun作用对象、method_noun手段核心名词和含两者及结果的逐字quote，primary标主要解法；不以类型标签代替名词。"
     if not final:
         prompt += (
@@ -430,6 +441,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             end_pov=None,
             end_pov_quote=None,
             character_locations=[],
+            core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
         )
     )
     saved = client.prefix

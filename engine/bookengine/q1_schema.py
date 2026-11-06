@@ -10,6 +10,14 @@ FIX = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/fix100.yaml").
 GROWTH = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/growth_payoff.yaml").read_text())
 BORROWED = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/borrowed_style.yaml").read_text())
 DATA["hook_types"] = list(dict.fromkeys([*DATA["hook_types"], *BORROWED["hook_types"]]))
+DATA["schemas"]["address_design"] = {
+    "characters": [{"name": "", "address": "", "address_origin": "", "address_target": ""}]
+}
+DATA["instructions"]["address_design"] = (
+    "只修改错误清单中人物的address/address_origin/address_target；name只作定位，不准改名。"
+    "address是该人物如何称呼目标人物，address_target填写目标真名。优先用姓名派生称呼；"
+    "确需无关称呼，给出具体address_origin，供首次使用时交代。不能删空称呼绕过校验。"
+)
 
 
 def parse(value):

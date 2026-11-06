@@ -12,6 +12,8 @@ from .longmemory import long_context
 from .storage import save
 from .text import pack
 from .structure_planning import stage_ranges, stage_for_chapter, repair_structure
+from .address_contracts import repair_addresses, address_issues
+from .opening_promises import opening_contract
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
@@ -23,8 +25,19 @@ def _ask(client, kind, key, sections, redo=False):
             validate_bible(bible)
 
     template = DATA["schemas"][kind]
+    if kind == "prepare":
+        template = dict(
+            template,
+            bible=dict(
+                template["bible"],
+                opening_promises=["第1–3章可逐项核实的具体承诺"],
+                characters=[dict(template["bible"]["characters"][0], address_origin="", address_target="")],
+            ),
+        )
     if kind == "outlines":
-        template = dict(template, chapters=[dict(template["chapters"][0], conflict="", opponent="", transition="")])
+        template = dict(
+            template, chapters=[dict(template["chapters"][0], conflict="", opponent="", transition="", location="")]
+        )
     if kind == "prepare" and any(k == "用户锁定事实，只可扩写不可替换" for k, _ in sections):
         selection = next(v for k, v in sections if k == "用户锁定事实，只可扩写不可替换")
         fixed, locked = selection["card"], selection["facts"]
@@ -45,6 +58,12 @@ def _ask(client, kind, key, sections, redo=False):
         )
     schema = pack(template)
     instruction = DATA["rules"] + DATA["instructions"][kind] + FIX["planning"]
+    if kind == "prepare":
+        instruction += (
+            "\nreader_expectation和opening_promises逐项列可检查的开篇承诺，别把后期承诺塞进前三章。"
+            "第1章必须实际展示书名或设定核心能力，前三章每章展示实际使用和可见代价。"
+            "address须从目标姓名派生，否则address_origin写具体来历并在首次使用章交代；address_target写目标真名。"
+        )
     overhead = len(getattr(client, "prefix", "")) + len(SYSTEM) + len(schema) + len(instruction) + 400
     budget = max(0, 10000 - overhead)
     packed = [(key, json.dumps(value, ensure_ascii=False, separators=(",", ":"))) for key, value in sections]
@@ -290,6 +309,13 @@ def prepare(client, book, out, assets, design=False):
             generated[0]["canon"]["seed"] = card["title"]
             record(Path(out), alignment, corrected)
         validate_bible(generated[0])
+        if values[0] is None:
+            if address_issues(generated[0]):
+                generated[0], address_note = repair_addresses(
+                    generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
+                )
+                save(Path(out) / "address-design.json", address_note)
+            generated[0]["opening_contract"] = opening_contract(generated[0])
         save(Path(out) / "prepared-design.json", generated)
         for i, path in enumerate(paths):
             if values[i] is None:

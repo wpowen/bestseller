@@ -76,6 +76,8 @@ def _transition_quotes(opening):
         movement = _MOVEMENT.search(sentence)
         elapsed = _ELAPSED.search(sentence)
         scene = _SCENE.search(sentence)
+        if scene and re.search(r"(?:尚未|没有|没能|并未|未曾|不曾).{0,6}$", sentence[: scene.start()]):
+            scene = None
         moved = bool(movement)
         if moved and re.search(r"(?:尚未|没有|没能|并未|未曾|不曾).{0,6}$", sentence[: movement.start()]):
             moved = False

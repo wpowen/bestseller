@@ -356,3 +356,18 @@ def test_surname_honorifics_are_name_derived_without_invented_origins(name, labe
     b = dict(characters=[dict(name=name, role="protagonist", address=label, address_target=name)])
     assert address_issues(b) == []
     assert address_findings(f"“{label}，有人等你。”", b, {}) == []
+
+
+@pytest.mark.parametrize("fragment", ["叮", "他拿起旧钟"])
+def test_sound_or_prop_fragment_alone_cannot_prove_core_use(fragment):
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        items = json.loads(dict(sections)["逐项验收"])
+        return dict(
+            items=[dict(id=i["id"], status="fulfilled", evidence=[dict(chapter=1, quote=fragment)]) for i in items]
+        )
+
+    result = review_opening(
+        None, "short-proof", fragment + "。", dict(title="旧钟", power=dict(rule="拨钟倒回一息")), 1, {}, ask
+    )
+    assert next(i for i in result["items"] if i["kind"] == "core_use")["status"] == "unknown"
+    assert result["status"] == "unfulfilled"

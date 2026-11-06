@@ -80,8 +80,10 @@ def opening_contract(bible):
 
 
 def _positive_quote(quote, kind):
-    return kind != "core_use" or not re.search(
-        r"没有|未曾|并未|不曾|尚未|不敢|不能|不打算|如果|假如|打算|准备|[？?]", quote
+    return (
+        kind != "core_use"
+        or len(re.findall(r"[\u3400-\u9fff]", quote)) >= 8
+        and not re.search(r"没有|未曾|并未|不曾|尚未|不敢|不能|不打算|如果|假如|打算|准备|[？?]", quote)
     )
 
 
@@ -92,6 +94,7 @@ def _review_batch(ask, client, key, items, text, chapter):
         key,
         "逐项核对承诺，不确定返回unknown。必须引用原文章号和逐字证据，不得编造。"
         "仅核验给定完整章节，核心能力必须实际使用，代价必须已经可见。"
+        "核心能力须引用完整肯定叙述，说明实际操作及造成的结果；至少8个汉字，响声或拿起道具的短片段不算证据。"
         "缺失项给出本章可定向修补段号（从1起）。状态仅fulfilled/missing/unknown。",
         [("逐项验收", json.dumps(items, ensure_ascii=False)), ("本章正文", text), ("验收章号", str(chapter))],
         REVIEW_SCHEMA,

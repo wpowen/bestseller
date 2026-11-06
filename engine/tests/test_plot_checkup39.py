@@ -56,3 +56,44 @@ def test_invalid_explicit_noun_receipt_stays_unknown(tmp_path):
     result = plot_findings(bible, [chapter])["solution_substance"]
     assert result["distribution"] == {}
     assert result["unknown_chapters"] == [1]
+
+
+def test_checkup_reads_only_source_bound_supplement_without_rewriting_checkpoint(tmp_path):
+    source = {
+        "title": "借影换命",
+        "power": {"name": "借影", "rule": "借影复制动作"},
+        "canon": {"solution_menu": ["借力"]},
+        "volumes": [{"number": 1, "start": 1, "end": 1}],
+    }
+    (tmp_path / "story_bible.yaml").write_text(yaml.safe_dump(source, allow_unicode=True))
+    text = "他借影复制守卫的开锁动作，使铁门终于弹开。"
+    (tmp_path / "chapter-001.body.md").write_text(text)
+    (tmp_path / "chapters").mkdir()
+    checkpoint = tmp_path / "chapters/001.json"
+    checkpoint.write_text(json.dumps(dict(number=1, solutions=[])))
+    before = checkpoint.read_bytes()
+    folder = tmp_path / "plot-observations"
+    folder.mkdir()
+    raw = dict(
+        solutions=[
+            dict(
+                type="借力",
+                content="复制动作使门打开",
+                primary=True,
+                target_noun="铁门",
+                method_noun="借影",
+                quote=text,
+            )
+        ],
+        core_use={},
+    )
+    sidecar = folder / "draft-001-v1.json"
+    sidecar.write_text(
+        json.dumps(dict(number=1, source="draft", source_path="chapter-001.body.md", source_text=text, raw=raw))
+    )
+    report = check_book(tmp_path, source="draft")
+    assert report["solution_substance"]["distribution"] == {"借影": 1}
+    assert report["plot_observations"]["applied_chapters"] == [1]
+    assert checkpoint.read_bytes() == before
+    (tmp_path / "chapter-001.body.md").write_text(text + "他离开了。")
+    assert check_book(tmp_path, source="draft")["solution_substance"]["unknown_chapters"] == [1]

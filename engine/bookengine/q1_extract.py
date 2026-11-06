@@ -410,7 +410,11 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "\n抽取core_use：decisive布尔值（能力是否直接决定主要冲突结果），mechanism用圣经中的能力名称，action_quote引用实际使用，result_quote引用含因果及结果的完整原文；仅提及、设想、否定不算。无法证明填null，不编引文。核心来源："
         + pack(core_source(bible))
     )
-    prompt += "\n每条solutions附target_noun作用对象、method_noun手段核心名词和含两者及结果的逐字quote，primary标主要解法；不以类型标签代替名词。"
+    prompt += (
+        "\n每条solutions必须保留type（solution_menu合法值）和content（手段→结果短摘要）字段，"
+        "另附target_noun作用对象、method_noun手段核心名词和含两者及结果的连续逐字quote；"
+        "每个名词只填一个原词，不能用顿号合并或拼接引文，primary标主要解法。"
+    )
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
@@ -444,6 +448,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             end_pov=None,
             end_pov_quote=None,
             character_locations=[],
+            solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
             core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
         )
     )

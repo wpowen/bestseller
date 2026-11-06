@@ -14,6 +14,7 @@ from .text import pack
 from .structure_planning import stage_ranges, stage_for_chapter, repair_structure
 from .address_contracts import repair_addresses, address_issues
 from .opening_promises import opening_contract
+from .cost_design import has_cost_source, repair_costs
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
@@ -316,6 +317,11 @@ def prepare(client, book, out, assets, design=False):
                 )
                 save(Path(out) / "address-design.json", address_note)
             generated[0]["opening_contract"] = opening_contract(generated[0])
+            if has_cost_source(generated[0]):
+                generated[0], cost_note = repair_costs(
+                    generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
+                )
+                save(Path(out) / "cost-design.json", cost_note)
         save(Path(out) / "prepared-design.json", generated)
         for i, path in enumerate(paths):
             if values[i] is None:

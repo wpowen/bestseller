@@ -6,7 +6,7 @@ import re
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
 from .handoff_places import same_place
-from .boundary_state import handoff_reference, advance_boundary_state
+from .boundary_state import handoff_reference, advance_boundary_state, with_ending_candidate
 
 
 OPENING_RULE = (
@@ -175,6 +175,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
                         },
                     )
             facts = boundary_facts(raw, text)
+    facts = with_ending_candidate(facts, text, bible, state)
     note = evaluate_handoff(state, facts, text, bible, outline)
     transition, issue = note.get("transition"), note["issue"]
     note["boundary_retried"] = retried

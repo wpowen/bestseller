@@ -13,7 +13,7 @@ from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
-from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state
+from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .structure_planning import final_stage_start
 from .retired_opponents import repair_retired, repair_exit_tail
@@ -234,6 +234,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
     )
     boundaries = boundary_facts(raw, text)
+    boundaries = with_ending_candidate(boundaries, text, bible, state)
     final_handoff = evaluate_handoff(state, boundaries, text, bible, outline)
     handoff.update({k: v for k, v in final_handoff.items() if k != "status"})
     if handoff["missing"]:

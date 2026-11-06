@@ -224,11 +224,13 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
         from .prose_repetition import clean_repetitions
 
         continuous = (
-            rechecked["status"] == "present"
-            if transition and transition["status"] == "missing" and rechecked
-            else bool(observed.get("opening_location"))
-            and not assessment["issue"]
+            not assessment["issue"]
             and "pov_location" not in assessment["missing"]
+            and (
+                rechecked["status"] == "present"
+                if transition and transition["status"] == "missing" and rechecked
+                else bool(observed.get("opening_location"))
+            )
         )
         lost = any(facts.get(k) and not observed.get(k) for k in ("opening_location", "end_location"))
         before = clean_repetitions(text, remove_safe=False)["counts"]

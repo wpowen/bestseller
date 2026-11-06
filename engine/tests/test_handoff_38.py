@@ -174,3 +174,28 @@ def test_unrelated_stage_movement_cannot_discharge_known_location_break():
     )
     note = evaluate_handoff(dict(end_location="石桥"), facts(text), text, bible, dict(number=11))
     assert note["issue"] and note["issue"]["kind"] == "location_break"
+
+
+def test_unrelated_stage_movement_is_also_rejected_on_repair_recheck():
+    original = "林舟站在驿站。"
+    replacement = "林舟站在驿站。门外的伙计追着鸡跑。"
+    bible = dict(
+        volumes=[dict(number=1, start=1, end=10, location="石桥"), dict(number=2, start=11, end=20, location="驿站")]
+    )
+
+    def extract(client, name, text, *args, **kwargs):
+        return dict(facts(text), events=[]), False, 0
+
+    actual, *_, note = repair_opening(
+        None,
+        "ch11",
+        original,
+        facts(original),
+        False,
+        dict(end_location="石桥"),
+        bible,
+        dict(number=11),
+        extract,
+        lambda *a, **k: dict(replace_count=1, paragraphs=[replacement]),
+    )
+    assert actual == original and note["status"] == "rolled_back"

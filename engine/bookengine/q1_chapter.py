@@ -15,7 +15,7 @@ from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
 from .structure_planning import final_stage_start
-from .retired_opponents import repair_retired
+from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
 from .stage_transition import stage_transition
@@ -226,6 +226,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, repetition["repair"] = repair_repetitions(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, exit_tail_repair = repair_exit_tail(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     boundaries = boundary_facts(raw, text)
     final_transition = stage_transition(bible, idx, text, state.get("end_location"), outline=outline)
     if final_transition:
@@ -327,6 +330,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         **boundaries,
         handoff=handoff,
         opponent_repair=opponent_repair,
+        exit_tail_repair=exit_tail_repair,
         cast_findings=cast_findings(text, bible, state, outline),
         cleaning=cleaning,
         repetition=dict(repetition, remaining=clean_repetitions(text, remove_safe=False)["counts"]),

@@ -48,6 +48,8 @@ class RepairClient(CaptureClient):
             else:
                 self.repetition_repairs += 1
                 self.replies[stage] = dict(edits=[dict(id=7, text="我握紧断剑，退到城门背后。")])
+        elif stage.endswith("-exit-tail-opponent-repair"):
+            self.replies[stage] = self.replies["r2-ch11-opponent-repair"]
         elif stage.endswith(("-opponent-recheck", "-opening-recheck", "-clean-state")):
             self.replies[stage] = self.extracted
         elif stage.endswith("-opening-repair"):
@@ -73,10 +75,10 @@ def run_chapter(fixture, client):
     )
 
 
-def test_opponent_repair_new_unsafe_repetition_gets_one_bounded_repair(repair_book):
+def test_opponent_repair_new_exact_repetition_is_removed_deterministically(repair_book):
     repeated = "何晏要的是我身上那把已经断裂的旧剑。"
     # Four intervening sentences put the later copy beyond precision.apply's
-    # three-neighbor suffix guard. The pronoun makes deterministic deletion unsafe.
+    # three-neighbor suffix guard. INBOX36 allows a pronoun in the duplicate itself.
     text = (
         "三天后，阿宁来到山城。\n\n"
         + repeated.replace("何晏", "石远")
@@ -91,7 +93,8 @@ def test_opponent_repair_new_unsafe_repetition_gets_one_bounded_repair(repair_bo
     saved = (repair_book.out / "chapter-011.body.md").read_text(encoding="utf-8")
     remaining = clean_repetitions(saved, remove_safe=False)
     assert remaining["counts"]["sentence_repetitions"] == 0, remaining["needs_repair"]
-    assert client.repetition_repairs == 1
+    assert client.repetition_repairs == 0
+    assert row["repetition"]["final"]["counts"]["removed_spans"] == 1
     assert not active_opponent_hits(saved, repair_book.bible, 11)
     assert row["repetition"]["remaining"]["sentence_repetitions"] == 0
     assert row["status"] == "complete" and row["fact_source"] == "final_body"

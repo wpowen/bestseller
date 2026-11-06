@@ -1,0 +1,357 @@
+{
+  "antagonists": [
+    {
+      "name": "杜木槿",
+      "tier": 1,
+      "stage": 1,
+      "exit": 10
+    },
+    {
+      "name": "韩柯铭",
+      "tier": 2,
+      "stage": 2,
+      "exit": 20
+    },
+    {
+      "name": "裴正谊",
+      "tier": 3,
+      "stage": 3,
+      "exit": 30
+    }
+  ],
+  "volumes": [
+    {
+      "number": 1,
+      "start": 1,
+      "end": 10,
+      "location": "停运渡口",
+      "antagonist": "杜木槿",
+      "goal": "确认旧船为何返航，并取得第一项靠岸权",
+      "climax": "夜航权争夺中，旧船同时逼停三艘争夺船，三方证词让杜木槿失去摆渡会控制权",
+      "exit_chapter": 10,
+      "stage": "",
+      "change": "",
+      "cost": ""
+    },
+    {
+      "number": 2,
+      "start": 11,
+      "end": 20,
+      "location": "货运联盟水仓",
+      "antagonist": "韩柯铭",
+      "goal": "破解联盟以失踪者承运的十二箱货路线",
+      "climax": "真假货船同时靠岸，失踪船工家属当场夺回姓名，联盟主力货船随假货路沉陷",
+      "exit_chapter": 20,
+      "stage": "",
+      "change": "",
+      "cost": ""
+    },
+    {
+      "number": 3,
+      "start": 21,
+      "end": 30,
+      "location": "旧泵站水门",
+      "antagonist": "裴正谊",
+      "goal": "完成第十二次假靠岸，释放所有未抵达者并查清父亲失踪真相",
+      "climax": "最终靠岸交易在江心展开，十二名见证者同时叫出被抹去的姓名，裴正谊被迫交出父亲留下的选择",
+      "exit_chapter": 30,
+      "stage": "",
+      "change": "",
+      "cost": ""
+    }
+  ],
+  "characters": [
+    {
+      "name": "沈岑溪",
+      "role": "protagonist",
+      "identity": "沿江修船匠",
+      "aliases": [
+        "小沈",
+        "岑溪"
+      ],
+      "desire": "找回失踪父亲并夺回旧船",
+      "fear": "亲手舍弃记忆会变成父亲的帮凶",
+      "flaw": "把自己当作所有代价的承担者",
+      "bottom_line": "不以无辜者作交易筹码",
+      "voice": "短促冷静，逼问时带修理工式的精准",
+      "growth_end": "接受记忆并非完整，代价也不必独担",
+      "goal": "揭开十二次假靠岸的献祭真相",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 0,
+      "gender": "女",
+      "address": "沈师傅",
+      "active_desire": "在父亲彻底成为未抵达者前赢下最终靠岸",
+      "personality_tags": [
+        "理性",
+        " stubborn",
+        "护短",
+        "敢赌",
+        "嘴硬"
+      ],
+      "catchphrase": "先看谁最怕这条船靠岸。",
+      "never_do": [
+        "拿无辜者作筹码",
+        "伪造父亲留下的证据",
+        "把同伴当作可弃置的代价"
+      ]
+    },
+    {
+      "name": "顾庭樾",
+      "role": "romance",
+      "identity": "停运渡口夜班管理员",
+      "aliases": [
+        "顾师傅",
+        "老顾"
+      ],
+      "desire": "保住渡口最后一批失踪船工的去向",
+      "fear": "被自己守了十年的秘密永久埋进江底",
+      "flaw": "总用沉默替别人做决定",
+      "bottom_line": "不把活人登记成失踪者",
+      "voice": "慢条斯理，危处反而格外客气",
+      "growth_end": "主动说出自己隐瞒的航线记录",
+      "goal": "带沈岑溪找到父亲被转移的旧航线",
+      "exit_volume": 3,
+      "attraction": "熟悉她逞强时最细微的停顿",
+      "obstacle": "二人各自守着半段父亲失踪真相",
+      "relationship_stages": [
+        "互相试探",
+        "危机互救",
+        "因记忆产生裂痕",
+        "共同承担代价",
+        "不替对方做决定"
+      ],
+      "ladder_volume": 0,
+      "gender": "男",
+      "address": "顾师傅",
+      "active_desire": "",
+      "personality_tags": [
+        "克制",
+        "谨慎",
+        "记仇",
+        "心软"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "陶念慈",
+      "role": "support",
+      "identity": "渡口渔民与船工家属",
+      "aliases": [
+        "穗姐"
+      ],
+      "desire": "找回被丈夫带走的三名船工",
+      "fear": "再有人以工作名额换一条命",
+      "flaw": "遇事先求人，欠下人情便不敢拒绝",
+      "bottom_line": "不带不知情者上夜船",
+      "voice": "爽利直白，骂人不绕弯",
+      "growth_end": "组织船工家属拒绝替势力传话",
+      "goal": "召集十二名还记得旧航线的人",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 0,
+      "gender": "女",
+      "address": "陶姐",
+      "active_desire": "",
+      "personality_tags": [
+        "泼辣",
+        "仗义",
+        "护短",
+        "怕欠债"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "邵承骏",
+      "role": "support",
+      "identity": "老船工",
+      "aliases": [
+        "栓叔"
+      ],
+      "desire": "守住父亲沈远山留下的修船手艺",
+      "fear": "那本被撕页的航海簿会害死沈岑溪",
+      "flaw": "把承诺看得比亲情更重",
+      "bottom_line": "不替活人签下离船的承诺",
+      "voice": "硬邦邦，句尾常带旧式行话",
+      "growth_end": "承认旧约无法永久约束后来者",
+      "goal": "找出航海簿缺失的十二页",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 0,
+      "gender": "男",
+      "address": "栓叔",
+      "active_desire": "",
+      "personality_tags": [
+        "固执",
+        "守信",
+        "寡言",
+        "护手艺"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "闻旻泽",
+      "role": "support",
+      "identity": "货运联盟账房",
+      "aliases": [
+        "旻泽"
+      ],
+      "desire": "替被冒名签货的弟弟洗清罪名",
+      "fear": "账册一旦公开，自己也会失去立足处",
+      "flaw": "每走一步都先替自己留退路",
+      "bottom_line": "不虚报一箱货的去向",
+      "voice": "轻快圆滑，报数比报情多",
+      "growth_end": "冒险交出能指向真货船的底单",
+      "goal": "从假货单中查出被藏起的真航线",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 0,
+      "gender": "女",
+      "address": "闻小姐",
+      "active_desire": "",
+      "personality_tags": [
+        "机灵",
+        "怕事",
+        "精算",
+        "重情"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "罗景铎",
+      "role": "support",
+      "identity": "地下渡运引路人",
+      "aliases": [
+        "禾姐"
+      ],
+      "desire": "让被献祭者留下的亲人得到名字",
+      "fear": "自己成为替罪的第十二名引路人",
+      "flaw": "用冒险证明自己值得被信任",
+      "bottom_line": "不把求救者送上没有回程的船",
+      "voice": "带笑却锋利，习惯用暗语试探",
+      "growth_end": "放弃独自掌船，选择公开路线",
+      "goal": "潜入地下水门找到父亲最后靠岸处",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 0,
+      "gender": "女",
+      "address": "禾姐",
+      "active_desire": "",
+      "personality_tags": [
+        "冷静",
+        "锋利",
+        "善赌",
+        "不认命"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "杜木槿",
+      "role": "antagonist",
+      "identity": "渡口摆渡会首",
+      "aliases": [
+        "杜会首"
+      ],
+      "desire": "垄断停运渡口的夜航权",
+      "fear": "失去摆渡人身份后被当作替罪船工",
+      "flaw": "相信恐惧足以统一所有人",
+      "bottom_line": "不承认停运记录曾经存在",
+      "voice": "洪亮亲热，发怒时突然轻声",
+      "growth_end": "被旧船和船工证词逼出渡口",
+      "goal": "以第三次假靠岸完成夜航权交易",
+      "exit_volume": 1,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 1,
+      "gender": "男",
+      "address": "杜会首",
+      "active_desire": "",
+      "personality_tags": [
+        "强势",
+        "善笼络",
+        "多疑",
+        "残酷"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "韩柯铭",
+      "role": "antagonist",
+      "identity": "货运联盟理事",
+      "aliases": [
+        "韩理事"
+      ],
+      "desire": "用十二座水仓换取沿江货运控制",
+      "fear": "联盟成员发现货箱中运的是失踪者",
+      "flaw": "算尽货物，却算不清人的选择",
+      "bottom_line": "不损失任何一艘联盟主力货船",
+      "voice": "公式化冷静，喜欢以数字施压",
+      "growth_end": "真假货船同返，联盟信誉崩毁",
+      "goal": "完成第七次靠岸并锁定沈岑溪的交易资格",
+      "exit_volume": 2,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 2,
+      "gender": "男",
+      "address": "韩理事",
+      "active_desire": "",
+      "personality_tags": [
+        "精明",
+        "冷酷",
+        "耐心",
+        "控制欲强"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    },
+    {
+      "name": "裴正谊",
+      "role": "antagonist",
+      "identity": "地下水门操舟人",
+      "aliases": [
+        "老裴"
+      ],
+      "desire": "完成最后一次靠岸并关闭旧航道",
+      "fear": "自己的名字重新出现在未抵达者名单上",
+      "flaw": "把自己当作规则的最终牺牲品",
+      "bottom_line": "不让任何交易者提前见到终点",
+      "voice": "温和简短，像替人送行",
+      "growth_end": "被迫交出父亲记忆的最终归处",
+      "goal": "诱使沈岑溪用自己换回父亲",
+      "exit_volume": 3,
+      "attraction": "",
+      "obstacle": "",
+      "relationship_stages": [],
+      "ladder_volume": 3,
+      "gender": "男",
+      "address": "裴先生",
+      "active_desire": "",
+      "personality_tags": [
+        "沉静",
+        "偏执",
+        "克制",
+        "洞悉人心"
+      ],
+      "catchphrase": "",
+      "never_do": []
+    }
+  ]
+}

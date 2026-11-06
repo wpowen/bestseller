@@ -147,7 +147,7 @@ def _stage_stats(bible, chapters):
 
 
 def _opponents(bible, chapters, stages):
-    from bookengine.retired_opponents import active_opponent_hits
+    from bookengine.retired_opponents import active_opponent_hits, exit_boundary_hits, opponent_hits
 
     opponents = {
         c["name"]: c
@@ -181,7 +181,17 @@ def _opponents(bible, chapters, stages):
                     for c in chapters
                     if any(h["name"] == name for h in active_opponent_hits(c["text"], bible, c["number"]))
                 ],
-                active_appearance_basis="surface_agent_or_action; Inference",
+                exit_next_chapter_presence=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in exit_boundary_hits(c["text"], bible, c["number"]))
+                ],
+                present_after_exit_chapters=[
+                    c["number"]
+                    for c in chapters
+                    if any(h["name"] == name for h in opponent_hits(c["text"], bible, c["number"]))
+                ],
+                active_appearance_basis="surface_agent_or_action; exit+1 passive presence; Inference",
             )
         )
     return result

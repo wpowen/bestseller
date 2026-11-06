@@ -1,14 +1,17 @@
 """Quote-grounded chapter handoffs and opening-only repairs."""
 
 import json
+import re
 
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
+from .handoff_places import same_place
 
 
 OPENING_RULE = (
     "开头300字内：写出从参考地点到本章地点的移动过程；或者写出明确的时间或场景切换并交代本章地点。"
-    "同一处地点的不同说法可直接承接。不臆造人物曾在上章末场；参考视角位置未知时明确本章地点。"
+    "如‘抵达本章地点时’的入场时间句也可明确切换场景。同一处地点的不同说法可直接承接。"
+    "不臆造人物曾在上章末场；参考视角位置未知时明确本章地点。"
 )
 
 
@@ -53,11 +56,17 @@ def boundary_facts(raw, text):
 
 def opening_issue(previous, facts, text, bible=None):
     old, new = previous.get("end_location"), facts.get("opening_location")
-    if not old or not new or old == new:
+    if not old or not new or same_place(old, new, bible, previous.get("known_locations", [])):
         return None
     opening = text[:300]
     quotes = _transition_quotes(opening)
-    if new in opening and any(old in q or _ELAPSED.search(q) or _SCENE.search(q) for q in quotes):
+    if new in opening and any(
+        any(same_place(old, place, bible) and place in q for place in [old, *previous.get("known_locations", [])])
+        or _ELAPSED.search(q)
+        or _SCENE.search(q)
+        or re.search(r"(?:追进|赶到|抵达|钻进|拐进|回到)" + re.escape(new) + r"时[，,]", q)
+        for q in quotes
+    ):
         return None
     return dict(kind="location_break", previous=old, opening=new, present=previous.get("present", []))
 
@@ -109,7 +118,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
                     )
             facts = boundary_facts(raw, text)
     transition = stage_transition(bible, outline.get("number"), text, state.get("end_location"), outline=outline)
-    issue = transition if transition and transition["issue"] else opening_issue(state, facts, text)
+    issue = transition if transition and transition["issue"] else opening_issue(state, facts, text, bible)
     if transition and transition["status"] == "present":
         issue = None
     known = (
@@ -177,7 +186,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
         continuous = (
             rechecked["status"] == "present"
             if transition and transition["status"] == "missing" and rechecked
-            else bool(observed.get("opening_location")) and not opening_issue(state, observed, candidate)
+            else bool(observed.get("opening_location")) and not opening_issue(state, observed, candidate, bible)
         )
         if not invalid and continuous and not high_confidence(state, checked.get("events", []), candidate):
             repaired = dict(note, status="repaired")

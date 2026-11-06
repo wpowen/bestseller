@@ -65,3 +65,41 @@ def test_rollback_has_a_specific_reason():
     )
     assert note["status"] == "rolled_back"
     assert note["rollback_reason"] == "invalid_or_unchanged_patch"
+
+
+@pytest.mark.parametrize("verb", ["追", "赶", "转入", "钻进", "回到", "折返", "跟着", "拐进", "爬出"])
+def test_maintained_movement_vocabulary(verb):
+    text = f"林舟从石桥{verb}驿站。"
+    assert opening_issue(dict(end_location="石桥"), facts(text), text) is None
+
+
+@pytest.mark.parametrize("old,new", [("狭巷", "巷中"), ("地下通道", "通道"), ("陆记钟铺", "陆记钟铺前堂")])
+def test_same_place_core_or_subordinate_location(old, new):
+    text = f"林舟守在{new}。"
+    assert opening_issue(dict(end_location=old), facts(text, new), text) is None
+
+
+def test_explicit_bible_location_relationships_do_not_join_distinct_named_places():
+    bible = dict(locations=[dict(name="青石院", children=["东厢", "西厢"])])
+    assert opening_issue(dict(end_location="青石院"), facts("林舟守在东厢。", "东厢"), "林舟守在东厢。", bible) is None
+    for old, new in [("北街旧巷", "南街旧巷"), ("王府东院", "王府西院"), ("南城", "北城")]:
+        assert opening_issue(dict(end_location=old), facts(f"林舟守在{new}。", new), f"林舟守在{new}。", bible)
+
+
+def test_late_movement_and_negation_do_not_pass():
+    for text in ["林舟在驿站。" + "风" * 300 + "林舟离开石桥，赶到驿站。", "林舟没有离开石桥去驿站。"]:
+        assert opening_issue(dict(end_location="石桥"), facts(text), text)
+
+
+def test_third_short_paragraph_can_supply_transition_within_300_characters():
+    text = "风停了。\n\n灯亮了。\n\n半个时辰后，林舟来到驿站。"
+    assert opening_issue(dict(end_location="石桥"), facts(text), text) is None
+
+
+def test_trial37_saved_repair_establishes_destination_on_entry():
+    text = (
+        "陆和笙追进北街旧巷时，地上的油泥印还没干。黑泥混着车轴脱落的脂油，从北街口一路拖进窄巷，"
+        "像有人故意留下的路标；凉风卷过墙根，细碎木屑贴着青砖滚向巷内。工具箱被拖行的刮擦声忽然停了，"
+        "陆和笙循声转入两重院墙之间的阴影，脚步落在湿冷石面上，身后北街的灯火被砖墙一并截断。"
+    )
+    assert opening_issue(dict(end_location="灶间"), facts(text, "北街旧巷"), text) is None

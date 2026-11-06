@@ -1,6 +1,7 @@
 """Pure planning/body checks for stage starts; no extraction or filesystem access."""
 
 import re
+from .handoff_places import MOVEMENT_WORDS, same_place
 
 
 def _label(value):
@@ -46,7 +47,7 @@ def _boundary(bible, number, outline):
 
 
 _MOVEMENT = re.compile(
-    r"离开|走出|走进|赶到|抵达|来到|到达|穿过|绕过|翻过|潜入|从[^。！？\n]{1,40}(?:到|往|去)"
+    "|".join(map(re.escape, MOVEMENT_WORDS)) + r"|从[^。！？\n]{1,40}(?:到|往|去)"
     r"|沿[^。！？\n]{1,20}(?:走|行|赶)|(?:走|行|赶)了[^。！？\n]{1,12}(?:时辰|小时|天|日|里)"
 )
 _DURATION = r"(?:[一二两三四五六七八九十百数几半\d]+(?:个)?(?:时辰|小时|分钟|日|天|夜|月|年|刻钟)|一炷香|一盏茶)"
@@ -54,7 +55,7 @@ _ELAPSED = re.compile(
     _DURATION + r"(?:之)?后|" + _DURATION + r"(?:已(?:经)?)?过去(?:了)?"
     r"|翌日|次日|第二天|天亮(?:时|后)|入夜(?:时|后)|转眼(?:已|便|就|过)|转眼间"
 )
-_SCENE = re.compile(r"与此同时|同一时刻|另一边|镜头转(?:到|向)|场景转(?:到|向)|再看|此时的")
+_SCENE = re.compile(r"与此同时|同一时刻|另一边|镜头转(?:到|向)|场景转(?:到|向)|再看|此时的|回到")
 _RECOLLECTION = re.compile(r"想起|记得|回忆|曾经|当年|往年|旧事|打算|计划|准备|如果|假如")
 
 
@@ -94,7 +95,7 @@ def stage_transition(bible, number, text, previous_end=None, *, outline=None):
     if boundary is None:
         return None
     old, new = _label(previous_end) or boundary["previous"], boundary["opening"]
-    if old and new and old == new:
+    if same_place(old, new, bible):
         return None
     opening = text[:300]
     result = dict(boundary, previous=old or None, opening=new or None, issue=None, status="unknown", quotes=[])

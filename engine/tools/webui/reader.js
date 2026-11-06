@@ -18,7 +18,7 @@ function renderTOC() {
   }
   const a = c.final
    ? link(`第 ${c.number} 章　${c.title}`, readURL(state.readerId, c.number), c.number === state.chapter ? 'on' : '')
-   : el('span', `第 ${c.number} 章　${c.draft ? '正在去 AI' : '未写'}`, 'muted');
+   : el('span', `第 ${c.number} 章　准备中`, 'muted');
   a.setAttribute('aria-current', c.number === state.chapter ? 'page' : 'false');
   nav.append(a);
  }
@@ -64,10 +64,10 @@ function renderChapter() {
  text('reader-title', `${b.title} · ${c?.title || '章节未生成'}`);
  $('close-reader').href = bookURL(b.id);
  text('chapter-title', `第 ${state.chapter} 章　${c?.title || ''}`);
- const note = mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章正在去 AI，完成后显示';
- text('chapter-meta', [b.title, note, c?.deai_notice].filter(Boolean).join(' · '));
+ const note = mode === 'compare' ? '草稿 / 终稿对照' : c?.final ? '静下来，读一个故事' : '本章准备中';
+ text('chapter-meta', [b.title, note].join(' · '));
  prose($('draft'), c?.draft, mode === 'compare' ? c?.final : null);
- prose($('final'), c?.final || '本章正在去 AI，完成后显示', mode === 'compare' ? c?.draft : null);
+ prose($('final'), c?.final || '本章准备中', mode === 'compare' ? c?.draft : null);
  $('comparison').dataset.mode = mode;
  $('reading-progress').max = Math.max(1, b.total);
  $('reading-progress').value = state.chapter;

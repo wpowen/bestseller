@@ -40,6 +40,14 @@ def test_selected_story_survives_tournament_renaming_and_resume(tmp_path, name, 
     )
     wrong = dict(bible=bible(), threads=[])
     responses = [json.dumps(facts, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 7
+    responses += [
+        json.dumps(
+            dict(
+                cost="损失：失去童年一次闻花香的记忆；心理：记忆缺口使他不敢认妹妹送的花，反复向她道歉；等级：1；升级：首次付出记忆代价"
+            ),
+            ensure_ascii=False,
+        )
+    ]
     client = ScriptedClient(tmp_path, responses)
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     value, _, _ = prepare(client, book, tmp_path, ROOT / "config", design=True)
@@ -196,7 +204,17 @@ def test_unnamed_card_recovery_uses_the_same_assigned_cast(tmp_path):
         threads={"threads": [dict(id="main", kind="main", beats=[dict(volume=1, description="陆惊山救姐姐")])]},
     )
     client = ScriptedClient(
-        tmp_path, [json.dumps(locked, ensure_ascii=False)] + [json.dumps(wrong, ensure_ascii=False)] * 7
+        tmp_path,
+        [json.dumps(locked, ensure_ascii=False)]
+        + [json.dumps(wrong, ensure_ascii=False)] * 7
+        + [
+            json.dumps(
+                dict(
+                    cost="损失：失去童年一次闻花香的记忆；心理：记忆缺口使他不敢认妹妹送的花，反复向她道歉；等级：1；升级：首次付出记忆代价"
+                ),
+                ensure_ascii=False,
+            )
+        ],
     )
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     saved_bible, saved_threads, _ = prepare(client, book, tmp_path, ROOT / "config")

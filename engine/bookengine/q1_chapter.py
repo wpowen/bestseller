@@ -14,6 +14,7 @@ from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, 
 from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening
+from .opening_promises import repair_opening_promises, previous_promise_context
 from .structure_planning import final_stage_start
 from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
@@ -229,7 +230,16 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, exit_tail_repair = repair_exit_tail(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, promise_review = repair_opening_promises(
+        client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
+    )
     boundaries = boundary_facts(raw, text)
+    handoff["missing"] = [k for k in ("opening_location", "end_location") if not boundaries[k]]
+    if idx > 1 and not state.get("end_location"):
+        handoff["missing"].append("previous_end")
+    if handoff["missing"]:
+        handoff["opening_status"] = handoff["status"]
+        handoff["status"] = "handoff_unknown"
     final_transition = stage_transition(bible, idx, text, state.get("end_location"), outline=outline)
     if final_transition:
         handoff["transition"] = final_transition
@@ -274,6 +284,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         issues += thread_issues
     paid = not failed and payoff_ok(raw.get("payoff"), outline["payoff_type"], text, canon["payoff_menu"])
     current["pending_payoff"] = outline["payoff_type"] if outline["payoff_due"] and not paid else None
+    current["handoff_unknown"] = bool(not boundaries["end_location"] or handoff.get("missing"))
     current.pop("end_location", None)
     current.pop("present", None)
     if boundaries["end_location"]:
@@ -329,6 +340,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         opens_new_mainline=raw.get("opens_new_mainline") if outline["ending"] else False,
         **boundaries,
         handoff=handoff,
+        opening_promises=promise_review,
         opponent_repair=opponent_repair,
         exit_tail_repair=exit_tail_repair,
         cast_findings=cast_findings(text, bible, state, outline),

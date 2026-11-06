@@ -85,7 +85,19 @@ def test_bad_substep_rolls_back_whole_chapter_and_watcher_finishes(tmp_path, mon
         assert report["checks"]["failure"]["reason"]
         assert (tmp_path / "final/chapter-001.md").read_bytes() == (tmp_path / "chapter-001.body.md").read_bytes()
         assert (tmp_path / "final/chapter-002.md").exists()
-        assert len([c for c in ReplyClient.instances[0].calls if c["stage"].startswith(bad_stage)]) == 6
+        failed_calls = [c for c in ReplyClient.instances[0].calls if c["stage"].startswith(bad_stage)]
+        assert len([c for c in failed_calls if "-narrow" not in c["stage"]]) == 6
+        assert len([c for c in failed_calls if "-narrow" in c["stage"]]) == 6
+        recovery = report["checks"]["recovery"]
+        assert recovery["strategy"] == "single_item" and recovery["status"] == "retained"
+        assert [attempt["status"] for attempt in recovery["attempts"]] == ["retained", "retained"]
+        for attempt in recovery["attempts"]:
+            assert attempt["failure"]["stage"] == bad_stage
+            assert attempt["failure"]["reason"]
+        work = tmp_path / "final/.deai/001"
+        assert read_json(work / "attempt-initial.json")["checks"]["failure"] == recovery["attempts"][0]["failure"]
+        assert report["checks"]["failure"] == recovery["attempts"][1]["failure"]
+        assert read_json(work / "recovery.json") == recovery
         for name, content in before.items():
             assert (tmp_path / name).read_bytes() == content
         finals = snapshot(tmp_path / "final")

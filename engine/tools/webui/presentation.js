@@ -50,6 +50,37 @@ function planning(value) {
  if (!box.childNodes.length) box.append(el('p', '暂无可展示的规划内容。', 'muted'));
  return box;
 }
+function diagnostic(value) {
+ if (value == null || value === '') return '未知';
+ if (Array.isArray(value)) return value.map(diagnostic).join('；') || '无';
+ if (typeof value === 'object') {
+  const names = { stage: '阶段', reason: '原因', strategy: '方式', attempts: '尝试记录', status: '结果',
+   recovered: '已恢复', rollback: '回退检查', paragraphs: '段落', error: '错误', failure: '失败', warnings: '警告' };
+  return Object.entries(value).map(([key, item]) => `${names[key] || key}：${diagnostic(item)}`).join('；') || '未知';
+ }
+ return String(value);
+}
+function failureDetails(section, label, failure) {
+ section.append(el('p', `${label}阶段：${diagnostic(failure?.stage)}`),
+  el('p', `${label}原因：${diagnostic(failure?.reason)}`));
+ if (failure?.warnings?.length) section.append(el('p', `${label}警告：${diagnostic(failure.warnings)}`));
+}
+function recoveryDetails(section, recovery) {
+ if (recovery?.strategy !== 'single_item' || !Array.isArray(recovery.attempts)) {
+  section.append(el('p', `去 AI 恢复记录：${diagnostic(recovery)}`));
+  return;
+ }
+ const names = { recovered: '已恢复', retained: '保留原稿', polished: '采用修改稿', unchanged: '无需修改',
+  partial: '保留原稿', error: '出错', quota_exhausted: '额度用尽', interrupted: '已中断' };
+ const outcome = (status) => `${names[status] || '结果未知'}（${status || 'unknown'}）`;
+ section.append(el('h4', '去 AI 恢复记录'), el('p', '重试方式：缩小范围（single_item）'),
+  el('p', `缩范围重试结果：${outcome(recovery.status)}`));
+ recovery.attempts.forEach((attempt, i) => {
+  const label = i === 0 ? '首次' : `缩范围重试 ${i} `;
+  section.append(el('p', `${label}处理结果：${outcome(attempt.status)}`));
+  if (attempt.failure) failureDetails(section, `${label}失败`, attempt.failure);
+ });
+}
 function checks(chapters) {
  const box = el('div');
  for (const chapter of chapters || []) {
@@ -62,7 +93,15 @@ function checks(chapters) {
    if (Array.isArray(check[key]) && check[key].length) section.append(el('p', `${label}：${check[key].length} 项`));
   }
   if (report.after_score != null) section.append(el('p', `润色后参考分：${count(report.after_score)}`));
-  if (chapter.deai_notice) section.append(el('p', chapter.deai_notice));
+  const deai = report.checks || {}, failure = deai.failure;
+  const retained = chapter.deai_notice || ['retained', 'partial'].includes(report.status);
+  if (retained) section.append(el('p', '去 AI 处理结果：保留原稿'));
+  if (failure) failureDetails(section, '去 AI 最后失败', failure);
+  else if (!deai.recovery && (retained || report.status === 'unknown')) {
+   section.append(el('p', '去 AI 原因：未知（记录未提供）', 'muted'));
+  }
+  if (report.warnings?.length) section.append(el('p', `去 AI 警告：${diagnostic(report.warnings)}`));
+  if (deai.recovery != null) recoveryDetails(section, deai.recovery);
   if (section.childNodes.length === 1) section.append(el('p', '暂无检测结果。', 'muted'));
   box.append(section);
  }

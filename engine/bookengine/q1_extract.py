@@ -18,6 +18,7 @@ from .storage import save
 from .text import prose, number_paragraphs, _paragraph_spans
 from .q1_cast import cast_hits, cast_findings
 from .retired_opponents import stage_constraints
+from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
 from tools.book_checkup import clean_prose
 
@@ -79,6 +80,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             address=c.get("address") or c["name"],
             aliases=c.get("aliases", []),
         )
+        card.update({k: c[k] for k in ("address_origin", "address_target") if c.get(k)})
         card.update(
             {k: c.get(k) for k in ("active_desire", "personality_tags", "never_do", "desire", "fear") if c.get(k)}
         )
@@ -164,6 +166,13 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    if chapter["number"] <= 3 and (bible.get("title") or bible.get("power")):
+        requirements = [
+            {k: item[k] for k in ("id", "requirement")}
+            for item in opening_contract(bible)
+            if item["chapter"] == chapter["number"]
+        ]
+        outline = dict({"本章承诺验收": requirements}, **outline)
     constraints = stage_constraints(bible, chapter["number"])
     constraints["omitted_retired"] = 0
     constraints["omitted_locations"] = 0
@@ -171,6 +180,8 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         field = "retired" if constraints["retired"] else "departed_locations"
         constraints[field].pop(0)
         constraints["omitted_retired" if field == "retired" else "omitted_locations"] += 1
+    if state.get("handoff_unknown"):
+        outline["上章地点未知"] = "开头必须明确交代当前地点，并从上章尾可确认的处境交代移动或时间；不得臆造上章地点。"
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),

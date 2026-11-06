@@ -221,67 +221,15 @@ def _keywords(chapters):
 
 
 def _boundary(chapter, side):
-    text = chapter["text"]
-    paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
-    passage = "\n\n".join(paragraphs[:2]) if side == "opening" else text[-1200:]
-    meta = chapter["meta"]
-    for data in (meta, meta.get("state", {}), meta.get("boundary", {})):
-        if not isinstance(data, dict):
-            continue
-        location, quote = data.get(side + "_location"), data.get(side + "_quote")
-        if (
-            isinstance(location, str)
-            and location
-            and isinstance(quote, str)
-            and quote
-            and location in quote
-            and quote in passage
-        ):
-            return location, quote
-    return None, None
+    from bookengine.boundary_diagnostics import _boundary as boundary
+
+    return boundary(chapter, side)
 
 
 def _breaks(chapters):
-    issues, unknown = [], []
-    for old, new in zip(chapters, chapters[1:]):
-        pair = [old["number"], new["number"]]
-        if pair[1] != pair[0] + 1:
-            unknown.append(dict(chapters=pair, reason="missing_chapters"))
-            continue
-        previous, end_quote = _boundary(old, "end")
-        opening, opening_quote = _boundary(new, "opening")
-        if previous and opening:
-            head = "\n\n".join(re.split(r"\n\s*\n", new["text"])[:2])
-            movement = (
-                previous in head
-                and opening in head
-                and re.search(r"离开|走出|走进|抵达|赶到|来到|穿过|沿.{0,12}(?:走|行)|从.{0,25}(?:到|往|去)", head)
-            )
-            if previous != opening and not movement:
-                issues.append(
-                    dict(
-                        chapters=pair,
-                        previous=previous,
-                        opening=opening,
-                        end_quote=end_quote,
-                        opening_quote=opening_quote,
-                        status="Inference",
-                        basis="grounded_locations",
-                    )
-                )
-            continue
-        tail, head = old["text"][-1600:], new["text"][:350]
-        outside = re.search(r"天光|阳光|天空|露天|天幕|户外", tail)
-        escape = re.search(r"冲出|走出|逃出|跑出|鱼贯|跨过门槛", tail)
-        inside = re.search(r"岩壁|矿道|矿轨|运矿|矿车|洞内|地下|隧道|洞顶", head)
-        movement = re.search(r"返回|折返|退回|回到|重新进入", head)
-        if outside and escape and inside and not movement:
-            issues.append(
-                dict(chapters=pair, end_quote=tail, opening_quote=head, status="Inference", basis="lexical_boundary")
-            )
-        else:
-            unknown.append(dict(chapters=pair, reason="missing_grounded_boundaries"))
-    return dict(count=len(issues), issues=issues, unknown=unknown, status="reference_only")
+    from bookengine.boundary_diagnostics import _breaks as breaks
+
+    return breaks(chapters)
 
 
 def _aliases(card):
@@ -379,6 +327,8 @@ def check_book(book, *, source="final"):
     from bookengine.retired_opponents import location_regression
     from bookengine.stage_transition import stage_transition
     from bookengine.prose_repetition import clean_repetitions
+    from bookengine.prose_similarity import analyze_prose, RULES
+    from bookengine.review_diagnostics import design_findings
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     by_number = {c["number"]: c for c in chapters}
@@ -406,6 +356,7 @@ def check_book(book, *, source="final"):
         )
         for c in chapters
     ]
+    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0])) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
@@ -414,6 +365,7 @@ def check_book(book, *, source="final"):
         reference_only=True,
         source_preference=source,
         chapter_count=len(chapters),
+        review_contracts=design_findings(bible, chapters),
         sources={str(c["number"]): c["path"] for c in chapters},
         stages=stages,
         antagonists=_opponents(bible, chapters, stages["distribution"]),
@@ -431,6 +383,13 @@ def check_book(book, *, source="final"):
             dialogue_repetitions=sum(r["counts"]["dialogue_repetitions"] for r in repetitions),
             adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
             chapters=[r for r in repetitions if r["records"]],
+        ),
+        prose_similarity=dict(
+            near_paragraph_pairs=sum(r["counts"]["near_paragraph_pairs"] for r in similarity),
+            card_explanations=sum(r["counts"]["card_explanations"] for r in similarity),
+            rules=dict(RULES),
+            status="Inference",
+            chapters=[r for r in similarity if r["records"]],
         ),
         format_residue=dict(
             total=sum(c["total"] for c in residue),

@@ -209,8 +209,11 @@ def process(
                 llm = SimpleNamespace(calls=[], estimate=lambda: 0)
                 result = SimpleNamespace(text=text, status="original", edits=[])
             else:
+                from .recovery import run
+
                 llm = client(work, env, model=model)
-                result = polish(text, ctx, llm)
+                recovery = {}
+                result = run(polish, text, ctx, llm, work, recovery)
             report = dataclasses.asdict(result) if dataclasses.is_dataclass(result) else vars(result).copy()
             report["deai_version"] = configuration["version"]
             calls = getattr(llm, "calls", [])
@@ -274,6 +277,9 @@ def process(
             redact = getattr(locals().get("llm"), "redact", str)
             message = redact(str(error))
             report = dict(status=kind, error=message, stage=f"deai-{number}")
+            recovery = locals().get("recovery")
+            if recovery:
+                report["checks"] = dict(recovery=recovery)
             previous = read_json(safe(root, f"final/chapter-{number}.deai.json"), {})
             if previous.get("complete") is True:
                 save(work, "attempt-last.json", report)

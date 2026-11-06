@@ -194,7 +194,7 @@ class MinimalBTestsPart1(MinimalBTests):
                 expected = draft.replace("\n\n", "\n\n" + addition + "\n\n", 1) if changed else draft
                 self.assert_saved(row, expected, 1)
                 self.assertEqual((self.out / "chapter-001.r2.draft.md").read_text(), draft)
-                self.assertEqual(row["outside_calls"], 1 + int(changed))
+                self.assertEqual(row["outside_calls"], 2 + int(changed))
                 self.assertEqual(row["payoff_fulfilled"], evidence in ("pid", "quote"))
                 self.assertEqual(row["state_failed"], evidence in ("forged", "invalid_pid"))
                 if evidence in ("pid", "quote"):
@@ -203,13 +203,18 @@ class MinimalBTestsPart1(MinimalBTests):
                 else:
                     self.assertEqual(row["state"]["pending_payoff"], kind)
                 if changed:
-                    self.assertIn(number_paragraphs(expected), client.calls[-1]["prompt"])
-                    final_schema = client.calls[-1]["prompt"].split("只返回完整JSON，结构：")[-1]
+                    self.assertIn(
+                        number_paragraphs(expected),
+                        [c for c in client.calls if c["stage"].endswith("-final-state")][-1]["prompt"],
+                    )
+                    final_schema = [c for c in client.calls if c["stage"].endswith("-final-state")][-1]["prompt"].split(
+                        "只返回完整JSON，结构："
+                    )[-1]
                     for field in ("edits", "paragraph_edits", "patch", "tail", "previous_delta"):
                         self.assertNotIn('"' + field + '":', final_schema)
                     self.assertNotIn("不得再次采用", expected)
                     if row["state_failed"]:
-                        self.assertEqual(row["state"], {"pending_payoff": kind})
+                        self.assertEqual(row["state"], {"pending_payoff": kind, "handoff_unknown": True})
                     else:
                         self.assertEqual(row["state"]["characters"]["阿宁"]["location"], "院")
 
@@ -252,7 +257,7 @@ class MinimalBTestsPart1(MinimalBTests):
                 final = (self.out / "chapter-002.body.md").read_text()
                 self.assert_saved(row, final)
                 self.assertTrue(row["within_band"])
-                self.assertEqual(row["outside_calls"], 2)
+                self.assertEqual(row["outside_calls"], 3)
                 self.assertTrue(row["length_correction"])
                 self.assertFalse(row["dialogue_rewrite"])
                 self.assertEqual((self.out / "chapter-002.r2.draft.md").read_text(), draft)
@@ -290,9 +295,17 @@ class MinimalBTestsPart1(MinimalBTests):
         rows = [first]
         second = self.run_chapter(client, state=first["state"], rows=rows)
         self.assertEqual(
-            [c["stage"] for c in client.calls], ["r2-ch1-draft", "r2-ch1-finish", "r2-ch2-draft", "r2-ch2-finish"]
+            [c["stage"] for c in client.calls],
+            [
+                "r2-ch1-draft",
+                "r2-ch1-finish",
+                "r2-ch1-boundary-reextract",
+                "r2-ch2-draft",
+                "r2-ch2-finish",
+                "r2-ch2-boundary-reextract",
+            ],
         )
-        finish = client.calls[-1]["prompt"]
+        finish = [c for c in client.calls if c["stage"].endswith("-finish")][-1]["prompt"]
         self.assertIn(number_paragraphs(current), finish)
         self.assertIn(previous, finish)
         self.assertIn("上章完整末尾证据。", finish)

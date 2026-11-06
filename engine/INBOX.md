@@ -507,7 +507,7 @@
 
 ## 2026-11-06-40：第 39 条整本验证的遗留——能力与手段计数打架、能力证据大面积 Unknown、开头修复空返回、说明句漏检、称呼字段自相矛盾
 
-状态：待执行（监工起草，用户尚未要求启动）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/`、`engine/tools/book_checkup.py`、`engine/tests/`、`engine/reports/`。

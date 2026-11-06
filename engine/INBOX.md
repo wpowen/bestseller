@@ -356,7 +356,7 @@
 
 ## 2026-11-06-36：收尾第 35 条遗留——完全相同的叙述句确定性删除、对手退场后一章复检（用户 2026-11-06 确认）
 
-状态：待执行。在独立工作树 `scratch/f36-worktree`、分支 `fix/repeat-exit-tail` 上做。
+状态：开发完成，待监工验收。在独立工作树 `scratch/f36-worktree`、分支 `fix/repeat-exit-tail` 上完成；报告见 `engine/reports/repeat-exit-tail-36.md`。
 
 文件归属：
 - 可改：`engine/bookengine/`、`engine/tools/book_checkup.py`、`engine/tests/`。

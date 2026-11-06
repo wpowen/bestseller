@@ -110,8 +110,10 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     issue = transition if transition and transition["issue"] else opening_issue(state, facts, text)
     if transition and transition["status"] == "present":
         issue = None
-    known = bool(facts.get("opening_location") and state.get("end_location")) or (
-        transition and transition["status"] != "unknown"
+    known = (
+        bool(facts.get("opening_location") and state.get("end_location"))
+        or (transition and transition["status"] != "unknown")
+        or bool(outline.get("number") == 1 and facts.get("opening_location") and facts.get("end_location"))
     )
     note = dict(
         status="checked" if known else "unknown",

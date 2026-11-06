@@ -70,3 +70,19 @@ def test_eval33_missing_observations_report_two_jumps_as_inference(tmp_path):
     assert [2, 3] in [r["chapters"] for r in result["issues"]]
     assert [3, 4] in [r["chapters"] for r in result["issues"]]
     assert all(r["status"] == "Inference" for r in result["issues"])
+
+
+def test_unrelated_small_movement_does_not_discharge_planned_place_transfer():
+    from bookengine.stage_transition import complete_transitions
+
+    result = complete_transitions(
+        [dict(number=2, location="残兵巷", scenes=[dict(action="守卫走出岗亭。")])], [dict(number=1, location="剑阁")]
+    )
+    assert "剑阁" in result[0]["transition"] and "残兵巷" in result[0]["transition"]
+
+
+def test_first_chapter_has_no_missing_predecessor_when_its_locations_are_known():
+    text = "林舟在石桥。"
+    raw = dict(opening_location="石桥", opening_quote=text, end_location="石桥", end_quote=text)
+    *_, note = repair_opening(None, "ch1", text, raw, False, {}, {}, {"number": 1}, None, None)
+    assert note["status"] == "checked" and note["missing"] == []

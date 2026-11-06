@@ -54,7 +54,7 @@ def _breaks(chapters):
                 )
             continue
         tail, head = old["text"][-1600:], new["text"][:350]
-        # Missing receipts are not a pass. Repeated explicit place nouns provide
+        # Missing observations are not a pass. Repeated explicit place nouns provide
         # candidates only; never store them as observed locations in state.
         old_places = place_candidates(old["text"])
         new_places = place_candidates(head)

@@ -154,6 +154,6 @@ def complete_transitions(batch, history=()):
         old, new = planned_location(previous), planned_location(row)
         if old and new and old != new and not _label(row.get("transition")):
             actions = " ".join(str(s.get("action", "")) for s in row.get("scenes", []) if isinstance(s, dict))
-            if not _transition_quotes(actions):
+            if not (old in actions and new in actions and _transition_quotes(actions)):
                 row["transition"] = f"交代离开{old}、抵达{new}的移动过程、耗时和原因，落实在开头300字。"
     return result

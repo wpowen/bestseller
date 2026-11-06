@@ -131,3 +131,29 @@ def planning_transition_issues(bible, batch):
                 )
             )
     return issues
+
+
+def planned_location(outline):
+    for value in [
+        outline.get("location"),
+        *[s.get("location") for s in outline.get("scenes", []) if isinstance(s, dict)],
+    ]:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def complete_transitions(batch, history=()):
+    """Add executable transfer beats when consecutive planned locations change."""
+    from copy import deepcopy
+
+    result = deepcopy(batch)
+    prior = {row.get("number"): row for row in [*history, *result]}
+    for row in result:
+        previous = prior.get(_number(row.get("number")) - 1, {})
+        old, new = planned_location(previous), planned_location(row)
+        if old and new and old != new and not _label(row.get("transition")):
+            actions = " ".join(str(s.get("action", "")) for s in row.get("scenes", []) if isinstance(s, dict))
+            if not _transition_quotes(actions):
+                row["transition"] = f"交代离开{old}、抵达{new}的移动过程、耗时和原因，落实在开头300字。"
+    return result

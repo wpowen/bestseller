@@ -77,6 +77,28 @@ def opening_patch(text, raw):
 
 def repair_opening(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     facts = boundary_facts(raw, text)
+    retried = not facts["opening_location"] or not facts["end_location"]
+    if retried:
+        observed = ask(
+            client,
+            prefix + "-boundary-reextract",
+            "只重抽开头与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
+            "找不到返回null。present仅列结尾实际在场者并逐人引文。返回JSON。",
+            [("开头", text[:1200]), ("结尾", text[-1200:])],
+            '{"opening_location":null,"opening_quote":null,"end_location":null,"end_quote":null}',
+            cap=1200,
+            input_limit=4000,
+            max_attempts=1,
+        )
+        if isinstance(observed, dict):
+            recovered = boundary_facts(observed, text)
+            for side in ("opening", "end"):
+                if not facts[side + "_location"] and recovered[side + "_location"]:
+                    raw = dict(raw)
+                    raw.update(
+                        {side + "_location": recovered[side + "_location"], side + "_quote": recovered[side + "_quote"]}
+                    )
+            facts = boundary_facts(raw, text)
     transition = stage_transition(bible, outline.get("number"), text, state.get("end_location"), outline=outline)
     issue = transition if transition and transition["issue"] else opening_issue(state, facts, text)
     if transition and transition["status"] == "present":
@@ -88,6 +110,12 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
         status="checked" if known else "unknown",
         issue=issue,
     )
+    note["boundary_retried"] = retried
+    note["missing"] = [k for k in ("opening_location", "end_location") if not facts[k]]
+    if outline.get("number", 0) > 1 and not state.get("end_location"):
+        note["missing"].append("previous_end")
+    if note["missing"]:
+        note["status"] = "handoff_unknown"
     if transition:
         note["transition"] = transition
     if not issue:

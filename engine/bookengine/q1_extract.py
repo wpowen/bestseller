@@ -171,6 +171,8 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         field = "retired" if constraints["retired"] else "departed_locations"
         constraints[field].pop(0)
         constraints["omitted_retired" if field == "retired" else "omitted_locations"] += 1
+    if state.get("handoff_unknown"):
+        outline["上章地点未知"] = "开头必须明确交代当前地点，并从上章尾可确认的处境交代移动或时间；不得臆造上章地点。"
     if state.get("end_location") or state.get("present"):
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),

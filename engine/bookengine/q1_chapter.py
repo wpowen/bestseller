@@ -274,6 +274,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         issues += thread_issues
     paid = not failed and payoff_ok(raw.get("payoff"), outline["payoff_type"], text, canon["payoff_menu"])
     current["pending_payoff"] = outline["payoff_type"] if outline["payoff_due"] and not paid else None
+    current["handoff_unknown"] = bool(not boundaries["end_location"] or handoff.get("missing"))
     current.pop("end_location", None)
     current.pop("present", None)
     if boundaries["end_location"]:

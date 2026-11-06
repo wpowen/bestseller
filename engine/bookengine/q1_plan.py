@@ -15,7 +15,7 @@ from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
-from .stage_transition import planning_transition_issues
+from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
@@ -372,6 +372,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ]
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
+    result = complete_transitions(result, prior)
     if not cached and getattr(client, "out", None):
         path = Path(client.out) / "outline-diversity" / (key + ".json")
         report = json.loads(path.read_text())

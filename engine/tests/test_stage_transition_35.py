@@ -42,7 +42,7 @@ def test_stage_jump_repairs_even_without_extracted_opening_location():
         None, "ch11", original, {}, False, state, bible(), {"number": 11}, extract, ask
     )
     assert actual == replacement + original[len(original.split("\n\n")[0]) :]
-    assert calls == ["ch11-opening-repair", "ch11-opening-recheck"]
+    assert calls == ["ch11-boundary-reextract", "ch11-opening-repair", "ch11-opening-recheck"]
     assert note["status"] == "repaired" and not failed
     assert facts["opening_location"] is None  # planning never becomes an observed fact
     assert raw == {"events": []} and state == before
@@ -184,12 +184,15 @@ def test_elapsed_time_satisfies_stage_check_without_legacy_location_repair():
     raw = dict(opening_location="山城", opening_quote="三天后，林舟已在山城。")
 
     def unexpected(*args, **kwargs):
+        if args[1].endswith("-boundary-reextract"):
+            return {}
         pytest.fail("a valid stage transition must not trigger the stricter non-stage movement repair")
 
     actual, _, _, _, note = repair_opening(
         None, "ch11", text, raw, False, {"end_location": "渡口"}, bible(), {"number": 11}, unexpected, unexpected
     )
-    assert actual == text and note["status"] == "checked"
+    assert actual == text and note["status"] == "handoff_unknown"
+    assert note["missing"] == ["end_location"]
 
 
 def test_a_transition_repair_cannot_adopt_a_new_hard_fact_conflict():

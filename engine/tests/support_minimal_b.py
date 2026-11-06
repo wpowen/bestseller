@@ -61,6 +61,8 @@ class CaptureClient(Client):
                 entry["status"] = "failed"
                 raise value
             return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        if stage.endswith("-boundary-reextract"):
+            return "{}"
         if re.fullmatch(r"r2-ch\d+-draft", stage):
             return next(self.bodies)
         if re.fullmatch(r"r2-ch\d+-(?:finish|final-state)", stage):

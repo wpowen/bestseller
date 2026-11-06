@@ -56,7 +56,9 @@ def test_structured_book_reports_every_diagnostic_without_writing(tmp_path):
     assert opponent["after_exit_mentions"] == [3]
     assert opponent["active_appearance_status"] == "Unknown"
     assert result["title_keywords"]["repeated"]["门"] == [1, 2, 3]
-    assert result["location_breaks"]["count"] == 1
+    assert result["location_breaks"]["count"] == 2
+    assert [row["chapters"] for row in result["location_breaks"]["issues"]] == [[1, 2], [2, 3]]
+    assert result["location_breaks"]["issues"][1]["basis"] == "shared_stage_transition"
     assert result["location_breaks"]["issues"][0]["status"] == "Inference"
     assert result["format_residue"]["heading_chapters"] == [1]
     assert any(r["name"] == "顾衡" for r in result["introductions"]["missing"])
@@ -81,10 +83,14 @@ def test_explicit_movement_and_ungrounded_metadata_are_not_counted_as_breaks(tmp
     put(tmp_path, "chapter-002.body.md", "她从南港走到北城。顾衡站在桥头。")
     put(tmp_path, "chapters/001.json", dict(state=dict(end_location="南港", end_quote="她走到南港。")))
     put(tmp_path, "chapters/002.json", dict(state=dict(opening_location="北城", opening_quote="她从南港走到北城。")))
-    assert check_book(tmp_path)["location_breaks"]["count"] == 0
+    breaks = check_book(tmp_path)["location_breaks"]
+    assert breaks["count"] == 1
+    assert breaks["issues"][0]["chapters"] == [2, 3]  # saved plan's next stage still lacks a transfer
+    assert breaks["issues"][0]["basis"] == "shared_stage_transition"
     put(tmp_path, "chapters/002.json", dict(state=dict(opening_location="京城", opening_quote="伪造引文")))
     result = check_book(tmp_path)
-    assert result["location_breaks"]["count"] == 0
+    assert result["location_breaks"]["count"] == 1
+    assert result["location_breaks"]["issues"][0]["chapters"] == [2, 3]
     assert result["location_breaks"]["unknown"]
 
 

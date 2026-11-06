@@ -226,10 +226,10 @@ def _boundary(chapter, side):
     return boundary(chapter, side)
 
 
-def _breaks(chapters):
+def _breaks(chapters, bible=None):
     from bookengine.boundary_diagnostics import _breaks as breaks
 
-    return breaks(chapters)
+    return breaks(chapters, bible)
 
 
 def _aliases(card):
@@ -325,24 +325,16 @@ def check_book(book, *, source="final"):
     chapters = _chapters(book, source, unknown)
     stages = _stage_stats(bible, chapters)
     from bookengine.retired_opponents import location_regression
-    from bookengine.stage_transition import stage_transition
     from bookengine.prose_repetition import clean_repetitions
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
-    by_number = {c["number"]: c for c in chapters}
+    handoffs = _breaks(chapters, bible)
     transitions = [
-        dict(row, chapters=[c["number"] - 1, c["number"]])
-        for c in chapters
-        if (
-            row := stage_transition(
-                bible,
-                c["number"],
-                clean_prose(c["text"])[0],
-                _boundary(by_number[c["number"] - 1], "end")[0] if c["number"] - 1 in by_number else None,
-            )
-        )
+        dict(row, chapters=check["chapters"])
+        for check in handoffs["checks"]
+        if (row := check["evaluation"].get("transition"))
     ]
     residue = [dict(chapter=c["number"], **clean_prose(c["text"])[1]) for c in chapters]
     repetitions = [
@@ -370,7 +362,7 @@ def check_book(book, *, source="final"):
         stages=stages,
         antagonists=_opponents(bible, chapters, stages["distribution"]),
         title_keywords=_keywords(chapters),
-        location_breaks=_breaks(chapters),
+        location_breaks=handoffs,
         location_regressions=dict(count=len(regressions), issues=regressions),
         stage_transitions=dict(
             checks=transitions,

@@ -40,7 +40,7 @@ def test_real_eval33_negative_quote_cannot_prove_use_even_if_reviewer_says_yes()
 
 @pytest.mark.parametrize("response", [{}, {"items": []}, {"items": [{"id": "core-1", "status": "unknown"}]}])
 def test_missing_or_unknown_review_never_passes(response):
-    note = review_opening(None, "test", "周远舟攥紧旧钟。", {}, 1, {}, lambda *a, **k: response)
+    note = review_opening(None, "test", "周远舟攥紧旧钟。", {"title": "借钟救人"}, 1, {}, lambda *a, **k: response)
     assert note["status"] == "unfulfilled"
 
 
@@ -117,7 +117,7 @@ def test_targeted_repair_reextracts_and_rolls_back_if_final_state_fails(invalid)
         return {"state": {}, "events": [], "summary": "新正文"}, invalid, []
 
     text, checked, failed, note = repair_opening_promises(
-        None, "ch1", original, raw, False, {}, {}, {"number": 1}, {}, extract, replies
+        None, "ch1", original, raw, False, {}, {"title": "借钟救人"}, {"number": 1}, {}, extract, replies
     )
     assert extracted and extracted[0][1]["final"] is True
     assert note["status"] == ("rolled_back" if invalid else "repaired")
@@ -150,7 +150,17 @@ def test_repair_missing_or_invalid_edits_preserves_original():
         return {}
 
     text, raw, failed, note = repair_opening_promises(
-        None, "ch1", "原文。", {}, True, {}, {}, {"number": 1}, {}, lambda *a, **k: pytest.fail("invalid edit"), ask
+        None,
+        "ch1",
+        "原文。",
+        {},
+        True,
+        {},
+        {"title": "借钟救人"},
+        {"number": 1},
+        {},
+        lambda *a, **k: pytest.fail("invalid edit"),
+        ask,
     )
     assert (text, raw, failed) == ("原文。", {}, True)
     assert note["status"] == "rolled_back"
@@ -209,3 +219,83 @@ def test_late_first_address_use_still_enters_transactional_repair():
     note = review_opening(None, "ch8", "石头，走！", b, 8, {}, lambda *a, **k: pytest.fail("no model needed"))
     assert note["status"] == "unfulfilled"
     assert note["items"][0]["kind"] == "address_origin"
+
+
+def test_no_source_fixture_is_not_due_and_makes_no_calls():
+    note = review_opening(None, "test", "夹具正文", {"characters": []}, 1, {}, lambda *a, **k: pytest.fail("no source"))
+    assert note["status"] == "not_due"
+    assert not opening_contract({"title": "", "power": {"cost": "", "limit": ""}})
+
+
+def test_precise_review_restores_prefix_and_never_silently_truncates():
+    from types import SimpleNamespace
+
+    c = SimpleNamespace(prefix="可能污染审核的故事前缀", context_limit=10000, clip_context=True)
+
+    def ask(client, *args, **kwargs):
+        assert client.prefix == "" and client.clip_context is False
+        assert kwargs["input_limit"] <= 10000
+        return {}
+
+    note = review_opening(c, "test", "正文", {"title": "借钟"}, 1, {}, ask)
+    assert note["status"] == "unfulfilled"
+    assert c.prefix == "可能污染审核的故事前缀" and c.clip_context is True
+    note = review_opening(c, "test", "字" * 11000, {"title": "借钟"}, 1, {}, lambda *a, **k: pytest.fail("oversize"))
+    assert note["status"] == "unfulfilled"
+    assert all(i["status"] == "unknown" for i in note["items"])
+    assert c.prefix == "可能污染审核的故事前缀"
+
+
+def test_third_chapter_full_sources_are_reviewed_separately_within_real_budget():
+    from types import SimpleNamespace
+
+    c = SimpleNamespace(prefix="写作设定", context_limit=10000, clip_context=True)
+    corpus = {1: "前" * 3800 + "救回妹妹。", 2: "中" * 3800, 3: "后" * 3800 + "借钟退敌，记忆丢失。"}
+    observed = []
+
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        data = dict(sections)
+        number = int(data["验收章号"])
+        assert data["本章正文"] == corpus[number]
+        assert client.prefix == "" and kwargs["input_limit"] == 10000
+        items = json.loads(data["逐项验收"])
+        observed.append((number, [i["id"] for i in items]))
+        assert all(i["kind"] == "reader" or number == 3 for i in items)
+        return dict(
+            items=[
+                dict(
+                    id=i["id"],
+                    status="fulfilled" if i["kind"] != "reader" or number == 1 else "missing",
+                    evidence=[dict(chapter=number, quote="救回妹妹" if number == 1 else "借钟退敌，记忆丢失")],
+                )
+                for i in items
+            ]
+        )
+
+    note = review_opening(
+        c,
+        "third",
+        corpus[3],
+        dict(title="借钟", reader_expectation="前三章救回妹妹"),
+        3,
+        {1: corpus[1], 2: corpus[2]},
+        ask,
+    )
+    assert note["status"] == "checked" and len(observed) == 2
+    assert c.prefix == "写作设定" and c.clip_context is True
+
+
+def test_prefix_restores_on_review_exception_and_future_unknown_is_pending():
+    from types import SimpleNamespace
+
+    c = SimpleNamespace(prefix="设定", clip_context=True)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("project failure")
+
+    with pytest.raises(RuntimeError, match="project failure"):
+        review_opening(c, "first", "正文", {"title": "借钟"}, 1, {}, fail)
+    assert c.prefix == "设定" and c.clip_context is True
+    note = review_opening(c, "first", "正文", {"reader_expectation": "前三章救人"}, 1, {}, lambda *a, **k: {})
+    assert note["status"] == "pending"
+    assert note["items"][0]["observed_status"] == "unknown"

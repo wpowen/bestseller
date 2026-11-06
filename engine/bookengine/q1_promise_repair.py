@@ -10,6 +10,7 @@ from .retired_opponents import opponent_hits
 from .prose_repetition import clean_repetitions
 from .q1_cast import cast_findings, remaining_cast_problems
 from .stage_transition import stage_transition
+from .promise_io import precise_ask
 
 
 def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, extract, ask):
@@ -30,7 +31,8 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
     if not targets:
         targets = set(range(1, min(2, len(spans)) + 1))
     allowed = [dict(id=i, original=s.group()) for i, s in enumerate(spans, 1) if i in targets]
-    response = ask(
+    response = precise_ask(
+        ask,
         client,
         prefix + "-promise-repair",
         "只改允许的段落，兑现缺失承诺或称呼来历。保留现有事件、"
@@ -43,7 +45,6 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
         ],
         '{"edits":[{"id":1,"original":"原段","text":"改段"}]}',
         cap=4500,
-        input_limit=14000,
     )
     edits = response.get("edits", []) if isinstance(response, dict) else []
     candidate, used = text, set()
@@ -76,7 +77,7 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_or_empty_targeted_edits")
     after = review_opening(client, prefix + "-recheck", candidate, bible, number, earlier, ask)
     note["after"] = after
-    if after["status"] != "checked":
+    if after["status"] not in ("checked", "pending"):
         return text, raw, failed, dict(note, status="rolled_back", reason="promise_recheck_failed")
     checked, invalid, _ = extract(
         client, prefix + "-promise-final-state", candidate, state, bible, outline, [], final=True

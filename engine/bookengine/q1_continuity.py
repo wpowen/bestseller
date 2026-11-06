@@ -121,8 +121,6 @@ def evaluate_handoff(state, facts, text, bible, outline):
     issue = opening_issue(reference, facts, text, bible)
     if transition and transition["issue"]:
         issue = transition
-    elif transition and transition["status"] == "present":
-        issue = None
     missing = [k for k in ("opening_location", "end_location") if not facts.get(k)]
     if outline.get("number", 0) > 1 and not reference.get("end_location"):
         missing.append("pov_location" if reference["basis"] == "viewpoint_last_location" else "previous_end")

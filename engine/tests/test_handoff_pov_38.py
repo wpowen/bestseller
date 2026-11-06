@@ -70,3 +70,18 @@ def test_adopted_boundaries_update_per_character_locations_and_clear_stale_end_p
     assert current["pov_locations"]["陶青"]["location"] == "灶间"
     assert "林舟" not in state["pov_locations"]
     assert "end_pov" not in continuity.advance_boundary_state(current, {}, 3, "风停了。", {})
+
+
+def test_earlier_character_observation_cannot_overwrite_later_end_location():
+    text = "林舟站在石桥。\n\n林舟抵达驿站。"
+    facts = dict(
+        opening_pov="林舟",
+        opening_location="石桥",
+        opening_quote="林舟站在石桥。",
+        end_pov="林舟",
+        end_location="驿站",
+        end_quote="林舟抵达驿站。",
+        character_locations=[dict(name="林舟", location="石桥", quote="林舟站在石桥。")],
+    )
+    state = continuity.advance_boundary_state({}, facts, 1, text, {})
+    assert state["pov_locations"]["林舟"]["location"] == "驿站"

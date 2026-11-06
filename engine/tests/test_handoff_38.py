@@ -158,3 +158,19 @@ def test_non_movement_compounds_do_not_prove_transfer(text):
 def test_negated_return_is_neither_movement_nor_scene_switch():
     text = "林舟没有回到驿站。"
     assert opening_issue(dict(end_location="石桥"), facts(text), text)
+
+
+def test_far_away_place_containing_old_name_is_not_a_sublocation():
+    text = "林舟站在剑阁外三十里。"
+    assert opening_issue(dict(end_location="剑阁"), facts(text, "剑阁外三十里"), text)
+
+
+def test_unrelated_stage_movement_cannot_discharge_known_location_break():
+    from bookengine.q1_continuity import evaluate_handoff
+
+    text = "林舟站在驿站。门外的伙计追着鸡跑。"
+    bible = dict(
+        volumes=[dict(number=1, start=1, end=10, location="石桥"), dict(number=2, start=11, end=20, location="驿站")]
+    )
+    note = evaluate_handoff(dict(end_location="石桥"), facts(text), text, bible, dict(number=11))
+    assert note["issue"] and note["issue"]["kind"] == "location_break"

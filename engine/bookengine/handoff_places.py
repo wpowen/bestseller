@@ -72,9 +72,12 @@ def location_table(bible, known=()):
         if isinstance(row, dict):
             names.update(re.split(r"[、，,与和]", str(row.get("location") or "")))
             read(row.get("locations", []))
+    interiors = ("前堂", "后堂", "大堂", "正堂", "后院", "前院", "内院", "外院", "门口", "内室", "东厢", "西厢")
     for parent in names:
         if len(parent) >= 2:
-            links.update((parent, child) for child in names if parent != child and parent in child)
+            links.update(
+                (parent, child) for child in names if child.startswith(parent) and child[len(parent) :] in interiors
+            )
     return dict(names=sorted(n for n in names if n), links=sorted(links))
 
 

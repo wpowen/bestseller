@@ -347,3 +347,12 @@ def test_prefix_restores_on_review_exception_and_future_unknown_is_pending():
     note = review_opening(c, "first", "正文", {"reader_expectation": "前三章救人"}, 1, {}, lambda *a, **k: {})
     assert note["status"] == "pending"
     assert note["items"][0]["observed_status"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    "name,label", [("白彦棕", "白掌柜"), ("闻旻泽", "闻小姐"), ("韩柯铭", "韩理事"), ("杜木槿", "杜会首")]
+)
+def test_surname_honorifics_are_name_derived_without_invented_origins(name, label):
+    b = dict(characters=[dict(name=name, role="protagonist", address=label, address_target=name)])
+    assert address_issues(b) == []
+    assert address_findings(f"“{label}，有人等你。”", b, {}) == []

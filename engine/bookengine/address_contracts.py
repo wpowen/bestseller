@@ -37,7 +37,11 @@ def derived_address(label, name):
     if not isinstance(name, str) or not name:
         return False
     stem = re.sub(r"^(?:阿|小|老)", "", label)
-    stem = re.sub(r"(?:师傅|师父|先生|姑娘|公子|师兄|师姐|师弟|师妹|哥|姐|弟|妹|叔|伯|爷)$", "", stem)
+    stem = re.sub(
+        r"(?:师傅|师父|先生|姑娘|公子|小姐|掌柜|老板|会首|理事|宗主|长老|队长|管事|执事|大人|师兄|师姐|师弟|师妹|哥|姐|弟|妹|叔|伯|爷)$",
+        "",
+        stem,
+    )
     return bool(stem and stem in name)
 
 

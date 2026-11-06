@@ -1,6 +1,5 @@
 """Transactional paragraph repair of opening promises, with final-state recheck."""
 
-import json
 import re
 
 from .checks import high_confidence
@@ -12,7 +11,7 @@ from .prose_similarity import analyze_prose
 from tools.book_checkup import clean_prose
 from .q1_cast import cast_findings, remaining_cast_problems
 from .stage_transition import stage_transition
-from .promise_io import precise_ask
+from .promise_repair_edits import targeted_edits
 
 
 def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, extract, ask):
@@ -32,50 +31,9 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
             targets.update(i for i, s in enumerate(spans, 1) if s.start() <= item["start"] < s.end())
     if not targets:
         targets = set(range(1, min(2, len(spans)) + 1))
-    allowed = [dict(id=i, original=s.group()) for i, s in enumerate(spans, 1) if i in targets]
-    response = precise_ask(
-        ask,
-        client,
-        prefix + "-promise-repair",
-        "只改允许的段落，兑现缺失承诺或称呼来历。保留现有事件、"
-        "人物、地点、过渡和末场结果。返回edits，每项包含id/original/text；original必须逐字一致。",
-        [
-            ("缺失承诺", json.dumps(pending, ensure_ascii=False)),
-            ("允许修改的段", json.dumps(allowed, ensure_ascii=False)),
-            ("只读圣经", json.dumps(bible, ensure_ascii=False)),
-            ("只读正文", text),
-        ],
-        '{"edits":[{"id":1,"original":"原段","text":"改段"}]}',
-        cap=4500,
-    )
-    edits = response.get("edits", []) if isinstance(response, dict) else []
-    candidate, used = text, set()
-    valid = isinstance(edits, list) and bool(edits)
-    patches = []
-    for edit in edits if isinstance(edits, list) else []:
-        if not isinstance(edit, dict):
-            valid = False
-            break
-        idx, replacement = edit.get("id"), edit.get("text")
-        if (
-            type(idx) is not int
-            or idx not in targets
-            or idx in used
-            or not isinstance(replacement, str)
-            or not replacement.strip()
-        ):
-            valid = False
-            break
-        span = spans[idx - 1]
-        if edit.get("original") != span.group() or "\n\n" in replacement:
-            valid = False
-            break
-        used.add(idx)
-        patches.append((span.start(), span.end(), replacement))
-    if valid:
-        for a, b, replacement in sorted(patches, reverse=True):
-            candidate = candidate[:a] + replacement + candidate[b:]
-    if not valid or candidate == text:
+    candidate, edits, attempts = targeted_edits(ask, client, prefix, text, spans, targets, pending, bible)
+    note["attempts"] = attempts
+    if candidate == text:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_or_empty_targeted_edits")
     candidate = clean_prose(candidate)[0]
     after = review_opening(client, prefix + "-recheck", candidate, bible, number, earlier, ask)
@@ -95,7 +53,8 @@ def repair(client, prefix, text, raw, failed, state, bible, outline, earlier, ex
     new_transition = stage_transition(bible, number, candidate, state.get("end_location"), outline=outline)
     old_repeats = clean_repetitions(text, remove_safe=False)["counts"]
     new_repeats = clean_repetitions(candidate, remove_safe=False)["counts"]
-    old_similarity, new_similarity = analyze_prose(text)["counts"], analyze_prose(candidate)["counts"]
+    old_similarity = analyze_prose(text, bible=bible)["counts"]
+    new_similarity = analyze_prose(candidate, bible=bible)["counts"]
     regressed = (
         not old_issue
         and bool(new_issue)

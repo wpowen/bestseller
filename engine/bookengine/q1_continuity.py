@@ -5,7 +5,7 @@ import re
 
 from .text import _paragraph_spans
 from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
-from .handoff_places import same_place
+from .handoff_places import same_place, location_table
 from .boundary_state import handoff_reference, with_ending_candidate
 from .boundary_state import advance_boundary_state as advance_boundary_state
 
@@ -19,8 +19,7 @@ OPENING_RULE = (
 
 def boundary_facts(raw, text):
     """Missing or ungrounded observations stay unknown, never inherit old facts."""
-    spans = _paragraph_spans(text)
-    opening = text[: spans[min(1, len(spans) - 1)][1]] if spans else ""
+    opening = text[:300]
     ending = text[-1200:]
     result = {}
     for side, passage in (("opening", opening), ("end", ending)):
@@ -89,8 +88,9 @@ def opening_issue(previous, facts, text, bible=None):
         return None
     opening = text[:300]
     quotes = _transition_quotes(opening)
+    places = location_table(bible or {}, [old, *previous.get("known_locations", [])])["names"]
     if new in opening and any(
-        any(same_place(old, place, bible) and place in q for place in [old, *previous.get("known_locations", [])])
+        any(same_place(old, place, bible) and place in q for place in places)
         or _ELAPSED.search(q)
         or _SCENE.search(q)
         or re.search(r"(?:追进|赶到|抵达|钻进|拐进|回到)" + re.escape(new) + r"时[，,]", q)
@@ -144,12 +144,25 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             observed = ask(
                 client,
                 prefix + "-boundary-reextract",
-                "只重抽开头与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
+                "只重抽开头300字与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
                 "找不到返回null。present仅列结尾实际在场者并逐人引文。"
                 "opening_pov/end_pov分别为开头/结尾视角人物，附opening_pov_quote/end_pov_quote逐字引文，"
                 "不把仅被提及者当视角，不确定填null。返回JSON。",
-                [("开头", text[:1200]), ("结尾", text[-1200:])],
-                '{"opening_location":null,"opening_quote":null,"end_location":null,"end_quote":null}',
+                [("开头", text[:300]), ("结尾", text[-1200:])],
+                json.dumps(
+                    dict(
+                        opening_location=None,
+                        opening_quote=None,
+                        end_location=None,
+                        end_quote=None,
+                        opening_pov=None,
+                        opening_pov_quote=None,
+                        end_pov=None,
+                        end_pov_quote=None,
+                        present=[],
+                        present_quotes={},
+                    )
+                ),
                 cap=1200,
                 input_limit=4000,
                 max_attempts=1,

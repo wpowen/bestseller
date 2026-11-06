@@ -199,3 +199,19 @@ def test_unrelated_stage_movement_is_also_rejected_on_repair_recheck():
         lambda *a, **k: dict(replace_count=1, paragraphs=[replacement]),
     )
     assert actual == original and note["status"] == "rolled_back"
+
+
+def test_registered_previous_location_alias_can_prove_a_transfer():
+    bible = dict(locations=[dict(name="白沙渡", aliases=["旧渡"]), "驿站"])
+    text = "林舟离开旧渡，抵达驿站。"
+    assert opening_issue(dict(end_location="白沙渡"), facts(text), text, bible) is None
+
+
+def test_boundary_extraction_and_acceptance_share_the_first_300_characters():
+    from bookengine.q1_continuity import boundary_facts
+
+    text = "风停了。\n\n灯亮了。\n\n半个时辰后，林舟来到驿站。"
+    raw = dict(opening_location="驿站", opening_quote="半个时辰后，林舟来到驿站。")
+    assert boundary_facts(raw, text)["opening_location"] == "驿站"
+    late = "风" * 301 + raw["opening_quote"]
+    assert boundary_facts(raw, late)["opening_location"] is None

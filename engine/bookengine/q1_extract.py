@@ -382,7 +382,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
     prompt += (
-        "\n只据正文抽取边界事实：opening_location/opening_quote限开头两段；end_location/end_quote从末尾1200字符内"
+        "\n只据正文抽取边界事实：opening_location/opening_quote限开头300字；end_location/end_quote从末尾1200字符内"
         "能证明最后所在地的叙述句提取，不要只看末尾对白。location必须是quote内连续原文，不拼接、不概括。"
         "quote逐字引用且包含地点原名；无法确定填null。present只列结尾实际在场人物，present_quotes逐人复制末场含其原名的叙述句，"
         "不能用不含人物名的纯对白，且引文必须在末尾1200字符内。"

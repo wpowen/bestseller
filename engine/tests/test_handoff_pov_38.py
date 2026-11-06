@@ -85,3 +85,15 @@ def test_earlier_character_observation_cannot_overwrite_later_end_location():
     )
     state = continuity.advance_boundary_state({}, facts, 1, text, {})
     assert state["pov_locations"]["林舟"]["location"] == "驿站"
+
+
+def test_boundary_retry_schema_includes_the_viewpoint_quotes_it_requests():
+    import json
+
+    def ask(client, stage, prompt, sections, schema, **kwargs):
+        shape = json.loads(schema)
+        assert all(k in shape for k in ("opening_pov", "opening_pov_quote", "end_pov", "end_pov_quote"))
+        assert "300" in prompt
+        return {}
+
+    continuity.repair_opening(None, "ch2", "风停了。", {}, False, {}, {}, dict(number=2), None, ask)

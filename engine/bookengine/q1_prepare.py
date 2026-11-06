@@ -52,6 +52,9 @@ def _ask(client, kind, key, sections, redo=False):
                     location="",
                     solution_target="",
                     solution_method="",
+                    rhythm_type="",
+                    rhythm_focus="主场景具体行动、人物选择及其后果；情感即人物关系主章",
+                    rhythm_contract_version=6,
                 )
             ],
         )

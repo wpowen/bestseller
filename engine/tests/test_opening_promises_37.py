@@ -69,6 +69,22 @@ def test_address_origin_cannot_be_unrelated_or_denied():
     assert address_findings("石头这个称呼不是因为挡下落石。", b, {})
 
 
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        {1: "石头，快走！"},
+        {1: "石头这个称呼不是因为挡下落石。"},
+        {1: "石头回家了。\n\n隔壁的人挡下落石。"},
+    ],
+)
+def test_earlier_unexplained_address_cannot_become_stale_completion(earlier):
+    b = dict(characters=[dict(name="周远舟", role="protagonist", address="石头", address_origin="挡下落石")])
+    findings = address_findings("石头，快走！", b, earlier)
+    assert findings and findings[0]["status"] == "Unknown"
+    assert findings[0]["first_use_chapter"] == 1
+    assert earlier[1].startswith("石头")
+
+
 def test_address_repair_only_updates_owned_fields_and_rechecks():
     b = bible()
     before = deepcopy(b)

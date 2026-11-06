@@ -48,6 +48,13 @@ def _origin(value):
     )
 
 
+def _explained(text, label, origin):
+    return any(
+        label in sentence and origin in sentence and not re.search(r"不是|并非|不曾|并未|没有|无关|[？?]", sentence)
+        for sentence in re.findall(r"[^。！？!?\n]+[。！？!?]?", text)
+    )
+
+
 def address_findings(text, bible, earlier):
     """Only a locally bound, non-negated origin can discharge first-use duty."""
     findings, seen = [], set()
@@ -60,8 +67,9 @@ def address_findings(text, bible, earlier):
             continue
         # Missing bible origin is still an issue even if a previous chapter used it.
         valid = row["known"] and _origin(row["origin"])
-        if valid and any(label in previous for previous in earlier.values()):
+        if valid and any(_explained(previous, label, row["origin"]) for previous in earlier.values()):
             continue
+        first_use = min((chapter for chapter, previous in earlier.items() if label in previous), default=None)
         start = text.index(label)
         end = start + len(label)
         sentence = next(
@@ -73,7 +81,8 @@ def address_findings(text, bible, earlier):
             dict(
                 row,
                 kind="address_origin",
-                status="Inference" if valid else "Unknown",
+                status="Inference" if valid and first_use is None else "Unknown",
+                first_use_chapter=first_use,
                 start=start,
                 end=end,
                 quote=text[start:end],

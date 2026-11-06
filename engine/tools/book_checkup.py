@@ -220,7 +220,16 @@ def _keywords(chapters):
     )
 
 
-from bookengine.boundary_diagnostics import _boundary, _breaks
+def _boundary(chapter, side):
+    from bookengine.boundary_diagnostics import _boundary as boundary
+
+    return boundary(chapter, side)
+
+
+def _breaks(chapters):
+    from bookengine.boundary_diagnostics import _breaks as breaks
+
+    return breaks(chapters)
 
 
 def _aliases(card):
@@ -318,6 +327,7 @@ def check_book(book, *, source="final"):
     from bookengine.retired_opponents import location_regression
     from bookengine.stage_transition import stage_transition
     from bookengine.prose_repetition import clean_repetitions
+    from bookengine.prose_similarity import analyze_prose, RULES
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     by_number = {c["number"]: c for c in chapters}
@@ -345,6 +355,7 @@ def check_book(book, *, source="final"):
         )
         for c in chapters
     ]
+    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0])) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
@@ -370,6 +381,13 @@ def check_book(book, *, source="final"):
             dialogue_repetitions=sum(r["counts"]["dialogue_repetitions"] for r in repetitions),
             adjacent_paragraph_pairs=sum(r["counts"]["adjacent_paragraph_pairs"] for r in repetitions),
             chapters=[r for r in repetitions if r["records"]],
+        ),
+        prose_similarity=dict(
+            near_paragraph_pairs=sum(r["counts"]["near_paragraph_pairs"] for r in similarity),
+            card_explanations=sum(r["counts"]["card_explanations"] for r in similarity),
+            rules=dict(RULES),
+            status="Inference",
+            chapters=[r for r in similarity if r["records"]],
         ),
         format_residue=dict(
             total=sum(c["total"] for c in residue),

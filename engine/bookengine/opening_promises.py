@@ -144,7 +144,7 @@ def _verified_row(response, item, text, chapter):
 
 def review_opening(client, prefix, text, bible, number, earlier, ask):
     """Check every due item; absent/ungrounded model evidence remains Unknown."""
-    addresses = address_findings(text, bible, earlier)
+    addresses = address_findings(text, bible, earlier, number=number)
     if not 1 <= number <= 3 and not addresses:
         return dict(status="not_due", items=[])
     # Derive from current source, never trust an old materialized contract.

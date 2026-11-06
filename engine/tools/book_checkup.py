@@ -343,6 +343,7 @@ def check_book(book, *, source="final"):
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
+    from bookengine.address_contracts import address_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -372,7 +373,12 @@ def check_book(book, *, source="final"):
         reference_only=True,
         source_preference=source,
         chapter_count=len(chapters),
-        review_contracts=design_findings(bible, chapters),
+        review_contracts=dict(
+            design_findings(bible, chapters),
+            address_first_use=address_checkup(
+                bible, chapters, complete=_read(book / "run.json", []).get("status") == "complete"
+            ),
+        ),
         **plot_findings(bible, chapters),
         plot_observations=dict(
             applied_chapters=[c["number"] for c in chapters if c.get("plot_observation")],

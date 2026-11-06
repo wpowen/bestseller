@@ -1,6 +1,7 @@
 """Address derivation, explicit origins and first-use evidence (legacy target aware)."""
 
 from copy import deepcopy
+from collections import Counter
 import re
 
 
@@ -46,11 +47,56 @@ def derived_address(label, name):
 
 
 def address_issues(bible):
-    return [
+    rows = list(address_rows(bible))
+    issues = [
         dict(row, kind="address_origin", message="称呼须从目标姓名派生，否则填写address_origin并在首次使用章交代")
-        for row in address_rows(bible)
+        for row in rows
         if not row["known"] or not derived_address(row["address"], row["name"]) and not _origin(row["origin"])
     ]
+    for row in rows:
+        if derived_address(row["address"], row["name"]) or not _origin(row["origin"]):
+            continue
+        for speaker in _originators(row, bible.get("characters", [])):
+            owned = [r for r in rows if r["speaker"] == speaker]
+            if any(r["name"] == row["name"] and r["address"] == row["address"] for r in owned):
+                continue
+            detail = dict(
+                kind="address_origin",
+                reason="originator_address_mismatch",
+                originator=speaker,
+                expected_address=row["address"],
+                expected_target=row["name"],
+                message="来历中起名者的人物卡须包含同一目标、同一称呼；可修正来历或起名者的称呼字段",
+            )
+            issues.append(dict(row, **detail))
+            # Include the originator as an editable issue, so the existing
+            # field-only repair can fix either side without touching names.
+            source = next((c for c in bible["characters"] if c.get("name") == speaker), {})
+            issues.append(
+                dict(
+                    speaker=speaker,
+                    name=source.get("address_target", speaker),
+                    address=source.get("address", ""),
+                    origin=source.get("address_origin", ""),
+                    known=True,
+                    **detail,
+                )
+            )
+    return issues
+
+
+def _originators(row, cards):
+    """Resolve named calling actors only; an incidental actor is not a namer."""
+    names = {c["name"] for c in cards if c.get("name")}
+    for name in sorted(names):
+        if name == row["name"] or name not in row["origin"]:
+            continue
+        tail = row["origin"].split(name, 1)[1]
+        # Do not attribute a later named character's calling action to this one.
+        for other in names - {name}:
+            tail = tail.split(other, 1)[0]
+        if re.search(r"叫|喊|唤|称|(?:取|起)(?:了|的)?(?:名|绰号|外号)", tail):
+            yield name
 
 
 def _origin(value):
@@ -61,45 +107,95 @@ def _origin(value):
     )
 
 
-def _explained(text, label, origin):
-    return any(
-        label in sentence and origin in sentence and not re.search(r"不是|并非|不曾|并未|没有|无关|[？?]", sentence)
-        for sentence in re.findall(r"[^。！？!?\n]+[。！？!?]?", text)
+def _explanation(text, label, origin):
+    return next(
+        (
+            sentence
+            for sentence in re.findall(r"[^。！？!?\n]+[。！？!?]?", text)
+            if label in sentence
+            and origin in sentence
+            and not re.search(r"不是|并非|不曾|并未|没有|无关|[？?]", sentence)
+        ),
+        "",
     )
 
 
-def address_findings(text, bible, earlier):
-    """Only a locally bound, non-negated origin can discharge first-use duty."""
-    findings, seen = [], set()
+def _first_use_check(row, corpus, complete):
+    label = row["address"]
+    first_use = min((n for n, text in corpus.items() if label in text), default=None)
+    if first_use is None or row["known"] and derived_address(label, row["name"]):
+        return None
+    text = corpus[first_use]
+    start = text.index(label)
+    window = range(max(1, first_use - 1), first_use + 2)
+    valid = row["known"] and _origin(row["origin"])
+    evidence = [
+        dict(chapter=n, quote=quote)
+        for n in window
+        if valid and (quote := _explanation(corpus.get(n, ""), label, row["origin"]))
+    ]
+    status = (
+        "explained"
+        if evidence
+        else "missing"
+        if not valid
+        else "pending"
+        if not complete and first_use + 1 > max(corpus)
+        else "Unknown"
+        if any(n not in corpus for n in window if not complete or n <= max(corpus))
+        else "missing"
+    )
+    return dict(
+        row,
+        kind="address_origin",
+        status=status,
+        chapter=first_use,
+        first_use_chapter=first_use,
+        start=start,
+        end=start + len(label),
+        quote=label,
+        evidence=evidence,
+        valid_origin=bool(valid),
+        message="首次使用非姓名派生称呼，须在本章或前后一章用同句肯定叙述绑定称呼和圣经来历",
+    )
+
+
+def address_checkup(bible, chapters, *, complete=False):
+    """Pure readback interface: chapter rows contain number/text, never saved flags.
+
+    complete=True closes the last chapter's future window for a finished book.
+    A missing interior chapter stays Unknown; an unwritten next chapter is pending.
+    """
+    corpus = {c["number"]: c["text"] for c in chapters}
+    checks = [check for row in address_rows(bible) if (check := _first_use_check(row, corpus, complete))]
+    return dict(
+        authority="agent_editorial_not_human",
+        counts=dict(Counter(c["status"] for c in checks)),
+        checks=checks,
+        findings=[c for c in checks if c["status"] != "explained"],
+    )
+
+
+def address_findings(text, bible, earlier, *, number=None):
+    """Runtime repair candidates; the whole-book check also inspects future prose."""
+    number = number if number is not None else max(earlier, default=0) + 1
+    corpus = {**earlier, number: text}
+    findings = []
     for row in address_rows(bible):
         label = row["address"]
-        if label in seen or label not in text:
+        if label not in text:
             continue
-        seen.add(label)
-        if row["known"] and derived_address(label, row["name"]):
+        check = _first_use_check(row, corpus, complete=False)
+        if not check or check["status"] == "explained":
             continue
-        # Missing bible origin is still an issue even if a previous chapter used it.
-        valid = row["known"] and _origin(row["origin"])
-        if valid and any(_explained(previous, label, row["origin"]) for previous in earlier.values()):
-            continue
-        first_use = min((chapter for chapter, previous in earlier.items() if label in previous), default=None)
         start = text.index(label)
-        end = start + len(label)
-        sentence = next(
-            (m.group() for m in re.finditer(r"[^。！？!?\n]+[。！？!?]?", text) if m.start() <= start < m.end()), ""
-        )
-        if valid and row["origin"] in sentence and not re.search(r"不是|并非|不曾|并未|没有|无关|[？?]", sentence):
-            continue
         findings.append(
             dict(
-                row,
-                kind="address_origin",
-                status="Inference" if valid and first_use is None else "Unknown",
-                first_use_chapter=first_use,
+                check,
+                status="Inference" if check["valid_origin"] and check["first_use_chapter"] == number else "Unknown",
+                chapter=number,
                 start=start,
-                end=end,
-                quote=text[start:end],
-                message="首次使用非姓名派生称呼，需在同句交代圣经登记的来历；不能把称呼当说话人的别名",
+                end=start + len(label),
             )
         )
     return findings

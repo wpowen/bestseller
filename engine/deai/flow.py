@@ -60,7 +60,12 @@ class Session:
         self.warnings = []
         self.failure = None
 
-    def ask(self, stage, prompt, data, cap=4500, partial_coverage=False):
+    def ask(self, stage, prompt, data, cap=4500, partial_coverage=False, scope=""):
+        narrow = self.ctx.get("_narrow_stage")
+        if self.ctx.get("_narrow_retry") and not scope and (not narrow or stage == narrow):
+            from .recovery import ask_narrow
+
+            return ask_narrow(self, stage, prompt, data, cap, partial_coverage)
         previous = ""
         for attempt in range(6):
             self.calls += 1
@@ -75,7 +80,7 @@ class Session:
             try:
                 raw = self.llm(
                     messages,
-                    stage=stage + (f"-format{attempt}" if attempt else ""),
+                    stage=stage + scope + (f"-format{attempt}" if attempt else ""),
                     max_tokens=min(max(cap * 2, 8000), 12000) if attempt else cap,
                 )
             except ModelResponseError:
@@ -463,6 +468,7 @@ def polish(text, ctx, llm):
         accepted = original
         all_edits = []
         result.status = "retained"
+        result.checks.setdefault("failure", dict(stage="publication", reason="whole_chapter_invariant"))
     result.text = accepted
     result.edits = all_edits
     result.after_score = score(current_hits, accepted) if result.before_score is not None else None

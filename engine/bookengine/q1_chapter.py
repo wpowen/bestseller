@@ -230,6 +230,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)
+    handoff["missing"] = [k for k in ("opening_location", "end_location") if not boundaries[k]]
+    if idx > 1 and not state.get("end_location"):
+        handoff["missing"].append("previous_end")
+    if handoff["missing"]:
+        handoff["opening_status"] = handoff["status"]
+        handoff["status"] = "handoff_unknown"
     final_transition = stage_transition(bible, idx, text, state.get("end_location"), outline=outline)
     if final_transition:
         handoff["transition"] = final_transition

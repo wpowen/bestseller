@@ -194,6 +194,10 @@ def q1_fixture(tmp_path, monkeypatch, chapters=2):
     monkeypatch.setattr(q1, "volume", lambda *args, **kw: dict(number=1, start=1, end=chapters))
     monkeypatch.setattr(q1, "outlines", lambda *args, **kw: [dict(number=n) for n in range(1, chapters + 1)])
     extracted = dict(
+        opening_location="院门",
+        opening_quote="她推开院门，灯还亮着。",
+        end_location="院门",
+        end_quote="她推开院门，灯还亮着。",
         summary="阿宁推门回家。",
         state={},
         edits=[],

@@ -173,10 +173,14 @@ class MinimalBTests(unittest.TestCase):
         self.assertEqual(row["chars"], q1.chinese_count(text))
 
     def assert_calls(self, client, stages):
-        self.assertEqual([c["stage"] for c in client.calls], stages)
+        boundary = [c for c in client.calls if c["stage"].endswith("-boundary-reextract")]
+        # Completed synthetic chapters have no grounded boundary observations.
+        completed = list((self.out / "chapters").glob("[0-9][0-9][0-9].json"))
+        self.assertEqual(len(boundary), len(completed))
+        self.assertEqual([c["stage"] for c in client.calls if c not in boundary], stages)
         # Count every request except drafting, including any word/length/repair.
         outside = [c for c in client.calls if not c["stage"].endswith("-draft")]
-        self.assertLessEqual(len(outside), 2)
+        self.assertLessEqual(len(outside), 3)
         self.assertTrue(all(c["attempt"] == 1 for c in client.calls))
         self.assertTrue(all("PREFIX_SENTINEL" not in c["prompt"] for c in client.calls))
         self.assertEqual(client.prefix, "PREFIX_SENTINEL")

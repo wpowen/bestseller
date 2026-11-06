@@ -223,7 +223,9 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached = None
     if cached:
         if cached["normalized"]:
-            return cached["chapters"]
+            return complete_transitions(
+                cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)
+            )
         end = cached["end"]
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     used = prompt_vocabulary(used_vocabulary(prior))

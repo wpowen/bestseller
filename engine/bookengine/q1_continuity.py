@@ -79,17 +79,24 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     facts = boundary_facts(raw, text)
     retried = not facts["opening_location"] or not facts["end_location"]
     if retried:
-        observed = ask(
-            client,
-            prefix + "-boundary-reextract",
-            "只重抽开头与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
-            "找不到返回null。present仅列结尾实际在场者并逐人引文。返回JSON。",
-            [("开头", text[:1200]), ("结尾", text[-1200:])],
-            '{"opening_location":null,"opening_quote":null,"end_location":null,"end_quote":null}',
-            cap=1200,
-            input_limit=4000,
-            max_attempts=1,
-        )
+        saved_prefix = getattr(client, "prefix", "")
+        if client is not None:
+            client.prefix = ""
+        try:
+            observed = ask(
+                client,
+                prefix + "-boundary-reextract",
+                "只重抽开头与结尾当前地点，不推测、不沿用规划。每个地点须在对应逐字引文里；"
+                "找不到返回null。present仅列结尾实际在场者并逐人引文。返回JSON。",
+                [("开头", text[:1200]), ("结尾", text[-1200:])],
+                '{"opening_location":null,"opening_quote":null,"end_location":null,"end_quote":null}',
+                cap=1200,
+                input_limit=4000,
+                max_attempts=1,
+            )
+        finally:
+            if client is not None:
+                client.prefix = saved_prefix
         if isinstance(observed, dict):
             recovered = boundary_facts(observed, text)
             for side in ("opening", "end"):

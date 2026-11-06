@@ -116,3 +116,7 @@ A/R表示保存raw操作/结果引文是否能在当前终稿逐字定位（只�
 - 父agent已报告strict plan_guided_literal仍为13/37；本审计不把候选数当作新增通过数，也不承诺Unknown<10。
 - 未运行全量pytest或修改代码；为只读审核运行了原raw验证、逐字切片断言和4项内存反例。唯一写入是本报告。
 
+
+## 父 agent 最终处理记录
+
+上文“当前 strict same-sentence”的反例指独立核查时的中间实现，属于历史审阅快照。`219fb3806` 已保护普通工具及明确decisive=false，但独立二次复核发现：目标仅出现在同一句的无关分句中，仍会误报。父agent继续先RED后修复，最终要求计划对象和相符的结果词族同时位于能力产生结果的分句内，仍困及失败转折不算通过。4个新增断言均保留在 `test_planned_target_in_an_unrelated_clause_cannot_prove_conflict_resolution`。该记录关闭已列代码反例，不将37个Unknown改判；词面规则无法证明所有语义上的主要冲突决定性。

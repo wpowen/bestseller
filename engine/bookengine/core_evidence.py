@@ -12,9 +12,23 @@ from .quote_text import literal_quote
 # Only local, explicit operations with a result in the same narrative sentence.
 # A plan chooses search terms, never supplies an action, an outcome or causality.
 _OPERATION = r"借用?|运用|动用|使出|施展|发动|催动|激活"
-_OUTCOME = r"撞开|推开|撬开|击退|挡住|救出|斩断|切断|辨出|识破|看清|看见|探出|找出|发现|夺回|挣脱|冲出|清晰|分明"
-_NEGATIVE = r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|失败|失效|无效|未能|没能|改用|转而|另用|尝试|猜测|回忆|当年|曾经|谈起|提及|提到|故事|传说|据说|设想|仍被|但|却"
+_EFFECTS = (
+    ("撞开", "推开", "撬开", "打开"),
+    ("辨出", "辨明", "辨认", "识破", "看清", "看见", "探出", "找出", "发现", "清晰", "分明"),
+    ("救出", "救下", "救回"),
+    ("击退", "挡住"),
+    ("斩断", "切断"),
+    ("夺回",),
+    ("挣脱", "冲出"),
+)
+_NEGATIVE = r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|失败|失效|无效|未能|没能|改用|转而|另用|尝试|猜测|回忆|当年|曾经|谈起|提及|提到|故事|传说|据说|设想|仍|但|却"
 _PLAN_FIELDS = ("number", "core_required", "core_application", "core_development", "solution_target", "solution_method")
+
+
+def _planned_effect(clause, application, target):
+    return target in clause and any(
+        any(word in clause for word in family) and any(word in application for word in family) for family in _EFFECTS
+    )
 
 
 def find_core_evidence(text, bible, plan=None):
@@ -48,8 +62,10 @@ def find_core_evidence(text, bible, plan=None):
             # grammatical cause. Mere nearby action/outcome mentions do not count.
             use = re.search(r"(?:" + _OPERATION + r")[^，,；;。]{0,12}" + re.escape(term), quote)
             bound = re.search(re.escape(term) + r"[^，,；;。]{0,16}(?:使|令|让|从而|迫使)", quote)
-            outcome = re.search(_OUTCOME, re.split(r"[，,；;]", quote[use.end() :], maxsplit=1)[0]) if use else None
-            caused_result = bound and re.search(_OUTCOME, quote[bound.end() :])
+            action_clause = re.split(r"[，,；;]", quote[use.end() :], maxsplit=1)[0] if use else ""
+            cause_clause = re.split(r"[，,；;]", quote[bound.end() :], maxsplit=1)[0] if bound else ""
+            outcome = use and _planned_effect(action_clause, application, target)
+            caused_result = bound and _planned_effect(cause_clause, application, target)
             if not caused_result and not outcome:
                 continue
             if not use and not bound:
@@ -61,7 +77,7 @@ def find_core_evidence(text, bible, plan=None):
                 action_quote=quote,
                 result_quote=quote,
                 evidence_status="Evidence",
-                causal_basis="same_sentence_explicit_operation_and_result",
+                causal_basis="same_clause_operation_planned_effect_and_target",
             )
     return dict(result, reason="no_literal_plan_action_result")
 

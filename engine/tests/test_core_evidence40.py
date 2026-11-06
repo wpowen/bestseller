@@ -79,3 +79,15 @@ def test_minor_use_cannot_override_main_conflict_or_explicit_model_nondecisive()
     text = "他催动听风，听风让暗道里的脚步清晰起来。"
     raw = dict(decisive=False, mechanism="听风", action_quote=text, result_quote=text)
     assert read_core_use(raw, text, BIBLE, PLAN)["status"] == "not_decisive"
+
+
+def test_planned_target_in_an_unrelated_clause_cannot_prove_conflict_resolution():
+    plan = dict(PLAN, solution_target="同伴", core_application="听风救出被困同伴")
+    assert (
+        find_core_evidence("他催动听风，听风让落叶的纹路清晰起来，同伴仍困其中。", BIBLE, plan)["status"] == "unknown"
+    )
+    plan = dict(PLAN, solution_target="囚室", core_application="听风辨明囚室的机关")
+    assert find_core_evidence("他借听风辨出茶杯的缺口，囚室就在身后。", BIBLE, plan)["status"] == "unknown"
+    assert find_core_evidence("他借听风辨出茶杯缺口，囚室仍紧闭。", BIBLE, plan)["status"] == "unknown"
+    plan = dict(PLAN, solution_target="同伴", core_application="听风救出被困同伴")
+    assert find_core_evidence("他借听风看见同伴的头发。", BIBLE, plan)["status"] == "unknown"

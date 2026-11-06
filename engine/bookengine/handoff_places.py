@@ -27,8 +27,51 @@ MOVEMENT_WORDS = (
     "逃出",
     "跑出",
     "冲出",
+    "挪去",
+    "挪到",
+    "退入",
+    "退出来",
+    "跨过",
+    "钻过",
+    "驶向",
 )
 PLACE_NOUNS = ("通道", "钟铺", "器室", "剑阁", "剑廊", "客栈", "驿站", "码头", "渡口", "矿道", "洞窟", "城楼", "巷")
+
+_LOCAL = re.compile(r"(?:上方|下方|更深处|最深处|里面|之中|中|内|里|旁|处|上|下|外|后)$")
+_DEICTIC = re.compile(r"(?:一|这|那)处")
+
+
+def _local_name(value):
+    name = _DEICTIC.sub("", value)
+    root = _LOCAL.sub("", name)
+    return name, root if len(root) >= 2 or root in PLACE_NOUNS else name
+
+
+def mentioned_place(location, passage):
+    """Match bounded spatial wording in a movement quote, retaining proper names."""
+    name, root = _local_name(location)
+    passage = _DEICTIC.sub("", passage)
+    # Deeper/deepest describe the same local area; don't equate opposite sides.
+    if name.endswith(("更深处", "最深处")):
+        return bool(re.search(re.escape(root) + r"(?:更|最)深处", passage))
+    return name in passage or (
+        name != root and bool(re.search(re.escape(root) + r"(?!上方|下方|上|下|外|内|里|中|后|旁)", passage))
+    )
+
+
+def quoted_departure(previous, movement):
+    """A concrete source in the grounded end quote can anchor rising to continue."""
+    quote, old = previous.get("end_quote"), previous.get("end_location")
+    if not quote or not old:
+        return False
+    narrative = re.sub(r'“[^”]*(?:”|$)|‘[^’]*(?:’|$)|「[^」]*(?:」|$)|"[^"]*(?:"|$)', "", quote)
+    source = re.search(r"从([^。！？！，,；;\n]{2,20}?)(?:起身|站起|动身|出发)", movement)
+    return bool(source) and any(
+        source[1] in sentence
+        and mentioned_place(old, sentence)
+        and not re.search(r"想起|记得|回忆|打算|计划|如果|假如|没有|并未|未曾|不曾|没能", sentence)
+        for sentence in re.split(r"[。！？!?\n]", narrative)
+    )
 
 
 def _strings(value):
@@ -86,9 +129,13 @@ def same_place(old, new, bible=None, known=()):
         return False
     if old == new:
         return True
-    left, right = (re.sub(r"(?:里面|之中|中|内|里|旁|处|上)$", "", s) for s in (old, new))
-    if left == right:
+    old_name, left = _local_name(old)
+    new_name, right = _local_name(new)
+    if old_name == new_name or old_name == right or new_name == left:
         return True
+    if left == right:
+        inside = ("里面", "之中", "中", "内", "里")
+        return old_name[len(left) :] in inside and new_name[len(right) :] in inside
     for noun in PLACE_NOUNS:
         if left.endswith(noun) and right.endswith(noun):
             a, b = left[: -len(noun)], right[: -len(noun)]

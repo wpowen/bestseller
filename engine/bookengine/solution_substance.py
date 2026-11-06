@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from .quote_text import literal_quote
+from .ability_methods import partition_methods, primary_target, ability_combination, target_class
 
 # Stable families across genres, extended by explicit quote-grounded extracted nouns.
 FAMILIES = {
@@ -86,14 +87,22 @@ def observe_solutions(raw, text):
     return result
 
 
-def chapter_nouns(row):
+def _method_nouns(solution, bible):
+    for key in ("method_noun", "solution_method"):
+        noun = solution.get(key)
+        if isinstance(noun, str) and ability_combination(bible or {}, noun):
+            return [noun]
+    return solution_nouns(solution, include_target=False)
+
+
+def chapter_nouns(row, bible=None):
     # Completed body observations supersede their old plan, including an Unknown observation.
     if row.get("fact_source") != "final_body" and "solutions" not in row:
-        return solution_nouns({"solution_method": row.get("solution_method")}, include_target=False)
+        return _method_nouns({"solution_method": row.get("solution_method")}, bible)
     solutions = rows(row.get("solutions"))
     primary = [s for s in solutions if s.get("primary") is True]
     chosen = primary[:1] or solutions[:1]
-    return sorted({noun for solution in chosen for noun in solution_nouns(solution, include_target=False)})
+    return sorted({noun for solution in chosen for noun in _method_nouns(solution, bible)})
 
 
 def stage_key(bible, number):
@@ -109,27 +118,59 @@ def stage_key(bible, number):
 
 def solution_context(bible, history, start):
     recent = [
-        dict(chapter=r["number"], nouns=chapter_nouns(r)) for r in history if 0 < start - r.get("number", 0) <= 10
+        dict(chapter=r["number"], nouns=chapter_nouns(r, bible))
+        for r in history
+        if 0 < start - r.get("number", 0) <= 10
     ]
     stage = stage_key(bible, start)
     counts = Counter(
         n
         for r in history
         if stage is not None and stage_key(bible, r.get("number", 0)) == stage and r.get("number", 0) < start
-        for n in chapter_nouns(r)
+        for n in partition_methods(bible, chapter_nouns(r, bible))[0]
     )
-    return dict(recent_ten=recent, stage_counts=dict(counts), stage_cap=3)
+    ability_counts = Counter(
+        (target_class(primary_target(r)), partition_methods(bible, chapter_nouns(r, bible))[1])
+        for r in history
+        if stage is not None
+        and stage_key(bible, r.get("number", 0)) == stage
+        and r.get("number", 0) < start
+        and primary_target(r)
+        and partition_methods(bible, chapter_nouns(r, bible))[1]
+    )
+    return dict(
+        recent_ten=recent,
+        stage_counts=dict(counts),
+        stage_cap=3,
+        ability_cap=2,
+        ability_counts=[dict(target_class=t, combination=list(c), count=n) for (t, c), n in ability_counts.items()],
+    )
 
 
 def solution_issues(bible, history, batch):
     combined = {r["number"]: r for r in [*history, *batch] if type(r.get("number")) is int}
     targets = {r["number"] for r in batch}
-    counts, issues = defaultdict(list), []
+    counts, ability_counts, issues = defaultdict(list), defaultdict(list), []
     for number, row in sorted(combined.items()):
         stage = stage_key(bible, number)
         if stage is None:
             continue
-        nouns = chapter_nouns(row)
+        nouns, combo = partition_methods(bible, chapter_nouns(row, bible))
+        target = target_class(primary_target(row))
+        if combo and target:
+            used = ability_counts[stage, target, combo]
+            used.append(number)
+            if len(used) > 2 and number in targets:
+                issues.append(
+                    dict(
+                        kind="ability_repetition",
+                        stage=stage,
+                        target_class=target,
+                        combination=list(combo),
+                        chapters=list(used),
+                        targets=[number],
+                    )
+                )
         if (
             bible.get("plot_contract_version")
             and number in targets

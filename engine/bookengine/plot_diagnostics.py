@@ -3,20 +3,34 @@
 from collections import Counter, defaultdict
 import math
 
-from .core_ability import core_source, verify_core_use, development_issues
+from .core_ability import core_source, development_issues
 from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
+from .ability_methods import partition_methods, primary_target, target_class
+from .core_evidence import read_core_use
 
 
 def plot_findings(bible, chapters):
     distribution, stage_nouns, noun_chapters = Counter(), defaultdict(lambda: defaultdict(list)), []
     targets = Counter()
+    ability_distribution, ability_groups, ability_applications = Counter(), defaultdict(list), []
     ability, type_counts, confrontations, current = [], Counter(), [], []
     previous = None
     for chapter in chapters:
         number, meta, text = chapter["number"], chapter["meta"], chapter["text"]
         # Deliberately exclude solution_target/method plans from observed statistics.
         observed = observe_solutions(dict(solutions=meta.get("solutions", [])), text)
-        nouns = chapter_nouns(observed)
+        nouns = chapter_nouns(observed, bible)
+        nouns, combo = partition_methods(bible, nouns)
+        target = primary_target(observed)
+        ability_distribution.update(combo)
+        if combo:
+            ability_applications.append(
+                dict(
+                    chapter=number, combination=list(combo), target=target, status="Inference" if target else "Unknown"
+                )
+            )
+            if target and stage_key(bible, number) is not None:
+                ability_groups[stage_key(bible, number), target_class(target), combo].append(number)
         distribution.update(nouns)
         targets.update({s["target_noun"] for s in observed["solutions"] if s.get("target_noun")})
         stage = stage_key(bible, number)
@@ -32,7 +46,9 @@ def plot_findings(bible, chapters):
         )
         saved = meta.get("core_use")
         raw = saved.get("raw", {}) if isinstance(saved, dict) else {}
-        ability.append(dict(chapter=number, **verify_core_use(raw, text, bible)))
+        ability.append(
+            dict(chapter=number, **read_core_use(raw, text, bible, chapter.get("core_plan", meta.get("core_plan"))))
+        )
         kind = meta.get("type") if isinstance(meta.get("type"), str) else "Unknown"
         kind = "关系" if kind == "情感" else kind
         type_counts[kind] += 1
@@ -101,10 +117,33 @@ def plot_findings(bible, chapters):
             basis="primary solution content and grounded extracted nouns; legacy surface family inference",
         ),
         core_ability=dict(
+            applications=dict(
+                distribution=dict(sorted(ability_distribution.items())),
+                cap=2,
+                chapters=ability_applications,
+                excess=[
+                    dict(
+                        stage=stage,
+                        target_class=target,
+                        combination=list(combo),
+                        chapters=ns,
+                        excess_chapters=ns[2:],
+                        count=len(ns),
+                        cap=2,
+                        status="Inference",
+                    )
+                    for (stage, target, combo), ns in ability_groups.items()
+                    if len(ns) > 2
+                ],
+                basis="declared powers + grounded target noun suffix classes; unclassified kinds retain literal nouns; Inference",
+            ),
             source=core_source(bible),
             verified_chapters=verified,
             unknown_chapters=unknown,
             not_decisive_chapters=[r["chapter"] for r in ability if r["status"] == "not_decisive"],
+            unknown_reasons=dict(
+                Counter(r.get("unknown_reason", "unclassified") for r in ability if r["status"] == "unknown")
+            ),
             ratio=len(verified) / len(chapters) if chapters else None,
             stages=ability_stages,
             chapters=ability,

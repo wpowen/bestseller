@@ -92,7 +92,8 @@ def test_checkup_reads_only_source_bound_supplement_without_rewriting_checkpoint
         json.dumps(dict(number=1, source="draft", source_path="chapter-001.body.md", source_text=text, raw=raw))
     )
     report = check_book(tmp_path, source="draft")
-    assert report["solution_substance"]["distribution"] == {"借影": 1}
+    assert report["solution_substance"]["distribution"] == {}
+    assert report["core_ability"]["applications"]["distribution"] == {"借影": 1}
     assert report["plot_observations"]["applied_chapters"] == [1]
     assert checkpoint.read_bytes() == before
     (tmp_path / "chapter-001.body.md").write_text(text + "他离开了。")

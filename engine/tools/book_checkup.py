@@ -105,6 +105,21 @@ def _chapters(book, source, unknown):
         if observed is not None:
             chapter["meta"] = dict(meta, solutions=observed["solutions"], core_use=observed["core_use"])
             chapter["plot_observation"] = dict(source=observed_source, authority=observed["authority"])
+        outline_path = book / f"writing_outlines/{n:03d}.json"
+        if outline_path.is_file():
+            plan = _read(outline_path, unknown)
+            chapter["core_plan"] = {
+                k: plan[k]
+                for k in (
+                    "number",
+                    "core_required",
+                    "core_application",
+                    "core_development",
+                    "solution_target",
+                    "solution_method",
+                )
+                if k in plan
+            }
         result.append(chapter)
     return result
 
@@ -337,6 +352,7 @@ def check_book(book, *, source="final"):
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
+    from bookengine.address_contracts import address_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -357,7 +373,7 @@ def check_book(book, *, source="final"):
         )
         for c in chapters
     ]
-    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0])) for c in chapters]
+    similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0], bible=bible)) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
@@ -366,7 +382,12 @@ def check_book(book, *, source="final"):
         reference_only=True,
         source_preference=source,
         chapter_count=len(chapters),
-        review_contracts=design_findings(bible, chapters),
+        review_contracts=dict(
+            design_findings(bible, chapters),
+            address_first_use=address_checkup(
+                bible, chapters, complete=_read(book / "run.json", []).get("status") == "complete"
+            ),
+        ),
         **plot_findings(bible, chapters),
         plot_observations=dict(
             applied_chapters=[c["number"] for c in chapters if c.get("plot_observation")],

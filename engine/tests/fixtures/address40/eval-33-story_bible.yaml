@@ -1,0 +1,555 @@
+characters:
+- name: 沈亦衡
+  role: protagonist
+  identity: 被逐出落霞宗的年轻修补匠
+  aliases: []
+  desire: 找到失踪的姐姐唐兆川
+  fear: 忘记自己为何要救她
+  flaw: 把失去理解成必须夺回
+  bottom_line: 不以活人身份作为交易代价
+  voice: 短句，嗓音沙哑，习惯先问价钱
+  growth_end: 建立拒绝被兵器定义的自由军阵
+  goal: 让姐姐保有拒绝他的权利
+  exit_volume: 5
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 男
+  address: 阿砺
+  active_desire: 我要姐姐亲口说她想要什么
+  personality_tags:
+  - 护短
+  - 狡黠
+  - 嘴硬
+  - 记仇
+  catchphrase: 先谈价，规矩随后再说。
+  never_do:
+  - 强迫唐兆川接受营救
+  - 把同伴当作可替换零件
+  - 主动献出无辜者的身份
+- name: 姜允禾
+  role: romance
+  identity: 九霄宗执剑长老
+  aliases: []
+  desire: 证明剑不必只供强者定义
+  fear: 沈亦衡会为救唐兆川毁掉自己
+  flaw: 习惯替别人决定危险
+  bottom_line: 不拿无辜者性命换胜利
+  voice: 冷利清楚，反问带锋
+  growth_end: 接受爱人也可能拒绝同行
+  goal: 夺回被宗门封存的兵冢名册
+  exit_volume: 5
+  attraction: 欣赏沈亦衡明知亏损仍敢出手
+  obstacle: 她与沈亦衡都把保护变成命令
+  relationship_stages:
+  - 第一卷：因抢剑互识
+  - 第二卷：被迫共同应战
+  - 第三卷：因唐兆川争执冷战
+  - 第四卷：坦白害怕失去彼此
+  - 第五卷：彼此允许选择
+  ladder_volume: 0
+  gender: 女
+  address: 沈亦衡
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 唐兆川
+  role: support
+  identity: 被兵冢逐步改写、拒绝获救的失踪姐姐
+  aliases: []
+  desire: 终结兵祖庭对残兵宿主的役使
+  fear: 沈亦衡把她当成必须救回的人
+  flaw: 隐瞒自己主动入冢的代价
+  bottom_line: 不以弟弟的自由换自己的自由
+  voice: 气息断续，偶带兵刃回响
+  growth_end: 夺回声音后仍拒绝沈亦衡同行
+  goal: 毁去兵祖庭的役兵根本
+  exit_volume: 5
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 女
+  address: 阿砺
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 陆初棠
+  role: support
+  identity: 残兵巷地下倒卖旧铭的少年
+  aliases: []
+  desire: 让被弃兵器拥有最后一位主人
+  fear: 再次被旧主召回服役
+  flaw: 嘴上守信，脚下总想逃
+  bottom_line: 不卖掉替朋友挨过刀的人
+  voice: 油滑快嘴，慌时连说三个成交
+  growth_end: 成为自由军阵的第一名旗手
+  goal: 护送一批无主残兵离开兵冢
+  exit_volume: 5
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 男
+  address: 砺哥
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 白启榆
+  role: support
+  identity: 边荒收殓残甲的女锻兵
+  aliases: []
+  desire: 找到被铸入王庭兵甲的兄长
+  fear: 亲手修补任何一件认人的兵器
+  flaw: 总把悲伤归咎于手艺不足
+  bottom_line: 不改造活人的武技
+  voice: 沉稳直接，提到兄长便发狠
+  growth_end: 放下修复所有人的执念
+  goal: 让自由军阵拥有可替换的兵甲
+  exit_volume: 5
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 0
+  gender: 女
+  address: 沈师傅
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 韩嘉屿
+  role: antagonist
+  identity: 残兵巷执法队首领
+  aliases: []
+  desire: 封死残兵巷所有异常借招者
+  fear: 旧日败招被沈亦衡当众重演
+  flaw: 把服从视为唯一秩序
+  bottom_line: 不放过持有邪兵的活人
+  voice: 强硬命令句，每句都逼人服从
+  growth_end: 被自己的剑阵否定
+  goal: 追回失窃的宗主旧剑
+  exit_volume: 1
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 1
+  gender: 男
+  address: 小子
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 裴天骁
+  role: antagonist
+  identity: 九霄宗论武场首席 challenger
+  aliases: []
+  desire: 借沈亦衡之手补全失传剑招
+  fear: 永远无法证明自己的天赋
+  flaw: 只承认胜者与败者
+  bottom_line: 不向失去自我的人手下跪
+  voice: 平静寡言，报出名字便是挑战
+  growth_end: 主动斩断被器灵驱使的右臂
+  goal: 赢取沈亦衡的全部借招
+  exit_volume: 2
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 2
+  gender: 男
+  address: 修补匠
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 赫连如筝
+  role: antagonist
+  identity: 边荒古战场的寄骨将军
+  aliases: []
+  desire: 为同袍夺回被夺走的战斗意识
+  fear: 自己早已没有活人意志
+  flaw: 认为牺牲身份即可换取自由
+  bottom_line: 不让同袍魂散战场
+  voice: 低沉缓慢，像替死者说话
+  growth_end: 承认被保存者也能自行离开
+  goal: 打开古战场通往王庭的兵门
+  exit_volume: 3
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 3
+  gender: 女
+  address: 借来的人
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 姜孟遥
+  role: antagonist
+  identity: 大晟王庭首席掌兵官
+  aliases: []
+  desire: 让王庭兵器库容纳所有逆者
+  fear: 王庭失去对王境强者的控制
+  flaw: 相信秩序值得献祭个人
+  bottom_line: 不让王庭兵权旁落
+  voice: 威严从容，喜欢以理服人
+  growth_end: 被自由军阵逼出王庭
+  goal: 封存唐兆川尚未被夺走的记忆
+  exit_volume: 4
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 4
+  gender: 男
+  address: 沈亦衡
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+- name: 姬宜秋
+  role: antagonist
+  identity: 天外兵祖庭第一执刃者
+  aliases: []
+  desire: 将诸域残兵收束成唯一意志
+  fear: 兵祖庭发现自己也是借来的兵器
+  flaw: 无法容忍任何定义之外的自由
+  bottom_line: 维持兵祖庭对残宿主的控制
+  voice: 雍容平静，每句话都像最终判词
+  growth_end: 被历代旧主的反噬吞没
+  goal: 把沈亦衡塑造成最后一柄兵祖
+  exit_volume: 5
+  attraction: ''
+  obstacle: ''
+  relationship_stages: []
+  ladder_volume: 5
+  gender: 男
+  address: 候选者
+  active_desire: ''
+  personality_tags: []
+  catchphrase: ''
+  never_do: []
+title: 《每借一剑，我就失去一点自己》
+premise: 修补匠沈亦衡能从残兵握痕中借出旧主一招绝技，但兵器会夺走他最像前任的一项特征。他循着姐姐唐兆川被夺走的声音闯入五域兵冢，逐渐发现姐姐并非不愿获救，而是不愿再被弟弟替她选择。最后，他以拒绝任何兵器定义的军阵打破兵祖庭，并让姐姐保有拒绝自己的权利。
+reader_expectation: 前三章兑现借招反杀与声音被夺的强钩子；此后每十章更换战场和对手，呈现越阶战斗、身份错位、关系拉扯与夺回主动权的连续爽点。终局不靠解释真相取胜，而由人物选择、行动代价与军阵对攻完成收束。
+selling_points:
+- 借招即失特征的高概念代价
+- 姐姐主动拒绝营救的价值冲突
+- 五域兵冢逐层升级的地图扩张
+- 残兵器旧主反噬形成独特战斗
+- 恋爱双方从保护走向允许选择
+- 拒绝被定义者组成自由军阵
+power:
+  cost: 每借一招，永久失去一项个人特征；侵蚀越深，旧主意识越强。
+  limit: 同时只能借一剑一招，失去沙哑嗓音后不能再伪装宗主声线，最终被完全覆盖便不再是沈亦衡。
+world:
+  rules:
+  - 残兵器保留前任最得意的一招与最深握痕。
+  - 借招者会短暂获得旧主境界与武技。
+  - 兵器夺走最接近旧主的一项特征作为代价。
+  - 侵蚀越深，旧主意识越能干涉借招者。
+  - 残兵器认主后拒绝原主，也排斥彻底空壳。
+  - 兵祖庭可把活人意识炼成残兵宿主的补丁。
+  levels:
+  - 醒脉
+  - 凝纹
+  - 蕴魂
+  - 融血
+  - 铸域
+  - 王境
+  - 皇境
+  - 圣境
+  factions:
+  - name: 落霞宗
+    interest: 追回宗门旧剑，维持外门威名
+  - name: 九霄宗
+    interest: 补全失传剑招，控制论武场话语权
+  - name: 边荒古军
+    interest: 让战死同袍保住意识并重返战场
+  - name: 大晟王庭
+    interest: 收拢王境兵器与残宿主，防止兵权失控
+  - name: 兵祖庭
+    interest: 统一诸域残兵意志，抹除自由武修
+  stages:
+  - volume: 1
+    stage: 残兵巷追捕与入宗
+  - volume: 2
+    stage: 九霄宗论武场争锋
+  - volume: 3
+    stage: 边荒古战场寻母
+  - volume: 4
+    stage: 大晟王庭兵器库
+  - volume: 5
+    stage: 天外兵祖庭决战
+  truth_layers:
+  - layer: 1
+    truth: 唐兆川的声音已被兵冢夺走，留在残剑中的回响属于她本人。
+    reveal_not_before: 1
+  - layer: 2
+    truth: 唐兆川主动进入兵冢，以自身换取沈亦衡不被兵祖庭锁定。
+    reveal_not_before: 15
+  - layer: 3
+    truth: 兵祖庭借历任旧主维持统一，唐兆川正在拆毁其根系而非等待救援。
+    reveal_not_before: 38
+main_foreshadows:
+- id: F1
+  description: 唐兆川留下的半句剑诀总是用沈亦衡的语气续完。
+  close_volume: 3
+- id: F2
+  description: 每柄残兵夺走的特征都对应兵祖庭缺失的一角。
+  close_volume: 4
+- id: F3
+  description: 姬宜秋没有自己的兵痕，却能驱使所有旧主。
+  close_volume: 5
+- id: F4
+  description: 沈亦衡失去沙哑嗓音后，唐兆川的呼吸仍能唤回旧声。
+  close_volume: 5
+summary: 沈亦衡是落霞宗逐出的修补匠，能从残兵握痕中借出前任一招武技，但兵器会永久夺走他最像旧主的一项特征。第一章，他借残剑旧主的落日斩斩开执法剑阵，随即失去沙哑嗓音，并用宗主旧声反令三名执法者跪下。姐姐唐兆川失踪前留下的声音，也正被兵冢一点点改写。沈亦衡因此追入九霄宗，在论武场与姜允禾、裴天骁争夺失传剑招；又循线索进入边荒古战场，发现唐兆川可能并非受害，而是主动入冢。赫连如筝以保存同袍意识为名替兵祖庭服务，却逐渐动摇了控制同袍的信念。第四阶段，沈亦衡闯入大晟王庭兵器库，与姜允禾在姐弟救赎和彼此选择之间冲突，并发现兵祖庭正借历代兵主统一诸域。最终战场转入天外兵祖庭，唐兆川拒绝被当成待救之物，独自拆解兵祖根系。沈亦衡失去旧声、旧习惯与部分情感印记，却以同伴自愿授予的武技组成自由军阵，击败姬宜秋。唐兆川夺回声音后仍选择留在边荒处理残兵魂魄，兄弟关系从强行相认转为彼此尊重。沈亦衡最终建立拒绝被任何兵器定义的军阵，力量迈入皇境，留下通往圣境的开放道路。
+initial_dashboard:
+  strength: 醒脉
+  wealth: 0灵晶
+  status: 旁支子弟
+  affiliation: 落霞宗
+  stage: 残兵巷
+antagonists:
+- name: 韩嘉屿
+  tier: 1
+  stage: 1
+  exit: 10
+- name: 裴天骁
+  tier: 2
+  stage: 2
+  exit: 20
+- name: 赫连如筝
+  tier: 3
+  stage: 3
+  exit: 30
+- name: 姜孟遥
+  tier: 4
+  stage: 4
+  exit: 40
+- name: 姬宜秋
+  tier: 5
+  stage: 5
+  exit: 50
+volumes:
+- number: 1
+  start: 1
+  end: 10
+  stage: 残兵巷追捕与入宗
+  location: 残兵巷
+  antagonist: 韩嘉屿
+  climax: 沈亦衡利用宗主旧声反令剑阵，并斩断追捕唐兆川的传讯残铃。
+  exit_chapter: 10
+  goal: 摆脱落霞宗追捕并找到唐兆川入九霄宗的线索。
+  change: 沈亦衡失去嗓音，也第一次看见姐姐主动留下的剑痕。
+  cost: 沙哑嗓音永逝，旧主命令声开始影响他的语气。
+- number: 2
+  start: 11
+  end: 20
+  stage: 九霄宗论武场争锋
+  location: 九霄宗论武场
+  antagonist: 裴天骁
+  climax: 沈亦衡与姜允禾联手破开夺招剑阵，裴天骁自断被器灵驱使的右臂。
+  exit_chapter: 20
+  goal: 夺回被封存的兵冢名册，确认唐兆川进入边荒的路线。
+  change: 沈亦衡与姜允禾从敌对转为同行，旧主武魂开始夺走他的战斗习惯。
+  cost: 沈亦衡不再习惯收剑收势，身体越来越像旧剑主。
+- number: 3
+  start: 21
+  end: 30
+  stage: 边荒古战场寻母
+  location: 边荒古战场
+  antagonist: 赫连如筝
+  climax: 沈亦衡放弃强迫唐兆川离开，独自夺下魂门并让存续同袍自行选择去留。
+  exit_chapter: 30
+  goal: 追到唐兆川身影并弄清她为何主动留在兵冢。
+  change: 姐弟关系由营救转为对话，唐兆川拒绝随他离开。
+  cost: 沈亦衡失去温和笑的 habit，赫连如筝带残军撤向王庭。
+- number: 4
+  start: 31
+  end: 40
+  stage: 大晟王庭兵器库
+  location: 大晟王庭兵器库
+  antagonist: 姜孟遥
+  climax: 姜允禾公开拒绝王庭封存令，沈亦衡与白启榆打开军械库引发自由军阵初成。
+  exit_chapter: 40
+  goal: 在王庭封库前救出被封存的残宿主，并取得兵祖庭入口。
+  change: 姜允禾与沈亦衡承认爱意，却不再替对方作决定。
+  cost: 沈亦衡失去旧情愫的敏锐，姜孟遥退入天外兵祖庭。
+- number: 5
+  start: 41
+  end: 50
+  stage: 天外兵祖庭决战
+  location: 天外兵祖庭
+  antagonist: 姬宜秋
+  climax: 唐兆川拆掉兵祖根系，沈亦衡以自愿共享的军阵击败姬宜秋。
+  exit_chapter: 50
+  goal: 毁去兵祖庭对残宿主的役使，让诸域残兵可以自行选择。
+  change: 唐兆川夺回声音却拒绝同行，沈亦衡建立自由军阵并走向皇境。
+  cost: 沈亦衡永远失去旧主留下的声音与战斗本能在封印下继续侵蚀。
+structure_version: 1
+canon:
+  ladder:
+    strength:
+    - 醒脉
+    - 凝纹
+    - 蕴魂
+    - 融血
+    - 铸域
+    - 王境
+    - 皇境
+    - 圣境
+    wealth_unit: 灵晶
+    status:
+    - 旁支子弟
+    - 内族精英
+    - 一城强者
+    - 王朝栋梁
+    - 一域霸主
+    - 诸域共尊
+  genre_kind: 爽文
+  payoff_menu:
+  - 升级
+  - 打脸
+  - 收获
+  - 身份抬升
+  - 碾压
+  solution_menu:
+  - 实力压制
+  - 弱点克制
+  - 信息欺骗
+  - 夺取控制
+  - 断链脱控
+  - 利益分化
+  - 对价交换
+  - 断源制停
+  - 脱域避险
+  - 外援协同
+  - 通路重构
+  - 反馈抑制
+  - 耗竭制胜
+  - 触发反用
+  - 隐蔽绕行
+  - 追踪定位
+  - 实验复现
+  - 物证鉴别
+  - 时序还原
+  - 证词排伪
+  - 公开解胁
+  - 替代依赖
+  - 弃权止损
+  - 主体归位
+  - 隔离封存
+  - 修复故障
+  - 资源重配
+  - 履约修复
+  - 逆向归因
+  - 群体表态
+  payoff_subtype_to_type:
+    血脉晋阶: 升级
+    武魂凝形: 升级
+    战技突破: 升级
+    擂台雪耻: 打脸
+    当众破除废材断言: 打脸
+    亲手击败轻视自己的同辈: 打脸
+    夺得可用传承: 收获
+    赢取独立支配的修炼资源: 收获
+    收服真心追随的盟友: 收获
+    获得正式继承资格: 身份抬升
+    凭战功取得领地: 身份抬升
+    被敌对势力承认主导地位: 身份抬升
+    正面对决压制强敌: 碾压
+    以既有战技击溃围攻: 碾压
+    以实力优势破掉敌阵: 碾压
+  payoff_descriptions:
+    升级:
+    - 血脉晋阶
+    - 武魂凝形
+    - 战技突破
+    打脸:
+    - 擂台雪耻
+    - 当众破除废材断言
+    - 亲手击败轻视自己的同辈
+    收获:
+    - 夺得可用传承
+    - 赢取独立支配的修炼资源
+    - 收服真心追随的盟友
+    身份抬升:
+    - 获得正式继承资格
+    - 凭战功取得领地
+    - 被敌对势力承认主导地位
+    碾压:
+    - 正面对决压制强敌
+    - 以既有战技击溃围攻
+    - 以实力优势破掉敌阵
+  hook_types:
+  - 人物当场隐瞒
+  - 证词矛盾
+  - 错误判断后果
+  - 关系破裂
+  - 新势力登场
+  - 反转揭示
+  - clue
+  - 新事实推翻旧判断
+  - 眼前危险逼近
+  - 关键行动悬停
+  - 熟人身份改观
+  - 两条路各有代价
+  - 异常物件待解释
+  - 截止时刻将到
+  - 誓言或威吓落地
+  - 人物物件无故失踪
+  - 话中漏洞露端倪
+  - 旧意象发生变化
+  - 首尾照面生新义
+  - 留下未答的反应
+  solution_aliases:
+    假目标分追: 信息欺骗
+    引敌换地: 信息欺骗
+    诱敌: 信息欺骗
+    伪装混入: 信息欺骗
+    事前掉包: 信息欺骗
+    放出假目标分散追兵: 信息欺骗
+    引敌离开熟悉地形再交战: 信息欺骗
+    换装混入敌方队伍穿过关口: 信息欺骗
+    预先掉包使敌方夺到无效物: 信息欺骗
+    诱导敌方火力击毁自身屏障: 信息欺骗
+    预设伏击在敌方返程截获目标: 信息欺骗
+    共同表态: 群体表态
+    齐声喊名: 群体表态
+    众人齐声喊名: 群体表态
+    群体表态: 群体表态
+    齐声: 群体表态
+    众人作证: 群体表态
+    众人齐声: 群体表态
+    众人共同拒绝: 群体表态
+    共同喊名: 群体表态
+    集体认同: 集体认同
+    断开外部供能使敌方装置停机: 断源制停
+    截断运输补给迫使围困者撤走: 断源制停
+    耗尽敌方有限弹药后反攻: 耗竭制胜
+    坚守既有防线拖过敌方有效时限: 耗竭制胜
+    搭建临时桥梁撤出被困者: 通路重构
+    破坏承重结构阻断追击路线: 通路重构
+    缴械制服施害者终止攻击: 实力压制
+    夺取控制器解除远程威胁: 夺取控制
+    沿观察盲区穿过封锁: 隐蔽绕行
+    绕开正面守军从侧路夺取关键物: 隐蔽绕行
+    切断已知追踪媒介后隐蔽转移: 断链脱控
+    分化敌方利益使其联盟瓦解: 利益分化
+    交换对方急需资源换回被扣物: 对价交换
+    抵押自有资产换取急需周转资源: 对价交换
+    主动放弃敌方控制的奖励退出陷阱: 弃权止损
+    当事人主动解除依附关系终止操纵: 弃权止损
+    建立备用供给摆脱独家供货钳制: 替代依赖
+  seed: 《每借一剑，我就失去一点自己》
+  scheduling:
+    upgrade_gap:
+    - 4
+    - 8
+    setup_lead_chapters: 1
+    seed_source: canon.seed
+    policy: 逐书可复现升级日历；前章蓄势；其余爽点在连续与十章覆盖约束下逐章随机，不按最少计数固定轮换。

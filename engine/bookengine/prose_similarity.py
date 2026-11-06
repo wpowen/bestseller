@@ -4,7 +4,7 @@ Offsets refer to the original input, paragraph numbers are one-based. Compare
 only wholly narrative paragraphs (mixed speech is conservatively excluded).
 The two overlap gates were calibrated against eval-33/eval-35, including the
 unequal-length pair in eval-33 chapter 36. A single identity introduction is
-report-only; more than one template sentence per chapter invites model repair.
+report-only here; the chapter repair routes first-chapter opening hits too.
 """
 
 import re
@@ -20,16 +20,43 @@ _QUOTES = set("“”‘’「」『』\"'«»＂＇")
 _AS_ROLE = re.compile(r"作为[^，,。！？!?；;：:\n]{2,30}[，,]\s*(?:他|她|其)")
 _ROLE = r"[^，,。！？!?；;：:\n]{0,20}(?:师|者|人|将|使|官|卫|主|长|管事|掌柜)"
 _IDENTITY = re.compile(r"^[\u3400-\u9fff]{2,4}是[^，,。！？!?；;：:\n]{1,30}的" + _ROLE + r"(?:与|和|兼)" + _ROLE)
+_IS_ALSO = re.compile(r"[他她]是[^，,。！？!?；;：:\n]+[，,]\s*也是[^，,。！？!?；;：:\n]+")
 
 
-def analyze_prose(text):
+def _identity_windows(bible):
+    """Index literal eight-character windows; never join punctuation or spaces."""
+    result = []
+    for character in (bible or {}).get("characters", []):
+        identity = character.get("identity", "")
+        if not isinstance(identity, str):
+            continue
+        windows = [identity[i : i + 8] for i in range(len(identity) - 7) if identity[i : i + 8].isalnum()]
+        if windows:
+            result.append((character.get("name", ""), identity, windows))
+    return result
+
+
+def _identity_matches(node, identities):
+    matches = []
+    for name, identity, windows in identities:
+        quote = next((part for part in windows if part in node["text"]), None)
+        if quote:
+            start = node["start"] + node["text"].index(quote)
+            matches.append(dict(character=name, identity=identity, quote=quote, start=start, end=start + len(quote)))
+    return matches
+
+
+def analyze_prose(text, bible=None):
     """Locate nearby paraphrases and card templates without changing any bytes.
 
     Exact normalized paragraphs are left to prose_repetition. Candidate records
     carry measurable scores and source spans, not a claim of semantic equality.
+    Optional bible supplies character identities; a literal eight-character
+    overlap is recorded once per sentence, even when several rules match.
     """
     paragraphs = _paragraph_spans(text)
     sentences = _sentences(text, paragraphs)
+    identities = _identity_windows(bible)
     narrative = {}
     cards = []
     for number, (start, end) in enumerate(paragraphs, 1):
@@ -44,17 +71,25 @@ def analyze_prose(text):
         for node in nodes:
             if node["quoted"] or any(c in _QUOTES for c in node["text"]):
                 continue
-            # The conjunction of occupational roles avoids object definitions;
-            # ordinary "A is a shopkeeper" introductions stay report-free.
+            matches = _identity_matches(node, identities)
+            # Role conjunctions avoid object definitions; literal identity reuse
+            # is independent evidence and may also occur inside an action.
             template = (
                 "as_role"
                 if _AS_ROLE.search(node["text"])
                 else "identity_roles"
                 if _IDENTITY.search(node["text"])
+                else "is_also"
+                if _IS_ALSO.search(node["text"])
+                else "identity_literal"
+                if matches
                 else None
             )
             if template:
-                cards.append(dict(node, kind="card_explanation", template=template, status="Inference"))
+                card = dict(node, kind="card_explanation", template=template, status="Inference")
+                if matches:
+                    card["identity_matches"] = matches
+                cards.append(card)
     pairs, pending = [], []
     for second, (normalized, right) in narrative.items():
         for first in range(max(1, second - RULES["paragraph_distance"]), second):

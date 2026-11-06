@@ -18,6 +18,7 @@ from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_context, solution_issues, chapter_nouns
+from .ability_methods import primary_target
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .chapter_rhythm import (
     rhythm_slots,
@@ -224,7 +225,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
-    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r)) for r in prior]
+    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r, bible), target=primary_target(r)) for r in prior]
     plot_stale = bool(
         cached
         and (solution_issues(bible, prior, cached["chapters"]) + ability_issues(bible, prior, cached["chapters"]))
@@ -301,7 +302,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     sections = [
         (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
-            "主要解法必须给solution_target作用对象及solution_method手段核心名词；同阶段同名词最多3次，超额换实际手段，不只换标签",
+            "主要解法必须给solution_target作用对象及solution_method手段核心名词；普通手段同阶段同名词最多3次；圣经核心能力及子能力另计，同阶段同能力组合对同类对象最多2次；超额换实际手段或作用对象，不只换标签",
             solution_context(bible, prior, start),
         ),
         (RHYTHM_RULE, scene_slots),
@@ -353,7 +354,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             [
                 (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
                 (
-                    "手段名词阶段上限3次；重写实际动作，解法附solution_target/solution_method",
+                    "普通手段名词阶段上限3次，核心能力组合对同类对象阶段上限2次；重写实际动作，解法附solution_target/solution_method",
                     solution_context(bible, prior, start),
                 ),
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),

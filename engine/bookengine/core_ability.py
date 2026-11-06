@@ -5,6 +5,7 @@ import json
 import re
 
 from .solution_substance import rows
+from .quote_text import literal_quote
 
 DEVELOPMENT = ("new_use", "new_cost", "new_limit")
 RULE = (
@@ -135,10 +136,11 @@ def verify_core_use(raw, text, bible):
     """Literal evidence plus explicit causal result; semantic authority remains agent review."""
     source = core_source(bible)
     raw = raw if isinstance(raw, dict) else {}
-    result = dict(status="unknown", source=source, authority="agent_editorial_not_human", raw=raw)
+    result = dict(status="unknown", source=source, authority="agent_editorial_not_human", raw=raw, validation_version=2)
     if not source:
         return dict(result, reason="no_core_source")
-    action, outcome, mechanism = (raw.get(k) for k in ("action_quote", "result_quote", "mechanism"))
+    action, outcome = (literal_quote(text, raw.get(k)) for k in ("action_quote", "result_quote"))
+    mechanism = raw.get("mechanism")
     grounded = all(isinstance(q, str) and len(q.strip()) >= 8 and q in text for q in (action, outcome))
     named = (
         isinstance(mechanism, str)
@@ -147,8 +149,16 @@ def verify_core_use(raw, text, bible):
         and grounded
         and mechanism in action
     )
-    causal = grounded and bool(re.search(r"使|令|因此|从而|终于|迫使|才|随之|于是", outcome))
-    negative = grounded and bool(re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备", action))
+    causal = grounded and bool(re.search(r"使|令|让|因此|从而|终于|迫使|才|随之|于是", outcome))
+    # These ordinary actions do not negate use of the ability. All other existing
+    # non-use, intent and failure exclusions remain conservative.
+    denial_text = re.sub(
+        r"(?:没有|并未|不曾|未曾|尚未)(?:再|曾|丝毫)?(?:犹豫|迟疑|回头|止步|停顿|停步)", "", action or ""
+    )
+    negative = grounded and bool(
+        re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备", denial_text)
+        or re.search(r"不(?:再|曾)?(?:借|使用|运用|动用|使出|施展|发动|催动|激活)", denial_text)
+    )
     if raw.get("decisive") is False and grounded:
         return dict(result, status="not_decisive", action_quote=action, result_quote=outcome)
     ineffective = grounded and bool(

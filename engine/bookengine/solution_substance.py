@@ -1,6 +1,7 @@
 """Surface solution substance; plans and legacy inference never become prose evidence."""
 
 from collections import Counter, defaultdict
+from .quote_text import literal_quote
 
 # Stable families across genres, extended by explicit quote-grounded extracted nouns.
 FAMILIES = {
@@ -70,9 +71,11 @@ def observe_solutions(raw, text):
     result = dict(raw)
     result["solutions"] = []
     for row in rows(raw.get("solutions")):
-        quote = row.get("quote")
+        quote = literal_quote(text, row.get("quote"))
         grounded = isinstance(quote, str) and bool(quote.strip()) and quote in text
         value = dict(row)
+        if quote is not None:
+            value["quote"] = quote
         for key in ("target_noun", "method_noun"):
             noun = row.get(key)
             value[key] = noun if grounded and isinstance(noun, str) and 0 < len(noun) <= 16 and noun in quote else None

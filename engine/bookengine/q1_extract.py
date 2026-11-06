@@ -20,6 +20,7 @@ from .q1_cast import cast_hits, cast_findings
 from .retired_opponents import stage_constraints
 from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
+from .q1_continuity import OPENING_RULE
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -186,7 +187,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         outline["开场必须承接"] = dict(
             end_location=state.get("end_location"),
             present=state.get("present", []),
-            rule="开场接续上章地点及在场人物；换地点先交代移动过程，不能瞬移。",
+            rule=OPENING_RULE,
         )
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),

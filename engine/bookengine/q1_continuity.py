@@ -1,9 +1,15 @@
 """Quote-grounded chapter handoffs and opening-only repairs."""
 
-import re
+import json
 
 from .text import _paragraph_spans
-from .stage_transition import stage_transition
+from .stage_transition import stage_transition, _transition_quotes, _ELAPSED, _SCENE
+
+
+OPENING_RULE = (
+    "开头300字内：写出从参考地点到本章地点的移动过程；或者写出明确的时间或场景切换并交代本章地点。"
+    "同一处地点的不同说法可直接承接。不臆造人物曾在上章末场；参考视角位置未知时明确本章地点。"
+)
 
 
 def boundary_facts(raw, text):
@@ -45,17 +51,13 @@ def boundary_facts(raw, text):
     return result
 
 
-def opening_issue(previous, facts, text):
+def opening_issue(previous, facts, text, bible=None):
     old, new = previous.get("end_location"), facts.get("opening_location")
     if not old or not new or old == new:
         return None
-    spans = _paragraph_spans(text)
-    opening = text[: spans[min(1, len(spans) - 1)][1]] if spans else ""
-    if (
-        old in opening
-        and new in opening
-        and re.search(r"离开|走出|走进|抵达|赶到|来到|穿过|沿.{0,12}(?:走|行)|从.{0,25}(?:到|往|去)", opening)
-    ):
+    opening = text[:300]
+    quotes = _transition_quotes(opening)
+    if new in opening and any(old in q or _ELAPSED.search(q) or _SCENE.search(q) for q in quotes):
         return None
     return dict(kind="location_break", previous=old, opening=new, present=previous.get("present", []))
 
@@ -136,10 +138,22 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     patch = ask(
         client,
         prefix + "-opening-repair",
-        "只重写开头一到两段，paragraphs条数必须等于replace_count。先承接上章地点和在场人物，"
-        "在开头300字内补上移动、时间流逝或明确场景切换。"
-        "不得改变或复述后文，不改变人物事实、时序和冲突结果。返回JSON。",
+        "只重写开头一到两段，paragraphs条数必须等于replace_count。"
+        + OPENING_RULE
+        + "不得改变或复述后文，不改变人物事实、时序和冲突结果。返回JSON。",
         [
+            ("衔接验收标准", OPENING_RULE),
+            (
+                "上章结尾地点原文、在场人物与本章开头地点",
+                json.dumps(
+                    dict(
+                        previous_end=state.get("end_location"),
+                        present=state.get("present", []),
+                        opening_location=facts.get("opening_location"),
+                    ),
+                    ensure_ascii=False,
+                ),
+            ),
             ("断裂与上章约束", str(issue)),
             ("只可修改的开头", opening),
             ("后文只读", text[len(opening) : len(opening) + 600]),
@@ -149,6 +163,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
         input_limit=10000,
     )
     candidate = opening_patch(text, patch if isinstance(patch, dict) else {})
+    reason = "invalid_or_unchanged_patch"
     if candidate != text:
         checked, invalid, _ = extract(
             client, prefix + "-opening-recheck", candidate, state, bible, outline, [], final=True
@@ -169,4 +184,11 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             if rechecked:
                 repaired["transition"] = rechecked
             return candidate, checked, False, observed, repaired
-    return text, raw, failed, facts, dict(note, status="rolled_back")
+        reason = (
+            "invalid_reextraction"
+            if invalid
+            else "opening_still_disconnected"
+            if not continuous
+            else "hard_fact_conflict"
+        )
+    return text, raw, failed, facts, dict(note, status="rolled_back", rollback_reason=reason)

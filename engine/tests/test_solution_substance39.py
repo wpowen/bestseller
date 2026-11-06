@@ -63,3 +63,15 @@ def test_batch_rewrites_actual_substance_before_persisting(tmp_path):
     result = repair_batch(tmp_path, "004-004", history, batch, rewrite, bible=bible())
     assert result[0]["solution_method"] == "账本"
     assert any(i["kind"] == "solution_substance" for i in calls[0])
+
+
+def test_new_plan_cannot_evade_cap_by_omitting_substance():
+    value = dict(bible(), plot_contract_version=1)
+    issues = solution_issues(value, [], [dict(number=1, solution_type="智取")])
+    assert issues[0]["kind"] == "solution_substance_missing"
+    assert issues[0]["targets"] == [1]
+
+
+def test_array_family_excludes_weather_and_injury_words():
+    assert solution_nouns({"content": "趁一阵风起，用阵痛诱敌"}) == []
+    assert solution_nouns({"method_noun": "阵风"}) == ["阵风"]

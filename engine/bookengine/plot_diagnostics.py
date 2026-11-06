@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 import math
 
 from .core_ability import core_source, verify_core_use, development_issues
-from .solution_substance import rows, chapter_nouns, stage_key
+from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
 
 
 def plot_findings(bible, chapters):
@@ -14,7 +14,8 @@ def plot_findings(bible, chapters):
     for chapter in chapters:
         number, meta, text = chapter["number"], chapter["meta"], chapter["text"]
         # Deliberately exclude solution_target/method plans from observed statistics.
-        nouns = chapter_nouns(dict(solutions=meta.get("solutions", [])))
+        observed = observe_solutions(dict(solutions=meta.get("solutions", [])), text)
+        nouns = chapter_nouns(observed)
         distribution.update(nouns)
         stage = stage_key(bible, number)
         for noun in nouns:
@@ -22,7 +23,7 @@ def plot_findings(bible, chapters):
                 stage_nouns[stage][noun].append(number)
         explicit = any(
             s.get("noun_status") == "Evidence" and isinstance(s.get("quote"), str) and s["quote"] in text
-            for s in rows(meta.get("solutions"))
+            for s in observed["solutions"]
         )
         noun_chapters.append(
             dict(chapter=number, nouns=nouns, status="Evidence" if explicit else "Inference" if nouns else "Unknown")

@@ -32,3 +32,27 @@ def test_body_receipts_stage_caps_and_unknowns(tmp_path):
     assert report["chapter_rhythm"]["longest_confrontation"] == 4
     assert report["chapter_rhythm"]["stages"][0]["relationship_chapters"] == [5]
     assert all(p.read_bytes() == value for p, value in before.items())
+
+
+def test_invalid_explicit_noun_receipt_stays_unknown(tmp_path):
+    from bookengine.plot_diagnostics import plot_findings
+
+    bible = {"volumes": [{"number": 1, "start": 1, "end": 1}]}
+    chapter = dict(
+        number=1,
+        text="他用铜秤开了门。",
+        meta=dict(
+            solutions=[
+                dict(
+                    content="完成开门",
+                    target_noun="阵眼",
+                    method_noun="阵钉",
+                    quote="伪造的原文",
+                    noun_status="Evidence",
+                )
+            ]
+        ),
+    )
+    result = plot_findings(bible, [chapter])["solution_substance"]
+    assert result["distribution"] == {}
+    assert result["unknown_chapters"] == [1]

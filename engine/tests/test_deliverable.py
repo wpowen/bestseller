@@ -17,6 +17,22 @@ from test_ideation import card
 from ideation import run, save, read
 
 
+def core_development_response():
+    return json.dumps(
+        dict(
+            volumes=[
+                dict(
+                    number=1,
+                    core_development=dict(
+                        new_use="借旧伞撑开一次封雨通道", new_cost="忘记亲人的一种笑容", new_limit="必须在真正雨中触发"
+                    ),
+                )
+            ]
+        ),
+        ensure_ascii=False,
+    )
+
+
 @pytest.mark.parametrize(
     "name,identity,setting,obj",
     [
@@ -48,6 +64,7 @@ def test_selected_story_survives_tournament_renaming_and_resume(tmp_path, name, 
             ensure_ascii=False,
         )
     ]
+    responses.append(core_development_response())
     client = ScriptedClient(tmp_path, responses)
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     value, _, _ = prepare(client, book, tmp_path, ROOT / "config", design=True)
@@ -214,7 +231,8 @@ def test_unnamed_card_recovery_uses_the_same_assigned_cast(tmp_path):
                 ),
                 ensure_ascii=False,
             )
-        ],
+        ]
+        + [core_development_response()],
     )
     book = Book("xuanhuan-power-fantasy", 5, 2200, json.dumps(selected, ensure_ascii=False))
     saved_bible, saved_threads, _ = prepare(client, book, tmp_path, ROOT / "config")

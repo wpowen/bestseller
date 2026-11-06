@@ -1,11 +1,35 @@
 """Surface solution substance; plans and legacy inference never become prose evidence."""
 
 from collections import Counter, defaultdict
-import re
 
 # Stable families across genres, extended by explicit quote-grounded extracted nouns.
 FAMILIES = {
-    "阵": ("阵",),
+    "阵": (
+        "阵眼",
+        "阵钉",
+        "阵纹",
+        "阵枢",
+        "阵盘",
+        "阵势",
+        "阵法",
+        "法阵",
+        "大阵",
+        "剑阵",
+        "杀阵",
+        "军阵",
+        "破阵",
+        "拆阵",
+        "敌阵",
+        "旧阵",
+        "外阵",
+        "内阵",
+        "阵心",
+        "阵脚",
+        "阵册",
+        "阵门",
+        "阵台",
+        "阵网",
+    ),
     "钥匙": ("钥匙", "锁匙"),
     "账本": ("账本", "账册", "账簿"),
     "借剑": ("借剑", "借招"),
@@ -21,7 +45,9 @@ def rows(value):
 
 
 def normalize_noun(noun):
-    return next((key for key, names in FAMILIES.items() if any(n in noun for n in names)), noun.strip())
+    return next(
+        (key for key, names in FAMILIES.items() if noun.strip() == key or any(n in noun for n in names)), noun.strip()
+    )
 
 
 def solution_nouns(solution):
@@ -95,7 +121,12 @@ def solution_issues(bible, history, batch):
         stage = stage_key(bible, number)
         if stage is None:
             continue
-        for noun in chapter_nouns(row):
+        nouns = chapter_nouns(row)
+        if bible.get("plot_contract_version") and number in targets and not nouns:
+            issues.append(
+                dict(kind="solution_substance_missing", targets=[number], requirement="补作用对象和手段核心名词")
+            )
+        for noun in nouns:
             counts[stage, noun].append(number)
             if len(counts[stage, noun]) > 3 and number in targets:
                 issues.append(

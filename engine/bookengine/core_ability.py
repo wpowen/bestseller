@@ -1,4 +1,4 @@
-"""Stage ability obligations and quote-bound, reference-only outcome receipts."""
+"""Stage ability obligations and quote-bound, reference-only outcome evidence."""
 
 from copy import deepcopy
 import json
@@ -140,3 +140,33 @@ def verify_core_use(raw, text, bible):
     if raw.get("decisive") is True and named and causal and not negative:
         return dict(result, status="verified", action_quote=action, result_quote=outcome, evidence_status="Evidence")
     return dict(result, reason="missing_or_noncausal_verbatim_evidence")
+
+
+def enforce_ability_plan(bible, batch):
+    """Repair missing planning obligations without claiming an observed action/result."""
+    result = deepcopy(batch)
+    slots = {
+        r["number"]: r
+        for r in ability_slots(
+            bible, min((r["number"] for r in batch), default=1), max((r["number"] for r in batch), default=0)
+        )
+    }
+    for row in result:
+        slot = slots.get(row["number"], {})
+        if not slot.get("core_required"):
+            continue
+        row["core_required"] = True
+        row["core_development"] = slot.get("core_development", {})
+        if isinstance(row.get("core_application"), str) and len(row["core_application"].strip()) >= 8:
+            continue
+        development = slot.get("core_development", {})
+        application = development.get("new_use") or str(core_source(bible).get("name", "核心能力"))
+        scenes = rows(row.get("scenes")) or [dict(goal=row.get("opening_conflict") or "解决本章主要阻碍")]
+        scene = scenes[0]
+        goal = scene.get("goal") or row.get("opening_conflict") or "解决本章主要阻碍"
+        causal = f"实际运用{application}，使{goal}得以实现；受{development.get('new_limit') or '圣经既有限制'}约束，并付出{development.get('new_cost') or '圣经既定代价'}。"
+        row["core_application"] = causal
+        scene["choice"] = causal
+        row["scenes"] = scenes
+        row["core_plan_repair"] = dict(status="deterministic_plan_completion", authority="plan_not_observation")
+    return result

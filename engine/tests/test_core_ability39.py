@@ -57,3 +57,15 @@ def test_plan_requires_actual_application_and_stage_development():
     bad["volumes"][1]["core_development"] = dict(bad["volumes"][0]["core_development"])
     assert development_issues(bad)[0]["stage"] == 2
     assert not development_issues(bible())
+
+
+def test_exhausted_application_repair_still_reserves_concrete_scene_plan():
+    from bookengine.core_ability import enforce_ability_plan
+
+    source = bible()
+    bad = [dict(number=n, type="对抗", scenes=[dict(goal="打开封门", conflict="守卫拦路")]) for n in range(1, 6)]
+    planned = enforce_ability_plan(source, bad)
+    assert len([r for r in planned if r.get("core_required")]) >= 3
+    assert not ability_issues(source, [], planned)
+    assert any("复制影主开锁动作" in str(r["scenes"]) for r in planned)
+    assert all("core_required" not in r for r in bad)

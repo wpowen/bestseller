@@ -223,6 +223,7 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
         assessment = evaluate_handoff(state, observed, candidate, bible, outline)
         rechecked = assessment.get("transition")
         from .checks import high_confidence
+        from .prose_repetition import clean_repetitions
 
         continuous = (
             rechecked["status"] == "present"
@@ -231,7 +232,12 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             and not assessment["issue"]
             and "pov_location" not in assessment["missing"]
         )
-        if not invalid and continuous and not high_confidence(state, checked.get("events", []), candidate):
+        lost = any(facts.get(k) and not observed.get(k) for k in ("opening_location", "end_location"))
+        before = clean_repetitions(text, remove_safe=False)["counts"]
+        after = clean_repetitions(candidate, remove_safe=False)["counts"]
+        repeated = any(after[k] > before[k] for k in before)
+        hard = high_confidence(state, checked.get("events", []), candidate)
+        if not invalid and continuous and not hard and not lost and not repeated:
             repaired = dict(note, status="repaired", recheck=assessment)
             if rechecked:
                 repaired["transition"] = rechecked
@@ -241,6 +247,10 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             if invalid
             else "opening_still_disconnected"
             if not continuous
+            else "lost_grounded_boundary"
+            if lost
+            else "introduced_repetition"
+            if repeated
             else "hard_fact_conflict"
         )
     return text, raw, failed, facts, dict(note, status="rolled_back", rollback_reason=reason)

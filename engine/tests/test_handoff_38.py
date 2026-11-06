@@ -103,3 +103,32 @@ def test_trial37_saved_repair_establishes_destination_on_entry():
         "陆和笙循声转入两重院墙之间的阴影，脚步落在湿冷石面上，身后北街的灯火被砖墙一并截断。"
     )
     assert opening_issue(dict(end_location="灶间"), facts(text, "北街旧巷"), text) is None
+
+
+@pytest.mark.parametrize("damage", ["lost_end", "repetition"])
+def test_relaxed_acceptance_retains_boundary_and_repetition_guards(damage):
+    text = "林舟站在驿站门外。\n\n车夫把三只破木箱搬到了驿站的墙边。\n\n林舟留在驿站。"
+    replacement = "半个时辰后，林舟站在驿站门外。"
+    if damage == "repetition":
+        replacement += "车夫把三只破木箱搬到了驿站的墙边。"
+
+    def extract(client, name, candidate, *args, **kwargs):
+        raw = dict(facts(candidate), events=[])
+        if damage == "lost_end":
+            raw.pop("end_location")
+        return raw, False, 0
+
+    actual, _, _, _, note = repair_opening(
+        None,
+        "ch2",
+        text,
+        facts(text),
+        False,
+        dict(end_location="石桥"),
+        {},
+        dict(number=2),
+        extract,
+        lambda *a, **k: dict(replace_count=1, paragraphs=[replacement]),
+    )
+    assert actual == text and note["status"] == "rolled_back"
+    assert note["rollback_reason"] == ("lost_grounded_boundary" if damage == "lost_end" else "introduced_repetition")

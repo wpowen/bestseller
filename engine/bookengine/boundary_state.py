@@ -73,7 +73,7 @@ def advance_boundary_state(state, facts, chapter, text, bible):
             current[key] = facts[key]
     if facts.get("present_status") == "grounded":
         current["present"] = facts.get("present", [])
-    history = current.setdefault("pov_locations", {})
+    history = current.get("pov_locations", {})
     for side in ("opening", "end"):
         name, location = facts.get(side + "_pov"), facts.get(side + "_location")
         if name and location:
@@ -82,8 +82,12 @@ def advance_boundary_state(state, facts, chapter, text, bible):
             )
     for row in facts.get("character_locations", []):
         history[row["name"]] = dict(location=row["location"], quote=row["quote"], chapter=chapter, status="Evidence")
-    current["known_locations"] = sorted(
+    if history:
+        current["pov_locations"] = history
+    known = sorted(
         set(current.get("known_locations", []))
         | {facts[k] for k in ("opening_location", "end_location") if facts.get(k)}
     )
+    if known:
+        current["known_locations"] = known
     return current

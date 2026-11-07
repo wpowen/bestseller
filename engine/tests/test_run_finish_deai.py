@@ -458,3 +458,21 @@ def test_cli_shutdown_returns_130_without_a_project_error_report(http, monkeypat
     assert cli.main(["run", str(http.book), "--env", str(http.env)]) == 130
     assert read_json(http.book / "runtime.json")["kind"] == "interrupted"
     assert not (http.book / "final/chapter-001.deai.json").exists()
+
+
+def _sensitive_http_error():
+    body = b'{"type":"error","error":{"type":"unprocessable_entity_error","message":"input new_sensitive (1026)"}}'
+    return urllib.error.HTTPError("https://fixture.invalid", 422, "unprocessable", {}, io.BytesIO(body))
+
+
+@pytest.mark.parametrize("reply", ["http_422", "business_1026"])
+def test_content_rejection_keeps_the_chapter_source_instead_of_stopping_the_book(http, reply):
+    if reply == "http_422":
+        http.replies.append(_sensitive_http_error())
+    else:
+        http.replies.append(Response(dict(base_resp=dict(status_code=1026, status_msg="input new_sensitive"))))
+    client = transport.MiniMax(http.work, http.env)
+    with pytest.raises(transport.ModelResponseError) as caught:
+        client([], stage="recall22-candidates-0")
+    assert caught.value.reason.startswith("content_rejected")
+    assert len(http.requests) == 1

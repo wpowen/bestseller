@@ -7,6 +7,7 @@ import fcntl
 from http.client import HTTPException
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import threading
@@ -25,6 +26,7 @@ from tools.runtime_support import (
 from .io import parse_json, read_json, safe, save, read_text
 
 STOP = threading.Event()
+_CONTENT_REJECTED = re.compile(r"new_sensitive|sensitive|\b102[67]\b", re.IGNORECASE)
 
 
 class LLMError(ProjectError):
@@ -364,6 +366,10 @@ class MiniMax:
                     return content
                 if kind != "waiting":
                     error = f"stage {stage}: HTTP {row['http_status']}: {row.get('error', 'request failed')}"
+                    if kind != "quota" and _CONTENT_REJECTED.search(str(row.get("error", ""))):
+                        # The provider refused this chapter's content. Only this chapter keeps
+                        # its source; the rest of the book continues.
+                        raise ModelResponseError(stage, "content_rejected: " + str(row.get("error", ""))[:200])
                     raise QuotaExhausted(error) if kind == "quota" else failure or LLMError(error)
                 self.backoff(index, row)
                 waited, attempt = row["waited"], row["attempt"]

@@ -46,6 +46,8 @@ RESPONSE_SCHEMA = """{
 class Reviewer:
     role: str
     model: str
+    configured_model: str
+    compatibility: str
     base: str
     key_env: str
     family: str
@@ -99,6 +101,12 @@ def _role(values, role):
     return model, base.rstrip("/"), key_env, key
 
 
+def _native_model(model, base):
+    if model_family(model, base) == "minimax" and model.lower().startswith("openai/") and "minimaxi.com" in base:
+        return MODEL, "legacy_litellm_name_replaced_with_engine_model"
+    return model, ""
+
+
 def select_reviewer(env):
     values = _env(env)
     writer = _role(values, "WRITER")
@@ -108,10 +116,22 @@ def select_reviewer(env):
     for role in ("CRITIC", "EDITOR", "PLANNER", "SUMMARIZER", "WRITER"):
         configured = _role(values, role)
         if configured:
-            model, base, key_env, key = configured
-            family = model_family(model, base)
+            configured_model, base, key_env, key = configured
+            model, compatibility = _native_model(configured_model, base)
+            family = model_family(configured_model, base)
             candidates.append(
-                Reviewer(role.lower(), model, base, key_env, family, writer_family, family == writer_family, key)
+                Reviewer(
+                    role.lower(),
+                    model,
+                    configured_model,
+                    compatibility,
+                    base,
+                    key_env,
+                    family,
+                    writer_family,
+                    family == writer_family,
+                    key,
+                )
             )
     if not candidates:
         key = values.get("MINIMAX_API_KEY")
@@ -121,6 +141,8 @@ def select_reviewer(env):
             Reviewer(
                 "writer",
                 MODEL,
+                MODEL,
+                "",
                 "https://api.minimaxi.com/v1",
                 "MINIMAX_API_KEY",
                 "minimax",

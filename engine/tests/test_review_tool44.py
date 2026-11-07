@@ -10,6 +10,7 @@ from tools.review_pack import create_reading_pack, parse_chapter_spec
 from tools.review_report import render_report, run_pipeline
 from tools.review_runner import EDITOR_QUESTIONS, READER_QUESTIONS, review_book, select_reviewer
 from tools.verify_review import verify_claims
+from bookengine.client import MODEL
 
 
 def _book(root):
@@ -100,6 +101,26 @@ def test_reviewer_selection_prefers_a_configured_different_family(tmp_path):
     assert reviewer.family == "deepseek"
     assert reviewer.same_family is False
     assert "secret" not in repr(reviewer)
+
+
+def test_legacy_litellm_minimax_name_uses_engine_native_model(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(
+        "BESTSELLER__LLM__WRITER__MODEL=openai/MiniMax-M3\n"
+        "BESTSELLER__LLM__WRITER__API_BASE=https://api.minimaxi.com/v1\n"
+        "BESTSELLER__LLM__WRITER__API_KEY_ENV=MINIMAX_API_KEY\n"
+        "BESTSELLER__LLM__CRITIC__MODEL=openai/MiniMax-M3\n"
+        "BESTSELLER__LLM__CRITIC__API_BASE=https://api.minimaxi.com/v1\n"
+        "BESTSELLER__LLM__CRITIC__API_KEY_ENV=MINIMAX_API_KEY\n"
+        "MINIMAX_API_KEY=dummy-key\n",
+        encoding="utf-8",
+    )
+
+    reviewer = select_reviewer(env)
+
+    assert reviewer.configured_model == "openai/MiniMax-M3"
+    assert reviewer.model == MODEL
+    assert reviewer.compatibility == "legacy_litellm_name_replaced_with_engine_model"
 
 
 class _FakeClient:

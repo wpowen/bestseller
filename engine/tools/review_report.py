@@ -85,13 +85,18 @@ def _inference(review):
 def render_report(review, verified):
     reviewer = review.get("reviewer", {})
     source_note = "同源判官，可能高估" if reviewer.get("same_family") else "判官与写手不同家族"
+    compatibility = (
+        f"；原配置 {reviewer.get('configured_model')} 由直连客户端兼容为当前 engine 模型"
+        if reviewer.get("compatibility")
+        else ""
+    )
     evidence = [row for row in verified if row.get("status") == "Evidence"]
     unknown = [row for row in verified if row.get("status") == "Unknown"]
     fabricated = [row for row in verified if row.get("status") == "可能捏造"]
     lines = [
         f"# 外部评审核对 · {review.get('book_title', '未命名书稿')}",
         "",
-        f"判官：{_cell(reviewer.get('model'))}（{_cell(reviewer.get('family'))}；{source_note}）。",
+        f"判官：{_cell(reviewer.get('model'))}（{_cell(reviewer.get('family'))}；{source_note}{compatibility}）。",
         f"核对结果：Evidence {len(evidence)}；Unknown {len(unknown)}；可能捏造 {len(fabricated)}。",
         "本报告不修改书稿，也不自动转成开发需求；程序核对不代替读者验收。",
         "",

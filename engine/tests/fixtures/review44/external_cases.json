@@ -1,0 +1,57 @@
+{
+  "eval-33": {
+    "source_report": "engine/reports/review-eval33-external.md",
+    "claims": [
+      {
+        "conclusion": "第1章没有展示金手指",
+        "severity": "high",
+        "chapter": 1,
+        "quote": "他没有借招，也没有唤出任何旧主的声音",
+        "subject": "主角",
+        "action": "没有借招",
+        "expected": "Evidence"
+      },
+      {
+        "conclusion": "主角在第19章折断右臂",
+        "severity": "critical",
+        "chapter": 19,
+        "quote": "裴天骁沉默片刻，忽然以左手撑地，右臂猛地撞上阵纹反锁的边缘",
+        "subject": "主角",
+        "action": "折断右臂",
+        "expected": "Unknown"
+      },
+      {
+        "conclusion": "目录出现第40章140章",
+        "severity": "medium",
+        "chapter": 40,
+        "quote": "第40章140章",
+        "subject": "",
+        "action": "",
+        "expected": "可能捏造"
+      }
+    ]
+  },
+  "yizhang": {
+    "source_report": "engine/reports/review-yizhang-external.md",
+    "claims": [
+      {
+        "conclusion": "第18章章名是断针即母",
+        "severity": "low",
+        "chapter": 18,
+        "quote": "断针即母",
+        "subject": "",
+        "action": "",
+        "expected": "Evidence"
+      },
+      {
+        "conclusion": "目录显示第7章1谁配领人",
+        "severity": "medium",
+        "chapter": 7,
+        "quote": "第7章1谁配领人",
+        "subject": "",
+        "action": "",
+        "expected": "可能捏造"
+      }
+    ]
+  }
+}

@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import sys
 
+import yaml
+
 try:
     from tools.redact import Redactor
     from tools.books_guard import repository_books
@@ -60,6 +62,105 @@ def sources(book, n):
         title = json.loads(path.read_text("utf-8")).get("title", "")
         result.append(("目录", f"第{n}章 {title}"))
     return result
+
+
+def _character_index(book):
+    path = Path(book) / "story_bible.yaml"
+    if not path.is_file():
+        return {}, ""
+    value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    characters = value.get("characters", []) if isinstance(value, dict) else []
+    aliases, protagonist = {}, ""
+    for item in characters:
+        if not isinstance(item, dict) or not str(item.get("name", "")).strip():
+            continue
+        name = str(item["name"]).strip()
+        names = [name, item.get("address", ""), *(item.get("aliases", []) or [])]
+        for alias in names:
+            if isinstance(alias, str) and alias.strip():
+                aliases[alias.strip()] = name
+        role = str(item.get("role", "")).lower()
+        if not protagonist and role in ("protagonist", "main", "hero"):
+            protagonist = name
+    return aliases, protagonist
+
+
+def _match_context(content, quote):
+    normalized, positions = [], []
+    for index, char in enumerate(content):
+        if not char.isspace():
+            normalized.append(char)
+            positions.append(index)
+    needle = compact(quote)
+    offset = "".join(normalized).find(needle)
+    if offset < 0:
+        return ""
+    start = positions[offset]
+    end = positions[min(len(positions) - 1, offset + len(needle) - 1)] + 1
+    return content[max(0, start - 160) : min(len(content), end + 40)]
+
+
+def _actual_subject(content, quote, aliases):
+    context = _match_context(content, quote)
+    occurrences = []
+    for alias, canonical in aliases.items():
+        for match in re.finditer(re.escape(alias), context):
+            occurrences.append((match.start(), len(alias), canonical))
+    if not occurrences:
+        return ""
+    return max(occurrences, key=lambda item: (item[0], item[1]))[2]
+
+
+def _book_chapters(book):
+    numbers = set()
+    for pattern in ("final/chapter-*.md", "chapter-*.body.md", "chapter-*.md", "chapters/*.json"):
+        for path in Path(book).glob(pattern):
+            match = re.search(r"(?:chapter-)?(\d+)", path.name)
+            if match:
+                numbers.add(int(match[1]))
+    return sorted(numbers)
+
+
+def verify_claims(book, claims):
+    """Classify structured claims by chapter, literal quote and named subject."""
+    book = Path(book)
+    aliases, protagonist = _character_index(book)
+    chapter_sources = {number: sources(book, number) for number in _book_chapters(book)}
+    rows = []
+    for claim in claims:
+        row = dict(claim)
+        chapter = claim.get("chapter")
+        quote = str(claim.get("quote", "")).strip()
+        expected = str(claim.get("subject", "")).strip()
+        if expected in ("主角", "男主", "女主"):
+            expected = protagonist
+        cited = chapter_sources.get(chapter, []) if type(chapter) is int else []
+        cited_hit = next(((name, content) for name, content in cited if compact(quote) in compact(content)), None)
+        anywhere = [
+            (number, name, content)
+            for number, items in chapter_sources.items()
+            for name, content in items
+            if quote and compact(quote) in compact(content)
+        ]
+        status, reason, actual, source = "Evidence", "引文和章号均匹配", "", ""
+        if not quote:
+            status, reason = "Unknown", "结论未附引文"
+        elif cited_hit is None and anywhere:
+            status = "Unknown"
+            reason = "引文存在，但章号不匹配：" + ", ".join(str(item[0]) for item in anywhere[:5])
+        elif cited_hit is None:
+            status, reason = "可能捏造", "引文在全书可用正文和目录中均不存在"
+        else:
+            source, content = cited_hit
+            if expected:
+                actual = _actual_subject(content, quote, aliases)
+                if not actual:
+                    status, reason = "Unknown", "引文存在，但无法确定动作指向的人物"
+                elif actual != expected:
+                    status, reason = "Unknown", f"人物归属不匹配：结论指向{expected}，引文指向{actual}"
+        row.update(status=status, reason=reason, source=source, expected_subject=expected, actual_subject=actual)
+        rows.append(row)
+    return rows
 
 
 def verify(book, review):

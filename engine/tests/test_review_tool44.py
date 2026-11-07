@@ -1,11 +1,13 @@
 """Instruction 44: external review packaging, verification and reporting."""
 
 import json
+from pathlib import Path
 
 import pytest
 
 from tools.review_pack import create_reading_pack, parse_chapter_spec
 from tools.review_runner import EDITOR_QUESTIONS, READER_QUESTIONS, review_book, select_reviewer
+from tools.verify_review import verify_claims
 
 
 def _book(root):
@@ -164,3 +166,51 @@ def test_two_perspectives_are_fixed_segmented_and_quote_less_claims_become_impre
     persisted = json.loads((tmp_path / "review-run/raw-reviews.json").read_text(encoding="utf-8"))
     assert persisted["reviewer"]["same_family"] is True
     assert "dummy-key" not in json.dumps(persisted, ensure_ascii=False)
+
+
+def test_two_historical_external_reviews_distinguish_evidence_mismatch_and_fabrication(tmp_path):
+    fixture = json.loads((Path(__file__).parent / "fixtures/review44/external_cases.json").read_text(encoding="utf-8"))
+    eval33 = tmp_path / "eval-33"
+    (eval33 / "final").mkdir(parents=True)
+    (eval33 / "chapters").mkdir()
+    (eval33 / "story_bible.yaml").write_text(
+        "title: 每借一剑\ncharacters:\n  - {name: 沈亦衡, role: protagonist}\n  - {name: 裴天骁, role: antagonist}\n",
+        encoding="utf-8",
+    )
+    (eval33 / "final/chapter-001.md").write_text(
+        "沈亦衡说完，握紧短剑。下一刻，他没有借招，也没有唤出任何旧主的声音。",
+        encoding="utf-8",
+    )
+    (eval33 / "final/chapter-019.md").write_text(
+        "裴天骁沉默片刻，忽然以左手撑地，右臂猛地撞上阵纹反锁的边缘。直到将自己的右臂生生折断在阵心之前。",
+        encoding="utf-8",
+    )
+    yizhang = tmp_path / "yizhang"
+    (yizhang / "chapters").mkdir(parents=True)
+    (yizhang / "chapters/018.json").write_text('{"title":"断针即母"}', encoding="utf-8")
+    (yizhang / "chapters/007.json").write_text('{"title":"谁配领人"}', encoding="utf-8")
+
+    eval_rows = verify_claims(eval33, fixture["eval-33"]["claims"])
+    yizhang_rows = verify_claims(yizhang, fixture["yizhang"]["claims"])
+
+    assert [row["status"] for row in eval_rows] == [item["expected"] for item in fixture["eval-33"]["claims"]]
+    assert eval_rows[1]["actual_subject"] == "裴天骁"
+    assert [row["status"] for row in yizhang_rows] == [item["expected"] for item in fixture["yizhang"]["claims"]]
+
+
+def test_quote_found_in_another_chapter_is_unknown_not_fabricated(tmp_path):
+    book = _book(tmp_path / "book")
+    rows = verify_claims(
+        book,
+        [
+            {
+                "conclusion": "错误章号",
+                "chapter": 2,
+                "quote": "第一章正文",
+                "subject": "",
+                "action": "",
+            }
+        ],
+    )
+    assert rows[0]["status"] == "Unknown"
+    assert "章号不匹配" in rows[0]["reason"]

@@ -10,6 +10,7 @@ from bookengine.character_diagnostics import character_reference, dialogue_sampl
 from bookengine.client import Client
 from bookengine.storage import save
 from tools.book_checkup import _chapters, _read, write_checkup
+from tools.runtime_support import ProjectError
 
 
 JUDGE_SYSTEM = (
@@ -37,7 +38,7 @@ def _family(base):
     return "Unknown"
 
 
-def judge_profile(env):
+def judge_profile(env, prefer_different=True):
     """Choose a configured judge family different from the configured writer."""
     values = _env_values(env)
     writer_base = values.get("BESTSELLER__LLM__WRITER__API_BASE", "https://api.minimaxi.com/v1")
@@ -46,7 +47,11 @@ def judge_profile(env):
         ("DeepSeek", "deepseek-flash", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
         ("MiniMax", "MiniMax-M3.1-Flash", "https://api.minimaxi.com/v1", "MINIMAX_API_KEY"),
     ]
-    selected = next((profile for profile in profiles if values.get(profile[3]) and profile[0] != writer_family), None)
+    selected = (
+        next((profile for profile in profiles if values.get(profile[3]) and profile[0] != writer_family), None)
+        if prefer_different
+        else None
+    )
     if selected is None:
         key_env = values.get("BESTSELLER__LLM__WRITER__API_KEY_ENV", "MINIMAX_API_KEY")
         model = values.get("BESTSELLER__LLM__WRITER__MODEL", "MiniMax-M3.1-Flash").split("/")[-1]
@@ -63,8 +68,8 @@ def judge_profile(env):
     }
 
 
-def make_judge(book, env, timeout=180):
-    profile = judge_profile(env)
+def make_judge(book, env, timeout=180, prefer_different=True):
+    profile = judge_profile(env, prefer_different)
     out = Path(book) / "character-eval"
     out.mkdir(parents=True, exist_ok=True)
     client = Client(
@@ -80,6 +85,7 @@ def make_judge(book, env, timeout=180):
     )
     client.family = profile["family"]
     client.same_family = profile["same_family"]
+    client.thinking = {"type": "disabled"}
     return client
 
 
@@ -116,6 +122,7 @@ def _evidence_corpus(bible, chapters, per_character=24):
 def _blind(client, bible, chapters):
     samples = dialogue_samples(bible, chapters)
     speakers = {sample["speaker"] for sample in samples}
+    candidates = [card.get("name") for card in bible.get("characters", []) if card.get("name")]
     if len(samples) < 20 or len(speakers) < 4:
         return {
             "status": "Unknown",
@@ -127,7 +134,7 @@ def _blind(client, bible, chapters):
     prompt = json.dumps(
         {
             "task": "名字和称呼已抹除。逐段猜说话人；只能从candidates选一个。",
-            "candidates": [card.get("name") for card in bible.get("characters", []) if card.get("name")],
+            "candidates": candidates,
             "samples": [{"id": row["id"], "chapter": row["chapter"], "text": row["masked"]} for row in samples],
         },
         ensure_ascii=False,
@@ -136,7 +143,12 @@ def _blind(client, bible, chapters):
         "character-blind",
         prompt,
         schema='{"guesses":[{"id":1,"speaker":"候选人物名"}]}',
-        validate=lambda value: isinstance(value, dict) and isinstance(value.get("guesses"), list),
+        validate=lambda value: (
+            isinstance(value, dict)
+            and isinstance(value.get("guesses"), list)
+            and {row.get("id") for row in value["guesses"] if isinstance(row, dict)} == {row["id"] for row in samples}
+            and all(isinstance(row, dict) and row.get("speaker") in candidates for row in value["guesses"])
+        ),
         cap=3000,
     )
     return dict(status="Evidence", speaker_count=len(speakers), **score_guesses(samples, raw["guesses"]))
@@ -195,11 +207,30 @@ def main(argv=None):
     parser.add_argument("books", nargs="+", type=Path)
     parser.add_argument("--env", required=True, type=Path)
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--same-family", action="store_true", help="已确认跨家族凭据不可用时使用写手家族")
     args = parser.parse_args(argv)
     outputs = []
+    prefer_different = not args.same_family
+    fallback_reason = "configured_cross_family_auth_rejected" if args.same_family else None
     for book in args.books:
-        client = make_judge(book, args.env, args.timeout)
-        result = evaluate_book(book, client)
+        client = make_judge(book, args.env, args.timeout, prefer_different=prefer_different)
+        if not client.same_family and any(call.get("http_status") == 401 for call in client.calls):
+            prefer_different = False
+            fallback_reason = "configured_cross_family_auth_rejected"
+            client = make_judge(book, args.env, args.timeout, prefer_different=False)
+        try:
+            result = evaluate_book(book, client)
+        except ProjectError as exc:
+            if client.same_family or "HTTP 401" not in str(exc):
+                raise
+            prefer_different = False
+            fallback_reason = "configured_cross_family_auth_rejected"
+            client = make_judge(book, args.env, args.timeout, prefer_different=False)
+            result = evaluate_book(book, client)
+        if fallback_reason:
+            result["judge_fallback"] = fallback_reason
+            save(Path(book) / "character_evaluation.json", result)
+            write_checkup(book)
         outputs.append({"book": str(book), "accuracy": result["blind_test"]["accuracy"]})
     print(json.dumps(outputs, ensure_ascii=False))
     return 0

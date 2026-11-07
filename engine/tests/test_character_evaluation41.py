@@ -123,6 +123,7 @@ def test_judge_profile_prefers_configured_family_different_from_writer(tmp_path)
         "key_env": "DEEPSEEK_API_KEY",
         "same_family": False,
     }
+    assert judge_profile(env, prefer_different=False)["same_family"] is True
 
 
 def test_model_evaluation_is_verified_then_saved_for_checkup(tmp_path):

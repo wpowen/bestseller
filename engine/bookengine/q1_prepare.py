@@ -13,6 +13,7 @@ from .storage import save
 from .text import pack
 from .structure_planning import stage_ranges, stage_for_chapter, repair_structure
 from .address_contracts import repair_addresses, address_issues
+from .rename_addresses import rename_addresses
 from .opening_promises import opening_contract
 from .cost_design import has_cost_source, repair_costs
 from .core_ability import repair_development, core_source, RULE as CORE_RULE
@@ -316,6 +317,7 @@ def prepare(client, book, out, assets, design=False):
                     used.add(mapping[name])
                 else:
                     used.add(name)
+            renamed = dict(mapping)
             mapping.update({a[-2:]: b[-2:] for a, b in list(mapping.items()) if len(a) > 2})
             if mapping:
                 generated = json.loads(
@@ -325,6 +327,7 @@ def prepare(client, book, out, assets, design=False):
                         json.dumps(generated, ensure_ascii=False),
                     )
                 )
+                generated[0] = rename_addresses(generated[0], renamed)
         if card:
             corrected = differences(generated[0], card, locked)
             generated = list(enforce(*generated, card, locked, corrected))

@@ -23,16 +23,16 @@ SYSTEM = (
 )
 
 
-def credentials(path):
+def credentials(path, key_env=None, api_base=None):
     values = {}
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         if line.lstrip().startswith("#") or "=" not in line:
             continue
         name, value = line.split("=", 1)
         values[name.strip()] = value.strip().strip("\"'")
-    name = values.get("BESTSELLER__LLM__WRITER__API_KEY_ENV", "MINIMAX_API_KEY")
+    name = key_env or values.get("BESTSELLER__LLM__WRITER__API_KEY_ENV", "MINIMAX_API_KEY")
     key = values.get(name)
-    base = values.get("BESTSELLER__LLM__WRITER__API_BASE", "https://api.minimaxi.com/v1")
+    base = api_base or values.get("BESTSELLER__LLM__WRITER__API_BASE", "https://api.minimaxi.com/v1")
     if not key or not base.startswith("https://"):
         raise ValueError("Missing API key or HTTPS endpoint")
     return base.rstrip("/"), key
@@ -71,12 +71,24 @@ def retry_after(value):
 
 
 class Client:
-    def __init__(self, out, env, prefix, timeout=180, model=MODEL):
+    def __init__(
+        self,
+        out,
+        env,
+        prefix,
+        timeout=180,
+        model=MODEL,
+        *,
+        key_env=None,
+        api_base=None,
+        provider="MiniMax",
+        system=SYSTEM,
+    ):
         self.out, self.prefix, self.timeout = Path(out), prefix, timeout
-        self.model = model
+        self.model, self.provider, self.system = model, provider, system
         self.context_limit = None
         self.clip_context = False
-        self.base, self._key = credentials(env)
+        self.base, self._key = credentials(env, key_env, api_base)
         self.history_path = self.out / "calls.json"
         self.calls = load(self.history_path) if self.history_path.exists() else []
         for entry in self.calls:
@@ -102,14 +114,15 @@ class Client:
         return totals
 
     def request(self, stage, prompt, cap, effort, attempt):
-        if self.context_limit and len(SYSTEM) + len(prompt) > self.context_limit:
+        system = getattr(self, "system", SYSTEM)
+        if self.context_limit and len(system) + len(prompt) > self.context_limit:
             raise RuntimeError("Context exceeds configured character limit: " + stage)
         entry = dict(
             seq=len(self.calls) + 1,
             stage=stage,
             attempt=attempt,
             model=self.model,
-            input_chars=len(SYSTEM) + len(prompt),
+            input_chars=len(system) + len(prompt),
             started=now(),
             status="pending",
             effort=effort,
@@ -118,7 +131,7 @@ class Client:
         save(self.history_path, self.calls)
         payload = dict(
             model=self.model,
-            messages=[dict(role="system", content=SYSTEM), dict(role="user", content=prompt)],
+            messages=[dict(role="system", content=system), dict(role="user", content=prompt)],
             max_completion_tokens=cap,
             reasoning_effort=effort,
             stream=False,
@@ -153,11 +166,11 @@ class Client:
                 kind = classify_api_error(code, message)
                 if kind == "quota":
                     entry["status"] = "quota_exhausted"
-                    raise QuotaExhausted(f"{stage}: MiniMax {code}: {message}")
+                    raise QuotaExhausted(f"{stage}: {getattr(self, 'provider', 'MiniMax')} {code}: {message}")
                 if kind == "waiting":
                     entry["status"] = "provider_wait"
-                    raise NetworkRetry(f"MiniMax {code}: {message}")
-                raise ProjectError(f"{stage}: MiniMax {code}: {message}")
+                    raise NetworkRetry(f"{getattr(self, 'provider', 'MiniMax')} {code}: {message}")
+                raise ProjectError(f"{stage}: {getattr(self, 'provider', 'MiniMax')} {code}: {message}")
             if not content_of(result):
                 raise Retryable("empty_return")
             if entry["finish_reason"] == "length":
@@ -176,7 +189,7 @@ class Client:
             kind = classify_api_error(code, message)
             if kind == "quota":
                 entry["status"] = "quota_exhausted"
-                raise QuotaExhausted(f"{stage}: MiniMax {code}: {message}") from None
+                raise QuotaExhausted(f"{stage}: {getattr(self, 'provider', 'MiniMax')} {code}: {message}") from None
             if kind == "waiting" or exc.code in (408, 429) or 500 <= exc.code < 600:
                 delay = (exc.headers or {}).get("Retry-After", "0")
                 raise NetworkRetry(f"http_{exc.code}: {message}", retry_after(delay)) from None
@@ -269,9 +282,10 @@ class Client:
         full = self.prefix + "\n\n" + prompt
         if schema:
             full += "\n只返回完整JSON，结构：\n" + schema
-        if self.context_limit and len(SYSTEM) + len(full) + 256 > self.context_limit:
+        system = getattr(self, "system", SYSTEM)
+        if self.context_limit and len(system) + len(full) + 256 > self.context_limit:
             if self.clip_context:
-                full = full[: max(0, self.context_limit - len(SYSTEM) - 256)]
+                full = full[: max(0, self.context_limit - len(system) - 256)]
             else:
                 raise RuntimeError("Context exceeds configured character limit: " + name)
         if cache_error:

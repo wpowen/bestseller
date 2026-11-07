@@ -42,6 +42,17 @@ def test_writer_receives_flaw_and_bottom_line_but_not_growth_end():
     assert "growth_end" not in card
 
 
+def test_writer_receives_identity_keywords_not_a_copyable_appositive_sentence():
+    identity = "被逐出驭兽宗的矿镇少年，雪耳的契主"
+    card = _card(2)
+
+    assert "identity" not in card
+    assert card["identity_keywords"] == ["矿镇少年", "雪耳契主"]
+    assert not any(
+        identity[index : index + 8] in json.dumps(card, ensure_ascii=False) for index in range(len(identity) - 7)
+    )
+
+
 def test_catchphrase_is_planned_once_per_five_chapters_with_optional_guidance():
     due = [number for number in range(1, 12) if catchphrase_due("顾冬岚", number)]
 

@@ -23,7 +23,7 @@ from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
-from .character_context import catchphrase_context, trim_dossier
+from .character_context import catchphrase_context, identity_keywords, trim_dossier
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -78,7 +78,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     for c in people:
         card = dict(
             name=c["name"],
-            identity=c.get("identity", ""),
+            identity_keywords=identity_keywords(c.get("identity", ""), c.get("occupation", "")),
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
             address=c.get("address") or c["name"],

@@ -1,5 +1,27 @@
 """Deterministic character-context scheduling shared by planning and writing."""
 
+import re
+
+
+def identity_keywords(identity, occupation=""):
+    """Reduce appositive identity prose to short non-copyable role keywords."""
+    source = occupation or identity
+    if not isinstance(source, str):
+        return []
+    result = []
+    for clause in re.split(r"[，,；;、。]+", source):
+        pieces = [piece.strip() for piece in clause.split("的") if piece.strip()]
+        if not pieces:
+            continue
+        keyword = pieces[-1]
+        if len(pieces) > 1 and len(pieces[-2]) <= 4 and len(pieces[-2] + keyword) <= 7:
+            keyword = pieces[-2] + keyword
+        keyword = re.sub(r"^(?:被|曾|现任|原是|本是)", "", keyword).strip()
+        keyword = keyword[-7:]
+        if keyword and keyword not in result:
+            result.append(keyword)
+    return result
+
 
 def catchphrase_due(name, chapter_number, interval=5):
     """Spread each character's optional catchphrase slot across a stable interval."""
@@ -23,9 +45,7 @@ def schedule_catchphrases(chapter, bible):
     chapter["catchphrase_due"] = [
         card["name"]
         for card in bible.get("characters", [])
-        if card.get("name") in scene_names
-        and card.get("catchphrase")
-        and catchphrase_due(card["name"], number)
+        if card.get("name") in scene_names and card.get("catchphrase") and catchphrase_due(card["name"], number)
     ]
     return chapter
 
@@ -33,7 +53,9 @@ def schedule_catchphrases(chapter, bible):
 def catchphrase_context(card, chapter):
     """Expose a catchphrase only in its planned slot, explicitly as optional."""
     due = chapter.get("catchphrase_due")
-    selected = card.get("name") in due if isinstance(due, list) else catchphrase_due(card.get("name"), chapter.get("number"))
+    selected = (
+        card.get("name") in due if isinstance(due, list) else catchphrase_due(card.get("name"), chapter.get("number"))
+    )
     if not selected or not card.get("catchphrase"):
         return {}
     return {
@@ -71,7 +93,11 @@ def trimming_candidates(cards, chapter):
     supporting = [card for card in present if card is not hero]
     return (
         [(card, key) for card in absent for key in tuple(card) if key != "name"]
-        + [(card, key) for card in reversed(present) for key in ("address_origin", "address_target", "aliases", "gender")]
+        + [
+            (card, key)
+            for card in reversed(present)
+            for key in ("address_origin", "address_target", "aliases", "gender", "identity_keywords")
+        ]
         + [(card, key) for card in reversed(supporting) for key in ("desire", "fear")]
         + [
             (card, key)
@@ -89,9 +115,7 @@ def trim_dossier(dossier, cards, chapter, dropped, pack, limit=1500):
         return
     hero = cards[0] if cards else {}
     if hero.get("dashboard"):
-        hero["dashboard"] = {
-            key: value for key, value in hero["dashboard"].items() if key in ("strength", "stage")
-        }
+        hero["dashboard"] = {key: value for key, value in hero["dashboard"].items() if key in ("strength", "stage")}
         dropped.append(hero["name"] + ".dashboard:compressed")
     if len(pack(dossier)) > limit and hero.get("continuity"):
         hero["continuity"] = _compress(hero["continuity"])

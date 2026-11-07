@@ -148,6 +148,8 @@ instructions:
 
     章末按6种人物/关系钩子轮换，clue表示线索浮出/新痕迹，滚动5章至多1次；不能换说法绕开配额。
 
+    每章另给ending_type与ending_content，明确“章末留下什么”：类型只用迫近危险/刚揭事实/悬停动作/两难选择/反常物件/关系裂痕，content用一句具体的人、物、动作或选择，不写空泛“留下悬念”。相邻章ending_type不同，同阶段同类型最多2次。平收只允许阶段收尾章且每阶段最多1次。
+
     稳定排期中的required_event必须落实到人物行动与后果：公开分歧不用武力解，代价误判要真的判断错，配角不同方案必须改变原决策。
 
     只生成指定窗口（最多10章）的chapters列表，不生成其余章节；每章约2200字、两场戏。
@@ -345,6 +347,8 @@ schemas:
       payoff: ''
       hook_type: ''
       hook: ''
+      ending_type: ''
+      ending_content: ''
       scenes:
       - where: ''
         characters: []
@@ -371,6 +375,7 @@ plan_slot_fields:
 - payoff_due
 - payoff_type
 - hook_type
+- ending_type
 - growth_setup
 - upgrade_due
 - next_upgrade

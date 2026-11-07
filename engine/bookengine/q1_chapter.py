@@ -6,6 +6,7 @@ from .checks import high_confidence, roll_day
 from .contracts import choose_contract, valid_extract, payoff_ok, observations, reduce_growth
 from .endings import ending_candidates, english_hits, apply_scene
 from .identity import name_hits
+from .hook_momentum import repair_after_draft
 from .precision import _sentences, apply as sentence_edits
 from .craft import reference_features
 from .q1_plan import GROWTH
@@ -234,6 +235,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     text, raw, failed, promise_review = repair_opening_promises(
         client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
+    )
+    text, raw, failed, _ = repair_after_draft(
+        client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

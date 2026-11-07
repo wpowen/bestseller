@@ -353,6 +353,7 @@ def check_book(book, *, source="final"):
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
     from bookengine.address_contracts import address_checkup
+    from bookengine.hook_momentum import book_momentum
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -394,6 +395,7 @@ def check_book(book, *, source="final"):
             ),
         ),
         **plot_findings(bible, chapters),
+        reading_momentum=book_momentum(chapters),
         plot_observations=dict(
             applied_chapters=[c["number"] for c in chapters if c.get("plot_observation")],
             sources={str(c["number"]): c["plot_observation"] for c in chapters if c.get("plot_observation")},

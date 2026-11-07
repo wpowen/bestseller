@@ -7,9 +7,11 @@ from pathlib import Path
 import tempfile
 
 try:
+    from tools.review_pack import is_system_temp
     from tools.review_runner import review_book
     from tools.verify_review import verify_claims
 except ModuleNotFoundError:
+    from review_pack import is_system_temp
     from review_runner import review_book
     from verify_review import verify_claims
 
@@ -114,7 +116,7 @@ def render_report(review, verified):
 
 def run_pipeline(book, env, *, output=None, chapter_spec=None, segment_chapters=10, client_factory=None):
     output = Path(output or tempfile.mkdtemp(prefix="bestseller-external-review-")).resolve()
-    if not output.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+    if not is_system_temp(output):
         raise ValueError("评审输出必须位于系统临时目录")
     kwargs = {}
     if client_factory is not None:

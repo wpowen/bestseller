@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import tempfile
 
 import pytest
 
@@ -65,6 +66,14 @@ def test_anonymous_pack_must_be_written_under_system_temp(tmp_path):
     book = _book(tmp_path / "book")
     with pytest.raises(ValueError, match="系统临时目录"):
         create_reading_pack(book, output="/var/not-system-temp/review.md")
+
+
+def test_explicit_tmp_directory_is_a_system_temporary_directory(tmp_path):
+    book = _book(tmp_path / "book")
+    with tempfile.TemporaryDirectory(prefix="bestseller-review-test-", dir="/tmp") as folder:
+        output = Path(folder) / "review.md"
+        create_reading_pack(book, output=output, chapter_spec="1")
+        assert output.is_file()
 
 
 def test_reviewer_selection_prefers_a_configured_different_family(tmp_path):

@@ -10,9 +10,9 @@ from bookengine.client import Client, MODEL
 from bookengine.storage import load, save
 
 try:
-    from tools.review_pack import available_chapters, create_reading_pack, parse_chapter_spec
+    from tools.review_pack import available_chapters, create_reading_pack, is_system_temp, parse_chapter_spec
 except ModuleNotFoundError:
-    from review_pack import available_chapters, create_reading_pack, parse_chapter_spec
+    from review_pack import available_chapters, create_reading_pack, is_system_temp, parse_chapter_spec
 
 
 EDITOR_QUESTIONS = (
@@ -226,7 +226,7 @@ def review_book(book, env, *, output=None, chapter_spec=None, segment_chapters=1
     if segment_chapters < 1:
         raise ValueError("segment_chapters 必须大于 0")
     output = Path(output or tempfile.mkdtemp(prefix="bestseller-review-run-")).resolve()
-    if not output.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+    if not is_system_temp(output):
         raise ValueError("评审运行目录必须位于系统临时目录")
     output.mkdir(parents=True, exist_ok=True)
     reviewer = select_reviewer(env)

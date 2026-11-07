@@ -41,9 +41,9 @@ def parse_chapter_spec(value):
     return sorted(result)
 
 
-def _under_system_temp(path):
-    root = Path(tempfile.gettempdir()).resolve()
-    return path.resolve().is_relative_to(root)
+def is_system_temp(path):
+    roots = {Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()}
+    return any(path.resolve().is_relative_to(root) for root in roots)
 
 
 def _title(book):
@@ -108,7 +108,7 @@ def create_reading_pack(book, *, output=None, chapter_spec=None):
     if output is None:
         output = Path(tempfile.mkdtemp(prefix="bestseller-review-pack-")) / "reading-pack.md"
     output = Path(output)
-    if not _under_system_temp(output):
+    if not is_system_temp(output):
         raise ValueError("阅读包只能写入系统临时目录")
     output.parent.mkdir(parents=True, exist_ok=True)
     title = _title(book)

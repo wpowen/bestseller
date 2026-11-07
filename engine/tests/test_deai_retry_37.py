@@ -46,6 +46,7 @@ class ScopedClient:
 def run(root, client):
     source = root / "chapter-001.body.md"
     source.write_text(TEXT)
+    (root / "deai-context.json").write_text(json.dumps({"_semantic_types": ["character_label"]}))
     status = process(root, "001", source, root / "absent.env", "local", polish, lambda *a, **k: client)
     return status, read_json(root / "final/chapter-001.deai.json")
 

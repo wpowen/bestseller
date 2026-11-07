@@ -45,6 +45,19 @@ policy:
   - 信息来源
   - 已知与未知的区别
   revision: 统计仅辅助定位，实际改句不能从案例移植事实；新问题回滚该处，不能靠删情报降低指标。
+repair:
+  audit_only_types:
+  - long_de_chain
+  note: 该类在第43条真实盲评中改写稿败于原稿；保留命中供人工参考，默认不花模型调用改写。
+deterministic_replacements:
+- id: silent_pressure_emit
+  type: verb_mismatch
+  regex: 发出(?=无声的(?:压迫|气息))
+  replacement: 散发出
+- id: guarantee_outcome
+  type: verb_mismatch
+  regex: 保证(?=(?:归处|出路|安全|结果))
+  replacement: 保证有
 density:
   unit: per_1000_han
   formula: 1000 * non_overlapping_match_count / han_count

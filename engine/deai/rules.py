@@ -38,6 +38,33 @@ DEFAULT = yaml.safe_load((DATA / "deai_rules.yaml").read_text())
 RECALL = yaml.safe_load((DATA.parents[1] / "data/deai_recall.yaml").read_text())
 FACT_TYPES = {"continuity_conflict", "date_arithmetic", "era_conflict"}
 
+_SEMANTIC_CUES = {
+    "verb_mismatch": re.compile(
+        r"(?:饥饿|闷热|寒气|热气|温度|风|雨|雪|雾|黑暗|寂静|声音|气味|疼痛|目光|影子|兽影)"
+        r"[^。！？!?\n]{0,18}(?:把|将|吃|咬|吞|压|折|拧|撞|绷|钉|扯|割|撕|封|发出)|"
+        r"(?:把|将)[^。！？!?\n]{0,22}(?:折成|拧成|吃到|咬住|吞没|压成|撞出|绷紧|钉在|撕成)"
+    ),
+    "empty_scene": re.compile(r"雨|雪|风|雾|晨光|月光|灯影|夜色|暮色|屋脊|街巷|霓虹|白霜|冰面"),
+    "cool_micro_action": re.compile(
+        r"(?:半寸|一线|半分|半圈|一毫米|指尖|眼皮|嘴角|唇角|眉梢|杯沿|袖扣|刀尖|手停在半空)"
+    ),
+    "character_label": re.compile(
+        r"(?:人|者|女人|男人|商人|生意人|官吏|弟子|少年|老者)[^。！？!?\n]{0,16}"
+        r"(?:特有|惯有|天生|骨子里|一贯|典型|狡诈|贪婪|势利|刻薄|冷漠)"
+    ),
+    "emotion_overload": re.compile(
+        r"血液沸腾|恨意滔天|撕碎|声嘶力竭|崩溃|绝望|发狂|歇斯底里|怒不可遏|万念俱灰|痛不欲生"
+    ),
+}
+
+
+def semantic_candidates(kind, rows):
+    """Cheap high-recall routing before an expensive semantic read."""
+    if kind == "written_dialogue":
+        return [row for row in rows if any(mark in row["text"] for mark in ("“", "「", '"'))]
+    pattern = _SEMANTIC_CUES.get(kind)
+    return [row for row in rows if pattern and pattern.search(row["text"])]
+
 
 def neutral_tags(text):
     view = re.sub(r'“[^”]*”|「[^」]*」|"[^"\n]*"', lambda m: " " * len(m[0]), text)

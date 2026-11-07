@@ -9,11 +9,12 @@ import random
 import time
 import yaml
 from .text import paragraphs, sentences, count, parse, replace, invariant, distance, rollback_invalid
-from .rules import detect, features, merge_hits, carry_hits, RECALL, neutral_tags
+from .rules import detect, features, merge_hits, carry_hits, RECALL, neutral_tags, semantic_candidates
 from .client import STOP, ModelResponseError
 from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
 from .parallel import collect
+from .adoption import deterministic_choices, entities as _entities, factcheck as _factcheck, final_adoption
 
 DATA = Path(__file__).resolve().parent / "data"
 RULES = yaml.safe_load((DATA / "deai_rules.yaml").read_text())
@@ -109,17 +110,20 @@ class Session:
         STOP.set()
         return error
 
-    def classify(self, text, stage, only=None):
+    def classify(self, text, stage, only=None, candidate_pids=None):
         rows = sentences(text)
         direct = detect(text, rows)
         ids = {r["sid"] for r in rows}
         jobs = []
         for kind in only or KINDS:
-            chosen = [
+            eligible = [
                 r
                 for r in (rows[: RECALL["semantic_windows"]["opening_sentences"]] if kind == "empty_scene" else rows)
-                if kind != "written_dialogue" or any(q in r["text"] for q in ("“", "「", '"'))
+                if candidate_pids is None or r["pid"] in candidate_pids
             ]
+            chosen = (
+                eligible if kind in set(self.ctx.get("_semantic_types", [])) else semantic_candidates(kind, eligible)
+            )
             if not chosen:
                 continue
             grouped = {}
@@ -268,44 +272,6 @@ def score(hits, text):
     return round(1000 * sum(severity.values()) / max(1, count(text)), 4)
 
 
-def final_adoption(original, text, edits, before, after, ctx):
-    changed = {e["pid"] for e in edits}
-    known = {(h["pid"], h["type"], h["text"]) for h in before}
-    bad = {h["pid"] for h in after if h["pid"] in changed and (h["pid"], h["type"], h["text"]) not in known}
-    text, edits, rolled = rollback_invalid(original, text, edits, ctx, bad)
-    return text, edits, carry_hits(before, [h for h in after if h["pid"] not in rolled], text, original), rolled
-
-
-def _entities(ctx, inventory):
-    cards = ctx.get("characters", [])
-    cards = list(cards.values()) if isinstance(cards, dict) else cards
-    return (
-        [c.get("name") for c in cards if isinstance(c, dict) and c.get("name")]
-        + [e for p in inventory.get("paragraphs", []) for e in p.get("entities", []) if isinstance(e, str)]
-        + [e for e in inventory.get("entities", []) if isinstance(e, str)]
-    )
-
-
-def _factcheck(session, stage, items, ctx):
-    items = [dict(item, before=neutral_tags(item["before"]), after=neutral_tags(item["after"])) for item in items]
-    raw = session.ask(
-        stage,
-        PROMPTS["runtime"]["facts_preservation"],
-        dict(
-            items=items,
-            characters=ctx.get("characters", []),
-            must_keep=ctx.get("facts", []),
-            ending=ctx.get("ending_image"),
-        ),
-        6000,
-    )
-    return {
-        x["id"]: x
-        for x in raw.get("checks", [])
-        if isinstance(x, dict) and isinstance(x.get("id"), str) and type(x.get("ok")) is bool
-    }
-
-
 def polish(text, ctx, llm):
     started = time.monotonic()
     ctx = dict(ctx)
@@ -330,7 +296,12 @@ def polish(text, ctx, llm):
             raise QualityRejected("Initial detector incomplete; original retained")
         result.before_score = score(before, original)
         targets = []
-        by_sid = {h["sid"]: dict(h, types=[x["type"] for x in before if x["sid"] == h["sid"]]) for h in before}
+        audit_only = set(RULES.get("repair", {}).get("audit_only_types", []))
+        repairable = [hit for hit in before if hit["type"] not in audit_only]
+        by_sid = {
+            hit["sid"]: dict(hit, types=[item["type"] for item in repairable if item["sid"] == hit["sid"]])
+            for hit in repairable
+        }
         for hit in list(by_sid.values())[: RECALL["repair"]["maximum_sentences"]]:
             i = next(i for i, p in enumerate(ps) if p["pid"] == hit["pid"])
             hit["context"] = [p["text"] for p in ps[max(0, i - 1) : i + 2]]
@@ -370,6 +341,8 @@ def polish(text, ctx, llm):
                         choices.insert(0, cleaned)
             if neutral_tags(hit["text"]) != hit["text"]:
                 choices = [neutral_tags(hit["text"])]
+            deterministic = deterministic_choices(hit, RULES)
+            choices = deterministic + choices
             candidates = []
             for choice in dict.fromkeys(choices):
                 if invariant(hit["text"], choice, ctx, entities):
@@ -377,10 +350,19 @@ def polish(text, ctx, llm):
                 revised = replace(original, [dict(hit, replacement=choice)])
                 if invariant(original, revised, ctx, entities, True):
                     continue
-                candidates.append(dict(text=choice, rule_score=score(detect(revised), revised)))
+                candidates.append(
+                    dict(
+                        text=choice,
+                        rule_score=score(detect(revised), revised),
+                        deterministic=choice in deterministic,
+                    )
+                )
             if not candidates:
                 continue
-            chosen = min(candidates, key=lambda c: (c["rule_score"], distance(hit["text"], c["text"])))
+            chosen = min(
+                candidates,
+                key=lambda c: (c["rule_score"], not c["deterministic"], distance(hit["text"], c["text"])),
+            )
             if chosen["rule_score"] > score(detect(original), original):
                 continue
             edits.append(
@@ -392,6 +374,7 @@ def polish(text, ctx, llm):
                     pid=hit["pid"],
                     sid=hit["sid"],
                     types=hit["types"],
+                    source="deterministic" if chosen["deterministic"] else "model",
                     round=1,
                     candidates=candidates,
                 )
@@ -401,12 +384,16 @@ def polish(text, ctx, llm):
             raise QualityRejected("Whole chapter invariant failed")
         revised_ps = {p["pid"]: p["text"] for p in paragraphs(revised)}
         changed = {e["pid"] for e in edits}
+        model_changed = {edit["pid"] for edit in edits if edit.get("source") != "deterministic"}
         fact_items = [
-            dict(id=p["pid"], before=p["text"], after=revised_ps[p["pid"]]) for p in ps if p["pid"] in changed
+            dict(id=p["pid"], before=p["text"], after=revised_ps[p["pid"]])
+            for p in ps
+            if p["pid"] in changed
+            if p["pid"] in model_changed
         ]
         with ThreadPoolExecutor(max_workers=3) as pool:
-            facts = pool.submit(_factcheck, session, "recall22-facts", fact_items, ctx) if edits else None
-            review = pool.submit(session.classify, revised, "recall22-recheck") if edits else None
+            facts = pool.submit(_factcheck, session, "recall22-facts", fact_items, ctx) if fact_items else None
+            review = pool.submit(session.classify, revised, "recall22-recheck", None, changed) if edits else None
             diagnostic = pool.submit(session.diagnostics, original)
             collect([f for f in (facts, review, diagnostic) if f is not None])
             checks = facts.result() if facts else {}
@@ -483,7 +470,13 @@ def polish(text, ctx, llm):
         final_chars=count(accepted),
         programmatic=invariant(original, accepted, ctx, entities, True),
         ending_image=ctx["ending_image"],
-        facts="preservation_model_checked" if all_edits else "original retained",
+        facts=(
+            "preservation_model_checked"
+            if any(edit.get("source") != "deterministic" for edit in all_edits)
+            else "deterministic_guards"
+            if all_edits
+            else "original retained"
+        ),
     )
     entries = getattr(llm, "calls", [])[baseline:] if hasattr(llm, "calls") else None
     usages = [r.get("usage") or {} for r in entries] if entries is not None else session.usages

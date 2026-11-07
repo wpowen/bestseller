@@ -31,7 +31,7 @@ def fake(skip_stage, requests):
 def test_skipped_paragraph_is_reread_instead_of_failing_the_stage():
     requests = []
     first = "recall22-initial-verb_mismatch-0"
-    Session(fake(first, requests), {}).classify(TEXT, "recall22-initial")
+    Session(fake(first, requests), {"_semantic_types": ["verb_mismatch"]}).classify(TEXT, "recall22-initial")
     reads = [r for r in requests if r[0].startswith(first)]
     assert reads[0] == (first, ["P1", "P2"])
     assert reads[1] == (first + "-missing0", ["P2"])

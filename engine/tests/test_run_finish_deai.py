@@ -413,7 +413,9 @@ def test_parallel_detector_quota_interrupts_other_waiters(http, quota_vote):
         raise InterruptedError("fixture sibling stopped")
 
     with pytest.raises(QuotaExhausted):
-        Session(llm, {}).classify("她把信放在门边。", "detector", only=["verb_mismatch"])
+        Session(llm, {"_semantic_types": ["verb_mismatch"]}).classify(
+            "她把信放在门边。", "detector", only=["verb_mismatch"]
+        )
     assert interrupted and all(interrupted), "A quota failure must interrupt sibling network waits"
 
 

@@ -67,7 +67,7 @@ def test_bad_substep_rolls_back_whole_chapter_and_watcher_finishes(tmp_path, mon
     monkeypatch.setattr(ReplyClient, "bad_stage", bad_stage)
     monkeypatch.setattr("deai.__main__.MiniMax", ReplyClient)
     monkeypatch.setattr("urllib.request.urlopen", mock.Mock(side_effect=AssertionError("no network")))
-    put(tmp_path / "deai-context.json", dict(force_dialogue=True))
+    put(tmp_path / "deai-context.json", dict(force_dialogue=True, _semantic_types=["verb_mismatch"]))
     put(tmp_path / "run.json", dict(status="complete", book=dict(chapters=2)))
     source = "她沉声道：“快走。”“好。”她站在门边，等着院里的脚步声远去，又把没收完的衣服抱回屋里。"
     for n in (1, 2):
@@ -302,7 +302,7 @@ def test_transport_format_exhaustion_rolls_back_in_real_flow(http, bad):
     from deai.client import MiniMax
 
     http.replies.extend(completion(bad) for _ in range(108))
-    result = polish("她推开门。", {}, MiniMax(http.work, http.env))
+    result = polish("她推开门。", {"_semantic_types": ["verb_mismatch"]}, MiniMax(http.work, http.env))
     assert result.status == "retained" and result.text == "她推开门。"
     assert result.checks["failure"]["stage"].startswith("recall22-initial-")
     assert result.checks["failure"]["reason"]

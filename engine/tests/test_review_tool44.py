@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tools.review_pack import create_reading_pack, parse_chapter_spec
+from tools.review_report import render_report, run_pipeline
 from tools.review_runner import EDITOR_QUESTIONS, READER_QUESTIONS, review_book, select_reviewer
 from tools.verify_review import verify_claims
 
@@ -214,3 +215,109 @@ def test_quote_found_in_another_chapter_is_unknown_not_fabricated(tmp_path):
     )
     assert rows[0]["status"] == "Unknown"
     assert "章号不匹配" in rows[0]["reason"]
+
+
+def test_report_sorts_issues_and_separates_evidence_inference_unknown_and_fabrication():
+    review = {
+        "book_title": "匿名测试书",
+        "reviewer": {"model": "MiniMax-M3", "family": "minimax", "same_family": True},
+        "reviews": [
+            {
+                "perspective": "reader",
+                "segment": [1, 5],
+                "abandon_chapter": 3,
+                "remembered_characters": [{"name": "阿甲", "description": "遇事先退一步"}],
+                "signable": None,
+            },
+            {
+                "perspective": "reader",
+                "segment": [6, 10],
+                "abandon_chapter": 3,
+                "remembered_characters": [{"name": "阿乙", "description": "说话很冲"}],
+                "signable": None,
+            },
+        ],
+        "impressions": [
+            {
+                "perspective": "editor",
+                "question": "人物",
+                "conclusion": "反派声音接近",
+                "reason": "未附引文",
+                "segment": [1, 10],
+            }
+        ],
+    }
+    verified = [
+        {
+            "status": "Evidence",
+            "severity": "low",
+            "chapter": 8,
+            "conclusion": "次要问题",
+            "quote": "原文乙",
+            "reason": "引文和章号均匹配",
+        },
+        {
+            "status": "Evidence",
+            "severity": "critical",
+            "chapter": 2,
+            "conclusion": "严重问题",
+            "quote": "原文甲",
+            "reason": "引文和章号均匹配",
+        },
+        {
+            "status": "Unknown",
+            "severity": "high",
+            "chapter": 4,
+            "conclusion": "人物归属错误",
+            "quote": "原文丙",
+            "reason": "人物归属不匹配",
+        },
+        {
+            "status": "可能捏造",
+            "severity": "medium",
+            "chapter": 7,
+            "conclusion": "不存在的目录",
+            "quote": "第7章17章",
+            "reason": "引文不存在",
+        },
+    ]
+
+    report = render_report(review, verified)
+
+    assert report.index("严重问题") < report.index("次要问题")
+    assert "## Evidence（已核引文）" in report
+    assert "## Inference（评审印象与分布）" in report
+    assert "## Unknown（对不上或无法确认）" in report
+    assert "## 可能捏造" in report
+    assert "| 3 | 2 |" in report
+    assert "阿甲：遇事先退一步" in report
+    assert "同源判官，可能高估" in report
+    assert "不自动转成开发需求" in report
+
+
+def test_pipeline_persists_verified_claims_and_markdown_report(tmp_path):
+    book = _book(tmp_path / "book")
+    env = tmp_path / ".env"
+    env.write_text(
+        "BESTSELLER__LLM__WRITER__MODEL=MiniMax-M3\n"
+        "BESTSELLER__LLM__WRITER__API_BASE=https://minimax.example/v1\n"
+        "BESTSELLER__LLM__WRITER__API_KEY_ENV=MINIMAX_API_KEY\n"
+        "MINIMAX_API_KEY=dummy-key\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "complete-review"
+
+    result = run_pipeline(
+        book,
+        env,
+        output=output,
+        chapter_spec="1-3",
+        segment_chapters=2,
+        client_factory=_FakeClient,
+    )
+
+    assert (output / "reading-pack.md").is_file()
+    assert (output / "raw-reviews.json").is_file()
+    assert (output / "verified-claims.json").is_file()
+    assert (output / "review-report.md").read_text(encoding="utf-8") == result["report"]
+    assert {row["status"] for row in result["verified"]} == {"Evidence"}

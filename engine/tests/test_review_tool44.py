@@ -247,6 +247,39 @@ def test_quote_found_in_another_chapter_is_unknown_not_fabricated(tmp_path):
     assert "章号不匹配" in rows[0]["reason"]
 
 
+def test_subject_attribution_prefers_names_inside_quote_and_never_reads_following_context(tmp_path):
+    book = tmp_path / "book"
+    (book / "final").mkdir(parents=True)
+    (book / "story_bible.yaml").write_text(
+        "characters:\n"
+        "  - {name: 沈亦衡, role: protagonist}\n"
+        "  - {name: 韩嘉屿, role: antagonist}\n"
+        "  - {name: 姜孟遥, role: antagonist, address: 沈亦衡}\n",
+        encoding="utf-8",
+    )
+    (book / "final/chapter-001.md").write_text(
+        "姜孟遥站在门外。\n韩嘉屿猛地 twist 手腕。\n姜孟遥转身离开。\n"
+        "沈亦衡说完，握紧短剑。下一刻，他没有借招。姜孟遥在远处敲门。\n"
+        "韩嘉屿抬剑：“最后一遍。交出姜孟遥。”",
+        encoding="utf-8",
+    )
+    rows = verify_claims(
+        book,
+        [
+            {"chapter": 1, "quote": "韩嘉屿猛地 twist 手腕", "subject": "韩嘉屿", "action": "twist"},
+            {"chapter": 1, "quote": "他没有借招", "subject": "主角", "action": "没有借招"},
+            {"chapter": 1, "quote": "他没有借招", "subject": "沈亦衡", "action": "没有借招"},
+            {"chapter": 1, "quote": "“最后一遍。交出姜孟遥。”", "subject": "韩嘉屿", "action": "抬剑"},
+        ],
+    )
+    assert [(row["status"], row["actual_subject"]) for row in rows] == [
+        ("Evidence", "韩嘉屿"),
+        ("Evidence", "沈亦衡"),
+        ("Evidence", "沈亦衡"),
+        ("Evidence", "韩嘉屿"),
+    ]
+
+
 def test_report_sorts_issues_and_separates_evidence_inference_unknown_and_fabrication():
     review = {
         "book_title": "匿名测试书",

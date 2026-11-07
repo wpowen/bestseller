@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import sys
 
+import yaml
+
 try:
     from tools.redact import Redactor
     from tools.books_guard import repository_books
@@ -60,6 +62,133 @@ def sources(book, n):
         title = json.loads(path.read_text("utf-8")).get("title", "")
         result.append(("目录", f"第{n}章 {title}"))
     return result
+
+
+def _character_index(book):
+    path = Path(book) / "story_bible.yaml"
+    if not path.is_file():
+        return {}, {}, ""
+    value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    characters = value.get("characters", []) if isinstance(value, dict) else []
+    aliases, actor_names, protagonist = {}, {}, ""
+    for item in characters:
+        if not isinstance(item, dict) or not str(item.get("name", "")).strip():
+            continue
+        name = str(item["name"]).strip()
+        explicit_aliases = item.get("aliases", []) or []
+        names = [name, *explicit_aliases]
+        for alias in names:
+            if isinstance(alias, str) and alias.strip():
+                aliases[alias.strip()] = name
+        for alias in [name, *explicit_aliases]:
+            if isinstance(alias, str) and alias.strip():
+                actor_names[alias.strip()] = name
+        role = str(item.get("role", "")).lower()
+        if not protagonist and role in ("protagonist", "main", "hero"):
+            protagonist = name
+    return aliases, actor_names, protagonist
+
+
+def _match_parts(content, quote):
+    normalized, positions = [], []
+    for index, char in enumerate(content):
+        if not char.isspace():
+            normalized.append(char)
+            positions.append(index)
+    needle = compact(quote)
+    offset = "".join(normalized).find(needle)
+    if offset < 0:
+        return "", "", ""
+    start = positions[offset]
+    end = positions[min(len(positions) - 1, offset + len(needle) - 1)] + 1
+    line_end = content.find("\n", end)
+    after = content[end : line_end if line_end >= 0 else min(len(content), end + 80)]
+    return content[max(0, start - 160) : start], content[start:end], after
+
+
+def _actual_subject(content, quote, aliases):
+    before, matched, after = _match_parts(content, quote)
+
+    def occurrences(text):
+        result = []
+        for alias, canonical in aliases.items():
+            for match in re.finditer(re.escape(alias), text):
+                result.append((match.start(), len(alias), canonical))
+        return result
+
+    stripped = matched.lstrip()
+    dialogue = stripped.startswith(("“", "「", "『", '"')) or before.rstrip().endswith(("“", "「", "『", '"'))
+    inside_text = matched
+    if dialogue:
+        endings = [stripped.find(mark) for mark in ("”", "」", "』", '"') if stripped.find(mark) >= 0]
+        inside_text = stripped[min(endings) + 1 :] if endings else ""
+    inside = occurrences(inside_text)
+    if inside:
+        return min(inside, key=lambda item: (item[0], -item[1]))[2]
+    if dialogue:
+        attribution = occurrences(after)
+        if attribution and re.search(r"(?:说|道|问|喊|喝|叫|答|吼|开口)", after):
+            return min(attribution, key=lambda item: (item[0], -item[1]))[2]
+    paragraph = before.rstrip().splitlines()[-1] if before.rstrip() else ""
+    previous = occurrences(paragraph)
+    return min(previous, key=lambda item: (item[0], -item[1]))[2] if previous else ""
+
+
+def _book_chapters(book):
+    numbers = set()
+    for pattern in ("final/chapter-*.md", "chapter-*.body.md", "chapter-*.md", "chapters/*.json"):
+        for path in Path(book).glob(pattern):
+            match = re.search(r"(?:chapter-)?(\d+)", path.name)
+            if match:
+                numbers.add(int(match[1]))
+    return sorted(numbers)
+
+
+def verify_claims(book, claims):
+    """Classify structured claims by chapter, literal quote and named subject."""
+    book = Path(book)
+    aliases, actor_names, protagonist = _character_index(book)
+    chapter_sources = {number: sources(book, number) for number in _book_chapters(book)}
+    rows = []
+    for claim in claims:
+        row = dict(claim)
+        chapter = claim.get("chapter")
+        quote = str(claim.get("quote", "")).strip()
+        expected = str(claim.get("subject", "")).strip()
+        if expected in ("主角", "男主", "女主"):
+            expected = protagonist
+        else:
+            expected = aliases.get(expected, expected)
+        cited = chapter_sources.get(chapter, []) if type(chapter) is int else []
+        cited_hit = next(((name, content) for name, content in cited if compact(quote) in compact(content)), None)
+        anywhere = [
+            (number, name, content)
+            for number, items in chapter_sources.items()
+            for name, content in items
+            if quote and compact(quote) in compact(content)
+        ]
+        status, reason, actual, source = "Evidence", "引文和章号均匹配", "", ""
+        if not quote:
+            status, reason = "Unknown", "结论未附引文"
+        elif cited_hit is None and anywhere:
+            status = "Unknown"
+            matched_chapters = sorted({item[0] for item in anywhere})
+            reason = "引文存在，但章号不匹配：" + ", ".join(str(number) for number in matched_chapters[:5])
+        elif cited_hit is None:
+            status, reason = "可能捏造", "引文在全书可用正文和目录中均不存在"
+        else:
+            source, content = cited_hit
+            if expected:
+                candidates = dict(actor_names)
+                candidates.setdefault(expected, expected)
+                actual = _actual_subject(content, quote, candidates)
+                if not actual:
+                    status, reason = "Unknown", "引文存在，但无法确定动作指向的人物"
+                elif actual != expected:
+                    status, reason = "Unknown", f"人物归属不匹配：结论指向{expected}，引文指向{actual}"
+        row.update(status=status, reason=reason, source=source, expected_subject=expected, actual_subject=actual)
+        rows.append(row)
+    return rows
 
 
 def verify(book, review):

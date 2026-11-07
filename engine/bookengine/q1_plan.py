@@ -19,6 +19,7 @@ from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_context, solution_issues, chapter_nouns
 from .ability_methods import primary_target
+from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .chapter_rhythm import (
     rhythm_slots,
@@ -122,7 +123,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
     return value
 
 
-def schedule(start, end, profile, recent=(), state=None):
+def schedule(start, end, profile, recent=(), state=None, *, stage_start=None, stage_end=None):
     """Return future rhythm requirements, never an observed payoff/progress."""
     previous = rows(list(recent)) if isinstance(recent, (list, tuple)) else []
     mix = defaults(profile.get("chapter_type_mix"), DATA["profile"]["chapter_type_mix"])
@@ -138,6 +139,15 @@ def schedule(start, end, profile, recent=(), state=None):
         or [start - 5]
     )
     result = []
+    ending_slots = {
+        row["number"]: row
+        for row in schedule_ending_types(
+            start,
+            end,
+            stage_end=stage_end,
+            recent=[r for r in previous if stage_start is None or integer(r.get("number")) >= stage_start],
+        )
+    }
     reservation = dict(state or {}, solutions=list((state or {}).get("solutions", [])))
     for n in range(start, end + 1):
         choices = [k for k in weights if len(previous) < 2 or not all(r.get("type") == k for r in previous[-2:])]
@@ -168,6 +178,7 @@ def schedule(start, end, profile, recent=(), state=None):
             meeting_allowed=n - meeting >= 5,
             required_event="",
             action_required=n % 5 != 0,
+            ending_type=ending_slots[n]["ending_type"],
         )
         if profile.get("canon"):
             slot.update(choose_contract(profile["canon"], previous, n, state=reservation))
@@ -256,12 +267,23 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached = None
     if cached:
         if cached["normalized"]:
-            return complete_transitions(
-                cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)
+            return apply_ending_contract(
+                complete_transitions(
+                    cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)
+                ),
+                stage_end=integer(volume.get("end"), end),
             )
         end = cached["end"]
     used = prompt_vocabulary(used_vocabulary(prior))
-    rhythm = schedule(start, end, profile, prior, state)
+    rhythm = schedule(
+        start,
+        end,
+        profile,
+        prior,
+        state,
+        stage_start=integer(volume.get("start"), start),
+        stage_end=integer(volume.get("end"), end),
+    )
     scene_slots = rhythm_slots(bible, start, end, prior, rhythm)
     core_slots = {r["number"]: r for r in ability_slots(bible, start, end)}
     for slot, scene_slot in zip(rhythm, scene_slots):
@@ -408,6 +430,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             required_event=slot["required_event"],
             payoff_due=slot["payoff_due"],
             payoff_type=slot.get("payoff_type"),
+            ending_type=slot["ending_type"],
+            ending_content=chapter.get("ending_content") or chapter.get("hook"),
             hook=chapter.get("hook")
             if chapter["hook_type"] == slot["hook_type"]
             else "末钩目标" + slot["hook_type"] + "，用本场面既有冲突重构，不沿用旧结尾。",
@@ -430,6 +454,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     result = enforce_ability_plan(bible, result)
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)
+    result = apply_ending_contract(result, stage_end=integer(volume.get("end"), end))
     if getattr(client, "out", None) and (not cached or final_rhythm_repairs):
         source_path = cached["path"] if cached else None
         if cached:

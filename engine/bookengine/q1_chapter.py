@@ -9,6 +9,7 @@ from .identity import name_hits
 from .precision import _sentences, apply as sentence_edits
 from .craft import reference_features
 from .q1_plan import GROWTH
+from .character_context import schedule_catchphrases
 from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
@@ -118,6 +119,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         growth_target=vol.get("expected_dashboard", {}),
     )
     outline = chapter_cast(outline, bible, state["seen_characters"])
+    outline = schedule_catchphrases(outline, bible)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
     if book.style_reference:

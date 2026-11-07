@@ -1,0 +1,51 @@
+"""Instruction 41 regressions for the bounded writer character context."""
+
+import json
+
+from bookengine.character_context import catchphrase_due
+from bookengine.q1_extract import context
+
+
+def _card(chapter_number):
+    bible = {
+        "characters": [
+            {
+                "name": "顾冬岚",
+                "role": "protagonist",
+                "identity": "被逐出驭兽宗的矿镇少年，雪耳的契主",
+                "voice": "紧张时拿冷话遮掩关心",
+                "desire": "救出妹妹",
+                "fear": "再次失去家人",
+                "flaw": "逞强会让他拒绝求援",
+                "bottom_line": "不牺牲无辜者换力量",
+                "catchphrase": "先救，再算账。",
+                "growth_end": "学会接受别人帮助",
+            }
+        ]
+    }
+    chapter = {"number": chapter_number, "scenes": [{"characters": ["顾冬岚"]}]}
+    sections = dict(context(bible, {}, {"number": 1}, chapter, {}, [], [], ""))
+    return json.loads(sections["出场人物档案、口吻卡与当前状态"])["characters"][0]
+
+
+def test_writer_receives_flaw_and_bottom_line_but_not_growth_end():
+    card = _card(2)
+
+    assert card["flaw"] == "逞强会让他拒绝求援"
+    assert card["bottom_line"] == "不牺牲无辜者换力量"
+    assert "growth_end" not in card
+
+
+def test_catchphrase_is_planned_once_per_five_chapters_with_optional_guidance():
+    due = [number for number in range(1, 12) if catchphrase_due("顾冬岚", number)]
+
+    assert len(due) >= 2
+    assert all(later - earlier >= 5 for earlier, later in zip(due, due[1:]))
+    for number in range(1, 12):
+        card = _card(number)
+        if number in due:
+            assert card["catchphrase"] == "先救，再算账。"
+            assert card["catchphrase_guidance"] == "本章可在合适情境用一次，不强求。"
+        else:
+            assert "catchphrase" not in card
+            assert "catchphrase_guidance" not in card

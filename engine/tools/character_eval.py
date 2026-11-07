@@ -4,8 +4,6 @@ import argparse
 import json
 from pathlib import Path
 
-import yaml
-
 from bookengine.character_diagnostics import character_reference, dialogue_samples, score_guesses, verify_fulfillment
 from bookengine.client import Client
 from bookengine.storage import save

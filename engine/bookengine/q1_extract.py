@@ -23,7 +23,7 @@ from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
-from .character_context import catchphrase_context, trimming_candidates
+from .character_context import catchphrase_context, trim_dossier
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -124,12 +124,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         fixed_cast=[(c["name"], c.get("role")) for c in bible.get("characters", [])],
         **({"dashboard": dash} if not cards else {}),
     )
-    for card, key in trimming_candidates(cards):
-        if len(pack(dossier)) - len(pack(dash)) <= 1500:
-            break
-        if key in card:
-            dropped.append(card["name"] + "." + key)
-            card.pop(key)
+    trim_dossier(dossier, cards, chapter, dropped, pack)
     outline = {
         k: chapter[k]
         for k in (

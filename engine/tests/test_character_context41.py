@@ -1,9 +1,15 @@
 """Instruction 41 regressions for the bounded writer character context."""
 
 import json
+from pathlib import Path
+
+import yaml
 
 from bookengine.character_context import catchphrase_due
 from bookengine.q1_extract import context
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _card(chapter_number):
@@ -49,3 +55,31 @@ def test_catchphrase_is_planned_once_per_five_chapters_with_optional_guidance():
         else:
             assert "catchphrase" not in card
             assert "catchphrase_guidance" not in card
+
+
+def test_trial50_chapter20_drops_system_context_before_scene_character_desire_and_fear():
+    bible = yaml.safe_load((FIXTURES / "address40/trial-50-story_bible.yaml").read_text())
+    saved = json.loads((FIXTURES / "character41/trial50-ch20-context.json").read_text())
+    dropped = []
+
+    sections = dict(
+        context(
+            bible,
+            {},
+            {"number": 2},
+            saved["chapter"],
+            saved["state"],
+            [],
+            [],
+            "",
+            dropped,
+        )
+    )
+    raw = sections["出场人物档案、口吻卡与当前状态"]
+    cards = {card["name"]: card for card in json.loads(raw)["characters"]}
+
+    assert len(raw) <= 1500
+    assert cards["顾冬岚"]["desire"] == next(c for c in bible["characters"] if c["name"] == "顾冬岚")["desire"]
+    assert cards["顾冬岚"]["fear"] == next(c for c in bible["characters"] if c["name"] == "顾冬岚")["fear"]
+    assert all("voice" in cards[name] and "current" in cards[name] for name in ("顾冬岚", "沈夏珩", "陆岳霖"))
+    assert any(field.startswith("顾冬岚.") and field.endswith(":compressed") for field in dropped)

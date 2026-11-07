@@ -42,24 +42,71 @@ def catchphrase_context(card, chapter):
     }
 
 
-def trimming_candidates(cards):
+def _scene_names(chapter):
+    return {
+        name
+        for scene in chapter.get("scenes", [])
+        if isinstance(scene, dict)
+        for name in scene.get("characters", [])
+        if isinstance(name, str)
+    }
+
+
+def _compress(value, limit=48):
+    if isinstance(value, dict):
+        return {
+            key: _compress(item.get("值", item) if isinstance(item, dict) else item, limit)
+            for key, item in value.items()
+        }
+    text = str(value)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def trimming_candidates(cards, chapter):
     """Order expendable fields while keeping scene characterization until last."""
     hero = cards[0] if cards else {}
+    scenes = _scene_names(chapter)
+    absent = [card for card in cards if card.get("name") not in scenes]
+    present = [card for card in cards if card.get("name") in scenes]
+    supporting = [card for card in present if card is not hero]
     return (
-        [(card, "current") for card in cards[1:]]
-        + [(hero, key) for key in ("desire", "fear")]
+        [(card, key) for card in absent for key in tuple(card) if key != "name"]
+        + [(card, key) for card in reversed(present) for key in ("address_origin", "address_target", "aliases", "gender")]
+        + [(card, key) for card in reversed(supporting) for key in ("desire", "fear")]
         + [
             (card, key)
-            for card in reversed(cards)
-            for key in (
-                "current",
-                "desire",
-                "fear",
-                "active_desire",
-                "personality_tags",
-                "never_do",
-                "flaw",
-                "bottom_line",
-            )
+            for card in reversed(present)
+            for key in ("active_desire", "personality_tags", "never_do", "catchphrase", "catchphrase_guidance")
         ]
+        + [(hero, key) for key in ("desire", "fear")]
+        + [(card, key) for card in reversed(present) for key in ("flaw", "bottom_line", "current")]
     )
+
+
+def trim_dossier(dossier, cards, chapter, dropped, pack, limit=1500):
+    """Fit the dossier by compressing system/history data before scene characters."""
+    if len(pack(dossier)) <= limit:
+        return
+    hero = cards[0] if cards else {}
+    if hero.get("dashboard"):
+        hero["dashboard"] = {
+            key: value for key, value in hero["dashboard"].items() if key in ("strength", "stage")
+        }
+        dropped.append(hero["name"] + ".dashboard:compressed")
+    if len(pack(dossier)) > limit and hero.get("continuity"):
+        hero["continuity"] = _compress(hero["continuity"])
+        dropped.append(hero["name"] + ".continuity:compressed")
+    if len(pack(dossier)) > limit and hero.get("power"):
+        hero["power"] = _compress(hero["power"], 80)
+        dropped.append(hero["name"] + ".power:compressed")
+    if len(pack(dossier)) > limit:
+        scenes = _scene_names(chapter)
+        omitted = [name for name, _ in dossier.get("fixed_cast", []) if name not in scenes]
+        dossier["fixed_cast"] = [row for row in dossier.get("fixed_cast", []) if row[0] in scenes]
+        dropped.extend("fixed_cast." + name for name in omitted)
+    for card, key in trimming_candidates(cards, chapter):
+        if len(pack(dossier)) <= limit:
+            break
+        if key in card:
+            dropped.append(card["name"] + "." + key)
+            card.pop(key)

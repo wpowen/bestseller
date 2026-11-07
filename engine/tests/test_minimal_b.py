@@ -72,7 +72,7 @@ class MinimalBTestsPart1(MinimalBTests):
         self.assertEqual(client.calls, [])
         self.assertEqual(snapshot(), before)
 
-    def test_context_keeps_dashboard_first_while_trimming_other_fields(self):
+    def test_context_trims_non_scene_hero_before_scene_character_fields(self):
         hero = dict(
             self.bible["characters"][0], desire="主动欲望" * 180, fear="具体恐惧" * 180, gender="女", address="阿宁"
         )
@@ -93,15 +93,10 @@ class MinimalBTestsPart1(MinimalBTests):
         sections = dict(q1.context(bible, self.threads, {"number": 1}, chapter, state, [], [], "", dropped))
         cards = json.loads(sections["出场人物档案、口吻卡与当前状态"])["characters"]
         self.assertEqual(cards[0]["name"], "阿宁")
-        self.assertEqual(next(iter(cards[0])), "dashboard")
-        self.assertEqual(cards[0]["dashboard"], dashboard)
-        self.assertLessEqual(len(q1.pack(cards[0]["dashboard"])), 200)
-        self.assertEqual(dropped[:3], [c["name"] + ".current" for c in support])
-        self.assertLess(dropped.index("阿宁.desire"), dropped.index("阿宁.fear"))
-        self.assertNotIn("阿宁.dashboard", dropped)
-        self.assertEqual(
-            (cards[0]["voice"], cards[0]["gender"], cards[0]["address"]), ("说话直接，先问再答。", "女", "阿宁")
-        )
+        self.assertEqual(cards[0], {"name": "阿宁"})
+        self.assertEqual(dropped[0], "阿宁.dashboard:compressed")
+        self.assertLess(dropped.index("阿宁.realm_ability"), dropped.index("配角2.current"))
+        self.assertTrue(all(card["voice"] == "说话直接" for card in cards[1:]))
         self.assertEqual((bible, state, chapter), before)
         fallback = dict(
             q1.context(

@@ -375,6 +375,11 @@ def check_book(book, *, source="final"):
     ]
     similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0], bible=bible)) for c in chapters]
     intros, aliases = _cast_stats(bible, chapters)
+    from bookengine.character_diagnostics import character_reference
+
+    model_evaluation = (
+        _read(book / "character_evaluation.json", unknown) if (book / "character_evaluation.json").is_file() else None
+    )
     if not chapters:
         unknown.append(dict(reason="no_chapters"))
     return dict(
@@ -426,6 +431,7 @@ def check_book(book, *, source="final"):
         ),
         introductions=intros,
         aliases=aliases,
+        character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

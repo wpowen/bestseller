@@ -139,12 +139,13 @@ class Q1R2ContinuationTests(unittest.TestCase):
         self.assertEqual(len(dossier["characters"]), len(names))
         cards = {person["name"]: person for person in dossier["characters"]}
         self.assertEqual(set(cards), set(names))
-        for person in people:
+        for person in people[1:]:
             card = cards[person["name"]]
             self.assertEqual(card["voice"], person["voice"][:100])
             self.assertLessEqual(len(card["voice"]), 100)
             self.assertNotIn("taboos", card)
             self.assertNotIn("habits", card)
+        self.assertEqual(cards[people[0]["name"]], {"name": people[0]["name"]})
         self.assertEqual(args, saved)
 
     def _deduplicated_outline(self, candidate, recent):

@@ -23,6 +23,7 @@ from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
+from .character_context import catchphrase_context, identity_keywords, trim_dossier
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -77,7 +78,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     for c in people:
         card = dict(
             name=c["name"],
-            identity=c.get("identity", ""),
+            identity_keywords=identity_keywords(c.get("identity", ""), c.get("occupation", "")),
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
             address=c.get("address") or c["name"],
@@ -85,8 +86,13 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         card.update({k: c[k] for k in ("address_origin", "address_target") if c.get(k)})
         card.update(
-            {k: c.get(k) for k in ("active_desire", "personality_tags", "never_do", "desire", "fear") if c.get(k)}
+            {
+                k: c.get(k)
+                for k in ("active_desire", "personality_tags", "never_do", "desire", "fear", "flaw", "bottom_line")
+                if c.get(k)
+            }
         )
+        card.update(catchphrase_context(c, chapter))
         card["current"] = state.get("characters", {}).get(c["name"], {})
         if c.get("role") == "protagonist":
             card = dict(
@@ -118,22 +124,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         fixed_cast=[(c["name"], c.get("role")) for c in bible.get("characters", [])],
         **({"dashboard": dash} if not cards else {}),
     )
-    hero = cards[0] if cards else {}
-    candidates = (
-        [(c, "current") for c in cards[1:]]
-        + [(hero, k) for k in ("desire", "fear")]
-        + [
-            (c, k)
-            for c in reversed(cards)
-            for k in ("current", "desire", "fear", "active_desire", "personality_tags", "never_do")
-        ]
-    )
-    for card, key in candidates:
-        if len(pack(dossier)) - len(pack(dash)) <= 1500:
-            break
-        if key in card:
-            dropped.append(card["name"] + "." + key)
-            card.pop(key)
+    trim_dossier(dossier, cards, chapter, dropped, pack)
     outline = {
         k: chapter[k]
         for k in (

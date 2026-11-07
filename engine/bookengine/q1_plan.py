@@ -20,6 +20,7 @@ from .retired_opponents import stage_constraints
 from .solution_substance import solution_context, solution_issues, chapter_nouns
 from .ability_methods import primary_target
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
+from .character_context import schedule_catchphrases
 from .chapter_rhythm import (
     rhythm_slots,
     rhythm_issues,
@@ -428,6 +429,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         result.append(chapter)
     result, final_rhythm_repairs = repair_rhythm(bible, prior, result)
     result = enforce_ability_plan(bible, result)
+    result = [schedule_catchphrases(chapter, bible) for chapter in result]
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)
     if getattr(client, "out", None) and (not cached or final_rhythm_repairs):

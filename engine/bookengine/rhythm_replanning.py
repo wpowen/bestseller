@@ -125,4 +125,16 @@ def semantic_review(client, key, batch, deterministic=()):
         effort="low",
     )
     value = model_value(raw)
-    return rows(value.get("chapters")) if isinstance(value, dict) else []
+    if not isinstance(value, dict):
+        return []
+    source = rows(value.get("chapters")) or rows(value.get("reviews"))
+    return [
+        {
+            "number": integer(row.get("number", row.get("chapter"))),
+            "content_type": row.get("content_type", ""),
+            "status": row.get("status", "unknown"),
+            "reason": row.get("reason", ""),
+        }
+        for row in source
+        if integer(row.get("number", row.get("chapter")))
+    ]

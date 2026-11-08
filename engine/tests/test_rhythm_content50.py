@@ -267,3 +267,48 @@ def test_exhausted_replanning_uses_saved_semantic_content_type_when_rules_are_un
     report = json.loads((tmp_path / "outline-diversity/004-004.json").read_text())
     assert report["rhythm_replans"][0]["action"] == "kept_original_relabelled"
     assert report["rhythm_replans"][0]["content_type"] == "对抗"
+
+
+def test_semantic_review_accepts_provider_review_aliases_instead_of_silently_dropping_them():
+    from bookengine.rhythm_replanning import semantic_review
+
+    class Client:
+        model = "fixture-model"
+        provider = "fixture-provider"
+
+        def stage(self, _name, _prompt, _schema, **_kwargs):
+            return {
+                "reviews": [
+                    {
+                        "chapter": 5,
+                        "content_type": "对抗",
+                        "status": "mismatch",
+                        "reason": "第一场执行救援，第二场才处理关系。",
+                    }
+                ]
+            }
+
+    review = semantic_review(
+        Client(),
+        "001-010",
+        [{"number": 5, "type": "情感", "scenes": [{"goal": "处理关系"}]}],
+    )
+
+    assert review == [
+        {
+            "number": 5,
+            "content_type": "对抗",
+            "status": "mismatch",
+            "reason": "第一场执行救援，第二场才处理关系。",
+        }
+    ]
+
+
+def test_noncombat_writer_instruction_resolves_conflicting_outline_actions_in_favor_of_the_chapter_type():
+    from bookengine.rhythm_writer import writer_rhythm_instruction
+
+    instruction = writer_rhythm_instruction({"type": "谋划"})
+
+    assert "两场戏只比较方案、风险、代价并完成取舍与分工" in instruction
+    assert "救援、开门、追踪或借力等执行动作移到相邻章" in instruction
+    assert "不得照抄与章型冲突的动作" in instruction

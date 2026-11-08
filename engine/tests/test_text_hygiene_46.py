@@ -95,9 +95,7 @@ def test_sentence_repair_deletes_only_later_copy_and_preserves_unique_informatio
         edits = []
         for target in targets:
             replacement = (
-                "顾昕冉判断药囊已被送入王城药道。"
-                if "他判断药囊" in target["text"]
-                else "这段文字不会被采用。"
+                "顾昕冉判断药囊已被送入王城药道。" if "他判断药囊" in target["text"] else "这段文字不会被采用。"
             )
             edits.append({"id": target["id"], "text": replacement})
         return {"edits": edits}
@@ -109,7 +107,7 @@ def test_sentence_repair_deletes_only_later_copy_and_preserves_unique_informatio
         {"events": []},
         False,
         {},
-        {"characters": [{"name": "顾昕冉"}, {"name": "顾小满"}]},
+        {"characters": [{"name": "顾昕冉"}, {"name": "顾小满"}, {"name": "黑牙"}]},
         {"number": 21},
         lambda *args, **kwargs: ({"events": []}, False, 0),
         ask,
@@ -120,6 +118,54 @@ def test_sentence_repair_deletes_only_later_copy_and_preserves_unique_informatio
     assert "顾昕冉判断药囊已被送入王城药道。" in result
     assert result.endswith("顾小满抬头望向北门。")
     assert inspect_text(result)["counts"]["sentence_repetitions"] == 0
+    assert note["status"] == "repaired"
+
+
+def test_safe_sentence_duplicate_accepts_empty_targeted_deletion():
+    repeated = "灰烬下，一枚陌生的兽铃碎片缓缓浮现，铃舌朝向外围，指向矿镇的方向。"
+    text = f"{repeated}\n\n{repeated}蛮玉筠抬起头。\n\n顾昕冉收起骨片。"
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch19",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾昕冉"}, {"name": "蛮玉筠"}]},
+        {"number": 19},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        lambda *_args, **_kwargs: {"edits": [{"id": "H1", "text": ""}]},
+    )
+
+    assert result.count(repeated) == 1
+    assert "蛮玉筠抬起头。" in result
+    assert note["status"] == "repaired"
+
+
+def test_dependency_repair_does_not_trust_an_echoed_repeated_block():
+    repeated = "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。"
+    text = f"{repeated}\n\n{repeated}他判断药囊已被送入王城药道。\n\n顾小满抬头望向北门。"
+
+    def ask(*args, **kwargs):
+        target = json.loads(dict(args[3])["卫生命中"])[0]
+        return {"edits": [{"id": target["id"], "text": target["text"]}]}
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch21",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾昕冉"}, {"name": "顾小满"}, {"name": "黑牙"}]},
+        {"number": 21},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        ask,
+    )
+
+    assert result.count(repeated) == 1
+    assert "顾昕冉判断药囊已被送入王城药道。" in result
     assert note["status"] == "repaired"
 
 

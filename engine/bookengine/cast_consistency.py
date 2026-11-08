@@ -31,7 +31,8 @@ _HOSTILE = re.compile(
     r"(?:出口|矿道|退路)[^。！？]{0,8}封死|杀(?:掉|死)"
 )
 _FRONTED_PRONOUN = re.compile(
-    r"[\s“‘\"']*(?:[^，,。！？!?]{1,32}(?:时|后|前|下|里|外|旁|边|处|中|上|间|口)[，,]\s*)?([他她])"
+    r"[\s“‘\"']*(?:[^，,。！？!?]{1,32}(?:时|后|前|下|里|外|旁|边|处|中|上|间|口|声|次|遍|刻|瞬|眼|步|句)"
+    r"[，,]\s*)?(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])"
 )
 
 
@@ -72,33 +73,38 @@ def _subject_bound(sentence, name):
 
 def _pronoun_findings(text, cards, chapter, spans):
     findings = []
+    bound = None
     for index, (start, end) in enumerate(spans):
         sentence = text[start:end]
         match = _FRONTED_PRONOUN.match(sentence)
-        if not match or index == 0:
-            continue
-        previous = text[slice(*spans[index - 1])]
-        people = [card for card in _mentioned(previous, cards) if card.get("gender") in _GENDER]
-        if len(people) > 1:
-            findings.append(
-                _finding(
-                    "gender_pronoun",
-                    chapter,
-                    "",
-                    "Unknown",
-                    match[1],
-                    "",
-                    "前句出现多名人物，代词指代不清",
-                    text,
-                    index + 1,
-                    start,
-                    end,
+        resolved = None
+        if match and index:
+            previous = text[slice(*spans[index - 1])]
+            people = [card for card in _mentioned(previous, cards) if card.get("gender") in _GENDER]
+            if len(people) > 1:
+                findings.append(
+                    _finding(
+                        "gender_pronoun",
+                        chapter,
+                        "",
+                        "Unknown",
+                        match[1],
+                        "",
+                        "前句出现多名人物，代词指代不清",
+                        text,
+                        index + 1,
+                        start,
+                        end,
+                    )
                 )
-            )
-        elif len(people) == 1:
-            card = people[0]
+            elif len(people) == 1 and _subject_bound(previous, people[0]["name"]):
+                resolved = people[0]
+            elif not people and bound is not None:
+                resolved = bound
+        if resolved is not None:
+            card = resolved
             expected, wrong = _GENDER[card["gender"]]
-            if match[1] == wrong and _subject_bound(previous, card["name"]):
+            if match[1] == wrong:
                 findings.append(
                     _finding(
                         "gender_pronoun",
@@ -114,6 +120,13 @@ def _pronoun_findings(text, cards, chapter, spans):
                         end,
                     )
                 )
+        people = [card for card in _mentioned(sentence, cards) if card.get("gender") in _GENDER]
+        if len(people) == 1 and _subject_bound(sentence, people[0]["name"]):
+            bound = people[0]
+        elif match and resolved is not None:
+            bound = resolved
+        else:
+            bound = None
     return findings
 
 
@@ -337,9 +350,20 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         cap=2500,
         input_limit=10000,
     )
+    proposed = response.get("edits", []) if isinstance(response, dict) else []
+    proposed = [row for row in proposed if isinstance(row, dict)]
+    for target in repair_targets:
+        if target["kind"] != "gender_pronoun":
+            continue
+        match = _FRONTED_PRONOUN.match(target["quote"])
+        if not match or match[1] != target["observed"]:
+            continue
+        replacement = target["quote"][: match.start(1)] + target["expected"] + target["quote"][match.end(1) :]
+        proposed = [row for row in proposed if row.get("id") != target["id"]]
+        proposed.append(dict(id=target["id"], text=replacement))
     candidate, edits = sentence_edits(
         text,
-        response.get("edits", []) if isinstance(response, dict) else [],
+        proposed,
         repair_targets,
         allow_empty=False,
         allow_style=True,

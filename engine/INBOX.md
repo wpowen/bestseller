@@ -726,7 +726,7 @@
 
 ## 2026-11-08-48：人物一致性——称呼字段语义统一、性别与身份不串（用户 2026-11-08：“写并并行启动”）
 
-状态：开发完成，待监工验收
+状态：已验收，已合并进 main（2026-11-08）。1523 项测试通过；书库 0 改动。称呼统一为“说话人→被称呼者→称呼→来历”，旧格式兼容读取；eval-45 主角卡上的“陆大哥”正确识别为顾川序对陆烈的称呼。性别/身份漂移检查能抓到 eval-39 第 8 章（沈夏珩被写成“沈师兄”和追兵领头人）和第 42 条试写第 7 章（顾安澜被写成“他”）。真实修复：第 7 章改对；eval-39 第 8 章两次候选都没过复检，已回滚——这一章是整段把女主写进了追兵链，单改代词修不好，属于剧情层面的串角。指代不清的保持 Unknown。
 
 文件归属：
 - 可改：`engine/bookengine/address_contracts.py`、`engine/bookengine/rename_addresses.py`、`engine/bookengine/q1_prepare.py`、`engine/bookengine/identity.py`、`engine/bookengine/introductions.py`、`engine/bookengine/q1_cast.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

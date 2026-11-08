@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import yaml
 
-from bookengine import longutil, q1_plan, q1_prepare
+from bookengine import longutil, outline_diversity, q1_plan, q1_prepare
 from bookengine.config import Book
 from bookengine.storage import save
 from bookengine.text import parse_json
@@ -164,7 +164,11 @@ class Fix100Tests(unittest.TestCase):
         state = {"ledger": {t["id"]: dict(last=25, done=[]) for t in threads["threads"]}}
         before = deepcopy((threads, vol, state))
         hostile = {"chapters": [dict(number=n, threads=[t["id"] for t in threads["threads"]]) for n in range(26, 36)]}
-        with patch.object(q1_plan, "_ask", return_value=hostile) as ask:
+        with (
+            patch.object(q1_plan, "_ask", return_value=hostile) as ask,
+            patch.object(q1_plan, "rhythm_issues", return_value=[]),
+            patch.object(outline_diversity, "rhythm_issues", return_value=[]),
+        ):
             result = q1_plan.outlines(
                 object(), {}, threads, deepcopy(q1_plan.DATA["profile"]), vol, 26, 35, state, [], [], []
             )

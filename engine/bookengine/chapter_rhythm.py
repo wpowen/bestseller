@@ -5,7 +5,7 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 6
+VERSION = 7
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
@@ -21,12 +21,23 @@ FOCUS = {
 }
 STRUCTURES = {"情感": "情感摊牌", "收获": "日常喘息里藏冲突", "揭秘": "误判后果", "谋划": "对峙谈判"}
 _CUES = {
-    "情感": r"关系|信任|坦白|隐瞒|原谅|疏远|和解|顾虑|承诺|分歧|心意|感情",
+    "情感": r"关系|信任|坦白|隐瞒|原谅|疏远|和解|顾虑|承诺|分歧|边界|分工|心意|感情",
     "收获": r"兑现|领取|试用|分配|收获|回报|报酬|奖励|认可|庆祝",
     "揭秘": r"核对|线索|推翻|判断|证据|揭示|真相|验证|发现|秘密",
     "谋划": r"方案|风险|代价|分工|筹备|准备|计划|谋划|策略|布局",
 }
 _COMBAT = re.compile(r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀")
+INTERNAL_TERMS = ("原章", "原定场景", "原定目标", "已登场同伴")
+_WRITER_FIELDS = (
+    "title",
+    "opening_conflict",
+    "conflict",
+    "payoff",
+    "hook",
+    "ending_content",
+    "rhythm_focus",
+    "scenes",
+)
 
 
 def chapter_type(row):
@@ -102,102 +113,49 @@ def rhythm_issues(bible, history, batch):
     for n, row in sorted(combined.items()):
         kind = chapter_type(row)
         if n in targets:
+            if not any(field in row for field in ("type", "rhythm_type", "scenes", "opening_conflict")):
+                previous[n] = row
+                continue
             allowed, reason = _requirement(bible, previous, n)
             if allowed and kind not in allowed:
                 issues.append(dict(kind=reason, targets=[n], allowed=list(allowed), requirement=RULE))
             elif kind in BREAK_TYPES and not _focused(row, kind):
                 issues.append(dict(kind="rhythm_scene_focus", targets=[n], allowed=[kind], requirement=RULE))
+            terms = internal_terms(row)
+            if terms:
+                issues.append(
+                    dict(
+                        kind="rhythm_internal_language",
+                        targets=[n],
+                        terms=terms,
+                        allowed=[kind] if kind else [],
+                        requirement="程序内部用语不得进入交给写手的章纲。" + RULE,
+                    )
+                )
         previous[n] = row
     return issues
 
 
-def _reframe(row, kind, bible):
-    """Replace scene intentions, preserving canonical identities/locations and original audit source."""
-    result = deepcopy(row)
-    scenes = rows(row.get("scenes"))
-    scene = deepcopy(scenes[0]) if scenes else {}
-    focus = FOCUS[kind]
-    cast = list(dict.fromkeys(c for s in scenes for c in s.get("characters", []) if isinstance(c, str)))
-    lead, partner = (cast + ["主角", "已登场同伴"])[:2]
-    place = scene.get("where") or scene.get("location") or row.get("location") or "原定场景"
-    intentions = {
-        "情感": (
-            f"{lead}在{place}向{partner}坦白原章行动中未说出的顾虑，争取重新建立信任",
-            f"{partner}当面指出不能接受的隐瞒；{lead}在独自承担与接受帮助间作出选择，双方据此改变分工或疏远",
-        ),
-        "收获": (
-            f"{lead}与{partner}在{place}实际领取并试用已赢得的回报，尚未赢得的奖励不能提前领取",
-            f"{lead}在自己保留与分给{partner}之间作出分配选择，试用时发现沿用既定规则的限制并承担代价",
-        ),
-        "揭秘": (
-            f"{lead}与{partner}在{place}对照已出现的两条线索，验证原判断的矛盾",
-            f"{partner}提出不同解释；{lead}用已有证据验证并推翻一个局部判断，依据揭示的真相改变下一步去向",
-        ),
-        "谋划": (
-            f"{lead}与{partner}在{place}讨论原定目标的两种方案，比较执行与暂缓的风险代价",
-            f"{partner}质疑原案的风险；{lead}为保住一项已有利益放弃另一项机会，选定方案并准备各自负责的行动",
-        ),
-    }
-    goal, choice = intentions[kind]
-    source = {k: deepcopy(row.get(k)) for k in ("opening_conflict", "scenes", "payoff", "core_application")}
-    result.setdefault("rhythm_source", source)
-    scene.update(
-        kind=kind,
-        goal=goal,
-        obstacle="原章前提："
-        + str(row.get("opening_conflict") or row.get("conflict") or "既有冲突的后果")
-        + "；保留既定人物欲望、资源限制和信息边界",
-        choice=choice,
-        action=choice,
-        result="以人物当场作出的选择改变后续行动条件，具体内容依已有事实，不新增胜利或恢复损失",
-        emotion="保留人物脾气，以选择和对白呈现变化",
-    )
-    result.update(
-        type=kind,
-        rhythm_type=kind,
-        rhythm_focus=focus,
-        rhythm_contract_version=VERSION,
-        structure=STRUCTURES[kind],
-        opening_conflict=goal,
-        conflict=goal,
-        conflict_type=kind + "抉择",
-        scenes=[scene],
-        hook="由本章人物选择产生的新后果留下悬念，沿用原定阶段节拍，不另起一轮围堵交战",
-    )
-    if row.get("core_required"):
-        power = bible.get("power") or {}
-        mechanism = next(
-            (power[k] for k in ("name", "object", "rule") if isinstance(power.get(k), str)), "既定核心能力"
-        )
-        result["core_application"] = (
-            f"沿用{mechanism}的已定机制、限制与代价，{focus}；能力须决定这个选择的可行性，不能只提名称"
-        )
-    return result
+def internal_terms(row):
+    """Return forbidden planner-only terms from fields passed to the prose writer."""
+    text = repr({field: row.get(field) for field in _WRITER_FIELDS if field in row})
+    return [term for term in INTERNAL_TERMS if term in text]
 
 
 def repair_rhythm(bible, history, batch):
-    """Final deterministic planning fallback; never accept failed_continued rhythm violations."""
-    current, decisions = deepcopy(batch), []
-    previous = {integer(r.get("number")): r for r in history}
-    for row in sorted(current, key=lambda r: integer(r.get("number"))):
-        n = integer(row.get("number"))
-        earlier = [r for number, r in previous.items() if number < n]
-        issues = rhythm_issues(bible, earlier, [row])
-        if issues:
-            kind = issues[0]["allowed"][0]
-            before = deepcopy(row)
-            row.update(_reframe(row, kind, bible))
-            decisions.append(
-                dict(
-                    number=n,
-                    reason=issues,
-                    action="rewrite_scene_intent",
-                    authority="planning_instruction_not_observed_fact",
-                    before=before,
-                    after=deepcopy(row),
-                )
-            )
-        previous[n] = row
+    """Keep unresolved plans unchanged; model-backed replanning is handled by the caller."""
+    current = deepcopy(batch)
+    decisions = [
+        dict(
+            number=number,
+            reason=[issue for issue in rhythm_issues(bible, history, current) if number in issue["targets"]],
+            action="kept_original",
+            authority="planning_instruction_not_observed_fact",
+        )
+        for number in sorted(
+            {target for issue in rhythm_issues(bible, history, current) for target in issue.get("targets", [])}
+        )
+    ]
     return current, decisions
 
 

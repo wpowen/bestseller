@@ -136,6 +136,24 @@ def inspect_text(text):
     )
 
 
+def summarize_chapters(chapters):
+    """Aggregate the three publication hygiene categories for book checkup."""
+    rows = [dict(chapter=row["number"], **inspect_text(row["text"])) for row in chapters]
+    return dict(
+        english_fragments=sum(row["counts"]["english_fragments"] for row in rows),
+        structural_notes=sum(row["counts"]["structural_notes"] for row in rows),
+        paragraph_repetitions=sum(row["counts"]["paragraph_repetitions"] for row in rows),
+        english_chapters=[row["chapter"] for row in rows if row["counts"]["english_fragments"]],
+        structural_chapters=[row["chapter"] for row in rows if row["counts"]["structural_notes"]],
+        paragraph_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["paragraph_repetitions"]],
+        chapters=[
+            row
+            for row in rows
+            if any(row["counts"][key] for key in ("english_fragments", "structural_notes", "paragraph_repetitions"))
+        ],
+    )
+
+
 def _repair_targets(text, findings):
     from .precision import _sentences
 

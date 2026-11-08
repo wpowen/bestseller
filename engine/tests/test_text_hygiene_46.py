@@ -137,3 +137,19 @@ def test_q1_chapter_runs_hygiene_before_saving(monkeypatch):
         assert row["cleaning"]["text_hygiene"] == {"status": "repaired"}
     finally:
         fixture.doCleanups()
+
+
+def test_book_checkup_counts_each_hygiene_kind_and_lists_chapters(tmp_path):
+    from tools.book_checkup import check_book
+
+    repeated = "陆烈收拾好刀，走到岩口却没有立刻下山。"
+    (tmp_path / "chapter-001.body.md").write_text("狭窄处/low石面刮过他的肩背。")
+    (tmp_path / "chapter-002.body.md").write_text("第二场戏开始时，天色已经暗了。")
+    (tmp_path / "chapter-003.body.md").write_text(f"{repeated}\n\n众人先走。\n\n{repeated}")
+
+    result = check_book(tmp_path)["text_hygiene"]
+
+    assert result["english_fragments"] == 1 and result["english_chapters"] == [1]
+    assert result["structural_notes"] == 1 and result["structural_chapters"] == [2]
+    assert result["paragraph_repetitions"] == 1 and result["paragraph_repetition_chapters"] == [3]
+    assert [row["chapter"] for row in result["chapters"]] == [1, 2, 3]

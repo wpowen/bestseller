@@ -6,7 +6,7 @@ import re
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
-from .identity import validate_bible
+from .identity import validate_bible, validate_cast_contract
 from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
 from .storage import save
@@ -26,6 +26,7 @@ def _ask(client, kind, key, sections, redo=False):
             raw = value if isinstance(value, dict) else {}
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             validate_bible(bible)
+            validate_cast_contract(bible)
 
     template = (
         dict(volumes=[dict(number=1, core_development=dict(new_use="", new_cost="", new_limit=""))])
@@ -85,7 +86,8 @@ def _ask(client, kind, key, sections, redo=False):
         instruction += (
             "\nreader_expectation和opening_promises逐项列可检查的开篇承诺，别把后期承诺塞进前三章。"
             "第1章必须实际展示书名或设定核心能力，前三章每章展示实际使用和可见代价。"
-            "address须从目标姓名派生，否则address_origin写具体来历并在首次使用章交代；address_target写目标真名。"
+            "每条称呼都按说话人→被称呼者→称呼→来历填写：address放在说话人的人物卡，"
+            "address_target写被称呼者真名；address须从目标姓名派生，否则address_origin写具体来历并在首次使用章交代。"
         )
     overhead = len(getattr(client, "prefix", "")) + len(SYSTEM) + len(schema) + len(instruction) + 400
     budget = max(0, 10000 - overhead)

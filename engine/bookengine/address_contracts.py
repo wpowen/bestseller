@@ -7,8 +7,9 @@ import re
 
 def address_rows(bible):
     cards = bible.get("characters", [])
-    names = {c.get("name") for c in cards if isinstance(c, dict)}
+    names = {c.get("name") for c in cards if isinstance(c, dict) and c.get("name")}
     lead = next((c.get("name") for c in cards if c.get("role") == "protagonist"), "")
+    seen = set()
     for card in cards:
         address = card.get("address")
         if not isinstance(address, str) or not address.strip():
@@ -17,21 +18,27 @@ def address_rows(bible):
             label = label.strip()
             if not label:
                 continue
-            # Old cards mix a person's own address with their address for the
-            # lead. Prefer self derivation before that legacy lead fallback;
-            # an explicit target always owns the interpretation.
             target = card.get("address_target")
-            if not target:
-                target = (
-                    card.get("name")
-                    if derived_address(label, card.get("name"))
-                    else label
-                    if label in names
-                    else lead or card.get("name")
-                )
             origin = card.get("address_origin", "")
             origin = origin.get(label, "") if isinstance(origin, dict) else origin
-            yield dict(speaker=card.get("name"), name=target, address=label, origin=origin, known=target in names)
+            derived = [name for name in names if derived_address(label, name)]
+            # Legacy cards sometimes store the target's own address on the
+            # target card, and sometimes point address_target back to that
+            # same card. A unique name-derived target is stronger evidence.
+            if len(derived) == 1 and (not target or target == card.get("name") and derived[0] != target):
+                target = derived[0]
+            if not target:
+                target = label if label in names else lead or card.get("name")
+            speaker = card.get("name")
+            if target == card.get("name") and isinstance(origin, str):
+                originators = list(_originators(dict(name=target, origin=origin), cards))
+                if len(originators) == 1:
+                    speaker = originators[0]
+            key = (speaker, target, label, origin)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield dict(speaker=speaker, name=target, address=label, origin=origin, known=target in names)
 
 
 # Plain kinship and teacher terms are ordinary speech, not nicknames that need
@@ -97,7 +104,73 @@ def address_issues(bible):
                     **detail,
                 )
             )
+    issues.extend(_legacy_storage_issues(bible, issues))
     return issues
+
+
+def _legacy_storage_issues(bible, existing):
+    """Keep old target-owned cards readable while requiring new speaker-owned data."""
+    cards = [card for card in bible.get("characters", []) if isinstance(card, dict)]
+    by_name = {card.get("name"): card for card in cards if card.get("name")}
+    result = []
+    present = {
+        (row.get("speaker"), row.get("expected_target"), row.get("expected_address"))
+        for row in existing
+        if row.get("reason") == "originator_address_mismatch"
+    }
+    for target_card in cards:
+        target = target_card.get("address_target") or target_card.get("name")
+        if target != target_card.get("name"):
+            continue
+        origin = target_card.get("address_origin", "")
+        if not isinstance(origin, str):
+            continue
+        labels = [
+            part.strip() for part in re.split(r"[/／、，,；;]", str(target_card.get("address", ""))) if part.strip()
+        ]
+        for label in labels:
+            row = dict(name=target, origin=origin)
+            for speaker in _originators(row, cards):
+                source = by_name.get(speaker, {})
+                source_labels = {
+                    part.strip() for part in re.split(r"[/／、，,；;]", str(source.get("address", ""))) if part.strip()
+                }
+                source_target = source.get("address_target")
+                if label in source_labels and source_target == target:
+                    continue
+                key = (speaker, target, label)
+                if key in present:
+                    continue
+                detail = dict(
+                    kind="address_origin",
+                    reason="originator_address_mismatch",
+                    originator=speaker,
+                    expected_address=label,
+                    expected_target=target,
+                    message="旧卡把称呼放在被称呼者卡上；新结构须放在说话人卡并填写同一目标",
+                )
+                result.extend(
+                    [
+                        dict(
+                            speaker=target_card.get("name"),
+                            name=target,
+                            address=label,
+                            origin=origin,
+                            known=True,
+                            **detail,
+                        ),
+                        dict(
+                            speaker=speaker,
+                            name=source_target or speaker,
+                            address=source.get("address", ""),
+                            origin=source.get("address_origin", ""),
+                            known=True,
+                            **detail,
+                        ),
+                    ]
+                )
+                present.add(key)
+    return result
 
 
 def _originators(row, cards):
@@ -110,7 +183,7 @@ def _originators(row, cards):
         # Do not attribute a later named character's calling action to this one.
         for other in names - {name}:
             tail = tail.split(other, 1)[0]
-        if re.search(r"叫|喊|唤|称|(?:取|起)(?:了|的)?(?:名|绰号|外号)", tail):
+        if re.search(r"直呼|叫|喊|唤|称|(?:取|起)(?:了|的)?(?:名|绰号|外号)", tail):
             yield name
 
 

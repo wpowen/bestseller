@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from .chapter_rhythm import FOCUS, rhythm_slots
+from .chapter_rhythm import FOCUS, VERSION, rhythm_slots
 from .q1_prepare import _ask
 from .q1_schema import integer, rows
 
@@ -64,3 +64,27 @@ def stage_content_skeleton(client, bible, volume, history, preferred):
         skeleton.append(row)
     wanted = set(numbers)
     return skeleton, [slot for slot in slots if slot["number"] in wanted]
+
+
+def window_stage_content(skeleton, start, end):
+    """Compact the saved stage skeleton for one detailed-outline request."""
+    result = []
+    for row in skeleton:
+        if not start <= integer(row.get("number")) <= end:
+            continue
+        result.append(
+            {
+                "number": row["number"],
+                "type": row.get("type", ""),
+                "rhythm_type": row.get("rhythm_type", row.get("type", "")),
+                "rhythm_focus": str(row.get("content_requirement", ""))[:100],
+                "rhythm_contract_version": VERSION,
+                "conflict": str(row.get("conflict", ""))[:80],
+                "result": str(row.get("result", ""))[:80],
+                "scenes": [
+                    {field: str(scene.get(field, ""))[:40] for field in ("goal", "obstacle", "action", "result")}
+                    for scene in rows(row.get("scenes"))[:2]
+                ],
+            }
+        )
+    return result

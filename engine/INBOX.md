@@ -726,7 +726,7 @@
 
 ## 2026-11-08-48：人物一致性——称呼字段语义统一、性别与身份不串（用户 2026-11-08：“写并并行启动”）
 
-状态：执行中（用户 2026-11-08：“写并并行启动”）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/address_contracts.py`、`engine/bookengine/rename_addresses.py`、`engine/bookengine/q1_prepare.py`、`engine/bookengine/identity.py`、`engine/bookengine/introductions.py`、`engine/bookengine/q1_cast.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

@@ -353,6 +353,7 @@ def check_book(book, *, source="final"):
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
     from bookengine.address_contracts import address_checkup
+    from bookengine.cast_consistency import cast_checkup
     from bookengine.hook_momentum import book_momentum
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
@@ -434,6 +435,7 @@ def check_book(book, *, source="final"):
         introductions=intros,
         aliases=aliases,
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
+        cast_consistency=cast_checkup(bible, chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

@@ -21,6 +21,17 @@ def _fallback(slot):
     }
 
 
+def coordinate_core_rhythm(preferred, core_slots):
+    """Put unconstrained required ability uses in action chapters, preserving mandatory rhythm breaks."""
+    result = deepcopy(rows(preferred))
+    for slot in result:
+        core = core_slots.get(integer(slot.get("number")), {})
+        if not core.get("core_required") or slot.get("rhythm_reason"):
+            continue
+        slot.update(type="对抗", rhythm_type="对抗", rhythm_focus=FOCUS["对抗"])
+    return result
+
+
 def stage_content_skeleton(client, bible, volume, history, preferred):
     """Return the complete stage skeleton and the detailed window's rhythm slots."""
     preferred = rows(preferred)

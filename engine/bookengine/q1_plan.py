@@ -23,7 +23,7 @@ from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
 from .chapter_rhythm import RULE as RHYTHM_RULE, VERSION as RHYTHM_VERSION, apply_contract, chapter_type, rhythm_issues
-from .rhythm_skeleton import stage_content_skeleton, window_stage_content
+from .rhythm_skeleton import coordinate_core_rhythm, stage_content_skeleton, window_stage_content
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -279,8 +279,9 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         stage_start=integer(volume.get("start"), start),
         stage_end=integer(volume.get("end"), end),
     )
-    stage_skeleton, scene_slots = stage_content_skeleton(client, bible, volume, prior, rhythm)
     core_slots = {r["number"]: r for r in ability_slots(bible, start, end)}
+    rhythm = coordinate_core_rhythm(rhythm, core_slots)
+    stage_skeleton, scene_slots = stage_content_skeleton(client, bible, volume, prior, rhythm)
     for slot, scene_slot in zip(rhythm, scene_slots):
         slot.update(scene_slot, type=scene_slot["rhythm_type"])
         slot.update(core_slots.get(slot["number"], {}))

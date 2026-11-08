@@ -312,3 +312,76 @@ def test_noncombat_writer_instruction_resolves_conflicting_outline_actions_in_fa
     assert "两场戏只比较方案、风险、代价并完成取舍与分工" in instruction
     assert "救援、开门、追踪或借力等执行动作移到相邻章" in instruction
     assert "不得照抄与章型冲突的动作" in instruction
+
+
+def test_exhausted_replanning_prefers_semantic_observation_over_conflicting_rule_guess(tmp_path):
+    original = {
+        "number": 2,
+        "type": "谋划",
+        "rhythm_type": "谋划",
+        "scenes": [
+            {"goal": "坦白隐瞒", "choice": "交出决定权并重建信任"},
+            {"goal": "修复关系", "choice": "承认顾虑并改变分工"},
+        ],
+    }
+    semantic_issue = {
+        "kind": "rhythm_model_mismatch",
+        "targets": [2],
+        "allowed": ["谋划"],
+        "observed": "对抗",
+        "reason": "对手在场，主要行动是突围。",
+        "requirement": "标签服从内容",
+    }
+
+    def unchanged(_current, _issues, _targets, _used, _attempt):
+        return {"chapters": [deepcopy(original)]}
+
+    result = outline_diversity.repair_batch(
+        tmp_path,
+        "002-002",
+        [],
+        [original],
+        unchanged,
+        initial_issues=[semantic_issue],
+        model_review=[{"number": 2, "content_type": "对抗", "status": "mismatch"}],
+    )
+
+    assert content_type(original) == "情感"
+    assert result[0]["type"] == result[0]["rhythm_type"] == "对抗"
+    report = json.loads((tmp_path / "outline-diversity/002-002.json").read_text())
+    assert isinstance(report["original_chapters"], list)
+    assert report["original_chapters"] == [original]
+
+
+def test_core_required_slots_use_action_rhythm_without_overriding_mandatory_breaks():
+    from bookengine.rhythm_skeleton import coordinate_core_rhythm
+
+    rhythm = [
+        {"number": 1, "type": "情感", "rhythm_type": "情感", "rhythm_focus": "关系变化", "rhythm_reason": ""},
+        {
+            "number": 4,
+            "type": "情感",
+            "rhythm_type": "情感",
+            "rhythm_focus": "关系变化",
+            "rhythm_reason": "rhythm_stage_relation",
+        },
+        {
+            "number": 8,
+            "type": "谋划",
+            "rhythm_type": "谋划",
+            "rhythm_focus": "比较方案",
+            "rhythm_reason": "rhythm_combat_run",
+        },
+    ]
+    core = {
+        1: {"number": 1, "core_required": True},
+        4: {"number": 4, "core_required": True},
+        8: {"number": 8, "core_required": True},
+    }
+
+    coordinated = coordinate_core_rhythm(rhythm, core)
+
+    assert coordinated[0]["type"] == coordinated[0]["rhythm_type"] == "对抗"
+    assert coordinated[1]["type"] == coordinated[1]["rhythm_type"] == "情感"
+    assert coordinated[2]["type"] == coordinated[2]["rhythm_type"] == "谋划"
+    assert rhythm[0]["type"] == "情感"

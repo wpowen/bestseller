@@ -12,7 +12,7 @@ from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
 from .core_ability import ability_issues
-from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, chapter_type, rhythm_issues
+from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_content, chapter_type, rhythm_issues
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
@@ -214,16 +214,21 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             )
         exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= 2}
         for number in sorted(exhausted - locked):
-            current = [deepcopy(originals[number]) if integer(row.get("number")) == number else row for row in current]
+            original = deepcopy(originals[number])
+            observed = chapter_type(align_label_to_content(original))
+            relabelled = bool(observed and observed != chapter_type(original))
+            fallback = align_label_to_content(original) if relabelled else original
+            current = [fallback if integer(row.get("number")) == number else row for row in current]
             locked.add(number)
-            rhythm_replans.append(
-                dict(
-                    number=number,
-                    attempts=rhythm_attempts[number],
-                    action="kept_original",
-                    reason=[issue for issue in issues if number in issue.get("targets", [])],
-                )
+            decision = dict(
+                number=number,
+                attempts=rhythm_attempts[number],
+                action="kept_original_relabelled" if relabelled else "kept_original",
+                reason=[issue for issue in issues if number in issue.get("targets", [])],
             )
+            if relabelled:
+                decision["content_type"] = chapter_type(fallback)
+            rhythm_replans.append(decision)
         if exhausted:
             deterministic = (
                 diversity_issues(history, current)

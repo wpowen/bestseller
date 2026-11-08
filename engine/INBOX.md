@@ -708,7 +708,7 @@
 
 ## 2026-11-08-47：金手指决定结果的证据几乎全是 Unknown（用户 2026-11-08：“写并并行启动”）
 
-状态：执行中（用户 2026-11-08：“写并并行启动”）
+状态：已验收，已合并进 main（2026-11-08）。书库 0 改动。根因三处：能力名称表漏了卷级子能力；因果判断只认“使/令/让/因此……”等固定连接词；否定词按整段匹配，把“没有立刻借”误判成没用能力。修后 eval-45 可核 3→11、Unknown 46→38，eval-39 保持 13/37 不退化；人工抽查 10 章引文站得住。剩下的 Unknown 主要是模型返回的 action/result 引文为空或不完整（约 22 章），按规定不猜。
 
 文件归属：
 - 可改：`engine/bookengine/core_evidence.py`、`engine/bookengine/core_ability.py`、`engine/bookengine/ability_methods.py`、`engine/bookengine/plot_observations.py`、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

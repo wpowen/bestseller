@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 import re
 
+from .ability_methods import ability_terms, normalized_ability_term
 from .solution_substance import rows
 from .quote_text import literal_quote
 
@@ -25,6 +26,7 @@ def core_source(bible):
         name=power.get("name") or power.get("object") or power.get("rule") or bible.get("title", ""),
         title=bible.get("title", ""),
         power=power,
+        aliases=sorted(ability_terms(bible)),
     )
 
 
@@ -132,6 +134,66 @@ def ability_issues(bible, history, batch):
     return issues
 
 
+_OPERATION = r"借用?|运用|动用|使出|施展|发动|催动|激活"
+_NON_USE = (
+    r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|不(?:再|曾)?(?:借|使用|运用|动用|使出|施展|发动|催动|激活)"
+)
+_TRANSFER = re.compile(
+    r"(?:契约|契纹|兽纹|牵引|热意|力量)[^。！？\n]{0,30}(?:发亮|发热|涌来|涌入|冲入|灌入|进入|贯入|渡入|连接|穿过)"
+    r"|(?:发亮|发热|涌来|涌入|冲入|灌入|进入|贯入|渡入|连接|穿过)[^。！？\n]{0,20}(?:契约|契纹|经脉|双腿|身体|骨)"
+)
+_CONCRETE_RESULT = re.compile(
+    r"打开|推开|弹开|震开|裂开|破开|崩裂|崩断|炸裂|炸开|打穿|塌陷|坠入|吞入|穿过|冲出|"
+    r"逃出|脱身|驶离|腾出|露出|拔出|脱开|升起|救出|救下|击退|震退|逼退|倒下|断开|斩断|"
+    r"烧断|熄灭|封住|守住|截断|反锁|闭合|辨出|看见|变得分明|转头|转过岔道|已经到了|"
+    r"失去控制|不再受控|活着抵达|被放出"
+)
+_RESULT_PENDING = re.compile(r"(?:下一刻|结果|结局|胜负|冲突)尚未落定|结果未定|未能结束|仍未解决|尚未解决|没有结束")
+
+
+def _positive_operation(action, mechanism):
+    if not isinstance(action, str) or not isinstance(mechanism, str):
+        return False
+    pattern = re.compile(r"(?:" + _OPERATION + r")[^。！？\n]{0,18}" + re.escape(mechanism))
+    for match in pattern.finditer(action):
+        prefix = action[max(0, match.start() - 10) : match.start()]
+        prefix = re.sub(r"(?:没有|并未|不曾|未曾|尚未)(?:再|曾|丝毫)?(?:犹豫|迟疑|回头|止步|停顿|停步)", "", prefix)
+        if not re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|尝试|不$", prefix):
+            return True
+    if mechanism.startswith(("借", "催", "御")):
+        for match in re.finditer(re.escape(mechanism), action):
+            prefix = action[max(0, match.start() - 10) : match.start()]
+            prefix = re.sub(r"(?:没有|并未|不曾|未曾|尚未)(?:再|曾|丝毫)?(?:犹豫|迟疑|回头|止步|停顿|停步)", "", prefix)
+            if not re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备|尝试|不$", prefix):
+                return True
+    transferred = re.search(
+        re.escape(mechanism) + r"[^。！？\n]{0,18}(?:传来|铺开|送入|引入|涌来|涌入|冲入|灌入|进入|贯入|渡入|流入)",
+        action,
+    ) or re.search(r"(?:触到|接通)[^。！？\n]{0,8}" + re.escape(mechanism), action)
+    borrowed = re.search(r"借来的[^。！？\n]{0,40}(?:而是|正是)[^。！？\n]{0,12}" + re.escape(mechanism), action)
+    return mechanism in action and bool(_TRANSFER.search(action) or transferred or borrowed)
+
+
+def _ordered_concrete_result(text, action, outcome, mechanism):
+    if not _positive_operation(action, mechanism) or not _CONCRETE_RESULT.search(outcome):
+        return False
+    action_start, outcome_start = text.find(action), text.find(outcome)
+    if action_start < 0 or outcome_start < action_start:
+        return False
+    gap = max(0, outcome_start - (action_start + len(action)))
+    return gap <= 1500
+
+
+def _ineffective(action, outcome, reported, mechanism):
+    pattern = r"失败|失效|无效|未能|没能|毫无作用|不起作用|改用|转而|另用|尝试"
+    if re.search(pattern, action):
+        return True
+    if not re.search(pattern, outcome):
+        return False
+    names = [name for name in (reported, mechanism) if isinstance(name, str) and name]
+    return any(name in outcome for name in names) or bool(re.search(r"改用|转而|另用", outcome))
+
+
 def verify_core_use(raw, text, bible):
     """Literal evidence plus explicit causal result; semantic authority remains agent review."""
     source = core_source(bible)
@@ -140,32 +202,36 @@ def verify_core_use(raw, text, bible):
     if not source:
         return dict(result, reason="no_core_source")
     action, outcome = (literal_quote(text, raw.get(k)) for k in ("action_quote", "result_quote"))
-    mechanism = raw.get("mechanism")
     grounded = all(isinstance(q, str) and len(q.strip()) >= 8 and q in text for q in (action, outcome))
-    named = (
-        isinstance(mechanism, str)
-        and len(mechanism) >= 2
-        and mechanism in json.dumps(source, ensure_ascii=False)
-        and grounded
-        and mechanism in action
-    )
-    causal = grounded and bool(re.search(r"使|令|让|因此|从而|终于|迫使|才|随之|于是", outcome))
+    reported_mechanism = raw.get("mechanism")
+    mechanism = normalized_ability_term(bible, reported_mechanism, action) if grounded else None
+    named = isinstance(mechanism, str) and len(mechanism) >= 2 and mechanism in json.dumps(source, ensure_ascii=False)
+    positive = grounded and named and _positive_operation(action, mechanism)
+    concrete = grounded and bool(_CONCRETE_RESULT.search(outcome)) and not _RESULT_PENDING.search(outcome)
+    connector = grounded and bool(re.search(r"使|令|让|因此|从而|终于|迫使|才|随之|于是", outcome))
+    ordered = grounded and named and _ordered_concrete_result(text, action, outcome, mechanism)
+    causal = concrete and positive and (connector or ordered)
     # These ordinary actions do not negate use of the ability. All other existing
     # non-use, intent and failure exclusions remain conservative.
     denial_text = re.sub(
         r"(?:没有|并未|不曾|未曾|尚未)(?:再|曾|丝毫)?(?:犹豫|迟疑|回头|止步|停顿|停步)", "", action or ""
     )
-    negative = grounded and bool(
-        re.search(r"没有|并未|不曾|未曾|尚未|如果|假如|想起|打算|准备", denial_text)
-        or re.search(r"不(?:再|曾)?(?:借|使用|运用|动用|使出|施展|发动|催动|激活)", denial_text)
-    )
+    negative = grounded and bool(re.search(_NON_USE, denial_text)) and not _positive_operation(action, mechanism)
     if raw.get("decisive") is False and grounded:
         return dict(result, status="not_decisive", action_quote=action, result_quote=outcome)
-    ineffective = grounded and bool(
-        re.search(r"失败|失效|无效|未能|没能|毫无作用|不起作用|改用|转而|另用|尝试", action + outcome)
-    )
+    ineffective = grounded and _ineffective(action, outcome, reported_mechanism, mechanism)
     if raw.get("decisive") is True and named and causal and not negative and not ineffective:
-        return dict(result, status="verified", action_quote=action, result_quote=outcome, evidence_status="Evidence")
+        basis = "explicit_causal_connector" if connector else "ordered_grounded_operation_and_concrete_result"
+        return dict(
+            result,
+            status="verified",
+            action_quote=action,
+            result_quote=outcome,
+            evidence_status="Evidence",
+            causal_basis=basis,
+            mechanism=mechanism,
+            reported_mechanism=reported_mechanism,
+        )
     return dict(result, reason="missing_or_noncausal_verbatim_evidence")
 
 

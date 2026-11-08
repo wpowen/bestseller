@@ -140,6 +140,13 @@ def test_eval49_pronoun_subject_carries_only_through_a_bound_pronoun_sentence():
     assert [(row["observed"], row["expected"]) for row in findings] == [("她", "他"), ("她", "他"), ("她", "他")]
 
 
+def test_named_man_looking_at_a_woman_does_not_bind_her_next_pronoun_to_him():
+    value = bible()
+    text = "顾冬岚看向她。她脸色苍白，却没有退缩。顾冬岚抬眼。她将铜片收回袖中。"
+
+    assert cast_findings(text, value, chapter=3) == []
+
+
 def test_eval49_pronoun_repair_targets_the_shared_finding_and_passes_recheck():
     value = bible()
     value["characters"][0].update(name="顾昕冉", gender="男")

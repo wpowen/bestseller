@@ -68,7 +68,14 @@ def _subject_bound(sentence, name):
     stripped = sentence.strip(" \t\r\n“”‘’\"'")
     if re.search(r"(?:竟|原来|正|却)?是" + re.escape(name) + r"[。！？!?]?$", stripped):
         return True
-    return stripped.startswith(name)
+    if not stripped.startswith(name):
+        return False
+    predicate = stripped[len(name) :]
+    return bool(
+        re.search(r"被[^。！？]{0,30}(?:拽|拖|压|击|撞|抓|绑|困|推|拉|卷|刺|砸|扯)", predicate)
+        or re.match(r"(?:没有|没|未)(?:答|回答|接话|开口|出声|回应)", predicate)
+        or re.match(r"(?:从|沿|穿过)[^。！？]{0,60}(?:折返|返回|回到|离开|赶到|抵达|走|跑)", predicate)
+    )
 
 
 def _pronoun_findings(text, cards, chapter, spans):

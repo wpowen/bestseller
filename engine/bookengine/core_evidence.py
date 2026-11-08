@@ -4,6 +4,7 @@ import json
 import re
 
 from .ability_methods import ability_terms
+from .client import ContentRejected
 from .core_ability import core_source, verify_core_use
 from .promise_io import precise_ask
 from .storage import save
@@ -116,21 +117,12 @@ def observe_core_use(raw, text, bible, plan, client, prefix, ask):
     if not core_source(bible) or not any(k in plan for k in ("core_required", "core_application")):
         return result
     if result["status"] == "unknown" and core_source(bible):
-        response = precise_ask(
-            ask,
-            client,
-            prefix + "-core-evidence-review",
-            "只核对正文实际核心能力操作与决定结果，不修改正文。章纲仅用于查找；"
-            "复制连续原文action_quote/result_quote，mechanism须圣经原词且出现在操作引文；"
-            "结果需明确因果；否定、计划、失败、普通工具替代不能算成功。无证据填null。",
-            [
-                ("只读本章能力计划", json.dumps(result["plan"], ensure_ascii=False)),
-                ("核心能力", json.dumps(core_source(bible), ensure_ascii=False)),
-                ("完整正文", text),
-            ],
-            '{"decisive":null,"mechanism":null,"action_quote":null,"result_quote":null}',
-            cap=1800,
-        )
+        try:
+            response = _review(result, text, bible, client, prefix, ask)
+        except ContentRejected as exc:
+            result = dict(result, fallback_attempted=True, fallback_skipped=str(exc)[:200])
+            save(client.out / "steps" / f"{prefix}-core-evidence.json", result)
+            return result
         result = dict(
             read_core_use(response, text, bible, plan),
             prior_extraction=raw,
@@ -139,3 +131,21 @@ def observe_core_use(raw, text, bible, plan, client, prefix, ask):
         )
     save(client.out / "steps" / f"{prefix}-core-evidence.json", result)
     return result
+
+
+def _review(result, text, bible, client, prefix, ask):
+    return precise_ask(
+        ask,
+        client,
+        prefix + "-core-evidence-review",
+        "只核对正文实际核心能力操作与决定结果，不修改正文。章纲仅用于查找；"
+        "复制连续原文action_quote/result_quote，mechanism须圣经原词且出现在操作引文；"
+        "结果需明确因果；否定、计划、失败、普通工具替代不能算成功。无证据填null。",
+        [
+            ("只读本章能力计划", json.dumps(result["plan"], ensure_ascii=False)),
+            ("核心能力", json.dumps(core_source(bible), ensure_ascii=False)),
+            ("完整正文", text),
+        ],
+        '{"decisive":null,"mechanism":null,"action_quote":null,"result_quote":null}',
+        cap=1800,
+    )

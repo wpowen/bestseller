@@ -19,6 +19,7 @@ from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_st
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
+from .content_guard import guarded
 from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
@@ -214,7 +215,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, boundaries, handoff = repair_opening(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, opponent_repair = repair_retired(
+    text, raw, failed, opponent_repair = guarded(repair_retired)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     from .q1_continuity import boundary_facts
@@ -229,22 +230,22 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         from .q1_continuity import boundary_facts
 
         boundaries = boundary_facts(raw, text)
-    text, raw, failed, repetition["repair"] = repair_repetitions(
+    text, raw, failed, repetition["repair"] = guarded(repair_repetitions)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, exit_tail_repair = repair_exit_tail(
+    text, raw, failed, exit_tail_repair = guarded(repair_exit_tail)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, promise_review = repair_opening_promises(
+    text, raw, failed, promise_review = guarded(repair_opening_promises)(
         client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
     )
-    text, raw, failed, _ = repair_after_draft(
+    text, raw, failed, _ = guarded(repair_after_draft)(
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
-    text, raw, failed, notes["cast_consistency"] = repair_cast_consistency(
+    text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, cleaning["text_hygiene"] = repair_text(
+    text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)

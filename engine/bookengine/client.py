@@ -56,6 +56,21 @@ class Retryable(ValueError):
         self.delay = delay
 
 
+class ContentRejected(ProjectError):
+    """The provider's content moderation refused this request (MiniMax 1026/1027)."""
+
+
+_REJECTED = re.compile(r"new_sensitive|\b102[67]\b")
+CONTENT_ATTEMPTS = 3
+RESTRAINT_NOTE = (
+    "\n上次输出被平台内容审核拒绝。请保持原有情节与事实，用更克制的写法：不写血腥、残肢和酷刑细节，暴力只写动作与后果。"
+)
+
+
+def _rejected(code, message):
+    return bool(_REJECTED.search(f"{code} {message}"))
+
+
 class NetworkRetry(Retryable):
     pass
 
@@ -170,6 +185,9 @@ class Client:
                 if kind == "waiting":
                     entry["status"] = "provider_wait"
                     raise NetworkRetry(f"{getattr(self, 'provider', 'MiniMax')} {code}: {message}")
+                if _rejected(code, message):
+                    entry["status"] = "content_rejected"
+                    raise ContentRejected(f"{stage}: {getattr(self, 'provider', 'MiniMax')} {code}: {message}")
                 raise ProjectError(f"{stage}: {getattr(self, 'provider', 'MiniMax')} {code}: {message}")
             if not content_of(result):
                 raise Retryable("empty_return")
@@ -193,6 +211,9 @@ class Client:
             if kind == "waiting" or exc.code in (408, 429) or 500 <= exc.code < 600:
                 delay = (exc.headers or {}).get("Retry-After", "0")
                 raise NetworkRetry(f"http_{exc.code}: {message}", retry_after(delay)) from None
+            if _rejected(code, message):
+                entry["status"] = "content_rejected"
+                raise ContentRejected(f"{stage}: HTTP {exc.code}; {message}") from None
             raise ProjectError(f"{stage}: HTTP {exc.code}; {message}") from None
         except (socket.timeout, TimeoutError, urllib.error.URLError, ConnectionError, HTTPException) as exc:
             entry["status"] = "transport_error"
@@ -318,6 +339,7 @@ class Client:
         attempt = len(previous)
         max_attempts += output_failures
         detail = "invalid output"
+        rejections = 0
         while output_failures < max_attempts:
             attempt += 1
             try:
@@ -346,6 +368,12 @@ class Client:
                     error=str(exc),
                 )
                 self.wait_network(name, network, retry_path)
+            except ContentRejected as exc:
+                rejections += 1
+                if rejections >= CONTENT_ATTEMPTS:
+                    write_runtime(self.out, "error", name, error=str(exc))
+                    raise
+                full = base_full + RESTRAINT_NOTE
             except (QuotaExhausted, ProjectError) as exc:
                 kind = "quota_exhausted" if isinstance(exc, QuotaExhausted) else "error"
                 write_runtime(self.out, kind, name, error=str(exc))

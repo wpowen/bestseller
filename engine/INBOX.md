@@ -776,7 +776,7 @@
 
 ## 2026-11-08-51：章内检查和整书体检口径统一——人物代词、单句重复、伙伴角色定位（用户 2026-11-08：“规划改内容”，监工随批次起草）
 
-状态：执行中（随第 50 条并行）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/cast_consistency.py`、`engine/bookengine/text_hygiene.py`、`engine/bookengine/prose_repetition.py`、`engine/bookengine/identity.py`、`engine/bookengine/q1_prepare.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

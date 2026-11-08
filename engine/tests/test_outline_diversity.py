@@ -10,12 +10,17 @@ from bookengine.storage import save
 
 
 def outline(n, title, conflict="资源争夺"):
+    kind = "情感" if n % 4 == 0 else "对抗"
+    goal = "修复同伴间的信任" if kind == "情感" else "击退追兵拿回行李"
+    choice = "坦白隐瞒并重新约定分工" if kind == "情感" else "冒险突围"
     return dict(
         number=n,
         title=title,
         conflict_type=conflict,
         opening_conflict="想拿回行李",
-        scenes=[dict(where="河岸", goal="拿回行李", choice="冒险")],
+        type=kind,
+        rhythm_type=kind,
+        scenes=[dict(where="河岸", goal=goal, choice=choice)],
     )
 
 

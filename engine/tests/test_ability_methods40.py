@@ -81,7 +81,7 @@ def test_old_plan_cache_rechecks_new_ability_cap_and_preserves_exhaustion(tmp_pa
     ]
     save(
         tmp_path / "outline-diversity/001-003.json",
-        dict(status="passed", structure_checks_version=6, chapters=rows, planned_chapters=rows, plot_history=[]),
+        dict(status="passed", structure_checks_version=5, chapters=rows, planned_chapters=rows, plot_history=[]),
     )
     client = OfflineClient(tmp_path, [dict(chapters=[dict(rows[2], solution_target="铁窗")])] * 3)
     result = q1_plan.outlines(client, bible, {}, DATA["profile"], dict(number=1, start=1, end=5), 1, 3, {}, [], [], [])

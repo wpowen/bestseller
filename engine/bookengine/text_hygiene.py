@@ -204,6 +204,8 @@ def _apply_targeted_edits(text, targets, value):
         replacement = proposed.get("text")
         if target is None or not isinstance(replacement, str) or "\n" in replacement or "\r" in replacement:
             continue
+        if target["kind"] == "exact_paragraph":
+            replacement = ""
         if not replacement.strip() and "paragraph" not in target["kind"]:
             continue
         seen.add(target["id"])
@@ -219,6 +221,15 @@ def _apply_targeted_edits(text, targets, value):
 def _last_paragraph(text):
     spans = _paragraph_spans(text)
     return text[spans[-1][0] : spans[-1][1]] if spans else ""
+
+
+def _quote_balance_worse(before, after):
+    if any(
+        abs(after.count(left) - after.count(right)) > abs(before.count(left) - before.count(right))
+        for left, right in (("“", "”"), ("「", "」"), ("『", "』"))
+    ):
+        return True
+    return after.count('"') % 2 > before.count('"') % 2
 
 
 def repair_text(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
@@ -256,6 +267,8 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
                 attempted_edits=edits,
             ),
         )
+    if _quote_balance_worse(text, candidate):
+        return text, raw, failed, dict(note, status="rolled_back", reason="punctuation_recheck_failed")
     names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
     if _last_paragraph(candidate) != _last_paragraph(text) or any(
         name in text and name not in candidate for name in names

@@ -121,6 +121,57 @@ def test_writer_repair_rolls_back_when_hygiene_recheck_fails():
     assert note["reason"] == "hygiene_recheck_failed"
 
 
+def test_writer_repair_rolls_back_when_quote_balance_gets_worse():
+    text = "顾川序说：“这不是 unquestioning 的归属。”\n\n霜砚秋抬头看他。"
+    extracted = []
+
+    def ask(*args, **kwargs):
+        target = json.loads(dict(args[3])["卫生命中"])[0]
+        return {"edits": [{"id": target["id"], "text": "顾川序说：“这不是无条件的归属。"}]}
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch31",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾川序"}]},
+        {"number": 31},
+        lambda *args, **kwargs: extracted.append(True),
+        ask,
+    )
+
+    assert result == text and extracted == []
+    assert note["status"] == "rolled_back" and note["reason"] == "punctuation_recheck_failed"
+
+
+def test_exact_duplicate_target_is_deleted_instead_of_paraphrased():
+    repeated = "陆烈收拾好刀，走到岩口却没有立刻下山。"
+    text = f"{repeated}\n\n众人先走。\n\n{repeated}\n\n顾川序抬头看向雪坡。"
+
+    def ask(*args, **kwargs):
+        target = json.loads(dict(args[3])["卫生命中"])[0]
+        return {"edits": [{"id": target["id"], "text": "陆烈把刀收好，暂时没有下山。"}]}
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch24",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "陆烈"}, {"name": "顾川序"}]},
+        {"number": 24},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        ask,
+    )
+
+    assert result.count(repeated) == 1
+    assert "陆烈把刀收好" not in result
+    assert note["status"] == "repaired"
+
+
 def test_q1_chapter_runs_hygiene_before_saving(monkeypatch):
     from bookengine import q1_chapter
     from support_minimal_b import CaptureClient, MinimalBTests, body

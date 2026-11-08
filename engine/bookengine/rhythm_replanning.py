@@ -25,7 +25,7 @@ def _outline_summary(row):
     return result
 
 
-def replan_context(history, batch, targets, observed=(), *, stage_start=0, stage_end=0):
+def replan_context(history, batch, targets, observed=(), required=(), *, stage_start=0, stage_end=0):
     """Return bounded neighboring plans plus already observed facts for targeted rewrites."""
     combined = {integer(row.get("number")): row for row in [*history, *batch] if integer(row.get("number"))}
     neighbor_numbers = {
@@ -34,8 +34,27 @@ def replan_context(history, batch, targets, observed=(), *, stage_start=0, stage
     facts = [
         deepcopy(row) for row in observed if stage_start <= integer(row.get("number", row.get("chapter"))) <= stage_end
     ]
+    requirements = {integer(row.get("number")): chapter_type(row) or row.get("rhythm_type", "") for row in required}
+    target_replans = []
+    for number in sorted(targets):
+        original = _outline_summary(combined.get(number, {}))
+        target_replans.append(
+            dict(
+                number=number,
+                required_type=requirements.get(number, ""),
+                original_content=original,
+                before_summary=_outline_summary(combined.get(number - 1, {})).get("summary", ""),
+                after_summary=_outline_summary(combined.get(number + 1, {})).get("summary", ""),
+                must_preserve={
+                    field: deepcopy(combined.get(number, {}).get(field))
+                    for field in ("threads", "required_event", "payoff", "payoff_type", "hook", "ending_content")
+                    if combined.get(number, {}).get(field) not in (None, "", [])
+                },
+            )
+        )
     return dict(
         neighbor_outlines=[_outline_summary(combined[number]) for number in sorted(neighbor_numbers)],
+        target_replans=target_replans,
         observed_stage_facts=facts,
     )
 

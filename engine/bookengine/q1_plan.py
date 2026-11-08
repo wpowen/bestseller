@@ -22,13 +22,7 @@ from .ability_methods import primary_target
 from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
-from .chapter_rhythm import (
-    rhythm_issues,
-    apply_contract,
-    chapter_type,
-    VERSION as RHYTHM_VERSION,
-    RULE as RHYTHM_RULE,
-)
+from .chapter_rhythm import RULE as RHYTHM_RULE, VERSION as RHYTHM_VERSION, apply_contract, chapter_type, rhythm_issues
 from .rhythm_skeleton import stage_content_skeleton
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
@@ -390,6 +384,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             current,
             targets,
             observed,
+            scene_slots,
             stage_start=integer(volume.get("start"), start),
             stage_end=integer(volume.get("end"), end),
         )
@@ -410,7 +405,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("每章重写两场场景，冲突、障碍、选择和行动后果必须与要求章型一致", targets),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
-                ("目标章前后章摘要与本阶段已发生事实，只能承接不能改写", context),
+                ("目标章原内容、要求章型、前后章摘要与必须保留事实，只能改目标章", context),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
                 (
                     "阶段首章必须带transition：从上阶段终点到新阶段的移动、时间与原因，落实于开头300字",

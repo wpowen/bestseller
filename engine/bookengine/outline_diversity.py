@@ -12,7 +12,7 @@ from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
 from .core_ability import ability_issues
-from .chapter_rhythm import VERSION as RHYTHM_VERSION, rhythm_issues, repair_rhythm
+from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, chapter_type, rhythm_issues
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
@@ -167,21 +167,30 @@ def terminal_window(out, start, end):
     return None
 
 
-def repair_batch(out, key, history, batch, rewrite, bible=None):
+def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(), model_review=()):
     """Only replace offending current chapters; persist decisions for no-call recovery."""
     path = Path(out) / "outline-diversity" / (key + ".json") if out is not None else None
-    current, attempts, resume, rhythm_repairs = deepcopy(batch), [], 0, []
+    current, original = deepcopy(batch), deepcopy(batch)
+    attempts, resume, rhythm_replans = [], 0, []
+    rhythm_attempts, model_resolved, locked = {}, set(), set()
     if path and path.exists():
         report = json.loads(path.read_text())
         if report["status"] != "repairing":
             return report["chapters"]
         current = report["chapters"]
+        original = report.get("original_chapters", original)
         resume = report["attempts"][-1]["regeneration"]
         attempts = report["attempts"][:resume]
-        rhythm_repairs = report.get("rhythm_repairs", [])
+        rhythm_replans = report.get("rhythm_replans", [])
+        rhythm_attempts = {int(k): int(v) for k, v in report.get("rhythm_replan_attempts", {}).items()}
+        model_resolved = set(report.get("rhythm_model_resolved", []))
+        locked = set(report.get("rhythm_locked", []))
+        initial_issues = report.get("initial_rhythm_issues", initial_issues)
+        model_review = report.get("rhythm_model_review", model_review)
+    originals = {integer(row.get("number")): deepcopy(row) for row in original}
     used = used_vocabulary(history)
     for retry in range(resume, 4):
-        issues = (
+        deterministic = (
             diversity_issues(history, current)
             + opponent_presence_issues(bible or {}, current)
             + planning_transition_issues(bible or {}, current)
@@ -189,7 +198,43 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
             + ability_issues(bible or {}, history, current)
             + rhythm_issues(bible or {}, history, current)
         )
-        targets = sorted({n for issue in issues for n in issue["targets"]})
+        pending_model = [
+            issue
+            for issue in initial_issues
+            if any(number not in model_resolved and number not in locked for number in issue.get("targets", []))
+        ]
+        issues = deterministic + [issue for issue in pending_model if issue not in deterministic]
+        rhythm_targets = {
+            number for issue in issues if issue["kind"].startswith("rhythm_") for number in issue.get("targets", [])
+        }
+        recorded = {row["number"] for row in rhythm_replans}
+        for number in sorted(set(rhythm_attempts).difference(rhythm_targets, locked, recorded)):
+            rhythm_replans.append(
+                dict(number=number, attempts=rhythm_attempts[number], action="accepted_model_replan", reason=[])
+            )
+        exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= 2}
+        for number in sorted(exhausted - locked):
+            current = [deepcopy(originals[number]) if integer(row.get("number")) == number else row for row in current]
+            locked.add(number)
+            rhythm_replans.append(
+                dict(
+                    number=number,
+                    attempts=rhythm_attempts[number],
+                    action="kept_original",
+                    reason=[issue for issue in issues if number in issue.get("targets", [])],
+                )
+            )
+        if exhausted:
+            deterministic = (
+                diversity_issues(history, current)
+                + opponent_presence_issues(bible or {}, current)
+                + planning_transition_issues(bible or {}, current)
+                + solution_issues(bible or {}, history, current)
+                + ability_issues(bible or {}, history, current)
+                + rhythm_issues(bible or {}, history, current)
+            )
+            issues = deterministic + [issue for issue in pending_model if issue not in deterministic]
+        targets = sorted({number for issue in issues for number in issue["targets"] if number not in locked})
         attempts.append(dict(regeneration=retry, issues=issues, targets=targets))
         if retry == 3:
             for issue in issues:
@@ -202,7 +247,6 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
                         if isinstance(scene.get("characters"), list):
                             scene["characters"] = [n for n in scene["characters"] if n not in issue["labels"]]
                     chapter.setdefault("background_only", []).append(issue["name"])
-            current, rhythm_repairs = repair_rhythm(bible or {}, history, current)
             # Recheck every contract after scene rewriting, without laundering old failures as passed.
             final_issues = (
                 diversity_issues(history, current)
@@ -215,11 +259,19 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
             # Existing cleanup warnings stay auditable even if removing a retired name cleared them.
             issues = [i for i in issues if not i["kind"].startswith("rhythm_")]
             issues += [i for i in final_issues if i not in issues]
+        terminal = retry == 3 or bool(issues and not targets)
         report = dict(
             structure_checks_version=STRUCTURE_CHECKS_VERSION,
             rhythm_contract_version=RHYTHM_VERSION,
-            rhythm_repairs=rhythm_repairs,
-            status="passed" if not issues else "failed_continued" if retry == 3 else "repairing",
+            rhythm_repairs=[],
+            rhythm_replans=rhythm_replans,
+            rhythm_replan_attempts={str(k): v for k, v in sorted(rhythm_attempts.items())},
+            rhythm_model_review=list(model_review),
+            rhythm_model_resolved=sorted(model_resolved),
+            rhythm_locked=sorted(locked),
+            initial_rhythm_issues=list(initial_issues),
+            original_chapters=original,
+            status="passed" if not issues else "failed_continued" if terminal else "repairing",
             used=used,
             attempts=attempts,
             issues=issues,
@@ -227,12 +279,15 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
         )
         if path:
             save(path, report)
-        if not issues or retry == 3:
+        if not issues or terminal:
             break
         raw = rewrite(current, issues, targets, used, retry + 1)
         source = rows(raw.get("chapters")) if isinstance(raw, dict) else rows(raw)
         replacements = {integer(r.get("number")): r for r in source}
         conflict_targets = {n for issue in issues if issue["kind"] == "conflict_run" for n in issue["targets"]}
+        attempted_rhythm = rhythm_targets.intersection(targets)
+        for number in attempted_rhythm:
+            rhythm_attempts[number] = rhythm_attempts.get(number, 0) + 1
         for index, old in enumerate(current):
             number = integer(old.get("number"))
             if number not in targets or number not in replacements:
@@ -242,6 +297,20 @@ def repair_batch(out, key, history, batch, rewrite, bible=None):
                 proposed.get(k) == old.get(k) for k in ("opening_conflict", "scenes", "payoff", "hook")
             ):
                 continue
+            if number in attempted_rhythm and all(
+                proposed.get(k) == old.get(k) for k in ("opening_conflict", "conflict", "scenes", "payoff", "hook")
+            ):
+                continue
             proposed["title_keywords"] = title_terms(proposed.get("title"), replacements[number].get("title_keywords"))
+            if number in attempted_rhythm:
+                kind = chapter_type(proposed)
+                proposed.update(
+                    rhythm_type=kind,
+                    rhythm_focus=replacements[number].get("rhythm_focus")
+                    or FOCUS.get(kind, "保留本章主场景行动与人物选择"),
+                    rhythm_contract_version=RHYTHM_VERSION,
+                )
             current[index] = proposed
+            if number in attempted_rhythm:
+                model_resolved.add(number)
     return current

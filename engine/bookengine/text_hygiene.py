@@ -258,7 +258,7 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
         )
     names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
     if _last_paragraph(candidate) != _last_paragraph(text) or any(
-        candidate.count(name) < text.count(name) for name in names
+        name in text and name not in candidate for name in names
     ):
         return text, raw, failed, dict(note, status="rolled_back", reason="character_or_ending_changed")
     checked, invalid, _ = extract(

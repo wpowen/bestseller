@@ -81,7 +81,7 @@ def test_writer_repair_changes_only_targets_then_rechecks_state():
         {"events": []},
         False,
         {},
-        {"characters": [{"name": "顾川序"}]},
+        {"characters": [{"name": "顾川序"}, {"name": "陆烈"}]},
         {"number": 24},
         lambda *args, **kwargs: (extracted, False, 0),
         ask,

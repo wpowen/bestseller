@@ -25,6 +25,7 @@ from .q1_repetition import repair_repetitions
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
+from .text_hygiene import repair_text
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -241,6 +242,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
     text, raw, failed, notes["cast_consistency"] = repair_cast_consistency(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["text_hygiene"] = repair_text(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)

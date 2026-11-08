@@ -350,6 +350,7 @@ def check_book(book, *, source="final"):
     from bookengine.retired_opponents import location_regression
     from bookengine.prose_repetition import clean_repetitions
     from bookengine.prose_similarity import analyze_prose, RULES
+    from bookengine.text_hygiene import summarize_chapters
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
     from bookengine.address_contracts import address_checkup
@@ -427,6 +428,7 @@ def check_book(book, *, source="final"):
             status="Inference",
             chapters=[r for r in similarity if r["records"]],
         ),
+        text_hygiene=summarize_chapters(chapters),
         format_residue=dict(
             total=sum(c["total"] for c in residue),
             chapters=[c for c in residue if c["total"]],

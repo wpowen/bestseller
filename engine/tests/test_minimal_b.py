@@ -273,7 +273,7 @@ class MinimalBTestsPart1(MinimalBTests):
             head, tail = label + "开头独标。" + fact, label + "完整末尾证据。"
             return head + filler * (2200 - q1.chinese_count(head + tail)) + tail
 
-        previous, current = long_body("上章", "甲"), long_body("本章", "乙")
+        previous, current = long_body("上章", "甲"), long_body("眼前", "乙")
         self.book = Book("suspense-mystery", 25, 2200, "USER_INPUT_SENTINEL")
         carry = self.extraction(state={"objects": {"旧钥匙": {"owner": "阿宁", "location": "院"}}})
         current_raw = self.extraction(
@@ -304,7 +304,7 @@ class MinimalBTestsPart1(MinimalBTests):
         self.assertIn(number_paragraphs(current), finish)
         self.assertIn(previous, finish)
         self.assertIn("上章完整末尾证据。", finish)
-        self.assertIn("本章完整末尾证据。", finish)
+        self.assertIn("眼前完整末尾证据。", finish)
         self.assertIn("## 上章失败顺带补提", finish)
         self.assertLess(len(finish), 10000)
         self.assertTrue(load(self.out / "steps/r2-ch2-finish.json")["_previous_complete"])

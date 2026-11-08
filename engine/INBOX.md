@@ -776,7 +776,7 @@
 
 ## 2026-11-08-51：章内检查和整书体检口径统一——人物代词、单句重复、伙伴角色定位（用户 2026-11-08：“规划改内容”，监工随批次起草）
 
-状态：开发完成，待监工验收
+状态：已验收，已合并进 main（2026-11-08）。书库 0 改动。章内检查与整书体检共用同一套代词/身份判断；新增同章整句重复检测与定向删除；非人伙伴不能标为 romance。eval-49 修前→修后（离线）：确定的性别代词错误 9→0、句重复 3→0、伙伴误标 1→0；真实模型修复第 6、19、20、21、26 章全部通过复检。指代不清的代词仍为 Unknown。
 
 文件归属：
 - 可改：`engine/bookengine/cast_consistency.py`、`engine/bookengine/text_hygiene.py`、`engine/bookengine/prose_repetition.py`、`engine/bookengine/identity.py`、`engine/bookengine/q1_prepare.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

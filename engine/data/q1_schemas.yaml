@@ -178,6 +178,8 @@ instructions:
     每章payoff_due/payoff_type按排期，必须让两场戏实际通向该结果。solution_type从canon菜单选择本世界已有且未在近30章用过的破局机理，无破局为null；不要为菜单强加新规则或装置，不强迫每章破局。
 
     本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。'
+  rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。以goal/choice/action/result实际发生什么为准，obstacle里提到战斗不等于对抗主章。
+    content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感章必须以两个人物关系发生变化为主，不能以交战、突围、追杀为主。reason一句话说明主要场景依据。'
 schemas:
   continuation:
     bible:
@@ -361,6 +363,12 @@ schemas:
       opening_conflict: ''
       callback_events: []
       solution_type: null
+  rhythm_review:
+    chapters:
+    - number: 1
+      content_type: ''
+      status: unknown
+      reason: ''
 plan_card_fields:
 - name
 - role

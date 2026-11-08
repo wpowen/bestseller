@@ -25,7 +25,6 @@ from .character_context import schedule_catchphrases
 from .chapter_rhythm import (
     rhythm_slots,
     rhythm_issues,
-    repair_rhythm,
     apply_contract,
     chapter_type,
     VERSION as RHYTHM_VERSION,
@@ -41,6 +40,7 @@ from .outline_diversity import (
     title_terms,
     conflict_type,
 )
+from .rhythm_replanning import model_review_issues, observed_rows, replan_context, semantic_review
 
 
 def _beats(threads, number, state=None):
@@ -366,7 +366,32 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     for i, item in enumerate(source):
         mapped.setdefault(integer(item.get("number"), start + i), item)
 
+    candidates = []
+    for slot in rhythm:
+        candidate = dict(mapped.get(slot["number"], {}), number=slot["number"])
+        if chapter_type(candidate) not in DATA["profile"]["chapter_type_mix"]:
+            candidate["type"] = slot["type"]
+        candidate.setdefault("rhythm_type", candidate["type"])
+        candidate.setdefault("rhythm_focus", slot["rhythm_focus"])
+        candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
+        candidates.append(candidate)
+
+    key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
+    if superseded:
+        key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
+    review = semantic_review(client, key, candidates)
+    review_issues = model_review_issues(candidates, review)
+    observed = observed_rows(recent, history)
+
     def rewrite(current, issues, targets, vocabulary, attempt):
+        context = replan_context(
+            prior,
+            current,
+            targets,
+            observed,
+            stage_start=integer(volume.get("start"), start),
+            stage_end=integer(volume.get("end"), end),
+        )
         return _ask(
             client,
             "outlines",
@@ -382,7 +407,9 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 ),
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
+                ("每章重写两场场景，冲突、障碍、选择和行动后果必须与要求章型一致", targets),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
+                ("目标章前后章摘要与本阶段已发生事实，只能承接不能改写", context),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
                 (
                     "阶段首章必须带transition：从上阶段终点到新阶段的移动、时间与原因，落实于开头300字",
@@ -397,9 +424,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             attempt,
         )
 
-    key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
-    if superseded:
-        key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
     repaired = (
         cached["chapters"]
         if cached
@@ -407,9 +431,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             getattr(client, "out", None),
             key,
             prior,
-            [dict(mapped.get(slot["number"], {}), number=slot["number"]) for slot in rhythm],
+            candidates,
             rewrite,
             bible=bible,
+            initial_issues=review_issues,
+            model_review=review,
         )
     )
     mapped = {r["number"]: r for r in repaired}
@@ -451,13 +477,13 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ]
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
-    result, final_rhythm_repairs = repair_rhythm(bible, prior, result)
     result = enforce_ability_plan(bible, result)
     result = [schedule_catchphrases(chapter, bible) for chapter in result]
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)
     result = apply_ending_contract(result, stage_end=integer(volume.get("end"), end))
-    if getattr(client, "out", None) and (not cached or final_rhythm_repairs):
+    final_rhythm_issues = rhythm_issues(bible, prior, result)
+    if getattr(client, "out", None) and (not cached or final_rhythm_issues):
         source_path = cached["path"] if cached else None
         if cached:
             key += f"-redo-rhythm{RHYTHM_VERSION}"
@@ -466,7 +492,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         report["rhythm_contract_version"] = RHYTHM_VERSION
         report["plot_history"] = plot_history
         report["plot_issues_after"] = solution_issues(bible, prior, result) + ability_issues(bible, prior, result)
-        report["rhythm_repairs"] = report.get("rhythm_repairs", []) + final_rhythm_repairs
+        report["rhythm_issues_after"] = final_rhythm_issues
         if source_path:
             report.update(source_report=source_path, chapters=result)
         save(path, dict(report, planned_chapters=result))

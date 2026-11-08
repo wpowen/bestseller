@@ -654,3 +654,92 @@
    - 用两次已核对的外部评审（`engine/reports/review-eval33-external.md` 中的结论与核对结果）做夹具：自动核对要能把“主角断臂”判成对不上、把“第 1 章没借招”判成 Evidence。
    - 真实模型：对 eval-33 前 10 章和《借兽之暖》（`/tmp/bestseller-f39-harness-d5ook3ep/trial-50`，先只读复制）前 10 章各跑一次完整流程，报告两本的核对结果对比。
 6. **约束**：遵守 AGENTS.md 护栏，不写真实书库，不打印进程参数和环境变量；不 push。报告写 `engine/reports/review-tool-44.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。
+
+## 并行批次说明（第 45–48 条，2026-11-08）
+
+第 45–48 条由四个 Codex 在不同工作树同时执行，依据是 `engine/reports/eval-45-validation.md`。每条只改自己“文件归属”里允许的文件。`engine/bookengine/q1_chapter.py` 和 `engine/tools/book_checkup.py` 是公共文件：只允许加 import 和一处调用，具体逻辑放在本条新建的模块里。`engine/data/q1_schemas.yaml` 只改本条所属的段落。合并冲突由监工处理。验证用的书（`books/eval-45`、`books/eval-39`、`books/eval-33`）先只读复制到系统临时目录，不改书库；真实模型试写也放在系统临时目录，照常记账。
+
+## 2026-11-08-45：章型节奏改成重新规划，不再套模板（用户 2026-11-08：“写并并行启动”）
+
+状态：执行中（用户 2026-11-08：“写并并行启动”）
+
+文件归属：
+- 可改：`engine/bookengine/chapter_rhythm.py`、`engine/bookengine/outline_diversity.py`、`engine/bookengine/q1_plan.py`、`engine/data/q1_schemas.yaml` 的章纲/卷纲段落、本条新增的 `engine/bookengine/` 模块、`engine/tests/`、`engine/reports/`。
+- 禁改：`engine/deai/`、`engine/tools/webui/`、人物/称呼相关文件（第 48 条）、能力证据相关文件（第 47 条）、真实书库。
+
+现状（Evidence）：
+- `books/eval-45` 的章纲（`writing_outlines/`）只排了 7 章对抗、最长连续 1 章；写完后实际是 30 章对抗、最长连续 7 章，38/50 章实际章型和章纲不同。
+- 原因是 `bookengine/chapter_rhythm.py` 的 `_reframe`：章纲章型不合规时，程序把场景换成写死的句子，不重新规划。19/50 份章纲的场景目标都是“顾川序在某地向霜砚秋坦白原章行动中未说出的顾虑，争取重新建立信任”，障碍以“原章前提：”开头，冲突类型统一写成“情感抉择/谋划抉择……”。
+- 写手对这些空模板基本不理会，照着原冲突写成了打斗。
+
+要做（每项单独提交；先写失败用例，再实现）：
+1. **删掉模板改写**：不合规的章纲不再用固定句子替换。改为把不合规的章号、要求的章型、前后章摘要和本阶段已发生的事交给规划模型，只重写这几章的章纲（含两场场景、冲突、障碍、选择），再用同一条规则校验；最多重试两次，仍不合规的保留原章纲并记录，不阻断写作。
+2. **章纲内容和章型一致**：校验不只看 `type` 标签，还要看场景内容是否符合章型（例如“情感”章的主要场景必须是两个人物之间关系发生变化，不能以打斗、突围为主）。用确定性规则加一次小的模型复核。
+3. **正文核对**：写完后已有的章型判定如果和章纲不一致，记入体检（参考，不拦截），报告不一致的章号和原因。
+4. **程序内部用语不进章纲**：“原章”“原定场景”“已登场同伴”这类内部词不能出现在交给写手的章纲里，加确定性检查。
+5. **验证**：
+   - 离线：用 `books/eval-45` 的保存数据做夹具，证明新流程不再产出模板章纲。
+   - 真实模型：在系统临时目录用 `books/eval-45/seed.yaml` 写前 15 章，报告章纲章型分布、正文实际章型分布、两者一致的章数、最长连续对抗，并附 3 份重新规划后的章纲原文。
+6. **约束**：遵守 AGENTS.md 护栏；第 26–44 条的行为不能退化；不 push。报告写 `engine/reports/rhythm-45.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。
+
+## 2026-11-08-46：文字卫生——英文、结构说明、整段重复在出稿前拦住（用户 2026-11-08：“写并并行启动”）
+
+状态：执行中（用户 2026-11-08：“写并并行启动”）
+
+文件归属：
+- 可改：本条新增的 `engine/bookengine/text_hygiene.py`（或同类新模块）、`engine/bookengine/endings.py`、`engine/data/ending_rules.yaml`、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/deai/` 中改写后校验相关的文件、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。bookengine 与 deai 互不导入，两边各自实现或通过 `tools/` 共享协议。
+- 禁改：`engine/bookengine/chapter_rhythm.py`、`q1_plan.py`（第 45 条），能力证据文件（第 47 条），人物/称呼文件（第 48 条），`engine/tools/webui/`，真实书库。
+
+现状（Evidence；`books/eval-45`）：
+- 正文混入英文：第 6 章“/low”、第 31 章“dragged”“unquestioning”、第 45 章“blood”出现在写手原稿里；第 4 章“belonged to”原稿没有，是去 AI 改写引入的（`final/chapter-004.deai.json` 状态 polished）。
+- 章节记录里已有 `english` 字段记录了这些命中，但只记录、不修复。
+- 第 28、47 章正文残留“第二场戏”这类结构说明，写手原稿里就有。
+- 第 24 章有一整段原样重复；外部评审还指出第 38 章同一解释段完整重复。第 36 条的逐字重复去除没有覆盖到。
+
+要做（每项单独提交；先写失败用例，再实现）：
+1. **统一的出稿前检查**：英文片段（沿用 `english_fragment` 规则，位置标签等白名单除外）、结构说明（“第X场戏”“场景一”“本章”“章纲”“原章”等）、整段重复和近似整段重复。
+2. **写手侧修复**：每章写完后命中的，只对命中句做一次定向修改（英文换成中文表达，结构说明删掉或改写成叙述，重复段删掉一份），修完复检，不合格回滚并记录。修复不能改变人物、事实和章末。
+3. **去 AI 侧**：去 AI 改写后的稿子出现原稿没有的英文或结构说明，这处改写直接作废、保留原句，并记录。
+4. **体检**：三项分别计数、列章号，进入整书体检。
+5. **验证**：
+   - 离线：在 `books/eval-45` 和 `books/eval-39` 的只读副本上报告当前命中，并用这些命中句做夹具。
+   - 真实模型：对 `books/eval-45` 副本中命中的章节（第 4、6、24、28、31、38、45、47 章）各跑一次修复，报告修前修后原文对照。
+6. **约束**：遵守 AGENTS.md 护栏；`engine/deai/` 单文件 ≤500 行；第 26–44 条的行为不能退化；不 push。报告写 `engine/reports/hygiene-46.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。
+
+## 2026-11-08-47：金手指决定结果的证据几乎全是 Unknown（用户 2026-11-08：“写并并行启动”）
+
+状态：执行中（用户 2026-11-08：“写并并行启动”）
+
+文件归属：
+- 可改：`engine/bookengine/core_evidence.py`、`engine/bookengine/core_ability.py`、`engine/bookengine/ability_methods.py`、`engine/bookengine/plot_observations.py`、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。
+- 禁改：`engine/deai/`、`engine/tools/webui/`，第 45、46、48 条的文件，真实书库。
+
+现状（Evidence）：
+- `books/eval-45` 体检：能力决定结果可核 3/50，Unknown 46；上一本 `books/eval-39` 是 13/50、Unknown 37。第 40 条加了写作时留证据的流程（`core-evidence-review` 步骤每章都跑了），在真书上反而更差。
+- 种子要求“每阶段至少一半章节由核心能力直接改变主要冲突结果”。读者评审能指出不少借力的具体场面（如第 3 章“他第一次将她的力量直接引向自己的手臂”），说明正文里并不是没用能力。
+
+要做（每项单独提交；先写失败用例，再实现）：
+1. **查清原因**：逐章看 `books/eval-45` 的 `core-evidence-review` 步骤原始响应和最终判定，分类统计 Unknown 的原因（返回为空、引文对不上、能力名称和圣经登记不一致、判定门槛过严、正文确实没用）。先出表，再改。
+2. **按原因修**：例如能力名称归一（圣经里的子能力和正文说法对齐）、引文定位放宽到允许空白差异但不许改字、判定门槛和第 40 条反例保持一致。不许把章纲计划当证据，不许猜。
+3. **验证**：在 `books/eval-45` 和 `books/eval-39` 的只读副本上重跑（需要时用真实模型，照常记账），报告 Unknown 降到多少；并人工抽查 10 章的判定是否站得住，附原文引文。
+4. **约束**：遵守 AGENTS.md 护栏；第 26–44 条的行为不能退化；不 push。报告写 `engine/reports/core-evidence-47.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。
+
+## 2026-11-08-48：人物一致性——称呼字段语义统一、性别与身份不串（用户 2026-11-08：“写并并行启动”）
+
+状态：执行中（用户 2026-11-08：“写并并行启动”）
+
+文件归属：
+- 可改：`engine/bookengine/address_contracts.py`、`engine/bookengine/rename_addresses.py`、`engine/bookengine/q1_prepare.py`、`engine/bookengine/identity.py`、`engine/bookengine/introductions.py`、`engine/bookengine/q1_cast.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。
+- 禁改：`engine/deai/`、`engine/tools/webui/`，第 45、46、47 条的文件，`engine/bookengine/q1_extract.py` 的写手上下文（第 41 条已改，本条如需改先写进报告由监工决定），真实书库。
+
+现状（Evidence）：
+- 称呼字段含义不统一：`books/eval-45` 主角顾川序的人物卡 `address` 是“陆大哥”，来历写“顾川序在边境猎场初见时按斥候排行称呼”——这是主角对配角陆烈的叫法，和陆烈卡上的 `address` 一样。妹妹顾湛宁卡上的 `address` 是“阿序”，指的是她对主角的叫法。同一个字段，有的卡表示“别人怎么叫我”，有的表示“我怎么叫别人”。
+- 性别/身份写串：`books/eval-39` 第 8 章把圣经里的女主角、女药师沈夏珩写成了“沈师兄”和封矿追捕的敌方领头人；第 42 条试写的第 7 章把妹妹顾安澜写成“他”。现有检查都没抓到。
+- 改名时单字名派生的称呼没跟着改（“砚哥”“阿砺”），已由监工修复（`c8a610272`，`bookengine/rename_addresses.py`），本条在此基础上继续。
+
+要做（每项单独提交；先写失败用例，再实现）：
+1. **称呼字段定义清楚**：统一成“说话人 → 被称呼的人 → 称呼 → 来历”的结构（可以放在说话人的卡上，用 `address_target` 指明对象），并对旧书的老格式做兼容读取。圣经生成 prompt 和校验同步改。用 `books/eval-45` 的圣经做夹具：主角卡上的“陆大哥”应被识别为主角对陆烈的称呼。
+2. **性别与身份漂移检查**：每章写完后，确定性检查出场人物的性别代词（他/她）、性别化称呼（师兄/师姐、哥/姐等）和阵营身份（感情线角色被写成敌方领头人），与圣经不符的记一条，并对命中句做一次定向修改，复检不过回滚。用 `books/eval-39` 第 8 章、第 42 条试写第 7 章做夹具（代词指代不清的保持 Unknown，不硬判）。
+3. **体检**：称呼一致性、性别/身份漂移计数进入整书体检。
+4. **验证**：在 `books/eval-45`、`books/eval-39`、`books/eval-33` 的只读副本上报告当前命中；真实模型对命中章做一次修复，附修前修后原文。
+5. **约束**：遵守 AGENTS.md 护栏；第 26–44 条的行为不能退化；不 push。报告写 `engine/reports/cast-consistency-48.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。

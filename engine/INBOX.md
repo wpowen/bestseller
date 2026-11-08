@@ -661,7 +661,7 @@
 
 ## 2026-11-08-45：章型节奏改成重新规划，不再套模板（用户 2026-11-08：“写并并行启动”）
 
-状态：开发完成，待监工验收
+状态：部分验收，已合并进 main（2026-11-08）。书库 0 改动。固定模板改写已删除，改为最多两次定向重规划，仍不合规就恢复原章纲并留痕；新增章型语义复核、内部用语拦截、章纲与正文章型对比体检。eval-45 保存数据离线复核：章纲与正文章型一致 12/50（eval-39 24/50，eval-33 5/50）。真实 15 章试写在第 5 章被 MiniMax 连续两次 HTTP 422 `output new_sensitive (1027)` 内容审核挡住，只完成 4 章，15 章指标 Unknown；试写中第 4–10 章两次重规划都没过校验、恢复了原章纲，重规划成功率偏低。遗留：写作侧遇到内容审核 422 会让整本停下（去 AI 侧已由 f95e7a663 处理）；重规划成功率与正文是否按章型写，需在下一本真书上验证。
 
 文件归属：
 - 可改：`engine/bookengine/chapter_rhythm.py`、`engine/bookengine/outline_diversity.py`、`engine/bookengine/q1_plan.py`、`engine/data/q1_schemas.yaml` 的章纲/卷纲段落、本条新增的 `engine/bookengine/` 模块、`engine/tests/`、`engine/reports/`。

@@ -352,6 +352,7 @@ def check_book(book, *, source="final"):
     from bookengine.prose_similarity import analyze_prose, RULES
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
+    from bookengine.rhythm_diagnostics import merge_rhythm_checkup
     from bookengine.address_contracts import address_checkup
     from bookengine.hook_momentum import book_momentum
 
@@ -394,7 +395,7 @@ def check_book(book, *, source="final"):
                 bible, chapters, complete=_read(book / "run.json", []).get("status") == "complete"
             ),
         ),
-        **plot_findings(bible, chapters),
+        **merge_rhythm_checkup(book, chapters, plot_findings(bible, chapters)),
         reading_momentum=book_momentum(chapters),
         plot_observations=dict(
             applied_chapters=[c["number"] for c in chapters if c.get("plot_observation")],

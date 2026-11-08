@@ -684,7 +684,7 @@
 
 ## 2026-11-08-46：文字卫生——英文、结构说明、整段重复在出稿前拦住（用户 2026-11-08：“写并并行启动”）
 
-状态：执行中（用户 2026-11-08：“写并并行启动”）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：本条新增的 `engine/bookengine/text_hygiene.py`（或同类新模块）、`engine/bookengine/endings.py`、`engine/data/ending_rules.yaml`、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/deai/` 中改写后校验相关的文件、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。bookengine 与 deai 互不导入，两边各自实现或通过 `tools/` 共享协议。

@@ -3,7 +3,7 @@
 from copy import deepcopy
 import json
 
-from .chapter_rhythm import RULE, chapter_type
+from .chapter_rhythm import RULE, VERSION, chapter_type
 from .q1_schema import DATA, integer, model_value, rows
 from .text import pack
 
@@ -25,7 +25,7 @@ def _outline_summary(row):
     return result
 
 
-def replan_context(history, batch, targets, observed=(), *, stage_start=0, stage_end=0):
+def replan_context(history, batch, targets, observed=(), required=(), *, stage_start=0, stage_end=0):
     """Return bounded neighboring plans plus already observed facts for targeted rewrites."""
     combined = {integer(row.get("number")): row for row in [*history, *batch] if integer(row.get("number"))}
     neighbor_numbers = {
@@ -34,8 +34,27 @@ def replan_context(history, batch, targets, observed=(), *, stage_start=0, stage
     facts = [
         deepcopy(row) for row in observed if stage_start <= integer(row.get("number", row.get("chapter"))) <= stage_end
     ]
+    requirements = {integer(row.get("number")): chapter_type(row) or row.get("rhythm_type", "") for row in required}
+    target_replans = []
+    for number in sorted(targets):
+        original = _outline_summary(combined.get(number, {}))
+        target_replans.append(
+            dict(
+                number=number,
+                required_type=requirements.get(number, ""),
+                original_content=original,
+                before_summary=_outline_summary(combined.get(number - 1, {})).get("summary", ""),
+                after_summary=_outline_summary(combined.get(number + 1, {})).get("summary", ""),
+                must_preserve={
+                    field: deepcopy(combined.get(number, {}).get(field))
+                    for field in ("threads", "required_event", "payoff", "payoff_type", "hook", "ending_content")
+                    if combined.get(number, {}).get(field) not in (None, "", [])
+                },
+            )
+        )
     return dict(
         neighbor_outlines=[_outline_summary(combined[number]) for number in sorted(neighbor_numbers)],
+        target_replans=target_replans,
         observed_stage_facts=facts,
     )
 
@@ -69,22 +88,27 @@ def model_review_issues(batch, review):
     return issues
 
 
-def semantic_review(client, key, batch):
+def semantic_review(client, key, batch, deterministic=()):
     """Run one compact semantic review when the client is a configured model client."""
     if not (getattr(client, "model", None) and getattr(client, "provider", None)):
         return []
-    payload = [
+    chapters = [
         {
             "number": integer(row.get("number")),
             "planned_type": chapter_type(row),
             "opening_conflict": row.get("opening_conflict", ""),
+            "conflict": row.get("conflict", ""),
             "scenes": [
-                {field: scene.get(field, "") for field in ("goal", "obstacle", "choice", "action", "result")}
+                {
+                    field: scene.get(field, "")
+                    for field in ("characters", "goal", "obstacle", "choice", "action", "result")
+                }
                 for scene in rows(row.get("scenes"))
             ],
         }
         for row in batch
     ]
+    payload = {"deterministic_issues": list(deterministic), "chapters": chapters}
     prompt = (
         DATA["instructions"]["rhythm_review"]
         + "\n待复核章纲：\n"
@@ -92,7 +116,7 @@ def semantic_review(client, key, batch):
     )
     schema = pack(DATA["schemas"]["rhythm_review"])
     raw = client.stage(
-        "plan-q1-rhythm-review-v7-" + key,
+        f"plan-q1-rhythm-review-v{VERSION}-" + key,
         prompt,
         schema,
         parser=model_value,
@@ -101,4 +125,16 @@ def semantic_review(client, key, batch):
         effort="low",
     )
     value = model_value(raw)
-    return rows(value.get("chapters")) if isinstance(value, dict) else []
+    if not isinstance(value, dict):
+        return []
+    source = rows(value.get("chapters")) or rows(value.get("reviews"))
+    return [
+        {
+            "number": integer(row.get("number", row.get("chapter"))),
+            "content_type": row.get("content_type", ""),
+            "status": row.get("status", "unknown"),
+            "reason": row.get("reason", ""),
+        }
+        for row in source
+        if integer(row.get("number", row.get("chapter")))
+    ]

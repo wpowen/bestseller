@@ -146,6 +146,7 @@ instructions:
   outlines: '每章conflict_type给简洁且稳定的核心冲突类型，跨批沿用同名类型；title_keywords列章名实词，不能漏填重复词来绕过检查。
     生成时避开已用高频章名关键词，同一实词全书章名最多出现两章；任何连续五章的核心冲突类型不可完全相同。
     定向重写仅返回被点名的相关章；冲突同型须改变人物争夺、场景行动与后果，不能只换类型标签或地名。
+    节奏定向重写必须把正面打斗移到章外，或换成另一种冲突；保住目标章列出的必须推进的剧情事实，不能只换章型标签、冲突名或地名。
     固定人物卡含identity和aliases；identity只写职业、经历和关系事实，不写“他是……也是……”式可照抄同位语句；
     首次登场用introductions列表标注name/identity来历，并在场景设计交代；
     称呼只用原名、合法aliases或说话人卡上目标一致的address，不得凭空造外号。
@@ -185,8 +186,10 @@ instructions:
     每章payoff_due/payoff_type按排期，必须让两场戏实际通向该结果。solution_type从canon菜单选择本世界已有且未在近30章用过的破局机理，无破局为null；不要为菜单强加新规则或装置，不强迫每章破局。
 
     本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。'
-  rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。以goal/choice/action/result实际发生什么为准，obstacle里提到战斗不等于对抗主章。
-    content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感章必须以两个人物关系发生变化为主，不能以交战、突围、追杀为主。reason一句话说明主要场景依据。'
+  rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。先看characters确认对手是否在场，再以goal/choice/action/result实际发生什么为准；obstacle里只提到战斗或远处压力不等于对抗主章。
+    content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感/日常/收获/揭秘/谋划章都不能以对手到场动手、交战、突围、追杀或反杀为主要行动。reason一句话说明主要场景依据。只返回{chapters:[{number,content_type,status,reason}]}，不得改用reviews或chapter字段。'
+  rhythm_skeleton: '先为指定整阶段排内容，再由后续步骤展开逐章章纲。严格按节奏槽位决定哪些章打、哪些章不打；不打的章具体发生什么：关系怎么变、得到什么并怎么用、揭开什么或如何比较方案。
+    非打斗章不得以对手到场动手、追杀、突围或反杀为主要行动；战斗可放在上一章末或下一章开头，本章写余波、疗伤、分配、对质、和解、试用、查证或取舍。每章给两场简短但可执行的goal/obstacle/action/result，不能只换type标签。'
 schemas:
   continuation:
     bible:
@@ -378,6 +381,17 @@ schemas:
       content_type: ''
       status: unknown
       reason: ''
+  rhythm_skeleton:
+    chapters:
+    - number: 1
+      type: ''
+      conflict: ''
+      result: ''
+      scenes:
+      - goal: ''
+        obstacle: ''
+        action: ''
+        result: ''
 plan_card_fields:
 - name
 - role

@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-from .chapter_rhythm import chapter_type
+import yaml
+
+from .chapter_rhythm import chapter_type, rhythm_issues
 
 
 def _plan_type(book, number):
@@ -15,6 +17,30 @@ def _plan_type(book, number):
     except (OSError, ValueError, TypeError):
         return "", "invalid_outline"
     return chapter_type(value), "" if chapter_type(value) else "missing_planned_type"
+
+
+def _plan_content(book):
+    outlines = []
+    for path in sorted((Path(book) / "writing_outlines").glob("[0-9][0-9][0-9].json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if isinstance(value, dict):
+            outlines.append(value)
+    bible = {}
+    try:
+        value = yaml.safe_load((Path(book) / "story_bible.yaml").read_text(encoding="utf-8"))
+        bible = value if isinstance(value, dict) else {}
+    except (OSError, yaml.YAMLError, TypeError):
+        pass
+    issues = rhythm_issues(bible, [], outlines)
+    return dict(
+        checked=len(outlines),
+        unresolved_chapters=sorted({number for issue in issues for number in issue.get("targets", [])}),
+        issues=issues,
+        basis="saved outline actions and labels; deterministic planning reference only",
+    )
 
 
 def merge_rhythm_checkup(book, chapters, findings):
@@ -56,5 +82,6 @@ def merge_rhythm_checkup(book, chapters, findings):
         unknown=unknown,
         basis="saved writing outline type versus saved observed body type; reference only",
     )
+    rhythm["plan_content"] = _plan_content(book)
     result["chapter_rhythm"] = rhythm
     return result

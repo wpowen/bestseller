@@ -4,6 +4,31 @@ from support_minimal_b import *
 
 
 class MinimalBTestsPart1(MinimalBTests):
+    def test_noncombat_writer_gets_plain_language_chapter_type_and_no_fighting_instruction(self):
+        outline = dict(
+            self.outline,
+            type="情感",
+            rhythm_type="情感",
+            rhythm_focus="说清隐瞒并重新约定分工",
+            scenes=[
+                {
+                    "characters": ["阿宁"],
+                    "goal": "坦白此前隐瞒",
+                    "obstacle": "同伴不再信任她",
+                    "choice": "交出路线决定权",
+                }
+            ],
+        )
+        client = CaptureClient(self.out, [body(60)])
+
+        self.run_chapter(client, outline=outline)
+
+        prompt = client.calls[0]["prompt"]
+        assert "本章章型：情感" in prompt
+        assert "本章不安排正面打斗" in prompt
+        assert "对手只能作为消息或远处压力" in prompt
+        assert all(term not in prompt for term in ("原章", "程序判定", "重规划"))
+
     def test_writer_has_four_blocks_without_style_or_prefix_leak(self):
         for dialogue in (30, 60):
             with self.subTest(dialogue=dialogue), tempfile.TemporaryDirectory() as directory:

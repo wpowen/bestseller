@@ -750,7 +750,7 @@
 
 ## 2026-11-08-50：章型节奏改成先定内容——规划必须真的写出非打斗章（用户 2026-11-08：“规划改内容”）
 
-状态：执行中（用户 2026-11-08：“规划改内容”）
+状态：已验收，已合并进 main（2026-11-09）。书库 0 改动。章型标签改为由章纲内容判定；规划先排整阶段骨架（哪些章打、不打的章具体写什么），非打斗章不允许对手到场动手；重规划把打斗挪到章外或换冲突；写手章纲明确写“本章不安排正面打斗”。真实模型 15 章共试五轮，第五轮达标：章纲/正文一致 10/15、最长连续对抗 3（正文对抗 8、谋划 5、收获 2）；前四轮分别为 7/3、7/3、6/5、13/5。五轮合计约 594 万 tokens、估算 $1.95。遗留：两个阶段都没有被识别出“关系主章”；9 章章纲仍有节奏告警；只在这一个种子上调过，换题材是否成立未知。
 
 文件归属：
 - 可改：`engine/bookengine/chapter_rhythm.py`、`engine/bookengine/rhythm_replanning.py`、`engine/bookengine/rhythm_diagnostics.py`、`engine/bookengine/outline_diversity.py`、`engine/bookengine/q1_plan.py`、`engine/data/q1_schemas.yaml` 的章纲/卷纲段落、`engine/data/q1_style.yaml` 中与章型相关的写手指令、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

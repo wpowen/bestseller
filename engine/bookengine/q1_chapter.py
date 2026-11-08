@@ -27,6 +27,7 @@ from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
 from .text_hygiene import repair_text
+from .rhythm_writer import writer_rhythm_instruction
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -133,6 +134,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         data[style]
         + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
+    instruction += writer_rhythm_instruction(outline)
 
     def write_draft(suffix):
         saved = client.prefix

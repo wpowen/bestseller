@@ -12,7 +12,7 @@ from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
 from .core_ability import ability_issues
-from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, chapter_type, rhythm_issues
+from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_content, chapter_type, rhythm_issues
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
@@ -170,7 +170,7 @@ def terminal_window(out, start, end):
 def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(), model_review=()):
     """Only replace offending current chapters; persist decisions for no-call recovery."""
     path = Path(out) / "outline-diversity" / (key + ".json") if out is not None else None
-    current, original = deepcopy(batch), deepcopy(batch)
+    current, original_chapters = deepcopy(batch), deepcopy(batch)
     attempts, resume, rhythm_replans = [], 0, []
     rhythm_attempts, model_resolved, locked = {}, set(), set()
     if path and path.exists():
@@ -178,7 +178,8 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
         if report["status"] != "repairing":
             return report["chapters"]
         current = report["chapters"]
-        original = report.get("original_chapters", original)
+        saved_originals = report.get("original_chapters")
+        original_chapters = saved_originals if isinstance(saved_originals, list) else original_chapters
         resume = report["attempts"][-1]["regeneration"]
         attempts = report["attempts"][:resume]
         rhythm_replans = report.get("rhythm_replans", [])
@@ -187,7 +188,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
         locked = set(report.get("rhythm_locked", []))
         initial_issues = report.get("initial_rhythm_issues", initial_issues)
         model_review = report.get("rhythm_model_review", model_review)
-    originals = {integer(row.get("number")): deepcopy(row) for row in original}
+    originals = {integer(row.get("number")): deepcopy(row) for row in original_chapters}
     used = used_vocabulary(history)
     for retry in range(resume, 4):
         deterministic = (
@@ -214,16 +215,39 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             )
         exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= 2}
         for number in sorted(exhausted - locked):
-            current = [deepcopy(originals[number]) if integer(row.get("number")) == number else row for row in current]
-            locked.add(number)
-            rhythm_replans.append(
-                dict(
-                    number=number,
-                    attempts=rhythm_attempts[number],
-                    action="kept_original",
-                    reason=[issue for issue in issues if number in issue.get("targets", [])],
-                )
+            original_row = deepcopy(originals[number])
+            aligned = align_label_to_content(original_row)
+            semantic = next(
+                (
+                    issue.get("observed")
+                    for issue in initial_issues
+                    if number in issue.get("targets", [])
+                    and issue.get("observed") in {"对抗", "谋划", "情感", "日常", "揭秘", "收获"}
+                ),
+                "",
             )
+            observed = semantic or chapter_type(aligned)
+            relabelled = bool(observed and observed != chapter_type(original_row))
+            fallback = aligned if relabelled and chapter_type(aligned) == observed else original_row
+            if relabelled and fallback is original_row:
+                fallback = dict(
+                    original_row,
+                    type=observed,
+                    rhythm_type=observed,
+                    rhythm_focus=FOCUS.get(observed, original_row.get("rhythm_focus", "保留本章主场景行动与人物选择")),
+                    rhythm_contract_version=RHYTHM_VERSION,
+                )
+            current = [fallback if integer(row.get("number")) == number else row for row in current]
+            locked.add(number)
+            decision = dict(
+                number=number,
+                attempts=rhythm_attempts[number],
+                action="kept_original_relabelled" if relabelled else "kept_original",
+                reason=[issue for issue in issues if number in issue.get("targets", [])],
+            )
+            if relabelled:
+                decision["content_type"] = chapter_type(fallback)
+            rhythm_replans.append(decision)
         if exhausted:
             deterministic = (
                 diversity_issues(history, current)
@@ -270,7 +294,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             rhythm_model_resolved=sorted(model_resolved),
             rhythm_locked=sorted(locked),
             initial_rhythm_issues=list(initial_issues),
-            original_chapters=original,
+            original_chapters=original_chapters,
             status="passed" if not issues else "failed_continued" if terminal else "repairing",
             used=used,
             attempts=attempts,

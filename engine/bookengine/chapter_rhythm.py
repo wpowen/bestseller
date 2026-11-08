@@ -5,7 +5,7 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 7
+VERSION = 8
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
@@ -25,8 +25,12 @@ _CUES = {
     "收获": r"兑现|领取|试用|分配|收获|回报|报酬|奖励|认可|庆祝",
     "揭秘": r"核对|线索|推翻|判断|证据|揭示|真相|验证|发现|秘密",
     "谋划": r"方案|风险|代价|分工|筹备|准备|计划|谋划|策略|布局",
+    "日常": r"休整|疗伤|吃饭|做饭|赶路|落脚|安顿|照料|闲谈|采买|整理|修补",
 }
-_COMBAT = re.compile(r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀")
+_COMBAT = re.compile(
+    r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀|"
+    r"反杀|突围|伏击|围杀|冲杀|扑杀|迎战|开战|动手|强攻|割开.{0,4}(?:咽喉|喉咙)"
+)
 INTERNAL_TERMS = ("原章", "原定场景", "原定目标", "已登场同伴")
 _WRITER_FIELDS = (
     "title",
@@ -45,6 +49,49 @@ def chapter_type(row):
     return "情感" if value == "关系" else value
 
 
+def _scene_intention(scene):
+    return "；".join(str(scene.get(k) or "") for k in ("goal", "action", "choice", "result"))
+
+
+def _positive(text):
+    return re.sub(r"(?:不再|禁止|不能|不要|不靠|暂不|避免|无需)[^；。！？]*", "", text)
+
+
+def _combat_scene(scene):
+    return bool(_COMBAT.search(_positive(_scene_intention(scene))))
+
+
+def content_type(row):
+    """Infer an outline type from planned actions; return empty when content is indeterminate."""
+    scenes = rows(row.get("scenes"))
+    combat = sum(_combat_scene(scene) for scene in scenes)
+    conflict = "；".join(str(row.get(k) or "") for k in ("opening_conflict", "conflict"))
+    if combat and (combat * 2 >= len(scenes) or _COMBAT.search(_positive(conflict))):
+        return "对抗"
+    intention = _positive("；".join(_scene_intention(scene) for scene in scenes))
+    focused = [kind for kind in _CUES if _focused(row, kind)]
+    if focused:
+        return max(focused, key=lambda kind: len(re.findall(_CUES[kind], intention)))
+    labelled = chapter_type(row)
+    if labelled in (*BREAK_TYPES, "日常") and not combat:
+        return labelled
+    return ""
+
+
+def align_label_to_content(row):
+    """Copy an outline and make labels describe its existing actions without rewriting them."""
+    result = deepcopy(row)
+    observed = content_type(result)
+    if observed:
+        result.update(
+            type=observed,
+            rhythm_type=observed,
+            rhythm_focus=FOCUS.get(observed, result.get("rhythm_focus") or "保留本章主场景行动与人物选择"),
+            rhythm_contract_version=VERSION,
+        )
+    return result
+
+
 def _stages(bible):
     return [s for s in rows(bible.get("volumes")) if 0 < integer(s.get("start")) <= integer(s.get("end"))]
 
@@ -56,9 +103,9 @@ def _focused(row, kind):
         return False
     matches = []
     for scene in scenes:
-        intention = "；".join(str(scene.get(k) or "") for k in ("goal", "action", "choice", "result"))
+        intention = _scene_intention(scene)
         # Ignore explicit prohibitions; a battle mentioned only in the obstacle is not the main action.
-        intention = re.sub(r"(?:不再|禁止|不能|不要|不靠|暂不)[^；。！？]*", "", intention)
+        intention = _positive(intention)
         matches.append(bool(re.search(_CUES[kind], intention)) and not _COMBAT.search(intention))
     return matches[0] and sum(matches) > len(matches) // 2
 
@@ -117,6 +164,17 @@ def rhythm_issues(bible, history, batch):
                 previous[n] = row
                 continue
             allowed, reason = _requirement(bible, previous, n)
+            observed = content_type(row)
+            if observed and kind and observed != kind:
+                issues.append(
+                    dict(
+                        kind="rhythm_content_mismatch",
+                        targets=[n],
+                        allowed=[kind],
+                        observed=observed,
+                        requirement=RULE,
+                    )
+                )
             if allowed and kind not in allowed:
                 issues.append(dict(kind=reason, targets=[n], allowed=list(allowed), requirement=RULE))
             elif kind in BREAK_TYPES and not _focused(row, kind):

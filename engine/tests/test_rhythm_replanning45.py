@@ -183,8 +183,9 @@ def test_semantic_review_is_one_small_model_call():
     assert result[0]["status"] == "mismatch"
     assert len(client.calls) == 1
     name, prompt, schema, kwargs = client.calls[0]
-    assert name == "plan-q1-rhythm-review-v7-001-004"
-    assert "只复核章型标签" in prompt and "content_type" in schema
+    assert name == "plan-q1-rhythm-review-v8-001-004"
+    assert all(term in prompt for term in ("只复核章型标签", "对手到场动手", "characters"))
+    assert "content_type" in schema
     assert kwargs["cap"] == 1800 and kwargs["effort"] == "low"
 
 
@@ -195,11 +196,33 @@ def test_replan_context_contains_neighbors_and_observed_stage_facts():
     batch = [outline(2), outline(3), outline(4)]
     observed = [dict(number=2, summary="顾川序发现妹妹留下的血痕", events=["血痕指向北侧岔口"])]
 
-    context = replan_context(history, batch, [3], observed, stage_start=1, stage_end=4)
+    context = replan_context(
+        history,
+        batch,
+        [3],
+        observed,
+        required=[{"number": 3, "rhythm_type": "情感"}],
+        stage_start=1,
+        stage_end=4,
+    )
 
     assert [row["number"] for row in context["neighbor_outlines"]] == [2, 3, 4]
     assert context["observed_stage_facts"] == observed
     assert "summary" in context["neighbor_outlines"][0]
+    target = context["target_replans"][0]
+    assert target["number"] == 3 and target["required_type"] == "情感"
+    assert target["original_content"]["scenes"] == batch[1]["scenes"]
+    assert target["before_summary"] == batch[0]["opening_conflict"]
+    assert target["after_summary"] == batch[2]["opening_conflict"]
+
+
+def test_replanning_instruction_moves_battle_outside_but_preserves_required_plot_facts():
+    from bookengine.q1_schema import DATA
+
+    instruction = DATA["instructions"]["outlines"]
+    assert all(
+        term in instruction for term in ("正面打斗移到章外", "换成另一种冲突", "必须推进的剧情事实", "不能只换章型标签")
+    )
 
 
 def test_checkup_reports_planned_and_actual_type_mismatch_without_writing(tmp_path):

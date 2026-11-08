@@ -4,9 +4,11 @@ from copy import deepcopy
 import json
 
 import pytest
+import yaml
 
 from bookengine import outline_diversity
 from bookengine.chapter_rhythm import align_label_to_content, content_type, rhythm_issues
+from tools.book_checkup import check_book
 
 
 def eval49_chapter3():
@@ -185,3 +187,23 @@ def test_noncombat_outline_allows_opponent_as_offstage_pressure_only():
     assert content_type(row) == "情感"
     issues = rhythm_issues({}, [], [row])
     assert not [issue for issue in issues if issue["kind"] == "rhythm_content_mismatch"]
+
+
+def test_checkup_registers_unresolved_saved_plan_content_without_writing(tmp_path):
+    (tmp_path / "story_bible.yaml").write_text(
+        yaml.safe_dump({"volumes": [{"number": 1, "start": 1, "end": 10}]}, allow_unicode=True)
+    )
+    (tmp_path / "chapters").mkdir()
+    (tmp_path / "writing_outlines").mkdir()
+    outline = eval49_chapter3()
+    (tmp_path / "writing_outlines/003.json").write_text(json.dumps(outline, ensure_ascii=False))
+    (tmp_path / "chapters/003.json").write_text(json.dumps({"number": 3, "type": "对抗"}, ensure_ascii=False))
+    (tmp_path / "chapter-003.body.md").write_text("霜牙扑进矿洞，顾昕冉拔刀反杀。")
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+
+    plan_content = check_book(tmp_path, source="draft")["chapter_rhythm"]["plan_content"]
+
+    assert plan_content["unresolved_chapters"] == [3]
+    assert plan_content["issues"][0]["kind"] == "rhythm_content_mismatch"
+    assert plan_content["issues"][0]["observed"] == "对抗"
+    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before

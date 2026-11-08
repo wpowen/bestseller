@@ -24,3 +24,23 @@ def guarded(repair):
             return text, raw, failed, skipped(exc)
 
     return run
+
+
+DRAFT_VARIANTS = ("", "-restrained1", "-restrained2")
+RESTRAINED_DRAFT = "\n上一稿未通过平台内容审核。情节、人物和事实不变；暴力只写动作与后果，不写血腥、残肢、酷刑细节。"
+
+
+def draft_until_readable(write_draft, finish):
+    """Redraft with restraint when the provider refuses to read the draft itself.
+
+    Each variant uses its own stage names, so the refused draft and its call
+    records stay on disk untouched. Returns ``(text, finish_result, variant)``.
+    """
+    for attempt, suffix in enumerate(DRAFT_VARIANTS):
+        text = write_draft(suffix)
+        try:
+            return text, finish(suffix, text), suffix or "base"
+        except ContentRejected:
+            if attempt == len(DRAFT_VARIANTS) - 1:
+                raise
+    raise AssertionError("unreachable")

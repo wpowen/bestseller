@@ -19,7 +19,7 @@ from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_st
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
-from .content_guard import guarded
+from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
 from .retired_opponents import repair_retired, repair_exit_tail
 from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
@@ -128,36 +128,47 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
-    saved = client.prefix
-    client.prefix = ""
     cleaning = dict(draft={})
-    try:
-        text = body_of(
-            ask(
-                client,
-                prefix + "-draft",
-                data[style]
-                + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。",
-                sections,
-                cap=6500,
-                input_limit=10000,
-                max_attempts=1,
-            ),
-            client,
-            cleaning["draft"],
-        )
-    finally:
-        client.prefix = saved
-    repetition = dict(draft=clean_repetitions(text))
-    text = clean(repetition["draft"].pop("cleaned"))
-    save(out / f"chapter-{idx:03d}.r2.draft.md", text)
-    outline.update(
-        actual_chars=chinese_count(text),
-        target_chars=target,
-        word_range=[low, high],
-        dialogue_ratio=metrics(text)["dialogue_ratio"],
+    instruction = (
+        data[style]
+        + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
-    raw, failed, _ = extract_state(client, prefix + "-finish", text, state, bible, outline, rows)
+
+    def write_draft(suffix):
+        saved = client.prefix
+        client.prefix = ""
+        try:
+            text = body_of(
+                ask(
+                    client,
+                    prefix + "-draft" + suffix,
+                    instruction + (RESTRAINED_DRAFT if suffix else ""),
+                    sections,
+                    cap=6500,
+                    input_limit=10000,
+                    max_attempts=1,
+                ),
+                client,
+                cleaning["draft"],
+            )
+        finally:
+            client.prefix = saved
+        repetition["draft"] = clean_repetitions(text)
+        text = clean(repetition["draft"].pop("cleaned"))
+        save(out / f"chapter-{idx:03d}.r2.draft.md", text)
+        outline.update(
+            actual_chars=chinese_count(text),
+            target_chars=target,
+            word_range=[low, high],
+            dialogue_ratio=metrics(text)["dialogue_ratio"],
+        )
+        return text
+
+    def finish(suffix, text):
+        return extract_state(client, prefix + "-finish" + suffix, text, state, bible, outline, rows)
+
+    repetition = {}
+    text, (raw, failed, _), outline["draft_variant"] = draft_until_readable(write_draft, finish)
     initial_failed = failed
     original = text
     original_raw = deepcopy(raw)

@@ -95,3 +95,34 @@ def test_guarded_passes_through_normal_results_and_other_errors():
 
     with pytest.raises(RuntimeError):
         guarded(broken)(None, "p", "文", {}, [])
+
+
+def test_input_rejected_draft_is_rewritten_with_restraint_under_new_stage_names():
+    from bookengine.content_guard import draft_until_readable
+
+    drafts, finishes = [], []
+
+    def write(suffix):
+        drafts.append(suffix)
+        return "稿" + suffix
+
+    def finish(suffix, text):
+        finishes.append((suffix, text))
+        if suffix == "":
+            raise ContentRejected("ch10-finish: input new_sensitive (1026)")
+        return ({"ok": True}, [], None)
+
+    text, result, variant = draft_until_readable(write, finish)
+    assert drafts == ["", "-restrained1"]
+    assert (text, variant) == ("稿-restrained1", "-restrained1")
+    assert result[0] == {"ok": True}
+
+
+def test_every_variant_rejected_still_stops_the_book():
+    from bookengine.content_guard import draft_until_readable
+
+    def finish(suffix, text):
+        raise ContentRejected("refused")
+
+    with pytest.raises(ContentRejected):
+        draft_until_readable(lambda suffix: "稿", finish)

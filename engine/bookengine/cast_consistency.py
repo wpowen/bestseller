@@ -75,6 +75,8 @@ def _subject_bound(sentence, name):
         re.search(r"被[^。！？]{0,30}(?:拽|拖|压|击|撞|抓|绑|困|推|拉|卷|刺|砸|扯)", predicate)
         or re.match(r"(?:没有|没|未)(?:答|回答|接话|开口|出声|回应)", predicate)
         or re.match(r"(?:从|沿|穿过)[^。！？]{0,60}(?:折返|返回|回到|离开|赶到|抵达|走|跑)", predicate)
+        or re.match(r"(?:握住|抓住|攥住)[^。！？]{0,40}(?:契约|契纹|纹路|筋骨)", predicate)
+        or re.match(r"收[^。！？]{0,10}时，(?:脑|记忆|意识|心神)", predicate)
     )
 
 

@@ -147,6 +147,18 @@ def test_named_man_looking_at_a_woman_does_not_bind_her_next_pronoun_to_him():
     assert cast_findings(text, value, chapter=3) == []
 
 
+def test_contract_borrowing_and_memory_loss_keep_the_named_subject_bound():
+    value = bible()
+    text = (
+        "顾冬岚握住契兽的前爪，契约纹路随即沉入筋骨。她没有窥见未来，只听见远处兽息。"
+        "顾冬岚收刀时，脑中忽然空了一块。她记得来路。可她再想不起回家的方向。"
+    )
+
+    findings = cast_findings(text, value, chapter=26)
+
+    assert [(row["observed"], row["expected"]) for row in findings] == [("她", "他"), ("她", "他"), ("她", "他")]
+
+
 def test_eval49_pronoun_repair_targets_the_shared_finding_and_passes_recheck():
     value = bible()
     value["characters"][0].update(name="顾昕冉", gender="男")

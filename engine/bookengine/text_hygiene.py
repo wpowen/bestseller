@@ -243,7 +243,7 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
         client,
         prefix + "-text-hygiene",
         "只修改卫生命中的句或后一次重复段：英文换成自然中文，结构说明改成叙述，重复段删除后一次或合并其独有信息。"
-        "不得修改其他文字，不增删人物、事实、数字、因果或章末画面；不安全则不提交该项。返回JSON。",
+        "不得修改其他文字，不增删人物、事实、数字、因果或章末画面，引号必须成对；不安全则不提交该项。返回JSON。",
         [("卫生命中", json.dumps(targets, ensure_ascii=False)), ("只读正文", text)],
         '{"edits":[{"id":"H1","text":"替换句；删除重复整段时为空字符串"}]}',
         cap=3000,

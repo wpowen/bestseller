@@ -30,6 +30,9 @@ _HOSTILE = re.compile(
     r"敌方|敌军|追兵|追捕|活捉|药引|截杀|围杀|追回|封死(?:出口|矿道|退路)|"
     r"(?:出口|矿道|退路)[^。！？]{0,8}封死|杀(?:掉|死)"
 )
+_FRONTED_PRONOUN = re.compile(
+    r"[\s“‘\"']*(?:[^，,。！？!?]{1,32}(?:时|后|前|下|里|外|旁|边|处|中|上|间|口)[，,]\s*)?([他她])"
+)
 
 
 def _cards(bible):
@@ -64,17 +67,14 @@ def _subject_bound(sentence, name):
     stripped = sentence.strip(" \t\r\n“”‘’\"'")
     if re.search(r"(?:竟|原来|正|却)?是" + re.escape(name) + r"[。！？!?]?$", stripped):
         return True
-    return bool(
-        stripped.startswith(name)
-        and re.search(r"被[^。！？]{0,30}(?:拽|拖|压|击|撞|抓|绑|困|推|拉|卷|刺|砸|扯)", stripped)
-    )
+    return stripped.startswith(name)
 
 
 def _pronoun_findings(text, cards, chapter, spans):
     findings = []
     for index, (start, end) in enumerate(spans):
         sentence = text[start:end]
-        match = re.match(r"[\s“‘\"']*([他她])", sentence)
+        match = _FRONTED_PRONOUN.match(sentence)
         if not match or index == 0:
             continue
         previous = text[slice(*spans[index - 1])]

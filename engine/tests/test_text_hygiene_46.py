@@ -1,6 +1,8 @@
 """INBOX 46: publication hygiene detection and bounded adoption."""
 
-from bookengine.text_hygiene import inspect_text
+import json
+
+from bookengine.text_hygiene import inspect_text, repair_text
 
 
 def test_detects_english_and_structure_notes_but_allows_position_labels():
@@ -44,3 +46,94 @@ def test_detects_near_explanation_paragraph_from_eval45_chapter38():
     assert issue["kind"] == "near_paragraph"
     assert issue["reference_paragraph"] == 1 and issue["paragraph"] == 2
     assert issue["similarity"] >= 0.65
+
+
+def test_writer_repair_changes_only_targets_then_rechecks_state():
+    repeated = "陆烈收拾好刀，走到岩口却没有立刻下山。"
+    text = (
+        "狭窄处/low石面刮过他的肩背。\n\n"
+        "第二场戏开始时，天色已经暗了。\n\n"
+        f"{repeated}\n\n众人先把伤者送走。\n\n{repeated}\n\n顾川序抬头看向雪坡。"
+    )
+    requests = []
+
+    def ask(*args, **kwargs):
+        requests.append(args[1])
+        targets = json.loads(dict(args[3])["卫生命中"])
+        replacements = {
+            "english": "狭窄处低矮石面刮过他的肩背。",
+            "structure": "天色已经暗了。",
+            "exact_paragraph": "",
+        }
+        return {"edits": [{"id": row["id"], "text": replacements[row["kind"]]} for row in targets]}
+
+    extracted = {"events": [], "state": {}}
+    result, raw, failed, note = repair_text(
+        None,
+        "r2-ch24",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾川序"}]},
+        {"number": 24},
+        lambda *args, **kwargs: (extracted, False, 0),
+        ask,
+    )
+
+    assert requests == ["r2-ch24-text-hygiene"]
+    assert not any(inspect_text(result)["counts"].values())
+    assert result.endswith("顾川序抬头看向雪坡。")
+    assert raw == extracted and failed is False
+    assert note["status"] == "repaired" and len(note["edits"]) == 3
+
+
+def test_writer_repair_rolls_back_when_hygiene_recheck_fails():
+    text = "狭窄处/low石面刮过他的肩背。\n\n顾川序抬头看向雪坡。"
+    extracted = []
+
+    def ask(*args, **kwargs):
+        target = json.loads(dict(args[3])["卫生命中"])[0]
+        return {"edits": [{"id": target["id"], "text": "狭窄处/high石面刮过他的肩背。"}]}
+
+    result, raw, failed, note = repair_text(
+        None,
+        "r2-ch6",
+        text,
+        {"events": []},
+        False,
+        {},
+        {},
+        {"number": 6},
+        lambda *args, **kwargs: extracted.append(True),
+        ask,
+    )
+
+    assert result == text and raw == {"events": []} and failed is False
+    assert extracted == []
+    assert note["status"] == "rolled_back"
+    assert note["reason"] == "hygiene_recheck_failed"
+
+
+def test_q1_chapter_runs_hygiene_before_saving(monkeypatch):
+    from bookengine import q1_chapter
+    from support_minimal_b import CaptureClient, MinimalBTests, body
+
+    fixture = MinimalBTests()
+    fixture.setUp()
+    try:
+        draft = body(40, 190) + "\n\n狭窄处/low石面刮过他的肩背。"
+        calls = []
+
+        def repair(client, prefix, text, raw, failed, *args):
+            calls.append(prefix)
+            return text.replace("/low", "低矮"), raw, failed, {"status": "repaired"}
+
+        monkeypatch.setattr(q1_chapter, "repair_text", repair)
+        row = fixture.run_chapter(CaptureClient(fixture.out, [draft]))
+
+        assert calls == ["r2-ch2"]
+        assert "/low" not in (fixture.out / "chapter-002.body.md").read_text()
+        assert row["cleaning"]["text_hygiene"] == {"status": "repaired"}
+    finally:
+        fixture.doCleanups()

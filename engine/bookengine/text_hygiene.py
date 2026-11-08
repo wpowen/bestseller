@@ -2,6 +2,7 @@
 
 from difflib import SequenceMatcher
 from pathlib import Path
+import json
 import re
 import unicodedata
 
@@ -132,4 +133,125 @@ def inspect_text(text):
         english=english,
         structure=structure,
         paragraphs=paragraphs,
+    )
+
+
+def _repair_targets(text, findings):
+    from .precision import _sentences
+
+    paragraph_spans = _paragraph_spans(text)
+    duplicate_spans = {(row["start"], row["end"]): row for row in findings["paragraphs"]}
+    targets = []
+    for (start, end), row in duplicate_spans.items():
+        reference = paragraph_spans[row["reference_paragraph"] - 1]
+        targets.append(
+            dict(
+                id="",
+                kind=row["kind"],
+                start=start,
+                end=end,
+                text=text[start:end],
+                reference_text=text[reference[0] : reference[1]],
+            )
+        )
+    sentence_spans = _sentences(text)
+    grouped = {}
+    for kind, rows in (("english", findings["english"]), ("structure", findings["structure"])):
+        for row in rows:
+            span = next(((start, end) for start, end in sentence_spans if start <= row["start"] < end), None)
+            if span is None or any(start <= span[0] and span[1] <= end for start, end in duplicate_spans):
+                continue
+            target = grouped.setdefault(
+                span,
+                dict(id="", kind=kind, kinds=[], start=span[0], end=span[1], text=text[span[0] : span[1]]),
+            )
+            target["kinds"].append(kind)
+            target["kind"] = "+".join(sorted(set(target["kinds"])))
+    targets.extend(grouped.values())
+    targets.sort(key=lambda row: row["start"])
+    for number, row in enumerate(targets, 1):
+        row["id"] = f"H{number}"
+    return targets
+
+
+def _apply_targeted_edits(text, targets, value):
+    by_id = {row["id"]: row for row in targets}
+    edits = []
+    seen = set()
+    for proposed in value.get("edits", []) if isinstance(value, dict) else []:
+        if not isinstance(proposed, dict) or proposed.get("id") in seen:
+            continue
+        target = by_id.get(proposed.get("id"))
+        replacement = proposed.get("text")
+        if target is None or not isinstance(replacement, str) or "\n" in replacement or "\r" in replacement:
+            continue
+        if not replacement.strip() and "paragraph" not in target["kind"]:
+            continue
+        seen.add(target["id"])
+        if replacement != target["text"]:
+            edits.append(dict(target, replacement=replacement))
+    candidate = text
+    for edit in sorted(edits, key=lambda row: row["start"], reverse=True):
+        candidate = candidate[: edit["start"]] + edit["replacement"] + candidate[edit["end"] :]
+    candidate = re.sub(r"\n(?:[ \t]*\n){2,}", "\n\n", candidate).strip()
+    return candidate, edits
+
+
+def _last_paragraph(text):
+    spans = _paragraph_spans(text)
+    return text[spans[-1][0] : spans[-1][1]] if spans else ""
+
+
+def repair_text(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+    """Make one targeted repair attempt and adopt only a fully clean recheck."""
+    before = inspect_text(text)
+    note = dict(status="checked", before=before["counts"], after=before["counts"], edits=[])
+    targets = _repair_targets(text, before)
+    if not targets:
+        return text, raw, failed, note
+    patch = ask(
+        client,
+        prefix + "-text-hygiene",
+        "只修改卫生命中的句或后一次重复段：英文换成自然中文，结构说明改成叙述，重复段删除后一次或合并其独有信息。"
+        "不得修改其他文字，不增删人物、事实、数字、因果或章末画面；不安全则不提交该项。返回JSON。",
+        [("卫生命中", json.dumps(targets, ensure_ascii=False)), ("只读正文", text)],
+        '{"edits":[{"id":"H1","text":"替换句；删除重复整段时为空字符串"}]}',
+        cap=3000,
+        input_limit=10000,
+        max_attempts=1,
+    )
+    candidate, edits = _apply_targeted_edits(text, targets, patch)
+    if candidate == text or not edits:
+        return text, raw, failed, dict(note, status="rolled_back", reason="invalid_or_empty_targeted_edits")
+    after = inspect_text(candidate)
+    if any(after["counts"].values()):
+        return (
+            text,
+            raw,
+            failed,
+            dict(
+                note,
+                status="rolled_back",
+                reason="hygiene_recheck_failed",
+                after=after["counts"],
+                attempted_edits=edits,
+            ),
+        )
+    names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
+    if _last_paragraph(candidate) != _last_paragraph(text) or any(
+        candidate.count(name) < text.count(name) for name in names
+    ):
+        return text, raw, failed, dict(note, status="rolled_back", reason="character_or_ending_changed")
+    checked, invalid, _ = extract(
+        client, prefix + "-text-hygiene-recheck", candidate, state, bible, outline, [], final=True
+    )
+    from .checks import high_confidence
+
+    if invalid or high_confidence(state, checked.get("events", []), candidate):
+        return text, raw, failed, dict(note, status="rolled_back", reason="fact_recheck_failed")
+    return (
+        candidate,
+        checked,
+        False,
+        dict(note, status="repaired", after=after["counts"], edits=edits, repair_call=prefix + "-text-hygiene"),
     )

@@ -24,6 +24,7 @@ from .prose_repetition import clean_repetitions
 from .q1_repetition import repair_repetitions
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
+from .text_hygiene import repair_text
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -238,6 +239,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     text, raw, failed, _ = repair_after_draft(
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
+    )
+    text, raw, failed, cleaning["text_hygiene"] = repair_text(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

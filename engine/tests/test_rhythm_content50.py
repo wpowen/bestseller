@@ -385,3 +385,58 @@ def test_core_required_slots_use_action_rhythm_without_overriding_mandatory_brea
     assert coordinated[1]["type"] == coordinated[1]["rhythm_type"] == "情感"
     assert coordinated[2]["type"] == coordinated[2]["rhythm_type"] == "谋划"
     assert rhythm[0]["type"] == "情感"
+
+
+def test_detailed_outlines_expand_stage_content_without_replacing_its_main_actions():
+    from bookengine.rhythm_skeleton import bind_stage_content
+
+    detailed = [
+        {
+            "number": 12,
+            "type": "对抗",
+            "conflict": "追兵到场封路",
+            "hook": "保留既有钩子",
+            "scenes": [
+                {
+                    "where": "旧井口",
+                    "characters": ["顾延柯", "追兵"],
+                    "goal": "突围",
+                    "obstacle": "追兵拔刀",
+                    "choice": "反杀追兵",
+                    "emotion": "紧张",
+                },
+                {
+                    "where": "避风棚",
+                    "characters": ["顾延柯", "同伴"],
+                    "goal": "继续追击",
+                    "choice": "追上对手",
+                    "emotion": "急切",
+                },
+            ],
+        }
+    ]
+    skeleton = [
+        {
+            "number": 12,
+            "type": "谋划",
+            "rhythm_type": "谋划",
+            "content_requirement": "比较路线风险并完成分工",
+            "conflict": "两条撤离路线各有代价",
+            "scenes": [
+                {"goal": "比较路线", "obstacle": "信息不全", "action": "列出风险并舍弃北路", "result": "选定南路"},
+                {"goal": "完成分工", "obstacle": "同伴意见相反", "action": "按代价分派接应", "result": "准备完成"},
+            ],
+        }
+    ]
+
+    bound = bind_stage_content(detailed, skeleton)
+
+    assert bound[0]["type"] == bound[0]["rhythm_type"] == "谋划"
+    assert bound[0]["opening_conflict"] == bound[0]["conflict"] == "两条撤离路线各有代价"
+    assert bound[0]["hook"] == "保留既有钩子"
+    assert bound[0]["scenes"][0]["where"] == "旧井口"
+    assert bound[0]["scenes"][0]["characters"] == ["顾延柯", "追兵"]
+    assert bound[0]["scenes"][0]["goal"] == "比较路线"
+    assert bound[0]["scenes"][0]["choice"] == bound[0]["scenes"][0]["action"] == "列出风险并舍弃北路"
+    assert bound[0]["scenes"][1]["goal"] == "完成分工"
+    assert detailed[0]["type"] == "对抗"

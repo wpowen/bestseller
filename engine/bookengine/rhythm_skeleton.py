@@ -32,6 +32,43 @@ def coordinate_core_rhythm(preferred, core_slots):
     return result
 
 
+def bind_stage_content(chapters, skeleton):
+    """Expand a stage skeleton without letting detailed outlines replace its main actions."""
+    anchors = {integer(row.get("number")): row for row in rows(skeleton)}
+    result = []
+    for source in rows(chapters):
+        chapter = deepcopy(source)
+        anchor = anchors.get(integer(chapter.get("number")))
+        if not anchor:
+            result.append(chapter)
+            continue
+        kind = anchor.get("rhythm_type") or anchor.get("type") or chapter.get("type", "")
+        conflict = anchor.get("conflict") or chapter.get("opening_conflict") or chapter.get("conflict", "")
+        chapter.update(
+            type=kind,
+            rhythm_type=kind,
+            rhythm_focus=anchor.get("content_requirement") or chapter.get("rhythm_focus", ""),
+            opening_conflict=conflict,
+            conflict=conflict,
+        )
+        detailed = rows(chapter.get("scenes"))
+        bound = []
+        for index, scene_anchor in enumerate(rows(anchor.get("scenes"))[:2]):
+            scene = deepcopy(detailed[index]) if index < len(detailed) else {}
+            action = scene_anchor.get("action", "")
+            scene.update(
+                goal=scene_anchor.get("goal", ""),
+                obstacle=scene_anchor.get("obstacle", ""),
+                choice=action,
+                action=action,
+                result=scene_anchor.get("result", ""),
+            )
+            bound.append(scene)
+        chapter["scenes"] = bound or detailed
+        result.append(chapter)
+    return result
+
+
 def stage_content_skeleton(client, bible, volume, history, preferred):
     """Return the complete stage skeleton and the detailed window's rhythm slots."""
     preferred = rows(preferred)
@@ -70,6 +107,7 @@ def stage_content_skeleton(client, bible, volume, history, preferred):
             type=slot["rhythm_type"],
             rhythm_type=slot["rhythm_type"],
             content_requirement=FOCUS.get(slot["rhythm_type"], slot["rhythm_focus"]),
+            _model_planned=number in mapped,
         )
         row["scenes"] = rows(row.get("scenes"))[:2]
         skeleton.append(row)

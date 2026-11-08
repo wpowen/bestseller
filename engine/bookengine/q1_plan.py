@@ -23,7 +23,7 @@ from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
 from .chapter_rhythm import RULE as RHYTHM_RULE, VERSION as RHYTHM_VERSION, apply_contract, chapter_type, rhythm_issues
-from .rhythm_skeleton import coordinate_core_rhythm, stage_content_skeleton, window_stage_content
+from .rhythm_skeleton import bind_stage_content, coordinate_core_rhythm, stage_content_skeleton, window_stage_content
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -370,6 +370,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         candidate.setdefault("rhythm_focus", slot["rhythm_focus"])
         candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
         candidates.append(candidate)
+    candidates = bind_stage_content(candidates, [row for row in stage_skeleton if row.get("_model_planned")])
     candidates = enforce_ability_plan(bible, candidates)
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")

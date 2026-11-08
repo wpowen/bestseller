@@ -15,6 +15,7 @@ from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
 from .parallel import collect
 from .adoption import deterministic_choices, entities as _entities, factcheck as _factcheck, final_adoption
+from .hygiene import reject_introduced
 
 DATA = Path(__file__).resolve().parent / "data"
 RULES = yaml.safe_load((DATA / "deai_rules.yaml").read_text())
@@ -379,7 +380,8 @@ def polish(text, ctx, llm):
                     candidates=candidates,
                 )
             )
-        revised = replace(original, edits)
+        revised, edits, hygiene_rollbacks = reject_introduced(original, edits)
+        result.warnings.extend(hygiene_rollbacks)
         if invariant(original, revised, ctx, entities, True):
             raise QualityRejected("Whole chapter invariant failed")
         revised_ps = {p["pid"]: p["text"] for p in paragraphs(revised)}
@@ -423,7 +425,9 @@ def polish(text, ctx, llm):
                 dict(paragraphs=ps, target_pids=ctx["dialogue_targets"], characters=ctx.get("characters", [])),
                 6500,
             )
-            voiced, voice_edits = rewrite(session, accepted, inventory, ctx, ctx["dialogue_mode"], entities)
+            _, voice_edits = rewrite(session, accepted, inventory, ctx, ctx["dialogue_mode"], entities)
+            voiced, voice_edits, hygiene_rollbacks = reject_introduced(accepted, voice_edits)
+            result.warnings.extend(hygiene_rollbacks)
             if voice_edits and not invariant(original, voiced, ctx, entities, True):
                 voice_hits, voice_unknown = session.classify(voiced, "dialogue-final")
                 if not voice_unknown and score(voice_hits, voiced) <= score(current_hits, accepted):

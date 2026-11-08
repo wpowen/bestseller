@@ -49,7 +49,7 @@ def extract_plot(client, stage, text, bible, ask):
     return ask(client, stage, INSTRUCTION, [("完整正文", text), ("圣经合法值与核心能力", context)], SCHEMA, cap=3000)
 
 
-def _validated(raw, text, bible, number):
+def _validated(raw, text, bible, number, fallback_core=None):
     raw = raw if isinstance(raw, dict) else {}
     menu = bible.get("canon", {}).get("solution_menu", [])
     # Do not accept chapter/_sources overrides or fallback category as missing content.
@@ -61,7 +61,15 @@ def _validated(raw, text, bible, number):
     observed = observe_solutions(dict(solutions=candidates), text)
     # Incomplete noun evidence stays in raw, never falls back to semantic content counting.
     observed["solutions"] = [r for r in observed["solutions"] if r.get("target_noun") and r.get("method_noun")]
-    core = verify_core_use(raw.get("core_use"), text, bible)
+    reviewed_raw = raw.get("core_use")
+    core = verify_core_use(reviewed_raw, text, bible)
+    fallback_raw = fallback_core.get("raw") if isinstance(fallback_core, dict) else None
+    fallback = verify_core_use(fallback_raw, text, bible)
+    if core["status"] == "unknown" and fallback["status"] == "verified":
+        if isinstance(reviewed_raw, dict) and reviewed_raw.get("decisive") is False:
+            core = dict(core, reason="conflicting_decisive_reviews")
+        else:
+            core = dict(fallback, evidence_method="source_bound_saved_evidence_fallback")
     mechanism = core["raw"].get("mechanism")
     if core["status"] == "verified" and (len(mechanism) > 16 or re.search(r"[、，,；;|/+\n]", mechanism)):
         core = dict(
@@ -113,7 +121,8 @@ def load_plot_observation(book, chapter, source):
             ):
                 continue
             bible = yaml.safe_load((book / "story_bible.yaml").read_text("utf-8"))
-            return dict(saved, **_validated(saved.get("raw"), text, bible, number))
+            fallback = chapter.get("meta", {}).get("core_use") if isinstance(chapter.get("meta"), dict) else None
+            return dict(saved, **_validated(saved.get("raw"), text, bible, number, fallback))
         except (OSError, ValueError, TypeError, AttributeError, yaml.YAMLError):
             continue
     return None

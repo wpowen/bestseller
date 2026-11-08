@@ -1,5 +1,6 @@
 from bookengine.ability_methods import ability_terms
 from bookengine.core_ability import core_source, verify_core_use
+from bookengine.storage import save
 
 
 def eval45_bible():
@@ -75,9 +76,21 @@ def test_grounded_control_mark_shattering_is_a_concrete_result():
     assert verify_core_use(raw, action + outcome, bible)["status"] == "verified"
 
 
+def test_internal_power_change_and_explicitly_unresolved_result_stay_unknown():
+    bible = {"power": {"name": "借力", "abilities": ["力量"]}}
+    action = "顾川序借用力量，将它引入掌心。"
+    for outcome in (
+        "他体内散乱的灵力随之收束，沿臂骨聚成清晰纹路。",
+        "霜层轰然向外炸开，风雪扑面而来，下一刻尚未落定。",
+    ):
+        raw = dict(decisive=True, mechanism="力量", action_quote=action, result_quote=outcome)
+        assert verify_core_use(raw, action + outcome, bible)["status"] == "unknown"
+
+
 def test_item40_non_use_failure_and_unregistered_mechanism_stay_unknown():
     bible = {"power": {"name": "借力", "abilities": ["身法"]}}
     cases = [
+        ("顾川序只喊了一声身法。", "铁门因此打开，他逃出牢房。", "身法", True),
         (
             "顾川序没有借身法，只举起普通钥匙。",
             "普通钥匙打开铁门，他逃出牢房。",
@@ -106,3 +119,33 @@ def test_distant_unrelated_result_does_not_turn_plan_or_mention_into_evidence():
     text = action + "他在空屋里等了很久。" * 180 + outcome
     raw = dict(decisive=True, mechanism="借影", action_quote=action, result_quote=outcome)
     assert verify_core_use(raw, text, bible)["status"] == "unknown"
+
+
+def test_bound_final_evidence_survives_incomplete_new_review_but_not_explicit_conflict(tmp_path):
+    from bookengine.plot_observations import load_plot_observation
+
+    bible = {"power": {"name": "借影", "rule": "借影复制动作"}, "canon": {"solution_menu": []}}
+    action = "林川借影复制守卫的开锁动作。"
+    outcome = "铁门轰然打开，他带着同伴冲出牢房。"
+    text = action + outcome
+    old = dict(decisive=True, mechanism="借影", action_quote=action, result_quote=outcome)
+    chapter = {
+        "number": 1,
+        "text": text,
+        "path": "final/chapter-001.md",
+        "meta": {"core_use": {"raw": old}},
+    }
+    save(tmp_path / "story_bible.yaml", bible)
+    sidecar = tmp_path / "plot-observations/final-001-v1.json"
+    binding = dict(number=1, source="final", source_path=chapter["path"], source_text=text)
+    incomplete = dict(decisive=True, mechanism="借影", action_quote=action, result_quote=None)
+    save(sidecar, dict(binding, raw={"solutions": [], "core_use": incomplete}))
+    result = load_plot_observation(tmp_path, chapter, "final")
+    assert result["core_use"]["status"] == "verified"
+    assert result["core_use"]["evidence_method"] == "source_bound_saved_evidence_fallback"
+
+    contradicted = dict(decisive=False, mechanism="借影", action_quote=action, result_quote=None)
+    save(sidecar, dict(binding, raw={"solutions": [], "core_use": contradicted}))
+    result = load_plot_observation(tmp_path, chapter, "final")
+    assert result["core_use"]["status"] == "unknown"
+    assert result["core_use"]["reason"] == "conflicting_decisive_reviews"

@@ -684,7 +684,7 @@
 
 ## 2026-11-08-46：文字卫生——英文、结构说明、整段重复在出稿前拦住（用户 2026-11-08：“写并并行启动”）
 
-状态：开发完成，待监工验收
+状态：已验收，已合并进 main（2026-11-08）。1528 项测试通过；书库 0 改动。出稿前统一检查英文片段、结构说明、整段/近似整段重复，写手侧定向修复、去 AI 引入的污染直接回滚。eval-45 命中的 8 章真实修复全部通过（如“旧印 belonged to 雪原上……”→“旧印，属于雪原上……”，“第二场戏转入祖窟核心”→“众人沿着回廊向祖窟深处推进”）。新发现：eval-39《借兽之暖》第 24 章终稿里残留整段英文模型思考（“Need Chinese only. Ensure 300 movement and current location...”，567 个英文词），之前的格式残留检查没抓到；本条只报告，未改书。
 
 文件归属：
 - 可改：本条新增的 `engine/bookengine/text_hygiene.py`（或同类新模块）、`engine/bookengine/endings.py`、`engine/data/ending_rules.yaml`、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/deai/` 中改写后校验相关的文件、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。bookengine 与 deai 互不导入，两边各自实现或通过 `tools/` 共享协议。

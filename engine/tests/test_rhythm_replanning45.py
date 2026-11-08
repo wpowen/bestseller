@@ -183,8 +183,9 @@ def test_semantic_review_is_one_small_model_call():
     assert result[0]["status"] == "mismatch"
     assert len(client.calls) == 1
     name, prompt, schema, kwargs = client.calls[0]
-    assert name == "plan-q1-rhythm-review-v7-001-004"
-    assert "只复核章型标签" in prompt and "content_type" in schema
+    assert name == "plan-q1-rhythm-review-v8-001-004"
+    assert all(term in prompt for term in ("只复核章型标签", "对手到场动手", "characters"))
+    assert "content_type" in schema
     assert kwargs["cap"] == 1800 and kwargs["effort"] == "low"
 
 

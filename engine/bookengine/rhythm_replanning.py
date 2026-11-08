@@ -3,7 +3,7 @@
 from copy import deepcopy
 import json
 
-from .chapter_rhythm import RULE, chapter_type
+from .chapter_rhythm import RULE, VERSION, chapter_type
 from .q1_schema import DATA, integer, model_value, rows
 from .text import pack
 
@@ -69,22 +69,27 @@ def model_review_issues(batch, review):
     return issues
 
 
-def semantic_review(client, key, batch):
+def semantic_review(client, key, batch, deterministic=()):
     """Run one compact semantic review when the client is a configured model client."""
     if not (getattr(client, "model", None) and getattr(client, "provider", None)):
         return []
-    payload = [
+    chapters = [
         {
             "number": integer(row.get("number")),
             "planned_type": chapter_type(row),
             "opening_conflict": row.get("opening_conflict", ""),
+            "conflict": row.get("conflict", ""),
             "scenes": [
-                {field: scene.get(field, "") for field in ("goal", "obstacle", "choice", "action", "result")}
+                {
+                    field: scene.get(field, "")
+                    for field in ("characters", "goal", "obstacle", "choice", "action", "result")
+                }
                 for scene in rows(row.get("scenes"))
             ],
         }
         for row in batch
     ]
+    payload = {"deterministic_issues": list(deterministic), "chapters": chapters}
     prompt = (
         DATA["instructions"]["rhythm_review"]
         + "\n待复核章纲：\n"
@@ -92,7 +97,7 @@ def semantic_review(client, key, batch):
     )
     schema = pack(DATA["schemas"]["rhythm_review"])
     raw = client.stage(
-        "plan-q1-rhythm-review-v7-" + key,
+        f"plan-q1-rhythm-review-v{VERSION}-" + key,
         prompt,
         schema,
         parser=model_value,

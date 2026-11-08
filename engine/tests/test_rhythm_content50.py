@@ -3,8 +3,10 @@
 from copy import deepcopy
 import json
 
+import pytest
+
 from bookengine import outline_diversity
-from bookengine.chapter_rhythm import align_label_to_content, content_type
+from bookengine.chapter_rhythm import align_label_to_content, content_type, rhythm_issues
 
 
 def eval49_chapter3():
@@ -124,3 +126,62 @@ def test_stage_content_is_planned_once_for_the_full_stage_before_window_expansio
     assert all(text in prompt for text in ("整阶段", "哪些章打", "不打的章具体发生什么"))
     assert all(field in schema for field in ("conflict", "result", "scenes"))
     assert kwargs["max_attempts"] == 6
+
+
+@pytest.mark.parametrize("kind", ["情感", "日常", "收获", "揭秘", "谋划"])
+def test_noncombat_outline_rejects_opponent_arrival_and_direct_fighting(kind):
+    row = {
+        "number": 8,
+        "type": kind,
+        "rhythm_type": kind,
+        "conflict": "两人原本要处理战后余波",
+        "scenes": [
+            {
+                "characters": ["顾昕冉", "霜牙"],
+                "goal": "安顿伤员",
+                "obstacle": "霜牙突然到场",
+                "action": "顾昕冉拔刀突围",
+                "result": "击退霜牙",
+            },
+            {
+                "characters": ["顾昕冉", "霜牙"],
+                "goal": "夺回出路",
+                "obstacle": "霜牙封住出口",
+                "action": "顾昕冉反杀追兵",
+                "result": "追兵退走",
+            },
+        ],
+    }
+
+    assert content_type(row) == "对抗"
+    issues = rhythm_issues({}, [], [row])
+    assert any(issue["kind"] == "rhythm_content_mismatch" for issue in issues)
+
+
+def test_noncombat_outline_allows_opponent_as_offstage_pressure_only():
+    row = {
+        "number": 8,
+        "type": "情感",
+        "rhythm_type": "情感",
+        "conflict": "追兵仍在远处搜山，两人必须先解决互不信任",
+        "scenes": [
+            {
+                "characters": ["顾昕冉", "蛮玉筠"],
+                "goal": "坦白此前隐瞒",
+                "obstacle": "远处追兵造成时间压力",
+                "action": "说清恐惧并交出路线决定权",
+                "result": "两人重新约定分工",
+            },
+            {
+                "characters": ["顾昕冉", "蛮玉筠"],
+                "goal": "恢复最低限度信任",
+                "obstacle": "蛮玉筠仍有顾虑",
+                "action": "约定可以拒绝借力",
+                "result": "关系由疏离转为谨慎合作",
+            },
+        ],
+    }
+
+    assert content_type(row) == "情感"
+    issues = rhythm_issues({}, [], [row])
+    assert not [issue for issue in issues if issue["kind"] == "rhythm_content_mismatch"]

@@ -379,7 +379,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
         key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
-    review = semantic_review(client, key, candidates)
+    deterministic_review = rhythm_issues(bible, prior, candidates)
+    review = semantic_review(client, key, candidates, deterministic_review)
     review_issues = model_review_issues(candidates, review)
     observed = observed_rows(recent, history)
 

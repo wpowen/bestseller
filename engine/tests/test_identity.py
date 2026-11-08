@@ -13,7 +13,7 @@ import yaml
 from bookengine.client import Client
 from tools.runtime_support import ProjectError
 from bookengine.config import Book
-from bookengine.identity import name_hits, validate_bible
+from bookengine.identity import name_hits, repair_companion_roles, validate_bible
 from bookengine import q1_plan
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,6 +94,70 @@ class BibleValidationTests(unittest.TestCase):
             del value["characters"][2][field]
             with self.subTest(field=field, missing=True), self.assertRaises(ValueError):
                 validate_bible(value)
+
+    def test_eval49_nonhuman_companion_is_not_assigned_the_romance_role(self):
+        value = bible()
+        value["characters"][1].update(
+            name="蛮玉筠",
+            role="romance",
+            identity="怕冷贪吃的白爪幼兽",
+            gender="雄性",
+        )
+        value["characters"].append(
+            dict(name="沈青禾", role="romance", identity="游历边境的女药师", voice="清晰利落", desire="救人")
+        )
+        seed = "被逐出驭兽宗的矿镇少年，为救妹妹与怕冷贪吃的幼兽结契。女药师有独立的救人目标。"
+
+        repaired, corrections = repair_companion_roles(value, seed)
+
+        assert repaired is not value
+        assert next(card for card in repaired["characters"] if card["name"] == "蛮玉筠")["role"] == "support"
+        assert next(card for card in repaired["characters"] if card["name"] == "沈青禾")["role"] == "romance"
+        assert corrections == [
+            {
+                "name": "蛮玉筠",
+                "from": "romance",
+                "to": "support",
+                "reason": "nonhuman_companion_not_explicit_romance",
+            }
+        ]
+        assert value["characters"][1]["role"] == "romance"
+
+    def test_seed_can_explicitly_require_a_nonhuman_romance_role(self):
+        value = bible()
+        value["characters"][1].update(name="蛮玉筠", role="romance", identity="白爪幼兽", gender="雄性")
+
+        repaired, corrections = repair_companion_roles(value, "白爪幼兽蛮玉筠是主角明确的感情对象与官配。")
+
+        assert repaired["characters"][1]["role"] == "romance"
+        assert corrections == []
+
+    def test_prepare_response_is_corrected_before_validation_and_checkpointing(self):
+        value = bible()
+        value["characters"][1].update(name="蛮玉筠", role="romance", identity="怕冷贪吃的白爪幼兽")
+
+        class Client:
+            prefix = ""
+            relaxed = False
+
+            def stage(self, _stage, _prompt, _schema, **kwargs):
+                response = {"bible": deepcopy(value), "threads": []}
+                normalized = kwargs["normalize"](response)
+                kwargs["validate"](normalized)
+                self.saved = deepcopy(normalized)
+                return normalized
+
+        client = Client()
+        result = q1_plan._ask(
+            client,
+            "prepare",
+            "prepare",
+            [("用户要求", {"user_input": "少年为救妹妹与怕冷贪吃的幼兽结契。"})],
+            seed_text="少年为救妹妹与怕冷贪吃的幼兽结契。",
+        )
+
+        assert result["bible"]["characters"][1]["role"] == "support"
+        assert client.saved == result
 
 
 class PrepareIdentityTests(unittest.TestCase):

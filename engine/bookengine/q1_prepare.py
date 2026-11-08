@@ -6,7 +6,7 @@ import re
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
-from .identity import validate_bible, validate_cast_contract
+from .identity import repair_companion_roles, validate_bible, validate_cast_contract
 from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
 from .storage import save
@@ -20,7 +20,19 @@ from .core_ability import repair_development, core_source, RULE as CORE_RULE
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
-def _ask(client, kind, key, sections, redo=False):
+def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
+    def normalize(value):
+        if kind != "prepare" or not isinstance(value, dict):
+            return value
+        container = "bible" if isinstance(value.get("bible"), dict) else "story_bible"
+        if not isinstance(value.get(container), dict):
+            return value
+        repaired, corrections = repair_companion_roles(value[container], seed_text)
+        normalized = dict(value, **{container: repaired})
+        if corrections:
+            normalized["_companion_role_corrections"] = corrections
+        return normalized
+
     def validate(value):
         if kind == "prepare":
             raw = value if isinstance(value, dict) else {}
@@ -103,7 +115,16 @@ def _ask(client, kind, key, sections, redo=False):
         if redo:
             stage += "-redo" + (str(redo) if redo != 1 else "")
         return parse(
-            client.stage(stage, prompt, schema, parser=model_value, validate=validate, max_attempts=6, cap=11000)
+            client.stage(
+                stage,
+                prompt,
+                schema,
+                parser=model_value,
+                normalize=normalize,
+                validate=validate,
+                max_attempts=6,
+                cap=11000,
+            )
         )
     except (QuotaExhausted, ProjectError):
         raise
@@ -248,7 +269,7 @@ def prepare(client, book, out, assets, design=False):
                 if redo
                 else []
             )
-            raw = _ask(client, "prepare", "prepare", sections + extra, redo)
+            raw = _ask(client, "prepare", "prepare", sections + extra, redo, seed_text=book.user_input)
             raw = raw if isinstance(raw, dict) else {}
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             try:
@@ -264,6 +285,11 @@ def prepare(client, book, out, assets, design=False):
                 previous_error = str(exc)
                 if redo == (3 if card else 5):
                     raise
+        if raw.get("_companion_role_corrections"):
+            save(
+                Path(out) / "companion-role-design.json",
+                dict(corrections=raw["_companion_role_corrections"], source="user_input"),
+            )
         if values[0] is None:
             bible, new_threads = repair_structure(
                 bible,

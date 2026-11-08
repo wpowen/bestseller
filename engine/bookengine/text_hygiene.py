@@ -20,8 +20,10 @@ _STRUCTURE = re.compile(
 )
 _MIN_EXACT_LENGTH = 10
 _MIN_NEAR_LENGTH = 20
+_MIN_SENTENCE_LENGTH = 15
 _NEAR_SIMILARITY = 0.65
 _NEAR_CONTAINMENT = 0.55
+_NEAR_SENTENCE_SIMILARITY = 0.92
 
 
 def _normalize(value):
@@ -111,6 +113,165 @@ def _paragraph_hits(text, spans):
     return result
 
 
+def _prefix_end(value, normalized):
+    current = ""
+    for offset, char in enumerate(value):
+        current += _normalize(char)
+        if len(current) < len(normalized):
+            continue
+        if current != normalized:
+            return None
+        end = offset + 1
+        while end < len(value) and (value[end].isspace() or unicodedata.category(value[end])[0] in "PZC"):
+            end += 1
+        return end
+    return None
+
+
+def _sentence_hits(text, spans):
+    from .prose_repetition import _sentences as complete_sentences
+    from .prose_repetition import clean_repetitions
+
+    nodes = complete_sentences(text, spans)
+    actions = {}
+    for record in clean_repetitions(text, remove_safe=False)["records"]:
+        if record["kind"] != "sentence":
+            continue
+        for occurrence in record["occurrences"][1:]:
+            actions[(occurrence["start"], occurrence["end"])] = occurrence
+    result = []
+    for index in range(1, len(nodes) - 1):
+        first, second = nodes[index], nodes[index + 1]
+        if first.get("quoted") or second.get("quoted") or first["paragraph"] != second["paragraph"]:
+            continue
+        normalized = _normalize(first["text"]) + _normalize(second["text"])
+        if len(normalized) < _MIN_SENTENCE_LENGTH:
+            continue
+        reference = next(
+            (
+                (left, right)
+                for left, right in zip(nodes[:index], nodes[1:index])
+                if not left.get("quoted")
+                and not right.get("quoted")
+                and left["paragraph"] == right["paragraph"]
+                and _normalize(left["text"]) + _normalize(right["text"]) == normalized
+            ),
+            None,
+        )
+        if reference is None:
+            continue
+        action = actions.get((second["start"], second["end"]), {})
+        result.append(
+            dict(
+                kind="sentence_sequence",
+                normalized=normalized,
+                reference_sentence=reference[0]["sentence_id"],
+                sentence=first["sentence_id"],
+                reference_text=text[reference[0]["start"] : reference[1]["end"]],
+                start=first["start"],
+                end=second["end"],
+                text=text[first["start"] : second["end"]],
+                safe_delete=action.get("action") != "unknown",
+                reasons=action.get("reasons", []),
+            )
+        )
+    occupied = {(row["start"], row["end"]) for row in result}
+    groups = {}
+    for node in nodes:
+        normalized = _normalize(node["text"])
+        if not node.get("quoted") and len(normalized) >= _MIN_SENTENCE_LENGTH:
+            groups.setdefault(normalized, []).append(node)
+    for normalized, occurrences in groups.items():
+        if len(occurrences) < 2:
+            continue
+        reference = occurrences[0]
+        for occurrence in occurrences[1:]:
+            if any(start <= occurrence["start"] and occurrence["end"] <= end for start, end in occupied):
+                continue
+            action = actions.get((occurrence["start"], occurrence["end"]), {})
+            result.append(
+                dict(
+                    kind="exact_sentence",
+                    normalized=normalized,
+                    reference_sentence=reference["sentence_id"],
+                    sentence=occurrence["sentence_id"],
+                    reference_text=reference["text"],
+                    start=occurrence["start"],
+                    end=occurrence["end"],
+                    text=occurrence["text"],
+                    safe_delete=action.get("action") == "reported",
+                    reasons=action.get("reasons", []),
+                )
+            )
+
+            occupied.add((occurrence["start"], occurrence["end"]))
+    for index, current in enumerate(nodes):
+        if current.get("quoted") or any(start <= current["start"] < end for start, end in occupied):
+            continue
+        current_normalized = _normalize(current["text"])
+        candidates = []
+        for earlier in nodes[:index]:
+            earlier_normalized = _normalize(earlier["text"])
+            if earlier.get("quoted") or min(len(earlier_normalized), len(current_normalized)) < _MIN_SENTENCE_LENGTH:
+                continue
+            length_ratio = min(len(earlier_normalized), len(current_normalized)) / max(
+                len(earlier_normalized), len(current_normalized)
+            )
+            similarity = SequenceMatcher(None, earlier_normalized, current_normalized, autojunk=False).ratio()
+            if length_ratio >= 0.8 and similarity >= _NEAR_SENTENCE_SIMILARITY:
+                candidates.append((similarity, earlier))
+        if candidates:
+            similarity, earlier = max(candidates, key=lambda item: item[0])
+            result.append(
+                dict(
+                    kind="near_sentence",
+                    normalized=current_normalized,
+                    reference_sentence=earlier["sentence_id"],
+                    sentence=current["sentence_id"],
+                    reference_text=earlier["text"],
+                    start=current["start"],
+                    end=current["end"],
+                    text=current["text"],
+                    similarity=round(similarity, 4),
+                    safe_delete=False,
+                    reasons=["near_match_may_contain_unique_content"],
+                )
+            )
+            occupied.add((current["start"], current["end"]))
+
+    for index, current in enumerate(nodes):
+        if current.get("quoted") or any(start <= current["start"] < end for start, end in occupied):
+            continue
+        current_normalized = _normalize(current["text"])
+        candidates = []
+        for first, second in zip(nodes[:index], nodes[1:index]):
+            if first.get("quoted") or second.get("quoted") or first["paragraph"] != second["paragraph"]:
+                continue
+            combined = _normalize(first["text"]) + _normalize(second["text"])
+            if len(combined) < _MIN_SENTENCE_LENGTH or not current_normalized.startswith(combined):
+                continue
+            end = _prefix_end(current["text"], combined)
+            if end is not None:
+                candidates.append((len(combined), first, second, combined, current["start"] + end))
+        if candidates:
+            _, first, second, combined, end = max(candidates, key=lambda item: item[0])
+            result.append(
+                dict(
+                    kind="fused_sentence",
+                    normalized=combined,
+                    reference_sentence=first["sentence_id"],
+                    sentence=current["sentence_id"],
+                    reference_text=text[first["start"] : second["end"]],
+                    start=current["start"],
+                    end=end,
+                    text=text[current["start"] : end],
+                    safe_delete=True,
+                    reasons=[],
+                )
+            )
+    return sorted(result, key=lambda row: (row["start"], row["end"], row["kind"]))
+
+
 def inspect_text(text):
     """Return located hygiene findings without changing the supplied text."""
     if not isinstance(text, str):
@@ -121,6 +282,7 @@ def inspect_text(text):
     ]
     structure = _surface_hits(text, spans, _STRUCTURE, "structure")
     paragraphs = _paragraph_hits(text, spans)
+    sentences = _sentence_hits(text, spans)
     exact = sum(row["kind"] == "exact_paragraph" for row in paragraphs)
     near = sum(row["kind"] == "near_paragraph" for row in paragraphs)
     return dict(
@@ -130,10 +292,14 @@ def inspect_text(text):
             exact_paragraph_repetitions=exact,
             near_paragraph_repetitions=near,
             paragraph_repetitions=exact + near,
+            exact_sentence_repetitions=sum(row["kind"] != "near_sentence" for row in sentences),
+            near_sentence_repetitions=sum(row["kind"] == "near_sentence" for row in sentences),
+            sentence_repetitions=len(sentences),
         ),
         english=english,
         structure=structure,
         paragraphs=paragraphs,
+        sentences=sentences,
     )
 
 
@@ -144,13 +310,18 @@ def summarize_chapters(chapters):
         english_fragments=sum(row["counts"]["english_fragments"] for row in rows),
         structural_notes=sum(row["counts"]["structural_notes"] for row in rows),
         paragraph_repetitions=sum(row["counts"]["paragraph_repetitions"] for row in rows),
+        sentence_repetitions=sum(row["counts"]["sentence_repetitions"] for row in rows),
         english_chapters=[row["chapter"] for row in rows if row["counts"]["english_fragments"]],
         structural_chapters=[row["chapter"] for row in rows if row["counts"]["structural_notes"]],
         paragraph_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["paragraph_repetitions"]],
+        sentence_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["sentence_repetitions"]],
         chapters=[
             row
             for row in rows
-            if any(row["counts"][key] for key in ("english_fragments", "structural_notes", "paragraph_repetitions"))
+            if any(
+                row["counts"][key]
+                for key in ("english_fragments", "structural_notes", "paragraph_repetitions", "sentence_repetitions")
+            )
         ],
     )
 
@@ -159,8 +330,41 @@ def _repair_targets(text, findings):
     from .precision import _sentences
 
     paragraph_spans = _paragraph_spans(text)
-    duplicate_spans = {(row["start"], row["end"]): row for row in findings["paragraphs"]}
+    sentence_spans = _sentences(text)
+    sentence_rows = [
+        row
+        for row in findings["sentences"]
+        if not any(
+            paragraph["kind"] == "exact_paragraph"
+            and paragraph["start"] == row["start"]
+            and paragraph["end"] == row["end"]
+            for paragraph in findings["paragraphs"]
+        )
+    ]
+    duplicate_spans = {
+        (row["start"], row["end"]): row
+        for row in findings["paragraphs"]
+        if not any(row["start"] <= sentence["start"] < row["end"] for sentence in sentence_rows)
+    }
     targets = []
+    for row in sentence_rows:
+        end = row["end"]
+        if not row["safe_delete"] and any(reason.endswith("dependency") for reason in row["reasons"]):
+            index = max((i for i, span in enumerate(sentence_spans) if span[1] <= row["end"]), default=None)
+            if index is not None and index + 1 < len(sentence_spans):
+                end = sentence_spans[index + 1][1]
+        targets.append(
+            dict(
+                id="",
+                kind=row["kind"],
+                start=row["start"],
+                end=end,
+                text=text[row["start"] : end],
+                reference_text=row["reference_text"],
+                safe_delete=row["safe_delete"],
+                reasons=row["reasons"],
+            )
+        )
     for (start, end), row in duplicate_spans.items():
         reference = paragraph_spans[row["reference_paragraph"] - 1]
         targets.append(
@@ -173,7 +377,6 @@ def _repair_targets(text, findings):
                 reference_text=text[reference[0] : reference[1]],
             )
         )
-    sentence_spans = _sentences(text)
     grouped = {}
     for kind, rows in (("english", findings["english"]), ("structure", findings["structure"])):
         for row in rows:
@@ -204,7 +407,7 @@ def _apply_targeted_edits(text, targets, value):
         replacement = proposed.get("text")
         if target is None or not isinstance(replacement, str) or "\n" in replacement or "\r" in replacement:
             continue
-        if target["kind"] == "exact_paragraph":
+        if target["kind"] == "exact_paragraph" or target.get("safe_delete"):
             replacement = ""
         if not replacement.strip() and "paragraph" not in target["kind"]:
             continue
@@ -243,6 +446,7 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
         client,
         prefix + "-text-hygiene",
         "只修改卫生命中的句或后一次重复段：英文换成自然中文，结构说明改成叙述，重复段删除后一次或合并其独有信息。"
+        "重复整句只删后一次；若后句靠它提供主语，把主语并入后句并保留后句独有信息。"
         "不得修改其他文字，不增删人物、事实、数字、因果或章末画面，引号必须成对；不安全则不提交该项。返回JSON。",
         [("卫生命中", json.dumps(targets, ensure_ascii=False)), ("只读正文", text)],
         '{"edits":[{"id":"H1","text":"替换句；删除重复整段时为空字符串"}]}',

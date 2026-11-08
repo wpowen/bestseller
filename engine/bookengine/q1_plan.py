@@ -369,6 +369,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         candidate.setdefault("rhythm_focus", slot["rhythm_focus"])
         candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
         candidates.append(candidate)
+    candidates = enforce_ability_plan(bible, candidates)
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
@@ -473,7 +474,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ]
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
-    result = enforce_ability_plan(bible, result)
     result = [schedule_catchphrases(chapter, bible) for chapter in result]
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)

@@ -207,3 +207,63 @@ def test_checkup_registers_unresolved_saved_plan_content_without_writing(tmp_pat
     assert plan_content["issues"][0]["kind"] == "rhythm_content_mismatch"
     assert plan_content["issues"][0]["observed"] == "对抗"
     assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
+
+
+def test_semantic_review_sees_ability_enforcement_before_rhythm_replanning(tmp_path, monkeypatch):
+    from test_chapter_rhythm39 import OfflineClient, bible, chapter, plan
+    from bookengine import q1_plan
+
+    seen = []
+
+    def enforce(_bible, batch):
+        return [dict(row, ability_enforced_before_rhythm=True) for row in batch]
+
+    def review(_client, _key, batch, deterministic=()):
+        seen.extend(batch)
+        return []
+
+    monkeypatch.setattr(q1_plan, "enforce_ability_plan", enforce)
+    monkeypatch.setattr(q1_plan, "semantic_review", review)
+    monkeypatch.setattr(q1_plan, "repair_batch", lambda _out, _key, _history, batch, _rewrite, **_kwargs: batch)
+    client = OfflineClient(None, [{"chapters": [chapter(1, "情感")]}])
+
+    result = plan(client, bible((1,)), 1, 1)
+
+    assert seen and seen[0]["ability_enforced_before_rhythm"] is True
+    assert result[0]["ability_enforced_before_rhythm"] is True
+
+
+def test_exhausted_replanning_uses_saved_semantic_content_type_when_rules_are_unknown(tmp_path):
+    original = {
+        "number": 4,
+        "type": "情感",
+        "rhythm_type": "情感",
+        "opening_conflict": "两队在窄道相遇",
+        "scenes": [{"goal": "穿过窄道", "choice": "主角作出决定"}],
+    }
+    model_issue = {
+        "kind": "rhythm_model_mismatch",
+        "targets": [4],
+        "allowed": ["情感"],
+        "observed": "对抗",
+        "reason": "对手在场交手",
+        "requirement": "标签服从内容",
+    }
+
+    def unchanged(_current, _issues, _targets, _used, _attempt):
+        return {"chapters": [deepcopy(original)]}
+
+    result = outline_diversity.repair_batch(
+        tmp_path,
+        "004-004",
+        [],
+        [original],
+        unchanged,
+        initial_issues=[model_issue],
+        model_review=[{"number": 4, "content_type": "对抗", "status": "mismatch"}],
+    )
+
+    assert result[0]["type"] == result[0]["rhythm_type"] == "对抗"
+    report = json.loads((tmp_path / "outline-diversity/004-004.json").read_text())
+    assert report["rhythm_replans"][0]["action"] == "kept_original_relabelled"
+    assert report["rhythm_replans"][0]["content_type"] == "对抗"

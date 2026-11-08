@@ -215,9 +215,29 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
         exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= 2}
         for number in sorted(exhausted - locked):
             original = deepcopy(originals[number])
-            observed = chapter_type(align_label_to_content(original))
+            aligned = align_label_to_content(original)
+            observed = chapter_type(aligned)
+            semantic = next(
+                (
+                    issue.get("observed")
+                    for issue in initial_issues
+                    if number in issue.get("targets", [])
+                    and issue.get("observed") in {"对抗", "谋划", "情感", "日常", "揭秘", "收获"}
+                ),
+                "",
+            )
+            if observed == chapter_type(original) or not observed:
+                observed = semantic or observed
             relabelled = bool(observed and observed != chapter_type(original))
-            fallback = align_label_to_content(original) if relabelled else original
+            fallback = aligned if relabelled and chapter_type(aligned) == observed else original
+            if relabelled and fallback is original:
+                fallback = dict(
+                    original,
+                    type=observed,
+                    rhythm_type=observed,
+                    rhythm_focus=FOCUS.get(observed, original.get("rhythm_focus", "保留本章主场景行动与人物选择")),
+                    rhythm_contract_version=RHYTHM_VERSION,
+                )
             current = [fallback if integer(row.get("number")) == number else row for row in current]
             locked.add(number)
             decision = dict(

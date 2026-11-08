@@ -1,11 +1,56 @@
 """Fixed cast validation and conservative subject-name candidates."""
 
+from copy import deepcopy
 from pathlib import Path
 import re
 import yaml
 from .precision import _sentences
 
 RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/identity_rules.yaml").read_text())
+_NONHUMAN_COMPANION = re.compile(r"契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵兽|妖兽|神兽|兽形|兽身")
+_ROMANCE_ROLE = re.compile(r"恋爱对象|感情对象|恋人|爱情线|感情线|官配|CP|相恋|谈恋爱")
+
+
+def _explicit_companion_romance(seed_text, card):
+    if not isinstance(seed_text, str):
+        return False
+    for clause in re.split(r"[。！？!?；;\n]", seed_text):
+        if not _ROMANCE_ROLE.search(clause):
+            continue
+        name = card.get("name")
+        if isinstance(name, str) and name and name in clause:
+            return True
+        if re.search(
+            r"(?:契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵兽|妖兽|神兽)"
+            r"[^，,；;。！？!?\n]{0,18}(?:恋爱对象|感情对象|恋人|爱情线|感情线|官配|CP|相恋|谈恋爱)|"
+            r"(?:恋爱对象|感情对象|恋人|爱情线|感情线|官配|CP)"
+            r"[^，,；;。！？!?\n]{0,18}(?:契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵兽|妖兽|神兽)",
+            clause,
+        ):
+            return True
+    return False
+
+
+def repair_companion_roles(bible, seed_text=""):
+    """Correct model-inferred nonhuman romance roles unless the seed explicitly requests one."""
+    repaired = deepcopy(bible)
+    corrections = []
+    cards = repaired.get("characters", []) if isinstance(repaired, dict) else []
+    for card in cards if isinstance(cards, list) else []:
+        if not isinstance(card, dict) or card.get("role") != "romance":
+            continue
+        identity = " ".join(str(card.get(key, "")) for key in ("identity", "species", "type"))
+        if not _NONHUMAN_COMPANION.search(identity) or _explicit_companion_romance(seed_text, card):
+            continue
+        card["role"] = "support"
+        corrections.append(
+            dict(
+                name=card.get("name", ""),
+                **{"from": "romance", "to": "support"},
+                reason="nonhuman_companion_not_explicit_romance",
+            )
+        )
+    return repaired, corrections
 
 
 def validate_bible(bible):

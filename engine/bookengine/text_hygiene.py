@@ -9,6 +9,7 @@ import unicodedata
 import yaml
 
 from .text import _paragraph_spans
+from .sentence_repetition import sentence_hits
 
 
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())
@@ -121,6 +122,7 @@ def inspect_text(text):
     ]
     structure = _surface_hits(text, spans, _STRUCTURE, "structure")
     paragraphs = _paragraph_hits(text, spans)
+    sentences = sentence_hits(text, spans)
     exact = sum(row["kind"] == "exact_paragraph" for row in paragraphs)
     near = sum(row["kind"] == "near_paragraph" for row in paragraphs)
     return dict(
@@ -130,10 +132,14 @@ def inspect_text(text):
             exact_paragraph_repetitions=exact,
             near_paragraph_repetitions=near,
             paragraph_repetitions=exact + near,
+            exact_sentence_repetitions=sum(row["kind"] != "near_sentence" for row in sentences),
+            near_sentence_repetitions=sum(row["kind"] == "near_sentence" for row in sentences),
+            sentence_repetitions=len(sentences),
         ),
         english=english,
         structure=structure,
         paragraphs=paragraphs,
+        sentences=sentences,
     )
 
 
@@ -144,23 +150,79 @@ def summarize_chapters(chapters):
         english_fragments=sum(row["counts"]["english_fragments"] for row in rows),
         structural_notes=sum(row["counts"]["structural_notes"] for row in rows),
         paragraph_repetitions=sum(row["counts"]["paragraph_repetitions"] for row in rows),
+        sentence_repetitions=sum(row["counts"]["sentence_repetitions"] for row in rows),
         english_chapters=[row["chapter"] for row in rows if row["counts"]["english_fragments"]],
         structural_chapters=[row["chapter"] for row in rows if row["counts"]["structural_notes"]],
         paragraph_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["paragraph_repetitions"]],
+        sentence_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["sentence_repetitions"]],
         chapters=[
             row
             for row in rows
-            if any(row["counts"][key] for key in ("english_fragments", "structural_notes", "paragraph_repetitions"))
+            if any(
+                row["counts"][key]
+                for key in ("english_fragments", "structural_notes", "paragraph_repetitions", "sentence_repetitions")
+            )
         ],
     )
 
 
-def _repair_targets(text, findings):
+def _repair_targets(text, findings, bible):
     from .precision import _sentences
 
     paragraph_spans = _paragraph_spans(text)
-    duplicate_spans = {(row["start"], row["end"]): row for row in findings["paragraphs"]}
+    sentence_spans = _sentences(text)
+    sentence_rows = [
+        row
+        for row in findings["sentences"]
+        if not any(
+            paragraph["kind"] == "exact_paragraph"
+            and paragraph["start"] == row["start"]
+            and paragraph["end"] == row["end"]
+            for paragraph in findings["paragraphs"]
+        )
+    ]
+    duplicate_spans = {
+        (row["start"], row["end"]): row
+        for row in findings["paragraphs"]
+        if not any(row["start"] <= sentence["start"] < row["end"] for sentence in sentence_rows)
+    }
     targets = []
+    for row in sentence_rows:
+        end = row["end"]
+        if not row["safe_delete"] and any(reason.endswith("dependency") for reason in row["reasons"]):
+            index = max((i for i, span in enumerate(sentence_spans) if span[1] <= row["end"]), default=None)
+            if index is not None and index + 1 < len(sentence_spans):
+                end = sentence_spans[index + 1][1]
+        forced_replacement = None
+        if end > row["end"]:
+            names = sorted(
+                [
+                    card.get("name")
+                    for card in bible.get("characters", [])
+                    if isinstance(card, dict) and card.get("name")
+                ],
+                key=len,
+                reverse=True,
+            )
+            reference = row["reference_text"].lstrip(" \t\r\n“‘\"'")
+            subject = next((name for name in names if reference.startswith(name)), None)
+            tail = text[row["end"] : end]
+            match = re.match(r"(\s*[“‘\"']?)[他她]", tail)
+            if subject and match:
+                forced_replacement = match[1] + subject + tail[match.end() :]
+        targets.append(
+            dict(
+                id="",
+                kind=row["kind"],
+                start=row["start"],
+                end=end,
+                text=text[row["start"] : end],
+                reference_text=row["reference_text"],
+                safe_delete=row["safe_delete"],
+                reasons=row["reasons"],
+                forced_replacement=forced_replacement,
+            )
+        )
     for (start, end), row in duplicate_spans.items():
         reference = paragraph_spans[row["reference_paragraph"] - 1]
         targets.append(
@@ -173,7 +235,6 @@ def _repair_targets(text, findings):
                 reference_text=text[reference[0] : reference[1]],
             )
         )
-    sentence_spans = _sentences(text)
     grouped = {}
     for kind, rows in (("english", findings["english"]), ("structure", findings["structure"])):
         for row in rows:
@@ -197,16 +258,26 @@ def _apply_targeted_edits(text, targets, value):
     by_id = {row["id"]: row for row in targets}
     edits = []
     seen = set()
-    for proposed in value.get("edits", []) if isinstance(value, dict) else []:
+    proposed_rows = value.get("edits", []) if isinstance(value, dict) else []
+    proposed_rows = [row for row in proposed_rows if isinstance(row, dict)]
+    submitted = {row.get("id") for row in proposed_rows}
+    proposed_rows += [
+        {"id": row["id"], "text": ""}
+        for row in targets
+        if (row.get("safe_delete") or row.get("forced_replacement") is not None) and row["id"] not in submitted
+    ]
+    for proposed in proposed_rows:
         if not isinstance(proposed, dict) or proposed.get("id") in seen:
             continue
         target = by_id.get(proposed.get("id"))
         replacement = proposed.get("text")
         if target is None or not isinstance(replacement, str) or "\n" in replacement or "\r" in replacement:
             continue
-        if target["kind"] == "exact_paragraph":
+        if target.get("forced_replacement") is not None:
+            replacement = target["forced_replacement"]
+        elif target["kind"] == "exact_paragraph" or target.get("safe_delete"):
             replacement = ""
-        if not replacement.strip() and "paragraph" not in target["kind"]:
+        if not replacement.strip() and "paragraph" not in target["kind"] and not target.get("safe_delete"):
             continue
         seen.add(target["id"])
         if replacement != target["text"]:
@@ -236,13 +307,14 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
     """Make one targeted repair attempt and adopt only a fully clean recheck."""
     before = inspect_text(text)
     note = dict(status="checked", before=before["counts"], after=before["counts"], edits=[])
-    targets = _repair_targets(text, before)
+    targets = _repair_targets(text, before, bible)
     if not targets:
         return text, raw, failed, note
     patch = ask(
         client,
         prefix + "-text-hygiene",
         "只修改卫生命中的句或后一次重复段：英文换成自然中文，结构说明改成叙述，重复段删除后一次或合并其独有信息。"
+        "重复整句只删后一次；若后句靠它提供主语，把主语并入后句并保留后句独有信息。"
         "不得修改其他文字，不增删人物、事实、数字、因果或章末画面，引号必须成对；不安全则不提交该项。返回JSON。",
         [("卫生命中", json.dumps(targets, ensure_ascii=False)), ("只读正文", text)],
         '{"edits":[{"id":"H1","text":"替换句；删除重复整段时为空字符串"}]}',

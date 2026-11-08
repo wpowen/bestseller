@@ -108,6 +108,108 @@ def test_f42_single_subject_pronoun_drift_is_repairable():
     ]
 
 
+def test_eval49_inline_and_following_sentence_pronouns_share_the_checkup_rule():
+    value = bible()
+    value["characters"][0].update(name="顾昕冉", gender="男")
+    inline = (
+        "顾昕冉从矿洞口抽身，顶着卷过矿架的风雪，沿镇外几近没膝的积雪一路折返。"
+        "抵达旧屋檐下时，她的铜哨已被风吹得发颤，肩头也落满冰碴。"
+    )
+    following = "顾昕冉没有答。她站在树影里，掌心旧伤被刀柄磨得发热。盐皮兽群正从寨门前的空地穿过。"
+
+    for chapter, text in ((6, inline), (26, following)):
+        findings = cast_findings(text, value, chapter=chapter)
+        assert [(row["kind"], row["name"], row["observed"], row["expected"]) for row in findings] == [
+            ("gender_pronoun", "顾昕冉", "她", "他")
+        ]
+        checkup = cast_checkup(value, [{"number": chapter, "text": text}])
+        assert checkup["counts"]["gender_pronoun"] == 1
+        assert checkup["findings"] == findings
+
+
+def test_eval49_pronoun_subject_carries_only_through_a_bound_pronoun_sentence():
+    value = bible()
+    value["characters"][0].update(name="顾昕冉", gender="男")
+    text = (
+        "顾昕冉沿积雪一路折返。抵达旧屋檐下时，她的铜哨已被风吹得发颤。"
+        "风铃响过三声，她顾不得进屋查看。可她再想不起回去的路。雪原在记忆里只剩一片白。她扶住墙。"
+    )
+
+    findings = cast_findings(text, value, chapter=6)
+
+    assert [(row["observed"], row["expected"]) for row in findings] == [("她", "他"), ("她", "他"), ("她", "他")]
+
+
+def test_named_man_looking_at_a_woman_does_not_bind_her_next_pronoun_to_him():
+    value = bible()
+    text = "顾冬岚看向她。她脸色苍白，却没有退缩。顾冬岚抬眼。她将铜片收回袖中。"
+
+    assert cast_findings(text, value, chapter=3) == []
+
+
+def test_contract_borrowing_and_memory_loss_keep_the_named_subject_bound():
+    value = bible()
+    text = (
+        "顾冬岚握住契兽的前爪，契约纹路随即沉入筋骨。她没有窥见未来，只听见远处兽息。"
+        "顾冬岚收刀时，脑中忽然空了一块。她记得来路。可她再想不起回家的方向。"
+    )
+
+    findings = cast_findings(text, value, chapter=26)
+
+    assert [(row["observed"], row["expected"]) for row in findings] == [("她", "他"), ("她", "他"), ("她", "他")]
+
+
+def test_eval49_pronoun_repair_targets_the_shared_finding_and_passes_recheck():
+    value = bible()
+    value["characters"][0].update(name="顾昕冉", gender="男")
+    text = "顾昕冉没有答。她站在树影里，掌心旧伤被刀柄磨得发热。"
+
+    def ask(_client, _stage, _instruction, sections, _schema, **_kwargs):
+        targets = yaml.safe_load(next(body for title, body in sections if title == "待修句"))
+        assert [(row["kind"], row["name"], row["observed"]) for row in targets] == [("gender_pronoun", "顾昕冉", "她")]
+        return {"edits": [{"id": targets[0]["id"], "text": "他站在树影里，掌心旧伤被刀柄磨得发热。"}]}
+
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "chapter26",
+        text,
+        {"events": []},
+        False,
+        {},
+        value,
+        {"number": 26},
+        lambda *_args, **_kwargs: ({"events": []}, False, None),
+        ask,
+    )
+
+    assert repaired == "顾昕冉没有答。他站在树影里，掌心旧伤被刀柄磨得发热。"
+    assert cast_findings(repaired, value, chapter=26) == []
+    assert failed is False and note["status"] == "repaired"
+
+
+def test_eval49_clear_pronoun_uses_deterministic_leaf_fix_when_model_returns_no_edit():
+    value = bible()
+    value["characters"][0].update(name="顾昕冉", gender="男")
+    text = "顾昕冉没有答。她站在树影里，掌心旧伤被刀柄磨得发热。"
+
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "chapter26",
+        text,
+        {"events": []},
+        False,
+        {},
+        value,
+        {"number": 26},
+        lambda *_args, **_kwargs: ({"events": []}, False, None),
+        lambda *_args, **_kwargs: {"edits": []},
+    )
+
+    assert repaired == "顾昕冉没有答。他站在树影里，掌心旧伤被刀柄磨得发热。"
+    assert cast_findings(repaired, value, chapter=26) == []
+    assert failed is False and note["status"] == "repaired"
+
+
 def test_ambiguous_pronoun_stays_unknown_and_is_not_a_repair_target():
     text = "顾安澜扶住顾冬岚，两人一起越过断桥。他回头看了一眼。"
     findings = cast_findings(text, bible(), chapter=7)

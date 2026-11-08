@@ -54,6 +54,121 @@ def test_short_repeated_dialogue_is_not_a_whole_paragraph_issue():
     assert result["counts"]["paragraph_repetitions"] == 0
 
 
+def test_eval49_complete_sentence_repetitions_cover_exact_and_fused_forms():
+    samples = {
+        19: (
+            "灰烬下，一枚陌生的兽铃碎片缓缓浮现，铃舌朝向外围，指向矿镇的方向。\n\n"
+            "灰烬下，一枚陌生的兽铃碎片缓缓浮现，铃舌朝向外围，指向矿镇的方向。"
+            "蛮玉筠盯着碎片上残留的旧骨纹路。"
+        ),
+        20: (
+            "顾昕冉低头。猎团令牌贴在掌心，正与脚下骨阵的灰纹发出同一种细微震动。\n\n"
+            "顾昕冉低头，猎团令牌贴在掌心，正与脚下骨阵的灰纹发出同一种细微震动。"
+            "撤出弟子，骨阵便能循着令牌找到出口。"
+        ),
+        21: (
+            "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。\n\n"
+            "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。"
+            "他判断药囊已被送入王城药道。"
+        ),
+    }
+
+    results = {chapter: inspect_text(text) for chapter, text in samples.items()}
+
+    assert results[19]["counts"]["sentence_repetitions"] == 1
+    assert results[20]["counts"]["sentence_repetitions"] == 1
+    assert results[20]["sentences"][0]["kind"] == "fused_sentence"
+    assert results[21]["counts"]["sentence_repetitions"] == 1
+    assert results[21]["sentences"][0]["kind"] == "sentence_sequence"
+    assert all(len(row["normalized"]) >= 15 for result in results.values() for row in result["sentences"])
+
+
+def test_sentence_repair_deletes_only_later_copy_and_preserves_unique_information():
+    text = (
+        "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。\n\n"
+        "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。"
+        "他判断药囊已被送入王城药道。\n\n顾小满抬头望向北门。"
+    )
+
+    def ask(*args, **kwargs):
+        targets = json.loads(dict(args[3])["卫生命中"])
+        edits = []
+        for target in targets:
+            replacement = (
+                "顾昕冉判断药囊已被送入王城药道。" if "他判断药囊" in target["text"] else "这段文字不会被采用。"
+            )
+            edits.append({"id": target["id"], "text": replacement})
+        return {"edits": edits}
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch21",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾昕冉"}, {"name": "顾小满"}, {"name": "黑牙"}]},
+        {"number": 21},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        ask,
+    )
+
+    assert result.count("顾昕冉一怔，重新看向铜铃。") == 1
+    assert result.count("兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。") == 1
+    assert "顾昕冉判断药囊已被送入王城药道。" in result
+    assert result.endswith("顾小满抬头望向北门。")
+    assert inspect_text(result)["counts"]["sentence_repetitions"] == 0
+    assert note["status"] == "repaired"
+
+
+def test_safe_sentence_duplicate_accepts_empty_targeted_deletion():
+    repeated = "灰烬下，一枚陌生的兽铃碎片缓缓浮现，铃舌朝向外围，指向矿镇的方向。"
+    text = f"{repeated}\n\n{repeated}蛮玉筠抬起头。\n\n顾昕冉收起骨片。"
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch19",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾昕冉"}, {"name": "蛮玉筠"}]},
+        {"number": 19},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        lambda *_args, **_kwargs: {"edits": [{"id": "H1", "text": ""}]},
+    )
+
+    assert result.count(repeated) == 1
+    assert "蛮玉筠抬起头。" in result
+    assert note["status"] == "repaired"
+
+
+def test_dependency_repair_does_not_trust_an_echoed_repeated_block():
+    repeated = "顾昕冉一怔，重新看向铜铃。兽铃回声再次响起，其中混着黑牙寨中特有的双层铃音。"
+    text = f"{repeated}\n\n{repeated}他判断药囊已被送入王城药道。\n\n顾小满抬头望向北门。"
+
+    def ask(*args, **kwargs):
+        target = json.loads(dict(args[3])["卫生命中"])[0]
+        return {"edits": [{"id": target["id"], "text": target["text"]}]}
+
+    result, _, _, note = repair_text(
+        None,
+        "r2-ch21",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "顾昕冉"}, {"name": "顾小满"}, {"name": "黑牙"}]},
+        {"number": 21},
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        ask,
+    )
+
+    assert result.count(repeated) == 1
+    assert "顾昕冉判断药囊已被送入王城药道。" in result
+    assert note["status"] == "repaired"
+
+
 def test_writer_repair_changes_only_targets_then_rechecks_state():
     repeated = "陆烈收拾好刀，走到岩口却没有立刻下山。"
     text = (
@@ -210,3 +325,15 @@ def test_book_checkup_counts_each_hygiene_kind_and_lists_chapters(tmp_path):
     assert result["structural_notes"] == 1 and result["structural_chapters"] == [2]
     assert result["paragraph_repetitions"] == 1 and result["paragraph_repetition_chapters"] == [3]
     assert [row["chapter"] for row in result["chapters"]] == [1, 2, 3]
+
+
+def test_book_checkup_uses_the_same_sentence_repetition_counts(tmp_path):
+    from tools.book_checkup import check_book
+
+    repeated = "灰烬下，一枚陌生的兽铃碎片缓缓浮现，铃舌朝向外围，指向矿镇的方向。"
+    (tmp_path / "chapter-019.body.md").write_text(f"{repeated}\n\n{repeated}蛮玉筠抬起头。")
+
+    result = check_book(tmp_path, source="draft")["text_hygiene"]
+
+    assert result["sentence_repetitions"] == 1
+    assert result["sentence_repetition_chapters"] == [19]

@@ -109,6 +109,8 @@ instructions:
 
     role使用protagonist/romance/support/antagonist，主角必须为protagonist，不能用中文角色名替代。
 
+    契兽、灵宠、幼兽等非人类伙伴role必须为support；只有用户种子明确指定它是恋爱对象时才可用romance，不能从结契、羁绊或共同承担代价推断感情线。
+
     恋爱对象另给attraction/obstacle/relationship_stages；反派给ladder_volume。
 
     3—5全书主伏笔各写close_volume。summary不超过1800字，固定初始主角仪表盘。

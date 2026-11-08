@@ -18,6 +18,7 @@ _STRUCTURE = re.compile(
     r"第\s*[0-9０-９零〇一二两三四五六七八九十百千]+\s*场戏|"
     r"场景\s*[0-9０-９零〇一二两三四五六七八九十百千]+|本章|章纲|原章"
 )
+_MIN_EXACT_LENGTH = 10
 _MIN_NEAR_LENGTH = 20
 _NEAR_SIMILARITY = 0.65
 _NEAR_CONTAINMENT = 0.55
@@ -66,7 +67,7 @@ def _paragraph_hits(text, spans):
             (row for row in rows[:index] if row["normalized"] and row["normalized"] == current["normalized"]),
             None,
         )
-        if exact:
+        if exact and len(current["normalized"]) >= _MIN_EXACT_LENGTH:
             result.append(
                 dict(
                     kind="exact_paragraph",

@@ -48,6 +48,12 @@ def test_detects_near_explanation_paragraph_from_eval45_chapter38():
     assert issue["similarity"] >= 0.65
 
 
+def test_short_repeated_dialogue_is_not_a_whole_paragraph_issue():
+    result = inspect_text("“好。”\n\n众人继续赶路。\n\n“好。”\n\n“安澜！”\n\n他推开门。\n\n“安澜！”")
+
+    assert result["counts"]["paragraph_repetitions"] == 0
+
+
 def test_writer_repair_changes_only_targets_then_rechecks_state():
     repeated = "陆烈收拾好刀，走到岩口却没有立刻下山。"
     text = (

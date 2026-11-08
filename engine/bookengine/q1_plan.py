@@ -23,13 +23,13 @@ from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
 from .chapter_rhythm import (
-    rhythm_slots,
     rhythm_issues,
     apply_contract,
     chapter_type,
     VERSION as RHYTHM_VERSION,
     RULE as RHYTHM_RULE,
 )
+from .rhythm_skeleton import stage_content_skeleton
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -285,7 +285,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         stage_start=integer(volume.get("start"), start),
         stage_end=integer(volume.get("end"), end),
     )
-    scene_slots = rhythm_slots(bible, start, end, prior, rhythm)
+    stage_skeleton, scene_slots = stage_content_skeleton(client, bible, volume, prior, rhythm)
     core_slots = {r["number"]: r for r in ability_slots(bible, start, end)}
     for slot, scene_slot in zip(rhythm, scene_slots):
         slot.update(scene_slot, type=scene_slot["rhythm_type"])
@@ -328,7 +328,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             "主要解法必须给solution_target作用对象及solution_method手段核心名词；普通手段同阶段同名词最多3次；圣经核心能力及子能力另计，同阶段同能力组合对同类对象最多2次；超额换实际手段或作用对象，不只换标签",
             solution_context(bible, prior, start),
         ),
-        (RHYTHM_RULE, scene_slots),
+        (RHYTHM_RULE, dict(stage_content=stage_skeleton, window_slots=scene_slots)),
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),

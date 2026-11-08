@@ -71,3 +71,56 @@ def test_exhausted_replanning_keeps_original_content_but_restores_its_honest_lab
     report = json.loads((tmp_path / "outline-diversity/003-003.json").read_text())
     assert report["rhythm_replans"][0]["action"] == "kept_original_relabelled"
     assert report["rhythm_replans"][0]["content_type"] == "对抗"
+
+
+def test_stage_content_is_planned_once_for_the_full_stage_before_window_expansion(tmp_path):
+    from bookengine.rhythm_skeleton import stage_content_skeleton
+
+    class Client:
+        model = "fixture-model"
+        provider = "fixture-provider"
+        prefix = ""
+        plan_suffix = ""
+        relaxed = True
+
+        def __init__(self):
+            self.out = tmp_path
+            self.calls = []
+
+        def stage(self, name, prompt, schema=None, **kwargs):
+            self.calls.append((name, prompt, schema, kwargs))
+            chapters = []
+            for number, kind in ((1, "对抗"), (2, "谋划"), (3, "情感"), (4, "揭秘"), (5, "收获")):
+                chapters.append(
+                    {
+                        "number": number,
+                        "type": kind,
+                        "conflict": f"第{number}章的具体矛盾",
+                        "result": f"第{number}章改变下一步选择",
+                        "scenes": [
+                            {"goal": "处理眼前问题", "obstacle": "旧选择受阻", "action": "作出新选择"},
+                            {"goal": "承担选择后果", "obstacle": "同伴不接受", "action": "调整关系或分工"},
+                        ],
+                    }
+                )
+            return kwargs["parser"](json.dumps({"chapters": chapters}, ensure_ascii=False))
+
+    client = Client()
+    preferred = [{"number": number, "rhythm_type": kind} for number, kind in ((1, "对抗"), (2, "谋划"), (3, "情感"))]
+    skeleton, window_slots = stage_content_skeleton(
+        client,
+        {"volumes": [{"number": 1, "start": 1, "end": 5}]},
+        {"number": 1, "start": 1, "end": 5},
+        [],
+        preferred,
+    )
+
+    assert [row["number"] for row in skeleton] == [1, 2, 3, 4, 5]
+    assert [row["number"] for row in window_slots] == [1, 2, 3]
+    assert skeleton[2]["type"] == "情感" and skeleton[2]["conflict"] == "第3章的具体矛盾"
+    assert len(client.calls) == 1
+    name, prompt, schema, kwargs = client.calls[0]
+    assert name == "plan-q1-rhythm-skeleton-1-5"
+    assert all(text in prompt for text in ("整阶段", "哪些章打", "不打的章具体发生什么"))
+    assert all(field in schema for field in ("conflict", "result", "scenes"))
+    assert kwargs["max_attempts"] == 6

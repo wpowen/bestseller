@@ -185,6 +185,8 @@ instructions:
     本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。'
   rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。以goal/choice/action/result实际发生什么为准，obstacle里提到战斗不等于对抗主章。
     content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感章必须以两个人物关系发生变化为主，不能以交战、突围、追杀为主。reason一句话说明主要场景依据。'
+  rhythm_skeleton: '先为指定整阶段排内容，再由后续步骤展开逐章章纲。严格按节奏槽位决定哪些章打、哪些章不打；不打的章具体发生什么：关系怎么变、得到什么并怎么用、揭开什么或如何比较方案。
+    非打斗章不得以对手到场动手、追杀、突围或反杀为主要行动；战斗可放在上一章末或下一章开头，本章写余波、疗伤、分配、对质、和解、试用、查证或取舍。每章给两场简短但可执行的goal/obstacle/action/result，不能只换type标签。'
 schemas:
   continuation:
     bible:
@@ -376,6 +378,17 @@ schemas:
       content_type: ''
       status: unknown
       reason: ''
+  rhythm_skeleton:
+    chapters:
+    - number: 1
+      type: ''
+      conflict: ''
+      result: ''
+      scenes:
+      - goal: ''
+        obstacle: ''
+        action: ''
+        result: ''
 plan_card_fields:
 - name
 - role

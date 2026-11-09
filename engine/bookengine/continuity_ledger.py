@@ -5,6 +5,7 @@ import json
 import re
 
 from .precision import _sentences, apply as sentence_edits
+from .continuity_checkup import merge_accident_delta
 
 
 LEDGER_VERSION = 1
@@ -166,6 +167,7 @@ def merge_continuity_delta(state, delta, text, bible, chapter):
     for row in delta.get("body_structures", []) if isinstance(delta.get("body_structures"), list) else []:
         _merge_body(ledger, row, text, chapter, cards)
     _merge_memories(ledger, delta.get("consumed_memories", []), text, bible, chapter)
+    merge_accident_delta(ledger, delta, text, bible, chapter)
     result["continuity_ledger"] = ledger
     return result
 

@@ -1,13 +1,17 @@
 import json
 from pathlib import Path
 
+import yaml
+
 from bookengine.continuity_ledger import (
     continuity_findings,
     merge_continuity_delta,
     repair_continuity_ledger,
     writer_continuity_facts,
 )
+from bookengine.continuity_checkup import continuity_checkup
 from bookengine.q1_extract import context
+from tools.book_checkup import check_book
 
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures/continuity53/eval52.json").read_text())
@@ -170,3 +174,21 @@ def test_targeted_model_repair_rechecks_and_rolls_back_on_failure():
     )
     assert rolled_back == text
     assert rejected["status"] == "rolled_back"
+
+
+def test_repeated_accident_is_reported_inside_ten_chapters_and_registered_in_checkup(tmp_path):
+    chapters = [{"number": number, "text": chapter(number)} for number in (1, 3, 5, 7, 8)]
+    result = continuity_checkup(bible(), chapters)
+
+    assert result["counts"]["repeated_accidents"] >= 4
+    assert result["repeated_accidents"][0]["window"] <= 10
+    assert result["authority"] == "agent_editorial_not_human"
+
+    (tmp_path / "story_bible.yaml").write_text(yaml.safe_dump(bible(), allow_unicode=True))
+    for row in chapters:
+        (tmp_path / f"chapter-{row['number']:03d}.body.md").write_text(row["text"])
+    report = check_book(tmp_path, source="draft")
+    assert report["continuity_ledger"]["counts"]["repeated_accidents"] >= 4
+
+    schemas = yaml.safe_load((Path(__file__).parents[1] / "data/q1_schemas.yaml").read_text())
+    assert "10章内" in schemas["instructions"]["outlines"]

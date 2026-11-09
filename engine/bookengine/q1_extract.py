@@ -24,6 +24,7 @@ from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
 from .character_context import catchphrase_context, identity_keywords, trim_dossier
+from .continuity_ledger import extraction_contract, writer_continuity_facts
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -64,6 +65,7 @@ def body_of(value, client, cleaning=None):
 
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
     dropped = [] if dropped is None else dropped
+    continuity_facts = writer_continuity_facts(state, bible, chapter)
     names = pack(chapter.get("scenes", []))
     people = sorted(
         [c for c in bible.get("characters", []) if c.get("role") == "protagonist" or c.get("name", "?") in names],
@@ -203,6 +205,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
+        *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),
@@ -352,8 +355,10 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         for row in cast_findings(text, bible, state, outline)
         if row.get("status") != "Evidence"
     ][:12]
+    previous_payload = pack(dict(number=previous["number"], text=prior)) if previous else ""
     sections = [
         ("编号正文", number_paragraphs(text)),
+        ("上章失败顺带补提", previous_payload),
         (
             "合法值",
             pack(
@@ -384,7 +389,6 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             pack({k: v for k, v in scene_context(text).items() if k != "paragraphs"}) if outline.get("ending") else "",
         ),
         ("末章候选", pack(ending_candidates(text, bible, outline) if outline.get("ending") else [])),
-        ("上章失败顺带补提", pack(dict(number=previous["number"], text=prior)) if previous else ""),
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
     prompt += (
@@ -406,6 +410,8 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "另附target_noun作用对象、method_noun手段核心名词和含两者及结果的连续逐字quote；"
         "每个名词只填一个原词，不能用顿号合并或拼接引文，primary标主要解法。"
     )
+    continuity_prompt, continuity_schema = extraction_contract()
+    prompt += continuity_prompt
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
@@ -441,11 +447,12 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             character_locations=[],
             solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
             core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
+            continuity_delta=continuity_schema,
         )
     )
     saved = client.prefix
     client.prefix = ""
-    complete = not previous or sections[-1][1] in long_context(
+    complete = not previous or previous_payload in long_context(
         sections, max(0, 10000 - len(SYSTEM) - len(prompt) - len(schema) - 350)
     )
     try:

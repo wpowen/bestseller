@@ -54,6 +54,48 @@ def test_short_repeated_dialogue_is_not_a_whole_paragraph_issue():
     assert result["counts"]["paragraph_repetitions"] == 0
 
 
+def test_eval52_short_sentence_and_dialogue_duplicates_are_one_safe_finding_each():
+    samples = [
+        "“藏什么？”他问。\n\n“藏什么？”他问。",
+        "两难就在眼前。\n\n两难就在眼前。",
+    ]
+
+    for text in samples:
+        result = inspect_text(text)
+        assert result["counts"]["sentence_repetitions"] == 1
+        assert result["sentences"][0]["kind"] == "exact_short_sentence"
+        assert result["sentences"][0]["safe_delete"] is True
+
+
+def test_short_exact_duplicate_within_three_sentences_is_detected_but_three_calls_are_not():
+    within_three = "别走。风压低了火苗。门外传来脚步。顾晴棣握紧药瓶。别走。"
+    rhetorical_three = "“回来！”\n\n“回来！”\n\n“回来！”"
+
+    assert inspect_text(within_three)["counts"]["sentence_repetitions"] == 1
+    assert inspect_text(rhetorical_three)["counts"]["sentence_repetitions"] == 0
+
+
+def test_eval52_short_duplicate_repair_deletes_only_the_later_complete_line():
+    text = "“藏什么？”他问。\n\n“藏什么？”他问。\n\n雪沛宁低头刨雪。"
+
+    result, _, failed, note = repair_text(
+        None,
+        "r2-ch11",
+        text,
+        {"events": []},
+        False,
+        {},
+        {"characters": [{"name": "雪沛宁"}]},
+        {"number": 11},
+        lambda *_args, **_kwargs: ({"events": []}, False, 0),
+        lambda *_args, **_kwargs: {"edits": []},
+    )
+
+    assert result == "“藏什么？”他问。\n\n雪沛宁低头刨雪。"
+    assert inspect_text(result)["counts"]["sentence_repetitions"] == 0
+    assert failed is False and note["status"] == "repaired"
+
+
 def test_eval49_complete_sentence_repetitions_cover_exact_and_fused_forms():
     samples = {
         19: (

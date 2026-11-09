@@ -7,6 +7,7 @@ import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
 from .identity import repair_companion_roles, validate_bible, validate_cast_contract
+from .nonhuman_speech import normalize_speech_contracts
 from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
 from .storage import save
@@ -20,6 +21,21 @@ from .core_ability import repair_development, core_source, RULE as CORE_RULE
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
+def _library_names(out):
+    out = Path(out)
+    root = next((parent for parent in (out.parent, *out.parents) if parent.name == "books"), out.parent)
+    current = str(out.relative_to(root)) if out.is_relative_to(root) else out.name
+    names = [
+        dict(
+            book=str(path.parent.relative_to(root)),
+            names=[card.get("name") for card in parse(path.read_text()).get("characters", [])],
+        )
+        for path in root.rglob("story_bible.yaml")
+        if path.is_file()
+    ]
+    return current, names
+
+
 def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
     def normalize(value):
         if kind != "prepare" or not isinstance(value, dict):
@@ -28,6 +44,7 @@ def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
         if not isinstance(value.get(container), dict):
             return value
         repaired, corrections = repair_companion_roles(value[container], seed_text)
+        repaired = normalize_speech_contracts(repaired)
         normalized = dict(value, **{container: repaired})
         if corrections:
             normalized["_companion_role_corrections"] = corrections
@@ -159,12 +176,9 @@ def prepare(client, book, out, assets, design=False):
     if values[0] and values[0].get("canon"):
         profile["canon"] = values[0]["canon"]
     rules = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/polish_rules.yaml").read_text())
-    names = [
-        dict(book=p.parent.name, names=[c.get("name") for c in parse(p.read_text()).get("characters", [])])
-        for p in Path(out).parent.glob("*/story_bible.yaml")
-    ]
+    current_book, names = _library_names(out)
     profile["name_pool"] = rules["given_names"]
-    profile["unavailable_names"] = [x for x in names if x["book"] != Path(out).name]
+    profile["unavailable_names"] = [x for x in names if x["book"] != current_book]
     continuations = sorted(Path(out).glob("continuation-*.yaml"), key=lambda p: integer(p.stem.split("-")[-1]))
     if values[0] and book.chapters > max(v.get("end", 0) for v in values[0].get("volumes", [])):
         continuations = list(
@@ -325,7 +339,7 @@ def prepare(client, book, out, assets, design=False):
             pool = [s + g for s, g in zip(rules["surname"] * 2, rules["given_names"])][
                 peers.index(Path(out).name) :: len(peers)
             ]
-            used = {n for x in names if x["book"] != Path(out).name for n in x["names"] if n}
+            used = {n for x in names if x["book"] != current_book for n in x["names"] if n}
             mapping = {}
             for c in bible["characters"]:
                 name = c["name"]

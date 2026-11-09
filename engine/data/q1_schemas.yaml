@@ -244,6 +244,8 @@ schemas:
         relationship_stages: []
         ladder_volume: 0
         gender: ''
+        can_speak_human: 否
+        human_speech_from_chapter: 0
         address: ''
         address_target: ''
         address_origin: ''

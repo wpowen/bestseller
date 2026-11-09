@@ -7,6 +7,7 @@ import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
 from .identity import repair_companion_roles, validate_bible, validate_cast_contract
+from .nonhuman_speech import normalize_speech_contracts
 from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
 from .storage import save
@@ -28,6 +29,7 @@ def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
         if not isinstance(value.get(container), dict):
             return value
         repaired, corrections = repair_companion_roles(value[container], seed_text)
+        repaired = normalize_speech_contracts(repaired)
         normalized = dict(value, **{container: repaired})
         if corrections:
             normalized["_companion_role_corrections"] = corrections

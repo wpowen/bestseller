@@ -24,7 +24,7 @@ from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
 from .character_context import catchphrase_context, identity_keywords, trim_dossier
-from .continuity_ledger import extraction_contract
+from .continuity_ledger import extraction_contract, writer_continuity_facts
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -65,6 +65,7 @@ def body_of(value, client, cleaning=None):
 
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
     dropped = [] if dropped is None else dropped
+    continuity_facts = writer_continuity_facts(state, bible, chapter)
     names = pack(chapter.get("scenes", []))
     people = sorted(
         [c for c in bible.get("characters", []) if c.get("role") == "protagonist" or c.get("name", "?") in names],
@@ -204,6 +205,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     return [
         *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
+        *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
         ("上章结尾", previous[-900:]),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),

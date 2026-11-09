@@ -13,6 +13,8 @@ _LIFE = {
     "死亡": "dead",
 }
 _TRAVEL = {"随行", "同行", "离队", "失踪", "留守", "死亡", "未知"}
+_LIFE_TEXT = {"alive": "存活", "missing": "失踪", "dead": "死亡"}
+_NUMBERS = {2: "两", 3: "三", 4: "四", 5: "五", 6: "六", 8: "八"}
 
 
 def extraction_contract():
@@ -160,3 +162,50 @@ def merge_continuity_delta(state, delta, text, bible, chapter):
     _merge_memories(ledger, delta.get("consumed_memories", []), text, bible, chapter)
     result["continuity_ledger"] = ledger
     return result
+
+
+def _person_fact(name, record):
+    facts = []
+    life = record.get("life_status") if isinstance(record.get("life_status"), dict) else {}
+    if life.get("value") in ("missing", "dead"):
+        facts.append(_LIFE_TEXT[life["value"]])
+    location = record.get("location") if isinstance(record.get("location"), dict) else {}
+    travel = location.get("travel_status")
+    place = str(location.get("value") or "")
+    if travel and travel != "未知":
+        facts.append(travel + ("，" + place if place else ""))
+    elif place:
+        facts.append(place)
+    for injury in record.get("injuries", []) if isinstance(record.get("injuries"), list) else []:
+        if not isinstance(injury, dict):
+            continue
+        side = "" if injury.get("side") in (None, "无") else injury["side"]
+        phrase = side + str(injury.get("part", "")) + str(injury.get("condition", ""))
+        if phrase:
+            facts.append(phrase + ("，" + str(injury["severity"]) if injury.get("severity") else ""))
+    body = record.get("body") if isinstance(record.get("body"), dict) else {}
+    body_fact = str(body.get("form") or "")
+    if type(body.get("limb_count")) is int:
+        count = _NUMBERS.get(body["limb_count"], str(body["limb_count"]))
+        count_fact = f"共{count}条{body.get('limb_name', '肢体')}"
+        body_fact = body_fact + ("，" if body_fact else "") + count_fact
+    if body_fact:
+        facts.append(body_fact)
+    return f"{name}：" + "；".join(dict.fromkeys(facts)) if facts else ""
+
+
+def writer_continuity_facts(state, bible, chapter):
+    """Render ledger facts as short natural-language constraints for the writer."""
+    ledger = _ledger(state if isinstance(state, dict) else {}, bible)
+    mentioned = str(chapter.get("scenes", []))
+    cards = _cards(bible)
+    names = [name for name, card in cards.items() if name in mentioned or card.get("role") == "protagonist"]
+    lines = [line for name in names if (line := _person_fact(name, ledger["characters"].get(name, {})))]
+    memories = [
+        f"{row.get('summary')}（第{row.get('chapter')}章）"
+        for row in ledger["consumed_memories"]
+        if isinstance(row, dict) and row.get("summary") and type(row.get("chapter")) is int
+    ]
+    if memories:
+        lines.append("已消耗记忆，不能再次献祭或当作完整记忆想起：" + "；".join(dict.fromkeys(memories)))
+    return lines

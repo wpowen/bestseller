@@ -149,6 +149,27 @@ class NamePoolTests(unittest.TestCase):
                     self.assertTrue(assigned["legacy_names_preserved"])
                     self.assertEqual({path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}, before)
 
+    def test_nested_webui_and_other_book_directories_reserve_names_for_new_book(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "books"
+            out = root / "book-new"
+            webui = root / "webui" / "uuid-a"
+            archived = root / "archive" / "batch-a" / "book-old"
+            for folder in (out, webui, archived):
+                folder.mkdir(parents=True)
+            (webui / "story_bible.yaml").write_text(yaml.safe_dump(self.response["bible"], allow_unicode=True))
+            archived_bible = deepcopy(self.response["bible"])
+            archived_bible["characters"][0]["name"] = "陆景和"
+            (archived / "story_bible.yaml").write_text(yaml.safe_dump(archived_bible, allow_unicode=True))
+
+            _, result = self.prepare(out)
+            assigned, _ = self.assert_references_and_assigned(out, result)
+            nested = set(name for card in self.response["bible"]["characters"] for name in [card["name"]])
+
+            self.assertTrue(assigned.isdisjoint(nested))
+            ledger = json.loads((out / "names.json").read_text())
+            self.assertEqual({row["book"] for row in ledger["books"]}, {"webui/uuid-a", "archive/batch-a/book-old"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ from copy import deepcopy
 import re
 
 from .precision import _sentences
+from .text import _paragraph_spans
 
 
 _NONHUMAN = re.compile(r"契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵兽|妖兽|神兽|雪兽|兽形|兽身")
@@ -118,6 +119,7 @@ def _attributed_card(text, match, cards):
 def speech_findings(text, bible, chapter=None):
     cards = [card for card in (bible or {}).get("characters", []) if is_nonhuman(card) and card.get("name")]
     spans = _sentences(text)
+    paragraphs = _paragraph_spans(text)
     findings = []
     seen = set()
     for match in _QUOTE.finditer(text):
@@ -133,7 +135,10 @@ def speech_findings(text, bible, chapter=None):
         if first is None or last is None or (card["name"], first[0]) in seen:
             continue
         seen.add((card["name"], first[0]))
-        start, end = first[1], last[2]
+        start, end = next(
+            ((start, end) for start, end in paragraphs if start <= match.start() < end),
+            (first[1], last[2]),
+        )
         allowed_from = _from_chapter(card)
         if not _can_speak(card) or chapter is None or chapter < allowed_from:
             findings.append(

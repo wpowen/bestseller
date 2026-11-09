@@ -142,7 +142,7 @@ def test_nonhuman_speech_uses_existing_targeted_model_repair_and_recheck():
     def ask(_client, _stage, _instruction, sections, _schema, **_kwargs):
         targets = next(body for title, body in sections if title == "待修句")
         assert "nonhuman_speech" in targets
-        return {"edits": [{"id": 1, "text": "雪沛宁低呜一声，挣扎着想自己站稳。"}]}
+        return {"edits": [{"id": 1, "text": "雪沛宁低呜一声，挣扎着想自己站稳。顾奕棣扶住它的前腹。"}]}
 
     repaired, _, failed, note = repair_cast_consistency(
         None,
@@ -159,4 +159,33 @@ def test_nonhuman_speech_uses_existing_targeted_model_repair_and_recheck():
 
     assert repaired == "雪沛宁低呜一声，挣扎着想自己站稳。顾奕棣扶住它的前腹。"
     assert not [row for row in cast_findings(repaired, bible(), chapter=27) if row["kind"] == "nonhuman_speech"]
+    assert failed is False and note["status"] == "repaired"
+
+
+def test_multi_quote_nonhuman_line_targets_the_balanced_complete_paragraph():
+    text = (
+        "“它认你了。”雪沛宁含混地叫了一声，随后连打三个喷嚏，“不是认主……是认名。”\n\n"
+        "顾奕棣低头看着铜牌。"
+    )
+
+    def ask(_client, _stage, _instruction, sections, _schema, **_kwargs):
+        targets = next(body for title, body in sections if title == "待修句")
+        assert "不是认主……是认名" in targets
+        return {"edits": [{"id": 1, "text": "雪沛宁含混地叫了一声，随后连打三个喷嚏。"}]}
+
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "chapter50",
+        text,
+        {"events": []},
+        False,
+        {},
+        bible(),
+        {"number": 50},
+        lambda *_args, **_kwargs: ({"events": []}, False, None),
+        ask,
+    )
+
+    assert repaired == "雪沛宁含混地叫了一声，随后连打三个喷嚏。\n\n顾奕棣低头看着铜牌。"
+    assert repaired.count("“") == repaired.count("”")
     assert failed is False and note["status"] == "repaired"

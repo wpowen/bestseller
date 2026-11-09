@@ -209,6 +209,34 @@ def _gendered_address_findings(text, cards, chapter, spans):
     return findings
 
 
+def _pronoun_name_residue_findings(text, cards, chapter, spans):
+    findings = []
+    for number, (start, end) in enumerate(spans, 1):
+        sentence = text[start:end]
+        for card in cards:
+            name = card["name"]
+            match = re.search(r"(?<![\u4e00-\u9fff])([他她它])\s*" + re.escape(name), sentence)
+            if not match:
+                continue
+            observed = match[0]
+            findings.append(
+                _finding(
+                    "pronoun_name_residue",
+                    chapter,
+                    name,
+                    "Inference",
+                    observed,
+                    name,
+                    "代词与已登记姓名直接相连，属于改写残留",
+                    text,
+                    number,
+                    start,
+                    end,
+                )
+            )
+    return findings
+
+
 def _identity_findings(text, bible, cards, chapter, spans):
     antagonists = {
         row.get("name")
@@ -287,6 +315,7 @@ def cast_findings(text, bible, *, chapter=None):
     findings = [
         *_gendered_address_findings(text, cards, chapter, spans),
         *_pronoun_findings(text, cards, chapter, spans),
+        *_pronoun_name_residue_findings(text, cards, chapter, spans),
         *_identity_findings(text, bible, cards, chapter, spans),
     ]
     return sorted(findings, key=lambda row: (row["start"], row["kind"], row["name"]))
@@ -365,7 +394,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     response = ask(
         client,
         prefix + "-cast-consistency-repair",
-        "只修改待修句S编号，修正人物性别代词、性别化称呼或被写串的阵营身份。"
+        "只修改待修句S编号，修正人物性别代词、性别化称呼、代词姓名残留或被写串的阵营身份。"
         "不得改正确人物的姓名、已发生事件、人物关系、胜负、物件、地点或章末结果。"
         "若人物被串成敌方领头人，依章纲把错误人物从整段追兵身份链移除，恢复为章纲中的匿名对手；"
         "不得只添加人物身份同位语。每个edit.id必须逐字复制待修句中的真实id，不得使用示例id；"
@@ -383,12 +412,15 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     proposed = response.get("edits", []) if isinstance(response, dict) else []
     proposed = [row for row in proposed if isinstance(row, dict)]
     for target in repair_targets:
-        if target["kind"] != "gender_pronoun":
+        if target["kind"] == "gender_pronoun":
+            match = _FRONTED_PRONOUN.match(target["quote"])
+            if not match or match[1] != target["observed"]:
+                continue
+            replacement = target["quote"][: match.start(1)] + target["expected"] + target["quote"][match.end(1) :]
+        elif target["kind"] == "pronoun_name_residue":
+            replacement = target["quote"].replace(target["observed"], target["expected"], 1)
+        else:
             continue
-        match = _FRONTED_PRONOUN.match(target["quote"])
-        if not match or match[1] != target["observed"]:
-            continue
-        replacement = target["quote"][: match.start(1)] + target["expected"] + target["quote"][match.end(1) :]
         proposed = [row for row in proposed if row.get("id") != target["id"]]
         proposed.append(dict(id=target["id"], text=replacement))
     candidate, edits = sentence_edits(

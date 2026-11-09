@@ -301,6 +301,41 @@ def test_two_coordinated_named_subjects_remain_unknown():
     assert findings[0]["name"] == ""
 
 
+def test_eval52_pronoun_name_residue_is_found_without_matching_ordinary_words():
+    value = bible()
+    value["characters"][3].update(name="雪沛宁", gender="雄性", identity="幼年雪兽")
+    text = "它雪沛宁恋恋不舍地叫了两声。顾奕棣看见他顾不上回头，只能继续往前走。"
+
+    findings = cast_findings(text, value, chapter=50)
+
+    assert [(row["kind"], row["name"], row["observed"], row["expected"]) for row in findings] == [
+        ("pronoun_name_residue", "雪沛宁", "它雪沛宁", "雪沛宁")
+    ]
+
+
+def test_eval52_pronoun_name_residue_receives_deterministic_leaf_repair():
+    value = bible()
+    value["characters"][3].update(name="雪沛宁", gender="雄性", identity="幼年雪兽")
+    text = "它雪沛宁恋恋不舍地叫了两声。顾晴棣轻声说。"
+
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "chapter50",
+        text,
+        {"events": []},
+        False,
+        {},
+        value,
+        {"number": 50},
+        lambda *_args, **_kwargs: ({"events": []}, False, None),
+        lambda *_args, **_kwargs: {"edits": []},
+    )
+
+    assert repaired == "雪沛宁恋恋不舍地叫了两声。顾晴棣轻声说。"
+    assert cast_findings(repaired, value, chapter=50) == []
+    assert failed is False and note["status"] == "repaired"
+
+
 def test_checkup_counts_address_gender_and_identity_without_claiming_human_acceptance():
     chapters = [
         {

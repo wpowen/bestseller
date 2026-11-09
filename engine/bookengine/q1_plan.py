@@ -35,6 +35,7 @@ from .outline_diversity import (
     conflict_type,
 )
 from .rhythm_replanning import model_review_issues, observed_rows, replan_context, semantic_review
+from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
 
 
 def _beats(threads, number, state=None):
@@ -110,7 +111,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
     value = defaults(dict(skeleton, **raw) if isinstance(raw, dict) else skeleton, DATA["schemas"]["volume"])
     value.update(number=number, start=boundary["start"], end=boundary["end"], beats=beats, feedback=feedback)
     if bible.get("structure_version"):
-        value.update({k: skeleton.get(k) for k in ("location", "antagonist", "goal", "climax", "exit_chapter")})
+        value.update({k: skeleton.get(k) for k in FIXED_STAGE_FIELDS})
         value["stage"] = skeleton.get("location", "")
     if target:
         value["expected_dashboard"] = dict(value.get("expected_dashboard") or {}, strength=target)
@@ -245,11 +246,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         and (
             plot_stale
             or rhythm_issues(bible, prior, cached["chapters"])
+            or opponent_presence_issues(bible, cached["chapters"])
             or (
                 cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
                 and (
-                    opponent_presence_issues(bible, cached["chapters"])
-                    + planning_transition_issues(bible, cached["chapters"])
+                    planning_transition_issues(bible, cached["chapters"])
                     + ability_issues(bible, prior, cached["chapters"])
                     + solution_issues(bible, prior, cached["chapters"])
                 )
@@ -309,10 +310,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         if start <= 100 <= end
         else []
     )
-    stage_contract = {
-        k: volume.get(k)
-        for k in ("number", "start", "end", "location", "stage", "antagonist", "goal", "climax", "exit_chapter", "cost")
-    }
+    stage_contract = {k: volume.get(k) for k in PROMPT_STAGE_FIELDS}
     opponents = [
         {k: opponent.get(k) for k in ("name", "tier", "stage", "exit")} for opponent in rows(bible.get("antagonists"))
     ]
@@ -480,6 +478,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     result = [apply_contract(chapter) for chapter in result]
     result = complete_transitions(result, prior)
     result = apply_ending_contract(result, stage_end=integer(volume.get("end"), end))
+    result = bind_title_contracts(bible, result)
     final_rhythm_issues = rhythm_issues(bible, prior, result)
     if getattr(client, "out", None) and (not cached or final_rhythm_issues):
         source_path = cached["path"] if cached else None

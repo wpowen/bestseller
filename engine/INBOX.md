@@ -850,7 +850,7 @@
 
 ## 2026-11-09-55：书名承诺进规划——“替我杀人”要真的发生，反派要有像样的结局（用户 2026-11-09：“写并并行启动”）
 
-状态：执行中（用户 2026-11-09：“写并并行启动”）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/q1_plan.py`、`engine/bookengine/structure_planning.py`、`engine/bookengine/retired_opponents.py`、`engine/bookengine/stage_transition.py`、`engine/data/q1_schemas.yaml` 的卷纲/章纲段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

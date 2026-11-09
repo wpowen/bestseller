@@ -92,7 +92,10 @@ instructions:
   structure: '只返回bible.volumes、bible.antagonists及threads。逐项修复错误清单，使用指定阶段边界。
     每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
     每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
-    threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。'
+    threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。
+    每阶段promise_payoffs至少一项且包含标为primary的书名承诺：章号在本阶段内，action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写相较上一阶段如何升级。
+    每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
+    最后阶段ending_contract回应书名承诺；growth_dimension只用力量/身份/关系，before与after写实质变化；new_burden_or_mystery必须为空。'
   prepare: 'world.levels严格逐条用固定实力阶梯规范名，initial_dashboard.strength从第一阶开始；不可另创境界。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
 
     initial_dashboard各项用可对账短值，实力写等级，财富写数值和单位，地位/名声写等级，归属和舞台用规范名；禁止把动作情绪写成长句。
@@ -142,7 +145,8 @@ instructions:
     暗线与感情卷内多次推进，隐藏线未到reveal_not_before仅露线索。
 
 
-    每卷至少一次主角主动选择并主导的决定性胜利，写明获胜场面及个人所得。全书最后10%只收不开，最后最多一条非新主线续作钩子。'
+    每卷至少一次主角主动选择并主导的决定性胜利，写明获胜场面及个人所得。全书最后10%只收不开，最后最多一条非新主线续作钩子。
+    原样保留本阶段promise_payoffs、opponent_resolution和ending_contract，不改章号、对象或结局类型；后续章纲必须逐项落实。'
   outlines: '每章conflict_type给简洁且稳定的核心冲突类型，跨批沿用同名类型；title_keywords列章名实词，不能漏填重复词来绕过检查。
     生成时避开已用高频章名关键词，同一实词全书章名最多出现两章；任何连续五章的核心冲突类型不可完全相同。
     定向重写仅返回被点名的相关章；冲突同型须改变人物争夺、场景行动与后果，不能只换类型标签或地名。
@@ -185,7 +189,8 @@ instructions:
 
     每章payoff_due/payoff_type按排期，必须让两场戏实际通向该结果。solution_type从canon菜单选择本世界已有且未在近30章用过的破局机理，无破局为null；不要为菜单强加新规则或装置，不强迫每章破局。
 
-    本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。'
+    本轮玄幻每章必须兑现指定payoff_type，严格依排期把收益/胜负结果写进两场戏的choice和结果，不能只填标签。无须每章新增代价，新增伤残或寿命/能力代价总计至多一项。solutions只设计一个主破局因果；solution_avoid禁止，群体表态群体作证不是别的机制子类。钩子依配额设计本场结尾，不能全部写成线索出现；最后一章收束，不留待解释的主角新身份或新年代关系。升级最多下一阶，growth_obligation要求时必须正面展示当前境界能力，不以带伤潜行窗口替代。
+    命中promise_payoffs章号时，reader_promise_id与promise_payoff逐项照抄阶段合同，并让两场戏实际完成action→target→result；不能只填标签。命中opponent_resolution章号时照抄name/type/outcome并写成不可逆结局，不能放狠话退走。末章照抄ending_promise_response，完成承诺回应与成长前后变化，不新增污名、谜团或追查任务。'
   rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。先看characters确认对手是否在场，再以goal/choice/action/result实际发生什么为准；obstacle里只提到战斗或远处压力不等于对抗主章。
     content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感/日常/收获/揭秘/谋划章都不能以对手到场动手、交战、突围、追杀或反杀为主要行动。reason一句话说明主要场景依据。只返回{chapters:[{number,content_type,status,reason}]}，不得改用reviews或chapter字段。'
   rhythm_skeleton: '先为指定整阶段排内容，再由后续步骤展开逐章章纲。严格按节奏槽位决定哪些章打、哪些章不打；不打的章具体发生什么：关系怎么变、得到什么并怎么用、揭开什么或如何比较方案。
@@ -320,6 +325,24 @@ schemas:
         goal: ''
         climax: ''
         exit_chapter: 12
+        promise_payoffs:
+        - promise_id: ''
+          chapter: 10
+          action: ''
+          target: ''
+          result: ''
+          escalation: ''
+        opponent_resolution:
+          name: ''
+          type: ''
+          chapter: 10
+          outcome: ''
+        ending_contract:
+          promise_response: ''
+          growth_dimension: ''
+          before: ''
+          after: ''
+          new_burden_or_mystery: ''
       antagonists:
       - name: ''
         tier: 1
@@ -334,6 +357,24 @@ schemas:
     stage: ''
     goal: ''
     cost: ''
+    promise_payoffs:
+    - promise_id: ''
+      chapter: 10
+      action: ''
+      target: ''
+      result: ''
+      escalation: ''
+    opponent_resolution:
+      name: ''
+      type: ''
+      chapter: 10
+      outcome: ''
+    ending_contract:
+      promise_response: ''
+      growth_dimension: ''
+      before: ''
+      after: ''
+      new_burden_or_mystery: ''
     expected_dashboard:
       strength: ''
       wealth: ''
@@ -363,12 +404,29 @@ schemas:
       hook: ''
       ending_type: ''
       ending_content: ''
+      reader_promise_id: ''
+      promise_payoff:
+        action: ''
+        target: ''
+        result: ''
+        escalation: ''
+      opponent_resolution:
+        name: ''
+        type: ''
+        outcome: ''
+      ending_promise_response:
+        promise_response: ''
+        growth_dimension: ''
+        before: ''
+        after: ''
       scenes:
       - where: ''
         characters: []
         goal: ''
         obstacle: ''
         choice: ''
+        action: ''
+        result: ''
         emotion: ''
         kind: action
       threads: []

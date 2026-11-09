@@ -108,7 +108,33 @@ def test_prepare_repairs_only_structure_three_times_and_records_failure(tmp_path
         if name == "plan-q1-prepare":
             return dict(bible=original, threads={})
         assert "location" in prompt
-        return dict(bible=dict(design(), title="禁止换标题", characters=[]), threads={}) if repair_success else {}
+        if not repair_success:
+            return {}
+        repaired = dict(design(), title="禁止换标题", characters=[])
+        for stage, opponent in zip(repaired["volumes"], repaired["antagonists"]):
+            chapter = stage["end"] - (stage["end"] == 50)
+            stage["promise_payoffs"] = [
+                dict(
+                    promise_id="reader-promise-1",
+                    chapter=chapter,
+                    action="主角亲自完成归途",
+                    target=stage["antagonist"],
+                    result="清除阻路者",
+                    escalation=f"阶段{stage['number']}推进归途",
+                )
+            ]
+            stage["opponent_resolution"] = dict(
+                name=stage["antagonist"], type="被擒", chapter=chapter, outcome="失去阻路能力"
+            )
+            opponent["exit"] = chapter
+        repaired["volumes"][-1]["ending_contract"] = dict(
+            promise_response="主角走完归途",
+            growth_dimension="身份",
+            before="流亡者",
+            after="归乡者",
+            new_burden_or_mystery="",
+        )
+        return dict(bible=repaired, threads={})
 
     client = Fixture(tmp_path, reply)
     bible, threads, _ = q1_prepare.prepare(client, Book("suspense-mystery", 50, 2200, ""), tmp_path, ROOT / "config")

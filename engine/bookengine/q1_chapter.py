@@ -28,6 +28,7 @@ from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
 from .text_hygiene import repair_text
 from .rhythm_writer import writer_rhythm_instruction
+from .continuity_ledger import repair_continuity_ledger
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -259,6 +260,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)

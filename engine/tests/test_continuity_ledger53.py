@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from bookengine.continuity_ledger import merge_continuity_delta, writer_continuity_facts
+from bookengine.continuity_ledger import (
+    continuity_findings,
+    merge_continuity_delta,
+    repair_continuity_ledger,
+    writer_continuity_facts,
+)
 from bookengine.q1_extract import context
 
 
@@ -98,3 +103,70 @@ def test_writer_gets_short_natural_facts_without_internal_field_names():
     sections = context(bible(), {}, {"number": 4}, outline, seeded_state(), [], [], "")
     section = dict(sections)["人物当前事实，不得违背"]
     assert "右手冻裂" in section and "药棚守夜" in section
+
+
+def test_eval52_saved_lines_detect_injury_limb_location_life_and_memory_conflicts():
+    state = seeded_state()
+    expected = {
+        27: "limb_count",
+        31: "location_status",
+        35: "consumed_memory",
+        39: "injury_side",
+        42: "life_status",
+    }
+
+    for number, kind in expected.items():
+        findings = continuity_findings(chapter(number), state, bible(), number)
+        assert kind in {row["kind"] for row in findings}, (number, findings)
+
+
+def test_targeted_model_repair_rechecks_and_rolls_back_on_failure():
+    state = seeded_state()
+    text = chapter(39)
+    requests = []
+
+    def ask(_client, stage, _prompt, sections, _schema, **_kwargs):
+        requests.append(stage)
+        targets = json.loads(dict(sections)["确定性矛盾句"])
+        assert targets[0]["kind"] == "injury_side"
+        return {
+            "findings": [],
+            "edits": [{"id": targets[0]["id"], "text": "顾晴棣坐在药车上，冻伤的右手死死扣住车沿。"}],
+        }
+
+    def extract(*args, **kwargs):
+        candidate = args[2]
+        valid = "右手" in candidate
+        return ({"state": {}, "continuity_delta": {}, "events": []}, not valid, 0)
+
+    repaired, raw, failed, note = repair_continuity_ledger(
+        None,
+        "r2-ch39",
+        text,
+        {"state": {}, "events": []},
+        False,
+        state,
+        bible(),
+        {"number": 39},
+        extract,
+        ask,
+    )
+    assert repaired == "顾晴棣坐在药车上，冻伤的右手死死扣住车沿。"
+    assert requests == ["r2-ch39-continuity-ledger"]
+    assert raw["continuity_delta"] == {} and failed is False
+    assert note["status"] == "repaired" and note["after"] == []
+
+    rolled_back, _, _, rejected = repair_continuity_ledger(
+        None,
+        "r2-ch39-bad",
+        text,
+        {"state": {}, "events": []},
+        False,
+        seeded_state(),
+        bible(),
+        {"number": 39},
+        extract,
+        lambda *_args, **_kwargs: {"findings": [], "edits": []},
+    )
+    assert rolled_back == text
+    assert rejected["status"] == "rolled_back"

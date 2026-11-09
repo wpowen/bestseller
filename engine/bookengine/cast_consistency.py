@@ -31,8 +31,8 @@ _HOSTILE = re.compile(
     r"(?:出口|矿道|退路)[^。！？]{0,8}封死|杀(?:掉|死)"
 )
 _FRONTED_PRONOUN = re.compile(
-    r"[\s“‘\"']*(?:[^，,。！？!?]{1,32}(?:时|后|前|下|里|外|旁|边|处|中|上|间|口|声|次|遍|刻|瞬|眼|步|句)"
-    r"[，,]\s*)?(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])"
+    r"[\s“‘\"']*(?:[^，,。！？!?]{1,40}[，,]\s*)?"
+    r"(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])"
 )
 
 
@@ -70,14 +70,29 @@ def _subject_bound(sentence, name):
         return True
     if not stripped.startswith(name):
         return False
+    tail = stripped[len(name) :]
+    if re.match(r"(?:和|与|跟|同|、)[\u4e00-\u9fff]{2,4}(?:一同|一起|都|也)?", tail) or re.search(
+        r"(?:两人|二人|他们|她们)(?:一同|一起|都|也)?", tail
+    ):
+        return False
     predicate = stripped[len(name) :]
     return bool(
         re.search(r"被[^。！？]{0,30}(?:拽|拖|压|击|撞|抓|绑|困|推|拉|卷|刺|砸|扯)", predicate)
-        or re.match(r"(?:没有|没|未)(?:答|回答|接话|开口|出声|回应)", predicate)
+        or re.match(r"(?:没有|没|未)(?:答|回答|接话|开口|出声|回应|再争)", predicate)
         or re.match(r"(?:从|沿|穿过)[^。！？]{0,60}(?:折返|返回|回到|离开|赶到|抵达|走|跑)", predicate)
         or re.match(r"(?:握住|抓住|攥住)[^。！？]{0,40}(?:契约|契纹|纹路|筋骨)", predicate)
         or re.match(r"收[^。！？]{0,10}时，(?:脑|记忆|意识|心神)", predicate)
+        or re.match(r"(?:正)?(?:蹲|站|坐|跪|伏|躺|俯身|转身|停稳|把)", predicate)
     )
+
+
+def _explicit_subject(sentence, people):
+    subjects = [card for card in people if _subject_bound(sentence, card["name"])]
+    return subjects[0] if len(subjects) == 1 else None
+
+
+def _dialogue_only(sentence):
+    return bool(re.fullmatch(r"\s*[“‘\"][\s\S]*[”’\"]\s*", sentence))
 
 
 def _pronoun_findings(text, cards, chapter, spans):
@@ -90,7 +105,10 @@ def _pronoun_findings(text, cards, chapter, spans):
         if match and index:
             previous = text[slice(*spans[index - 1])]
             people = [card for card in _mentioned(previous, cards) if card.get("gender") in _GENDER]
-            if len(people) > 1:
+            explicit = _explicit_subject(previous, people)
+            if explicit is not None:
+                resolved = explicit
+            elif len(people) > 1:
                 findings.append(
                     _finding(
                         "gender_pronoun",
@@ -130,10 +148,13 @@ def _pronoun_findings(text, cards, chapter, spans):
                     )
                 )
         people = [card for card in _mentioned(sentence, cards) if card.get("gender") in _GENDER]
-        if len(people) == 1 and _subject_bound(sentence, people[0]["name"]):
-            bound = people[0]
+        explicit = _explicit_subject(sentence, people)
+        if explicit is not None:
+            bound = explicit
         elif match and resolved is not None:
             bound = resolved
+        elif bound is not None and _dialogue_only(sentence):
+            pass
         else:
             bound = None
     return findings

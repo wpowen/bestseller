@@ -230,6 +230,77 @@ def test_ambiguous_pronoun_stays_unknown_and_is_not_a_repair_target():
     ]
 
 
+def test_eval52_explicit_named_subject_binds_following_pronoun_despite_other_people():
+    value = bible()
+    value["characters"][3].update(name="沈弘策", gender="女")
+    value["characters"][4].update(name="顾晴棣", gender="女")
+    value["characters"][5].update(name="顾奕棣", gender="男")
+    samples = {
+        14: "沈弘策正蹲在伤员身边。他听见脚步，抬眼看见顾奕棣。",
+        15: "沈弘策没有再争。他将药箱背紧，指向左侧一道覆雪的凹槽。",
+        44: (
+            "沈弘策把药车停稳，俯身翻检门边残存石简。纸片早被风雪磨薄，她看了许久，仍只摇头。"
+            "“契印槽是宗族旧制，弃名槽没有注记。”他语速越来越快。"
+        ),
+        48: "沈弘策蹲在侧廊入口，正替顾晴棣查看冻伤的右手。听见这句话，他抬头道。",
+    }
+
+    for chapter, text in samples.items():
+        findings = cast_findings(text, value, chapter=chapter)
+        assert [(row["status"], row["name"], row["observed"], row["expected"]) for row in findings] == [
+            ("Inference", "沈弘策", "他", "她")
+        ]
+
+
+def test_eval52_explicit_named_subject_pronouns_receive_deterministic_leaf_repairs():
+    value = bible()
+    value["characters"][3].update(name="沈弘策", gender="女")
+    value["characters"][4].update(name="顾晴棣", gender="女")
+    samples = {
+        14: ("沈弘策正蹲在伤员身边。他听见脚步。", "沈弘策正蹲在伤员身边。她听见脚步。"),
+        15: ("沈弘策没有再争。他将药箱背紧。", "沈弘策没有再争。她将药箱背紧。"),
+        44: (
+            "沈弘策把药车停稳。她看了许久。\n\n“弃名槽没有注记。”他语速越来越快。",
+            "沈弘策把药车停稳。她看了许久。\n\n“弃名槽没有注记。”她语速越来越快。",
+        ),
+        48: (
+            "沈弘策蹲在侧廊入口，正替顾晴棣查看冻伤的右手。听见这句话，他抬头道。",
+            "沈弘策蹲在侧廊入口，正替顾晴棣查看冻伤的右手。听见这句话，她抬头道。",
+        ),
+    }
+
+    for chapter, (text, expected) in samples.items():
+        repaired, _, failed, note = repair_cast_consistency(
+            None,
+            f"chapter{chapter}",
+            text,
+            {"events": []},
+            False,
+            {},
+            value,
+            {"number": chapter},
+            lambda *_args, **_kwargs: ({"events": []}, False, None),
+            lambda *_args, **_kwargs: {"edits": []},
+        )
+
+        assert repaired == expected
+        assert cast_findings(repaired, value, chapter=chapter) == []
+        assert failed is False and note["status"] == "repaired"
+
+
+def test_two_coordinated_named_subjects_remain_unknown():
+    value = bible()
+    value["characters"][3].update(name="沈弘策", gender="女")
+    value["characters"][4].update(name="顾晴棣", gender="女")
+    text = "沈弘策和顾晴棣一起抬起药箱。他转身走向侧廊。"
+
+    findings = cast_findings(text, value, chapter=48)
+
+    assert len(findings) == 1
+    assert findings[0]["status"] == "Unknown"
+    assert findings[0]["name"] == ""
+
+
 def test_checkup_counts_address_gender_and_identity_without_claiming_human_acceptance():
     chapters = [
         {

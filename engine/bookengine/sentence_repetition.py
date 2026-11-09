@@ -42,7 +42,9 @@ def _short_exact_hits(text, spans, nodes):
             continue
         sentence = next((node["sentence_id"] for node in nodes if start <= node["start"] < end), None)
         if sentence is not None:
-            paragraph_rows.append(dict(start=start, end=end, paragraph=paragraph, sentence=sentence, normalized=normalized))
+            paragraph_rows.append(
+                dict(start=start, end=end, paragraph=paragraph, sentence=sentence, normalized=normalized)
+            )
     paragraph_groups = {}
     for row in paragraph_rows:
         paragraph_groups.setdefault(row["normalized"], []).append(row)
@@ -238,9 +240,7 @@ def sentence_hits(text, spans):
         for row in result
         if row["kind"] != "exact_short_sentence"
         or not any(
-            other["kind"] != "exact_short_sentence"
-            and other["start"] <= row["start"]
-            and row["end"] <= other["end"]
+            other["kind"] != "exact_short_sentence" and other["start"] <= row["start"] and row["end"] <= other["end"]
             for other in result
         )
     ]

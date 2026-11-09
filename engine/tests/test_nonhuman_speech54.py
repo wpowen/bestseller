@@ -163,10 +163,7 @@ def test_nonhuman_speech_uses_existing_targeted_model_repair_and_recheck():
 
 
 def test_multi_quote_nonhuman_line_targets_the_balanced_complete_paragraph():
-    text = (
-        "“它认你了。”雪沛宁含混地叫了一声，随后连打三个喷嚏，“不是认主……是认名。”\n\n"
-        "顾奕棣低头看着铜牌。"
-    )
+    text = "“它认你了。”雪沛宁含混地叫了一声，随后连打三个喷嚏，“不是认主……是认名。”\n\n顾奕棣低头看着铜牌。"
 
     def ask(_client, _stage, _instruction, sections, _schema, **_kwargs):
         targets = next(body for title, body in sections if title == "待修句")

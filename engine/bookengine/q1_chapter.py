@@ -258,13 +258,14 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, _ = guarded(repair_after_draft)(
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
+    # Content repairs first; text hygiene last so it also cleans what they rewrote.
+    text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
-        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
-    )
-    text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     boundaries = boundary_facts(raw, text)

@@ -94,6 +94,33 @@ def test_quote_grounded_ledger_records_people_body_and_consumed_memories():
     assert changed["continuity_ledger"]["characters"]["顾晴棣"]["life_status"]["value"] == "alive"
 
 
+def test_real_model_delta_shape_keeps_grounded_injury_and_defaults_memory_owner_to_protagonist():
+    text = "顾奕棣猛地扑过去，碎石擦着他的肩背砸进雪里。他再也想不起妹妹第一次叫他哥哥时的声音。"
+    delta = {
+        "characters": [
+            {
+                "name": "顾奕棣",
+                "field": "injury",
+                "value": "肩背碎石擦伤",
+                "quote": "顾奕棣猛地扑过去，碎石擦着他的肩背砸进雪里。",
+            }
+        ],
+        "consumed_memories": [
+            {
+                "name": "妹妹第一次叫哥哥的声音",
+                "summary": "妹妹第一次叫哥哥的声音",
+                "quote": "他再也想不起妹妹第一次叫他哥哥时的声音。",
+            }
+        ],
+    }
+
+    state = merge_continuity_delta({}, delta, text, bible(), 1)
+    ledger = state["continuity_ledger"]
+
+    assert ledger["characters"]["顾奕棣"]["injuries"][0]["part"] == "肩背"
+    assert ledger["consumed_memories"][0]["name"] == "顾奕棣"
+
+
 def test_writer_gets_short_natural_facts_without_internal_field_names():
     outline = {"number": 40, "scenes": [{"characters": ["顾晴棣", "雪沛宁"]}]}
     facts = writer_continuity_facts(seeded_state(), bible(), outline)

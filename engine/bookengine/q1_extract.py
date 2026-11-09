@@ -355,8 +355,10 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         for row in cast_findings(text, bible, state, outline)
         if row.get("status") != "Evidence"
     ][:12]
+    previous_payload = pack(dict(number=previous["number"], text=prior)) if previous else ""
     sections = [
         ("编号正文", number_paragraphs(text)),
+        ("上章失败顺带补提", previous_payload),
         (
             "合法值",
             pack(
@@ -371,12 +373,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         ),
         ("本章要求", pack(contract)),
         ("登场与称呼问题，合并本次定点修复", pack(findings)),
-        (
-            "旧状态",
-            pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "continuity_ledger", "clock")})[
-                :1800
-            ],
-        ),
+        ("旧状态", pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "clock")})[:500]),
         ("候选句S编号", pack(hits)[:1800]),
         (
             "固定角色",
@@ -392,7 +389,6 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             pack({k: v for k, v in scene_context(text).items() if k != "paragraphs"}) if outline.get("ending") else "",
         ),
         ("末章候选", pack(ending_candidates(text, bible, outline) if outline.get("ending") else [])),
-        ("上章失败顺带补提", pack(dict(number=previous["number"], text=prior)) if previous else ""),
     ]
     prompt = EXTRACT["final_prompt"] if final else EXTRACT["prompt"]
     prompt += (
@@ -456,7 +452,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     )
     saved = client.prefix
     client.prefix = ""
-    complete = not previous or sections[-1][1] in long_context(
+    complete = not previous or previous_payload in long_context(
         sections, max(0, 10000 - len(SYSTEM) - len(prompt) - len(schema) - 350)
     )
     try:

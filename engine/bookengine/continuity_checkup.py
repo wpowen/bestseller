@@ -46,7 +46,8 @@ def accident_events(bible, chapters):
         last_named = None
         for index, (start, end) in enumerate(_sentences(text)):
             sentence = text[start:end]
-            named = next((name for name in sorted(_cards(bible), key=len, reverse=True) if name in sentence), None)
+            mentioned = [name for name in _cards(bible) if name in sentence]
+            named = min(mentioned, key=lambda name: (sentence.index(name), -len(name))) if mentioned else None
             if named:
                 last_named = (named, index)
             cause = _cause(sentence)

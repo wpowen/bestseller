@@ -800,7 +800,7 @@
 
 ## 2026-11-09-53：连续性账本——身体状态、生死位置、已消耗记忆（用户 2026-11-09：“写并并行启动”）
 
-状态：执行中（用户 2026-11-09：“写并并行启动”）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：本条新增的 `engine/bookengine/continuity_ledger.py`（或同类新模块）、`engine/bookengine/q1_extract.py`（写手上下文与状态提取）、`engine/bookengine/q1_continuity.py`、`engine/data/q1_schemas.yaml` 的状态提取段落、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

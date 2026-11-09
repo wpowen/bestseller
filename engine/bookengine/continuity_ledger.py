@@ -22,6 +22,7 @@ _LIFE_TEXT = {"alive": "存活", "missing": "失踪", "dead": "死亡"}
 _NUMBERS = {2: "两", 3: "三", 4: "四", 5: "五", 6: "六", 8: "八"}
 _CN_NUMBERS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 _MODEL_KINDS = {"injury_side", "life_status", "location_status", "consumed_memory", "limb_count"}
+_BODY_PART = re.compile(r"(左|右|双侧)?(肩背|前腿|后腿|手臂|手掌|肩|背|手|腿|臂|脚|掌|蹄|角)")
 
 
 def extraction_contract():
@@ -91,11 +92,14 @@ def _merge_character(ledger, row, text, chapter, cards):
             "travel_status": row.get("travel_status") if row.get("travel_status") in _TRAVEL else "未知",
         }
     elif field == "injury":
-        part = row.get("part")
-        side = row.get("side")
-        condition = row.get("condition")
-        if not all(isinstance(value, str) and value.strip() for value in (part, condition)):
+        value = str(row.get("value") or "")
+        match = _BODY_PART.search(str(row.get("part") or "") + value + quote)
+        part = row.get("part") or (match[2] if match else "")
+        side = row.get("side") or (match[1] if match else "")
+        condition = row.get("condition") or value
+        if not all(isinstance(item, str) and item.strip() for item in (part, condition)):
             return
+        part = re.sub(r"^(?:左|右|双侧)", "", part.strip())
         side = side.strip() if isinstance(side, str) and side.strip() in {"左", "右", "双侧", "无"} else "无"
         injuries = target.setdefault("injuries", [])
         current = next(
@@ -104,7 +108,7 @@ def _merge_character(ledger, row, text, chapter, cards):
         )
         start = current.get("start_chapter", chapter) if current else chapter
         item = {
-            "part": part.strip()[:20],
+            "part": part[:20],
             "side": side,
             "condition": condition.strip()[:30],
             "severity": str(row.get("severity") or "未说明")[:30],
@@ -146,7 +150,7 @@ def _merge_memories(ledger, rows, text, bible, chapter):
         if not isinstance(row, dict) or not (quote := _quote(row, text)):
             continue
         summary = row.get("summary")
-        name = row.get("name") or _protagonist(bible)
+        name = row.get("name") if row.get("name") in _cards(bible) else _protagonist(bible)
         if name not in _cards(bible) or not isinstance(summary, str) or not summary.strip():
             continue
         item = {"name": name, "summary": summary.strip()[:60], "chapter": chapter, "quote": quote}
@@ -429,7 +433,8 @@ def repair_continuity_ledger(client, prefix, text, raw, failed, state, bible, ou
     facts = writer_continuity_facts(state, bible, outline)
     note = {"status": "checked", "before": before, "after": before, "model_findings": []}
     if not facts:
-        _adopt_state(state, raw, text, bible, chapter)
+        if not failed:
+            _adopt_state(state, raw, text, bible, chapter)
         return text, raw, failed, note
     spans = _sentences(text)
     response = ask(
@@ -464,7 +469,8 @@ def repair_continuity_ledger(client, prefix, text, raw, failed, state, bible, ou
     after = continuity_findings(candidate, state, bible, chapter)
     note.update(model_findings=model, after=after, edits=edits)
     if not targets:
-        _adopt_state(state, raw, text, bible, chapter)
+        if not failed:
+            _adopt_state(state, raw, text, bible, chapter)
         return text, raw, failed, note
     if candidate == text or after:
         return text, raw, failed, dict(note, status="rolled_back", reason="continuity_recheck_failed")

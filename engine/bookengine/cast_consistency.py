@@ -5,8 +5,9 @@ import json
 import re
 
 from .address_contracts import address_issues, address_rows
+from .cast_repair import apply_cast_edits, registered_labels
 from .nonhuman_speech import identity_literal_findings, speech_findings
-from .precision import _sentences, apply as sentence_edits
+from .precision import _sentences
 from .unregistered_names import name_findings
 
 
@@ -391,41 +392,6 @@ def _repair_targets(text, findings):
     return sorted(targets.values(), key=lambda row: (row["id"], row["kind"]))
 
 
-def _apply_cast_edits(text, proposed, targets):
-    direct_kinds = {"nonhuman_speech", "nonhuman_speech_origin"}
-    direct_targets = {row["id"]: row for row in targets if row["kind"] in direct_kinds}
-    direct_proposed = {
-        row.get("id"): row.get("text")
-        for row in proposed
-        if isinstance(row, dict) and row.get("id") in direct_targets and isinstance(row.get("text"), str)
-    }
-    remaining_targets = [row for row in targets if row["id"] not in direct_targets]
-    remaining_proposed = [row for row in proposed if row.get("id") not in direct_targets]
-    candidate, edits = sentence_edits(
-        text,
-        remaining_proposed,
-        remaining_targets,
-        allow_empty=False,
-        allow_style=True,
-    )
-    for number, replacement in direct_proposed.items():
-        target = direct_targets[number]
-        if not replacement.strip() or "\n" in replacement or "\r" in replacement or target["quote"] not in candidate:
-            continue
-        candidate = candidate.replace(target["quote"], replacement, 1)
-        edits.append(dict(id=number, text=replacement))
-    return candidate, edits
-
-
-def _registered_labels(bible):
-    labels = []
-    for card in _cards(bible):
-        aliases = card.get("aliases", [])
-        labels.extend([aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else [])
-        labels.extend([card.get("name"), card.get("address")])
-    return {label for label in labels if isinstance(label, str) and label}
-
-
 def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """One sentence-only model repair; any failed deterministic recheck rolls back."""
     from .checks import high_confidence
@@ -461,7 +427,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     )
     proposed = response.get("edits", []) if isinstance(response, dict) else []
     proposed = [row for row in proposed if isinstance(row, dict)]
-    labels = _registered_labels(bible)
+    labels = registered_labels(_cards(bible))
     protected_names = {
         target["id"]
         for target in repair_targets
@@ -484,7 +450,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
             continue
         proposed = [row for row in proposed if row.get("id") != target["id"]]
         proposed.append(dict(id=target["id"], text=replacement))
-    candidate, edits = _apply_cast_edits(text, proposed, repair_targets)
+    candidate, edits = apply_cast_edits(text, proposed, repair_targets)
     after = cast_findings(candidate, bible, chapter=chapter)
     remaining = {(row["kind"], row["name"]) for row in after if row["status"] == "Inference"}
     edited_ids = {row["id"] for row in edits}

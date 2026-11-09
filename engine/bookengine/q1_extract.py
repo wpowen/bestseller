@@ -24,6 +24,7 @@ from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
 from .core_ability import core_source
 from .character_context import catchphrase_context, identity_keywords, trim_dossier
+from .continuity_ledger import extraction_contract
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -368,7 +369,12 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         ),
         ("本章要求", pack(contract)),
         ("登场与称呼问题，合并本次定点修复", pack(findings)),
-        ("旧状态", pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "clock")})[:500]),
+        (
+            "旧状态",
+            pack({k: state.get(k) for k in ("dashboard", "power_status", "continuity", "continuity_ledger", "clock")})[
+                :1800
+            ],
+        ),
         ("候选句S编号", pack(hits)[:1800]),
         (
             "固定角色",
@@ -406,6 +412,8 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "另附target_noun作用对象、method_noun手段核心名词和含两者及结果的连续逐字quote；"
         "每个名词只填一个原词，不能用顿号合并或拼接引文，primary标主要解法。"
     )
+    continuity_prompt, continuity_schema = extraction_contract()
+    prompt += continuity_prompt
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
@@ -441,6 +449,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             character_locations=[],
             solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
             core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
+            continuity_delta=continuity_schema,
         )
     )
     saved = client.prefix

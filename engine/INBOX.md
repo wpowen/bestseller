@@ -824,7 +824,7 @@
 
 ## 2026-11-09-54：检查收紧——主语明确的代词、短句重复、残句、非人角色说话、跨网页书库重名（用户 2026-11-09：“写并并行启动”）
 
-状态：执行中（用户 2026-11-09：“写并并行启动”）
+状态：开发完成，待监工验收
 
 文件归属：
 - 可改：`engine/bookengine/cast_consistency.py`、`engine/bookengine/text_hygiene.py`、`engine/bookengine/sentence_repetition.py`、`engine/bookengine/identity.py`、`engine/bookengine/q1_prepare.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

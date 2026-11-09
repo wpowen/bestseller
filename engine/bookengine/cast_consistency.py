@@ -417,6 +417,15 @@ def _apply_cast_edits(text, proposed, targets):
     return candidate, edits
 
 
+def _registered_labels(bible):
+    labels = []
+    for card in _cards(bible):
+        aliases = card.get("aliases", [])
+        labels.extend([aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else [])
+        labels.extend([card.get("name"), card.get("address")])
+    return {label for label in labels if isinstance(label, str) and label}
+
+
 def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """One sentence-only model repair; any failed deterministic recheck rolls back."""
     from .checks import high_confidence
@@ -435,6 +444,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         prefix + "-cast-consistency-repair",
         "只修改待修句S编号，修正人物性别代词、性别化称呼、代词姓名残留、非人角色违规说人话、"
         "人物卡原句贴入正文、未登记名字或被写串的阵营身份。非人角色不能说人话时，把台词改成兽鸣、动作和反应；"
+        "未登记名字只能改成固定人物卡里的name、aliases或address；旧名归属不确定就不改，绝不能改成兽鸣或新名字。"
         "不得改正确人物的姓名、已发生事件、人物关系、胜负、物件、地点或章末结果。"
         "若人物被串成敌方领头人，依章纲把错误人物从整段追兵身份链移除，恢复为章纲中的匿名对手；"
         "不得只添加人物身份同位语。每个edit.id必须逐字复制待修句中的真实id，不得使用示例id；"
@@ -451,6 +461,17 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     )
     proposed = response.get("edits", []) if isinstance(response, dict) else []
     proposed = [row for row in proposed if isinstance(row, dict)]
+    labels = _registered_labels(bible)
+    protected_names = {
+        target["id"]
+        for target in repair_targets
+        if target["kind"] == "unregistered_name" and target["name"].startswith("阿")
+    }
+    proposed = [
+        row
+        for row in proposed
+        if row.get("id") not in protected_names or any(label in str(row.get("text", "")) for label in labels)
+    ]
     for target in repair_targets:
         if target["kind"] == "gender_pronoun":
             match = _FRONTED_PRONOUN.match(target["quote"])
@@ -466,7 +487,10 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     candidate, edits = _apply_cast_edits(text, proposed, repair_targets)
     after = cast_findings(candidate, bible, chapter=chapter)
     remaining = {(row["kind"], row["name"]) for row in after if row["status"] == "Inference"}
-    required = {(row["kind"], row["name"]) for row in targets}
+    edited_ids = {row["id"] for row in edits}
+    required = {
+        (row["kind"], row["name"]) for row in targets if row["id"] not in protected_names or row["id"] in edited_ids
+    }
     before_repetition = clean_repetitions(text, remove_safe=False)["counts"]
     after_repetition = clean_repetitions(candidate, remove_safe=False)["counts"]
     regression = any(

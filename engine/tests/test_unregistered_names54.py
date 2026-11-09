@@ -88,3 +88,24 @@ def test_unregistered_name_receives_one_targeted_model_repair():
     assert repaired == "“顾奕棣。”一个陌生而熟悉的旧名落进耳中。"
     assert not [row for row in cast_findings(repaired, bible(), chapter=15) if row["kind"] == "unregistered_name"]
     assert failed is False and note["status"] == "repaired"
+
+
+def test_unregistered_old_name_cannot_be_replaced_with_an_animal_sound():
+    text = "“阿岐。”一个陌生而熟悉的旧名落进耳中。"
+
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "chapter15",
+        text,
+        {"events": []},
+        False,
+        {},
+        bible(),
+        {"number": 15},
+        lambda *_args, **_kwargs: ({"events": []}, False, None),
+        lambda *_args, **_kwargs: {"edits": [{"id": 1, "text": "“嗷——”"}]},
+    )
+
+    assert repaired == text
+    assert failed is False
+    assert note["status"] == "rolled_back"

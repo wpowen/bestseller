@@ -10,6 +10,8 @@ _SURNAMES = "".join(RULES["surname"])
 _SUBJECT = re.compile(RULES["subject_pattern"].replace("SURNAME", _SURNAMES))
 _VOCATIVE = re.compile(r"[“「『]\s*(阿[\u4e00-\u9fff]{1,2}|[" + _SURNAMES + r"][\u4e00-\u9fff]{1,2})\s*[。！？!?]?[”」』]")
 _NAMED = re.compile(r"(?:名叫|名为|叫作|唤作|喊着|喊道)\s*([" + _SURNAMES + r"][\u4e00-\u9fff]{1,2})")
+_NOT_NAMES = {"左手", "右手", "左边", "右边", "时限", "封石", "别怕", "别停", "能用", "麻了", "那便"}
+_GRAMMAR_CHARS = set("边道路人兽手后前上下里外能再即要交")
 
 
 def _strings(value):
@@ -21,7 +23,7 @@ def _strings(value):
 def _known_labels(bible):
     return {
         label
-        for card in (bible or {}).get("characters", [])
+        for card in [*(bible or {}).get("characters", []), *(bible or {}).get("antagonists", [])]
         if isinstance(card, dict)
         for label in [card.get("name"), card.get("address"), *_strings(card.get("aliases"))]
         if isinstance(label, str) and label
@@ -32,16 +34,24 @@ def name_findings(text, bible, chapter=None):
     known = _known_labels(bible)
     spans = _sentences(text)
     candidates = []
-    for pattern in (_SUBJECT, _VOCATIVE, _NAMED):
-        for match in pattern.finditer(text):
-            name = match[1]
-            if name in known or name in RULES["exclude"]:
-                continue
-            candidates.append((match.start(1), name))
+    for match in _SUBJECT.finditer(text):
+        candidates.append((match.start(1), match[1]))
+    for match in _VOCATIVE.finditer(text):
+        window = text[max(0, match.start() - 24) : min(len(text), match.end() + 40)]
+        if re.search(r"旧名|名字|姓名|称呼|名落|(?:喊|叫|唤)[^。！？]{0,12}[“「『]", window):
+            candidates.append((match.start(1), match[1]))
+    candidates.extend((match.start(1), match[1]) for match in _NAMED.finditer(text))
     findings = []
     seen = set()
     for offset, name in sorted(candidates):
-        if name in seen:
+        if (
+            name in seen
+            or name in known
+            or name in RULES["exclude"]
+            or name in _NOT_NAMES
+            or any(char in _GRAMMAR_CHARS for char in name[1:])
+            or any(name.startswith(label) for label in known)
+        ):
             continue
         span = next(
             ((number, start, end) for number, (start, end) in enumerate(spans, 1) if start <= offset < end),

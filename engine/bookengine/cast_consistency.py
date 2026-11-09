@@ -327,7 +327,15 @@ def cast_findings(text, bible, *, chapter=None):
 
 
 def cast_checkup(bible, chapters):
-    findings = [row for chapter in chapters for row in cast_findings(chapter["text"], bible, chapter=chapter["number"])]
+    findings = []
+    unregistered = set()
+    for chapter in chapters:
+        for row in cast_findings(chapter["text"], bible, chapter=chapter["number"]):
+            if row["kind"] == "unregistered_name":
+                if row["name"] in unregistered:
+                    continue
+                unregistered.add(row["name"])
+            findings.append(row)
     contract_issues = address_issues(bible)
     logical_contract_issues = {
         (

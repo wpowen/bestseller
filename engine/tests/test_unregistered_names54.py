@@ -33,6 +33,12 @@ def test_registered_names_aliases_and_addresses_are_not_reported():
     assert not [row for row in cast_findings(text, bible(), chapter=15) if row["kind"] == "unregistered_name"]
 
 
+def test_short_dialogue_and_registered_name_followed_by_a_verb_are_not_names():
+    text = "“别怕。”\n\n“能用。”\n\n沈弘策握紧药包：“时限？”\n\n顾奕棣没有回答。"
+
+    assert not [row for row in cast_findings(text, bible(), chapter=5) if row["kind"] == "unregistered_name"]
+
+
 def test_unknown_subject_name_is_detected_without_requiring_repeat_mentions():
     text = "韩远抬头看向雪坡，随后把药包塞回怀里。"
 
@@ -50,6 +56,12 @@ def test_unregistered_name_is_shared_by_chapter_repair_and_whole_book_checkup(tm
     (tmp_path / "chapter-015.body.md").write_text(text)
     whole = check_book(tmp_path, source="draft")["cast_consistency"]
     assert whole["counts"]["unregistered_name"] == 1
+
+    repeated = cast_checkup(
+        bible(),
+        [{"number": 15, "text": text}, {"number": 16, "text": "回声再一次喊：“阿岐！”"}],
+    )
+    assert repeated["counts"]["unregistered_name"] == 1
 
 
 def test_unregistered_name_receives_one_targeted_model_repair():

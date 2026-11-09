@@ -824,7 +824,7 @@
 
 ## 2026-11-09-54：检查收紧——主语明确的代词、短句重复、残句、非人角色说话、跨网页书库重名（用户 2026-11-09：“写并并行启动”）
 
-状态：开发完成，待监工验收
+状态：已验收，已合并进 main（2026-11-09）。书库 0 改动。主语明确的代词按人名绑定（沈弘策 4 句都改成“她”）；短句/短对白相邻重复删除后一处；“它雪沛宁”类残句修复；非人角色默认不说人话、写进人物卡并交给写手；identity 原句贴进任何句子都能检出；改名防撞扫到 books/webui/。eval-52 离线修前→修后：代词错误 8→2、残句 1→0、句子重复 7→5；真实修复第 11、14、15、44、48、50 章通过复检。监工修正：未登记名字只记录不修改（原实现把群演“马三根”改成“守仓人”、把母亲叫的“阿棣”改成全名）；由人物名派生的昵称算已知。遗留：eval-49 蛮玉筠正文从第 1 章就说话但人物卡没登记，按新规则 274 条存量提示；identity 贴句修复后仍 6 处。
 
 文件归属：
 - 可改：`engine/bookengine/cast_consistency.py`、`engine/bookengine/text_hygiene.py`、`engine/bookengine/sentence_repetition.py`、`engine/bookengine/identity.py`、`engine/bookengine/q1_prepare.py`、`engine/data/q1_schemas.yaml` 的人物段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

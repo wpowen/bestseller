@@ -400,7 +400,9 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
 
     chapter = outline.get("number")
     observed = cast_findings(text, bible, chapter=chapter)
-    targets = [row for row in observed if row["status"] == "Inference"]
+    # Unregistered names (walk-on characters, nicknames) are reported for review only;
+    # rewriting them would erase named minor characters and natural forms of address.
+    targets = [row for row in observed if row["status"] == "Inference" and row["kind"] != "unregistered_name"]
     note = dict(status="checked", before=observed, after=observed, edits=[])
     if not targets:
         return text, raw, failed, note

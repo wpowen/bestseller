@@ -32,6 +32,17 @@ def _known_labels(bible):
     }
 
 
+def _derived(name, bible):
+    """A nickname built from a registered character's name (阿棣 for 顾奕棣) is not new."""
+    from .address_contracts import derived_address
+
+    return any(
+        derived_address(name, card.get("name"))
+        for card in [*(bible or {}).get("characters", []), *(bible or {}).get("antagonists", [])]
+        if isinstance(card, dict)
+    )
+
+
 def name_findings(text, bible, chapter=None):
     known = _known_labels(bible)
     spans = _sentences(text)
@@ -53,6 +64,7 @@ def name_findings(text, bible, chapter=None):
             or name in _NOT_NAMES
             or any(char in _GRAMMAR_CHARS for char in name[1:])
             or any(name.startswith(label) for label in known)
+            or _derived(name, bible)
         ):
             continue
         span = next(

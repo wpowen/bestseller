@@ -64,13 +64,12 @@ def test_unregistered_name_is_shared_by_chapter_repair_and_whole_book_checkup(tm
     assert repeated["counts"]["unregistered_name"] == 1
 
 
-def test_unregistered_name_receives_one_targeted_model_repair():
+def test_unregistered_name_is_reported_and_left_in_the_text():
+    """Policy (supervisor 2026-11-09): walk-on names and nicknames are review hints, not repairs."""
     text = "“阿岐。”一个陌生而熟悉的旧名落进耳中。"
 
-    def ask(_client, _stage, _instruction, sections, _schema, **_kwargs):
-        targets = next(body for title, body in sections if title == "待修句")
-        assert "unregistered_name" in targets and "阿岐" in targets
-        return {"edits": [{"id": 1, "text": "“顾奕棣。”一个陌生而熟悉的旧名落进耳中。"}]}
+    def ask(*_args, **_kwargs):
+        raise AssertionError("unregistered names must not be sent to the model")
 
     repaired, _, failed, note = repair_cast_consistency(
         None,
@@ -85,27 +84,32 @@ def test_unregistered_name_receives_one_targeted_model_repair():
         ask,
     )
 
-    assert repaired == "“顾奕棣。”一个陌生而熟悉的旧名落进耳中。"
-    assert not [row for row in cast_findings(repaired, bible(), chapter=15) if row["kind"] == "unregistered_name"]
-    assert failed is False and note["status"] == "repaired"
-
-
-def test_unregistered_old_name_cannot_be_replaced_with_an_animal_sound():
-    text = "“阿岐。”一个陌生而熟悉的旧名落进耳中。"
-
-    repaired, _, failed, note = repair_cast_consistency(
-        None,
-        "chapter15",
-        text,
-        {"events": []},
-        False,
-        {},
-        bible(),
-        {"number": 15},
-        lambda *_args, **_kwargs: ({"events": []}, False, None),
-        lambda *_args, **_kwargs: {"edits": [{"id": 1, "text": "“嗷——”"}]},
-    )
-
     assert repaired == text
-    assert failed is False
-    assert note["status"] == "rolled_back"
+    assert failed is False and note["status"] == "checked"
+    assert [row["name"] for row in note["before"] if row["kind"] == "unregistered_name"] == ["阿岐"]
+
+
+def test_nickname_derived_from_a_registered_name_is_known():
+    from bookengine.unregistered_names import name_findings
+
+    bible = dict(characters=[dict(name="顾奕棣", role="protagonist")])
+    text = "风里传来母亲的声音。“阿棣。”她喊着他的名字。"
+    assert [f["name"] for f in name_findings(text, bible)] == []
+
+
+def test_unregistered_names_are_reported_but_never_sent_for_repair(monkeypatch):
+    from bookengine import cast_consistency as cast
+
+    finding = dict(
+        kind="unregistered_name", status="Inference", name="马三根", id=1, chapter=11, quote="马三根走过来。"
+    )
+    monkeypatch.setattr(cast, "cast_findings", lambda text, bible, chapter=None: [finding])
+
+    def ask(*args, **kwargs):
+        raise AssertionError("an unregistered walk-on name must not trigger a model repair")
+
+    text, raw, failed, note = cast.repair_cast_consistency(
+        None, "ch11", "马三根走过来。", {}, [], {}, {}, dict(number=11), None, ask
+    )
+    assert text == "马三根走过来。"
+    assert note["before"] == [finding]

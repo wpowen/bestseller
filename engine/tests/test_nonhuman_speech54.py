@@ -106,6 +106,16 @@ def test_eval52_nonhuman_human_speech_is_found_in_name_and_pronoun_attributions(
     assert {row["name"] for row in speech} == {"雪沛宁"}
 
 
+def test_human_dialogue_near_a_nonhuman_name_and_animal_calls_are_not_attributed_to_it():
+    text = (
+        "顾晴棣脸色骤白：“敲钟的人停了。”\n\n"
+        "顾奕棣把药箱塞进雪沛宁背侧的皮囊，转身便走。沈弘策拦住他：“你带晴棣走支道。”\n\n"
+        "雪沛宁低头咬住他的袖口，含糊地叫了一声。"
+    )
+
+    assert not [row for row in cast_findings(text, bible(), chapter=4) if row["kind"] == "nonhuman_speech"]
+
+
 def test_speaking_contract_allows_speech_from_configured_chapter_but_requires_first_origin():
     text = "契印补全后，雪沛宁喉间第一次发出清楚人声：“我能自己走。”"
 

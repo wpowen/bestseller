@@ -91,8 +91,15 @@ def _attributed_card(text, match, cards):
     direct = []
     for card in cards:
         name = card["name"]
-        after_match = re.search(re.escape(name) + r"[^。！？!?\n]{0,24}" + _SPEECH_VERB, after)
-        before_match = re.search(re.escape(name) + r"[^。！？!?\n]{0,24}" + _SPEECH_VERB + r"[：:,，]?\s*$", before)
+        after_match = re.match(r"[ \t]*" + re.escape(name) + r"[^。！？!?\n]{0,24}" + _SPEECH_VERB, after)
+        before_match = re.search(
+            r"(?:^|[。！？!?\n])\s*"
+            + re.escape(name)
+            + r"[^。！？!?\n]{0,24}(?:"
+            + _SPEECH_VERB
+            + r"[：:,，]?|[：:])\s*$",
+            before,
+        )
         if after_match:
             direct.append((card, match.end() + after_match.end()))
         elif before_match:

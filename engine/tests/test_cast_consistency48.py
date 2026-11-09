@@ -304,7 +304,7 @@ def test_two_coordinated_named_subjects_remain_unknown():
 def test_eval52_pronoun_name_residue_is_found_without_matching_ordinary_words():
     value = bible()
     value["characters"][3].update(name="雪沛宁", gender="雄性", identity="幼年雪兽")
-    text = "它雪沛宁恋恋不舍地叫了两声。顾奕棣看见他顾不上回头，只能继续往前走。"
+    text = "它雪沛宁恋恋不舍地叫了两声。顾冬岚看见他顾不上回头，只能继续往前走。"
 
     findings = cast_findings(text, value, chapter=50)
 

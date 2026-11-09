@@ -7,6 +7,7 @@ import re
 from .address_contracts import address_issues, address_rows
 from .nonhuman_speech import identity_literal_findings, speech_findings
 from .precision import _sentences, apply as sentence_edits
+from .unregistered_names import name_findings
 
 
 _GENDER = {"男": ("他", "她"), "女": ("她", "他")}
@@ -319,6 +320,7 @@ def cast_findings(text, bible, *, chapter=None):
         *_pronoun_name_residue_findings(text, cards, chapter, spans),
         *speech_findings(text, bible, chapter),
         *identity_literal_findings(text, bible, chapter),
+        *name_findings(text, bible, chapter),
         *_identity_findings(text, bible, cards, chapter, spans),
     ]
     return sorted(findings, key=lambda row: (row["start"], row["kind"], row["name"]))
@@ -398,7 +400,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         client,
         prefix + "-cast-consistency-repair",
         "只修改待修句S编号，修正人物性别代词、性别化称呼、代词姓名残留、非人角色违规说人话、"
-        "人物卡原句贴入正文或被写串的阵营身份。非人角色不能说人话时，把台词改成兽鸣、动作和反应；"
+        "人物卡原句贴入正文、未登记名字或被写串的阵营身份。非人角色不能说人话时，把台词改成兽鸣、动作和反应；"
         "不得改正确人物的姓名、已发生事件、人物关系、胜负、物件、地点或章末结果。"
         "若人物被串成敌方领头人，依章纲把错误人物从整段追兵身份链移除，恢复为章纲中的匿名对手；"
         "不得只添加人物身份同位语。每个edit.id必须逐字复制待修句中的真实id，不得使用示例id；"

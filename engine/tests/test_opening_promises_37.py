@@ -431,6 +431,20 @@ def test_reader_promises_are_batched_once_per_chapter_and_stop_after_fulfillment
     assert [len(ids) for _, ids in seen] == [3, 2, 1]
 
 
+def test_large_reader_batch_reserves_enough_output_for_every_grounded_result():
+    promises = [f"第{i}项兑现" for i in range(14)]
+    caps = []
+
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        items = json.loads(dict(sections)["逐项验收"])
+        caps.append(kwargs["cap"])
+        return dict(items=[dict(id=item["id"], status="missing", evidence=[]) for item in items])
+
+    review_opening(None, "large-batch", "正文", {"opening_promises": ["；".join(promises)]}, 1, {}, ask)
+
+    assert caps == [6100]
+
+
 def test_saved_fulfilled_reader_promise_is_not_reviewed_again(tmp_path):
     (tmp_path / "chapters").mkdir()
     (tmp_path / "chapter-001.body.md").write_text("第一项已经兑现。", encoding="utf-8")

@@ -142,6 +142,7 @@ def _positive_quote(quote, kind):
 
 
 def _review_batch(ask, client, key, items, text, chapter):
+    output_cap = min(7000, max(2500, len(items) * 400 + 500))
     return precise_ask(
         ask,
         client,
@@ -152,6 +153,7 @@ def _review_batch(ask, client, key, items, text, chapter):
         "缺失项给出本章可定向修补段号（从1起）。状态仅fulfilled/missing/unknown。",
         [("逐项验收", json.dumps(items, ensure_ascii=False)), ("本章正文", text), ("验收章号", str(chapter))],
         REVIEW_SCHEMA,
+        cap=output_cap,
     )
 
 

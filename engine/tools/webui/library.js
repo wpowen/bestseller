@@ -129,9 +129,15 @@ function renderLibrary() {
  text('trash-toggle', `回收站 ${trashed.length} 本`);
  text('archive-toggle', `已归档 ${archived.length} 本`);
 }
-async function refreshBooks() {
+async function refreshBooks(manual = false) {
  if (state.booksBusy) return;
  state.booksBusy = true;
+ const button = $('refresh-books');
+ if (manual === true) {
+  button.disabled = true;
+  button.textContent = '刷新中…';
+ }
+ $('books').setAttribute('aria-busy', 'true');
  try {
   const [result, archive, trash] = await Promise.all([api('/api/books'), api('/api/archive'), api('/api/trash')]);
   const changed = !$('books').children.length || JSON.stringify([books, archived, trashed]) !== JSON.stringify([result.books, archive.books, trash.books]);
@@ -145,6 +151,9 @@ async function refreshBooks() {
   text('library-status', error.message);
  } finally {
   state.booksBusy = false;
+  button.disabled = false;
+  button.textContent = '刷新';
+  $('books').setAttribute('aria-busy', 'false');
  }
 }
 async function manage(book, name, title) {
@@ -180,7 +189,7 @@ $('filters').onclick = (e) => {
 };
 $('search').oninput = renderLibrary;
 $('sort').onchange = renderLibrary;
-$('refresh-books').onclick = refreshBooks;
+$('refresh-books').onclick = () => refreshBooks(true);
 $('archive-toggle').onclick = () => {
  $('archives').hidden = !$('archives').hidden;
 };

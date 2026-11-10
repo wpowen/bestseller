@@ -373,7 +373,8 @@ def test_concurrent_cold_http_requests_build_one_book_once(http, monkeypatch):
     with ThreadPoolExecutor(max_workers=4) as executor:
         results = list(executor.map(lambda _: request(), range(4)))
     assert all(row == results[0] for row in results)
-    assert counts["webui/story/chapter-001.body.md"] == 1
+    assert counts["webui/story/final/chapter-001.md"] == 1
+    assert counts["webui/story/chapter-001.body.md"] == 0
 
 
 def test_warm_cache_still_rejects_symlink_replacement(http, tmp_path):

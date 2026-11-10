@@ -93,7 +93,15 @@ def costs(folder, include_final=True):
     unknown = calls = tokens = 0
     paths = [folder / "calls.json"]
     if include_final:
-        paths.extend(folder.glob("final/**/http/ledger.json"))
+        for pattern in (
+            "final/.deai/*/http/ledger.json",
+            "final/.deai/single/*/final/.deai/*/http/ledger.json",
+            "final/.deai/single/*/final/http/ledger.json",
+        ):
+            paths.extend(folder.glob(pattern))
+        legacy = folder / "final/http/ledger.json"
+        if legacy.exists():
+            paths.append(legacy)
     if (folder / "http/ledger.json").exists():
         paths.append(folder / "http/ledger.json")
     for path in paths:
@@ -186,7 +194,7 @@ class Library:
                 dirs[:] = []
         return found
 
-    def chapters(self, folder):
+    def chapters(self, folder, include_drafts=True):
         result = []
         for source in sorted(folder.glob("chapter-*.body.md")):
             m = re.fullmatch(r"chapter-(\d{3,})\.body\.md", source.name)
@@ -202,7 +210,7 @@ class Library:
                 dict(
                     number=number,
                     title=row.get("title", f"第{number}章"),
-                    draft=text(self.safe(source)),
+                    draft=text(self.safe(source)) if include_drafts else "",
                     final=final if valid_final else "",
                     report=report,
                     checks={
@@ -227,7 +235,7 @@ class Library:
                         dict(
                             number=int(m[1]),
                             title=f"第{int(m[1])}章",
-                            draft=text(self.safe(source)),
+                            draft=text(self.safe(source)) if include_drafts else "",
                             final="",
                             report={},
                         )
@@ -254,7 +262,7 @@ class Library:
 
         run = read(self.safe(folder / "run.json"), {})
         web = read(self.safe(folder / "web.json"), {})
-        rows = self.chapters(folder)
+        rows = self.chapters(folder, include_drafts=False)
         book = run.get("book", {})
         bible = bible_data(self.safe(folder / "story_bible.yaml"))
         title = (

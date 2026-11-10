@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 import stat
 import threading
@@ -22,59 +23,75 @@ class BookCache:
 
     def _signature(self, folder):
         folder = self.safe(folder)
-        paths = {
-            folder,
-            *(
-                folder / name
-                for name in (
-                    "web.json",
-                    "run.json",
-                    "runtime.json",
-                    "story_bible.yaml",
-                    "calls.json",
-                    "http/ledger.json",
-                    ".pipeline/polish/runtime.json",
-                )
-            ),
-        }
-        for pattern in (
-            "chapter-*.md",
-            "chapters/*.json",
-            "final/chapter-*.md",
-            "final/chapter-*.deai.json",
-            # Fixed depth: a recursive walk lists ~200 request files per chapter,
-            # which costs seconds per poll on Docker bind mounts.
-            "final/.deai/*/http/ledger.json",
-        ):
-            paths.update(folder.glob(pattern))
-        # Check each ancestor once, including missing directories. lstat rejects
-        # replaced symlinks without resolving every leaf's entire ancestry again.
-        for path in tuple(paths):
-            parent = path.parent
-            while parent != folder and folder in parent.parents:
-                paths.add(parent)
-                parent = parent.parent
-        result = []
-        for path in sorted(paths):
+        result = {}
+
+        def record(path, info=None):
             try:
-                info = path.lstat()
+                info = info or path.lstat()
             except FileNotFoundError:
-                result.append((str(path.relative_to(folder)), None))
-                continue
+                result[str(path.relative_to(folder))] = None
+                return None
             if stat.S_ISLNK(info.st_mode):
                 raise ValueError("不可读取此路径")
-            result.append(
-                (
-                    str(path.relative_to(folder)),
-                    info.st_dev,
-                    info.st_ino,
-                    info.st_mode,
-                    info.st_size,
-                    info.st_mtime_ns,
-                    info.st_ctime_ns,
-                )
+            result[str(path.relative_to(folder))] = (
+                info.st_dev,
+                info.st_ino,
+                info.st_mode,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
             )
-        return tuple(result)
+            return info
+
+        def scan(path, matches):
+            info = record(path)
+            if info is None or not stat.S_ISDIR(info.st_mode):
+                return []
+            selected = []
+            try:
+                with os.scandir(path) as entries:
+                    for entry in entries:
+                        if matches(entry.name):
+                            child = path / entry.name
+                            try:
+                                info = entry.stat(follow_symlinks=False)
+                            except FileNotFoundError:
+                                record(child)
+                                continue
+                            record(child, info)
+                            selected.append((child, info))
+            except FileNotFoundError:
+                record(path)
+            return selected
+
+        # List each chapter directory once; never enumerate raw HTTP responses.
+        scan(folder, lambda n: n.startswith("chapter-") and n.endswith(".md"))
+        for name in ("web.json", "run.json", "runtime.json", "story_bible.yaml", "calls.json"):
+            record(folder / name)
+        scan(folder / "chapters", lambda n: n.endswith(".json"))
+        scan(folder / "final", lambda n: n.startswith("chapter-") and n.endswith((".md", ".deai.json")))
+        for base in (folder / "http", folder / ".pipeline"):
+            record(base)
+        record(folder / ".pipeline/polish")
+        record(folder / ".pipeline/polish/runtime.json")
+        record(folder / "http/ledger.json")
+
+        def final_ledgers(base, include_single=True):
+            record(base / "final/http")
+            record(base / "final/http/ledger.json")
+            for stage, info in scan(base / "final/.deai", lambda n: True):
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+                record(stage / "http")
+                record(stage / "http/ledger.json")
+                if include_single and stage.name == "single":
+                    for single, info in scan(stage, lambda n: True):
+                        if stat.S_ISDIR(info.st_mode):
+                            record(single / "final")
+                            final_ledgers(single, include_single=False)
+
+        final_ledgers(folder)
+        return tuple(sorted(result.items()))
 
     def get(self, folder, kind, build):
         folder = self.safe(Path(folder))

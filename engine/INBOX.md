@@ -852,6 +852,8 @@
 
 状态：执行中（用户 2026-11-09：“写并并行启动”）
 
+2026-11-10 交付核对：`feat/title-promise-55` 已提交开发报告，但尚未合并或部署。规划校验目前主要核对合同字段，不能证明场景实际兑现；真实试写更换了书名与主承诺，第 10 章支持“具名反派被擒”，尚不能证明原要求“兽正面击杀或重创具名敌人”。不得将字段通过或既有 payoff 分数视为本条验收通过。现有书库最新整本 eval-52 只含第 50/51 条，不含第 53–55 条；第 53/54 条在本次第 56 条部署后才进入 8787 新开书流程。详见 `reports/library-refresh-56.md`。
+
 文件归属：
 - 可改：`engine/bookengine/q1_plan.py`、`engine/bookengine/structure_planning.py`、`engine/bookengine/retired_opponents.py`、`engine/bookengine/stage_transition.py`、`engine/data/q1_schemas.yaml` 的卷纲/章纲段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。
 - 禁改：`engine/deai/`、`engine/tools/webui/`，第 53、54 条的文件，节奏相关文件（`chapter_rhythm.py`、`rhythm_*.py`，除非只读引用），真实书库。
@@ -869,3 +871,13 @@
 5. **体检**：承诺兑现章、反派结局类型逐个列出，进入整书体检（参考，不拦截）。在 `books/eval-52` 只读副本上报告当前值。
 6. **验证**：真实模型在系统临时目录用 `books/eval-52/seed.yaml` 只做全书规划（卷纲 + 50 章章纲，不写正文），报告承诺排期和每个反派的结局安排；再写前 10 章，附一个承诺兑现章的正文片段。
 7. **约束**：遵守 AGENTS.md 护栏；第 26–51 条的行为不能退化（尤其第 42 条章末钩子、第 50 条节奏）；不 push。报告写 `engine/reports/title-promise-55.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。
+
+## 2026-11-10-56：书库刷新慢与体验版本核对（用户 2026-11-10 反馈）
+
+状态：开发完成，已部署 8787，待用户体验验收。
+
+- 去 AI 费用只扫描现役逐章、单文件嵌套和旧版整书账本，避免递归遍历原始响应；缓存签名每个章节目录只列举一次，保留文件替换、修改、删除和符号链接检查。补齐旧版 `final/http/ledger.json` 更新时的缓存失效，并处理扫描期间文件消失。
+- 书库列表不读无用草稿正文；阅读和对照仍读取完整草稿。手动刷新保留书卡，按钮显示“刷新中…”。
+- 真实 10 本/390 章只读副本通过，列表元数据哈希与旧接口一致；最终生产接口刷新实测由 2.112 秒降到 0.165–0.315 秒，完整响应逐字段一致。
+- `1630 passed, 1 skipped, 761 subtests passed`；真实快照冒烟 107 请求/20 导出，最大书库响应 76.72ms；scope、Ruff、JS 语法通过；真实书库前后清单无新增、删除或改动。
+- 部署包含 main 已合并的第 53/54 条及最新修复顺序，不含未通过验收的第 55 条。旧书未重新生成，不能据此验收新增写作规则。报告 `reports/library-refresh-56.md`。

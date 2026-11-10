@@ -88,12 +88,17 @@ def _observed_drift(cached, prior, report):
     if not mismatches:
         return []
     target = integer(cached["chapters"][0].get("number"))
+    semantic = next(
+        (mismatch.get("observed") for mismatch in mismatches if mismatch.get("field") == "type"),
+        "",
+    )
     return [
         dict(
             kind="rhythm_observed_plan_drift",
             targets=[target],
             allowed=[cached["chapters"][0].get("type", "")],
-            observed=mismatches,
+            observed=semantic,
+            observed_mismatches=mismatches,
             requirement="上一章实际章型、关键事件或章纲明确偏离保存计划时，只重排受影响的未写后缀",
         )
     ]

@@ -260,6 +260,34 @@ def test_completed_chapter_type_drift_replans_the_affected_future_suffix(tmp_pat
     ]
 
 
+def test_observed_drift_issue_keeps_semantic_observed_scalar_for_diversity_fallback(tmp_path):
+    from bookengine.planning_drift import cache_replan_issues
+
+    batch = [chapter(1), chapter(2, "谋划")]
+    report_path = tmp_path / "outline-diversity/001-002.json"
+    save(report_path, dict(chapters=batch, rhythm_issues_after=[], plot_issues_after=[], plot_history=[]))
+    observed = dict(
+        batch[0],
+        fact_source="final_body",
+        plan_alignment=dict(
+            status="mismatch",
+            mismatches=[
+                dict(field="type", expected="对抗", observed="谋划"),
+                dict(field="hook_type", expected="threat", observed="关系裂痕"),
+            ],
+        ),
+    )
+    cached = dict(path=str(report_path), chapters=[batch[1]])
+
+    issue = next(
+        row for row in cache_replan_issues({}, [observed], cached) if row["kind"] == "rhythm_observed_plan_drift"
+    )
+
+    assert issue["observed"] == "谋划"
+    assert issue["observed_mismatches"] == observed["plan_alignment"]["mismatches"]
+    assert hash(issue["observed"])
+
+
 def test_plan_alignment_uses_explicit_observations_and_keeps_missing_events_unknown():
     from bookengine.planning_drift import observe_plan_alignment
 

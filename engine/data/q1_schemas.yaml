@@ -127,6 +127,7 @@ instructions:
 
     人物每人明确gender。称呼严格按说话人→被称呼者→称呼→来历。
     address放在说话人卡，address_target填被称呼者真名，address_origin填来历；
+    不能说人话的非人角色不得填写address/address_target/address_origin；称号只作旁白或由其他可说话人物使用。
     不得把目标的称呼复制到目标卡。主角另有active_desire/personality_tags/catchphrase/never_do。
     主角主动欲望必须尖锐，不能靠服从团队复核推进；设定必须按选定高概念，不转入救援维保审计档案。'
   volume: '严格遵守antagonists.stage/exit，低层对手退场后只可背景提及，不再安排为现场characters或主导冲突。

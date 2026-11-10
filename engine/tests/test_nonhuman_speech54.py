@@ -1,7 +1,7 @@
 """INBOX54: explicit nonhuman speech contracts and literal identity checks."""
 
 from bookengine.cast_consistency import cast_findings, repair_cast_consistency
-from bookengine.nonhuman_speech import normalize_speech_contracts, speech_context
+from bookengine.nonhuman_speech import normalize_speech_contracts, speech_context, writer_speech_bible
 from bookengine.q1_schema import DATA
 
 
@@ -35,6 +35,31 @@ def test_new_nonhuman_cards_default_to_no_human_speech_and_have_natural_writer_c
     assert "can_speak_human" not in context[0][1]
     template = DATA["schemas"]["prepare"]["bible"]["characters"][0]
     assert template["can_speak_human"] == "否" and template["human_speech_from_chapter"] == 0
+
+
+def test_nonspeaking_nonhuman_address_becomes_narrative_only_and_is_not_an_oral_contract():
+    from bookengine.address_contracts import address_rows
+
+    value = bible()
+    value["characters"][2].update(address="谦哥", address_target="顾奕棣", address_origin="自幼这样称呼")
+
+    normalized = normalize_speech_contracts(value)
+    beast = normalized["characters"][2]
+
+    assert beast["narrative_address"] == "谦哥"
+    assert all(key not in beast for key in ("address", "address_target", "address_origin"))
+    assert not any(row["speaker"] == "雪沛宁" for row in address_rows(value))
+
+
+def test_legacy_nonspeaking_address_is_hidden_from_writer_view_without_mutating_bible():
+    value = bible()
+    value["characters"][2].update(address="谦哥", address_target="顾奕棣", address_origin="旧书字段")
+
+    writer_view = writer_speech_bible(value)
+
+    assert value["characters"][2]["address"] == "谦哥"
+    beast = writer_view["characters"][2]
+    assert beast.get("address") is None and beast["narrative_address"] == "谦哥"
 
 
 def test_prepare_response_normalizes_missing_nonhuman_speech_contract():
@@ -104,6 +129,32 @@ def test_eval52_nonhuman_human_speech_is_found_in_name_and_pronoun_attributions(
 
     assert len(speech) == 3
     assert {row["name"] for row in speech} == {"雪沛宁"}
+
+
+def test_eval57_single_quoted_address_spoken_by_nonspeaking_beast_is_detected():
+    value = bible()
+    value["characters"][2].update(address="谦哥", address_target="顾奕棣")
+    text = "‘谦哥。’雪沛宁用脑袋拱了拱他的手。\n\n‘谦哥！’雪沛宁用身体顶住他的腿，回头急叫。"
+
+    findings = cast_findings(text, value, chapter=2)
+
+    speech = [row for row in findings if row["kind"] == "nonhuman_speech"]
+    assert len(speech) == 2 and {row["observed"] for row in speech} == {"谦哥。", "谦哥！"}
+
+
+def test_explicit_human_speaker_near_nonspeaking_beast_is_not_misattributed():
+    value = bible()
+    value["characters"][2].update(address="谦哥", address_target="顾奕棣")
+    text = "顾晴棣喊：‘谦哥！’雪沛宁随即用身体顶住顾奕棣的腿。"
+
+    assert not [row for row in cast_findings(text, value, chapter=2) if row["kind"] == "nonhuman_speech"]
+
+
+def test_human_dialogue_after_touching_nonhuman_card_is_not_attributed_to_the_beast():
+    value = bible()
+    text = "顾奕棣摸了摸雪沛宁的耳根：‘鼻子不是拳头，能借，却不能乱借。’雪沛宁咬住他的袖口，低叫一声。"
+
+    assert not [row for row in cast_findings(text, value, chapter=5) if row["kind"] == "nonhuman_speech"]
 
 
 def test_human_dialogue_near_a_nonhuman_name_and_animal_calls_are_not_attributed_to_it():

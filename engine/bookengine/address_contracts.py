@@ -4,6 +4,8 @@ from copy import deepcopy
 from collections import Counter
 import re
 
+from .nonhuman_speech import _can_speak, is_nonhuman
+
 
 def address_rows(bible):
     cards = bible.get("characters", [])
@@ -11,6 +13,8 @@ def address_rows(bible):
     lead = next((c.get("name") for c in cards if c.get("role") == "protagonist"), "")
     seen = set()
     for card in cards:
+        if is_nonhuman(card) and not _can_speak(card):
+            continue
         address = card.get("address")
         if not isinstance(address, str) or not address.strip():
             continue

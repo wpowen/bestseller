@@ -29,7 +29,7 @@ from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
 from .text_hygiene import repair_text
-from .nonhuman_speech import speech_context
+from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
@@ -132,7 +132,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
-    sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
+    sections = context(writer_speech_bible(bible), threads, vol, outline, state, history, rows, previous, drops)
     sections.extend(speech_context(bible, idx))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))

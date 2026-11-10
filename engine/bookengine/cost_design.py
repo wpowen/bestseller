@@ -42,7 +42,11 @@ def _specific(value):
 
 def _specific_psychology(value):
     return _specific(value) and bool(
-        re.search(r"不再|开始|转而|主动|拒绝|选择|决定|改为|宁可|从此|再也|变得|习惯|只(?:相信|接受|依赖)", value)
+        re.search(
+            r"不再|不敢|开始|转而|主动|拒绝|选择|决定|改为|宁可|从此|再也|变得|习惯|反复|每次|总是|"
+            r"只(?:相信|接受|依赖)",
+            value,
+        )
     )
 
 

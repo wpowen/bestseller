@@ -5,7 +5,7 @@ import time
 from .checks import high_confidence, roll_day
 from .contracts import choose_contract, valid_extract, payoff_ok, observations, reduce_growth
 from .endings import ending_candidates, english_hits, apply_scene
-from .identity import name_hits
+from .identity import name_hits, writer_identity_bible, writer_identity_outline
 from .hook_momentum import repair_after_draft
 from .precision import _sentences, apply as sentence_edits
 from .craft import reference_features
@@ -17,6 +17,8 @@ from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
+from .planning_drift import observe_plan_alignment
+from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -27,7 +29,7 @@ from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
 from .text_hygiene import repair_text
-from .nonhuman_speech import speech_context
+from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
@@ -127,10 +129,13 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         growth_target=vol.get("expected_dashboard", {}),
     )
     outline = chapter_cast(outline, bible, state["seen_characters"])
+    outline = writer_identity_outline(outline, bible)
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
+    outline = prepare_writer_payoffs(outline)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
-    sections = context(bible, threads, vol, outline, state, history, rows, previous, drops)
+    writer_bible = writer_identity_bible(writer_speech_bible(bible))
+    sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
     sections.extend(speech_context(bible, idx))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
@@ -140,6 +145,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
     instruction += writer_rhythm_instruction(outline)
+    instruction += writer_payoff_instruction(outline)
 
     def write_draft(suffix):
         saved = client.prefix
@@ -254,6 +260,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, exit_tail_repair = guarded(repair_exit_tail)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, story_payoffs = guarded(repair_story_payoffs)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, promise_review = guarded(repair_opening_promises)(
         client, prefix, text, raw, failed, state, bible, outline, previous_promise_context(out, idx), extract_state, ask
     )
@@ -351,6 +360,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         scene_types=kinds,
         structure=raw.get("structure"),
         r2_events=raw.get("r2_events") or [],
+        plan_alignment=observe_plan_alignment(outline, raw),
         meeting_scenes=kinds.count("meeting"),
         scenes=len(kinds),
         hard_conflicts=len(high_confidence(state, events, text)),
@@ -370,6 +380,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         **boundaries,
         handoff=handoff,
         opening_promises=promise_review,
+        story_payoffs=story_payoffs,
         core_plan={
             k: outline[k]
             for k in (

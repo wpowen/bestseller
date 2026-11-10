@@ -13,13 +13,67 @@ REVIEW_SCHEMA = json.dumps(
 )
 
 
+class PromiseContext(dict):
+    """Saved bodies plus grounded review state for one chapter transaction."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fulfilled = {}
+        self.retry_ids = None
+
+
+def _saved_fulfilled(note, bodies):
+    found = {}
+
+    def visit(value):
+        if isinstance(value, dict):
+            rows = value.get("items")
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict) or row.get("kind") != "reader" or row.get("status") != "fulfilled":
+                        continue
+                    evidence = row.get("evidence", [])
+                    grounded = [
+                        item
+                        for item in evidence
+                        if isinstance(item, dict)
+                        and type(item.get("chapter")) is int
+                        and item["chapter"] in bodies
+                        and isinstance(item.get("quote"), str)
+                        and item["quote"].strip()
+                        and item["quote"] in bodies[item["chapter"]]
+                    ]
+                    if grounded and isinstance(row.get("id"), str):
+                        found[row["id"]] = dict(row, evidence=grounded, paragraphs=[])
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(note)
+    return found
+
+
 def previous_promise_context(out, number):
-    """Read saved bodies, never rewrite them or trust derived seen-address state."""
-    return {
-        int(p.name.split("-")[1].split(".")[0]): p.read_text(encoding="utf-8")
-        for p in sorted(Path(out).glob("chapter-*.body.md"))
-        if p.name.split("-")[1].split(".")[0].isdigit() and int(p.name.split("-")[1].split(".")[0]) < number
-    }
+    """Read saved bodies and grounded promise evidence without rewriting checkpoints."""
+    context = PromiseContext(
+        {
+            int(p.name.split("-")[1].split(".")[0]): p.read_text(encoding="utf-8")
+            for p in sorted(Path(out).glob("chapter-*.body.md"))
+            if p.name.split("-")[1].split(".")[0].isdigit() and int(p.name.split("-")[1].split(".")[0]) < number
+        }
+    )
+    for chapter in context:
+        path = Path(out) / "chapters" / f"{chapter:03d}.json"
+        if not path.exists():
+            continue
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        context.fulfilled.update(_saved_fulfilled(saved.get("opening_promises", {}), context))
+    return context
 
 
 def opening_contract(bible):
@@ -88,6 +142,7 @@ def _positive_quote(quote, kind):
 
 
 def _review_batch(ask, client, key, items, text, chapter):
+    output_cap = min(7000, max(2500, len(items) * 400 + 500))
     return precise_ask(
         ask,
         client,
@@ -98,6 +153,7 @@ def _review_batch(ask, client, key, items, text, chapter):
         "缺失项给出本章可定向修补段号（从1起）。状态仅fulfilled/missing/unknown。",
         [("逐项验收", json.dumps(items, ensure_ascii=False)), ("本章正文", text), ("验收章号", str(chapter))],
         REVIEW_SCHEMA,
+        cap=output_cap,
     )
 
 
@@ -148,46 +204,71 @@ def review_opening(client, prefix, text, bible, number, earlier, ask):
     if not 1 <= number <= 3 and not addresses:
         return dict(status="not_due", items=[])
     # Derive from current source, never trust an old materialized contract.
-    items = (
+    contract_items = (
         [i for i in opening_contract(bible) if i["chapter"] == number or i["kind"] == "reader"] if number <= 3 else []
     )
+    retry_ids = getattr(earlier, "retry_ids", None) if "-recheck" in prefix else None
+    items = [item for item in contract_items if retry_ids is None or item["id"] in retry_ids]
     if not items and not addresses:
         return dict(status="not_due", items=[], reason="no_opening_source")
     local = [i for i in items if i["kind"] != "reader"]
     response = _review_batch(ask, client, prefix + "-promise-review", local, text, number) if local else {}
     corpus = {**earlier, number: text}
     checked = []
-    for item in items:
-        row = _verified_row(response, item, text, number)
-        if item["kind"] == "reader":
-            reports = []
-            for chapter in range(1, number + 1):
-                if chapter not in corpus:
-                    reports.append(
-                        dict(item, status="unknown", evidence=[], paragraphs=[], reason="missing_saved_chapter")
-                    )
-                    continue
-                reply = _review_batch(
-                    ask,
-                    client,
-                    f"{prefix}-{item['id']}-chapter-{chapter}-promise-review",
-                    [item],
-                    corpus[chapter],
-                    chapter,
+    checked.extend(_verified_row(response, item, text, number) for item in local)
+    readers = [item for item in items if item["kind"] == "reader"]
+    saved_fulfilled = getattr(earlier, "fulfilled", {})
+    resolved = {
+        item["id"]: dict(saved_fulfilled[item["id"]], **item)
+        for item in readers
+        if item["id"] in saved_fulfilled
+        and saved_fulfilled[item["id"]].get("source") == item.get("source")
+        and saved_fulfilled[item["id"]].get("requirement") == item.get("requirement")
+    }
+    reports = {item["id"]: [] for item in readers}
+    unresolved = [item for item in readers if item["id"] not in resolved]
+    for chapter in range(1, number + 1):
+        if not unresolved:
+            break
+        if chapter not in corpus:
+            for item in unresolved:
+                reports[item["id"]].append(
+                    dict(item, status="unknown", evidence=[], paragraphs=[], reason="missing_saved_chapter")
                 )
-                row = _verified_row(reply, item, corpus[chapter], chapter)
-                if chapter != number:
-                    row["paragraphs"] = []
-                reports.append(row)
-                if row["status"] == "fulfilled":
-                    break
+            continue
+        reply = _review_batch(
+            ask,
+            client,
+            f"{prefix}-reader-chapter-{chapter}-promise-review",
+            unresolved,
+            corpus[chapter],
+            chapter,
+        )
+        remaining = []
+        for item in unresolved:
+            row = _verified_row(reply, item, corpus[chapter], chapter)
+            if chapter != number:
+                row["paragraphs"] = []
+            reports[item["id"]].append(row)
+            if row["status"] == "fulfilled":
+                resolved[item["id"]] = row
+            else:
+                remaining.append(item)
+        unresolved = remaining
+    for item in readers:
+        item_reports = reports[item["id"]]
+        row = resolved.get(item["id"])
+        if row is None:
             row = next(
-                (r for r in reports if r["status"] == "fulfilled"),
-                next((r for r in reports if r["status"] == "unknown"), reports[-1]),
+                (report for report in item_reports if report["status"] == "unknown"),
+                item_reports[-1],
             )
+        checked.append(row)
+    for index, row in enumerate(checked):
+        item = next(item for item in items if item["id"] == row["id"])
         if item["chapter"] > number and row["status"] != "fulfilled":
             row = dict(row, status="pending", observed_status=row["status"])
-        checked.append(row)
+            checked[index] = row
     for finding in addresses:
         checked.append(
             dict(
@@ -201,6 +282,8 @@ def review_opening(client, prefix, text, bible, number, earlier, ask):
                 evidence=[],
             )
         )
+    if isinstance(earlier, PromiseContext):
+        earlier.retry_ids = {item["id"] for item in checked if item["status"] in ("missing", "unknown")}
     return dict(
         status="unfulfilled"
         if any(i["status"] in ("missing", "unknown") for i in checked)

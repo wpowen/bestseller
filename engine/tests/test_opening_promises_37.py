@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from bookengine.opening_promises import opening_contract, review_opening, repair_opening_promises
+from bookengine.opening_promises import (
+    opening_contract,
+    previous_promise_context,
+    repair_opening_promises,
+    review_opening,
+)
 from bookengine.address_contracts import address_rows, address_issues, address_findings, repair_addresses
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures/promise37/eval33.json").read_text())
@@ -389,3 +394,120 @@ def test_sound_or_prop_fragment_alone_cannot_prove_core_use(fragment):
     )
     assert next(i for i in result["items"] if i["kind"] == "core_use")["status"] == "unknown"
     assert result["status"] == "unfulfilled"
+
+
+def test_reader_promises_are_batched_once_per_chapter_and_stop_after_fulfillment():
+    corpus = {1: "第一项已经兑现。", 2: "第二项已经兑现。", 3: "第三项已经兑现。"}
+    seen = []
+
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        data = dict(sections)
+        chapter = int(data["验收章号"])
+        items = json.loads(data["逐项验收"])
+        seen.append((chapter, [item["id"] for item in items]))
+        fulfilled = items[:1]
+        return dict(
+            items=[
+                dict(
+                    id=item["id"],
+                    status="fulfilled" if item in fulfilled else "missing",
+                    evidence=[dict(chapter=chapter, quote=corpus[chapter])] if item in fulfilled else [],
+                )
+                for item in items
+            ]
+        )
+
+    note = review_opening(
+        None,
+        "batched",
+        corpus[3],
+        {"opening_promises": ["第一项；第二项；第三项"]},
+        3,
+        {1: corpus[1], 2: corpus[2]},
+        ask,
+    )
+
+    assert note["status"] == "checked"
+    assert [len(ids) for _, ids in seen] == [3, 2, 1]
+
+
+def test_large_reader_batch_reserves_enough_output_for_every_grounded_result():
+    promises = [f"第{i}项兑现" for i in range(14)]
+    caps = []
+
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        items = json.loads(dict(sections)["逐项验收"])
+        caps.append(kwargs["cap"])
+        return dict(items=[dict(id=item["id"], status="missing", evidence=[]) for item in items])
+
+    review_opening(None, "large-batch", "正文", {"opening_promises": ["；".join(promises)]}, 1, {}, ask)
+
+    assert caps == [6100]
+
+
+def test_saved_fulfilled_reader_promise_is_not_reviewed_again(tmp_path):
+    (tmp_path / "chapters").mkdir()
+    (tmp_path / "chapter-001.body.md").write_text("第一项已经兑现。", encoding="utf-8")
+    (tmp_path / "chapters/001.json").write_text(
+        json.dumps(
+            {
+                "opening_promises": {
+                    "after": {
+                        "items": [
+                            {
+                                "id": "reader-0",
+                                "chapter": 3,
+                                "kind": "reader",
+                                "source": "第一项",
+                                "requirement": "第一项",
+                                "status": "fulfilled",
+                                "evidence": [{"chapter": 1, "quote": "第一项已经兑现。"}],
+                            }
+                        ]
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    earlier = previous_promise_context(tmp_path, 2)
+    note = review_opening(
+        None,
+        "resume",
+        "第二章继续。",
+        {"opening_promises": ["第一项"]},
+        2,
+        earlier,
+        lambda *args, **kwargs: pytest.fail("fulfilled promise must not be reviewed again"),
+    )
+
+    assert note["status"] == "checked"
+    assert note["items"][0]["evidence"] == [{"chapter": 1, "quote": "第一项已经兑现。"}]
+
+
+def test_recheck_only_reviews_items_that_failed_the_previous_round(tmp_path):
+    earlier = previous_promise_context(tmp_path, 3)
+    bible = {"opening_promises": ["第一项；第二项"]}
+    reviewed = []
+
+    def ask(client, key, prompt, sections, schema, **kwargs):
+        items = json.loads(dict(sections)["逐项验收"])
+        reviewed.append((key, [item["id"] for item in items]))
+        return dict(
+            items=[
+                dict(
+                    id=item["id"],
+                    status="fulfilled" if item["requirement"] == "第一项" else "missing",
+                    evidence=[dict(chapter=3, quote="第一项已经兑现。")] if item["requirement"] == "第一项" else [],
+                )
+                for item in items
+            ]
+        )
+
+    review_opening(None, "round", "第一项已经兑现。", bible, 3, earlier, ask)
+    review_opening(None, "round-recheck", "第一项已经兑现，第二项也兑现。", bible, 3, earlier, ask)
+
+    assert reviewed[0][1] == ["reader-0", "reader-1"]
+    assert reviewed[1][1] == ["reader-1"]

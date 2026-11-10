@@ -109,3 +109,86 @@ def test_bad_return_is_bounded_recorded_and_does_not_replace_original():
 def test_valid_design_does_not_call_model():
     result, note = repair_costs(bible(), lambda *a: pytest.fail("already valid"))
     assert note["status"] == "passed" and result == bible()
+
+
+def test_eval57_five_empty_stages_accept_period_delimited_specific_psychology_without_category_words():
+    minds = [
+        "开始主动核对陌生人的承诺后才行动",
+        "不再轻信同伴的安慰，转而亲自查证风险",
+        "拒绝把判断交给权威，选择独自承担误判后果",
+        "宁可放弃眼前捷径，也要先确认同行者能安全撤离",
+        "从此主动公开自己的代价，让同伴共同决定是否继续",
+    ]
+    candidates = {}
+    previous = ""
+    for number, mind in enumerate(minds, 1):
+        upgrade = "首次代价" if number == 1 else f"{previous}→{mind}"
+        candidates[number] = f"损失：永久忘记一段炉火记忆。心理：{mind}。等级：{number}。升级：{upgrade}"
+        previous = mind
+    value = {
+        "power": {"rule": "借用冷鼻会永久失去温暖记忆"},
+        "volumes": [dict(number=n, start=(n - 1) * 10 + 1, end=n * 10, cost="") for n in range(1, 6)],
+    }
+    original = deepcopy(value)
+    calls = []
+
+    def ask(kind, key, sections, redo):
+        number = int(key.rsplit("-", 1)[1])
+        calls.append((number, sections, redo))
+        return {"cost": candidates[number]}
+
+    changed, note = repair_costs(value, ask)
+
+    assert note["status"] == "passed" and len(calls) == 5
+    assert [stage["cost"] for stage in changed["volumes"]] == list(candidates.values())
+    assert value == original
+
+
+def test_cost_retry_receives_rejected_candidate_and_remaining_errors():
+    value = bible()
+    value["volumes"][1]["cost"] = ""
+    good = bible()["volumes"][1]["cost"]
+    calls = []
+
+    def ask(kind, key, sections, redo):
+        calls.append(dict(sections))
+        return {"cost": "损失：失去一段记忆。心理：更加痛苦。等级：2。升级：首次代价"} if redo == 1 else {"cost": good}
+
+    changed, note = repair_costs(value, ask)
+
+    assert note["status"] == "passed" and changed["volumes"][1]["cost"] == good
+    assert calls[1]["上次候选，只读"] and calls[1]["上次候选仍有错误"]
+
+
+def test_cost_repair_canonicalizes_model_comparison_from_the_two_psychology_fields():
+    value = bible()
+    value["volumes"][1]["cost"] = ""
+    previous_mind = "性格变得多疑，开始查验陌生人的口信"
+    current_mind = "开始让同伴共同选择路线并主动说明每条路的风险"
+    proposed = (
+        "损失：永久忘记与妹妹在炉边分食干粮的温暖记忆；"
+        f"心理：{current_mind}；等级：2；"
+        f"升级：{previous_mind}→开始让同伴共同选择路线并说明每条路的风险"
+    )
+    calls = []
+
+    def ask(*args):
+        calls.append(args)
+        return {"cost": proposed}
+
+    changed, note = repair_costs(value, ask)
+
+    assert note["status"] == "passed" and len(calls) == 1
+    assert f"升级：{previous_mind}→{current_mind}" in changed["volumes"][1]["cost"]
+    assert note["attempts"][0]["candidate"] == proposed
+    assert note["attempts"][0]["normalized_candidate"] == changed["volumes"][1]["cost"]
+
+
+def test_later_stage_cannot_claim_first_cost_when_previous_stage_is_empty():
+    value = bible()
+    value["volumes"][0]["cost"] = ""
+    value["volumes"][1]["cost"] = "损失：永久忘记一段炉火记忆；心理：开始主动核对风险再行动；等级：2；升级：首次代价"
+
+    issues = cost_issues(value)
+
+    assert any(issue["stage"] == 2 and issue["code"] == "escalation" for issue in issues)

@@ -200,3 +200,105 @@ def test_relationship_alias_survives_normalization_and_retains_real_scene_intent
     assert result[0]["type"] == "情感"
     assert result[0]["scenes"][0]["choice"] == row["scenes"][0]["choice"]
     assert len(client.calls) == 1
+
+
+def test_completed_chapter_matching_saved_plan_does_not_retry_exhausted_future_issues(tmp_path):
+    module, design = rhythm(), bible((5,))
+    batch = [chapter(n) for n in range(1, 6)]
+    issues = module.rhythm_issues(design, [], batch)
+    assert issues
+    save(
+        tmp_path / "outline-diversity/001-005.json",
+        dict(
+            status="failed_continued",
+            chapters=batch,
+            planned_chapters=batch,
+            structure_checks_version=999,
+            rhythm_contract_version=module.VERSION,
+            rhythm_issues_after=issues,
+            plot_issues_after=[],
+        ),
+    )
+    save(tmp_path / "writing_outlines/001.json", batch[0])
+    save(tmp_path / "chapters/001.json", dict(batch[0], fact_source="final_body"))
+    client = OfflineClient(tmp_path, [dict(chapters=[])] * 4)
+
+    result = plan(client, design, 2, 5)
+
+    assert [(row["number"], row["title"], row["type"]) for row in result] == [
+        (row["number"], row["title"], row["type"]) for row in batch[1:]
+    ]
+    assert client.calls == []
+
+
+def test_completed_chapter_type_drift_replans_the_affected_future_suffix(tmp_path):
+    module, design = rhythm(), bible((5,))
+    batch = [chapter(1), chapter(2), chapter(3, "谋划"), chapter(4, "情感"), chapter(5)]
+    save(
+        tmp_path / "outline-diversity/001-005.json",
+        dict(
+            status="passed",
+            chapters=batch,
+            planned_chapters=batch,
+            structure_checks_version=999,
+            rhythm_contract_version=module.VERSION,
+            rhythm_issues_after=[],
+            plot_issues_after=[],
+        ),
+    )
+    save(tmp_path / "writing_outlines/001.json", batch[0])
+    save(tmp_path / "chapters/001.json", dict(batch[0], type="谋划", fact_source="final_body"))
+    replacement = chapter(2, "谋划")
+    client = OfflineClient(tmp_path, [dict(chapters=[replacement])])
+
+    result = plan(client, design, 2, 5)
+
+    assert client.calls
+    assert result[0]["number"] == 2 and result[0]["type"] == "谋划"
+    assert [(row["number"], row["title"], row["type"]) for row in result[1:]] == [
+        (row["number"], row["title"], row["type"]) for row in batch[2:]
+    ]
+
+
+def test_observed_drift_issue_keeps_semantic_observed_scalar_for_diversity_fallback(tmp_path):
+    from bookengine.planning_drift import cache_replan_issues
+
+    batch = [chapter(1), chapter(2, "谋划")]
+    report_path = tmp_path / "outline-diversity/001-002.json"
+    save(report_path, dict(chapters=batch, rhythm_issues_after=[], plot_issues_after=[], plot_history=[]))
+    observed = dict(
+        batch[0],
+        fact_source="final_body",
+        plan_alignment=dict(
+            status="mismatch",
+            mismatches=[
+                dict(field="type", expected="对抗", observed="谋划"),
+                dict(field="hook_type", expected="threat", observed="关系裂痕"),
+            ],
+        ),
+    )
+    cached = dict(path=str(report_path), chapters=[batch[1]])
+
+    issue = next(
+        row for row in cache_replan_issues({}, [observed], cached) if row["kind"] == "rhythm_observed_plan_drift"
+    )
+
+    assert issue["observed"] == "谋划"
+    assert issue["observed_mismatches"] == observed["plan_alignment"]["mismatches"]
+    assert hash(issue["observed"])
+
+
+def test_plan_alignment_uses_explicit_observations_and_keeps_missing_events_unknown():
+    from bookengine.planning_drift import observe_plan_alignment
+
+    outline = dict(type="情感", hook_type="关系破裂", structure="情感摊牌", required_event="同伴公开决裂")
+    matched = observe_plan_alignment(
+        outline,
+        dict(type="情感", hook_type="关系破裂", structure="情感摊牌", required_event_fulfilled=True),
+    )
+    drifted = observe_plan_alignment(outline, dict(type="对抗", hook_type="关系破裂", structure="情感摊牌"))
+    unknown = observe_plan_alignment(outline, dict(type="情感", hook_type="关系破裂"))
+
+    assert matched["status"] == "matched"
+    assert drifted["status"] == "mismatch" and drifted["mismatches"][0]["field"] == "type"
+    assert unknown["status"] == "unknown" and set(unknown["unknown"]) == {"structure", "required_event"}

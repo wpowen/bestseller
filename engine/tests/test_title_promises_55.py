@@ -200,7 +200,7 @@ def test_writer_receives_positive_payoff_named_exit_and_closed_growth_in_existin
     result = writer_title_contract(outline)
     instructions = "\n".join(result["must_respond"])
 
-    assert "正面兑现" in instructions and "白啸" in instructions and "被杀" in instructions
+    assert "真实发生" in instructions and "白啸" in instructions and "被杀" in instructions
     assert "顾家弃卒" in instructions and "不添新污名" in instructions
     assert "白啸已被杀" in result["hook"] and "不得让其脱身" in result["hook"]
     assert "must_respond" not in outline

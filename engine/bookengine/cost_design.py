@@ -21,10 +21,10 @@ FORMAT = (
 def _fields(cost):
     result = {}
     if isinstance(cost, str):
-        for term in re.split(r"[；;\n]", cost):
-            pair = re.split(r"[：:]", term, maxsplit=1)
-            if len(pair) == 2:
-                result[pair[0].strip()] = pair[1].strip()
+        labels = list(re.finditer(r"(?:^|[；;。\n])\s*(损失|心理|等级|升级|恢复章|恢复办法)\s*[：:]", cost))
+        for index, match in enumerate(labels):
+            end = labels[index + 1].start() if index + 1 < len(labels) else len(cost)
+            result[match[1]] = cost[match.end() : end].strip(" ；;。\n")
     return result
 
 
@@ -37,6 +37,16 @@ def _specific(value):
         isinstance(value, str)
         and len(value.strip()) >= 8
         and not re.search(r"待定|未知|稍后|某种|更加痛苦|进一步侵蚀", value)
+    )
+
+
+def _specific_psychology(value):
+    return _specific(value) and bool(
+        re.search(
+            r"不再|不敢|开始|转而|主动|拒绝|选择|决定|改为|宁可|从此|再也|变得|习惯|反复|每次|总是|"
+            r"只(?:相信|接受|依赖)",
+            value,
+        )
     )
 
 
@@ -65,6 +75,22 @@ def _ability_risks(cost):
     return risks
 
 
+def _canonical_escalation(cost, previous_cost):
+    """Use the model's two psychology fields as the comparison's exact source."""
+    fields, previous = _fields(cost), _fields(previous_cost)
+    comparison = fields.get("升级", "")
+    if not all(fields.get(key) for key in ("损失", "心理", "等级", "升级")):
+        return cost
+    if not previous.get("心理") or not re.search(r"→|->", comparison):
+        return cost
+    exact = f"{previous['心理']}→{fields['心理']}"
+    if exact in comparison:
+        return cost
+    fields["升级"] = exact
+    order = ("损失", "心理", "等级", "升级", "恢复章", "恢复办法")
+    return "；".join(f"{label}：{fields[label]}" for label in order if fields.get(label))
+
+
 def has_cost_source(bible):
     power = bible.get("power", {})
     return any(v.get("cost") for v in bible.get("volumes", [])) or bool(
@@ -87,11 +113,11 @@ def cost_issues(bible):
         if not _specific(fields.get("损失")):
             issue("specific_wording", "损失字段须说明具体失去什么，避免音色/失声歧义")
         mind, level = fields.get("心理", ""), _level(fields.get("等级"))
-        if not _specific(mind) or not re.search(r"性格|记忆|情感|身份", mind):
+        if not _specific_psychology(mind):
             issue("psychological_change", "心理字段须具体改变性格、记忆、情感或身份认知并说明行为后果")
         if not level:
             issue("escalation", "等级缺少可检查的正整数")
-        if previous:
+        if previous is not None:
             old_mind, old_level = previous.get("心理", ""), _level(previous.get("等级"))
             comparison = fields.get("升级", "")
             if (
@@ -131,32 +157,43 @@ def repair_costs(bible, ask, editable=None):
         number = stage.get("number", position + 1)
         if number not in allowed:
             continue
+        last_candidate, last_issues = None, []
         for retry in range(1, 4):
             before = cost_issues(current)
             issues = [i for i in before if i["stage"] == number]
             if not issues:
                 break
+            sections = [
+                ("用户锁定事实，只读", dict(card=current.get("selected_card", {}), power=current.get("power", {}))),
+                ("仅本阶段cost允许重写", stage),
+                ("逐项错误", issues),
+                ("前一阶段cost，只读", stages[position - 1].get("cost") if position else None),
+                ("后一阶段cost，只读", stages[position + 1].get("cost") if position + 1 < len(stages) else None),
+            ]
+            if last_candidate is not None:
+                sections.extend([("上次候选，只读", last_candidate), ("上次候选仍有错误", last_issues)])
             raw = ask(
                 "cost_design",
                 f"cost-stage-{number}",
-                [
-                    ("用户锁定事实，只读", dict(card=current.get("selected_card", {}), power=current.get("power", {}))),
-                    ("仅本阶段cost允许重写", stage),
-                    ("逐项错误", issues),
-                    ("前一阶段cost，只读", stages[position - 1].get("cost") if position else None),
-                    ("后一阶段cost，只读", stages[position + 1].get("cost") if position + 1 < len(stages) else None),
-                ],
+                sections,
                 retry,
             )
             candidate = deepcopy(current)
             proposed = raw.get("cost") if isinstance(raw, dict) else None
-            if isinstance(proposed, str) and proposed.strip():
-                candidate["volumes"][position]["cost"] = proposed
+            normalized = (
+                _canonical_escalation(proposed, stages[position - 1].get("cost"))
+                if isinstance(proposed, str) and position
+                else proposed
+            )
+            if isinstance(normalized, str) and normalized.strip():
+                candidate["volumes"][position]["cost"] = normalized
             after = cost_issues(candidate)
+            last_candidate = normalized
+            last_issues = [issue for issue in after if issue["stage"] == number]
             before_stages = {i["stage"] for i in before}
             adopted = (
-                isinstance(proposed, str)
-                and proposed != stage.get("cost")
+                isinstance(normalized, str)
+                and normalized != stage.get("cost")
                 and not any(i["stage"] == number or i["stage"] not in before_stages for i in after)
             )
             attempts.append(
@@ -165,6 +202,7 @@ def repair_costs(bible, ask, editable=None):
                     retry=retry,
                     before=stage.get("cost"),
                     candidate=proposed,
+                    normalized_candidate=normalized,
                     issues_before=issues,
                     issues_after=after,
                     adopted=adopted,
@@ -172,7 +210,7 @@ def repair_costs(bible, ask, editable=None):
             )
             if adopted:
                 # Assign only this string; ignore every other model-returned field.
-                stage["cost"] = proposed
+                stage["cost"] = normalized
                 break
     remaining = cost_issues(current)
     return current, dict(

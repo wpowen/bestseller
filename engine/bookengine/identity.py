@@ -5,10 +5,57 @@ from pathlib import Path
 import re
 import yaml
 from .precision import _sentences
+from .character_context import identity_keywords
 
 RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/identity_rules.yaml").read_text())
 _NONHUMAN_COMPANION = re.compile(r"契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵兽|妖兽|神兽|兽形|兽身")
 _ROMANCE_ROLE = re.compile(r"恋爱对象|感情对象|恋人|爱情线|感情线|官配|CP|相恋|谈恋爱")
+
+
+def _identity_replacements(bible):
+    result = {}
+    for card in bible.get("characters", []) if isinstance(bible, dict) else []:
+        identity = card.get("identity") if isinstance(card, dict) else None
+        if not isinstance(identity, str) or not identity.strip():
+            continue
+        keywords = identity_keywords(identity, card.get("occupation", ""))
+        result[identity] = "、".join(keywords) or "用行动交代来历"
+    return result
+
+
+def _replace_identity_text(value, replacements):
+    if isinstance(value, str):
+        for original, replacement in replacements.items():
+            value = value.replace(original, replacement)
+        return value
+    if isinstance(value, dict):
+        return {key: _replace_identity_text(item, replacements) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_identity_text(item, replacements) for item in value]
+    return value
+
+
+def writer_identity_cards(bible):
+    """Return prompt-safe cards with role keywords instead of copyable identity prose."""
+    cards = deepcopy(bible.get("characters", []) if isinstance(bible, dict) else [])
+    for card in cards:
+        identity = card.pop("identity", "") if isinstance(card, dict) else ""
+        if identity:
+            card["identity_keywords"] = identity_keywords(identity, card.get("occupation", ""))
+    return cards
+
+
+def writer_identity_bible(bible):
+    """Build a writer-only bible view without changing saved design facts."""
+    current = _replace_identity_text(deepcopy(bible), _identity_replacements(bible))
+    if isinstance(current, dict):
+        current["characters"] = writer_identity_cards(bible)
+    return current
+
+
+def writer_identity_outline(outline, bible):
+    """Remove identity literals from introductions and model-authored scene text."""
+    return _replace_identity_text(deepcopy(outline), _identity_replacements(bible))
 
 
 def _explicit_companion_romance(seed_text, card):

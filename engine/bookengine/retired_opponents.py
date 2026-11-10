@@ -34,12 +34,16 @@ def retired_opponents(bible, number):
 
 _PAST = re.compile(r"回忆|想起|忆起|当年|那年|往年|昔日|从前|过去|此前|曾经|曾|早已|旧事")
 _NOW = re.compile(r"如今|现在|此刻|眼下|正在|仍在|还在|又(?:派|来|要|封|截)")
-_VERBS = r"要|派|截|封|追|杀|打|抢|夺|攻|逼|拦|堵|命令|下令|调|抬|举|挥|走|冲|站|立|怒吼|喝|说|道|喊|看|笑|伸|拔|按|扣|指|出手|现身|出现|复返|在"
+_VERBS = r"要|派|带|截|封|追|杀|打|抢|夺|攻|逼|拦|堵|命令|下令|调|抬|举|挥|走|跑|逃|冲|站|立|怒吼|喝|说|道|喊|看|笑|伸|拔|按|扣|指|出手|现身|出现|复返|在"
 _PREDICATE = re.compile(_VERBS)
 _ACTION = re.compile(
     r"^(?:[，,：:\s]*)(?:(?:正|仍|还|又|已|竟|却|则|也|便|就|竟然|已经|突然|终于|亲自|立刻)*)(?:" + _VERBS + r")"
 )
 _AGENTS = re.compile(r"^的(?:人|手下|部下|兵|军|队|门徒|弟子|爪牙)|^麾下")
+_CAPTIVE = re.compile(
+    r"^[，,：:\s]*(?:被擒|被捕|被绑|被押|被关|囚禁|关押|锁在|困在|在(?:囚车|牢房|囚室)|"
+    r"戴着(?:镣铐|枷锁))[^。！？!?]*(?:[。！？!?]|$)"
+)
 
 
 def _past_action(before, after):
@@ -60,6 +64,8 @@ def active_opponent_hits(text, bible, number):
                 for match in re.finditer(re.escape(label), sentence):
                     before, after = sentence[: match.start()], sentence[match.end() :]
                     if _past_action(before, after):
+                        continue
+                    if _CAPTIVE.fullmatch(after):
                         continue
                     direct = bool(_ACTION.search(after) or _AGENTS.search(after))
                     retribution = bool(

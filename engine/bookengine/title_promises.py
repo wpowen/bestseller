@@ -251,7 +251,8 @@ def writer_title_contract(outline):
     payoff = current.get("promise_payoff")
     if isinstance(payoff, dict) and current.get("reader_promise_id"):
         requirements.append(
-            f"书名承诺正面兑现：{payoff.get('action')}，对象{payoff.get('target')}，结果必须是{payoff.get('result')}；不能只提计划或让对手放话离开。"
+            f"本章必须让{payoff.get('action')}真实发生：面对{payoff.get('target')}，"
+            f"用人物行动、现场反应和直接后果写出{payoff.get('result')}，不能只回顾计划。"
         )
     resolution = current.get("opponent_resolution")
     if isinstance(resolution, dict) and resolution.get("name"):
@@ -261,7 +262,8 @@ def writer_title_contract(outline):
         )
         current.update(hook=resolution_hook, ending_content=resolution_hook)
         requirements.append(
-            f"本章清算{resolution.get('name')}：结局为{resolution.get('type')}，正文明确写出{resolution.get('outcome')}。"
+            f"本章必须写出{resolution.get('name')}{resolution.get('type')}，"
+            f"并让{resolution.get('outcome')}成为不可逆的现场结果。"
         )
     ending = current.get("ending_promise_response")
     if isinstance(ending, dict) and ending.get("promise_response"):
@@ -274,7 +276,7 @@ def writer_title_contract(outline):
     return current
 
 
-def title_promise_checkup(bible):
+def title_promise_checkup(bible, chapters=()):
     """Expose saved planning only; absent contracts remain Unknown."""
     promises = extract_reader_promises(bible)
     scheduled, resolutions = [], []
@@ -296,6 +298,8 @@ def title_promise_checkup(bible):
     complete = bool(
         scheduled and resolutions and all(row["resolution_type"] != "Unknown" for row in resolutions) and ending
     )
+    from .story_payoffs import story_payoff_checkup
+
     return {
         "status": "planned" if complete else "Unknown",
         "basis": "saved_planning_fields_only; reference_not_reader_acceptance",
@@ -303,4 +307,5 @@ def title_promise_checkup(bible):
         "scheduled_payoffs": scheduled,
         "opponent_resolutions": resolutions,
         "ending_contract": ending or "Unknown",
+        "prose_contracts": story_payoff_checkup(bible, chapters),
     }

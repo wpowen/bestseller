@@ -850,7 +850,7 @@
 
 ## 2026-11-09-55：书名承诺进规划——“替我杀人”要真的发生，反派要有像样的结局（用户 2026-11-09：“写并并行启动”）
 
-状态：开发完成，待监工验收
+状态：已验收，已合并进 main（2026-11-10）。书库 0 改动。从书名和卖点抽 1–3 条承诺（eval-52：“喂回忆换兽力”“兽力替我杀人”），排进卷纲与章纲；每阶段反派要有明确结局（被杀/被擒/被废/当众击败后失势），终局反派在末章前清算，末章要有成长、不留新污名或谜团；体检列出兑现章与反派结局。真实 50 章规划：五个阶段的承诺兑现章分别在第 10、20、30、40、49 章，五个反派依次被擒、被擒、被废、失势、失势；前 10 章试写第 10 章兑现并擒获反派。监工观察：每阶段只排在阶段末尾兑现一次，频率偏低；兑现事件多是“击断锁链、冲垮阵法”，书名说的“替我杀人”仍偏弱，反派也没有一个被杀。需在新书上读者验证。
 
 文件归属：
 - 可改：`engine/bookengine/q1_plan.py`、`engine/bookengine/structure_planning.py`、`engine/bookengine/retired_opponents.py`、`engine/bookengine/stage_transition.py`、`engine/data/q1_schemas.yaml` 的卷纲/章纲段落、本条新增的 `engine/bookengine/` 模块、`engine/bookengine/q1_chapter.py`（只加 import 和一处调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。

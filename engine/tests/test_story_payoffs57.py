@@ -5,7 +5,13 @@ import json
 import pytest
 import yaml
 
-from bookengine.story_payoffs import repair_story_payoffs, review_story_payoffs
+from bookengine.story_payoffs import (
+    conflicting_payoff_paragraphs,
+    prepare_writer_payoffs,
+    repair_story_payoffs,
+    review_story_payoffs,
+    writer_payoff_instruction,
+)
 from bookengine.title_promises import writer_title_contract
 
 
@@ -39,9 +45,31 @@ def test_due_payoff_and_opponent_exit_are_reviewed_together_with_grounded_quotes
     assert all(item["status"] == "missing" for item in note["items"])
 
 
-def test_missing_payoff_gets_one_tail_rewrite_and_is_adopted_only_after_recheck():
-    original = "矿民守住坡口。\n\n岑烈的身影很快消失在风雪中。"
+def test_writer_payoff_contract_survives_context_truncation_and_removes_escape_instructions():
+    planned = outline()
+    planned["scenes"] = [{"result": "岑烈没有恋战，转身消失在风雪中。"}]
+
+    prepared = prepare_writer_payoffs(planned)
+    instruction = writer_payoff_instruction(prepared)
+
+    assert "没有恋战" not in json.dumps(prepared, ensure_ascii=False)
+    assert "消失在风雪中" not in json.dumps(prepared, ensure_ascii=False)
+    assert "岑烈被擒" in prepared["scenes"][0]["result"]
+    assert "本章必须发生" in instruction and "岑烈被擒" in instruction
+
+
+def test_conflict_detection_identifies_escape_paragraph_but_not_captive_mentions():
+    text = "矿民守住坡口。\n\n岑烈没有恋战，退入暗道。\n\n岑烈被矿绳缚住，押在火盆旁看守。"
+
+    conflicts = conflicting_payoff_paragraphs(text, outline())
+
+    assert conflicts == [{"id": 2, "quote": "岑烈没有恋战，退入暗道。", "reason": "opponent_escape"}]
+
+
+def test_missing_payoff_rewrites_escape_and_its_consequences_before_recheck():
+    original = "矿民守住坡口。\n\n岑烈没有恋战，消失在风雪中。\n\n石门随即合拢。\n\n众人只能停步。"
     replacement = "矿民合力截断雪梁退路，夺回粮车与驿路控制点；岑烈被猎索捆住押下，粮道和人手尽失。"
+    aftermath = "矿民用矿绳封住岑烈双手，将他押在坡口看守。"
     calls = []
 
     def ask(client, key, instruction, sections, schema, **kwargs):
@@ -49,9 +77,15 @@ def test_missing_payoff_gets_one_tail_rewrite_and_is_adopted_only_after_recheck(
         if key == "ch8-prose-review":
             items = json.loads(dict(sections)["本章必须发生的事"])
             return {"items": [{"id": item["id"], "status": "missing", "evidence": []} for item in items]}
-        if key.endswith("-tail-repair"):
-            allowed = json.loads(dict(sections)["只允许修改的结尾段"])
-            return {"edits": [{"id": allowed[-1]["id"], "original": allowed[-1]["original"], "text": replacement}]}
+        if key.endswith("-conflict-repair"):
+            allowed = json.loads(dict(sections)["可修改的冲突段落及其后果"])
+            by_id = {row["id"]: row for row in allowed}
+            return {
+                "edits": [
+                    {"id": 2, "original": by_id[2]["original"], "text": replacement},
+                    {"id": 3, "original": by_id[3]["original"], "text": aftermath},
+                ]
+            }
         items = json.loads(dict(sections)["本章必须发生的事"])
         return {
             "items": [
@@ -67,10 +101,11 @@ def test_missing_payoff_gets_one_tail_rewrite_and_is_adopted_only_after_recheck(
         None, "ch8", original, {"events": []}, False, {}, {}, outline(), extract, ask
     )
 
-    assert changed.endswith(replacement)
+    assert replacement in changed and aftermath in changed and "消失在风雪中" not in changed
     assert raw["summary"] == "矿民夺路并擒住岑烈" and failed is False
-    assert note["status"] == "repaired"
-    assert sum(key.endswith("-tail-repair") for key in calls) == 1
+    assert note["status"] == "checked" and note["conflicts_before"][0]["id"] == 2
+    assert note["conflicts_after"] == []
+    assert sum(key.endswith("-conflict-repair") for key in calls) == 1
 
 
 @pytest.mark.parametrize("grounded", [False, True])
@@ -82,9 +117,10 @@ def test_payoff_repair_rolls_back_when_quote_or_final_state_recheck_fails(ground
         if key == "ch8-prose-review":
             items = json.loads(dict(sections)["本章必须发生的事"])
             return {"items": [{"id": item["id"], "status": "missing", "evidence": []} for item in items]}
-        if key.endswith("-tail-repair"):
-            allowed = json.loads(dict(sections)["只允许修改的结尾段"])
-            return {"edits": [{"id": allowed[-1]["id"], "original": allowed[-1]["original"], "text": replacement}]}
+        if key.endswith("-conflict-repair"):
+            allowed = json.loads(dict(sections)["可修改的冲突段落及其后果"])
+            target = next(row for row in allowed if "消失" in row["original"])
+            return {"edits": [{"id": target["id"], "original": target["original"], "text": replacement}]}
         items = json.loads(dict(sections)["本章必须发生的事"])
         quote = replacement if grounded else "正文里没有这句话"
         return {
@@ -109,6 +145,7 @@ def test_payoff_repair_rolls_back_when_quote_or_final_state_recheck_fails(ground
 
     assert result[:3] == (original, {"events": []}, False)
     assert result[-1]["status"] == "rolled_back"
+    assert result[-1]["conflicts_before"][0]["quote"] == "岑烈的身影很快消失在风雪中。"
 
 
 def test_writer_receives_natural_must_happen_language_without_internal_field_names():

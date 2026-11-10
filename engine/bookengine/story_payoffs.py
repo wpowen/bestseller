@@ -2,10 +2,10 @@
 
 import json
 import re
+from copy import deepcopy
 
 from .checks import high_confidence
 from .promise_io import precise_ask
-from .q1_continuity import boundary_facts
 from .retired_opponents import opponent_hits
 from .text import _sentences
 from tools.book_checkup import clean_prose
@@ -15,6 +15,9 @@ REVIEW_SCHEMA = json.dumps(
     {"items": [{"id": "", "status": "unknown", "evidence": [{"chapter": 1, "quote": ""}], "reason": ""}]},
     ensure_ascii=False,
 )
+
+_ESCAPE = re.compile(r"逃(?:走|离|脱)|脱身|退入|遁入|消失(?:在|于)|离开|撤离|远去|没有恋战|不再恋战|无心恋战")
+_ESCAPE_BLOCK = re.compile(r"(?:不得|不能|不可|不许).{0,8}(?:逃(?:走|离|脱)|脱身|退入|遁入|消失|离开|撤离|远去)")
 
 
 def due_story_payoffs(outline):
@@ -46,6 +49,69 @@ def due_story_payoffs(outline):
             }
         )
     return items
+
+
+def _resolution_pattern(outline):
+    resolution = outline.get("opponent_resolution") if isinstance(outline, dict) else None
+    return _RESOLUTION_WORDS.get(resolution.get("type")) if isinstance(resolution, dict) else None
+
+
+def _escape_conflict(text, outline):
+    resolution = outline.get("opponent_resolution") if isinstance(outline, dict) else None
+    if not isinstance(resolution, dict) or resolution.get("type") not in _RESOLUTION_WORDS:
+        return False
+    name, pattern = resolution.get("name"), _resolution_pattern(outline)
+    return bool(
+        isinstance(name, str)
+        and name in text
+        and _ESCAPE.search(text)
+        and not _ESCAPE_BLOCK.search(text)
+        and not pattern.search(text)
+    )
+
+
+def conflicting_payoff_paragraphs(text, outline):
+    """Locate prose that lets an opponent escape a terminal scheduled outcome."""
+    return [
+        {"id": index, "quote": span.group().strip(), "reason": "opponent_escape"}
+        for index, span in enumerate(_tail_spans(text), 1)
+        if _escape_conflict(span.group(), outline)
+    ]
+
+
+def prepare_writer_payoffs(outline):
+    """Remove contradictory escape instructions before the writing call."""
+    current = deepcopy(outline)
+    resolution = current.get("opponent_resolution") if isinstance(current, dict) else None
+    if not isinstance(resolution, dict) or resolution.get("type") not in _RESOLUTION_WORDS:
+        return current
+    replacement = (
+        f"{resolution.get('name')}{resolution.get('type')}，并让{resolution.get('outcome')}成为不可逆的现场结果。"
+    )
+
+    def clean(value):
+        if isinstance(value, dict):
+            return {key: clean(child) for key, child in value.items()}
+        if isinstance(value, list):
+            return [clean(child) for child in value]
+        if isinstance(value, str) and _escape_conflict(value, current):
+            return replacement
+        return value
+
+    return clean(current)
+
+
+def writer_payoff_instruction(outline):
+    """Put due events in the untruncated writer instruction, ahead of optional hooks."""
+    items = due_story_payoffs(outline)
+    if not items:
+        return ""
+    requirements = "\n".join(f"- {item['requirement']}" for item in items)
+    return (
+        "\n本章必须发生（优先于普通悬念、章末反转和后续伏笔）：\n"
+        f"{requirements}\n"
+        "正文不得把这些结果改成对手逃走、消失、脱身或继续掌控资源；必须写出人物行动、现场反应和直接后果。"
+    )
 
 
 def _verified(response, item, text, number):
@@ -105,20 +171,23 @@ def _tail_spans(text):
     return list(re.finditer(r"\S[\s\S]*?(?=\n\s*\n|$)", text))
 
 
-def _apply_tail_edit(text, spans, response, targets):
+def _apply_payoff_edits(text, spans, response, targets, required):
     edits = response.get("edits") if isinstance(response, dict) else None
-    if not isinstance(edits, list) or len(edits) != 1 or not isinstance(edits[0], dict):
+    if not isinstance(edits, list) or not edits or any(not isinstance(edit, dict) for edit in edits):
         return text, [], "invalid_edit_schema"
-    edit = edits[0]
-    index, replacement = edit.get("id"), edit.get("text")
-    if type(index) is not int or index not in targets:
+    indexes = [edit.get("id") for edit in edits]
+    if any(type(index) is not int or index not in targets for index in indexes) or len(set(indexes)) != len(indexes):
         return text, [], "invalid_target_id"
-    span = spans[index - 1]
-    if edit.get("original") != span.group():
-        return text, [], "original_mismatch"
-    if not isinstance(replacement, str) or not replacement.strip() or re.search(r"\n\s*\n", replacement):
-        return text, [], "invalid_replacement"
-    candidate = text[: span.start()] + replacement.strip() + text[span.end() :]
+    if not required.issubset(indexes):
+        return text, [], "conflict_not_rewritten"
+    candidate = text
+    for edit in sorted(edits, key=lambda row: row["id"], reverse=True):
+        span, replacement = spans[edit["id"] - 1], edit.get("text")
+        if edit.get("original") != span.group():
+            return text, [], "original_mismatch"
+        if not isinstance(replacement, str) or not replacement.strip() or re.search(r"\n\s*\n", replacement):
+            return text, [], "invalid_replacement"
+        candidate = candidate[: span.start()] + replacement.strip() + candidate[span.end() :]
     return candidate, edits, "valid" if candidate != text else "unchanged"
 
 
@@ -129,26 +198,35 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     if before["status"] != "unfulfilled" or not missing:
         return text, raw, failed, note
     spans = _tail_spans(text)
-    targets = set(range(max(1, len(spans) - 1), len(spans) + 1))
+    conflicts = conflicting_payoff_paragraphs(text, outline)
+    note["conflicts_before"] = conflicts
+    conflict_ids = {row["id"] for row in conflicts}
+    start = max(1, min(conflict_ids) - 2) if conflict_ids else max(1, len(spans) - 1)
+    targets = set(range(start, len(spans) + 1))
     allowed = [{"id": index, "original": spans[index - 1].group()} for index in sorted(targets)]
     response = precise_ask(
         ask,
         client,
-        prefix + "-tail-repair",
-        "只改一个允许的结尾段，让缺失事件在现场自然发生。保留人物、地点、既有行动和前文事实；"
-        "返回一项edit，id和original逐字对应允许段，text只含一个完整自然段。",
+        prefix + "-conflict-repair",
+        "改写每个冲突段，让缺失事件在现场自然发生；必要时连同其后直到章末的后果一起重写，不能只在末段追加。"
+        "保留不冲突的人物、地点和既有行动。返回一到多项edit，每项id和original逐字对应允许段，text只含一个完整自然段。",
         [
             ("缺失事件", json.dumps(missing, ensure_ascii=False)),
-            ("只允许修改的结尾段", json.dumps(allowed, ensure_ascii=False)),
+            ("必须改写的冲突段落", json.dumps(conflicts, ensure_ascii=False)),
+            ("可修改的冲突段落及其后果", json.dumps(allowed, ensure_ascii=False)),
             ("只读正文", text),
         ],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的自然段"}]}',
-        cap=3500,
+        cap=5000,
     )
-    candidate, edits, reason = _apply_tail_edit(text, spans, response, targets)
+    candidate, edits, reason = _apply_payoff_edits(text, spans, response, targets, conflict_ids)
     note.update(edits=edits, repair_reason=reason)
     if reason != "valid" or clean_prose(candidate)[0] != candidate:
-        return text, raw, failed, dict(note, status="rolled_back", reason="invalid_tail_rewrite")
+        return text, raw, failed, dict(note, status="rolled_back", reason="invalid_conflict_rewrite")
+    remaining = conflicting_payoff_paragraphs(candidate, outline)
+    note["conflicts_after"] = remaining
+    if remaining:
+        return text, raw, failed, dict(note, status="rolled_back", reason="conflicting_paragraphs_remain")
     after = review_story_payoffs(client, prefix + "-recheck", candidate, outline, ask)
     note["after"] = after
     if after["status"] != "checked":
@@ -156,18 +234,26 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     checked, invalid, _ = extract(
         client, prefix + "-payoff-final-state", candidate, state, bible, outline, [], final=True
     )
-    old_boundary, new_boundary = boundary_facts(raw, text), boundary_facts(checked, candidate)
-    boundary_lost = any(
-        old_boundary[key] and new_boundary[key] != old_boundary[key] for key in ("opening_location", "end_location")
-    )
-    if (
-        invalid
-        or boundary_lost
-        or high_confidence(state, checked.get("events", []), candidate)
-        or opponent_hits(candidate, bible, outline["number"])
-    ):
-        return text, raw, failed, dict(note, status="rolled_back", reason="final_state_or_continuity_failed")
-    return candidate, checked, False, dict(note, status="repaired")
+    continuity_failures = []
+    if invalid:
+        continuity_failures.append("invalid_final_state")
+    if high_confidence(state, checked.get("events", []), candidate):
+        continuity_failures.append("high_confidence_continuity_conflict")
+    if opponent_hits(candidate, bible, outline["number"]):
+        continuity_failures.append("retired_opponent_conflict")
+    if continuity_failures:
+        return (
+            text,
+            raw,
+            failed,
+            dict(
+                note,
+                status="rolled_back",
+                reason="final_state_or_continuity_failed",
+                continuity_failures=continuity_failures,
+            ),
+        )
+    return candidate, checked, False, dict(note, status="checked", repair="adopted")
 
 
 _RESOLUTION_WORDS = {

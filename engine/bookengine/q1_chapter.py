@@ -18,7 +18,7 @@ from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .planning_drift import observe_plan_alignment
-from .story_payoffs import repair_story_payoffs
+from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -132,6 +132,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     outline = writer_identity_outline(outline, bible)
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
+    outline = prepare_writer_payoffs(outline)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
@@ -144,6 +145,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
     instruction += writer_rhythm_instruction(outline)
+    instruction += writer_payoff_instruction(outline)
 
     def write_draft(suffix):
         saved = client.prefix

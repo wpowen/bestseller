@@ -40,6 +40,16 @@ def test_diagnose_specific_natural_tail_candidates_without_quality_claims():
         assert expected in result["types"]
 
 
+def test_diagnose_laid_trap_reveal_without_treating_a_true_flat_close_as_hook():
+    reveal = "他们选出的路，从一开始就是韩阙留下的错口。"
+    flat = "韩阙走后，众人收好绳索，各自回房歇息。"
+
+    result = diagnose_ending(reveal)
+    assert result["classification"] == "hook_candidate"
+    assert "刚揭事实" in result["types"]
+    assert diagnose_ending(flat)["classification"] == "flat_candidate"
+
+
 def test_payoff_evidence_requires_due_quote_grounded_in_body():
     text = "顾冬岚借来雪耳的蛮力，一拳震开石门，抢回三枚灵石。"
     fulfilled = payoff_evidence(

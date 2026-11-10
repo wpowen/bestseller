@@ -442,7 +442,7 @@ def check_book(book, *, source="final"):
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         cast_consistency=cast_checkup(bible, chapters),
         continuity_ledger=continuity_checkup(bible, chapters),
-        title_promises=title_promise_checkup(bible),
+        title_promises=title_promise_checkup(bible, chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

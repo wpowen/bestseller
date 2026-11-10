@@ -881,3 +881,35 @@
 - 真实 10 本/390 章只读副本通过，列表元数据哈希与旧接口一致；最终生产接口刷新实测由 2.112 秒降到 0.165–0.315 秒，完整响应逐字段一致。
 - `1630 passed, 1 skipped, 761 subtests passed`；真实快照冒烟 107 请求/20 导出，最大书库响应 76.72ms；scope、Ruff、JS 语法通过；真实书库前后清单无新增、删除或改动。
 - 部署包含 main 已合并的第 53/54 条及最新修复顺序，不含未通过验收的第 55 条。旧书未重新生成，不能据此验收新增写作规则。报告 `reports/library-refresh-56.md`。
+
+## 2026-11-10-57：写书提速，排好的兑现要写进正文（用户 2026-11-10：“写第57条”）
+
+状态：待执行。
+
+依据：`books/eval-57` 前 10–12 章（合并第 53–56 条后的 main `bf6983a4e`）的调用记录与体检，监工逐章核对。验证一律在系统临时目录的只读副本或临时书目录里做，照常记账；`books/eval-57` 正在写，不要碰它的目录和进程。
+
+文件归属：
+- 可改：`engine/bookengine/opening_promises.py`、`engine/bookengine/q1_plan.py` 和 `structure_planning.py` 里触发逐章重排的部分、`engine/bookengine/title_promises.py`、`engine/bookengine/retired_opponents.py`、`engine/bookengine/cost_design.py`、`engine/bookengine/address_contracts.py`、`engine/bookengine/nonhuman_speech.py`、`engine/bookengine/cast_consistency.py`、`engine/bookengine/identity.py`、本条新增的 `engine/bookengine/` 模块、`engine/data/q1_schemas.yaml` 的相关段落、`engine/bookengine/q1_chapter.py`（只加 import 和调用）、`engine/tools/book_checkup.py`（只加注册）、`engine/tests/`、`engine/reports/`。
+- 禁改：`engine/deai/`、`engine/tools/webui/`、真实书库。
+
+现状（Evidence；`books/eval-57`）：
+- **耗时**：前 10 章 109 分钟、297 次调用，基本串行。
+  - 开篇承诺审读 138 次、约 29 分钟，只在第 1–3 章：14 条读者承诺（`reader-6`…`reader-19`）每条对每个已写章单独问一次，之后再整套复检一遍（`opening_promises.py` `review_opening` 里 `kind == "reader"` 的逐章循环）。第 3 章一章就调用 70 多次。
+  - 章纲规划约 43 分钟：每写完一章，就把本卷剩下的章重排一遍（`plan-q1-chapters-N-10-diversity-structure35v6-observedN-growth2-redo/redo2/redo3`），每次 2–3 轮，不管上一章有没有跑偏都重排。
+  - 真正写正文（draft、finish、final-state）约 32 分钟。
+- **排好的兑现没写出来**：`title_promises` 排定第 8 章“岑烈被矿民截断退路并被擒”，正文写的是“岑烈的身影很快消失在风雪中”，第 9、10 章他还在活动。第 55 条只检查规划字段，不检查正文。体检里 `antagonists` 记岑烈 exit=8，但第 9、10 章仍有出场。
+- **不会说话的角色被排了称呼**：圣经里霜团是 `can_speak_human: 否`，同时又有 `address: 谦哥`、`address_target: 顾立谦`。正文第 1 章“‘谦哥。’霜团用脑袋拱了蹭他的手”，第 2 章“‘谦哥！’霜团用身体顶住他的腿，回头急叫”。
+- **人物卡原句仍进正文**：第 1 章“顾立谦是被逐出驭兽宗的矿镇少年”“暴雪矿镇雪匪头目岑烈的人”，第 2 章“她是游走雪地的女药师”。第 54 条体检能检出，写作时没修掉。
+- **代价设计空了四卷**：`cost-design.json` 状态 `failed_continued`，圣经第 1–4 阶段 `cost: ''`，只有第 5 阶段有值；共重做 13 次（`plan-q1-cost-stage-*-redo*`）。写手手里另有 `core_development.new_cost`，正文的失忆代价目前没受影响。
+
+要做（每项单独提交；先写失败用例，再实现）：
+1. **开篇审读合并调用**：同一章的所有读者承诺放进一次调用审读，返回逐条结果和逐字引文。已经在前面章兑现过的条目不再回头审读。复检只查上一轮没通过的条目。判定规则不变：引文对不上原文，仍然记 Unknown。目标是第 1–3 章的审读从 138 次降到 10 次以内。
+2. **只在跑偏时重排章纲**：上一章保存的章型、关键事件和章纲一致，就不重排后面的章。只有不一致，或者节奏骨架约束（连续对抗不超过 3 章、阶段内要有关系章等）会被打破时，才重排受影响的章。第 50 条的节奏行为不能退化。
+3. **兑现进正文**：规划里排定的承诺兑现和反派结局（被杀、被擒、被废、失势），写那一章时作为“本章必须发生”交给写手，用自然语言，不带程序内部用语。写完核对正文里有没有对应原文引文：没有就对结尾段做一次定向补写，复检不过就回滚并记录。反派结局写成之后，后面章节不能让他照常行动（回忆、被提及、俘虏状态除外）。
+4. **称呼与说话一致**：不能说人话的角色，不分配口头称呼；已有的称呼改成只用于旁白或别人的话。cast 检查把“不会说话的角色说了称呼”算进非人说话命中，并修复。
+5. **人物卡原句**：查清第 54 条为什么能检出、写作时却没修掉（是没触发修复，还是修复后复检没过回滚了），修到写作时能处理；写手上下文也不要再把 identity 原句当成可以照抄的描述。
+6. **代价设计**：查清第 1–4 阶段为什么重做 13 次都是空的（是模型没给，还是重做的结果没写回），修根因，并补一个夹具测试。
+7. **验证**：
+   - 离线：用 `books/eval-57` 的只读副本做夹具，第 8 章兑现缺失、霜团称呼、第 1–2 章 identity 原句、第 1–4 阶段代价空缺，都要能检出。
+   - 真实模型：在系统临时目录用 `books/eval-57/seed.yaml` 写前 10 章。报告调用次数和总耗时（对照 eval-57：297 次、109 分钟），以及体检各项（章末平收、重复、连续性、最长连续对抗、章纲一致数，都不能比 eval-57 差）。附兑现章的正文片段。如果书名改了、兑现章不在前 10 章，就说明原因，并只做规划层验证。
+8. **约束**：遵守 AGENTS.md 护栏；第 26–56 条的行为不能退化；不 push。报告写 `engine/reports/speed-and-payoff-57.md`，区分 Evidence / Inference / Unknown。完成后把状态改为“开发完成，待监工验收”，然后停下。

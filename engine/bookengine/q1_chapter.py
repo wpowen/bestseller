@@ -5,7 +5,7 @@ import time
 from .checks import high_confidence, roll_day
 from .contracts import choose_contract, valid_extract, payoff_ok, observations, reduce_growth
 from .endings import ending_candidates, english_hits, apply_scene
-from .identity import name_hits
+from .identity import name_hits, writer_identity_bible, writer_identity_outline
 from .hook_momentum import repair_after_draft
 from .precision import _sentences, apply as sentence_edits
 from .craft import reference_features
@@ -129,10 +129,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         growth_target=vol.get("expected_dashboard", {}),
     )
     outline = chapter_cast(outline, bible, state["seen_characters"])
+    outline = writer_identity_outline(outline, bible)
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
-    sections = context(writer_speech_bible(bible), threads, vol, outline, state, history, rows, previous, drops)
+    writer_bible = writer_identity_bible(writer_speech_bible(bible))
+    sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
     sections.extend(speech_context(bible, idx))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))

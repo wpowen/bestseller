@@ -395,6 +395,7 @@ def _repair_targets(text, findings):
 def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """One sentence-only model repair; any failed deterministic recheck rolls back."""
     from .checks import high_confidence
+    from .identity import writer_identity_cards, writer_identity_outline
     from .prose_repetition import clean_repetitions
     from tools.book_checkup import clean_prose
 
@@ -418,8 +419,8 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         "不得只添加人物身份同位语。每个edit.id必须逐字复制待修句中的真实id，不得使用示例id；"
         "不确定不改，其他句逐字保留。",
         [
-            ("固定人物卡", json.dumps(_cards(bible), ensure_ascii=False)),
-            ("本章固定章纲", json.dumps(outline, ensure_ascii=False)),
+            ("固定人物卡", json.dumps(writer_identity_cards(bible), ensure_ascii=False)),
+            ("本章固定章纲", json.dumps(writer_identity_outline(outline, bible), ensure_ascii=False)),
             ("待修句", json.dumps(repair_targets, ensure_ascii=False)),
             ("只读正文", text),
         ],

@@ -235,9 +235,27 @@ def test_prepare_persists_contract_and_resume_preserves_design_without_calls(tmp
                 goal="救人",
                 climax="救出妹妹",
                 exit_chapter=3,
+                promise_payoffs=[
+                    dict(
+                        promise_id="reader-promise-1",
+                        chapter=2,
+                        action="周远舟敲响借钟救人",
+                        target="王见微",
+                        result="救回妹妹并夺回戒指",
+                        escalation="首次兑现借钟救人",
+                    )
+                ],
+                opponent_resolution=dict(name="王见微", type="被擒", chapter=2, outcome="失去继续作恶能力"),
+                ending_contract=dict(
+                    promise_response="周远舟借钟救回妹妹",
+                    growth_dimension="关系",
+                    before="独自救人",
+                    after="与妹妹共同守钟",
+                    new_burden_or_mystery="",
+                ),
             )
         ],
-        antagonists=[dict(name="王见微", stage=1, tier=1, exit=3)],
+        antagonists=[dict(name="王见微", stage=1, tier=1, exit=2)],
     )
 
     class Client:

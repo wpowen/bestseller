@@ -71,6 +71,22 @@ def _ability_risks(cost):
     return risks
 
 
+def _canonical_escalation(cost, previous_cost):
+    """Use the model's two psychology fields as the comparison's exact source."""
+    fields, previous = _fields(cost), _fields(previous_cost)
+    comparison = fields.get("升级", "")
+    if not all(fields.get(key) for key in ("损失", "心理", "等级", "升级")):
+        return cost
+    if not previous.get("心理") or not re.search(r"→|->", comparison):
+        return cost
+    exact = f"{previous['心理']}→{fields['心理']}"
+    if exact in comparison:
+        return cost
+    fields["升级"] = exact
+    order = ("损失", "心理", "等级", "升级", "恢复章", "恢复办法")
+    return "；".join(f"{label}：{fields[label]}" for label in order if fields.get(label))
+
+
 def has_cost_source(bible):
     power = bible.get("power", {})
     return any(v.get("cost") for v in bible.get("volumes", [])) or bool(
@@ -160,15 +176,20 @@ def repair_costs(bible, ask, editable=None):
             )
             candidate = deepcopy(current)
             proposed = raw.get("cost") if isinstance(raw, dict) else None
-            if isinstance(proposed, str) and proposed.strip():
-                candidate["volumes"][position]["cost"] = proposed
+            normalized = (
+                _canonical_escalation(proposed, stages[position - 1].get("cost"))
+                if isinstance(proposed, str) and position
+                else proposed
+            )
+            if isinstance(normalized, str) and normalized.strip():
+                candidate["volumes"][position]["cost"] = normalized
             after = cost_issues(candidate)
-            last_candidate = proposed
+            last_candidate = normalized
             last_issues = [issue for issue in after if issue["stage"] == number]
             before_stages = {i["stage"] for i in before}
             adopted = (
-                isinstance(proposed, str)
-                and proposed != stage.get("cost")
+                isinstance(normalized, str)
+                and normalized != stage.get("cost")
                 and not any(i["stage"] == number or i["stage"] not in before_stages for i in after)
             )
             attempts.append(
@@ -177,6 +198,7 @@ def repair_costs(bible, ask, editable=None):
                     retry=retry,
                     before=stage.get("cost"),
                     candidate=proposed,
+                    normalized_candidate=normalized,
                     issues_before=issues,
                     issues_after=after,
                     adopted=adopted,
@@ -184,7 +206,7 @@ def repair_costs(bible, ask, editable=None):
             )
             if adopted:
                 # Assign only this string; ignore every other model-returned field.
-                stage["cost"] = proposed
+                stage["cost"] = normalized
                 break
     remaining = cost_issues(current)
     return current, dict(

@@ -160,6 +160,30 @@ def test_cost_retry_receives_rejected_candidate_and_remaining_errors():
     assert calls[1]["上次候选，只读"] and calls[1]["上次候选仍有错误"]
 
 
+def test_cost_repair_canonicalizes_model_comparison_from_the_two_psychology_fields():
+    value = bible()
+    value["volumes"][1]["cost"] = ""
+    previous_mind = "性格变得多疑，开始查验陌生人的口信"
+    current_mind = "开始让同伴共同选择路线并主动说明每条路的风险"
+    proposed = (
+        "损失：永久忘记与妹妹在炉边分食干粮的温暖记忆；"
+        f"心理：{current_mind}；等级：2；"
+        f"升级：{previous_mind}→开始让同伴共同选择路线并说明每条路的风险"
+    )
+    calls = []
+
+    def ask(*args):
+        calls.append(args)
+        return {"cost": proposed}
+
+    changed, note = repair_costs(value, ask)
+
+    assert note["status"] == "passed" and len(calls) == 1
+    assert f"升级：{previous_mind}→{current_mind}" in changed["volumes"][1]["cost"]
+    assert note["attempts"][0]["candidate"] == proposed
+    assert note["attempts"][0]["normalized_candidate"] == changed["volumes"][1]["cost"]
+
+
 def test_later_stage_cannot_claim_first_cost_when_previous_stage_is_empty():
     value = bible()
     value["volumes"][0]["cost"] = ""

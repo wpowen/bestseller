@@ -36,6 +36,7 @@ from .outline_diversity import (
 )
 from .rhythm_replanning import model_review_issues, observed_rows, replan_context, semantic_review
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
+from .planning_drift import cache_replan_issues
 
 
 def _beats(threads, number, state=None):
@@ -233,11 +234,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
     plot_history = [dict(number=r["number"], nouns=chapter_nouns(r, bible), target=primary_target(r)) for r in prior]
-    plot_stale = bool(
-        cached
-        and (solution_issues(bible, prior, cached["chapters"]) + ability_issues(bible, prior, cached["chapters"]))
-        and cached.get("plot_history") != plot_history
-    )
+    dynamic_issues = cache_replan_issues(bible, prior, cached)
+    plot_stale = bool(cached and dynamic_issues)
     revision_suffix = ""
     if plot_stale and getattr(client, "out", None):
         revision_suffix = "-observed" + str(len(list((Path(client.out) / "outline-diversity").glob("*.json"))) + 1)
@@ -245,8 +243,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached
         and (
             plot_stale
-            or rhythm_issues(bible, prior, cached["chapters"])
-            or opponent_presence_issues(bible, cached["chapters"])
             or (
                 cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
                 and (
@@ -431,7 +427,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             candidates,
             rewrite,
             bible=bible,
-            initial_issues=review_issues,
+            initial_issues=[
+                *[issue for issue in dynamic_issues if issue.get("kind") == "rhythm_observed_plan_drift"],
+                *review_issues,
+            ],
             model_review=review,
         )
     )
@@ -490,6 +489,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         report["plot_history"] = plot_history
         report["plot_issues_after"] = solution_issues(bible, prior, result) + ability_issues(bible, prior, result)
         report["rhythm_issues_after"] = final_rhythm_issues
+        report["opponent_issues_after"] = opponent_presence_issues(bible, result)
+        report["replan_issues"] = dynamic_issues
         if source_path:
             report.update(source_report=source_path, chapters=result)
         save(path, dict(report, planned_chapters=result))

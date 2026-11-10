@@ -17,6 +17,7 @@ from .storage import load, save
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
+from .planning_drift import observe_plan_alignment
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -351,6 +352,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         scene_types=kinds,
         structure=raw.get("structure"),
         r2_events=raw.get("r2_events") or [],
+        plan_alignment=observe_plan_alignment(outline, raw),
         meeting_scenes=kinds.count("meeting"),
         scenes=len(kinds),
         hard_conflicts=len(high_confidence(state, events, text)),

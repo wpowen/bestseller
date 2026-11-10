@@ -89,8 +89,17 @@ def test_replay_saved_review_response_text(case):
     for row in FIXTURE["responses"]:
         responses[row["stage"]] = row["raw"]
 
-    def ask(client, key, *args, **kwargs):
-        return parse_json(content_of(responses[key]))
+    def ask(client, key, instruction, sections, schema, **kwargs):
+        if key in responses:
+            return parse_json(content_of(responses[key]))
+        data = dict(sections)
+        chapter = int(data["验收章号"])
+        combined = []
+        for item in json.loads(data["逐项验收"]):
+            old_key = f"r2-ch{case['chapter']}-{item['id']}-chapter-{chapter}-promise-review"
+            old = parse_json(content_of(responses[old_key]))
+            combined.extend(row for row in old.get("items", []) if row.get("id") == item["id"])
+        return {"items": combined}
 
     earlier = {c["chapter"]: c["body"] for c in FIXTURE["cases"] if c["chapter"] < case["chapter"]}
     note = review_opening(

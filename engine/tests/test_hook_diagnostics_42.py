@@ -50,6 +50,18 @@ def test_diagnose_laid_trap_reveal_without_treating_a_true_flat_close_as_hook():
     assert diagnose_ending(flat)["classification"] == "flat_candidate"
 
 
+def test_diagnose_distant_beast_threat_and_hidden_unknown_fact_from_real_run():
+    cases = {
+        "迫近危险": "骨片在贴身的衣襟里透出一股冰冷腥气，远处乱石深处，似乎又传来一声若有若无的兽吼。",
+        "刚揭事实": "韩砺已被捆住。可沈青萝藏起的那片木签，明显还牵着一件没人知道的事。",
+    }
+
+    for expected, text in cases.items():
+        result = diagnose_ending(text)
+        assert result["classification"] == "hook_candidate"
+        assert expected in result["types"]
+
+
 def test_payoff_evidence_requires_due_quote_grounded_in_body():
     text = "顾冬岚借来雪耳的蛮力，一拳震开石门，抢回三枚灵石。"
     fulfilled = payoff_evidence(

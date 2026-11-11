@@ -84,6 +84,35 @@ def test_final_closure_repair_rolls_back_when_new_task_remains():
     assert note["status"] == "rolled_back" and note["reason"] == "closure_recheck_failed"
 
 
+def test_final_closure_accepts_short_web_paragraphs_within_the_bounded_tail():
+    replacement = "\n\n".join(
+        [
+            "控制石的旧字彻底熄灭。",
+            "顾立谦没有借那股催逼众人的兽力。",
+            "他只借一缕风辨出出口。",
+            "白苓护着顾梨先走。",
+            "陆铜生和陶七各自扶起伤员。",
+            "霜团用鼻尖碰了碰他的掌心。",
+        ]
+    )
+
+    result, _, _, note = repair_final_closure(
+        None,
+        "r2-ch50",
+        EVAL57_ENDING,
+        {"events": []},
+        False,
+        {},
+        {},
+        {"number": 50, "ending": True},
+        lambda *_args, **_kwargs: ({"events": [], "state": {}}, False, 0),
+        lambda *_args, **_kwargs: {"text": replacement},
+    )
+
+    assert result == replacement
+    assert note["status"] == "repaired"
+
+
 def test_checkup_registers_final_chapter_new_suspense(tmp_path):
     bible = {"title": "终局", "characters": []}
     (tmp_path / "story_bible.yaml").write_text(yaml.safe_dump(bible, allow_unicode=True))

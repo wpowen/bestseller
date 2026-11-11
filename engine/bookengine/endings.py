@@ -152,7 +152,12 @@ def repair_final_closure(client, prefix, text, raw, failed, state, bible, outlin
         max_attempts=1,
     )
     replacement = value.get("text") if isinstance(value, dict) else None
-    if not isinstance(replacement, str) or not replacement.strip() or len(_paragraph_spans(replacement)) > 5:
+    if (
+        not isinstance(replacement, str)
+        or not replacement.strip()
+        or len(replacement) > 1600
+        or len(_paragraph_spans(replacement)) > 20
+    ):
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_closure_patch")
     candidate = text[:start] + replacement.strip()
     remaining = final_closure_hits(candidate)

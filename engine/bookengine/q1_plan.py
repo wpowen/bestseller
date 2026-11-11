@@ -15,7 +15,7 @@ from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
-from .stage_transition import planning_transition_issues, complete_transitions
+from .stage_transition import complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_issues
 from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
@@ -34,10 +34,10 @@ from .outline_diversity import (
     title_terms,
     conflict_type,
 )
-from .rhythm_replanning import observed_rows, replan_context
+from .rhythm_replanning import RELATIONSHIP_REWRITE_RULE, observed_rows, replan_context
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
-from .planning_drift import cache_replan_issues
-from .planning_policy import hard_replan_issues, planning_window_end
+from .planning_drift import cache_replan_issues, cached_contract_stale
+from .planning_policy import planning_window_end
 
 
 def _beats(threads, number, state=None):
@@ -237,30 +237,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     plot_history = solution_plot_history(bible, prior)
     dynamic_issues = cache_replan_issues(bible, prior, cached)
     plot_stale = bool(cached and dynamic_issues)
-    rhythm_stale = bool(
-        cached
-        and cached.get("rhythm_contract_version", 0) < RHYTHM_VERSION
-        and rhythm_issues(bible, prior, cached["chapters"])
-    )
     revision_suffix = ""
     if plot_stale and getattr(client, "out", None):
         revision_suffix = "-observed" + str(len(list((Path(client.out) / "outline-diversity").glob("*.json"))) + 1)
-    superseded = bool(
-        cached
-        and (
-            plot_stale
-            or rhythm_stale
-            or (
-                cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
-                and hard_replan_issues(
-                    planning_transition_issues(bible, cached["chapters"])
-                    + ability_issues(bible, prior, cached["chapters"])
-                    + solution_issues(bible, prior, cached["chapters"])
-                    + solution_sequence_issues(bible, prior, cached["chapters"])
-                )
-            )
-        )
-    )
+    superseded = bool(cached and (plot_stale or cached_contract_stale(bible, prior, cached, STRUCTURE_CHECKS_VERSION)))
     stale = cached if superseded else None
     if superseded:
         end = cached["end"]
@@ -408,11 +388,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("每章重写两场场景，冲突、障碍、选择和行动后果必须与要求章型一致", targets),
-                (
-                    "情感章本地定向重写硬约束",
-                    "action只写两人之间的坦白、试探、拒绝、让步或和解；choice另写对方的当场选择，"
-                    "不得复制action。追杀、闯关、受控搏斗与正面打斗只能是一句背景压力。",
-                ),
+                ("情感章本地定向重写硬约束", RELATIONSHIP_REWRITE_RULE),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("目标章原内容、要求章型、前后章摘要与必须保留事实，只能改目标章", context),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),

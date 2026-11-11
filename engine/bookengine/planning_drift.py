@@ -3,13 +3,29 @@
 import json
 from pathlib import Path
 
-from .chapter_rhythm import normalize_chapter_type, rhythm_issues
+from .chapter_rhythm import VERSION as RHYTHM_VERSION, normalize_chapter_type, rhythm_issues
 from .core_ability import ability_issues
 from .q1_schema import integer, rows
 from .solution_substance import solution_issues
 from .solution_sequences import solution_plot_history, solution_sequence_issues
+from .stage_transition import planning_transition_issues
 from .structure_planning import opponent_presence_issues
 from .planning_policy import hard_replan_issues
+
+
+def cached_contract_stale(bible, prior, cached, structure_version):
+    """Return whether an old cache violates a current hard planning contract."""
+    if not cached:
+        return False
+    chapters = cached.get("chapters", [])
+    rhythm_stale = cached.get("rhythm_contract_version", 0) < RHYTHM_VERSION and rhythm_issues(bible, prior, chapters)
+    structural = cached.get("structure_checks_version", 0) < structure_version and hard_replan_issues(
+        planning_transition_issues(bible, chapters)
+        + ability_issues(bible, prior, chapters)
+        + solution_issues(bible, prior, chapters)
+        + solution_sequence_issues(bible, prior, chapters)
+    )
+    return bool(rhythm_stale or structural)
 
 
 def observe_plan_alignment(outline, observed):

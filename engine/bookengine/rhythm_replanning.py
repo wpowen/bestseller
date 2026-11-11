@@ -7,6 +7,11 @@ from .chapter_rhythm import RULE, VERSION, chapter_type, normalize_chapter_type
 from .q1_schema import DATA, integer, model_value, rows
 from .text import pack
 
+RELATIONSHIP_REWRITE_RULE = (
+    "action只写两人之间的坦白、试探、拒绝、让步或和解；choice另写对方的当场选择，不得复制action。"
+    "追杀、闯关、受控搏斗与正面打斗只能是一句背景压力。"
+)
+
 
 def _outline_summary(row):
     fields = (

@@ -28,6 +28,18 @@ from bookengine.rhythm_writer import writer_main_scene_contract, writer_rhythm_i
         ("阶段兑现", "对抗"),
         ("关系推进", "情感"),
         ("关系", "情感"),
+        ("战斗", "对抗"),
+        ("打斗", "对抗"),
+        ("解谜", "揭秘"),
+        ("推理", "揭秘"),
+        ("谋略", "谋划"),
+        ("关系章", "情感"),
+        ("身份揭露", "揭秘"),
+        ("潜入揭密", "揭秘"),
+        ("潜入营救", "对抗"),
+        ("救援推进", "对抗"),
+        ("连续闯关", "对抗"),
+        ("潜入试探", "对抗"),
     ],
 )
 def test_chapter_type_aliases_are_normalized_before_comparison(value, expected):
@@ -36,6 +48,28 @@ def test_chapter_type_aliases_are_normalized_before_comparison(value, expected):
         [{"number": 1, "type": expected}],
         [{"number": 1, "content_type": value, "status": "mismatch", "reason": "旧词表"}],
     )
+
+
+def test_unknown_chapter_type_never_enters_comparisons_as_a_private_vocabulary():
+    assert normalize_chapter_type("自创章型") == ""
+
+
+def test_extraction_planning_and_checkup_share_the_same_canonical_types():
+    from bookengine.plot_diagnostics import plot_findings
+    from bookengine.q1_extract import normalize_extract
+    from bookengine.q1_plan import schedule
+
+    assert normalize_extract({"type": "动作", "state": {}})["type"] == "对抗"
+    assert (
+        schedule(3, 3, {"chapter_type_mix": {"对抗": 30, "情感": 15}}, [{"type": "打"}, {"type": "动作"}])[0]["type"]
+        != "对抗"
+    )
+    findings = plot_findings(
+        {"volumes": [{"number": 1, "start": 1, "end": 1}]},
+        [{"number": 1, "meta": {"type": "关系推进", "solutions": []}, "text": "两人当面坦白。"}],
+    )
+    assert findings["chapter_rhythm"]["distribution"] == {"关系": 1}
+    assert findings["chapter_rhythm"]["stages"][0]["status"] == "met"
 
 
 def test_only_stage_hard_constraints_are_replan_eligible():
@@ -102,6 +136,9 @@ def test_replan_targets_at_most_two_chapters_and_retries_once(tmp_path):
 
     assert len(calls) == 1 and calls[0][1] == 1
     assert 1 <= len(calls[0][0]) <= 2
+    report = json.loads((tmp_path / "outline-diversity/001-005.json").read_text())
+    assert report["replan_decisions"]
+    assert all(row["action"] == "kept_original" and row["attempts"] == 1 for row in report["replan_decisions"])
 
 
 class Reply:

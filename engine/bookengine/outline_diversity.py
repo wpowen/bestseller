@@ -119,8 +119,9 @@ def rename_repeated_titles(history, batch):
         if target is None:
             break
         before = str(target.get("title") or "")
-        after = before.replace(str(issue.get("keyword") or ""), "").strip(" ·：:，,。！!？?")
-        after = after or f"第{integer(target.get('number'))}章"
+        # Deleting one repeated character produced broken titles such as “断取痕”.
+        # A neutral ordinal is less literary but deterministic, grammatical, and cannot retrigger this surface rule.
+        after = f"第{integer(target.get('number'))}章"
         target["title"] = after
         target["title_keywords"] = title_terms(after)
         decisions.append(
@@ -350,6 +351,28 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             issues = [i for i in issues if not i["kind"].startswith("rhythm_")]
             issues += [i for i in final_issues if i not in issues]
         terminal = retry == MAX_REWRITE_CALLS or bool(issues and not targets)
+        attempted_targets = sorted(
+            {
+                number
+                for attempt in attempts
+                if attempt.get("regeneration", MAX_REWRITE_CALLS) < MAX_REWRITE_CALLS
+                for number in attempt.get("targets", [])
+            }
+        )
+        unresolved_targets = {number for issue in paid_issues for number in issue.get("targets", [])}
+        replan_decisions = (
+            [
+                dict(
+                    number=number,
+                    attempts=1,
+                    action="kept_original" if number in unresolved_targets else "accepted_model_replan",
+                    reason=[issue for issue in paid_issues if number in issue.get("targets", [])],
+                )
+                for number in attempted_targets
+            ]
+            if terminal
+            else []
+        )
         report = dict(
             structure_checks_version=STRUCTURE_CHECKS_VERSION,
             rhythm_contract_version=RHYTHM_VERSION,
@@ -362,6 +385,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             initial_rhythm_issues=list(initial_issues),
             title_renames=title_renames,
             paid_replan_issues=paid_issues,
+            replan_decisions=replan_decisions,
             original_chapters=original_chapters,
             status="passed" if not issues else "failed_continued" if terminal else "repairing",
             used=used,

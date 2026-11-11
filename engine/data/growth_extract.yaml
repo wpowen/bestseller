@@ -1,10 +1,4 @@
 effort: low
-type_aliases:
-  解谜: 揭秘
-  推理: 揭秘
-  战斗: 对抗
-  打斗: 对抗
-  谋略: 谋划
 prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
 
   state仅实际变化，未知保旧：dashboard的strength/wealth/status/affiliation/stage用短规范值与带单位财富；实力只用阶梯，每次最多一级。power_status仅代价/限制/封禁/余额/当前状态/境界，各{值,最后更新}≤50字；continuity仅blocked/limbs/balances/released，不编治愈。characters记录本章在场角色所在地/在场，objects最多3个关键物品owner/location，clock只明确day/minute，伏笔open/closed。不要复制旧状态和整段对白。

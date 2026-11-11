@@ -73,7 +73,7 @@ def test_global_history_is_loaded_and_title_repeat_is_renamed_without_rewrite(tm
     before = (tmp_path / "chapters/001.json").read_bytes()
     client = Fixture(tmp_path, [dict(chapters=batch)])
     result = plan(client, 45, 46, recent)
-    assert [r["title"] for r in result] == ["碎", "夜雨"]
+    assert [r["title"] for r in result] == ["第45章", "夜雨"]
     assert len(client.calls) == 1
     assert "闸" in client.calls[0][1] and "已用核心冲突类型与章名关键词" in client.calls[0][1]
     assert (tmp_path / "chapters/001.json").read_bytes() == before
@@ -182,7 +182,7 @@ def test_title_repair_does_not_call_model(tmp_path):
 
     result = diversity.repair_batch(tmp_path, "003-003", history, batch, forbidden)
     report = json.loads((tmp_path / "outline-diversity/003-003.json").read_text())
-    assert result[0]["title"] == "碎" and not calls
+    assert result[0]["title"] == "第3章" and not calls
     assert report["title_renames"]
 
 

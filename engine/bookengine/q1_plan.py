@@ -148,11 +148,11 @@ def schedule(start, end, profile, recent=(), state=None, *, stage_start=None, st
     }
     reservation = dict(state or {}, solutions=list((state or {}).get("solutions", [])))
     for n in range(start, end + 1):
-        choices = [k for k in weights if len(previous) < 2 or not all(r.get("type") == k for r in previous[-2:])]
+        choices = [k for k in weights if len(previous) < 2 or not all(chapter_type(r) == k for r in previous[-2:])]
         kind = max(
             choices,
             key=lambda k: (
-                (len(previous) + 1) * weights[k] / sum(weights.values()) - sum(r.get("type") == k for r in previous)
+                (len(previous) + 1) * weights[k] / sum(weights.values()) - sum(chapter_type(r) == k for r in previous)
             ),
         )
         hooks = DATA["hook_types"]

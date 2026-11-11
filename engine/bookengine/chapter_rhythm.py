@@ -6,6 +6,7 @@ import re
 from .q1_schema import integer, rows
 
 VERSION = 10
+CANONICAL_TYPES = ("对抗", "谋划", "情感", "日常", "揭秘", "收获")
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
@@ -48,6 +49,8 @@ _WRITER_FIELDS = (
 )
 
 TYPE_ALIASES = {
+    "战斗": "对抗",
+    "打斗": "对抗",
     "打": "对抗",
     "救": "对抗",
     "爽点": "对抗",
@@ -61,13 +64,25 @@ TYPE_ALIASES = {
     "关系推进": "情感",
     "情感推进": "情感",
     "人物关系": "情感",
+    "关系章": "情感",
+    "解谜": "揭秘",
+    "推理": "揭秘",
+    "身份揭露": "揭秘",
+    "潜入揭密": "揭秘",
+    "谋略": "谋划",
+    "骗": "对抗",
+    "潜入营救": "对抗",
+    "救援推进": "对抗",
+    "连续闯关": "对抗",
+    "潜入试探": "对抗",
 }
 
 
 def normalize_chapter_type(value):
     """Normalize every planner/extractor/checkup label before it is compared."""
     value = value.strip() if isinstance(value, str) else ""
-    return TYPE_ALIASES.get(value, value)
+    value = TYPE_ALIASES.get(value, value)
+    return value if value in CANONICAL_TYPES else ""
 
 
 def chapter_type(row):

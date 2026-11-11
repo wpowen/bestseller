@@ -7,6 +7,7 @@ from .core_ability import core_source, development_issues
 from .solution_substance import rows, chapter_nouns, stage_key, observe_solutions
 from .ability_methods import partition_methods, primary_target, target_class
 from .core_evidence import read_core_use
+from .chapter_rhythm import chapter_type
 
 
 def plot_findings(bible, chapters):
@@ -49,7 +50,7 @@ def plot_findings(bible, chapters):
         ability.append(
             dict(chapter=number, **read_core_use(raw, text, bible, chapter.get("core_plan", meta.get("core_plan"))))
         )
-        kind = meta.get("type") if isinstance(meta.get("type"), str) else "Unknown"
+        kind = chapter_type(meta) or "Unknown"
         kind = "关系" if kind == "情感" else kind
         type_counts[kind] += 1
         if kind == "对抗":
@@ -97,7 +98,7 @@ def plot_findings(bible, chapters):
                 else "not_proven",
             )
         )
-        relationships = [c["number"] for c in available if c["meta"].get("type") in ("关系", "情感")]
+        relationships = [c["number"] for c in available if chapter_type(c["meta"]) == "情感"]
         rhythm_stages.append(
             dict(
                 stage=stage.get("number"),
@@ -156,7 +157,7 @@ def plot_findings(bible, chapters):
             confrontation_runs=confrontations,
             excess_runs=[r for r in confrontations if len(r) > 3],
             stages=rhythm_stages,
-            unknown_chapters=[c["number"] for c in chapters if not c["meta"].get("type")],
+            unknown_chapters=[c["number"] for c in chapters if not chapter_type(c["meta"])],
             basis="saved observed type; 情感 mapped to 关系; unclassified chapters break runs",
         ),
     )

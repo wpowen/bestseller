@@ -10,12 +10,16 @@ class MinimalBTestsPart1(MinimalBTests):
             type="情感",
             rhythm_type="情感",
             rhythm_focus="说清隐瞒并重新约定分工",
+            hook_type="choice",
+            hook="阿宁把钥匙推回桌边，等她决定是否坦白。",
             scenes=[
                 {
                     "characters": ["阿宁"],
                     "goal": "坦白此前隐瞒",
                     "obstacle": "同伴不再信任她",
                     "choice": "交出路线决定权",
+                    "action": "当面承认隐瞒",
+                    "result": "阿宁收回离开的决定",
                 }
             ],
         )
@@ -27,6 +31,9 @@ class MinimalBTestsPart1(MinimalBTests):
         assert "本章章型：情感" in prompt
         assert "本章不安排正面打斗" in prompt
         assert "对手只能作为消息或远处压力" in prompt
+        assert "阿宁把钥匙推回桌边，等她决定是否坦白。" in prompt
+        assert "当面承认隐瞒" in prompt and "阿宁收回离开的决定" in prompt
+        assert prompt.index("本章主场景硬合同") < prompt.index(self.data["b"][:20])
         assert all(term not in prompt for term in ("原章", "程序判定", "重规划"))
 
     def test_writer_has_four_blocks_without_style_or_prefix_leak(self):

@@ -76,7 +76,7 @@ class MinimalBTestsPart2(MinimalBTests):
         self.assertEqual(old, before)
         self.assertNotIn("criteria", result)
         self.assertEqual(q1.ground({"state": {}, "type": "解谜"}, "正文。")["type"], "揭秘")
-        self.assertEqual(q1.ground({"state": {}, "type": "未知分类"}, "正文。")["type"], "未知分类")
+        self.assertEqual(q1.ground({"state": {}, "type": "未知分类"}, "正文。")["type"], "")
         self.assertEqual(q1.ground({"state": {}, "type": {}}, "正文。")["type"], {})
         ranged = q1.ground({"state": {}, "payoff": {"pid": "P2-P3"}}, "首段。\n\n第二段。\n\n第三段。")
         self.assertEqual(ranged["payoff"]["quote"], "第二段。\n\n第三段。")

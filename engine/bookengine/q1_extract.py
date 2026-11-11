@@ -220,7 +220,7 @@ def normalize_extract(raw):
     if isinstance(raw.get("type"), str):
         from .chapter_rhythm import normalize_chapter_type
 
-        result["type"] = normalize_chapter_type(EXTRACT.get("type_aliases", {}).get(raw["type"], raw["type"]))
+        result["type"] = normalize_chapter_type(raw["type"])
     for key in (
         "gains",
         "costs",

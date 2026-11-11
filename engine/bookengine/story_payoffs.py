@@ -196,7 +196,13 @@ def _apply_payoff_edits(text, spans, response, targets, required):
 def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     before = review_story_payoffs(client, prefix, text, outline, ask)
     note = {"status": before["status"], "before": before, "after": before, "edits": []}
-    missing = [item for item in before["items"] if item["status"] == "missing"]
+    resolution = outline.get("opponent_resolution") if isinstance(outline, dict) else None
+    death_due = isinstance(resolution, dict) and resolution.get("type") == "被杀"
+    missing = [
+        item
+        for item in before["items"]
+        if item["status"] == "missing" or death_due and item["status"] == "unknown"
+    ]
     if before["status"] != "unfulfilled" or not missing:
         return text, raw, failed, note
     spans = _tail_spans(text)

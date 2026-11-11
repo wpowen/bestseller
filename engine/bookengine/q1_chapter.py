@@ -4,7 +4,7 @@ from copy import deepcopy
 import time
 from .checks import high_confidence, roll_day
 from .contracts import choose_contract, valid_extract, payoff_ok, observations, reduce_growth
-from .endings import ending_candidates, english_hits, apply_scene
+from .endings import ending_candidates, english_hits, apply_scene, repair_final_closure
 from .identity import name_hits, writer_identity_bible, writer_identity_outline
 from .hook_momentum import repair_after_draft
 from .precision import _sentences, apply as sentence_edits
@@ -274,6 +274,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["final_closure"] = guarded(repair_final_closure)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(

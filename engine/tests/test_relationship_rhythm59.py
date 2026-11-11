@@ -121,6 +121,17 @@ def test_invalid_exemption_is_a_structure_issue():
     assert any("combat_run_exemption" in issue for issue in issues)
 
 
+def test_null_optional_exemption_is_absent_not_an_invalid_request():
+    bible = final_bible()
+    for stage in bible["volumes"]:
+        stage["combat_run_exemption"] = None
+    bible.update(reader_promise_contract_version=0, antagonists=[])
+
+    issues = structure_issues(bible, 20)
+
+    assert not any("combat_run_exemption" in issue for issue in issues)
+
+
 def test_checkup_separates_approved_and_unapproved_excess_runs(tmp_path):
     from tools.book_checkup import check_book
     import yaml

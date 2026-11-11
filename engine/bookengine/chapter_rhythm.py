@@ -140,7 +140,7 @@ def combat_exemption_issues(bible):
     final = max(stages, key=lambda row: integer(row.get("end"))) if stages else None
     issues = []
     for stage in stages:
-        if "combat_run_exemption" not in stage:
+        if stage.get("combat_run_exemption") in (None, "", {}):
             continue
         if stage is not final or combat_run_exemption(bible) is None:
             issues.append(

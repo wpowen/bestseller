@@ -5,9 +5,9 @@ from pathlib import Path
 
 from .chapter_rhythm import rhythm_issues
 from .core_ability import ability_issues
-from .ability_methods import primary_target
 from .q1_schema import integer, rows
-from .solution_substance import chapter_nouns, solution_issues
+from .solution_substance import solution_issues
+from .solution_sequences import solution_plot_history, solution_sequence_issues
 from .structure_planning import opponent_presence_issues
 
 
@@ -110,10 +110,12 @@ def cache_replan_issues(bible, prior, cached):
         return []
     report = _report(cached)
     chapters = cached.get("chapters", [])
-    plot = solution_issues(bible, prior, chapters) + ability_issues(bible, prior, chapters)
-    plot_history = [
-        dict(number=row["number"], nouns=chapter_nouns(row, bible), target=primary_target(row)) for row in prior
-    ]
+    plot = (
+        solution_issues(bible, prior, chapters)
+        + solution_sequence_issues(bible, prior, chapters)
+        + ability_issues(bible, prior, chapters)
+    )
+    plot_history = solution_plot_history(bible, prior)
     rhythm = rhythm_issues(bible, prior, chapters)
     opponents = opponent_presence_issues(bible, chapters)
     return [

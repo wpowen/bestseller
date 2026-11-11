@@ -363,6 +363,7 @@ def check_book(book, *, source="final"):
     from bookengine.quote_text import quote_checkup
     from bookengine.dialogue_hygiene import dialogue_checkup
     from bookengine.solution_sequences import solution_sequence_checkup
+    from bookengine.first_appearances import first_appearance_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -454,6 +455,7 @@ def check_book(book, *, source="final"):
         unclosed_quotes=quote_checkup(chapters),
         dialogue_repetitions=dialogue_checkup(bible, chapters),
         solution_sequences=solution_sequence_checkup(bible, chapters, book),
+        world_introductions=first_appearance_checkup(bible, chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

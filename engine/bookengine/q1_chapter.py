@@ -20,6 +20,7 @@ from .opening_promises import repair_opening_promises, previous_promise_context
 from .planning_drift import observe_plan_alignment
 from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
 from .solution_sequences import repair_solution_sequence, writer_solution_sequence_context
+from .first_appearances import repair_first_appearances, writer_first_appearance_instruction
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -153,6 +154,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     instruction += writer_rhythm_instruction(outline)
     instruction += writer_payoff_instruction(outline)
+    instruction += writer_first_appearance_instruction(out, idx, bible, outline)
 
     def write_draft(suffix):
         saved = client.prefix
@@ -269,6 +271,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     text, raw, failed, exit_tail_repair = guarded(repair_exit_tail)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["first_appearances"] = guarded(repair_first_appearances)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
     )
     text, raw, failed, notes["solution_sequence"] = guarded(repair_solution_sequence)(
         client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask

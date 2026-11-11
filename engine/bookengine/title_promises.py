@@ -99,7 +99,7 @@ def normalize_promise_references(bible):
             if reference in ids:
                 continue
             alias = re.sub(r"[\s_-]+", "", reference).casefold()
-            match = primary if alias in {"mainpromise", "primarypromise", "primary", "主承诺"} else None
+            match = primary if alias in {"p01", "p1", "mainpromise", "primarypromise", "primary", "主承诺"} else None
             match = match or next((row for row in ordered if _text(row.get("text")) in reference), None)
             if match:
                 payoff["promise_id"] = match["id"]
@@ -332,17 +332,33 @@ def title_promise_checkup(bible, chapters=()):
     from .story_payoffs import story_payoff_checkup
 
     density = []
-    primary = _primary_id(bible)
-    for stage in _rows(bible.get("volumes")):
+    normalized = normalize_promise_references(bible)
+    primary = _primary_id(normalized)
+    for stage in _rows(normalized.get("volumes")):
         payoffs = [row for row in _rows(stage.get("promise_payoffs")) if row.get("promise_id") == primary]
+        payoff_chapters = [_integer(row.get("chapter")) for row in payoffs]
+        scales = {row.get("scale") for row in payoffs}
+        start, end = _integer(stage.get("start")), _integer(stage.get("end"))
+        midpoint = start + (end - start) // 2
+        small = next((row for row in payoffs if row.get("scale") == "小兑现"), {})
+        large = next((row for row in payoffs if row.get("scale") == "大兑现"), {})
+        if len(payoffs) < 2 or len(set(payoff_chapters)) < 2:
+            density_status = "missing_two_points"
+        elif scales != {"小兑现", "大兑现"}:
+            density_status = "invalid_scales"
+        elif (
+            not start <= _integer(small.get("chapter")) <= midpoint
+            or not end - 1 <= _integer(large.get("chapter")) <= end
+        ):
+            density_status = "invalid_positions"
+        else:
+            density_status = "met"
         density.append(
             {
                 "stage": stage.get("number"),
                 "count": len(payoffs),
-                "chapters": [_integer(row.get("chapter")) for row in payoffs],
-                "status": "met"
-                if len(payoffs) >= 2 and len({_integer(row.get("chapter")) for row in payoffs}) >= 2
-                else "missing_two_points",
+                "chapters": payoff_chapters,
+                "status": density_status,
             }
         )
     kill_required = "杀" in (_text(bible.get("title")) + "".join(_text(v) for v in bible.get("selling_points", [])))

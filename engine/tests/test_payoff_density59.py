@@ -3,7 +3,12 @@
 import json
 
 from bookengine.story_payoffs import review_story_payoffs
-from bookengine.title_promises import ensure_reader_promise_contract, structure_promise_issues
+from bookengine.title_promises import (
+    ensure_reader_promise_contract,
+    normalize_promise_references,
+    structure_promise_issues,
+    title_promise_checkup,
+)
 
 
 def design(title="借兽杀仇"):
@@ -69,6 +74,10 @@ def test_each_stage_needs_distinct_middle_small_and_late_large_payoffs():
     bible["volumes"][0]["promise_payoffs"][1]["chapter"] = bible["volumes"][0]["promise_payoffs"][0]["chapter"]
     assert any("章号不同" in issue for issue in structure_promise_issues(bible, 20))
 
+    bible = design(title="借兽清算")
+    bible["volumes"][0]["promise_payoffs"][0]["chapter"] = 7
+    assert title_promise_checkup(bible)["payoff_density"][0]["status"] == "invalid_positions"
+
     assert not [issue for issue in structure_promise_issues(design(title="借兽清算"), 20) if "payoff" in issue]
 
 
@@ -78,6 +87,19 @@ def test_literal_kill_in_title_requires_at_least_one_opponent_killed():
 
     bible["volumes"][-1]["opponent_resolution"]["type"] = "被杀"
     assert not any("至少一个阶段反派被杀" in issue for issue in structure_promise_issues(bible, 20))
+
+
+def test_model_p01_alias_binds_to_primary_promise_before_validation_and_checkup():
+    bible = design(title="借兽清算")
+    for stage in bible["volumes"]:
+        for payoff in stage["promise_payoffs"]:
+            payoff["promise_id"] = "P01"
+
+    normalized = normalize_promise_references(bible)
+    primary = next(row["id"] for row in normalized["reader_promises"] if row["primary"])
+
+    assert {payoff["promise_id"] for stage in normalized["volumes"] for payoff in stage["promise_payoffs"]} == {primary}
+    assert all(row["status"] == "met" for row in title_promise_checkup(bible)["payoff_density"])
 
 
 def test_story_payoff_review_schema_uses_current_chapter_and_wrong_chapter_stays_unknown():

@@ -258,7 +258,7 @@ class PolishResumeTestsPart1(PolishResumeTests):
             "b",
             {"b": ""},
         )
-        expected = BODY.replace("\n\n", "\n\n她在门口停了一下。\n\n", 1)
+        expected = BODY + "\n\n她在门口停了一下。"
         self.assertEqual(self.files[self.out / "chapter-001.body.md"], expected)
         self.assertEqual(
             [c["stage"] for c in client.calls],

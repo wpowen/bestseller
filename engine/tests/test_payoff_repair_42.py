@@ -27,7 +27,7 @@ def fake_extract(client, name, text, state, bible, outline, rows, final=False):
     return raw, False, 0
 
 
-def test_missing_due_payoff_gets_one_grounded_patch_without_changing_tail():
+def test_missing_due_payoff_is_appended_after_all_existing_events():
     original = "顾冬岚推开石门。\n\n门外的追兵已经举刀。"
     client = FakeClient([{"patch": {"after": 1, "text": "顾冬岚夺回三枚灵石。"}}])
     changed, raw, failed, note = repair_after_draft(
@@ -51,7 +51,8 @@ def test_missing_due_payoff_gets_one_grounded_patch_without_changing_tail():
         fake_ask,
     )
     assert "顾冬岚夺回三枚灵石" in changed
-    assert changed.endswith("门外的追兵已经举刀。")
+    assert changed.index("门外的追兵已经举刀。") < changed.index("顾冬岚夺回三枚灵石")
+    assert changed.endswith("顾冬岚夺回三枚灵石。")
     assert note["payoff"]["status"] == "repaired"
     assert note["hook"]["status"] == "kept"
     assert raw["payoff"]["fulfilled"] is True
@@ -85,9 +86,9 @@ def test_due_payoff_patch_is_relocated_to_final_three_paragraphs_before_recheck(
         fake_ask,
     )
 
-    assert changed.index("第6段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石")
+    assert changed.index("第8段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石")
     assert note["payoff"]["requested_after"] == 1
-    assert note["payoff"]["effective_after"] == 6
+    assert note["payoff"]["effective_after"] == 8
     assert note["payoff"]["placement"] == "relocated_to_tail"
     assert not failed
 
@@ -100,7 +101,7 @@ def test_finish_extraction_patch_uses_the_same_tail_placement_guard():
     changed, accepted = supplement(original, {"after": 1, "text": "兑现结果。"})
 
     assert accepted is True
-    assert changed.index("第6段。") < changed.index("兑现结果。") < changed.index("第7段。")
+    assert changed.index("第8段。") < changed.index("兑现结果。")
 
 
 def test_repair_does_nothing_when_hook_and_payoff_are_already_grounded():

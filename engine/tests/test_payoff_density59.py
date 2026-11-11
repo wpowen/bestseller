@@ -4,6 +4,8 @@ import json
 
 from bookengine.story_payoffs import review_story_payoffs
 from bookengine.title_promises import (
+    bind_title_contracts,
+    enforce_promise_positions,
     ensure_reader_promise_contract,
     normalize_promise_references,
     structure_promise_issues,
@@ -79,6 +81,47 @@ def test_each_stage_needs_distinct_middle_small_and_late_large_payoffs():
     assert title_promise_checkup(bible)["payoff_density"][0]["status"] == "invalid_positions"
 
     assert not [issue for issue in structure_promise_issues(design(title="借兽清算"), 20) if "payoff" in issue]
+
+
+def test_planning_projects_late_small_payoffs_back_to_each_stage_midpoint():
+    bible = design(title="借兽清算")
+    bible["volumes"][0]["promise_payoffs"][0]["chapter"] = 7
+    bible["volumes"][1]["promise_payoffs"][0]["chapter"] = 16
+
+    repaired = enforce_promise_positions(bible, 20)
+
+    assert [stage["promise_payoffs"][0]["chapter"] for stage in repaired["volumes"]] == [5, 15]
+    assert not [issue for issue in structure_promise_issues(repaired, 20) if "兑现" in issue or "payoff" in issue]
+    assert bible["volumes"][0]["promise_payoffs"][0]["chapter"] == 7
+
+
+def test_only_validated_schedule_can_put_a_payoff_or_resolution_on_an_outline():
+    bible = design(title="借兽清算")
+    batch = [
+        {
+            "number": 20,
+            "type": "揭秘",
+            "reader_promise_id": "model-invented",
+            "promise_payoff": {"action": "并非计划内兑现"},
+            "opponent_resolution": {"name": "白啸", "type": "追踪者", "outcome": "逼退"},
+        }
+    ]
+
+    bound = bind_title_contracts(bible, batch)[0]
+
+    assert "reader_promise_id" not in bound
+    assert "promise_payoff" not in bound
+    assert "opponent_resolution" not in bound
+
+
+def test_scheduled_opponent_resolution_makes_the_planned_chapter_combat():
+    bible = design(title="借兽清算")
+    chapter = bible["volumes"][0]["opponent_resolution"]["chapter"]
+
+    bound = bind_title_contracts(bible, [{"number": chapter, "type": "收获", "rhythm_type": "收获"}])[0]
+
+    assert bound["opponent_resolution"]["name"] == "岑烈"
+    assert bound["type"] == "对抗" and bound["rhythm_type"] == "对抗"
 
 
 def test_literal_kill_in_title_requires_at_least_one_opponent_killed():

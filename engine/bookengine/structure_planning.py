@@ -5,6 +5,7 @@ from copy import deepcopy
 from .q1_schema import defaults, integer, rows, DATA
 from .storage import save
 from .title_promises import (
+    enforce_promise_positions,
     ensure_reader_promise_contract,
     normalize_promise_references,
     planning_promise_issues,
@@ -111,7 +112,7 @@ def repair_structure(bible, threads, total, ask, out):
     current, lines = ensure_reader_promise_contract(deepcopy(bible), total), deepcopy(threads)
     attempts = []
     for retry in range(4):
-        current = normalize_promise_references(current)
+        current = enforce_promise_positions(normalize_promise_references(current), total)
         issues = structure_issues(current, total)
         attempts.append(dict(regeneration=retry, issues=issues))
         save(

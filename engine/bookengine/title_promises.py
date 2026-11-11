@@ -106,6 +106,36 @@ def normalize_promise_references(bible):
     return current
 
 
+def enforce_promise_positions(bible, total):
+    """Project invalid primary-payoff chapter numbers into their stage windows."""
+    current = deepcopy(bible) if isinstance(bible, dict) else {}
+    if _integer(current.get("reader_promise_contract_version")) < 2:
+        return current
+    primary = _primary_id(current)
+    for stage in _rows(current.get("volumes")):
+        start, end = (_integer(stage.get(key)) for key in ("start", "end"))
+        if start <= 0 or end < start:
+            continue
+        midpoint = start + (end - start) // 2
+        resolution = stage.get("opponent_resolution") if isinstance(stage.get("opponent_resolution"), dict) else {}
+        resolution_chapter = _integer(resolution.get("chapter"))
+        for payoff in _rows(stage.get("promise_payoffs")):
+            if payoff.get("promise_id") != primary:
+                continue
+            chapter = _integer(payoff.get("chapter"))
+            if payoff.get("scale") == "小兑现" and not start <= chapter <= midpoint:
+                payoff["chapter"] = midpoint
+            elif payoff.get("scale") == "大兑现" and not end - 1 <= chapter <= end:
+                payoff["chapter"] = (
+                    resolution_chapter
+                    if end - 1 <= resolution_chapter <= end
+                    else end - 1
+                    if end == _integer(total) and end > start
+                    else end
+                )
+    return current
+
+
 def _primary_id(bible):
     promises = _rows(bible.get("reader_promises"))
     return next((row.get("id") for row in promises if row.get("primary")), promises[0].get("id") if promises else "")
@@ -250,6 +280,9 @@ def planning_promise_issues(bible, batch):
 def bind_title_contracts(bible, batch):
     """Project validated stage schedules onto exact chapters after bounded rewrite fallback."""
     current = deepcopy(batch)
+    for row in current:
+        for key in ("reader_promise_id", "promise_payoff", "opponent_resolution"):
+            row.pop(key, None)
     mapped = {_integer(row.get("number")): row for row in current if isinstance(row, dict)}
     for stage in _rows(bible.get("volumes")):
         for payoff in _rows(stage.get("promise_payoffs")):
@@ -264,6 +297,7 @@ def bind_title_contracts(bible, batch):
         row = mapped.get(_integer(resolution.get("chapter")))
         if row is not None:
             row["opponent_resolution"] = {key: resolution.get(key) for key in ("name", "type", "outcome")}
+            row.update(type="对抗", rhythm_type="对抗")
     total = _integer(
         bible.get("reader_promise_total"),
         max([_integer(stage.get("end")) for stage in _rows(bible.get("volumes"))] or [0]),

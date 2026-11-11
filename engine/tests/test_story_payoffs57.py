@@ -140,9 +140,7 @@ def test_ambiguous_scheduled_death_is_rewritten_but_rechecked_strictly():
                 ]
             }
         return {
-            "items": [
-                {"id": item["id"], "status": "fulfilled", "evidence": [{"chapter": 10, "quote": replacement}]}
-            ]
+            "items": [{"id": item["id"], "status": "fulfilled", "evidence": [{"chapter": 10, "quote": replacement}]}]
         }
 
     changed, _, failed, note = repair_story_payoffs(

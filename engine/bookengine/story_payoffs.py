@@ -199,9 +199,7 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     resolution = outline.get("opponent_resolution") if isinstance(outline, dict) else None
     death_due = isinstance(resolution, dict) and resolution.get("type") == "被杀"
     missing = [
-        item
-        for item in before["items"]
-        if item["status"] == "missing" or death_due and item["status"] == "unknown"
+        item for item in before["items"] if item["status"] == "missing" or death_due and item["status"] == "unknown"
     ]
     if before["status"] != "unfulfilled" or not missing:
         return text, raw, failed, note

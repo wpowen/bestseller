@@ -82,7 +82,14 @@ def analyze_explanation_density(text):
             issues.append(dict(id=index, quote=paragraph, start=start, end=end, **result))
         elif result["inference_reason"]:
             inferences.append(
-                dict(id=index, quote=paragraph, start=start, end=end, reason=result["inference_reason"], decision="Inference")
+                dict(
+                    id=index,
+                    quote=paragraph,
+                    start=start,
+                    end=end,
+                    reason=result["inference_reason"],
+                    decision="Inference",
+                )
             )
     explanation_chars = sum(row["chars"] for row in issues)
     issue_ids = {row["id"] for row in issues}

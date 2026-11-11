@@ -237,6 +237,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     plot_history = solution_plot_history(bible, prior)
     dynamic_issues = cache_replan_issues(bible, prior, cached)
     plot_stale = bool(cached and dynamic_issues)
+    rhythm_stale = bool(
+        cached
+        and cached.get("rhythm_contract_version", 0) < RHYTHM_VERSION
+        and rhythm_issues(bible, prior, cached["chapters"])
+    )
     revision_suffix = ""
     if plot_stale and getattr(client, "out", None):
         revision_suffix = "-observed" + str(len(list((Path(client.out) / "outline-diversity").glob("*.json"))) + 1)
@@ -244,6 +249,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached
         and (
             plot_stale
+            or rhythm_stale
             or (
                 cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
                 and (

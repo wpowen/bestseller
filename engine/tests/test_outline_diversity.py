@@ -231,6 +231,54 @@ def test_existing_raw_terminal_window_is_reused_and_next_window_is_generated(tmp
     assert path.read_bytes() == before
 
 
+def test_old_cached_relationship_outline_with_combat_is_superseded_once(tmp_path):
+    bad = outline(4, "旧关系章")
+    bad.update(
+        relationship_change={
+            "people": ["顾川序", "霜砚秋"],
+            "cause": "隐瞒伤势",
+            "before": "彼此猜疑",
+            "after": "建立有限信任",
+        },
+        scenes=[
+            {
+                "goal": "确认是否可信",
+                "action": "顾川序挥刀撞开暗门并躲避追杀",
+                "choice": "顾川序挥刀撞开暗门并躲避追杀",
+            },
+            {
+                "goal": "重新同行",
+                "action": "霜砚秋坦白顾虑",
+                "choice": "顾川序接受她保留拒绝同行的权利",
+            },
+        ],
+    )
+    save(
+        tmp_path / "outline-diversity/004-004.json",
+        dict(
+            status="passed",
+            chapters=[bad],
+            planned_chapters=[bad],
+            attempts=[dict(regeneration=0)],
+            issues=[],
+            used={},
+            rhythm_contract_version=10,
+            structure_checks_version=diversity.STRUCTURE_CHECKS_VERSION,
+        ),
+    )
+    good = deepcopy(bad)
+    good["scenes"][0].update(
+        action="顾川序坦白自己隐瞒伤势的原因",
+        choice="霜砚秋接受坦白，但要求保留拒绝同行的权利",
+    )
+    client = Fixture(tmp_path, [dict(chapters=[good])])
+
+    result = plan(client, 4, 4)
+
+    assert result[0]["scenes"][0]["action"] == good["scenes"][0]["action"]
+    assert len(client.calls) == 1
+
+
 def test_nonterminal_or_unrelated_windows_are_not_used_for_resume(tmp_path):
     save(tmp_path / "outline-diversity/001-010.json", dict(status="passed", chapters=[outline(1, "旧岸")]))
     save(tmp_path / "outline-diversity/011-020.json", dict(status="repairing", chapters=[outline(11, "未定")]))

@@ -92,6 +92,33 @@ def _previous_outcome_facts(state, history, chapter_rows):
     )
 
 
+def _selected_card_writer_view(bible):
+    card = bible.get("selected_card") if isinstance(bible.get("selected_card"), dict) else {}
+    points = [
+        point
+        for point in bible.get("selected_card_rule_points", [])
+        if isinstance(point, str) and point.strip() and len(point.strip()) <= 16
+    ]
+    return {
+        key: card.get(key)
+        for key in ("title", "premise", "opening", "hook")
+        if isinstance(card.get(key), str) and card[key].strip()
+    } | {
+        "核心规则要点": points,
+        "写法约束": "只据要点设计本章动作与后果，禁止照搬选题卡规则原句或把要点拼回说明句。",
+    }
+
+
+def _power_writer_view(bible):
+    power = bible.get("power") if isinstance(bible.get("power"), dict) else {}
+    return {
+        key: power.get(key) for key in ("name", "object") if isinstance(power.get(key), str) and power[key].strip()
+    } | {
+        "rule_points": _selected_card_writer_view(bible)["核心规则要点"],
+        "rule": "禁止照搬选题卡规则原句；用本章具体操作、限制与后果体现。",
+    }
+
+
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
     dropped = [] if dropped is None else dropped
     continuity_facts = writer_continuity_facts(state, bible, chapter)
@@ -139,7 +166,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
                     ),
                     object_hook=lambda d: {k: v for k, v in d.items() if k != "最后更新"},
                 ),
-                power=bible.get("power", {}),
+                power=_power_writer_view(bible),
                 realm_ability=next(
                     (
                         str(v)[:160]
@@ -232,7 +259,11 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     handoff_keys = ("开场必须承接", "上章地点未知", "上章结尾地点候选，仅供参考不当作事实")
     outline = {**{k: outline[k] for k in handoff_keys if k in outline}, **outline}
     return [
-        *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
+        *(
+            [("用户选定事实，只可扩写不可替换；规则只给要点", pack(_selected_card_writer_view(bible)))]
+            if bible.get("selected_card")
+            else []
+        ),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
         *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),

@@ -57,7 +57,7 @@ def test_real_chapter_locates_actual_first_second_paragraphs_and_three_card_sent
     assert len(cards) == 3
     for fragment in ("作为王庭统阵者", "作为九霄宗客卿", "白启榆是旧军械库的守库人与阵纹师"):
         assert any(fragment in r["text"] for r in cards)
-    assert result["counts"] == {"near_paragraph_pairs": 1, "card_explanations": 3}
+    assert result["counts"] == {"near_paragraph_pairs": 1, "card_explanations": 3, "card_rule_copies": 0}
     assert result["rules"]["card_repair_above"] == 1
     for node in result["needs_repair"]:
         assert node["text"] == text[node["start"] : node["end"]]
@@ -72,7 +72,7 @@ def test_narration_pair_must_be_at_most_three_paragraphs_apart(gap, expected):
 @pytest.mark.parametrize("opener, closer", [("“", "”"), ("「", "」"), ('"', '"'), ("『", "』")])
 def test_dialogue_and_mixed_speech_paragraphs_do_not_enter_similarity_repairs(opener, closer):
     text = opener + FIRST + closer + "\n\n" + opener + SECOND + closer
-    assert analyze(text)["counts"] == {"near_paragraph_pairs": 0, "card_explanations": 0}
+    assert analyze(text)["counts"] == {"near_paragraph_pairs": 0, "card_explanations": 0, "card_rule_copies": 0}
     assert not analyze("他说：" + opener + FIRST + closer + "\n\n" + SECOND)["needs_repair"]
     assert analyze(opener + CARDS + closer)["counts"]["card_explanations"] == 0
 
@@ -90,6 +90,40 @@ def test_single_card_sentence_is_reported_but_does_not_trigger_repair():
     result = analyze("作为南城的守将，他不得不拦住城门。")
     assert result["counts"]["card_explanations"] == 1
     assert not result["needs_repair"]
+
+
+def test_selected_card_power_rule_near_copy_is_a_repair_candidate():
+    from bookengine.prose_similarity import analyze_prose
+
+    rule = "每斩断一条控制线，都能把一条线转接到操控者身上；若目标未察觉，傀儡会暂时继承对方的部分地位与权限。"
+    text = (
+        "这是他修习木偶术后才有的转接。每斩断一条控制线，他都能把这条线转接到操控者身上；"
+        "若目标毫无察觉，被转接的傀儡便可暂时继承对方一部分地位与权限。"
+    )
+
+    result = analyze_prose(text, {"selected_card": {"golden_finger_rule": rule}, "power": {"rule": rule}})
+
+    assert result["counts"]["card_rule_copies"] == 1
+    assert [row["kind"] for row in result["records"]] == ["card_rule_copy"]
+    assert result["needs_repair"][0]["reasons"] == ["card_rule_copy"]
+
+
+def test_writer_context_exposes_only_short_rule_points_not_the_selected_card_sentence():
+    from bookengine.q1_extract import context
+
+    rule = "每斩断一条控制线，都能把一条线转接到操控者身上；若目标未察觉，傀儡会暂时继承权限。"
+    bible = {
+        "selected_card": {"title": "断线", "premise": "木偶师夺回自由。", "golden_finger_rule": rule},
+        "selected_card_rule_points": ["斩断控制线", "转接操控者", "目标未察觉", "继承权限"],
+        "power": {"object": "控制线", "rule": rule, "ability": rule, "cost": rule, "limit": rule},
+        "characters": [{"name": "赵溪", "role": "protagonist"}],
+    }
+    sections = dict(context(bible, {}, {"number": 1}, {"number": 1, "scenes": []}, {}, [], [], ""))
+    rendered = json.dumps(sections, ensure_ascii=False)
+
+    assert rule not in rendered
+    assert all(point in rendered for point in bible["selected_card_rule_points"])
+    assert "禁止照搬选题卡规则原句" in rendered
 
 
 def test_both_overlap_gates_are_required_and_short_repeated_orders_are_excluded():

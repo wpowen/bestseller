@@ -202,6 +202,35 @@ def test_card_drift_fallback_never_replaces_valid_stage_contracts_with_the_premi
     assert selected["premise"] not in (stage["location"], stage["antagonist"], stage["goal"], stage["climax"])
 
 
+def test_card_rule_fallback_saves_short_points_without_copying_rule_into_every_power_field():
+    from bookengine.selected_card import enforce
+
+    rule = "每斩断一条控制线，都能转接到操控者身上；目标未察觉时，木偶暂时继承对方权限。"
+    selected = card(title="断线", premise="木偶师夺回自由。", golden_finger_rule=rule)
+    locked = dict(
+        name="赵溪",
+        identity="木偶师",
+        setting="禁库",
+        object="控制线",
+        keywords=dict(
+            identity=["木偶师"],
+            setting=["禁库"],
+            object=["控制线"],
+            rule=["斩断控制线", "转接操控者", "目标未察觉", "继承权限"],
+        ),
+    )
+    source = bible()
+    source.setdefault("world", {"levels": [], "rules": []})
+    source.setdefault("power", {})
+    source["characters"][0].update(name="赵溪", identity="错误身份")
+
+    fixed, _ = enforce(source, {"threads": []}, selected, locked, ["identity", "rule"])
+
+    assert fixed["selected_card_rule_points"] == locked["keywords"]["rule"]
+    assert fixed["power"]["rule"] == rule
+    assert not any(fixed["power"].get(field) == rule for field in ("ability", "cost", "limit"))
+
+
 def test_first_group_is_selectable_before_slowest_generation_finishes(tmp_path):
     finished, release = threading.Event(), threading.Event()
 

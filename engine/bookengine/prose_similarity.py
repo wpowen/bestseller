@@ -17,7 +17,14 @@ from .text import _paragraph_spans
 
 
 RULES = dict(
-    ngram=3, jaccard_min=0.32, containment_min=0.7, paragraph_distance=3, min_characters=10, card_repair_above=1
+    ngram=3,
+    jaccard_min=0.32,
+    containment_min=0.7,
+    paragraph_distance=3,
+    min_characters=10,
+    card_repair_above=1,
+    card_rule_ratio=0.68,
+    card_rule_containment=0.72,
 )
 _QUOTES = set("“”‘’「」『』\"'«»＂＇")
 _AS_ROLE = re.compile(r"作为[^，,。！？!?；;：:\n]{2,30}[，,]\s*(?:他|她|其)")
@@ -61,6 +68,44 @@ def _identity_matches(node, identities):
     return matches
 
 
+def _power_rules(bible):
+    if not isinstance(bible, dict):
+        return []
+    selected = bible.get("selected_card") if isinstance(bible.get("selected_card"), dict) else {}
+    power = bible.get("power") if isinstance(bible.get("power"), dict) else {}
+    values = [selected.get("golden_finger_rule"), power.get("rule")]
+    return list(
+        dict.fromkeys(value.strip() for value in values if isinstance(value, str) and len(_normalize(value)) >= 16)
+    )
+
+
+def _rule_copy(node, rules):
+    candidate = _normalize(node["text"])
+    if len(candidate) < 16:
+        return None
+    best = None
+    for source in rules:
+        normalized = _normalize(source)
+        matcher = SequenceMatcher(None, normalized, candidate, autojunk=False)
+        ratio = matcher.ratio()
+        containment = matcher.find_longest_match().size / min(len(normalized), len(candidate))
+        if ratio >= RULES["card_rule_ratio"] or containment >= RULES["card_rule_containment"]:
+            value = (ratio, containment, source)
+            best = max(best, value) if best else value
+    if not best:
+        return None
+    ratio, containment, source = best
+    return dict(
+        node,
+        kind="card_rule_copy",
+        template="selected_card_power_rule",
+        similarity=round(ratio, 4),
+        containment=round(containment, 4),
+        source_chars=len(source),
+        status="Inference",
+    )
+
+
 def analyze_prose(text, bible=None):
     """Locate nearby paraphrases and card templates without changing any bytes.
 
@@ -72,8 +117,9 @@ def analyze_prose(text, bible=None):
     paragraphs = _paragraph_spans(text)
     sentences = _sentences(text, paragraphs)
     identities = _identity_windows(bible)
+    power_rules = _power_rules(bible)
     narrative = {}
-    cards = []
+    cards, rule_copies = [], []
     for number, (start, end) in enumerate(paragraphs, 1):
         passage = text[start:end]
         nodes = [n for n in sentences if start <= n["start"] < end]
@@ -84,6 +130,9 @@ def analyze_prose(text, bible=None):
                 grams = {normalized[i : i + size] for i in range(len(normalized) - size + 1)}
                 narrative[number] = (normalized, grams)
         for node in nodes:
+            copied_rule = _rule_copy(node, power_rules)
+            if copied_rule:
+                rule_copies.append(copied_rule)
             if node["quoted"] or any(c in _QUOTES for c in node["text"]):
                 continue
             matches = _identity_matches(node, identities)
@@ -132,9 +181,14 @@ def analyze_prose(text, bible=None):
             pending.append(occurrences[-1])
     if len(cards) > RULES["card_repair_above"]:
         pending.extend(dict(c, action="repair", reasons=["card_explanation"]) for c in cards)
+    pending.extend(dict(row, action="repair", reasons=["card_rule_copy"]) for row in rule_copies)
     return dict(
-        counts=dict(near_paragraph_pairs=len(pairs), card_explanations=len(cards)),
-        records=[*pairs, *cards],
+        counts=dict(
+            near_paragraph_pairs=len(pairs),
+            card_explanations=len(cards),
+            card_rule_copies=len(rule_copies),
+        ),
+        records=[*pairs, *cards, *rule_copies],
         needs_repair=sorted(pending, key=lambda n: n["start"]),
         rules=dict(RULES),
         status="Inference",

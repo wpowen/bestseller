@@ -434,6 +434,7 @@ def check_book(book, *, source="final"):
         prose_similarity=dict(
             near_paragraph_pairs=sum(r["counts"]["near_paragraph_pairs"] for r in similarity),
             card_explanations=sum(r["counts"]["card_explanations"] for r in similarity),
+            card_rule_copies=sum(r["counts"]["card_rule_copies"] for r in similarity),
             rules=dict(RULES),
             status="Inference",
             chapters=[r for r in similarity if r["records"]],

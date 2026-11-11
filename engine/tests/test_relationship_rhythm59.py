@@ -128,7 +128,7 @@ def test_relationship_local_rewrite_uses_real_planning_prompt_assembly(tmp_path)
         [],
         [{"number": number, "type": "对抗", "scenes": [{"action": "击退追兵"}]} for number in range(1, 4)] + [invalid],
         rewrite,
-        bible={"volumes": [{"number": 1, "start": 1, "end": 4}]},
+        bible={"structure_version": 1, "volumes": [{"number": 1, "start": 1, "end": 4}]},
     )
 
     assert result[-1]["scenes"] == corrected["scenes"]

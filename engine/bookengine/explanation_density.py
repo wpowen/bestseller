@@ -17,9 +17,10 @@ SHORT_RATIO_THRESHOLD = 0.4
 
 _DIALOGUE = re.compile(r"“[^”]*”")
 _CAUSAL = re.compile(
-    r"因为|所以|因此|意味着|说明|证明|原来|如果|若|只要|一旦|除非|之所以|取决于|"
-    r"不是.{0,16}而是|并非.{0,16}而是|直到.{0,16}才"
+    r"因为|所以|因此|意味着|说明|证明|原来|如果|若(?!有若无)|只要|一旦|除非|之所以|取决于|"
+    r"不是.{0,16}而是|并非.{0,16}而是"
 )
+_TEMPORAL_ACTION = re.compile(r"直到.{0,24}才")
 _MODAL = re.compile(r"必须|不得|不能|只能|不必|只需|可以|能够|才会|才能|便会|便能|不会|并不")
 _ANALYTIC = re.compile(
     r"判断|认定|发现|明白|知道|看出|真正|根本|其实|显然|足以|同一|每一|两边|一边|另一|"
@@ -39,6 +40,7 @@ def _classify(paragraph):
     modal = len(_MODAL.findall(prose))
     analytic = len(_ANALYTIC.findall(prose))
     technical = len(_TECHNICAL.findall(prose))
+    inference_reason = "temporal_action_not_explanation" if _TEMPORAL_ACTION.search(prose) else None
     category = None
     if chars >= 35 and (modal >= 2 or "规则" in prose) and analytic + causal >= 1:
         category = "rule_repeat"
@@ -63,12 +65,14 @@ def _classify(paragraph):
         modal_markers=modal,
         analytic_markers=analytic,
         technical_markers=technical,
+        inference_reason=inference_reason if category is None else None,
     )
 
 
 def analyze_explanation_density(text):
     spans = _paragraph_spans(text)
     issues = []
+    inferences = []
     total = 0
     for index, (start, end) in enumerate(spans, 1):
         paragraph = text[start:end]
@@ -76,6 +80,10 @@ def analyze_explanation_density(text):
         total += result["chars"]
         if result["category"]:
             issues.append(dict(id=index, quote=paragraph, start=start, end=end, **result))
+        elif result["inference_reason"]:
+            inferences.append(
+                dict(id=index, quote=paragraph, start=start, end=end, reason=result["inference_reason"], decision="Inference")
+            )
     explanation_chars = sum(row["chars"] for row in issues)
     issue_ids = {row["id"] for row in issues}
     longest = run = 0
@@ -93,6 +101,7 @@ def analyze_explanation_density(text):
         "non_dialogue_chars": total,
         "longest_run": longest,
         "issues": issues,
+        "inferences": inferences,
         "basis": "finite surface heuristic; agent_editorial_not_human",
     }
 

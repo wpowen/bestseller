@@ -34,6 +34,11 @@ RELATIONSHIP_CONTROL = (
     "霜团没有碰骨片，只把爪子压在他的手背上。顾立谦松开手，退到它身后半步。"
 )
 
+ACTION_CONTROL = (
+    "矿车终于被撬离轨道，两根轨闩接连弹起。封住的检修口露出足以让伤者通过的空隙，众人合力将车推成斜坡。"
+    "顾砚没有松手，直到最后一名矿工拖着幼兽箱越过出口，才翻身滚开。"
+)
+
 
 def test_eval57_four_reviewed_chapters_are_in_dense_tier_but_relationship_scene_is_not():
     for number, text in EVAL57_DENSE.items():
@@ -41,6 +46,15 @@ def test_eval57_four_reviewed_chapters_are_in_dense_tier_but_relationship_scene_
         assert result["tier"] == "dense", (number, result)
         assert result["issues"]
     assert analyze_explanation_density(RELATIONSHIP_CONTROL)["tier"] == "normal"
+
+
+def test_temporal_action_paragraph_is_inference_and_never_a_repair_target():
+    result = analyze_explanation_density(ACTION_CONTROL)
+
+    assert result["tier"] == "normal"
+    assert result["issues"] == []
+    assert result["inferences"][0]["quote"] == ACTION_CONTROL
+    assert result["inferences"][0]["reason"] == "temporal_action_not_explanation"
 
 
 def test_fake_repair_turns_explanation_into_action_and_dialogue_without_losing_terms():

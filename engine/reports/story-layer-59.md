@@ -309,3 +309,136 @@ attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重�
 - 未 push，未合并 main；未改 `deai/`、`tools/webui/` 或真实书库。
 - **Unknown**：监工网页真机的平均每章耗时、规划占比、作废重排率、截断数、`plan_alignment`、关系章、连续对抗、兑现位置、被杀、术语铺垫、解释密度，以及三类修复的新回滚率。
 - **Unknown**：真人对中性 `第N章` 确定性改名的接受度；它满足“不为章名重复付费重排”的框架合同，不等于文学标题验收。
+
+## 返工三
+
+状态：返工三完成，待监工网页真机验收。
+
+本轮遵从分工调整，只改框架代码、跑假客户端和只读离线回算；没有启动、续写或新建真书。证据目录仅为：
+
+- `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller-tmp/web59-ch10-copy`
+- `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller-tmp/web59-ch19-copy`
+
+原网页书目录未改。以下“旧结果”均指保存副本的历史输出；“新规则”指当前代码的离线判定或假客户端契约，不冒充网页真机结果。
+
+### P0：关系章章纲、写手与修复
+
+根因已查实：
+
+1. `q1_schemas.yaml` 的阶段骨架 scene 原本没有 `choice` 字段，模型只能返回 `action`。
+2. `rhythm_skeleton.bind_stage_content()` 随后明确执行 `choice=action`，所以第 4、14 章的两场 scene 都出现逐字相同，不是模型原始输出自行复制。
+3. 第 4 章虽被标为情感，但旧硬重排策略不接收 `rhythm_scene_focus/content_mismatch`，战斗场景可带着关系标签进入写手。
+4. 第 14 章关系修复的 16 个目标中，模型给出 15 个逐字匹配的编辑；仅第 17 段把原文“目光冷下来”误写成“目光冷起来”。旧代码因一个 `original_mismatch` 把其余 15 个有效编辑全部回滚为 `invalid_edit_target`。
+
+代码变更：
+
+- 阶段骨架 schema、窗口和 fallback 都新增独立 `choice`；绑定阶段内容时分别保留 `action/choice`，不再互相复制。
+- 新增 `relationship_outline_issues()`：两场必须各有不同的 action/choice，且都落实坦白、试探、拒绝、让步、接受、边界或和解；握刀、撞门、追杀、闯关、受控搏斗为主动作时直接拦截。
+- `rhythm_relationship_scene` 成为硬问题，只本地重写目标章一次；返回章纲仍不合格就保留旧稿并记录，不接受只换标签。
+- 写手首段合同现在明确要求关系从 before 变到 after；追杀、机关和受控搏斗最多一笔带过。
+- 关系正文修复改为逐条采用有效编辑；单个错 `original` 记录到 `rejected_edits`，只要仍有至少 8 个有效主场景编辑就进入章型/状态/兑现复检。
+- 节奏合同升到 v11。旧缓存只有在新关系硬合同或其他硬规划合同确实失败时才失效；旧软诊断不会触发付费迁移。
+
+对 `web59-ch19-copy` 的只读回算：
+
+| 章 | 新章纲校验结果 | 主要缺陷 |
+| --- | --- | --- |
+| 4 | 拦截 | scene 1 `combat_main_action`；两场均 `choice_duplicates_action`；action/choice 非人际主动作 |
+| 14 | 拦截 | 两场均 `choice_duplicates_action`；scene 2 以探阵分工为主，非关系变化 |
+| 允许例 | 通过 | 第 14 章式合同改为“坦白失控冲动→对方交出阵路但保留收回权→接受叫停边界”，两场 action/choice 分开，issues 为 0 |
+
+假客户端走真实 `_ask → Client.stage` 拼装路径，stage 为 `plan-q1-chapters-4-4-relationship-offline`；发出的 prompt 逐字包含第 4 章战斗 action 和 relationship_change.before，schema 含 `choice`，返回的合格章纲被采用。契约测试保留在 `test_relationship_rhythm59.py`。
+
+旧网页副本没有被改写，故体检仍是 19 章中对抗 13 / 谋划 4 / 揭秘 2 / 情感 0，阶段 1 `missing_relationship`，第 4–7 章仍是未豁免连续 4 章对抗。这是历史结果，不是新代码真机结论。
+
+旧关系修复调用账：第 4 章 seq 66，`input_chars=4382`，返回编辑后 `after_type_mismatch`；第 14 章 seq 162，`input_chars=4818`，因上述单个错原文而 `invalid_edit_target`。新代码能让第 14 章候选进入后续复检，但没有付费模型重跑，最终能否变成情感章仍为 **Unknown**。
+
+### P1：相邻章开头重复
+
+7 对全部不是“没触发”。它们在初稿已重复，修复也全部请求，但 7/7 因返回段数不符合框架的隐藏要求而回滚，且没有一对进入 `cross-chapter-recheck`：
+
+| 对章 | 命中句数 | 修复调用 | 历史返回 | 历史结果 |
+| --- | ---: | --- | --- | --- |
+| 1/2 | 3 | seq 34 / 6609 chars / ok | 要 2 段，回 4 段 | `invalid_opening_patch` |
+| 5/6 | 1 | seq 83 / 6668 / truncated；seq 84 / 6668 / ok | 要 2 段，回 3 段 | `invalid_opening_patch` |
+| 6/7 | 2 | seq 92 / 6656 / truncated；seq 93 / 6681 / ok | 要 2 段，回 1 段 | `invalid_opening_patch` |
+| 10/11 | 2 | seq 135 / 6649 / ok | 要 2 段，回 4 段 | `invalid_opening_patch` |
+| 12/13 | 3 | seq 148 / 6665 / ok | 要 2 段，回 3 段 | `invalid_opening_patch` |
+| 13/14 | 1 | seq 158 / 6651 / ok | 要 1 段，回 3 段 | `invalid_opening_patch` |
+| 17/18 | 3 | seq 192 / 6657 / ok | 要 2 段，回 3 段 | `invalid_opening_patch` |
+
+写手真实路径原先先由 `q1_extract.context()` 发送 `previous[-900:]`，又由 `with_completed_action_context()` 追加末三段；本次所有命中原句都落在两段范围内，相当于逐字发送两遍。现在写手只收到保存的 summary/events/payoff/gains/costs 和结尾地点、在场人物、视角等结构化事实，不再收到上一章原句。修复 prompt 明写“必须恰好 N 个自然段”，只发送当前待改开头、命中诊断和当前状态；段数不符时记录 expected/returned。
+
+离线回算仍能在旧正文中检出这 7 对、共 15 个命中句；旧正文只读不变。假客户端按明确 N 段返回时能进入事实复检。网页模型在新 prompt 下的采用率仍为 **Unknown**。
+
+### P2-5：对手字段与卖点截断
+
+`opponent_resolutions.opponent` 不是体检展示错。`plan-q1-structure-redo` 原始结构里五阶段的 `antagonist` 与 `opponent_resolution.name` 都是具名对手；随后 `selected_card.enforce()` 只因 identity/setting 漂移，就把 volume 的全部字符串字段替换成整段 premise。`title_promises` 只是如实展示被污染的 `stage.antagonist`。
+
+现在选题卡兜底仍可清掉冲突世界/能力，但不再改写已验证的 stage location/antagonist/goal/climax/opponent_resolution。跨书测试断言阶段对手仍与 resolution.name 一致。
+
+旧副本保存的五个 opponent 仍是 82 字 premise，未迁移、未改文件。新书生成路径不再污染。`extract_reader_promises()` 也取消 40 字语义截断：把旧副本字段重新抽取（不读已保存的截断 rows）后，三条长度为 8 / 82 / 88；第 40 字后的暴力词可参与 primary 判断，前 40 字相同的两条也不会误去重。旧副本已保存 rows 仍是 8 / 40 / 40，保持历史证据。
+
+### P2-6：第 14 章未闭合引号
+
+原因确认，未伪报修复：`chapter-014.r2.draft.md` 和 `chapter-014.body.md` 均平衡，书稿层引号修复正确记为 `checked/before=0`。之后 `final/chapter-014.deai.json` 把：
+
+> 门内阵槽九处，重复点应该有三处——不，可能四处，第四处在折返之后。”
+
+替换为缺闭引号的：
+
+> 门内阵槽九处，重复点应该有三处；也可能四处，第四处在折返之后。
+
+因此最终第 14 章第 42 段仍有 1 个缺失 `”`。根因是去 AI 后处理发生在 bookengine 引号门禁之后。本条文件归属禁止改 `deai/`，共享 final 采用协议也不在第 59 条可改清单；本轮只保留体检告警，没有越权改后处理。要彻底闭环需监工另授权 deai/final adoption 的发布后卫生门禁。
+
+### P2-7：术语首提说明书化
+
+第 1 章“醒脉是第一阶；凝纹是第二阶”从 `chapter-001.r2.draft.md` 起就存在，不是 first-appearance repair 插入。根因是框架为裸 `world.levels` 自动造“第 N 阶/承接上一阶”定义，再允许写手用一句叙述交代；旧检测只要看到“境界/第 N 阶”就判 Evidence。
+
+现在裸层级只提供结构提示，不再制造可照抄的序号定义；写手与修复 prompt 明确要求用修炼动作、受限结果、突破结果或人物对白体现，禁止“某词是第几阶/承接上一阶”的说明书句。确定性复检也把原句判为 `term_first_use_missing`，而“你才醒脉，催不动这道阵；等凝纹后再来”可通过。首提必须有交代的严格要求未放宽。
+
+### P2-8：选题卡金手指照搬
+
+原句从两路进入写手：完整 `selected_card.golden_finger_rule`，以及主角档案里的完整 `bible.power`；旧选题卡 drift 兜底还把同一句复制到 rule/ability/cost/limit 四字段。现改为：
+
+- 新书只保存模型从卡片抽出的短规则要点；不再把整句复制到 ability/cost/limit。
+- 写手只收到 title/premise/opening/hook、短规则要点和当前 power status，不收到规则原句，并有“禁止照搬或把要点拼回说明句”的硬提示。
+- `prose_similarity` 新增 `card_rule_copies`：对选题卡与 power.rule 做归一近似重合检查；单次命中也进入定向修复候选。
+
+对第 1 章旧正文离线重算，原来 `card_explanations=0` 的假阴性现在为 `card_rule_copies=1`，相似度 0.8200；命中原文正是“每斩断一条控制线……继承对方一部分地位与权限”。旧正文未改。
+
+### P2-9：每书独立境界阶梯
+
+`growth_payoff.yaml` 的玄幻 pack 已删除“醒脉/凝纹/蕴魂/融血/铸域/王境/皇境/圣境”字面列表，改为 shape-only 规格：8 层、每名 2–4 字、同书统一意象和构词、禁止数字序号与占位名。新书 prepare 必须由模型在 `world.levels` 生成 8 个唯一专名，验证后一次性绑定到 `bible.canon.ladder.strength`；不合格会走原 prepare 重试，不用写死名兜底。
+
+向后兼容：已有 `story_bible.yaml` 带 canon 时，prepare 仍直接采用保存 canon，不走生成绑定、不改旧境界。单测以新书生成的 8 个专名验证绑定，并以旧 canon 验证字节语义不变。eval-57 和 web59 旧副本继续保留原阶梯，符合“已有书圣经不受影响”。
+
+### 提交与验证
+
+| 提交 | 内容 |
+| --- | --- |
+| `ee32864f2` | 关系章纲硬校验、独立 action/choice、写手主线合同、有效编辑部分采用 |
+| `d4d90ee23` | 写手不再接收上一章原句；开头修复公开精确段数合同 |
+| `a68b0270d` | 选题卡兜底保留阶段对手；promise 取消 40 字语义截断 |
+| `ce2dd5eb9` | 境界首提必须融入动作/限制/对白 |
+| `51ef5fbca` | 规则原句移出写手 prompt；新增近似照搬检测 |
+| `955fbcd72` | 新书模型生成独立境界阶梯，旧书 canon 原样恢复 |
+| `65ce09d1f` | 增大的主场景合同不再挤掉末章 callback 事实 |
+| `3987a5481` | v11 旧关系章纲只在硬失败时失效重建 |
+| `f32ca5b2c` | 旧缓存仅硬约束迁移，软诊断不付费；旧书/测试兼容 |
+| `0a7cb5e39` | 写手上下文与缓存判断拆模块，恢复单文件 ≤500 行 |
+
+验证结果：
+
+- 全量测试：`1782 passed, 2 skipped, 751 subtests passed`。
+- `engine/tools/check_scope.py`：PASS；最大 Python 文件 494 行；无 `bestseller` import、无 bookengine/deai 交叉 import、无禁词。
+- `ruff format --check .`：PASS，299 个文件已格式化。
+- 未 push、未合并；未改 `deai/`、`tools/webui/`、真实书库或两个只读副本。
+
+### 仍待监工网页真机验收
+
+- 关系章是否实际写成情感主章、关系正文修复是否通过 after_type/state/payoff 复检。
+- 新 prompt 下 7 类相邻开头的真实采用率。
+- 新书 opponent 显示、完整 promise、独立境界阶梯和首提写法。
+- 已达标的速度 4.7 分钟/章、规划 22%，兑现位置/证据、解释密度、术语缺失、重复和连续性不得退化。
+- 第 14 章最终文本引号问题仍未闭环，原因和权限边界见上；需要监工决定是否扩大 deai/final adoption 文件归属。

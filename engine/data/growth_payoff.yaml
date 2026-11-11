@@ -821,15 +821,12 @@ packs:
     hook_types: *id002
   xuanhuan-power-fantasy:
     ladder:
-      strength:
-      - 醒脉
-      - 凝纹
-      - 蕴魂
-      - 融血
-      - 铸域
-      - 王境
-      - 皇境
-      - 圣境
+      strength: []
+      strength_generation:
+        count: 8
+        name_min_chars: 2
+        name_max_chars: 4
+        naming_style: 同一本书使用同一意象和构词规律，由低到高递进；不用数字序号或通用占位名
       wealth_unit: 灵晶
       status:
       - 旁支子弟

@@ -137,14 +137,43 @@ class RhythmTests(unittest.TestCase):
 
 
 class StageInterfaceTests(unittest.TestCase):
+    def test_xuanhuan_pack_contains_only_generation_shape_not_literal_realm_names(self):
+        registry = yaml.safe_load((ROOT / "engine/data/growth_payoff.yaml").read_text())
+        ladder = registry["packs"]["xuanhuan-power-fantasy"]["ladder"]
+
+        self.assertEqual(ladder["strength"], [])
+        self.assertEqual(ladder["strength_generation"]["count"], 8)
+        self.assertNotIn("醒脉", yaml.safe_dump(ladder, allow_unicode=True))
+
+    def test_generated_strength_ladder_comes_from_new_book_world_and_existing_canon_is_unchanged(self):
+        from bookengine.q1_prepare import bind_generated_strength_ladder
+
+        names = ["引息", "锻脉", "刻印", "聚灵", "化铠", "镇岳", "开天", "归真"]
+        template = {
+            "ladder": {
+                "strength": [],
+                "strength_generation": {"count": 8, "name_min_chars": 2, "name_max_chars": 4},
+            }
+        }
+
+        generated = bind_generated_strength_ladder({"world": {"levels": names}}, template)
+        existing = {"ladder": {"strength": ["旧一境", "旧二境"]}}
+
+        self.assertEqual(generated["ladder"]["strength"], names)
+        self.assertEqual(bind_generated_strength_ladder({"world": {"levels": names}}, existing), existing)
+        with self.assertRaisesRegex(ValueError, "成长阶梯"):
+            bind_generated_strength_ladder({"world": {"levels": ["一阶"] * 8}}, template)
+
     def test_prepare_loads_profile_and_never_rewrites_yaml_on_resume(self):
         registry = yaml.safe_load((ROOT / "engine/data/growth_payoff.yaml").read_text())
+        generated_strength = ["引息", "锻脉", "刻印", "聚灵", "化铠", "镇岳", "开天", "归真"]
         canon = dict(
             registry["packs"][PACKS[0]],
             solution_aliases=registry["solution_aliases"],
             seed="新书",
             scheduling=registry.get("scheduling", {}),
         )
+        canon["ladder"] = dict(canon["ladder"], strength=generated_strength)
         self.assertTrue(canon["solution_aliases"])
         fixture = StageFixture(
             yaml.safe_dump(
@@ -157,6 +186,7 @@ class StageInterfaceTests(unittest.TestCase):
                             dict(name="王见微", role="antagonist", voice="慢声威胁", desire="夺下城门"),
                         ],
                         initial_dashboard=dict(strength="一阶"),
+                        world=dict(levels=generated_strength),
                         summary="字" * 2000,
                     ),
                     threads=[],

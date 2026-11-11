@@ -98,7 +98,7 @@ instructions:
     每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
     最后阶段ending_contract回应书名承诺；growth_dimension只用力量/身份/关系，before与after写实质变化；new_burden_or_mystery必须为空。
     末阶段确需连续四章以上对抗时才给combat_run_exemption，chapters为连续至末章的高潮章号，reason写不可拆开的具体收束理由；其他阶段留空。'
-  prepare: 'world.levels严格逐条用固定实力阶梯规范名，initial_dashboard.strength从第一阶开始；不可另创境界。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
+  prepare: '成长阶梯strength非空时，world.levels严格逐条沿用；strength为空且有strength_generation时，必须为本书按count生成独有world.levels，名称长度和构词风格遵守规格，不用数字序号、通用占位名或其他书的字面阶梯。initial_dashboard.strength从本书第一阶开始。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
 
     initial_dashboard各项用可对账短值，实力写等级，财富写数值和单位，地位/名声写等级，归属和舞台用规范名；禁止把动作情绪写成长句。
 

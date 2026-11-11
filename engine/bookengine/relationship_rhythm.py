@@ -42,7 +42,10 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         [("关系变化合同", contract), ("可改主场景段", targets)],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的完整自然段"}]}',
         cap=5500,
+        required_sources=[row["original"] for row in targets],
     )
+    if isinstance(response, dict) and response.get("status") == "skipped":
+        return text, raw, failed, dict(note, status="skipped", reason=response.get("reason"))
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list) or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edits")

@@ -125,7 +125,10 @@ def repair_explanation_density(client, prefix, text, raw, failed, state, bible, 
         [("只可修改的解释段", targets), ("必须逐字保留的实体、术语与数字", protected)],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的单个自然段"}]}',
         cap=6000,
+        required_sources=[row["original"] for row in targets],
     )
+    if isinstance(response, dict) and response.get("status") == "skipped":
+        return text, raw, failed, dict(note, status="skipped", reason=response.get("reason"))
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list) or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edits")

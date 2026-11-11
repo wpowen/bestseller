@@ -220,7 +220,10 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
         ],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的自然段"}]}',
         cap=5000,
+        required_sources=[row["original"] for row in allowed],
     )
+    if isinstance(response, dict) and response.get("status") == "skipped":
+        return text, raw, failed, dict(note, status="skipped", reason=response.get("reason"))
     candidate, edits, reason = _apply_payoff_edits(text, spans, response, targets, conflict_ids)
     note.update(edits=edits, repair_reason=reason)
     if reason != "valid" or clean_prose(candidate)[0] != candidate:

@@ -29,6 +29,8 @@ def _sections(pending, allowed, bible, text):
 def _apply(response, text, spans, targets):
     if isinstance(response, dict) and "context_unknown" in response:
         return text, [], "context_unknown"
+    if isinstance(response, dict) and response.get("status") == "skipped":
+        return text, [], response.get("reason", "skipped")
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list):
         return text, [], "invalid_edit_schema"
@@ -73,6 +75,7 @@ def targeted_edits(ask, client, prefix, text, spans, targets, pending, bible):
             sections,
             '{"edits":[{"id":1,"original":"原段","text":"改段"}]}',
             cap=4500,
+            required_sources=[row["original"] for row in allowed],
         )
         candidate, edits, reason = _apply(response, text, spans, targets)
         row = dict(key=key, reason=reason, targets=sorted(targets))

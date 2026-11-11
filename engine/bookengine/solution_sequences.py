@@ -276,7 +276,10 @@ def repair_solution_sequence(client, prefix, text, raw, failed, state, bible, ou
         [("重复结构", json.dumps([*duplicates, before["signature"]], ensure_ascii=False)), ("允许修改段", allowed)],
         '{"edits":[{"id":1,"original":"原段","text":"替换段"}]}',
         cap=5000,
+        required_sources=[row["original"] for row in allowed],
     )
+    if isinstance(response, dict) and response.get("status") == "skipped":
+        return text, raw, failed, dict(note, status="skipped", reason=response.get("reason"))
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list) or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edits")

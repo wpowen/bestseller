@@ -84,6 +84,33 @@ def test_fake_repair_inserts_grounded_term_definition_and_clears_issue(tmp_path)
     assert calls == ["r2-ch7-first-appearance-repair"]
 
 
+def test_same_chapter_second_realm_level_repair_must_put_action_in_the_term_sentence(tmp_path):
+    value = {"world": {"levels": ["木丝初", "木丝续"]}, "characters": [{"name": "顾长风"}]}
+    original = "顾长风催动木丝初扯住门闩，木线只绷紧一瞬。木丝续已能借外物延续片刻牵引，却不能反向追索。"
+    replacement = "顾长风催动木丝初扯住门闩，木线只绷紧一瞬。他再催动木丝续借门轴延长牵引，却仍追不到施术者。"
+
+    def ask(_client, _key, _instruction, sections, _schema, **_kwargs):
+        target = dict(sections)["只可修改的首次出现段"][0]
+        return {"edits": [{"id": target["id"], "original": target["original"], "text": replacement}]}
+
+    changed, _, _, note = repair_first_appearances(
+        None,
+        "r2-ch1",
+        original,
+        {"state": {}},
+        False,
+        {},
+        value,
+        {"number": 1},
+        tmp_path,
+        lambda *_args, **_kwargs: ({"state": {}, "events": []}, False, 0),
+        ask,
+    )
+
+    assert changed == replacement
+    assert note["status"] == "checked" and note["after"] == []
+
+
 def test_realm_first_use_can_be_grounded_by_immediate_dialogue_about_its_ability():
     from bookengine.introductions import check_world_first_appearances
 

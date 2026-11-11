@@ -34,6 +34,7 @@ from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
+from .quote_text import repair_unclosed_quotes
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -282,6 +283,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["final_closure"] = guarded(repair_final_closure)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["quotes"] = guarded(repair_unclosed_quotes)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(

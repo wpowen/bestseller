@@ -116,12 +116,22 @@ def test_prepare_repairs_only_structure_three_times_and_records_failure(tmp_path
             stage["promise_payoffs"] = [
                 dict(
                     promise_id="reader-promise-1",
+                    chapter=stage["start"] + (stage["end"] - stage["start"]) // 2,
+                    scale="小兑现",
+                    action="主角亲自赢下一次局部争夺",
+                    target=stage["antagonist"],
+                    result="夺回一处通路",
+                    escalation=f"阶段{stage['number']}中段小兑现",
+                ),
+                dict(
+                    promise_id="reader-promise-1",
                     chapter=chapter,
+                    scale="大兑现",
                     action="主角亲自完成归途",
                     target=stage["antagonist"],
                     result="清除阻路者",
                     escalation=f"阶段{stage['number']}推进归途",
-                )
+                ),
             ]
             stage["opponent_resolution"] = dict(
                 name=stage["antagonist"], type="被擒", chapter=chapter, outcome="失去阻路能力"

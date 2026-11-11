@@ -243,12 +243,22 @@ def test_prepare_persists_contract_and_resume_preserves_design_without_calls(tmp
                 promise_payoffs=[
                     dict(
                         promise_id="reader-promise-1",
+                        chapter=1,
+                        scale="小兑现",
+                        action="周远舟敲钟打开救人通路",
+                        target="王见微",
+                        result="先救出一名被困者",
+                        escalation="阶段中段小兑现",
+                    ),
+                    dict(
+                        promise_id="reader-promise-1",
                         chapter=2,
+                        scale="大兑现",
                         action="周远舟敲响借钟救人",
                         target="王见微",
                         result="救回妹妹并夺回戒指",
                         escalation="首次兑现借钟救人",
-                    )
+                    ),
                 ],
                 opponent_resolution=dict(name="王见微", type="被擒", chapter=2, outcome="失去继续作恶能力"),
                 ending_contract=dict(

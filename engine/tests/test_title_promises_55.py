@@ -58,12 +58,22 @@ def _valid_contract(total=20):
         stage["promise_payoffs"] = [
             {
                 "promise_id": primary["id"],
+                "chapter": stage["start"] + (stage["end"] - stage["start"]) // 2,
+                "scale": "小兑现",
+                "action": "顾奕棣驱使雪沛宁夺回局部资源",
+                "target": stage["antagonist"],
+                "result": "夺回补给",
+                "escalation": f"第{stage['number']}阶段中段小兑现",
+            },
+            {
+                "promise_id": primary["id"],
                 "chapter": resolution_chapter,
+                "scale": "大兑现",
                 "action": "顾奕棣驱使雪沛宁正面扑杀",
                 "target": stage["antagonist"],
                 "result": "击杀" if stage["number"] == 2 else "重创",
                 "escalation": f"第{stage['number']}阶段升级兑现",
-            }
+            },
         ]
         stage["opponent_resolution"] = {
             "name": stage["antagonist"],
@@ -144,10 +154,11 @@ def test_outline_contract_requires_scheduled_payoff_resolution_and_final_growth(
 
     chapters = deepcopy(empty)
     for stage in bible["volumes"]:
-        payoff = stage["promise_payoffs"][0]
-        row = chapters[payoff["chapter"] - 1]
-        row["reader_promise_id"] = payoff["promise_id"]
-        row["promise_payoff"] = {k: payoff[k] for k in ("action", "target", "result", "escalation")}
+        for payoff in stage["promise_payoffs"]:
+            row = chapters[payoff["chapter"] - 1]
+            row["reader_promise_id"] = payoff["promise_id"]
+            row["promise_payoff"] = {k: payoff[k] for k in ("action", "target", "result", "escalation", "scale")}
+        row = chapters[stage["opponent_resolution"]["chapter"] - 1]
         resolution = stage["opponent_resolution"]
         row["opponent_resolution"] = {
             "name": resolution["name"],
@@ -187,7 +198,7 @@ def test_validated_stage_contracts_are_rebound_after_outline_fallback():
 def test_writer_receives_positive_payoff_named_exit_and_closed_growth_in_existing_field():
     bible = _valid_contract()
     stage = bible["volumes"][-1]
-    payoff = stage["promise_payoffs"][0]
+    payoff = stage["promise_payoffs"][-1]
     outline = {
         "number": payoff["chapter"],
         "hook": "白啸挣脱束缚，带着新线索离开",

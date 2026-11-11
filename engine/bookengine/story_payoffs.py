@@ -11,10 +11,12 @@ from .text import _sentences
 from tools.book_checkup import clean_prose
 
 
-REVIEW_SCHEMA = json.dumps(
-    {"items": [{"id": "", "status": "unknown", "evidence": [{"chapter": 1, "quote": ""}], "reason": ""}]},
-    ensure_ascii=False,
-)
+def review_schema(number):
+    return json.dumps(
+        {"items": [{"id": "", "status": "unknown", "evidence": [{"chapter": number, "quote": ""}], "reason": ""}]},
+        ensure_ascii=False,
+    )
+
 
 _ESCAPE = re.compile(r"逃(?:走|离|脱)|脱身|退入|遁入|消失(?:在|于)|离开|撤离|远去|没有恋战|不再恋战|无心恋战")
 _ESCAPE_BLOCK = re.compile(r"(?:不得|不能|不可|不许).{0,8}(?:逃(?:走|离|脱)|脱身|退入|遁入|消失|离开|撤离|远去)")
@@ -157,7 +159,7 @@ def review_story_payoffs(client, prefix, text, outline, ask):
             ("本章正文", text),
             ("章号", str(outline["number"])),
         ],
-        REVIEW_SCHEMA,
+        review_schema(outline["number"]),
     )
     checked = [_verified(response, item, text, outline["number"]) for item in items]
     return {

@@ -93,7 +93,8 @@ instructions:
     每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
     每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
     threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。
-    每阶段promise_payoffs至少一项且包含标为primary的书名承诺：章号在本阶段内，action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写相较上一阶段如何升级。
+    每阶段promise_payoffs至少两项且都用primary主承诺，章号不同：阶段中段一项scale=小兑现，末两章一项scale=大兑现。action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写升级。
+    书名或selling_points字面含“杀”时，至少一个opponent_resolution.type必须是被杀，不能全部改成被擒或失势。
     每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
     最后阶段ending_contract回应书名承诺；growth_dimension只用力量/身份/关系，before与after写实质变化；new_burden_or_mystery必须为空。
     末阶段确需连续四章以上对抗时才给combat_run_exemption，chapters为连续至末章的高潮章号，reason写不可拆开的具体收束理由；其他阶段留空。'
@@ -337,6 +338,14 @@ schemas:
         promise_payoffs:
         - promise_id: ''
           chapter: 10
+          scale: 小兑现
+          action: ''
+          target: ''
+          result: ''
+          escalation: ''
+        - promise_id: ''
+          chapter: 12
+          scale: 大兑现
           action: ''
           target: ''
           result: ''
@@ -371,6 +380,7 @@ schemas:
     promise_payoffs:
     - promise_id: ''
       chapter: 10
+      scale: 小兑现
       action: ''
       target: ''
       result: ''
@@ -421,6 +431,7 @@ schemas:
         target: ''
         result: ''
         escalation: ''
+        scale: ''
       opponent_resolution:
         name: ''
         type: ''

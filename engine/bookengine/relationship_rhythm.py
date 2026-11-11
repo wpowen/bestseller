@@ -82,6 +82,17 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     after_type = chapter_type(checked if isinstance(checked, dict) else {})
     note.update(after_type=after_type, edits=edits)
     payoff_lost = _grounded_payoff(raw, text) and not _grounded_payoff(checked, candidate)
-    if invalid or after_type != "情感" or payoff_lost or high_confidence(state, checked.get("events", []), candidate):
-        return text, raw, failed, dict(note, status="rolled_back", reason="relationship_recheck_failed")
+    reason = (
+        "state_recheck_failed"
+        if invalid
+        else "after_type_mismatch"
+        if after_type != "情感"
+        else "lost_grounded_payoff"
+        if payoff_lost
+        else "hard_fact_conflict"
+        if high_confidence(state, checked.get("events", []), candidate)
+        else None
+    )
+    if reason:
+        return text, raw, failed, dict(note, status="rolled_back", reason=reason)
     return candidate, checked, False, dict(note, status="checked")

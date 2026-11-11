@@ -4,7 +4,7 @@ from copy import deepcopy
 import time
 from .checks import high_confidence, roll_day
 from .contracts import choose_contract, valid_extract, payoff_ok, observations, reduce_growth
-from .endings import ending_candidates, english_hits, apply_scene
+from .endings import ending_candidates, english_hits, apply_scene, repair_final_closure
 from .identity import name_hits, writer_identity_bible, writer_identity_outline
 from .hook_momentum import repair_after_draft
 from .precision import _sentences, apply as sentence_edits
@@ -28,11 +28,15 @@ from .q1_repetition import repair_repetitions
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
-from .text_hygiene import repair_text
+from .text_hygiene import repair_text, require_publishable
 from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
+from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
+from .quote_text import repair_unclosed_quotes
+from .dialogue_hygiene import repair_dialogue_repetitions
+from .model_notes import repair_model_notes
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -136,6 +140,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
+    sections = with_completed_action_context(sections, out, idx)
     sections.extend(speech_context(bible, idx))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
@@ -239,6 +244,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, boundaries, handoff = repair_opening(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, notes["cross_chapter_opening"] = guarded(repair_cross_chapter_opening)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
+    )
     text, raw, failed, opponent_repair = guarded(repair_retired)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -270,15 +278,28 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
     # Content repairs first; text hygiene last so it also cleans what they rewrote.
+    text, raw, failed, cleaning["model_notes"] = guarded(repair_model_notes)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, cleaning["final_closure"] = guarded(repair_final_closure)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["quotes"] = guarded(repair_unclosed_quotes)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["dialogue_repetitions"] = guarded(repair_dialogue_repetitions)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)
     final_handoff = evaluate_handoff(state, boundaries, text, bible, outline)

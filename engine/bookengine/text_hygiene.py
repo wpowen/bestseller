@@ -10,11 +10,11 @@ import yaml
 
 from .text import _paragraph_spans
 from .sentence_repetition import sentence_hits
+from .model_notes import ENGLISH_WORD_GATE, english_rows as _english_rows
+from .model_notes import model_note_hits, repair_model_notes, require_publishable
 
 
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())
-_ENGLISH = re.compile(_RULES["english_fragment"])
-_POSITION_LABEL = re.compile(_RULES["position_label"])
 _STRUCTURE = re.compile(
     r"第\s*[0-9０-９零〇一二两三四五六七八九十百千]+\s*场戏|"
     r"场景\s*[0-9０-９零〇一二两三四五六七八九十百千]+|本章|章纲|原章"
@@ -117,9 +117,8 @@ def inspect_text(text):
     if not isinstance(text, str):
         text = ""
     spans = _paragraph_spans(text)
-    english = [
-        row for row in _surface_hits(text, spans, _ENGLISH, "english") if not _POSITION_LABEL.fullmatch(row["text"])
-    ]
+    english = _english_rows(text, spans)
+    notes = model_note_hits(text)
     structure = _surface_hits(text, spans, _STRUCTURE, "structure")
     paragraphs = _paragraph_hits(text, spans)
     sentences = sentence_hits(text, spans)
@@ -128,6 +127,9 @@ def inspect_text(text):
     return dict(
         counts=dict(
             english_fragments=len(english),
+            english_words=len(english),
+            english_gate_blocks=int(len(english) > ENGLISH_WORD_GATE),
+            model_notes=len(notes),
             structural_notes=len(structure),
             exact_paragraph_repetitions=exact,
             near_paragraph_repetitions=near,
@@ -137,6 +139,7 @@ def inspect_text(text):
             sentence_repetitions=len(sentences),
         ),
         english=english,
+        model_notes=notes,
         structure=structure,
         paragraphs=paragraphs,
         sentences=sentences,
@@ -148,10 +151,14 @@ def summarize_chapters(chapters):
     rows = [dict(chapter=row["number"], **inspect_text(row["text"])) for row in chapters]
     return dict(
         english_fragments=sum(row["counts"]["english_fragments"] for row in rows),
+        english_gate_blocks=sum(row["counts"]["english_gate_blocks"] for row in rows),
+        model_notes=sum(row["counts"]["model_notes"] for row in rows),
         structural_notes=sum(row["counts"]["structural_notes"] for row in rows),
         paragraph_repetitions=sum(row["counts"]["paragraph_repetitions"] for row in rows),
         sentence_repetitions=sum(row["counts"]["sentence_repetitions"] for row in rows),
         english_chapters=[row["chapter"] for row in rows if row["counts"]["english_fragments"]],
+        english_gate_chapters=[row["chapter"] for row in rows if row["counts"]["english_gate_blocks"]],
+        model_note_chapters=[row["chapter"] for row in rows if row["counts"]["model_notes"]],
         structural_chapters=[row["chapter"] for row in rows if row["counts"]["structural_notes"]],
         paragraph_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["paragraph_repetitions"]],
         sentence_repetition_chapters=[row["chapter"] for row in rows if row["counts"]["sentence_repetitions"]],
@@ -305,11 +312,17 @@ def _quote_balance_worse(before, after):
 
 def repair_text(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """Make one targeted repair attempt and adopt only a fully clean recheck."""
+    text, raw, failed, model_notes = repair_model_notes(
+        client, prefix, text, raw, failed, state, bible, outline, extract, ask
+    )
     before = inspect_text(text)
-    note = dict(status="checked", before=before["counts"], after=before["counts"], edits=[])
+    note = dict(status="checked", before=before["counts"], after=before["counts"], edits=[], model_notes=model_notes)
+    if model_notes["status"] == "unfinalized":
+        return text, raw, failed, dict(note, status="unfinalized", reason=model_notes["reason"])
     targets = _repair_targets(text, before, bible)
     if not targets:
-        return text, raw, failed, note
+        status = "repaired" if model_notes["status"] == "repaired" else "checked"
+        return text, raw, failed, dict(note, status=status)
     patch = ask(
         client,
         prefix + "-text-hygiene",

@@ -402,6 +402,11 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("每章重写两场场景，冲突、障碍、选择和行动后果必须与要求章型一致", targets),
+                (
+                    "情感章本地定向重写硬约束",
+                    "action只写两人之间的坦白、试探、拒绝、让步或和解；choice另写对方的当场选择，"
+                    "不得复制action。追杀、闯关、受控搏斗与正面打斗只能是一句背景压力。",
+                ),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("目标章原内容、要求章型、前后章摘要与必须保留事实，只能改目标章", context),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),

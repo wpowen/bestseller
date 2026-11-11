@@ -2,7 +2,9 @@
 
 import json
 
-from bookengine.chapter_rhythm import chapter_type, rhythm_issues, rhythm_slots
+from bookengine.chapter_rhythm import chapter_type, relationship_outline_issues, rhythm_issues, rhythm_slots
+from bookengine.planning_policy import hard_replan_issues
+from bookengine.q1_prepare import _ask
 from bookengine.relationship_rhythm import repair_relationship_rhythm
 from bookengine.rhythm_writer import writer_rhythm_instruction
 from bookengine.structure_planning import structure_issues
@@ -54,6 +56,85 @@ def test_writer_receives_exact_relationship_change_and_no_combat_contract():
 
     assert all(text in instruction for text in ("顾立谦、霜团", "承认借力", "不再主动靠近", "明确边界"))
     assert "不安排正面打斗" in instruction
+    assert "变化前" in instruction and "变化后" in instruction and "主线" in instruction
+
+
+def test_relationship_outline_rejects_combat_actions_and_duplicated_choices_before_writing():
+    invalid = relationship_outline()
+    invalid["scenes"][0].update(
+        action="他挥刀撞开暗门并带同伴躲避追杀",
+        choice="他挥刀撞开暗门并带同伴躲避追杀",
+    )
+
+    issues = relationship_outline_issues(invalid)
+    rhythm = rhythm_issues({"structure_version": 1, "characters": [{"name": "甲"}, {"name": "乙"}]}, [], [invalid])
+
+    assert {issue["reason"] for issue in issues} >= {"combat_main_action", "choice_duplicates_action"}
+    assert any(issue["kind"] == "rhythm_relationship_scene" for issue in rhythm)
+    assert any(issue["kind"] == "rhythm_relationship_scene" for issue in hard_replan_issues(rhythm))
+
+
+def test_relationship_outline_accepts_interpersonal_actions_and_distinct_choices():
+    outline = relationship_outline()
+    outline["scenes"][0]["choice"] = "霜团听完后明确说出仍可同行的边界"
+    outline["scenes"][1]["choice"] = "顾立谦接受她随时叫停借力"
+
+    assert relationship_outline_issues(outline) == []
+
+
+def test_relationship_local_rewrite_uses_real_planning_prompt_assembly(tmp_path):
+    from bookengine.outline_diversity import repair_batch
+
+    invalid = relationship_outline()
+    invalid["scenes"][0].update(
+        action="顾立谦挥刀撞开暗门并带霜团躲避追杀",
+        choice="顾立谦挥刀撞开暗门并带霜团躲避追杀",
+    )
+    corrected = relationship_outline()
+    corrected["scenes"][0]["choice"] = "霜团听完坦白，允许他在明确边界内借力"
+    corrected["scenes"][1]["choice"] = "顾立谦接受她保留随时拒绝的权利"
+
+    class FakeClient:
+        model = "offline"
+        provider = "offline"
+        prefix = ""
+        plan_suffix = ""
+        relaxed = False
+
+        def stage(self, stage, prompt, schema, **kwargs):
+            self.stage_name = stage
+            self.prompt = prompt
+            self.schema = schema
+            return {"chapters": [corrected]}
+
+    client = FakeClient()
+
+    def rewrite(current, issues, targets, used, attempt):
+        return _ask(
+            client,
+            "outlines",
+            "chapters-1-4-relationship",
+            [
+                ("关系章错误", issues),
+                ("待重写章纲", [row for row in current if row["number"] in targets]),
+                ("硬约束", "action与choice必须是不同的人际行为，打斗只能作背景"),
+            ],
+            attempt,
+        )
+
+    result = repair_batch(
+        tmp_path,
+        "001-004",
+        [],
+        [{"number": number, "type": "对抗", "scenes": [{"action": "击退追兵"}]} for number in range(1, 4)] + [invalid],
+        rewrite,
+        bible={"volumes": [{"number": 1, "start": 1, "end": 4}]},
+    )
+
+    assert result[-1]["scenes"] == corrected["scenes"]
+    assert invalid["scenes"][0]["action"] in client.prompt
+    assert invalid["relationship_change"]["before"] in client.prompt
+    assert "choice" in client.schema
 
 
 def test_relationship_contract_overrides_a_conflicting_combat_label():
@@ -63,7 +144,7 @@ def test_relationship_contract_overrides_a_conflicting_combat_label():
     assert chapter_type(outline) == "情感"
     instruction = writer_rhythm_instruction(outline)
     assert "本章章型：情感" in instruction
-    assert "两场主场景都要让这个变化" in instruction
+    assert "把人物关系从变化前推到变化后" in instruction
 
 
 def test_eval57_style_planned_relationship_but_actual_combat_gets_targeted_main_scene_rewrite():
@@ -129,6 +210,40 @@ def test_relationship_repair_sends_full_body_and_targets_both_main_scenes():
 
     assert changed != original and raw["type"] == "情感" and failed is False
     assert note["status"] == "checked" and len(note["edits"]) == 10
+
+
+def test_relationship_repair_keeps_grounded_edits_when_one_model_original_is_wrong():
+    paragraphs = [f"顾立谦与霜团在第{number}段讨论退路。" for number in range(1, 11)]
+    original = "\n\n".join(paragraphs)
+
+    def ask(client, key, instruction, sections, schema, **kwargs):
+        targets = dict(sections)["可改主场景段"]
+        edits = [
+            {
+                "id": row["id"],
+                "original": row["original"],
+                "text": f"顾立谦坦白隐瞒，霜团在第{row['id']}段明确选择继续同行。",
+            }
+            for row in targets
+        ]
+        edits[3]["original"] = edits[3]["original"].replace("讨论", "商量")
+        return {"edits": edits}
+
+    changed, raw, failed, note = repair_relationship_rhythm(
+        None,
+        "r2-ch18",
+        original,
+        {"state": {}, "events": [], "type": "对抗"},
+        False,
+        {},
+        {},
+        relationship_outline(18),
+        lambda *args, **kwargs: ({"state": {}, "events": [], "type": "情感"}, False, 0),
+        ask,
+    )
+
+    assert changed != original and raw["type"] == "情感" and failed is False
+    assert note["status"] == "checked" and note["rejected_edits"] == [{"id": 4, "reason": "original_mismatch"}]
 
 
 def final_bible(exemption=None):

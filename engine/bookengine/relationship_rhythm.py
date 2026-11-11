@@ -61,17 +61,35 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     if len(edits) < minimum_edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="insufficient_main_scene_edits")
     by_id = {row["id"]: row for row in targets}
-    candidate = text
-    for edit in sorted(edits, key=lambda row: row.get("id", 0), reverse=True):
+    valid_edits, rejected_edits = [], []
+    seen = set()
+    for edit in edits:
         source = by_id.get(edit.get("id"))
         replacement = edit.get("text")
-        if (
-            not source
-            or edit.get("original") != source["original"]
-            or not isinstance(replacement, str)
-            or not replacement.strip()
-        ):
-            return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edit_target")
+        reason = (
+            "unknown_id"
+            if not source or edit.get("id") in seen
+            else "original_mismatch"
+            if edit.get("original") != source["original"]
+            else "empty_replacement"
+            if not isinstance(replacement, str) or not replacement.strip()
+            else None
+        )
+        if reason:
+            rejected_edits.append(dict(id=edit.get("id"), reason=reason))
+            continue
+        valid_edits.append(edit)
+        seen.add(edit["id"])
+    if len(valid_edits) < minimum_edits:
+        return (
+            text,
+            raw,
+            failed,
+            dict(note, status="rolled_back", reason="invalid_edit_target", rejected_edits=rejected_edits),
+        )
+    candidate = text
+    for edit in sorted(valid_edits, key=lambda row: row.get("id", 0), reverse=True):
+        replacement = edit["text"]
         start, end = spans[edit["id"] - 1]
         candidate = candidate[:start] + replacement.strip() + candidate[end:]
     if clean_prose(candidate)[0] != candidate or any(person not in candidate for person in people):
@@ -80,7 +98,7 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         client, prefix + "-relationship-final-state", candidate, state, bible, outline, [], final=True
     )
     after_type = chapter_type(checked if isinstance(checked, dict) else {})
-    note.update(after_type=after_type, edits=edits)
+    note.update(after_type=after_type, edits=valid_edits, rejected_edits=rejected_edits)
     payoff_lost = _grounded_payoff(raw, text) and not _grounded_payoff(checked, candidate)
     reason = (
         "state_recheck_failed"

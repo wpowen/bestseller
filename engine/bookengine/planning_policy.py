@@ -9,6 +9,7 @@ MAX_REWRITE_CALLS = 1
 HARD_REPLAN_KINDS = {
     "rhythm_stage_relation",
     "rhythm_combat_run",
+    "rhythm_relationship_scene",
     "reader_promise_payoff",
     "opponent_resolution",
 }

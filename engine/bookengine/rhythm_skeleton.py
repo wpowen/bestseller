@@ -15,8 +15,20 @@ def _fallback(slot):
         "conflict": focus,
         "result": focus,
         "scenes": [
-            {"goal": focus, "obstacle": "既有矛盾阻碍选择", "action": focus, "result": "人物选择产生后果"},
-            {"goal": "承接前一场后果", "obstacle": "代价或分歧仍在", "action": focus, "result": "改变下一步选择"},
+            {
+                "goal": focus,
+                "obstacle": "既有矛盾阻碍选择",
+                "choice": "人物在两个有代价的选项中明确取舍",
+                "action": focus,
+                "result": "人物选择产生后果",
+            },
+            {
+                "goal": "承接前一场后果",
+                "obstacle": "代价或分歧仍在",
+                "choice": "另一人物接受或拒绝前一场选择",
+                "action": focus,
+                "result": "改变下一步选择",
+            },
         ],
     }
 
@@ -56,12 +68,11 @@ def bind_stage_content(chapters, skeleton):
         bound = []
         for index, scene_anchor in enumerate(rows(anchor.get("scenes"))[:2]):
             scene = deepcopy(detailed[index]) if index < len(detailed) else {}
-            action = scene_anchor.get("action", "")
             scene.update(
                 goal=scene_anchor.get("goal", ""),
                 obstacle=scene_anchor.get("obstacle", ""),
-                choice=action,
-                action=action,
+                choice=scene_anchor.get("choice", ""),
+                action=scene_anchor.get("action", ""),
                 result=scene_anchor.get("result", ""),
             )
             bound.append(scene)
@@ -133,7 +144,7 @@ def window_stage_content(skeleton, start, end):
             "conflict": str(row.get("conflict", ""))[:80],
             "result": str(row.get("result", ""))[:80],
             "scenes": [
-                {field: str(scene.get(field, ""))[:40] for field in ("goal", "obstacle", "action", "result")}
+                {field: str(scene.get(field, ""))[:40] for field in ("goal", "obstacle", "choice", "action", "result")}
                 for scene in rows(row.get("scenes"))[:2]
             ],
         }

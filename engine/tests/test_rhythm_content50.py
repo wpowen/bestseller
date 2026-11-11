@@ -416,8 +416,20 @@ def test_detailed_outlines_expand_stage_content_without_replacing_its_main_actio
             "content_requirement": "比较路线风险并完成分工",
             "conflict": "两条撤离路线各有代价",
             "scenes": [
-                {"goal": "比较路线", "obstacle": "信息不全", "action": "列出风险并舍弃北路", "result": "选定南路"},
-                {"goal": "完成分工", "obstacle": "同伴意见相反", "action": "按代价分派接应", "result": "准备完成"},
+                {
+                    "goal": "比较路线",
+                    "obstacle": "信息不全",
+                    "choice": "舍弃更快但暴露的北路",
+                    "action": "列出风险并核对南路",
+                    "result": "选定南路",
+                },
+                {
+                    "goal": "完成分工",
+                    "obstacle": "同伴意见相反",
+                    "choice": "让熟悉地形者接应",
+                    "action": "按代价分派任务",
+                    "result": "准备完成",
+                },
             ],
         }
     ]
@@ -430,6 +442,7 @@ def test_detailed_outlines_expand_stage_content_without_replacing_its_main_actio
     assert bound[0]["scenes"][0]["where"] == "旧井口"
     assert bound[0]["scenes"][0]["characters"] == ["顾延柯", "追兵"]
     assert bound[0]["scenes"][0]["goal"] == "比较路线"
-    assert bound[0]["scenes"][0]["choice"] == bound[0]["scenes"][0]["action"] == "列出风险并舍弃北路"
+    assert bound[0]["scenes"][0]["choice"] == "舍弃更快但暴露的北路"
+    assert bound[0]["scenes"][0]["action"] == "列出风险并核对南路"
     assert bound[0]["scenes"][1]["goal"] == "完成分工"
     assert detailed[0]["type"] == "对抗"

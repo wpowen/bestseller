@@ -48,7 +48,8 @@ def emotional_replan(number):
             characters=["顾川序", "霜砚秋"],
             goal="说清隐瞒伤势的原因",
             obstacle="霜砚秋不再信任顾川序的判断",
-            choice="顾川序坦白恐惧并交出路线决定权",
+            action="顾川序坦白恐惧并交出路线决定权",
+            choice="霜砚秋接受坦白，但要求保留拒绝同行的权利",
             emotion="恼怒转迟疑",
         ),
         dict(
@@ -56,7 +57,8 @@ def emotional_replan(number):
             characters=["顾川序", "霜砚秋"],
             goal="重新约定借力边界",
             obstacle="两人对谁承担代价仍有分歧",
-            choice="霜砚秋接受新分工但保留拒绝权",
+            action="霜砚秋说出自己不愿再被蒙在鼓里的顾虑",
+            choice="顾川序承诺以后先说明代价，让她决定是否借力",
             emotion="疏离转谨慎信任",
         ),
     ]

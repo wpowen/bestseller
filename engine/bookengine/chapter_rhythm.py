@@ -5,7 +5,7 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 10
+VERSION = 11
 CANONICAL_TYPES = ("对抗", "谋划", "情感", "日常", "揭秘", "收获")
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
@@ -32,9 +32,11 @@ _CUES = {
 _COMBAT = re.compile(
     r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀|"
     r"反杀|突围|伏击|围杀|冲杀|扑杀|迎战|开战|动手|强攻|割开.{0,4}(?:咽喉|喉咙)"
+    r"|撞开.{0,6}(?:门|关|阵)|闯关|受控搏斗|握刀|持刀|反扭.{0,4}刀|追兵.{0,10}(?:封|赶到|抵达)"
 )
 _RELATION_CHANGE = re.compile(
-    r"坦白|承认|信任|隐瞒|原谅|疏远|和解|顾虑|承诺|拒绝|允许|边界|同伴|伙伴|同行|共同|分工|选择|权利"
+    r"坦白|承认|信任|隐瞒|原谅|疏远|和解|顾虑|承诺|拒绝|允许|接受|让步|道歉|试探|质问|回应|"
+    r"边界|同伴|伙伴|同行|合作|分开|靠近|共同|分工|选择|决定|权利"
 )
 INTERNAL_TERMS = ("原章", "原定场景", "原定目标", "已登场同伴")
 _WRITER_FIELDS = (
@@ -156,6 +158,31 @@ def relationship_contract(row):
     if len(set(people)) != 2 or not all(fields.values()) or fields["before"] == fields["after"]:
         return None
     return dict(people=people, **fields)
+
+
+def relationship_outline_issues(row):
+    """Return deterministic main-scene defects before a relationship outline reaches the writer."""
+    if not relationship_contract(row):
+        return []
+    issues = []
+    scenes = rows(row.get("scenes"))[:2]
+    if len(scenes) != 2:
+        return [dict(scene=0, reason="missing_main_scenes")]
+    for index, scene in enumerate(scenes, 1):
+        action = str(scene.get("action") or "").strip()
+        choice = str(scene.get("choice") or "").strip()
+        main = _positive("；".join((action, choice)))
+        if not choice:
+            issues.append(dict(scene=index, reason="missing_choice"))
+        if action and action == choice:
+            issues.append(dict(scene=index, reason="choice_duplicates_action"))
+        if _COMBAT.search(main):
+            issues.append(dict(scene=index, reason="combat_main_action"))
+        if not action or not _RELATION_CHANGE.search(_positive(action)):
+            issues.append(dict(scene=index, reason="action_not_interpersonal"))
+        if not choice or not _RELATION_CHANGE.search(_positive(choice)):
+            issues.append(dict(scene=index, reason="choice_not_interpersonal"))
+    return issues
 
 
 def combat_run_exemption(bible, number=None):
@@ -304,6 +331,20 @@ def rhythm_issues(bible, history, batch):
                         targets=[n],
                         allowed=[kind],
                         requirement="关系章必须写明两名人物、变化起因、变化前与变化后，且前后不同。" + RULE,
+                    )
+                )
+            relationship_scene_issues = relationship_outline_issues(row) if kind == "情感" else []
+            if relationship_scene_issues:
+                issues.append(
+                    dict(
+                        kind="rhythm_relationship_scene",
+                        targets=[n],
+                        allowed=[kind],
+                        defects=relationship_scene_issues,
+                        requirement=(
+                            "关系章两场的action与choice必须分别写人物间的坦白、试探、让步、拒绝、接受或和解；"
+                            "choice不能复制action，正面打斗、追杀、闯关和受控搏斗只能作背景压力。" + RULE
+                        ),
                     )
                 )
             terms = internal_terms(row)

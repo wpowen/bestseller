@@ -13,7 +13,14 @@ from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
 from .solution_sequences import solution_sequence_issues
 from .core_ability import ability_issues
-from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_content, chapter_type, rhythm_issues
+from .chapter_rhythm import (
+    FOCUS,
+    VERSION as RHYTHM_VERSION,
+    align_label_to_content,
+    chapter_type,
+    relationship_outline_issues,
+    rhythm_issues,
+)
 from .planning_policy import MAX_REWRITE_CALLS, hard_replan_issues, replan_targets
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
@@ -412,6 +419,8 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 continue
             proposed["title_keywords"] = title_terms(proposed.get("title"), replacements[number].get("title_keywords"))
             if number in attempted_rhythm:
+                if chapter_type(proposed) == "情感" and relationship_outline_issues(proposed):
+                    continue
                 kind = chapter_type(proposed)
                 proposed.update(
                     rhythm_type=kind,

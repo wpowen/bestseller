@@ -47,6 +47,8 @@ def writer_rhythm_instruction(outline):
         instruction += (
             f"关系变化合同：人物={people}；起因={change.get('cause', '')}；"
             f"变化前={change.get('before', '')}；变化后={change.get('after', '')}。"
-            "两场主场景都要让这个变化通过选择与反应发生，不能只在结尾补一句关系总结。"
+            "两场主场景都要把人物关系从变化前推到变化后：坦白、试探、拒绝、让步或和解是主线，"
+            "对方必须当场作出不同于action的choice并产生反应，不能只在结尾补一句关系总结。"
+            "追杀、闯关、受控搏斗和机关执行最多一笔带过，不能占据主场景。"
         )
     return instruction

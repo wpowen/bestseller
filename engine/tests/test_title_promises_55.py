@@ -99,6 +99,17 @@ def test_eval52_title_extracts_specific_reader_promises():
     assert [p["primary"] for p in promises] == [False, True]
 
 
+def test_long_reader_promises_keep_full_text_for_deduplication_and_violent_primary_detection():
+    prefix = "前四十字完全相同的卖点描述用于证明不能按展示宽度截断" * 2
+    first = prefix + "但最后兑现的是救回故乡"
+    second = prefix + "但最后兑现的是反杀幕后操控者"
+    promises = extract_reader_promises({"title": "归乡", "premise": first, "reader_expectation": second})
+
+    assert [row["text"] for row in promises] == ["归乡", first, second]
+    assert len(promises[-1]["text"]) > 40
+    assert promises[-1]["primary"] is True
+
+
 def test_model_promise_labels_migrate_to_stable_primary_id_without_changing_content():
     bible = ensure_reader_promise_contract(_design(), 20)
     bible["volumes"][0]["promise_payoffs"] = [

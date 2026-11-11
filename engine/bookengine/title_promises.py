@@ -64,7 +64,7 @@ def extract_reader_promises(bible):
             candidates.extend((_text(value), "selling_point") for value in extras if _text(value))
     unique = []
     for text, source in candidates:
-        text = re.sub(r"\s+", "", text)[:40]
+        text = re.sub(r"\s+", "", text)
         if len(text) >= 2 and text not in {row[0] for row in unique}:
             unique.append((text, source))
         if len(unique) == 3:

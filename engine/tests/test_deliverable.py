@@ -166,6 +166,42 @@ def test_fallback_removes_conflicting_mechanism_and_resolves_name_collision():
     )
 
 
+def test_card_drift_fallback_never_replaces_valid_stage_contracts_with_the_premise():
+    from bookengine.selected_card import enforce
+
+    selected = card(title="旧伞渡口", premise="修伞匠赵溪想找姐姐。", golden_finger_rule="旧伞只能挡一次雨。")
+    locked = dict(
+        name="赵溪",
+        identity="修伞匠",
+        setting="码头",
+        object="旧伞",
+        keywords=dict(identity=["修伞匠"], setting=["码头"], object=["旧伞"], rule=["一次雨"]),
+    )
+    source = bible()
+    source.setdefault("world", {"levels": [], "rules": []})
+    source.setdefault("power", {})
+    source["characters"][0].update(name="赵溪", identity="错误身份")
+    source["volumes"] = [
+        {
+            "number": 1,
+            "start": 1,
+            "end": 10,
+            "location": "南码头",
+            "antagonist": "周掌柜",
+            "goal": "找到姐姐留下的账册",
+            "climax": "当众揭穿周掌柜",
+            "opponent_resolution": {"name": "周掌柜", "type": "被废", "chapter": 10},
+        }
+    ]
+
+    fixed, _ = enforce(source, {"threads": []}, selected, locked, ["identity", "setting"])
+
+    stage = fixed["volumes"][0]
+    assert stage["antagonist"] == stage["opponent_resolution"]["name"] == "周掌柜"
+    assert stage["location"] == "南码头" and stage["goal"] == "找到姐姐留下的账册"
+    assert selected["premise"] not in (stage["location"], stage["antagonist"], stage["goal"], stage["climax"])
+
+
 def test_first_group_is_selectable_before_slowest_generation_finishes(tmp_path):
     finished, release = threading.Event(), threading.Event()
 

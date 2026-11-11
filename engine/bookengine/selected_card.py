@@ -107,10 +107,6 @@ def enforce(bible, threads, card, locked, drift=()):
         bible["world"] = dict(levels=bible["world"].get("levels", []), rules=[card["premise"]])
         bible["power"] = {}
         hero.update(desire=card["premise"], goal=card["premise"], address=hero["name"])
-        for volume in bible.get("volumes", []):
-            for key in list(volume):
-                if isinstance(volume[key], str):
-                    volume[key] = card["premise"]
         for line in threads.get("threads", []):
             for beat in line.get("beats", []):
                 beat["description"] = card.get("engine") or card["premise"]

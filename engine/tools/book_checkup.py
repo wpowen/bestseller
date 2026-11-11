@@ -349,7 +349,7 @@ def check_book(book, *, source="final"):
     stages = _stage_stats(bible, chapters)
     from bookengine.retired_opponents import location_regression
     from bookengine.prose_repetition import clean_repetitions
-    from bookengine.prose_similarity import analyze_prose, RULES
+    from bookengine.prose_similarity import analyze_prose, cross_chapter_checkup, RULES
     from bookengine.text_hygiene import summarize_chapters
     from bookengine.review_diagnostics import design_findings
     from bookengine.plot_diagnostics import plot_findings
@@ -381,6 +381,7 @@ def check_book(book, *, source="final"):
         for c in chapters
     ]
     similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0], bible=bible)) for c in chapters]
+    adjacent_openings, repeated_arrivals = cross_chapter_checkup(chapters)
     intros, aliases = _cast_stats(bible, chapters)
     from bookengine.character_diagnostics import character_reference
 
@@ -432,6 +433,8 @@ def check_book(book, *, source="final"):
             status="Inference",
             chapters=[r for r in similarity if r["records"]],
         ),
+        adjacent_opening_repetitions=adjacent_openings,
+        repeated_arrivals=repeated_arrivals,
         text_hygiene=summarize_chapters(chapters),
         format_residue=dict(
             total=sum(c["total"] for c in residue),

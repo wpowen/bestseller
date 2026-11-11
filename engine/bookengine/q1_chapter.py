@@ -33,6 +33,7 @@ from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
+from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -136,6 +137,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
+    sections = with_completed_action_context(sections, out, idx)
     sections.extend(speech_context(bible, idx))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
@@ -238,6 +240,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         notes["cast_repair"] = "rechecked"
     text, raw, failed, boundaries, handoff = repair_opening(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["cross_chapter_opening"] = guarded(repair_cross_chapter_opening)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
     )
     text, raw, failed, opponent_repair = guarded(repair_retired)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask

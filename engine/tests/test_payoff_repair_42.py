@@ -92,6 +92,17 @@ def test_due_payoff_patch_is_relocated_to_final_three_paragraphs_before_recheck(
     assert not failed
 
 
+def test_finish_extraction_patch_uses_the_same_tail_placement_guard():
+    from bookengine.q1_chapter import supplement
+
+    original = "\n\n".join(f"第{number}段。" for number in range(1, 9))
+
+    changed, accepted = supplement(original, {"after": 1, "text": "兑现结果。"})
+
+    assert accepted is True
+    assert changed.index("第6段。") < changed.index("兑现结果。") < changed.index("第7段。")
+
+
 def test_repair_does_nothing_when_hook_and_payoff_are_already_grounded():
     text = "顾冬岚夺回三枚灵石。\n\n门外的追兵已经举刀。"
     raw = {"state": {}, "payoff": {"fulfilled": True, "quote": "顾冬岚夺回三枚灵石"}}

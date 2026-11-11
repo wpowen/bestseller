@@ -366,7 +366,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
         candidates.append(candidate)
     candidates = bind_stage_content(candidates, [row for row in stage_skeleton if row.get("_model_planned")])
-    candidates = enforce_ability_plan(bible, candidates)
+    candidates = bind_title_contracts(bible, enforce_ability_plan(bible, candidates))
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:

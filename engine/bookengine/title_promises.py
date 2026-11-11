@@ -7,6 +7,7 @@ import re
 RESOLUTION_TYPES = {"被杀", "被擒", "被废", "当众击败后失势"}
 GROWTH_DIMENSIONS = {"力量", "身份", "关系"}
 _VIOLENT = re.compile(r"杀|复仇|报仇|击败|清算|镇压|审判")
+_PAYOFF_COMBAT = re.compile(r"杀|击败|击退|争夺|赢下|冲破|闯过|夺回|反制|围困|伏击|追杀")
 FIXED_STAGE_FIELDS = (
     "location",
     "antagonist",
@@ -293,11 +294,16 @@ def bind_title_contracts(bible, batch):
             row["promise_payoff"] = {
                 key: payoff.get(key) for key in ("action", "target", "result", "escalation", "scale")
             }
+            payoff_text = "".join(_text(payoff.get(key)) for key in ("action", "result"))
+            if _PAYOFF_COMBAT.search(payoff_text):
+                row.update(type="对抗", rhythm_type="对抗")
+                row.pop("relationship_change", None)
         resolution = stage.get("opponent_resolution") if isinstance(stage.get("opponent_resolution"), dict) else {}
         row = mapped.get(_integer(resolution.get("chapter")))
         if row is not None:
             row["opponent_resolution"] = {key: resolution.get(key) for key in ("name", "type", "outcome")}
             row.update(type="对抗", rhythm_type="对抗")
+            row.pop("relationship_change", None)
     total = _integer(
         bible.get("reader_promise_total"),
         max([_integer(stage.get("end")) for stage in _rows(bible.get("volumes"))] or [0]),

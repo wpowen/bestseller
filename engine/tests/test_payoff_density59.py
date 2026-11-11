@@ -124,6 +124,27 @@ def test_scheduled_opponent_resolution_makes_the_planned_chapter_combat():
     assert bound["type"] == "对抗" and bound["rhythm_type"] == "对抗"
 
 
+def test_scheduled_combat_payoff_cannot_also_carry_a_relationship_contract():
+    bible = design(title="借兽清算")
+    chapter = bible["volumes"][0]["promise_payoffs"][0]["chapter"]
+    planned = {
+        "number": chapter,
+        "type": "情感",
+        "rhythm_type": "情感",
+        "relationship_change": {
+            "people": ["顾立谦", "霜团"],
+            "cause": "顾立谦坦白代价",
+            "before": "霜团不信任他",
+            "after": "霜团愿意同行",
+        },
+    }
+
+    bound = bind_title_contracts(bible, [planned])[0]
+
+    assert bound["promise_payoff"]["scale"] == "小兑现"
+    assert bound["type"] == "对抗" and "relationship_change" not in bound
+
+
 def test_literal_kill_in_title_requires_at_least_one_opponent_killed():
     bible = design()
     assert any("至少一个阶段反派被杀" in issue for issue in structure_promise_issues(bible, 20))

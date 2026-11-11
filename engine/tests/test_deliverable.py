@@ -202,6 +202,29 @@ def test_card_drift_fallback_never_replaces_valid_stage_contracts_with_the_premi
     assert selected["premise"] not in (stage["location"], stage["antagonist"], stage["goal"], stage["climax"])
 
 
+def test_card_drift_fallback_does_not_retarget_a_saved_address_to_the_renamed_hero():
+    from bookengine.selected_card import enforce
+
+    selected = card(title="断线", premise="木偶师顾长风夺回自由。", golden_finger_rule="斩断控制线。")
+    locked = dict(
+        name="顾长风",
+        identity="木偶师",
+        setting="禁库",
+        object="控制线",
+        keywords=dict(identity=["木偶师"], setting=["禁库"], object=["控制线"], rule=["斩断控制线"]),
+    )
+    source = bible()
+    source.setdefault("world", {"levels": [], "rules": []})
+    source.setdefault("power", {})
+    source["characters"][0].update(name="裴照夜", identity="错误身份", address="裴照夜", address_target="裴照夜")
+
+    fixed, _ = enforce(source, {"threads": []}, selected, locked, ["identity", "setting"])
+    hero = next(row for row in fixed["characters"] if row["role"] == "protagonist")
+
+    assert hero["name"] == "顾长风"
+    assert hero["address"] == hero["address_target"] == "顾长风"
+
+
 def test_card_rule_fallback_saves_short_points_without_copying_rule_into_every_power_field():
     from bookengine.selected_card import enforce
 

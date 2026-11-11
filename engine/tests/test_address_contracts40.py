@@ -157,3 +157,55 @@ def test_conflicting_shared_label_cannot_hide_missing_origin_in_second_row():
     bible["characters"].append(dict(name="郑玉兰", address="石头", address_target="周远舟"))
     result = check(bible, {1: "石头是他挡下落石后得来的称呼。", 2: "他们离开了。"})
     assert any(i["speaker"] == "郑玉兰" for i in result["findings"])
+
+
+def test_formal_name_label_is_not_an_origin_contract_and_stale_target_is_corrected():
+    bible = {
+        "characters": [
+            {"name": "顾长风", "role": "protagonist", "address": "顾长风", "address_target": "裴晏竹"},
+            {"name": "裴晏竹", "role": "support"},
+        ]
+    }
+
+    assert list(addresses.address_rows(bible))[0]["name"] == "顾长风"
+    assert addresses.address_issues(bible) == []
+
+
+def test_new_bible_rejects_a_formal_name_pointing_at_another_character():
+    from bookengine.identity import validate_cast_contract
+
+    bible = {
+        "characters": [
+            {"name": "顾长风", "role": "protagonist", "address": "顾长风", "address_target": "裴晏竹"},
+            {"name": "裴晏竹", "role": "support"},
+        ]
+    }
+
+    with pytest.raises(ValueError, match="formal name"):
+        validate_cast_contract(bible)
+
+
+def test_stale_formal_name_target_no_longer_blocks_a_fulfilled_reader_promise():
+    bible = {
+        "characters": [
+            {"name": "顾长风", "role": "protagonist", "address": "顾长风", "address_target": "裴晏竹"},
+            {"name": "裴晏竹", "role": "support"},
+        ],
+        "opening_promises": ["顾长风在第三章公开证据"],
+    }
+    text = "顾长风在第三章公开证据，当众交出盖有戒律堂印记的抄页。"
+
+    def ask(_client, _key, _prompt, sections, _schema, **_kwargs):
+        import json
+
+        items = json.loads(dict(sections)["逐项验收"])
+        return {
+            "items": [
+                {"id": item["id"], "status": "fulfilled", "evidence": [{"chapter": 3, "quote": text}]} for item in items
+            ]
+        }
+
+    note = review_opening(None, "chapter3", text, bible, 3, {}, ask)
+
+    assert note["status"] == "checked"
+    assert not any(item["kind"] == "address_origin" for item in note["items"])

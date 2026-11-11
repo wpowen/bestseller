@@ -10,6 +10,13 @@ from .nonhuman_speech import _can_speak, is_nonhuman
 def address_rows(bible):
     cards = bible.get("characters", [])
     names = {c.get("name") for c in cards if isinstance(c, dict) and c.get("name")}
+    formal_owners = {}
+    for item in cards:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        for formal in [item["name"], *(item.get("aliases") or [])]:
+            if isinstance(formal, str) and formal:
+                formal_owners.setdefault(formal, set()).add(item["name"])
     lead = next((c.get("name") for c in cards if c.get("role") == "protagonist"), "")
     seen = set()
     for card in cards:
@@ -26,6 +33,9 @@ def address_rows(bible):
             origin = card.get("address_origin", "")
             origin = origin.get(label, "") if isinstance(origin, dict) else origin
             derived = [name for name in names if derived_address(label, name)]
+            owners = formal_owners.get(label, set())
+            if len(owners) == 1:
+                target = next(iter(owners))
             # Legacy cards sometimes store the target's own address on the
             # target card, and sometimes point address_target back to that
             # same card. A unique name-derived target is stronger evidence.

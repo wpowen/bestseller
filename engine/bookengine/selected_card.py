@@ -112,7 +112,7 @@ def enforce(bible, threads, card, locked, drift=()):
         # Failed designs must not keep a second mechanism or location beside the fixed fields.
         bible["world"] = dict(levels=bible["world"].get("levels", []), rules=[card["premise"]])
         bible["power"] = {}
-        hero.update(desire=card["premise"], goal=card["premise"], address=hero["name"])
+        hero.update(desire=card["premise"], goal=card["premise"])
         for line in threads.get("threads", []):
             for beat in line.get("beats", []):
                 beat["description"] = card.get("engine") or card["premise"]

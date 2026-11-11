@@ -108,31 +108,24 @@ def diversity_issues(history, batch):
 
 
 def rename_repeated_titles(history, batch):
-    """Resolve surface title repetition locally; never spend an outline rewrite on it."""
-    current, decisions = deepcopy(batch), []
-    for _ in range(12):
-        issue = next((row for row in diversity_issues(history, current) if row.get("kind") == "title_keyword"), None)
-        if not issue:
-            break
-        later = set(issue.get("chapters", [])[2:])
-        target = next((row for row in current if integer(row.get("number")) in later), None)
-        if target is None:
-            break
-        before = str(target.get("title") or "")
-        # Deleting one repeated character produced broken titles such as “断取痕”.
-        # A neutral ordinal is less literary but deterministic, grammatical, and cannot retrigger this surface rule.
-        after = f"第{integer(target.get('number'))}章"
-        target["title"] = after
-        target["title_keywords"] = title_terms(after)
-        decisions.append(
-            dict(
-                number=integer(target.get("number")),
-                keyword=issue.get("keyword"),
-                before=before,
-                after=after,
-                action="deterministic_title_rename",
-            )
+    """Record surface title repetition without a paid rewrite and without destroying titles.
+
+    Earlier versions deleted a character (broken titles) or replaced the title with a bare ordinal,
+    which erased real chapter titles from the book. Repetition is now a non-blocking diagnostic.
+    """
+    current = deepcopy(batch)
+    decisions = [
+        dict(
+            number=number,
+            keyword=issue.get("keyword"),
+            title=str(next((row.get("title") for row in current if integer(row.get("number")) == number), "")),
+            action="kept_title_diagnostic",
         )
+        for issue in diversity_issues(history, current)
+        if issue.get("kind") == "title_keyword"
+        for number in sorted(set(issue.get("chapters", [])[2:]))
+        if any(integer(row.get("number")) == number for row in current)
+    ]
     return current, decisions
 
 

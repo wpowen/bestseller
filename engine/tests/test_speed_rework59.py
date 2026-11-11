@@ -102,7 +102,7 @@ def _combat(number, title):
     }
 
 
-def test_title_repetition_is_renamed_without_calling_outline_rewrite(tmp_path):
+def test_title_repetition_is_kept_without_calling_outline_rewrite(tmp_path):
     batch = [_combat(1, "雪兽来袭"), _combat(2, "雪兽伏击"), _combat(3, "雪兽围堵")]
 
     def forbidden(*_):
@@ -111,7 +111,7 @@ def test_title_repetition_is_renamed_without_calling_outline_rewrite(tmp_path):
     result = repair_batch(tmp_path, "001-003", [], batch, forbidden, bible={})
 
     assert result[:2] == batch[:2]
-    assert result[2]["title"] != batch[2]["title"]
+    assert result == batch
     report = json.loads((tmp_path / "outline-diversity/001-003.json").read_text())
     assert report["title_renames"][0]["number"] == 3
 

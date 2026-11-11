@@ -65,7 +65,7 @@ def test_conflict_window_spans_batches_and_only_reports_current_batch_targets():
     assert not diversity.diversity_issues([previous[0], previous[1], previous[3]], current)
 
 
-def test_global_history_is_loaded_and_title_repeat_is_renamed_without_rewrite(tmp_path):
+def test_global_history_is_loaded_and_title_repeat_is_kept_without_rewrite(tmp_path):
     save(tmp_path / "chapters/001.json", outline(1, "闸外"))
     save(tmp_path / "chapters/010.json", outline(10, "守闸"))
     recent = [outline(n, f"旧章{n}", str(n)) for n in range(41, 45)]
@@ -73,13 +73,13 @@ def test_global_history_is_loaded_and_title_repeat_is_renamed_without_rewrite(tm
     before = (tmp_path / "chapters/001.json").read_bytes()
     client = Fixture(tmp_path, [dict(chapters=batch)])
     result = plan(client, 45, 46, recent)
-    assert [r["title"] for r in result] == ["第45章", "夜雨"]
+    assert [r["title"] for r in result] == ["碎闸", "夜雨"]
     assert len(client.calls) == 1
     assert "闸" in client.calls[0][1] and "已用核心冲突类型与章名关键词" in client.calls[0][1]
     assert (tmp_path / "chapters/001.json").read_bytes() == before
     report = json.loads(next((tmp_path / "outline-diversity").glob("*.json")).read_text())
     assert report["attempts"][0]["targets"] == []
-    assert report["title_renames"][0]["action"] == "deterministic_title_rename"
+    assert report["title_renames"][0]["action"] == "kept_title_diagnostic"
     assert "闸" in report["used"]["title_keywords"]
 
 
@@ -182,7 +182,7 @@ def test_title_repair_does_not_call_model(tmp_path):
 
     result = diversity.repair_batch(tmp_path, "003-003", history, batch, forbidden)
     report = json.loads((tmp_path / "outline-diversity/003-003.json").read_text())
-    assert result[0]["title"] == "第3章" and not calls
+    assert result[0]["title"] == "碎闸" and not calls
     assert report["title_renames"]
 
 

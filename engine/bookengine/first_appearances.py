@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from .introductions import check_world_first_appearances, world_term_registry
+from .introductions import check_introductions, check_world_first_appearances, world_term_registry
 from .promise_io import precise_ask
 from .text import _paragraph_spans
 from tools.book_checkup import clean_prose
@@ -30,11 +30,29 @@ def _character_names(bible):
     ]
 
 
+def _character_cards(bible):
+    return [card for card in bible.get("characters", []) if isinstance(card, dict) and card.get("name")]
+
+
+def _character_definition(card):
+    for field in ("identity", "background", "origin", "身份", "背景", "来历"):
+        value = card.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "人物卡中的既定身份"
+
+
 def due_first_appearances(out, number, bible, outline):
     registry = world_term_registry(bible)
     prior = _prior_text(out, number)
     planned = json.dumps(outline, ensure_ascii=False)
-    return [dict(term=term, **card) for term, card in registry.items() if term in planned and term not in prior]
+    due = [dict(term=term, **card) for term, card in registry.items() if term in planned and term not in prior]
+    due.extend(
+        dict(term=card["name"], kind="character", definition=_character_definition(card))
+        for card in _character_cards(bible)
+        if card["name"] in planned and card["name"] not in prior
+    )
+    return due
 
 
 def writer_first_appearance_instruction(out, number, bible, outline):
@@ -47,8 +65,8 @@ def writer_first_appearance_instruction(out, number, bible, outline):
     )
 
 
-def _problems(text, bible, prior):
-    return [
+def _problems(text, bible, prior, *, include_characters=True):
+    world = [
         row
         for row in check_world_first_appearances(
             text,
@@ -58,6 +76,16 @@ def _problems(text, bible, prior):
         )
         if row["status"] != "Evidence"
     ]
+    if not include_characters:
+        return world
+    cards = _character_cards(bible)
+    seen = [card["name"] for card in cards if card["name"] in prior]
+    characters = [
+        row
+        for row in check_introductions(text, cards, previously_seen=seen)
+        if row.get("kind") == "missing_introduction"
+    ]
+    return world + characters
 
 
 def _targets(text, issues):
@@ -72,7 +100,11 @@ def _targets(text, issues):
 
 def repair_first_appearances(client, prefix, text, raw, failed, state, bible, outline, out, extract, ask):
     prior = _prior_text(out, outline["number"])
-    before = _problems(text, bible, prior)
+    # The finish extraction can already carry a cast edit through the older
+    # amend/recheck path. Do not pay for a second character rewrite after that
+    # path attempted (and possibly rolled back) the same introduction.
+    attempted_cast_edit = isinstance(raw, dict) and bool(raw.get("edits"))
+    before = _problems(text, bible, prior, include_characters=not attempted_cast_edit)
     note = {"status": "checked" if not before else "unfulfilled", "before": before, "after": before, "edits": []}
     if not before:
         return text, raw, failed, note
@@ -81,7 +113,7 @@ def repair_first_appearances(client, prefix, text, raw, failed, state, bible, ou
         ask,
         client,
         prefix + "-first-appearance-repair",
-        "只改首次出现所在段：术语第一次出现的句子就用自然动作、对白或一句叙述交代所给定义；"
+        "只改首次出现所在段：术语或人物第一次出现的句子就用自然动作、对白或一句叙述交代所给定义/身份；"
         "指称不明时改用已有人物或生物原名，不造新实体。保留段内事件、人物、数字和结果。",
         [
             ("缺失项及圣经定义", before),
@@ -108,7 +140,7 @@ def repair_first_appearances(client, prefix, text, raw, failed, state, bible, ou
             return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edit_target")
         start, end = spans[edit["id"] - 1]
         candidate = candidate[:start] + replacement.strip() + candidate[end:]
-    after = _problems(candidate, bible, prior)
+    after = _problems(candidate, bible, prior, include_characters=not attempted_cast_edit)
     note.update(after=after, edits=edits)
     if after or clean_prose(candidate)[0] != candidate:
         return text, raw, failed, dict(note, status="rolled_back", reason="first_appearance_recheck_failed")

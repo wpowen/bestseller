@@ -75,6 +75,33 @@ def test_fake_repair_inserts_grounded_term_definition_and_clears_issue(tmp_path)
     assert calls == ["r2-ch7-first-appearance-repair"]
 
 
+def test_character_first_mentioned_in_dialogue_gets_identity_at_that_mention(tmp_path):
+    character_bible = {"characters": [{"name": "沈照霜", "identity": "驭兽宗女药师"}]}
+    original = "“你认识沈照霜？”陶七问。"
+    replacement = "沈照霜是驭兽宗女药师，先前替伤员配过药。陶七问：“你认识她？”"
+
+    def ask(client, key, instruction, sections, schema, **kwargs):
+        target = dict(sections)["只可修改的首次出现段"][0]
+        return {"edits": [{"id": target["id"], "original": target["original"], "text": replacement}]}
+
+    changed, raw, failed, note = repair_first_appearances(
+        None,
+        "r2-ch12",
+        original,
+        {"state": {}},
+        False,
+        {},
+        character_bible,
+        {"number": 12},
+        tmp_path,
+        lambda *args, **kwargs: ({"state": {}, "events": []}, False, 0),
+        ask,
+    )
+
+    assert changed == replacement and raw["events"] == [] and failed is False
+    assert note["status"] == "checked" and note["after"] == []
+
+
 def test_checkup_registers_term_and_unresolved_reference_findings(tmp_path):
     from tools.book_checkup import check_book
 

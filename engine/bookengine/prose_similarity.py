@@ -240,7 +240,7 @@ def _places(text):
 
 
 def with_completed_action_context(sections, out, chapter):
-    """Tell the writer what already happened without changing existing context sections."""
+    """Add completed-action guidance inside the existing previous-ending block."""
     history = _history(out, chapter)
     if not history:
         return list(sections)
@@ -251,7 +251,12 @@ def with_completed_action_context(sections, out, chapter):
     value = "上一章末场已发生，开头不得重写同一动作或时间起句：\n" + tail[-1200:]
     if places:
         value += "\n此前到过的地点（再次到达必须写明折返理由）：" + "、".join(places[-20:])
-    return [*sections, ("已经发生，不要重写", value)]
+    result = list(sections)
+    for index, (title, current) in enumerate(result):
+        if title == "上章结尾":
+            result[index] = (title, current + "\n" + value)
+            break
+    return result
 
 
 def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible, outline, out, extract, ask):

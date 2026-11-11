@@ -57,11 +57,13 @@ def test_writer_context_marks_previous_scene_and_seen_places_as_completed(tmp_pa
     (tmp_path / "chapter-011.body.md").write_text(CH11)
     (tmp_path / "chapter-012.body.md").write_text("众人离开骨桥，进入转轮室。")
 
-    sections = with_completed_action_context([("章纲", "继续追踪")], tmp_path, 13)
+    sections = with_completed_action_context([("章纲", "继续追踪"), ("上章结尾", "众人离开转轮室。")], tmp_path, 13)
 
     assert sections[0] == ("章纲", "继续追踪")
-    title, value = sections[-1]
-    assert title == "已经发生，不要重写"
+    assert len(sections) == 2
+    title, value = sections[1]
+    assert title == "上章结尾"
+    assert "众人离开转轮室" in value
     assert "众人离开骨桥" in value
     assert "悬骨桥" in value
 

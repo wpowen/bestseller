@@ -84,6 +84,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             identity_keywords=identity_keywords(c.get("identity", ""), c.get("occupation", "")),
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
+            pronoun="他" if c.get("gender") == "男" else "她" if c.get("gender") == "女" else "未知",
             address=c.get("address") or c["name"],
             aliases=c.get("aliases", []),
         )

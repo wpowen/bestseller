@@ -6,6 +6,7 @@ import re
 
 from .address_contracts import address_issues, address_rows
 from .cast_repair import apply_cast_edits, registered_labels
+from .gender_pronouns import pronoun_findings
 from .nonhuman_speech import identity_literal_findings, speech_findings
 from .precision import _sentences
 from .unregistered_names import name_findings
@@ -32,10 +33,6 @@ _LEADER = re.compile(r"最前方|领头|首领|头目|为首|带队|率众|指�
 _HOSTILE = re.compile(
     r"敌方|敌军|追兵|追捕|活捉|药引|截杀|围杀|追回|封死(?:出口|矿道|退路)|"
     r"(?:出口|矿道|退路)[^。！？]{0,8}封死|杀(?:掉|死)"
-)
-_FRONTED_PRONOUN = re.compile(
-    r"[\s“‘\"']*(?:[^，,。！？!?]{1,40}[，,]\s*)?"
-    r"(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])"
 )
 
 
@@ -65,102 +62,6 @@ def _finding(kind, chapter, name, status, observed, expected, reason, text, numb
 
 def _mentioned(sentence, cards):
     return [card for card in cards if card["name"] in sentence]
-
-
-def _subject_bound(sentence, name):
-    stripped = sentence.strip(" \t\r\n“”‘’\"'")
-    if re.search(r"(?:竟|原来|正|却)?是" + re.escape(name) + r"[。！？!?]?$", stripped):
-        return True
-    if not stripped.startswith(name):
-        return False
-    tail = stripped[len(name) :]
-    if re.match(r"(?:和|与|跟|同|、)[\u4e00-\u9fff]{2,4}(?:一同|一起|都|也)?", tail) or re.search(
-        r"(?:两人|二人|他们|她们)(?:一同|一起|都|也)?", tail
-    ):
-        return False
-    predicate = stripped[len(name) :]
-    return bool(
-        re.search(r"被[^。！？]{0,30}(?:拽|拖|压|击|撞|抓|绑|困|推|拉|卷|刺|砸|扯)", predicate)
-        or re.match(r"(?:没有|没|未)(?:答|回答|接话|开口|出声|回应|再争)", predicate)
-        or re.match(r"(?:从|沿|穿过)[^。！？]{0,60}(?:折返|返回|回到|离开|赶到|抵达|走|跑)", predicate)
-        or re.match(r"(?:握住|抓住|攥住)[^。！？]{0,40}(?:契约|契纹|纹路|筋骨)", predicate)
-        or re.match(r"收[^。！？]{0,10}时，(?:脑|记忆|意识|心神)", predicate)
-        or re.match(r"(?:正)?(?:蹲|站|坐|跪|伏|躺|俯身|转身|停稳|把)", predicate)
-    )
-
-
-def _explicit_subject(sentence, people):
-    subjects = [card for card in people if _subject_bound(sentence, card["name"])]
-    return subjects[0] if len(subjects) == 1 else None
-
-
-def _dialogue_only(sentence):
-    return bool(re.fullmatch(r"\s*[“‘\"][\s\S]*[”’\"]\s*", sentence))
-
-
-def _pronoun_findings(text, cards, chapter, spans):
-    findings = []
-    bound = None
-    for index, (start, end) in enumerate(spans):
-        sentence = text[start:end]
-        match = _FRONTED_PRONOUN.match(sentence)
-        resolved = None
-        if match and index:
-            previous = text[slice(*spans[index - 1])]
-            people = [card for card in _mentioned(previous, cards) if card.get("gender") in _GENDER]
-            explicit = _explicit_subject(previous, people)
-            if explicit is not None:
-                resolved = explicit
-            elif len(people) > 1:
-                findings.append(
-                    _finding(
-                        "gender_pronoun",
-                        chapter,
-                        "",
-                        "Unknown",
-                        match[1],
-                        "",
-                        "前句出现多名人物，代词指代不清",
-                        text,
-                        index + 1,
-                        start,
-                        end,
-                    )
-                )
-            elif len(people) == 1 and _subject_bound(previous, people[0]["name"]):
-                resolved = people[0]
-            elif not people and bound is not None:
-                resolved = bound
-        if resolved is not None:
-            card = resolved
-            expected, wrong = _GENDER[card["gender"]]
-            if match[1] == wrong:
-                findings.append(
-                    _finding(
-                        "gender_pronoun",
-                        chapter,
-                        card["name"],
-                        "Inference",
-                        match[1],
-                        expected,
-                        "前句只有一名已登记人物，后句性别代词与人物卡不符",
-                        text,
-                        index + 1,
-                        start,
-                        end,
-                    )
-                )
-        people = [card for card in _mentioned(sentence, cards) if card.get("gender") in _GENDER]
-        explicit = _explicit_subject(sentence, people)
-        if explicit is not None:
-            bound = explicit
-        elif match and resolved is not None:
-            bound = resolved
-        elif bound is not None and _dialogue_only(sentence):
-            pass
-        else:
-            bound = None
-    return findings
 
 
 def _name_prefixes(name):
@@ -317,7 +218,7 @@ def cast_findings(text, bible, *, chapter=None):
     spans = _sentences(text)
     findings = [
         *_gendered_address_findings(text, cards, chapter, spans),
-        *_pronoun_findings(text, cards, chapter, spans),
+        *pronoun_findings(text, cards, chapter, spans, _finding),
         *_pronoun_name_residue_findings(text, cards, chapter, spans),
         *speech_findings(text, bible, chapter),
         *identity_literal_findings(text, bible, chapter),
@@ -347,11 +248,13 @@ def cast_checkup(bible, chapters):
         )
         for row in contract_issues
     }
-    counts = Counter(row["kind"] for row in findings if row["status"] == "Inference")
+    counts = Counter(row["kind"] for row in findings if row["status"] in ("Evidence", "Inference"))
     counts["address_contract"] = len(logical_contract_issues)
     return dict(
         authority="agent_editorial_not_human",
         counts=dict(counts),
+        evidence_counts=dict(Counter(row["kind"] for row in findings if row["status"] == "Evidence")),
+        inference_counts=dict(Counter(row["kind"] for row in findings if row["status"] == "Inference")),
         unknown_counts=dict(Counter(row["kind"] for row in findings if row["status"] == "Unknown")),
         findings=findings,
         address_contract=dict(
@@ -403,7 +306,9 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     observed = cast_findings(text, bible, chapter=chapter)
     # Unregistered names (walk-on characters, nicknames) are reported for review only;
     # rewriting them would erase named minor characters and natural forms of address.
-    targets = [row for row in observed if row["status"] == "Inference" and row["kind"] != "unregistered_name"]
+    targets = [
+        row for row in observed if row["status"] in ("Evidence", "Inference") and row["kind"] != "unregistered_name"
+    ]
     note = dict(status="checked", before=observed, after=observed, edits=[])
     if not targets:
         return text, raw, failed, note
@@ -443,10 +348,10 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     ]
     for target in repair_targets:
         if target["kind"] == "gender_pronoun":
-            match = _FRONTED_PRONOUN.match(target["quote"])
-            if not match or match[1] != target["observed"]:
+            relative = target.get("pronoun_start", -1) - target["start"]
+            if relative < 0 or target["quote"][relative : relative + 1] != target["observed"]:
                 continue
-            replacement = target["quote"][: match.start(1)] + target["expected"] + target["quote"][match.end(1) :]
+            replacement = target["quote"][:relative] + target["expected"] + target["quote"][relative + 1 :]
         elif target["kind"] == "pronoun_name_residue":
             replacement = target["quote"].replace(target["observed"], target["expected"], 1)
         else:
@@ -455,7 +360,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         proposed.append(dict(id=target["id"], text=replacement))
     candidate, edits = apply_cast_edits(text, proposed, repair_targets)
     after = cast_findings(candidate, bible, chapter=chapter)
-    remaining = {(row["kind"], row["name"]) for row in after if row["status"] == "Inference"}
+    remaining = {(row["kind"], row["name"]) for row in after if row["status"] in ("Evidence", "Inference")}
     edited_ids = {row["id"] for row in edits}
     required = {
         (row["kind"], row["name"]) for row in targets if row["id"] not in protected_names or row["id"] in edited_ids

@@ -96,7 +96,7 @@ def trimming_candidates(cards, chapter):
         + [
             (card, key)
             for card in reversed(present)
-            for key in ("address_origin", "address_target", "aliases", "gender", "identity_keywords")
+            for key in ("address_origin", "address_target", "aliases", "identity_keywords")
         ]
         + [(card, key) for card in reversed(supporting) for key in ("desire", "fear")]
         + [

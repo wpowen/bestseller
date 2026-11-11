@@ -116,7 +116,9 @@ class MinimalBTestsPart1(MinimalBTests):
         hero = dict(
             self.bible["characters"][0], desire="主动欲望" * 180, fear="具体恐惧" * 180, gender="女", address="阿宁"
         )
-        support = [dict(name=f"配角{i}", role="support", voice="说话直接", desire="各自目标") for i in range(3)]
+        support = [
+            dict(name=f"配角{i}", role="support", voice="说话直接", desire="各自目标", gender="女") for i in range(3)
+        ]
         bible = dict(self.bible, characters=[*support, hero])
         dashboard = dict(
             strength=self.bible["canon"]["ladder"]["strength"][0],
@@ -137,6 +139,7 @@ class MinimalBTestsPart1(MinimalBTests):
         self.assertEqual(dropped[0], "阿宁.dashboard:compressed")
         self.assertLess(dropped.index("阿宁.realm_ability"), dropped.index("配角2.current"))
         self.assertTrue(all(card["voice"] == "说话直接" for card in cards[1:]))
+        self.assertTrue(all(card["gender"] == "女" and card["pronoun"] == "她" for card in cards[1:]))
         self.assertEqual((bible, state, chapter), before)
         fallback = dict(
             q1.context(

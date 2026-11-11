@@ -42,6 +42,8 @@ def writer_identity_cards(bible):
         identity = card.pop("identity", "") if isinstance(card, dict) else ""
         if identity:
             card["identity_keywords"] = identity_keywords(identity, card.get("occupation", ""))
+        if card.get("gender") in ("男", "女"):
+            card["pronoun"] = "他" if card["gender"] == "男" else "她"
     return cards
 
 

@@ -63,6 +63,35 @@ def body_of(value, client, cleaning=None):
     return clean(value)
 
 
+def _previous_outcome_facts(state, history, chapter_rows):
+    """Expose saved consequences to the writer without exposing copyable prose."""
+    facts = {}
+    for source in (history or [], chapter_rows or []):
+        iterable = source.values() if isinstance(source, dict) else source
+        for row in iterable:
+            if not isinstance(row, dict):
+                continue
+            facts.update(
+                {
+                    key: row.get(key)
+                    for key in ("summary", "events", "payoff", "gains", "costs", "advances", "demotion_event")
+                    if row.get(key) not in (None, "", [])
+                }
+            )
+    boundary = {
+        key: state.get(key) for key in ("end_location", "present", "end_pov") if state.get(key) not in (None, "", [])
+    }
+    if state.get("dashboard"):
+        boundary["dashboard"] = state["dashboard"]
+    return pack(
+        {
+            "rule": "上一章已完成；只承接这些结局事实，不复述、改写或引用上一章末段原句。",
+            "outcome": facts,
+            "boundary": boundary,
+        }
+    )
+
+
 def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
     dropped = [] if dropped is None else dropped
     continuity_facts = writer_continuity_facts(state, bible, chapter)
@@ -207,7 +236,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
         *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
-        ("上章结尾", previous[-900:]),
+        ("上章结尾", _previous_outcome_facts(state, history, rows)),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),
     ]
 

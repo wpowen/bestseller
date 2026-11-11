@@ -55,8 +55,10 @@ class MinimalBTestsPart1(MinimalBTests):
                     ],
                 )
                 self.assertIn("目标200汉字", prompt.split("## ", 1)[0])
-                for required in ("只写两场戏", "说话直接，先问再答。", self.previous, "阿宁在院里等她，要求一起回家"):
+                for required in ("只写两场戏", "说话直接，先问再答。", "阿宁在院里等她，要求一起回家"):
                     self.assertIn(required, prompt)
+                self.assertNotIn(self.previous, prompt)
+                self.assertIn("不提供上一章原句", prompt)
                 for forbidden in (
                     "PREFIX_SENTINEL",
                     "BIBLE_SENTINEL",

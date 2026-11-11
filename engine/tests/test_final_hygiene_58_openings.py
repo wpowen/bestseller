@@ -73,9 +73,32 @@ def test_writer_context_marks_previous_scene_and_seen_places_as_completed(tmp_pa
     assert len(sections) == 2
     title, value = sections[1]
     assert title == "上章结尾"
-    assert "众人离开转轮室" in value
-    assert "众人离开骨桥" in value
+    assert "众人离开转轮室" not in value
+    assert "众人离开骨桥" not in value
+    assert "不提供上一章原句" in value
     assert "悬骨桥" in value
+
+
+def test_writer_context_uses_saved_outcome_facts_not_previous_prose():
+    from bookengine.q1_extract import context
+
+    repeated = "他掌下，那根控线仍在轻轻挣动，像一条察觉危险的蛇。"
+    sections = dict(
+        context(
+            {},
+            {},
+            {"number": 1},
+            {"number": 2},
+            {"end_location": "柴棚", "present": ["木匠"]},
+            [{"chapter": 1, "summary": "木匠斩断首条控线并保住木偶。"}],
+            [{"number": 1, "events": ["首条控线已断"]}],
+            "前文。\n\n" + repeated,
+        )
+    )
+
+    assert repeated not in sections["上章结尾"]
+    assert "木匠斩断首条控线并保住木偶" in sections["上章结尾"]
+    assert "柴棚" in sections["上章结尾"]
 
 
 def test_cross_chapter_opening_repair_changes_only_opening_and_rechecks(tmp_path):
@@ -113,6 +136,12 @@ def test_cross_chapter_repair_rejects_a_one_paragraph_patch_for_two_hit_paragrap
     (tmp_path / "chapter-001.body.md").write_text(previous)
     text = previous + "\n\n门外传来脚步。"
 
+    seen = {}
+
+    def ask(_client, _key, instruction, sections, _schema, **_kwargs):
+        seen.update(instruction=instruction, sections=dict(sections))
+        return {"text": "两人没有重演方才的动作，直接听向门外脚步。"}
+
     result, _, _, note = repair_cross_chapter_opening(
         None,
         "r2-ch2",
@@ -124,11 +153,14 @@ def test_cross_chapter_repair_rejects_a_one_paragraph_patch_for_two_hit_paragrap
         {"number": 2},
         tmp_path,
         lambda *_args, **_kwargs: ({"events": [], "state": {}}, False, 0),
-        lambda *_args, **_kwargs: {"text": "两人没有重演方才的动作，直接听向门外脚步。"},
+        ask,
     )
 
     assert result == text
     assert note["status"] == "rolled_back" and note["reason"] == "invalid_opening_patch"
+    assert "恰好2个自然段" in seen["instruction"]
+    assert seen["sections"]["本章待改开头"] == "\n\n".join(previous.split("\n\n")[:2])
+    assert note["expected_paragraphs"] == 2 and note["returned_paragraphs"] == 1
 
 
 def test_checkup_registers_both_cross_chapter_opening_defects(tmp_path):

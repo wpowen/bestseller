@@ -239,21 +239,18 @@ def _places(text):
 
 
 def with_completed_action_context(sections, out, chapter):
-    """Add completed-action guidance inside the existing previous-ending block."""
+    """Keep prior prose out of the writer prompt; only retain deterministic place facts."""
     history = _history(out, chapter)
     if not history:
         return list(sections)
-    previous = history[-1][1]
-    spans = _paragraph_spans(previous)
-    tail = previous[spans[-3][0] :] if len(spans) >= 3 else previous
     places = sorted({place for _, text in history for place in _places(text)})
-    value = "上一章末场已发生，开头不得重写同一动作或时间起句：\n" + tail[-1200:]
+    value = "上一章末场已发生；不提供上一章原句。开头只承接已保存的结局事实，不得复述同一动作或时间起句。"
     if places:
         value += "\n此前到过的地点（再次到达必须写明折返理由）：" + "、".join(places[-20:])
     result = list(sections)
     for index, (title, current) in enumerate(result):
         if title == "上章结尾":
-            result[index] = (title, current + "\n" + value)
+            result[index] = (title, value)
             break
     return result
 
@@ -278,12 +275,13 @@ def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible
     value = ask(
         client,
         prefix + "-cross-chapter-opening",
-        "只改本章开头命中段：不要重复上一章已完成的动作或相同时间起句；再次到旧地点必须写明返回原因。"
+        f"只改本章开头命中段，必须恰好{target_paragraph}个自然段："
+        "不要重复上一章已完成的动作或相同时间起句；再次到旧地点必须写明返回原因。"
         "保留本章既定人物、目标、事实和开头之后的原文，不增事件。返回JSON。",
         [
-            ("问题", json.dumps(issues, ensure_ascii=False)),
-            ("历史正文", "\n\n".join(t for _, t in history)[-3000:]),
-            ("本章", text),
+            ("历史命中诊断，只用于避开不得复制", json.dumps(issues, ensure_ascii=False)),
+            ("本章待改开头", text[:end]),
+            ("本章合同与当前状态", [outline, state]),
         ],
         '{"text":"改写后的开头段"}',
         cap=1400,
@@ -293,7 +291,18 @@ def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible
     replacement = value.get("text") if isinstance(value, dict) else None
     replacement_count = len(_paragraph_spans(replacement)) if isinstance(replacement, str) else 0
     if not isinstance(replacement, str) or not replacement.strip() or replacement_count != target_paragraph:
-        return text, raw, failed, dict(note, status="rolled_back", reason="invalid_opening_patch")
+        return (
+            text,
+            raw,
+            failed,
+            dict(
+                note,
+                status="rolled_back",
+                reason="invalid_opening_patch",
+                expected_paragraphs=target_paragraph,
+                returned_paragraphs=replacement_count,
+            ),
+        )
     candidate = replacement.strip() + text[end:]
     remaining = [
         *(adjacent_opening_hits(previous, candidate) if previous else []),

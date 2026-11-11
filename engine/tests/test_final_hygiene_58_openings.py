@@ -44,6 +44,16 @@ def test_eval57_adjacent_opening_replays_completed_action():
     assert "半刻钟后" in hits[0]["current_text"]
 
 
+def test_adjacent_opening_reports_every_replayed_sentence_before_one_repair():
+    previous = "顾立谦退到门边，按住伤口。\n\n霜团抬头盯着旧铃，不肯再走。"
+    current = "顾立谦退到门边，按住伤口。\n\n霜团抬头盯着旧铃，不肯再走。\n\n门外传来脚步。"
+
+    hits = adjacent_opening_hits(previous, current)
+
+    assert len(hits) == 2
+    assert {row["current_paragraph"] for row in hits} == {1, 2}
+
+
 def test_eval57_repeated_arrival_requires_an_explicit_return_reason():
     hits = repeated_arrival_hits([(11, CH11)], 13, CH13)
 
@@ -96,6 +106,29 @@ def test_cross_chapter_opening_repair_changes_only_opening_and_rechecks(tmp_path
     assert not repeated_arrival_hits([(11, CH11)], 13, result)
     assert raw == {"events": [], "state": {}} and failed is False
     assert note["status"] == "repaired"
+
+
+def test_cross_chapter_repair_rejects_a_one_paragraph_patch_for_two_hit_paragraphs(tmp_path):
+    previous = "顾立谦退到门边，按住伤口。\n\n霜团抬头盯着旧铃，不肯再走。"
+    (tmp_path / "chapter-001.body.md").write_text(previous)
+    text = previous + "\n\n门外传来脚步。"
+
+    result, _, _, note = repair_cross_chapter_opening(
+        None,
+        "r2-ch2",
+        text,
+        {"events": []},
+        False,
+        {},
+        {},
+        {"number": 2},
+        tmp_path,
+        lambda *_args, **_kwargs: ({"events": [], "state": {}}, False, 0),
+        lambda *_args, **_kwargs: {"text": "两人没有重演方才的动作，直接听向门外脚步。"},
+    )
+
+    assert result == text
+    assert note["status"] == "rolled_back" and note["reason"] == "invalid_opening_patch"
 
 
 def test_checkup_registers_both_cross_chapter_opening_defects(tmp_path):

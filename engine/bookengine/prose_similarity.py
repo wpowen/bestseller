@@ -186,7 +186,6 @@ def adjacent_opening_hits(previous, current):
                     status="Inference",
                 )
             )
-            break
     return result
 
 
@@ -292,7 +291,8 @@ def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible
         max_attempts=1,
     )
     replacement = value.get("text") if isinstance(value, dict) else None
-    if not isinstance(replacement, str) or not replacement.strip() or len(_paragraph_spans(replacement)) > 3:
+    replacement_count = len(_paragraph_spans(replacement)) if isinstance(replacement, str) else 0
+    if not isinstance(replacement, str) or not replacement.strip() or replacement_count != target_paragraph:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_opening_patch")
     candidate = replacement.strip() + text[end:]
     remaining = [

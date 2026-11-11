@@ -90,7 +90,7 @@ def opening_issue(previous, facts, text, bible=None):
     opening = text[:300]
     quotes = _transition_quotes(opening)
     places = location_table(bible or {}, [old, *previous.get("known_locations", [])])["names"]
-    if new in opening and any(
+    if mentioned_place(new, opening) and any(
         any(
             same_place(old, place, bible) and mentioned_place(old if old.startswith(place) else place, q)
             for place in places
@@ -201,11 +201,14 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
     spans = _paragraph_spans(text)
     if not spans:
         return text, raw, failed, facts, dict(note, status="rolled_back")
-    opening = text[: spans[min(1, len(spans) - 1)][1]]
+    # The framework owns the editable span. Giving the model two paragraphs while allowing it
+    # to claim replace_count=1 caused merged replacements followed by a duplicated old paragraph.
+    replace_count = 1
+    opening = text[: spans[0][1]]
     patch = ask(
         client,
         prefix + "-opening-repair",
-        "只重写开头一到两段，paragraphs条数必须等于replace_count。"
+        f"只重写开头前{replace_count}段，必须返回恰好{replace_count}个paragraphs，由框架决定替换段数。"
         + OPENING_RULE
         + "不得改变或复述后文，不改变人物事实、时序和冲突结果。返回JSON。",
         [
@@ -226,11 +229,12 @@ def repair_opening(client, prefix, text, raw, failed, state, bible, outline, ext
             ("只可修改的开头", opening),
             ("后文只读", text[len(opening) : len(opening) + 600]),
         ],
-        '{"replace_count":1,"paragraphs":["替换开头段"]}',
+        json.dumps({"paragraphs": ["替换开头段"] * replace_count}, ensure_ascii=False),
         cap=2000,
         input_limit=10000,
     )
-    candidate = opening_patch(text, patch if isinstance(patch, dict) else {})
+    patch = dict(patch, replace_count=replace_count) if isinstance(patch, dict) else {}
+    candidate = opening_patch(text, patch)
     reason = "invalid_or_unchanged_patch"
     if candidate != text:
         from .opening_recheck import recheck_opening

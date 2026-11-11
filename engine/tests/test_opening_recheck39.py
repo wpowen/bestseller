@@ -83,6 +83,16 @@ def test_dedicated_call_only_sees_boundaries_and_never_inherits_cached_prefix():
     assert checked["end_quote"] == raw["end_quote"]
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("旧驿", "旧驿深处"), ("暗渠入口", "暗渠"), ("灶房深处", "灶房"), ("白骨堡下层站台", "站台")],
+)
+def test_real_trial_parent_and_local_place_names_are_equivalent(old, new):
+    from bookengine.handoff_places import same_place
+
+    assert same_place(old, new)
+
+
 @pytest.mark.parametrize("response", [{}, None, [], "bad", {"opening_location": "驿站", "opening_quote": "伪造引文"}])
 def test_missing_or_malformed_fields_keep_deterministic_proof_as_inference(response):
     text, raw, state, patch = example()
@@ -171,15 +181,15 @@ def test_invalid_patch_cannot_modify_suffix_or_trigger_boundary_call():
     assert len(calls) == 1 and not extractions
 
 
-def test_two_paragraph_patch_preserves_suffix_and_unchanged_event_records():
+def test_model_cannot_expand_framework_owned_one_paragraph_span():
     text, raw, state, _ = example()
     raw["events"] = [
         dict(kind="character", name="林舟", location="驿站", action="stay", paragraph=3, quote="林舟留在驿站。")
     ]
     patch = dict(replace_count=2, paragraphs=["林舟离开石桥，走进驿站。", "车夫递给他一碗水。"])
     (actual, checked, _, facts, note), _, _ = run_repair(text, raw, state, patch)
-    assert note["status"] == "repaired" and actual.endswith("\n\n林舟留在驿站。")
-    assert checked["events"] == raw["events"] and facts["end_quote"] == raw["end_quote"]
+    assert actual == text and checked == raw and facts["end_location"] == "驿站"
+    assert note["status"] == "rolled_back" and note["rollback_reason"] == "invalid_or_unchanged_patch"
 
 
 def test_grounded_end_in_unchanged_suffix_wins_over_new_extractor_disagreement():

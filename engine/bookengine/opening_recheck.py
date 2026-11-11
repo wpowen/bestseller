@@ -5,7 +5,7 @@ import json
 import re
 
 from .checks import high_confidence
-from .handoff_places import location_table, same_place
+from .handoff_places import location_table, mentioned_place, same_place
 from .prose_repetition import clean_repetitions
 from .stage_transition import _transition_quotes, stage_transition
 from .text import _paragraph_spans
@@ -109,7 +109,7 @@ def recheck_opening(client, prefix, text, candidate, patch, raw, facts, state, b
     proof["reference"] = reference
     transition = stage_transition(bible, outline.get("number"), opening, reference.get("end_location"), outline=outline)
     connected = (
-        bool(target and target in opening and reference.get("end_location"))
+        bool(target and mentioned_place(target, opening) and reference.get("end_location"))
         and not opening_issue(reference, dict(opening_location=target), opening, bible)
         and not (transition and transition["issue"])
     )

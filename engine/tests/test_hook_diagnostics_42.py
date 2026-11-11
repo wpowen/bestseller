@@ -62,6 +62,19 @@ def test_diagnose_distant_beast_threat_and_hidden_unknown_fact_from_real_run():
         assert expected in result["types"]
 
 
+def test_diagnose_refused_release_as_relationship_tension_from_f58_real_run():
+    text = (
+        "“没借太久。没事。”顾怀瑾把发抖的手藏进袖中。\n\n"
+        "沈煦阳没有松手。她的指腹仍压在他腕骨上，那里冷得几乎没有一丝活人的温度。"
+    )
+
+    result = diagnose_ending(text)
+
+    assert result["classification"] == "hook_candidate"
+    assert "关系裂痕" in result["types"]
+    assert diagnose_ending("她替他裹好伤口，松手后各自回房歇息。")["classification"] == "flat_candidate"
+
+
 def test_payoff_evidence_requires_due_quote_grounded_in_body():
     text = "顾冬岚借来雪耳的蛮力，一拳震开石门，抢回三枚灵石。"
     fulfilled = payoff_evidence(

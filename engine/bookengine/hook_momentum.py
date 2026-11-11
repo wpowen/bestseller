@@ -11,6 +11,7 @@ import yaml
 from .endings import apply_tail
 from .storage import save
 from .text import _paragraph_spans, chinese_count
+from .repair_placement import place_tail_bounded_patch
 
 
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())["momentum"]
@@ -163,18 +164,6 @@ def apply_ending_contract(chapters, *, stage_end=None):
     return result
 
 
-def _apply_patch(text, value):
-    spans = _paragraph_spans(text)
-    after = value.get("after") if isinstance(value, dict) else None
-    patch = value.get("text") if isinstance(value, dict) else None
-    if type(after) is not int or not 1 <= after <= len(spans):
-        return text, False
-    if not isinstance(patch, str) or not patch.strip() or "\n" in patch or len(patch) > 500:
-        return text, False
-    offset = spans[after - 1][1]
-    return text[:offset] + "\n\n" + patch.strip() + text[offset:], True
-
-
 def _tail_patch(value):
     if isinstance(value, (list, tuple)) and len(value) == 1 and isinstance(value[0], str):
         paragraphs = _paragraphs(value[0])
@@ -249,14 +238,18 @@ def repair_after_draft(
             answer = ask(
                 client,
                 prefix + "-momentum-payoff-repair",
-                "只补一处本章应兑现的具体收获、反杀或揭示；不改其他段落，不新增人物、主线或规则。",
+                "只补一处本章应兑现的具体收获、反杀或揭示；补段必须在相关场景完成之后，且只能放在章末三段以内；"
+                "不得引用后文才发生的选择、状态或结果。不改其他段落，不新增人物、主线或规则。",
                 [("正文", current), ("章纲兑现要求", outline), ("下一章章纲，只读防冲突", next_outline)],
                 json.dumps({"patch": {"after": 1, "text": ""}}, ensure_ascii=False),
                 cap=1200,
                 input_limit=10000,
                 max_attempts=1,
             )
-            candidate, changed = _apply_patch(current, answer.get("patch") if isinstance(answer, dict) else None)
+            candidate, placement = place_tail_bounded_patch(
+                current, answer.get("patch") if isinstance(answer, dict) else None
+            )
+            changed = placement["status"] == "placed"
             candidate_raw, candidate_failed, _ = _extract(
                 extract_state, client, prefix + "-momentum-payoff-recheck", candidate, state, bible, outline, rows
             )
@@ -268,9 +261,14 @@ def repair_after_draft(
                 and payoff_evidence(candidate, candidate_meta)["classification"] == "fulfilled"
             ):
                 current, observed = candidate, candidate_raw
-                note["payoff"] = {"status": "repaired"}
+                note["payoff"] = {"status": "repaired", **{k: v for k, v in placement.items() if k != "status"}}
             else:
-                note["payoff"] = {"status": "rolled_back", "reason": "payoff_recheck_unknown"}
+                reason = placement.get("reason") if not changed else "payoff_recheck_unknown"
+                note["payoff"] = {
+                    "status": "rolled_back",
+                    "reason": reason,
+                    **{k: v for k, v in placement.items() if k not in ("status", "reason")},
+                }
 
     diagnosis = diagnose_ending(current)
     payoff_before_hook = payoff_evidence(current, dict(observed, payoff_due=outline.get("payoff_due")))

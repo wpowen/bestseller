@@ -41,29 +41,15 @@ from .prose_similarity import repair_cross_chapter_opening, with_completed_actio
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
 from .model_notes import repair_model_notes
+from .repair_placement import place_tail_bounded_patch
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
 
 
 def supplement(text, value):
-    spans = _paragraph_spans(text)
-    idx = value.get("after")
-    patch = value.get("text")
-    if (
-        type(idx) is int
-        and 1 <= idx <= len(spans)
-        and isinstance(patch, str)
-        and 0 < len(patch.strip()) <= 400
-        and "\n" not in patch
-    ):
-        a, b = spans[idx - 1]
-        return clean(
-            text[:a] + patch.strip() + text[b:]
-            if value.get("replace") is True
-            else text[:b] + "\n\n" + patch.strip() + text[b:]
-        ), True
-    return text, False
+    changed, placement = place_tail_bounded_patch(text, value, max_chars=400)
+    return (clean(changed), True) if placement["status"] == "placed" else (text, False)
 
 
 def amend(text, raw, bible, state, outline):

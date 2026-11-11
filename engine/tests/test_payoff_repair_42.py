@@ -59,6 +59,39 @@ def test_missing_due_payoff_gets_one_grounded_patch_without_changing_tail():
     assert not failed
 
 
+def test_due_payoff_patch_is_relocated_to_final_three_paragraphs_before_recheck():
+    paragraphs = [f"第{number}段仍在推进争执。" for number in range(1, 9)]
+    original = "\n\n".join(paragraphs)
+    client = FakeClient([{"patch": {"after": 1, "text": "顾冬岚夺回三枚灵石。"}}])
+
+    changed, raw, failed, note = repair_after_draft(
+        client,
+        "r2-ch4",
+        original,
+        {"state": {}, "payoff": {}},
+        False,
+        {},
+        {},
+        {
+            "number": 4,
+            "hook": "迫近危险：追兵举刀",
+            "ending_type": "平收",
+            "payoff_due": True,
+            "payoff_type": "得到回报",
+        },
+        {},
+        [],
+        fake_extract,
+        fake_ask,
+    )
+
+    assert changed.index("第6段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石")
+    assert note["payoff"]["requested_after"] == 1
+    assert note["payoff"]["effective_after"] == 6
+    assert note["payoff"]["placement"] == "relocated_to_tail"
+    assert not failed
+
+
 def test_repair_does_nothing_when_hook_and_payoff_are_already_grounded():
     text = "顾冬岚夺回三枚灵石。\n\n门外的追兵已经举刀。"
     raw = {"state": {}, "payoff": {"fulfilled": True, "quote": "顾冬岚夺回三枚灵石"}}

@@ -13,6 +13,12 @@ def _grounded_payoff(raw, text):
     return bool(payoff and payoff.get("fulfilled") is True and isinstance(quote, str) and quote in text)
 
 
+def _spread(indexes, limit=8):
+    if len(indexes) <= limit:
+        return indexes
+    return sorted({indexes[round(position * (len(indexes) - 1) / (limit - 1))] for position in range(limit)})
+
+
 def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     contract = relationship_contract(outline)
     before_type = chapter_type(raw if isinstance(raw, dict) else {})
@@ -27,21 +33,22 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         return text, raw, failed, note
     spans = _paragraph_spans(text)
     people = contract["people"]
-    selected = [
+    matching = [
         index for index, (start, end) in enumerate(spans, 1) if any(person in text[start:end] for person in people)
-    ][:2]
-    if not selected:
-        selected = list(range(1, min(2, len(spans)) + 1))
+    ]
+    selected = _spread(matching)
+    if len(selected) < min(8, len(spans)):
+        selected = _spread(sorted(set(selected + list(range(1, len(spans) + 1)))))
     targets = [dict(id=index, original=text[spans[index - 1][0] : spans[index - 1][1]]) for index in selected]
     response = precise_ask(
         ask,
         client,
         prefix + "-relationship-rhythm-repair",
-        "只改给出的主场景段，使两场戏的主要变化成为指定人物关系合同；正面打斗移到章外。"
-        "保留已发生事件、地点、兑现、代价和后果，不得只把标签改成情感。",
-        [("关系变化合同", contract), ("可改主场景段", targets)],
+        "只改给出的主场景段，至少改4段（不足4段则全改），使两场戏的主要变化成为指定人物关系合同；"
+        "正面打斗移到章外。保留已发生事件、地点、兑现、代价和后果，不得只把标签改成情感。",
+        [("关系变化合同", contract), ("可改主场景段", targets), ("完整正文只读", text)],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的完整自然段"}]}',
-        cap=5500,
+        cap=6500,
         required_sources=[row["original"] for row in targets],
     )
     if isinstance(response, dict) and response.get("status") == "skipped":
@@ -49,6 +56,8 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list) or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edits")
+    if len(targets) >= 4 and len(edits) < 4:
+        return text, raw, failed, dict(note, status="rolled_back", reason="insufficient_main_scene_edits")
     by_id = {row["id"]: row for row in targets}
     candidate = text
     for edit in sorted(edits, key=lambda row: row.get("id", 0), reverse=True):

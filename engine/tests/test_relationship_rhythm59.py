@@ -94,6 +94,43 @@ def test_eval57_style_planned_relationship_but_actual_combat_gets_targeted_main_
     assert note["status"] == "checked"
 
 
+def test_relationship_repair_sends_full_body_and_targets_both_main_scenes():
+    paragraphs = [f"顾立谦与霜团在第{number}段讨论退路。" for number in range(1, 11)]
+    original = "\n\n".join(paragraphs)
+
+    def ask(client, key, instruction, sections, schema, **kwargs):
+        supplied = dict(sections)
+        targets = supplied["可改主场景段"]
+        assert supplied["完整正文只读"] == original
+        assert len(targets) == 8
+        return {
+            "edits": [
+                {
+                    "id": row["id"],
+                    "original": row["original"],
+                    "text": f"顾立谦向霜团坦白代价，霜团在第{index}处主动选择继续同行。",
+                }
+                for index, row in enumerate(targets, 1)
+            ]
+        }
+
+    changed, raw, failed, note = repair_relationship_rhythm(
+        None,
+        "r2-ch18",
+        original,
+        {"state": {}, "events": [], "type": "对抗"},
+        False,
+        {},
+        {},
+        relationship_outline(18),
+        lambda *args, **kwargs: ({"state": {}, "events": [], "type": "情感"}, False, 0),
+        ask,
+    )
+
+    assert changed != original and raw["type"] == "情感" and failed is False
+    assert note["status"] == "checked" and len(note["edits"]) == 8
+
+
 def final_bible(exemption=None):
     stages = [
         {"number": 1, "start": 1, "end": 10},

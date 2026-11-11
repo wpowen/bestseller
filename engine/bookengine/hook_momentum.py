@@ -12,6 +12,7 @@ from .endings import apply_tail
 from .storage import save
 from .text import _paragraph_spans, chinese_count
 from .repair_placement import place_tail_bounded_patch
+from .prose_similarity import analyze_prose
 
 
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())["momentum"]
@@ -172,6 +173,37 @@ def _tail_patch(value):
     return value
 
 
+def _ground_collapsed_subject(source, replacement, bible):
+    cards = bible.get("characters", []) if isinstance(bible, dict) else []
+    names = [card.get("name") for card in cards if isinstance(card, dict) and card.get("name")]
+    source_names = [name for name in names if name in source]
+    if len(source_names) != 1 or any(name in replacement for name in names):
+        return replacement
+    card = next(card for card in cards if card.get("name") == source_names[0])
+    pronoun = "他" if card.get("gender") == "男" else "她" if card.get("gender") == "女" else None
+    return replacement.replace(pronoun, source_names[0], 1) if pronoun and pronoun in replacement else replacement
+
+
+def _apply_hook_tail(text, value, bible=None):
+    """Replace the semantic source too when a rewrite restates the preserved adjacent paragraph."""
+    candidate, changed = apply_tail(text, value)
+    spans = _paragraph_spans(text)
+    replacements = value if isinstance(value, (list, tuple)) else []
+    if len(spans) >= 3 and len(replacements) == 2:
+        source = text[spans[-3][0] : spans[-3][1]]
+        probe = source + "\n\n" + replacements[0]
+        if analyze_prose(probe)["counts"]["near_paragraph_pairs"]:
+            replacements = [_ground_collapsed_subject(source, replacements[0], bible), replacements[1]]
+            candidate = text[: spans[-3][0]] + "\n\n".join(part.strip() for part in replacements)
+            changed = candidate != text
+    adjacent = [
+        row
+        for row in analyze_prose(candidate)["records"]
+        if row.get("kind") == "near_paragraph" and row.get("rule") == "adjacent_semantic"
+    ]
+    return candidate, changed, adjacent
+
+
 def _within_saved_maximum(text, outline):
     word_range = outline.get("word_range")
     return not (
@@ -281,16 +313,29 @@ def repair_after_draft(
         answer = ask(
             client,
             prefix + "-momentum-hook-repair",
-            "只重写正文最后两段，落实章纲指定的具体未解决钩子；不新增人物、主线或规则，不提前写下一章。",
-            [("正文最后三段", diagnosis["tail"]), ("章末要求", outline.get("hook")), ("下一章章纲", next_outline)],
+            "只重写正文最后两段，落实章纲指定的具体未解决钩子；不得复述只读前一段的事件或换词追加其改写版；"
+            "不新增人物、主线或规则，不提前写下一章。",
+            [
+                ("只可重写的正文最后两段", "\n\n".join(_paragraphs(current)[-2:])),
+                ("只读前一段，禁止复述", _paragraphs(current)[-3] if len(_paragraphs(current)) >= 3 else ""),
+                ("章末要求", outline.get("hook")),
+                ("下一章章纲", next_outline),
+            ],
             json.dumps({"tail": ["", ""]}, ensure_ascii=False),
             cap=1200,
             input_limit=10000,
             max_attempts=1,
         )
-        candidate, changed = apply_tail(current, _tail_patch(answer.get("tail") if isinstance(answer, dict) else None))
+        candidate, changed, adjacent = _apply_hook_tail(
+            current, _tail_patch(answer.get("tail") if isinstance(answer, dict) else None), bible
+        )
         recheck = diagnose_ending(candidate)
-        if changed and _within_saved_maximum(candidate, outline) and recheck["classification"] == "hook_candidate":
+        if (
+            changed
+            and not adjacent
+            and _within_saved_maximum(candidate, outline)
+            and recheck["classification"] == "hook_candidate"
+        ):
             candidate_raw, candidate_failed, _ = _extract(
                 extract_state, client, prefix + "-momentum-hook-recheck", candidate, state, bible, outline, rows
             )
@@ -305,7 +350,8 @@ def repair_after_draft(
                 reason = "state_recheck_failed" if candidate_failed else "payoff_regressed"
                 note["hook"] = {"status": "rolled_back", "reason": reason}
         else:
-            note["hook"] = {"status": "rolled_back", "reason": "hook_recheck_flat_or_mismatched"}
+            reason = "adjacent_semantic_repetition" if adjacent else "hook_recheck_flat_or_mismatched"
+            note["hook"] = {"status": "rolled_back", "reason": reason}
     note["after"] = dict(
         ending=diagnose_ending(current),
         payoff=payoff_evidence(current, dict(observed, payoff_due=outline.get("payoff_due"))),

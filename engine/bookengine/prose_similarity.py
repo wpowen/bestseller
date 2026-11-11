@@ -22,6 +22,9 @@ RULES = dict(
     containment_min=0.7,
     paragraph_distance=3,
     min_characters=10,
+    adjacent_min_characters=40,
+    adjacent_jaccard_min=0.15,
+    adjacent_containment_min=0.35,
     card_repair_above=1,
     card_rule_ratio=0.68,
     card_rule_containment=0.72,
@@ -165,7 +168,10 @@ def analyze_prose(text, bible=None):
             intersection = len(left & right)
             jaccard = intersection / len(left | right)
             containment = intersection / min(len(left), len(right))
-            if jaccard < RULES["jaccard_min"] or containment < RULES["containment_min"]:
+            adjacent = second == first + 1 and min(len(old), len(normalized)) >= RULES["adjacent_min_characters"]
+            jaccard_min = RULES["adjacent_jaccard_min"] if adjacent else RULES["jaccard_min"]
+            containment_min = RULES["adjacent_containment_min"] if adjacent else RULES["containment_min"]
+            if jaccard < jaccard_min or containment < containment_min:
                 continue
             occurrences = [_position(text, *paragraphs[n - 1], n) for n in (first, second)]
             occurrences[-1].update(action="repair", reasons=["near_paragraph"], status="Inference")
@@ -174,6 +180,7 @@ def analyze_prose(text, bible=None):
                     kind="near_paragraph",
                     jaccard=jaccard,
                     containment=containment,
+                    rule="adjacent_semantic" if adjacent else "nearby_lexical",
                     occurrences=occurrences,
                     status="Inference",
                 )

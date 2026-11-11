@@ -21,6 +21,7 @@ from .planning_drift import observe_plan_alignment
 from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
 from .solution_sequences import repair_solution_sequence, writer_solution_sequence_context
 from .first_appearances import repair_first_appearances, writer_first_appearance_instruction
+from .explanation_density import repair_explanation_density
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -295,6 +296,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["explanation_density"] = guarded(repair_explanation_density)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["final_closure"] = guarded(repair_final_closure)(

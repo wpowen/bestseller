@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .chapter_rhythm import chapter_type, rhythm_issues
+from .chapter_rhythm import chapter_type, combat_run_exemption, rhythm_issues
 
 
 def _plan_type(book, number):
@@ -83,5 +83,18 @@ def merge_rhythm_checkup(book, chapters, findings):
         basis="saved writing outline type versus saved observed body type; reference only",
     )
     rhythm["plan_content"] = _plan_content(book)
+    try:
+        bible = yaml.safe_load((Path(book) / "story_bible.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError, TypeError):
+        bible = {}
+    exemption = combat_run_exemption(bible)
+    excess = rhythm.get("excess_runs", [])
+    rhythm["combat_exemptions"] = [exemption] if exemption else []
+    rhythm["approved_excess_runs"] = (
+        [exemption["chapters"]] if exemption and any(set(exemption["chapters"]).issubset(run) for run in excess) else []
+    )
+    rhythm["unapproved_excess_runs"] = [
+        run for run in excess if not exemption or not set(run).issubset(exemption["chapters"])
+    ]
     result["chapter_rhythm"] = rhythm
     return result

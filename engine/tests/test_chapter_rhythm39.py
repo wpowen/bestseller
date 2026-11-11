@@ -29,7 +29,7 @@ def chapter(n, kind="对抗"):
         "日常": ("在驿站休整疗伤", "吃饭后整理行装再赶路"),
     }
     goal, choice = intentions.get(kind, ("击败守卫", "拔剑击退守卫"))
-    return dict(
+    row = dict(
         number=n,
         title=chr(0x4E00 + n),
         type=kind,
@@ -37,6 +37,14 @@ def chapter(n, kind="对抗"):
         opening_conflict="守卫阻拦主角取回行李",
         scenes=[dict(where="河岸", characters=["主角", "同伴"], goal=goal, choice=choice)],
     )
+    if kind in ("情感", "关系"):
+        row["relationship_change"] = {
+            "people": ["主角", "同伴"],
+            "cause": "主角坦白此前隐瞒",
+            "before": "两人互不信任",
+            "after": "两人重新约定分工",
+        }
+    return row
 
 
 class OfflineClient:

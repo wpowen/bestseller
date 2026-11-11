@@ -16,6 +16,7 @@ FIXED_STAGE_FIELDS = (
     "promise_payoffs",
     "opponent_resolution",
     "ending_contract",
+    "combat_run_exemption",
 )
 PROMPT_STAGE_FIELDS = ("number", "start", "end", "stage", "cost", *FIXED_STAGE_FIELDS)
 

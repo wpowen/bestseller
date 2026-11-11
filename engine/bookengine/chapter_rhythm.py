@@ -5,11 +5,12 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 8
+VERSION = 9
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
     "每阶段至少1章人物关系主章，情感即关系；阶段第4章前预留，短阶段在尾章落实。"
+    "关系章必须给两名人物、起因及不同的变化前后状态，两场都落实且不安排正面打斗。"
     "rhythm_type和rhythm_focus须落实到多数场景的goal/choice，不能仅改type标签或附加一场关系戏。"
 )
 FOCUS = {
@@ -96,6 +97,58 @@ def _stages(bible):
     return [s for s in rows(bible.get("volumes")) if 0 < integer(s.get("start")) <= integer(s.get("end"))]
 
 
+def relationship_contract(row):
+    value = row.get("relationship_change") if isinstance(row, dict) else None
+    if not isinstance(value, dict):
+        return None
+    people = value.get("people") if isinstance(value.get("people"), list) else []
+    people = [name for name in people if isinstance(name, str) and name.strip()]
+    fields = {
+        key: value.get(key, "").strip() if isinstance(value.get(key), str) else ""
+        for key in ("cause", "before", "after")
+    }
+    if len(set(people)) != 2 or not all(fields.values()) or fields["before"] == fields["after"]:
+        return None
+    return dict(people=people, **fields)
+
+
+def combat_run_exemption(bible, number=None):
+    stages = _stages(bible)
+    if not stages:
+        return None
+    stage = max(stages, key=lambda row: integer(row.get("end")))
+    value = stage.get("combat_run_exemption")
+    if not isinstance(value, dict):
+        return None
+    chapters = value.get("chapters") if isinstance(value.get("chapters"), list) else []
+    chapters = [integer(chapter) for chapter in chapters]
+    reason = value.get("reason", "").strip() if isinstance(value.get("reason"), str) else ""
+    valid = (
+        len(chapters) >= 4
+        and chapters == list(range(chapters[0], chapters[-1] + 1))
+        and integer(stage.get("start")) <= chapters[0]
+        and chapters[-1] == integer(stage.get("end"))
+        and len(reason) >= 6
+    )
+    if not valid or number is not None and number not in chapters:
+        return None
+    return dict(stage=stage.get("number"), chapters=chapters, reason=reason)
+
+
+def combat_exemption_issues(bible):
+    stages = _stages(bible)
+    final = max(stages, key=lambda row: integer(row.get("end"))) if stages else None
+    issues = []
+    for stage in stages:
+        if "combat_run_exemption" not in stage:
+            continue
+        if stage is not final or combat_run_exemption(bible) is None:
+            issues.append(
+                f"stage {stage.get('number')}: combat_run_exemption只允许末阶段连续高潮章，章号须连续至末章且理由不少于6字"
+            )
+    return issues
+
+
 def _focused(row, kind):
     """Conservative scene intent check, not a semantic or reader acceptance score."""
     scenes = rows(row.get("scenes"))
@@ -126,6 +179,8 @@ def _requirement(bible, previous, number):
         if not _relation_seen(previous, stage):
             return ("情感",), "rhythm_stage_relation"
     if all(chapter_type(previous.get(n, {})) == "对抗" for n in range(number - 3, number)):
+        if combat_run_exemption(bible, number):
+            return (), "rhythm_combat_exempt"
         return BREAK_TYPES, "rhythm_combat_run"
     return (), ""
 
@@ -146,6 +201,8 @@ def rhythm_slots(bible, start, end, history=(), preferred=()):
             rhythm_focus=FOCUS.get(kind, "保留本章主场景行动与人物选择"),
             rhythm_contract_version=VERSION,
             rhythm_reason=reason,
+            combat_exempt=bool(combat_run_exemption(bible, n)),
+            combat_exemption_reason=(combat_run_exemption(bible, n) or {}).get("reason", ""),
         )
         result.append(slot)
         # Slots are reservations only; this synthetic scene records intent, not an observed relationship.
@@ -156,6 +213,7 @@ def rhythm_slots(bible, start, end, history=(), preferred=()):
 def rhythm_issues(bible, history, batch):
     targets = {integer(r.get("number")) for r in batch}
     combined = {integer(r.get("number")): r for r in [*history, *batch]}
+    named_cast = [card.get("name") for card in rows(bible.get("characters")) if isinstance(card.get("name"), str)]
     previous, issues = {}, []
     for n, row in sorted(combined.items()):
         kind = chapter_type(row)
@@ -179,6 +237,20 @@ def rhythm_issues(bible, history, batch):
                 issues.append(dict(kind=reason, targets=[n], allowed=list(allowed), requirement=RULE))
             elif kind in BREAK_TYPES and not _focused(row, kind):
                 issues.append(dict(kind="rhythm_scene_focus", targets=[n], allowed=[kind], requirement=RULE))
+            if (
+                kind == "情感"
+                and len(named_cast) >= 2
+                and (bible.get("structure_version") or integer(row.get("rhythm_contract_version")) >= VERSION)
+                and relationship_contract(row) is None
+            ):
+                issues.append(
+                    dict(
+                        kind="rhythm_relationship_contract",
+                        targets=[n],
+                        allowed=[kind],
+                        requirement="关系章必须写明两名人物、变化起因、变化前与变化后，且前后不同。" + RULE,
+                    )
+                )
             terms = internal_terms(row)
             if terms:
                 issues.append(

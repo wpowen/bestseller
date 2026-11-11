@@ -50,6 +50,7 @@ def bind_stage_content(chapters, skeleton):
             rhythm_focus=anchor.get("content_requirement") or chapter.get("rhythm_focus", ""),
             opening_conflict=conflict,
             conflict=conflict,
+            relationship_change=deepcopy(anchor.get("relationship_change", chapter.get("relationship_change"))),
         )
         detailed = rows(chapter.get("scenes"))
         bound = []
@@ -109,6 +110,8 @@ def stage_content_skeleton(client, bible, volume, history, preferred):
             content_requirement=FOCUS.get(slot["rhythm_type"], slot["rhythm_focus"]),
             _model_planned=number in mapped,
         )
+        if slot["rhythm_type"] != "情感":
+            row.pop("relationship_change", None)
         row["scenes"] = rows(row.get("scenes"))[:2]
         skeleton.append(row)
     wanted = set(numbers)
@@ -121,19 +124,20 @@ def window_stage_content(skeleton, start, end):
     for row in skeleton:
         if not start <= integer(row.get("number")) <= end:
             continue
-        result.append(
-            {
-                "number": row["number"],
-                "type": row.get("type", ""),
-                "rhythm_type": row.get("rhythm_type", row.get("type", "")),
-                "rhythm_focus": str(row.get("content_requirement", ""))[:100],
-                "rhythm_contract_version": VERSION,
-                "conflict": str(row.get("conflict", ""))[:80],
-                "result": str(row.get("result", ""))[:80],
-                "scenes": [
-                    {field: str(scene.get(field, ""))[:40] for field in ("goal", "obstacle", "action", "result")}
-                    for scene in rows(row.get("scenes"))[:2]
-                ],
-            }
-        )
+        value = {
+            "number": row["number"],
+            "type": row.get("type", ""),
+            "rhythm_type": row.get("rhythm_type", row.get("type", "")),
+            "rhythm_focus": str(row.get("content_requirement", ""))[:100],
+            "rhythm_contract_version": VERSION,
+            "conflict": str(row.get("conflict", ""))[:80],
+            "result": str(row.get("result", ""))[:80],
+            "scenes": [
+                {field: str(scene.get(field, ""))[:40] for field in ("goal", "obstacle", "action", "result")}
+                for scene in rows(row.get("scenes"))[:2]
+            ],
+        }
+        if row.get("relationship_change"):
+            value["relationship_change"] = deepcopy(row["relationship_change"])
+        result.append(value)
     return result

@@ -60,6 +60,12 @@ def emotional_replan(number):
             emotion="疏离转谨慎信任",
         ),
     ]
+    row["relationship_change"] = {
+        "people": ["顾川序", "霜砚秋"],
+        "cause": "顾川序坦白隐瞒伤势",
+        "before": "霜砚秋不再信任",
+        "after": "两人重新约定借力边界",
+    }
     return row
 
 
@@ -183,7 +189,7 @@ def test_semantic_review_is_one_small_model_call():
     assert result[0]["status"] == "mismatch"
     assert len(client.calls) == 1
     name, prompt, schema, kwargs = client.calls[0]
-    assert name == "plan-q1-rhythm-review-v8-001-004"
+    assert name == "plan-q1-rhythm-review-v9-001-004"
     assert all(term in prompt for term in ("只复核章型标签", "对手到场动手", "characters"))
     assert "content_type" in schema
     assert kwargs["cap"] == 1800 and kwargs["effort"] == "low"

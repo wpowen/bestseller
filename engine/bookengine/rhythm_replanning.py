@@ -19,6 +19,7 @@ def _outline_summary(row):
         "conflict",
         "scenes",
         "hook",
+        "relationship_change",
     )
     result = {field: deepcopy(row[field]) for field in fields if row.get(field) not in (None, "", [])}
     result["summary"] = row.get("summary") or row.get("opening_conflict") or row.get("conflict") or ""
@@ -47,7 +48,15 @@ def replan_context(history, batch, targets, observed=(), required=(), *, stage_s
                 after_summary=_outline_summary(combined.get(number + 1, {})).get("summary", ""),
                 must_preserve={
                     field: deepcopy(combined.get(number, {}).get(field))
-                    for field in ("threads", "required_event", "payoff", "payoff_type", "hook", "ending_content")
+                    for field in (
+                        "threads",
+                        "required_event",
+                        "payoff",
+                        "payoff_type",
+                        "hook",
+                        "ending_content",
+                        "relationship_change",
+                    )
                     if combined.get(number, {}).get(field) not in (None, "", [])
                 },
             )

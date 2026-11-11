@@ -10,6 +10,7 @@ from .title_promises import (
     planning_promise_issues,
     structure_promise_issues,
 )
+from .chapter_rhythm import combat_exemption_issues
 
 
 def stage_ranges(total):
@@ -102,7 +103,7 @@ def structure_issues(bible, total):
         name = stage.get("antagonist")
         if not isinstance(name, str) or name not in by_name or integer(by_name[name].get("stage")) != n:
             issues.append(f"stage {n}: antagonist缺分级或被安排跨阶段出场")
-    return issues + structure_promise_issues(bible, total)
+    return issues + combat_exemption_issues(bible) + structure_promise_issues(bible, total)
 
 
 def repair_structure(bible, threads, total, ask, out):

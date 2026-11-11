@@ -442,3 +442,106 @@ attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重�
 - 新书 opponent 显示、完整 promise、独立境界阶梯和首提写法。
 - 已达标的速度 4.7 分钟/章、规划 22%，兑现位置/证据、解释密度、术语缺失、重复和连续性不得退化。
 - 第 14 章最终文本引号问题仍未闭环，原因和权限边界见上；需要监工决定是否扩大 deai/final adoption 文件归属。
+
+## 返工四
+
+状态：返工四完成，待监工网页真机验收。
+
+本轮只改框架代码，并只读检查以下副本；没有启动、续写或新建真书，也没有改原网页书目录：
+
+- `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller-tmp/web59b-ch10-copy`
+- `/Volumes/MACSSD/owen-home/Documents/workspace/bestseller-tmp/web59-ch19-copy`
+
+### P0：关系合同接线与正文章型
+
+根因不是写手阶段再次丢字段，而是保存合同的 schema 与清理器唯一接受的 schema 不一致。`relationship_rhythm` 调用的是 `relationship_contract(outline)`；旧解析器只接受 `people + cause + before + after`：
+
+- 第二本第 4 章保存 `before/after/turning_point/cost`，人物只在两场 `scenes[].characters` 中；
+- 第 6 章保存 `characters + cause + before + after`；
+- 历史数据还存在 `pair` 别名。第 8 章虽有不完整 `pair/before/after`，但章型是“揭秘”，属于陈旧附带字段，不能反向把揭秘章改成关系章。
+
+现在关系合同在比较和修复前统一归一：明确的关系章可从 `characters/pair/scenes` 取得两人，从 `turning_point/opening_conflict/conflict` 取得缺失起因；非关系章的不完整陈旧字段不升级为合同。节奏合同版本升至 v12。离线走真实 `repair_relationship_rhythm → precise_ask` 路径的结果：
+
+| 章 | `planned` | 新正文判定 | 是否调用修复 | 假客户端结果 |
+| --- | --- | --- | --- | --- |
+| 4 | 顾长风/木岳霖、隐瞒→坦白并获得制止权 | 情感 | 0；正文已满足，不应重写 | `checked` |
+| 6 | 顾长风/木手、工具关系→共同决定次序 | 对抗 | 1；完整正文逐字进入 `完整正文只读` | 假客户端故意返回空 edits，故如实 `rolled_back/invalid_edits` |
+
+第 4 章的正文判定旧误差来自抽取提示只给合法标签、没有说明标签边界。现在抽取提示明确：两人围绕隐瞒、选择、信任和边界的言语冲突属于情感；对抗只指与敌对势力的正面冲突、追杀、搏斗或突围；若后半章由敌人到场并展开大段战斗，仍判对抗。体检另用保守落地规则纠正旧保存结果：必须有有效关系合同、合同两人均在正文出现、至少 4 段关系变化证据，且关系证据段严格多于正面战斗段。该规则只纠正计划关系章的假阴性，不把普通打斗章改成情感。
+
+第二本第 1–10 章逐章离线重算：
+
+| 章 | 章纲 | 旧保存判定 | 新规则判定 | 结论 |
+| ---: | --- | --- | --- | --- |
+| 1 | 对抗 | 对抗 | 对抗 | 一致 |
+| 2 | 对抗 | 对抗 | 对抗 | 一致 |
+| 3 | 对抗 | 对抗 | 对抗 | 一致 |
+| 4 | 情感 | 对抗 | 情感 | 抽取假阴性已纠正 |
+| 5 | 对抗 | 对抗 | 对抗 | 一致 |
+| 6 | 情感 | 对抗 | 对抗 | 后半章为韩厉、铜镜和被控弟子的长段救援战，属写手偏离，不能误判情感 |
+| 7 | 对抗 | 对抗 | 对抗 | 一致 |
+| 8 | 揭秘 | 对抗 | 对抗 | 正文没有以证据核对和推翻旧判断为主，属写手偏离 |
+| 9 | 对抗 | 对抗 | 对抗 | 一致 |
+| 10 | 对抗 | 对抗 | 对抗 | 一致 |
+
+体检新值为对抗 9 / 关系 1；阶段 1 由 `missing_relationship` 变为 `met`，关系章为第 4 章；最长连续对抗由历史保存类型的 10 章变为第 5–10 章连续 6 章，仍未达标。章纲对齐由 7/10 变为 8/10，剩余第 6、8 章均是写手主场景偏离，不是抽取器遗漏。新接线会让第 6 章真实进入关系主场景修复；是否能在网页真机通过章型、状态和兑现复检仍为 **Unknown**。
+
+第一本副本在同一严格规则下仍为对抗 13 / 谋划 4 / 揭秘 2 / 关系 0，最长连续对抗仍是第 4–7 章共 4 章；第 4 章正文确有正面战斗，未被错误改判关系。对齐为 12/19，错章为 3、4、6、8、12、14、16。这个对照证明新规则不会仅因章纲带关系标签就把战斗正文洗成情感。
+
+相关提交：
+
+- `7cd255e29`：关系合同归一、正文保守判型、抽取边界和体检统一。
+
+### P0：兑现补段的时序位置
+
+生产代码中会把模型 `after` 真正应用到正文的入口只有两个：`hook_momentum` 的兑现补段，以及 `q1_chapter.supplement` 的 finish 抽取补段；二者现共用 `repair_placement.place_tail_bounded_patch()`。插入补段的有效位置被框架强制为章末三段范围；模型若给得更早，框架先搬移再做状态/兑现复检，并记录 `requested_after/effective_after/placement=relocated_to_tail`。无效段号或文本分别记录 `invalid_after/invalid_patch_text` 并回滚。`replace=true` 是定点替换而非插入，仍保留原目标段。
+
+两本副本逐章只读审计：共有 5 个兑现修复 API 请求（含第 4、8 章各一次截断/无效后的重试），4 个成功返回 `after` 的 payload，只有 1 个实际落盘。
+
+| 副本 / 章 | 调用 | 返回位置 | 历史结果 | 时序结论 |
+| --- | --- | ---: | --- | --- |
+| 第二本 ch2 | seq 40，9168 chars，ok | 35；原正文 27 段 | `rolled_back/payoff_recheck_unknown`，补段未落盘 | 未破坏顺序；旧代码未单列非法位置 |
+| 第二本 ch4 | seq 64 truncated；seq 65，9664 chars，ok | 1；正文 78 段 | `repaired`，唯一落盘 | **确认插乱**：第 2 段先出现“我选告诉你”，第 3 段后才开始“保护还是隐瞒”的争执 |
+| 第二本 ch7 | seq 96，9522 chars，ok | 1；正文 34 段 | `rolled_back/payoff_recheck_unknown`，补段未落盘 | 未破坏顺序 |
+| 第一本 ch8 | seq 106 invalid/truncated；seq 107，9687 chars，ok | 41；正文 66 段 | `rolled_back/payoff_recheck_unknown`，补段未落盘 | 未破坏顺序 |
+
+相邻章开头修复使用替换而非正文中段插入：第一本 ch3/ch8/ch17 共 3 次采用，另 7 次 `invalid_opening_patch` 回滚，没有发现新的“结果先于场景”事故。tail 修复只重写最后两段，也不属于任意位置插入。
+
+相关提交：
+
+- `85ed8228d`：两个生产插入入口共用章末三段防线，并记录搬移/回滚原因。
+- `d5af17ba8`：补齐 finish 抽取路径的同一防线契约测试。
+
+### P1：第 3 章“牵丝境”首提
+
+这次不是写手没执行，也不是修复没触发。第 3 章 seq 49 `r2-ch3-first-appearance-repair` 已正常请求，`input_chars=639`、status=ok；最终首提已变为：
+
+> “牵丝境能顺着丝势借物移力，牵着哪一头，线后的东西便会被引向另一头。”他低声说完，掌心贴紧断桩。
+
+误报来自确定性体检 `_term_is_bound()`：层级首提只接受“催动/运转/突破/只能”等动作或限制词，却没有接受任务合同明确允许的直接对白能力说明。现在仅当首提句确为直接引语，且术语后在 24 字内出现“能/可/只能/不能/借/使/让”等能力或限制关系时才算 Evidence；普通裸术语和“第几阶/承接上一阶”的说明书句仍不通过。第二本离线重算的 `world_introductions.missing_terms` 从 `[ch3 牵丝境]` 变为 `[]`。
+
+相关提交：
+
+- `e19ed48ac`：接受有实际能力含义的直接对白首提，不放宽裸用和说明书句。
+
+### 已生效项的离线回读
+
+- 相邻章开头重复仍为 0，对应 `adjacent_opening_repetitions.count=0`。
+- 第 6、9、10 章兑现仍为逐字 Evidence/fulfilled；本轮没有改兑现判据。
+- 对手字段、每书境界阶梯、截断放大重试、解释密度和重复检测代码均未改。
+- 第二本副本原始第 4 章错位补段仍保留为历史证据；离线检查没有改书稿，因此不能把框架防线误报成该旧正文已修复。
+
+### 预算测试偶发失败
+
+按完整 pytest 节点 `tests/test_webui_deai_budget.py::DeaiBudgetTests::test_create_discards_default_and_custom_deai_budget` 连续运行 20 次，20/20 通过；整文件和全量测试中也通过。代码回读确认 `Queue.create()` 不写 `budget/deai_budget`，fixture 每次使用独立临时目录并屏蔽调度线程/子进程。当前分支无法复现监工的 2/5，且没有失败断言或日志可指向生产代码；因此保持 **Unknown**，没有盲改 `tools/webui/`。监工给出的省略 class 的节点名在当前 pytest 中匹配不到测试，报告采用上述完整节点名。
+
+### 验证与边界
+
+- 全量测试按要求独立跑 3 遍：
+  - 第 1 遍：`1789 passed, 2 skipped, 751 subtests passed in 32.79s`；
+  - 第 2 遍：`1789 passed, 2 skipped, 751 subtests passed in 33.65s`；
+  - 第 3 遍：`1789 passed, 2 skipped, 751 subtests passed in 35.87s`。
+- `engine/tools/check_scope.py`：PASS；最大 Python 文件 494 行，无 `bestseller` import、无 bookengine/deai 交叉 import、无禁词。
+- `ruff format --check .`：PASS，300 个文件已格式化。
+- 未改 `deai/`、`tools/webui/`、真实书库或两个只读副本；未 push、未合并。
+- **Unknown / 待网页真机**：第 6 章式关系正文重写能否采用、网页新书关系章数量与连续对抗是否最终达标、兑现补段搬移后模型复检成功率，以及预算测试在监工运行方式下的偶发失败能否复现。

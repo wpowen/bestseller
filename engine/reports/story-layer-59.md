@@ -494,7 +494,7 @@ attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重�
 
 ### P0：兑现补段的时序位置
 
-生产代码中会把模型 `after` 真正应用到正文的入口只有两个：`hook_momentum` 的兑现补段，以及 `q1_chapter.supplement` 的 finish 抽取补段；二者现共用 `repair_placement.place_tail_bounded_patch()`。插入补段的有效位置被框架强制为章末三段范围；模型若给得更早，框架先搬移再做状态/兑现复检，并记录 `requested_after/effective_after/placement=relocated_to_tail`。无效段号或文本分别记录 `invalid_after/invalid_patch_text` 并回滚。`replace=true` 是定点替换而非插入，仍保留原目标段。
+生产代码中会把模型 `after` 真正应用到正文的入口只有两个：`hook_momentum` 的兑现补段，以及 `q1_chapter.supplement` 的 finish 抽取补段；二者现共用 `repair_placement.place_tail_bounded_patch()`。为同时满足“章末三段以内”和“不能引用尚未发生的状态”，插入补段一律放在现有正文最后一段之后；随后仍执行状态、兑现和章末钩子复检。框架记录 `requested_after/effective_after/placement=relocated_to_tail`。无效段号或文本分别记录 `invalid_after/invalid_patch_text` 并回滚。`replace=true` 是定点替换而非插入，仍保留原目标段。
 
 两本副本逐章只读审计：共有 5 个兑现修复 API 请求（含第 4、8 章各一次截断/无效后的重试），4 个成功返回 `after` 的 payload，只有 1 个实际落盘。
 
@@ -511,6 +511,7 @@ attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重�
 
 - `85ed8228d`：两个生产插入入口共用章末三段防线，并记录搬移/回滚原因。
 - `d5af17ba8`：补齐 finish 抽取路径的同一防线契约测试。
+- `03820c3cd`：进一步收紧为现有正文全部事件之后再插入，避免末三段内部仍发生结果倒置。
 
 ### P1：第 3 章“牵丝境”首提
 
@@ -538,9 +539,9 @@ attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重�
 ### 验证与边界
 
 - 全量测试按要求独立跑 3 遍：
-  - 第 1 遍：`1789 passed, 2 skipped, 751 subtests passed in 32.79s`；
-  - 第 2 遍：`1789 passed, 2 skipped, 751 subtests passed in 33.65s`；
-  - 第 3 遍：`1789 passed, 2 skipped, 751 subtests passed in 35.87s`。
+  - 第 1 遍：`1789 passed, 2 skipped, 751 subtests passed in 34.01s`；
+  - 第 2 遍：`1789 passed, 2 skipped, 751 subtests passed in 35.96s`；
+  - 第 3 遍：`1789 passed, 2 skipped, 751 subtests passed in 37.22s`。
 - `engine/tools/check_scope.py`：PASS；最大 Python 文件 494 行，无 `bestseller` import、无 bookengine/deai 交叉 import、无禁词。
 - `ruff format --check .`：PASS，300 个文件已格式化。
 - 未改 `deai/`、`tools/webui/`、真实书库或两个只读副本；未 push、未合并。

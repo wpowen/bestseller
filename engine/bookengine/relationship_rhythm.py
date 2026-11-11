@@ -13,7 +13,7 @@ def _grounded_payoff(raw, text):
     return bool(payoff and payoff.get("fulfilled") is True and isinstance(quote, str) and quote in text)
 
 
-def _spread(indexes, limit=8):
+def _spread(indexes, limit=16):
     if len(indexes) <= limit:
         return indexes
     return sorted({indexes[round(position * (len(indexes) - 1) / (limit - 1))] for position in range(limit)})
@@ -37,15 +37,16 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         index for index, (start, end) in enumerate(spans, 1) if any(person in text[start:end] for person in people)
     ]
     selected = _spread(matching)
-    if len(selected) < min(8, len(spans)):
+    if len(selected) < min(16, len(spans)):
         selected = _spread(sorted(set(selected + list(range(1, len(spans) + 1)))))
     targets = [dict(id=index, original=text[spans[index - 1][0] : spans[index - 1][1]]) for index in selected]
     response = precise_ask(
         ask,
         client,
         prefix + "-relationship-rhythm-repair",
-        "只改给出的主场景段，至少改4段（不足4段则全改），使两场戏的主要变化成为指定人物关系合同；"
-        "正面打斗移到章外。保留已发生事件、地点、兑现、代价和后果，不得只把标签改成情感。",
+        "只改给出的主场景段，长章至少改8段（可改段不足8段则全改），使两场戏的主要变化成为指定人物关系合同；"
+        "以坦白、反应和当场选择推动关系，不得把定规则、排路线或分工写成主要结果。正面打斗移到章外。"
+        "保留已发生事件、地点、兑现、代价和后果，不得只把标签改成情感。",
         [("关系变化合同", contract), ("可改主场景段", targets), ("完整正文只读", text)],
         '{"edits":[{"id":1,"original":"原段","text":"替换后的完整自然段"}]}',
         cap=6500,
@@ -56,7 +57,8 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     edits = response.get("edits") if isinstance(response, dict) else None
     if not isinstance(edits, list) or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edits")
-    if len(targets) >= 4 and len(edits) < 4:
+    minimum_edits = 8 if len(targets) >= 8 else len(targets)
+    if len(edits) < minimum_edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="insufficient_main_scene_edits")
     by_id = {row["id"]: row for row in targets}
     candidate = text

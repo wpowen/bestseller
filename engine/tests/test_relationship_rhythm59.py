@@ -72,7 +72,7 @@ def test_eval57_style_planned_relationship_but_actual_combat_gets_targeted_main_
 
     def ask(client, key, instruction, sections, schema, **kwargs):
         targets = dict(sections)["可改主场景段"]
-        return {"edits": [{"id": targets[0]["id"], "original": targets[0]["original"], "text": replacement}]}
+        return {"edits": [{"id": row["id"], "original": row["original"], "text": replacement} for row in targets]}
 
     def extract(*args, **kwargs):
         return {"state": {}, "events": [], "type": "情感"}, False, 0
@@ -102,7 +102,7 @@ def test_relationship_repair_sends_full_body_and_targets_both_main_scenes():
         supplied = dict(sections)
         targets = supplied["可改主场景段"]
         assert supplied["完整正文只读"] == original
-        assert len(targets) == 8
+        assert len(targets) == 10
         return {
             "edits": [
                 {
@@ -128,7 +128,7 @@ def test_relationship_repair_sends_full_body_and_targets_both_main_scenes():
     )
 
     assert changed != original and raw["type"] == "情感" and failed is False
-    assert note["status"] == "checked" and len(note["edits"]) == 8
+    assert note["status"] == "checked" and len(note["edits"]) == 10
 
 
 def final_bible(exemption=None):

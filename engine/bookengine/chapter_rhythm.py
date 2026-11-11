@@ -32,6 +32,9 @@ _COMBAT = re.compile(
     r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀|"
     r"反杀|突围|伏击|围杀|冲杀|扑杀|迎战|开战|动手|强攻|割开.{0,4}(?:咽喉|喉咙)"
 )
+_RELATION_CHANGE = re.compile(
+    r"坦白|承认|信任|隐瞒|原谅|疏远|和解|顾虑|承诺|拒绝|允许|边界|同伴|伙伴|同行|共同|分工|选择|权利"
+)
 INTERNAL_TERMS = ("原章", "原定场景", "原定目标", "已登场同伴")
 _WRITER_FIELDS = (
     "title",
@@ -46,6 +49,10 @@ _WRITER_FIELDS = (
 
 
 def chapter_type(row):
+    # A complete relationship contract is an obligation, not optional metadata.
+    # It must control planning, writer guidance, repair, and diagnostics alike.
+    if relationship_contract(row):
+        return "情感"
     value = row.get("type", "")
     return "情感" if value == "关系" else value
 
@@ -65,6 +72,8 @@ def _combat_scene(scene):
 def content_type(row):
     """Infer an outline type from planned actions; return empty when content is indeterminate."""
     scenes = rows(row.get("scenes"))
+    if relationship_contract(row) and _focused(row, "情感"):
+        return "情感"
     combat = sum(_combat_scene(scene) for scene in scenes)
     conflict = "；".join(str(row.get(k) or "") for k in ("opening_conflict", "conflict"))
     if combat and (combat * 2 >= len(scenes) or _COMBAT.search(_positive(conflict))):
@@ -154,6 +163,15 @@ def _focused(row, kind):
     scenes = rows(row.get("scenes"))
     if not scenes or kind not in _CUES:
         return False
+    if kind == "情感":
+        contract = relationship_contract(row)
+        if contract:
+            matches = []
+            for scene in scenes:
+                intention = _positive(_scene_intention(scene))
+                main_action = _positive("；".join(str(scene.get(key) or "") for key in ("action", "choice", "result")))
+                matches.append(bool(_RELATION_CHANGE.search(intention)) and not _COMBAT.search(main_action))
+            return matches[0] and sum(matches) > len(matches) // 2
     matches = []
     for scene in scenes:
         intention = _scene_intention(scene)

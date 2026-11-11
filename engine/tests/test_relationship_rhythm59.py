@@ -2,7 +2,7 @@
 
 import json
 
-from bookengine.chapter_rhythm import rhythm_issues, rhythm_slots
+from bookengine.chapter_rhythm import chapter_type, rhythm_issues, rhythm_slots
 from bookengine.relationship_rhythm import repair_relationship_rhythm
 from bookengine.rhythm_writer import writer_rhythm_instruction
 from bookengine.structure_planning import structure_issues
@@ -54,6 +54,16 @@ def test_writer_receives_exact_relationship_change_and_no_combat_contract():
 
     assert all(text in instruction for text in ("顾立谦、霜团", "承认借力", "不再主动靠近", "明确边界"))
     assert "不安排正面打斗" in instruction
+
+
+def test_relationship_contract_overrides_a_conflicting_combat_label():
+    outline = relationship_outline(18)
+    outline.update(type="对抗", rhythm_type="对抗")
+
+    assert chapter_type(outline) == "情感"
+    instruction = writer_rhythm_instruction(outline)
+    assert "本章章型：情感" in instruction
+    assert "两场主场景都要让这个变化" in instruction
 
 
 def test_eval57_style_planned_relationship_but_actual_combat_gets_targeted_main_scene_rewrite():

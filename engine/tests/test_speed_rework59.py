@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from bookengine.chapter_rhythm import normalize_chapter_type
-from bookengine.client import Client, TruncatedOutput
+from bookengine.client import Client, ProjectError
 from bookengine.outline_diversity import repair_batch
 from bookengine.planning_policy import hard_replan_issues, planning_window_end
 from bookengine.rhythm_replanning import model_review_issues
@@ -154,15 +154,37 @@ class Reply:
         ).encode()
 
 
-def test_truncated_response_is_recorded_separately_and_not_retried(tmp_path):
+class OkReply(Reply):
+    def read(self):
+        return json.dumps({"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}], "usage": {}}).encode()
+
+
+def test_truncated_response_is_recorded_separately_and_retried_with_larger_cap(tmp_path):
     with patch("bookengine.client.credentials", return_value=("https://fake.invalid/v1", "fake-key")):
         client = Client(tmp_path, tmp_path / "unused.env", "")
-    with patch("urllib.request.urlopen", return_value=Reply()) as http:
-        with pytest.raises(TruncatedOutput):
-            client.stage("plan-q1-chapters-1-5", "prompt", "{}")
+    caps = []
+    original = client.request
 
-    assert http.call_count == 1
-    assert client.calls[0]["status"] == "truncated"
+    def spy(name, full, cap, *rest):
+        caps.append(cap)
+        return original(name, full, cap, *rest)
+
+    client.request = spy
+    with patch("urllib.request.urlopen", side_effect=[Reply(), OkReply()]) as http:
+        assert client.stage("r2-ch6-cross-chapter-opening", "prompt", "{}", cap=1400) == {}
+
+    assert http.call_count == 2
+    assert [c["status"] for c in client.calls] == ["truncated", "ok"]
+    assert caps[0] == 1400 and caps[1] >= 16000
+
+
+def test_repeated_truncation_still_fails_the_stage_not_silently(tmp_path):
+    with patch("bookengine.client.credentials", return_value=("https://fake.invalid/v1", "fake-key")):
+        client = Client(tmp_path, tmp_path / "unused.env", "")
+    with patch("urllib.request.urlopen", side_effect=lambda *a, **k: Reply()):
+        with pytest.raises(ProjectError):
+            client.stage("plan-q1-chapters-1-5", "prompt", "{}")
+    assert all(c["status"] == "truncated" for c in client.calls)
 
 
 def test_writer_contract_leads_with_exact_type_hook_and_scene_actions():

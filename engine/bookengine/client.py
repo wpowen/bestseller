@@ -379,6 +379,11 @@ class Client:
                     write_runtime(self.out, "error", name, error=str(exc))
                     raise
                 full = base_full + RESTRAINT_NOTE
+            except TruncatedOutput:
+                # Ledger keeps status=truncated; retry once more with the enlarged cap instead of killing the book.
+                output_failures += 1
+                detail = "output reached the token cap"
+                full = base_full + "\n上次输出在长度上限处被截断，请更简洁地完整输出。"
             except (QuotaExhausted, ProjectError) as exc:
                 kind = "quota_exhausted" if isinstance(exc, QuotaExhausted) else "error"
                 write_runtime(self.out, kind, name, error=str(exc))

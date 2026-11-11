@@ -361,6 +361,7 @@ def check_book(book, *, source="final"):
     from bookengine.continuity_checkup import continuity_checkup
     from bookengine.endings import final_closure_checkup
     from bookengine.quote_text import quote_checkup
+    from bookengine.dialogue_hygiene import dialogue_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -450,6 +451,7 @@ def check_book(book, *, source="final"):
         title_promises=title_promise_checkup(bible, chapters),
         final_chapter_new_suspense=final_closure_checkup(chapters),
         unclosed_quotes=quote_checkup(chapters),
+        dialogue_repetitions=dialogue_checkup(bible, chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

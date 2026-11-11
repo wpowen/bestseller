@@ -35,6 +35,8 @@ from .rhythm_writer import writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
+from .dialogue_hygiene import repair_dialogue_repetitions
+from .model_notes import repair_model_notes
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -276,6 +278,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, None, rows, extract_state, ask
     )
     # Content repairs first; text hygiene last so it also cleans what they rewrote.
+    text, raw, failed, cleaning["model_notes"] = guarded(repair_model_notes)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -286,6 +291,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["quotes"] = guarded(repair_unclosed_quotes)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["dialogue_repetitions"] = guarded(repair_dialogue_repetitions)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(

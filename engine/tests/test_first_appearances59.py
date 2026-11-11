@@ -84,6 +84,19 @@ def test_fake_repair_inserts_grounded_term_definition_and_clears_issue(tmp_path)
     assert calls == ["r2-ch7-first-appearance-repair"]
 
 
+def test_realm_first_use_can_be_grounded_by_immediate_dialogue_about_its_ability():
+    from bookengine.introductions import check_world_first_appearances
+
+    text = "“牵丝境能顺着丝势借物移力，牵着哪一头，线后的东西便会被引向另一头。”他低声说完，掌心贴紧断桩。"
+    findings = check_world_first_appearances(
+        text,
+        {"牵丝境": {"kind": "level", "definition": "修行层级；须由能力或受限结果体现"}},
+    )
+
+    assert findings[0]["kind"] == "term_introduction_present"
+    assert findings[0]["status"] == "Evidence"
+
+
 def test_writer_and_repair_prompts_forbid_copying_realm_definitions_as_exposition(tmp_path):
     from bookengine.first_appearances import writer_first_appearance_instruction
 

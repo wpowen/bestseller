@@ -321,6 +321,10 @@ def _term_is_bound(term, card, sentence):
             sentence,
         ):
             return False
+        if re.match(r"\s*[“‘\"']", sentence) and re.search(
+            re.escape(term) + r"[^。！？!?]{0,24}(?:能|可|可以|只能|不能|借|使|让)", sentence
+        ):
+            return True
         return bool(
             re.search(
                 r"催动|运转|修炼|突破|晋升|压制|挡住|顶住|推开|劈开|施展|只能|尚不能|还不能|"

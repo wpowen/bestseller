@@ -29,13 +29,31 @@ def chapter(n, kind="对抗"):
         "日常": ("在驿站休整疗伤", "吃饭后整理行装再赶路"),
     }
     goal, choice = intentions.get(kind, ("击败守卫", "拔剑击退守卫"))
+    scenes = [dict(where="河岸", characters=["主角", "同伴"], goal=goal, choice=choice)]
+    if kind in ("情感", "关系"):
+        scenes = [
+            dict(
+                where="河岸",
+                characters=["主角", "同伴"],
+                goal="说清此前隐瞒",
+                action="主角坦白自己隐瞒了伤势",
+                choice="同伴接受坦白但保留拒绝同行的权利",
+            ),
+            dict(
+                where="避风处",
+                characters=["主角", "同伴"],
+                goal="重新约定边界",
+                action="同伴说出不愿再被蒙在鼓里的顾虑",
+                choice="主角承诺以后先说明代价再由对方选择",
+            ),
+        ]
     row = dict(
         number=n,
         title=chr(0x4E00 + n),
         type=kind,
         conflict_type=str(n),
         opening_conflict="守卫阻拦主角取回行李",
-        scenes=[dict(where="河岸", characters=["主角", "同伴"], goal=goal, choice=choice)],
+        scenes=scenes,
     )
     if kind in ("情感", "关系"):
         row["relationship_change"] = {
@@ -203,7 +221,6 @@ def test_normalization_filled_types_are_checked_and_restart_reuses_result_withou
 
 def test_relationship_alias_survives_normalization_and_retains_real_scene_intent(tmp_path):
     design, row = bible((1,)), chapter(1, "关系")
-    row["scenes"] = [dict(goal="向同伴坦白隐瞒并恢复信任", choice="同伴拒绝原来的分工，双方重新约定边界")]
     client = OfflineClient(tmp_path, [dict(chapters=[row])])
     result = plan(client, design, 1, 1)
     assert result[0]["type"] == "情感"

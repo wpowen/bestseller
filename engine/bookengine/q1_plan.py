@@ -37,7 +37,7 @@ from .outline_diversity import (
 from .rhythm_replanning import observed_rows, replan_context
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
 from .planning_drift import cache_replan_issues
-from .planning_policy import planning_window_end
+from .planning_policy import hard_replan_issues, planning_window_end
 
 
 def _beats(threads, number, state=None):
@@ -252,7 +252,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             or rhythm_stale
             or (
                 cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
-                and (
+                and hard_replan_issues(
                     planning_transition_issues(bible, cached["chapters"])
                     + ability_issues(bible, prior, cached["chapters"])
                     + solution_issues(bible, prior, cached["chapters"])

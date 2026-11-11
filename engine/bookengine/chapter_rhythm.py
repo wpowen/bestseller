@@ -333,7 +333,12 @@ def rhythm_issues(bible, history, batch):
                         requirement="关系章必须写明两名人物、变化起因、变化前与变化后，且前后不同。" + RULE,
                     )
                 )
-            relationship_scene_issues = relationship_outline_issues(row) if kind == "情感" else []
+            relationship_scene_issues = (
+                relationship_outline_issues(row)
+                if kind == "情感"
+                and (bible.get("structure_version") or integer(row.get("rhythm_contract_version")) >= VERSION)
+                else []
+            )
             if relationship_scene_issues:
                 issues.append(
                     dict(

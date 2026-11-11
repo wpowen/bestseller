@@ -3,12 +3,13 @@
 import json
 from pathlib import Path
 
-from .chapter_rhythm import rhythm_issues
+from .chapter_rhythm import normalize_chapter_type, rhythm_issues
 from .core_ability import ability_issues
 from .q1_schema import integer, rows
 from .solution_substance import solution_issues
 from .solution_sequences import solution_plot_history, solution_sequence_issues
 from .structure_planning import opponent_presence_issues
+from .planning_policy import hard_replan_issues
 
 
 def observe_plan_alignment(outline, observed):
@@ -16,6 +17,8 @@ def observe_plan_alignment(outline, observed):
     checks, mismatches, unknown = {}, [], []
     for field in ("type", "hook_type", "structure"):
         expected, actual = outline.get(field), observed.get(field)
+        if field == "type":
+            expected, actual = normalize_chapter_type(expected), normalize_chapter_type(actual)
         if expected in (None, ""):
             continue
         if actual in (None, ""):
@@ -118,9 +121,15 @@ def cache_replan_issues(bible, prior, cached):
     plot_history = solution_plot_history(bible, prior)
     rhythm = rhythm_issues(bible, prior, chapters)
     opponents = opponent_presence_issues(bible, chapters)
-    return [
-        *_observed_drift(cached, prior, report),
-        *(_new_issues(plot, report.get("plot_issues_after", [])) if report.get("plot_history") != plot_history else []),
-        *_new_issues(rhythm, report.get("rhythm_issues_after", [])),
-        *_new_issues(opponents, report.get("opponent_issues_after", [])),
-    ]
+    return hard_replan_issues(
+        [
+            # Body type/hook/structure drift remains an alignment diagnostic. It must not reopen a paid plan window.
+            *(
+                _new_issues(plot, report.get("plot_issues_after", []))
+                if report.get("plot_history") != plot_history
+                else []
+            ),
+            *_new_issues(rhythm, report.get("rhythm_issues_after", [])),
+            *_new_issues(opponents, report.get("opponent_issues_after", [])),
+        ]
+    )

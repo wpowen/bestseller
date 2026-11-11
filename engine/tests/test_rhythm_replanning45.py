@@ -69,7 +69,7 @@ def emotional_replan(number):
     return row
 
 
-def test_failed_rhythm_replanning_stops_after_two_calls_and_keeps_original(tmp_path):
+def test_failed_rhythm_replanning_stops_after_one_call_and_keeps_original(tmp_path):
     original = [outline(n) for n in range(1, 5)]
     before = deepcopy(original)
     attempts = []
@@ -87,7 +87,7 @@ def test_failed_rhythm_replanning_stops_after_two_calls_and_keeps_original(tmp_p
         bible={"volumes": [{"number": 1, "start": 1, "end": 4}]},
     )
 
-    assert attempts == [1, 2]
+    assert attempts == [1]
     assert result == before
     report = json.loads((tmp_path / "outline-diversity/001-004.json").read_text())
     assert report["status"] == "failed_continued"
@@ -189,7 +189,7 @@ def test_semantic_review_is_one_small_model_call():
     assert result[0]["status"] == "mismatch"
     assert len(client.calls) == 1
     name, prompt, schema, kwargs = client.calls[0]
-    assert name == "plan-q1-rhythm-review-v9-001-004"
+    assert name == f"plan-q1-rhythm-review-v{chapter_rhythm.VERSION}-001-004"
     assert all(term in prompt for term in ("只复核章型标签", "对手到场动手", "characters"))
     assert "content_type" in schema
     assert kwargs["cap"] == 1800 and kwargs["effort"] == "low"

@@ -217,11 +217,10 @@ def normalize_extract(raw):
         return raw
     fields = recover_fields(pack(raw))
     result = dict(raw)
-    result.update(
-        {"type": EXTRACT.get("type_aliases", {}).get(raw["type"], raw["type"])}
-        if isinstance(raw.get("type"), str)
-        else {}
-    )
+    if isinstance(raw.get("type"), str):
+        from .chapter_rhythm import normalize_chapter_type
+
+        result["type"] = normalize_chapter_type(EXTRACT.get("type_aliases", {}).get(raw["type"], raw["type"]))
     for key in (
         "gains",
         "costs",

@@ -5,7 +5,7 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 9
+VERSION = 10
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
@@ -47,14 +47,36 @@ _WRITER_FIELDS = (
     "scenes",
 )
 
+TYPE_ALIASES = {
+    "打": "对抗",
+    "救": "对抗",
+    "爽点": "对抗",
+    "能力": "对抗",
+    "动作": "对抗",
+    "收束": "对抗",
+    "能力兑现": "对抗",
+    "对抗兑现": "对抗",
+    "阶段兑现": "对抗",
+    "关系": "情感",
+    "关系推进": "情感",
+    "情感推进": "情感",
+    "人物关系": "情感",
+}
+
+
+def normalize_chapter_type(value):
+    """Normalize every planner/extractor/checkup label before it is compared."""
+    value = value.strip() if isinstance(value, str) else ""
+    return TYPE_ALIASES.get(value, value)
+
 
 def chapter_type(row):
     # A complete relationship contract is an obligation, not optional metadata.
     # It must control planning, writer guidance, repair, and diagnostics alike.
     if relationship_contract(row):
         return "情感"
-    value = row.get("type", "")
-    return "情感" if value == "关系" else value
+    value = row.get("type") or row.get("rhythm_type") or ""
+    return normalize_chapter_type(value)
 
 
 def _scene_intention(scene):

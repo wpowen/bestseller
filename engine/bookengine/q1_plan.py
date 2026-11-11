@@ -34,9 +34,10 @@ from .outline_diversity import (
     title_terms,
     conflict_type,
 )
-from .rhythm_replanning import model_review_issues, observed_rows, replan_context, semantic_review
+from .rhythm_replanning import observed_rows, replan_context
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
 from .planning_drift import cache_replan_issues
+from .planning_policy import planning_window_end
 
 
 def _beats(threads, number, state=None):
@@ -228,7 +229,7 @@ def beat_slice(threads, vol, chapter, state):
 
 
 def outlines(client, bible, threads, profile, volume, start, end, state, recent, history, alerts, redo=False):
-    end = min(end, start + 9, integer(volume.get("end"), end))
+    end = planning_window_end(start, end, integer(volume.get("end"), end))
     if end < start:
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
@@ -371,9 +372,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
         key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
-    deterministic_review = rhythm_issues(bible, prior, candidates)
-    review = semantic_review(client, key, candidates, deterministic_review)
-    review_issues = model_review_issues(candidates, review)
+    review = []
+    review_issues = []
     observed = observed_rows(recent, history)
 
     def rewrite(current, issues, targets, vocabulary, attempt):

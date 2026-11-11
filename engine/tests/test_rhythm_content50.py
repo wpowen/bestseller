@@ -51,7 +51,7 @@ def test_eval49_saved_outline_is_classified_by_content_and_relabelled_without_sc
     assert source["type"] == "情感"
 
 
-def test_exhausted_replanning_keeps_original_content_but_restores_its_honest_label(tmp_path):
+def test_content_label_mismatch_is_reported_without_paid_replan(tmp_path):
     original = [eval49_chapter3()]
     before = deepcopy(original)
     attempts = []
@@ -69,12 +69,11 @@ def test_exhausted_replanning_keeps_original_content_but_restores_its_honest_lab
         bible={"volumes": [{"number": 1, "start": 1, "end": 10}]},
     )
 
-    assert attempts == [1, 2]
+    assert attempts == []
     assert result[0]["scenes"] == before[0]["scenes"]
-    assert result[0]["type"] == result[0]["rhythm_type"] == "对抗"
+    assert result[0]["type"] == result[0]["rhythm_type"] == "情感"
     report = json.loads((tmp_path / "outline-diversity/003-003.json").read_text())
-    assert report["rhythm_replans"][0]["action"] == "kept_original_relabelled"
-    assert report["rhythm_replans"][0]["content_type"] == "对抗"
+    assert report["rhythm_replans"] == []
 
 
 def test_stage_content_is_planned_once_for_the_full_stage_before_window_expansion(tmp_path):
@@ -209,7 +208,7 @@ def test_checkup_registers_unresolved_saved_plan_content_without_writing(tmp_pat
     assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
 
 
-def test_semantic_review_sees_ability_enforcement_before_rhythm_replanning(tmp_path, monkeypatch):
+def test_ability_enforcement_runs_without_paid_semantic_review(tmp_path, monkeypatch):
     from test_chapter_rhythm39 import OfflineClient, bible, chapter, plan
     from bookengine import q1_plan
 
@@ -218,18 +217,13 @@ def test_semantic_review_sees_ability_enforcement_before_rhythm_replanning(tmp_p
     def enforce(_bible, batch):
         return [dict(row, ability_enforced_before_rhythm=True) for row in batch]
 
-    def review(_client, _key, batch, deterministic=()):
-        seen.extend(batch)
-        return []
-
     monkeypatch.setattr(q1_plan, "enforce_ability_plan", enforce)
-    monkeypatch.setattr(q1_plan, "semantic_review", review)
     monkeypatch.setattr(q1_plan, "repair_batch", lambda _out, _key, _history, batch, _rewrite, **_kwargs: batch)
     client = OfflineClient(None, [{"chapters": [chapter(1, "情感")]}])
 
     result = plan(client, bible((1,)), 1, 1)
 
-    assert seen and seen[0]["ability_enforced_before_rhythm"] is True
+    assert seen == []
     assert result[0]["ability_enforced_before_rhythm"] is True
 
 
@@ -263,10 +257,9 @@ def test_exhausted_replanning_uses_saved_semantic_content_type_when_rules_are_un
         model_review=[{"number": 4, "content_type": "对抗", "status": "mismatch"}],
     )
 
-    assert result[0]["type"] == result[0]["rhythm_type"] == "对抗"
+    assert result[0]["type"] == result[0]["rhythm_type"] == "情感"
     report = json.loads((tmp_path / "outline-diversity/004-004.json").read_text())
-    assert report["rhythm_replans"][0]["action"] == "kept_original_relabelled"
-    assert report["rhythm_replans"][0]["content_type"] == "对抗"
+    assert report["rhythm_replans"] == []
 
 
 def test_semantic_review_accepts_provider_review_aliases_instead_of_silently_dropping_them():
@@ -347,7 +340,7 @@ def test_exhausted_replanning_prefers_semantic_observation_over_conflicting_rule
     )
 
     assert content_type(original) == "情感"
-    assert result[0]["type"] == result[0]["rhythm_type"] == "对抗"
+    assert result[0]["type"] == result[0]["rhythm_type"] == "谋划"
     report = json.loads((tmp_path / "outline-diversity/002-002.json").read_text())
     assert isinstance(report["original_chapters"], list)
     assert report["original_chapters"] == [original]

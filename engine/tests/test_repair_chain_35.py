@@ -162,7 +162,7 @@ def test_history_object_does_not_bypass_full_chapter_opponent_repair(repair_book
     assert row["opponent_repair"]["status"] == "repaired"
 
 
-def test_legacy_cache_with_history_object_cannot_skip_retired_agent_rewrite(repair_book, monkeypatch):
+def test_legacy_cache_retired_agent_warning_does_not_trigger_paid_rewrite(repair_book, monkeypatch):
     folder = repair_book.out / "outline-diversity"
     folder.mkdir()
     original = dict(
@@ -195,6 +195,6 @@ def test_legacy_cache_with_history_object_cannot_skip_retired_agent_rewrite(repa
         [],
         [],
     )
-    assert result[0]["conflict"] == "何晏拦住阿宁", result
-    assert requests
+    assert result[0]["conflict"] == original["conflict"], result
+    assert not requests
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before

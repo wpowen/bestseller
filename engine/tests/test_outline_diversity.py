@@ -65,22 +65,21 @@ def test_conflict_window_spans_batches_and_only_reports_current_batch_targets():
     assert not diversity.diversity_issues([previous[0], previous[1], previous[3]], current)
 
 
-def test_global_history_is_loaded_beyond_recent_and_rewrite_touches_only_current_targets(tmp_path):
+def test_global_history_is_loaded_and_title_repeat_is_renamed_without_rewrite(tmp_path):
     save(tmp_path / "chapters/001.json", outline(1, "闸外"))
     save(tmp_path / "chapters/010.json", outline(10, "守闸"))
     recent = [outline(n, f"旧章{n}", str(n)) for n in range(41, 45)]
     batch = [outline(45, "碎闸", "情感抉择"), outline(46, "夜雨", "追逐逃脱")]
     before = (tmp_path / "chapters/001.json").read_bytes()
-    replacement = outline(45, "风入高原", "情感抉择")
-    client = Fixture(tmp_path, [dict(chapters=batch), dict(chapters=[replacement, outline(46, "不能改")])])
+    client = Fixture(tmp_path, [dict(chapters=batch)])
     result = plan(client, 45, 46, recent)
-    assert [r["title"] for r in result] == ["风入高原", "夜雨"]
-    assert len(client.calls) == 2
+    assert [r["title"] for r in result] == ["碎", "夜雨"]
+    assert len(client.calls) == 1
     assert "闸" in client.calls[0][1] and "已用核心冲突类型与章名关键词" in client.calls[0][1]
-    assert "只重写" in client.calls[1][1] and "45" in client.calls[1][1]
     assert (tmp_path / "chapters/001.json").read_bytes() == before
     report = json.loads(next((tmp_path / "outline-diversity").glob("*.json")).read_text())
-    assert report["status"] == "passed" and report["attempts"][0]["targets"] == [45]
+    assert report["attempts"][0]["targets"] == []
+    assert report["title_renames"][0]["action"] == "deterministic_title_rename"
     assert "闸" in report["used"]["title_keywords"]
 
 
@@ -90,15 +89,15 @@ def test_conflict_rewrite_must_change_story_not_only_type_label(tmp_path):
         save(tmp_path / f"writing_outlines/{row['number']:03d}.json", row)
     row = outline(5, "暗潮")
     labels_only = dict(row, conflict_type="情感抉择")
-    client = Fixture(tmp_path, [dict(chapters=[row])] + [dict(chapters=[labels_only])] * 3)
+    client = Fixture(tmp_path, [dict(chapters=[row]), dict(chapters=[labels_only])])
     result = plan(client, 5, 5)
     assert result[0]["conflict_type"] == row["conflict_type"]
-    assert len(client.calls) == 4
+    assert len(client.calls) == 1
     report_path = next((tmp_path / "outline-diversity").glob("*.json"))
     report = json.loads(report_path.read_text())
     assert report["status"] == "failed_continued" and report["issues"]
     again = plan(client, 5, 5)
-    assert again == result and len(client.calls) == 4
+    assert again == result and len(client.calls) == 1
 
 
 def test_repaired_batch_is_history_after_restart_even_without_chapter_record(tmp_path):
@@ -147,18 +146,17 @@ def test_retired_opponent_is_not_allowed_in_planned_presence_even_after_failed_r
     bible = design()
     row = outline(11, "钟声", "信任抉择")
     row["scenes"][0]["characters"] = ["对手1", "同伴"]
-    client = Fixture(tmp_path, [dict(chapters=[row])] * 4)
+    client = Fixture(tmp_path, [dict(chapters=[row])])
     result = q1_plan.outlines(client, bible, {}, DATA["profile"], bible["volumes"][1], 11, 11, {}, [], [], [])
     assert result[0]["scenes"][0]["characters"] == ["同伴"]
-    assert len(client.calls) == 4
+    assert len(client.calls) == 1
     assert "只能背景" in client.calls[0][1]
     report = json.loads(next((tmp_path / "outline-diversity").glob("*.json")).read_text())
     assert report["status"] == "failed_continued"
-    assert any(i["kind"] == "opponent_scope" for i in report["issues"])
     assert report["chapters"][0]["background_only"] == ["对手1"]
 
 
-def test_conflict_rewrite_changes_relevant_scenes_and_keeps_unaffected_chapter(tmp_path):
+def test_conflict_run_is_reported_without_paid_rewrite(tmp_path):
     for n in range(1, 5):
         save(tmp_path / f"chapters/{n:03d}.json", outline(n, f"旧章{n}"))
     changed = outline(5, "远雷", "信任抉择")
@@ -166,34 +164,26 @@ def test_conflict_rewrite_changes_relevant_scenes_and_keeps_unaffected_chapter(t
     sixth = outline(6, "松涛", "追逐逃脱")
     client = Fixture(tmp_path, [dict(chapters=[outline(5, "远雷"), sixth]), dict(chapters=[changed])])
     result = plan(client, 5, 6)
-    assert result[0]["conflict_type"] == "信任抉择"
-    assert result[0]["scenes"][0]["goal"] == "放下行李救同伴"
+    assert result[0]["conflict_type"] == "资源争夺"
+    assert result[0]["scenes"][0]["goal"] != "放下行李救同伴"
     assert result[1]["title"] == sixth["title"]
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
 
-def test_interrupted_repair_resumes_instead_of_accepting_unfinished_report(tmp_path):
-    import pytest
-
+def test_title_repair_does_not_call_model(tmp_path):
     history = [outline(1, "闸口"), outline(2, "守闸")]
     batch = [outline(3, "碎闸")]
 
-    def interrupted(*args):
-        raise RuntimeError("simulated process interruption")
+    calls = []
 
-    with pytest.raises(RuntimeError):
-        diversity.repair_batch(tmp_path, "003-003", history, batch, interrupted)
+    def forbidden(*args):
+        calls.append(args)
+        raise AssertionError("title repair must be deterministic")
+
+    result = diversity.repair_batch(tmp_path, "003-003", history, batch, forbidden)
     report = json.loads((tmp_path / "outline-diversity/003-003.json").read_text())
-    assert report["status"] == "repairing"
-    attempts = []
-
-    def repaired(current, issues, targets, used, attempt):
-        attempts.append(attempt)
-        return dict(chapters=[outline(3, "山雨")])
-
-    result = diversity.repair_batch(tmp_path, "003-003", history, batch, repaired)
-    assert result[0]["title"] == "山雨" and attempts == [1]
-    assert json.loads((tmp_path / "outline-diversity/003-003.json").read_text())["status"] == "passed"
+    assert result[0]["title"] == "碎" and not calls
+    assert report["title_renames"]
 
 
 def test_bounded_prompt_keeps_repeated_terms_first_and_persists_complete_vocabulary():
@@ -209,12 +199,12 @@ def test_bounded_prompt_keeps_repeated_terms_first_and_persists_complete_vocabul
 
 
 def test_resume_from_second_chapter_reuses_exhausted_complete_window_without_calls(tmp_path):
-    batch = [outline(n, "闸", "资源争夺") for n in range(1, 11)]
-    original_client = Fixture(tmp_path, [dict(chapters=batch)] + [{}] * 3)
+    batch = [outline(n, "闸", "资源争夺") for n in range(1, 6)]
+    original_client = Fixture(tmp_path, [dict(chapters=batch)])
     original = plan(original_client, 1, 10)
-    assert len(original_client.calls) == 4
+    assert len(original_client.calls) == 1
     save(tmp_path / "chapters/001.json", dict(original[0], fact_source="final_body"))
-    path = tmp_path / "outline-diversity/001-010.json"
+    path = tmp_path / "outline-diversity/001-005.json"
     assert json.loads(path.read_text())["status"] == "failed_continued"
     before = path.read_bytes(), path.stat().st_mtime_ns
     resumed_client = Fixture(tmp_path, [])
@@ -232,8 +222,8 @@ def test_existing_raw_terminal_window_is_reused_and_next_window_is_generated(tmp
     before = path.read_bytes()
     resumed_client = Fixture(tmp_path, [])
     remaining = plan(resumed_client, 2, 11)
-    assert [r["number"] for r in remaining] == list(range(2, 11))
-    assert [r["title"] for r in remaining] == [r["title"] for r in batch[1:]]
+    assert [r["number"] for r in remaining] == list(range(2, 7))
+    assert [r["title"] for r in remaining] == [r["title"] for r in batch[1:6]]
     assert resumed_client.calls == [] and path.read_bytes() == before
     next_client = Fixture(tmp_path, [dict(chapters=[outline(11, "晴空", "关系决裂")])])
     next_batch = plan(next_client, 11, 11)

@@ -39,7 +39,13 @@ class MinimalBTestsPart1(MinimalBTests):
                 prompt = client.calls[0]["prompt"]
                 self.assertEqual(
                     re.findall(r"^## (.+)$", prompt, re.M),
-                    ["本章章纲", "出场人物档案、口吻卡与当前状态", "上章结尾", "本章推进线"],
+                    [
+                        "本章主场景硬合同，章型、两场行动与末钩必须逐项落实",
+                        "本章章纲",
+                        "出场人物档案、口吻卡与当前状态",
+                        "上章结尾",
+                        "本章推进线",
+                    ],
                 )
                 self.assertIn("目标200汉字", prompt.split("## ", 1)[0])
                 for required in ("只写两场戏", "说话直接，先问再答。", self.previous, "阿宁在院里等她，要求一起回家"):

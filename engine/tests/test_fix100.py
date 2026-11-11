@@ -174,7 +174,7 @@ class Fix100Tests(unittest.TestCase):
             )
         ask.assert_called_once()
         rhythm = dict(ask.call_args.args[3])["稳定节奏排期，每章只执行指定两条线"]
-        self.assertEqual([r["number"] for r in rhythm], list(range(26, 36)))
+        self.assertEqual([r["number"] for r in rhythm], list(range(26, 31)))
         rolling = deepcopy(state)
         for slot, chapter in zip(rhythm, result):
             with self.subTest(chapter=chapter["number"]):

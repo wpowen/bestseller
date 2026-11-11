@@ -62,7 +62,7 @@ def test_ability_names_survive_tool_family_normalization_and_conjunction_charact
     assert solution_issues(bible, [], [dict(number=n, solution_method="阵钉") for n in range(1, 5)])
 
 
-def test_old_plan_cache_rechecks_new_ability_cap_and_preserves_exhaustion(tmp_path):
+def test_old_plan_cache_reports_ability_cap_without_paid_replan(tmp_path):
     from bookengine import q1_plan
     from bookengine.q1_schema import DATA
     from bookengine.storage import save, load
@@ -85,7 +85,7 @@ def test_old_plan_cache_rechecks_new_ability_cap_and_preserves_exhaustion(tmp_pa
     )
     client = OfflineClient(tmp_path, [dict(chapters=[dict(rows[2], solution_target="铁窗")])] * 3)
     result = q1_plan.outlines(client, bible, {}, DATA["profile"], dict(number=1, start=1, end=5), 1, 3, {}, [], [], [])
-    assert client.calls and not solution_issues(bible, [], result)
+    assert not client.calls and solution_issues(bible, [], result)
     original = load(tmp_path / "outline-diversity/001-003.json")
     assert original["chapters"] == rows
     resumed = OfflineClient(tmp_path)

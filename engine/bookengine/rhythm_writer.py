@@ -1,6 +1,9 @@
 """Plain-language rhythm guidance passed to the prose writer."""
 
+import json
+
 from .chapter_rhythm import chapter_type
+from .q1_schema import rows
 
 
 NONCOMBAT = {"情感", "日常", "收获", "揭秘", "谋划"}
@@ -13,9 +16,26 @@ FOCUS = {
 }
 
 
+def writer_main_scene_contract(outline):
+    """Exact outline obligations placed before style guidance in the writer prompt."""
+    return {
+        "chapter_type": chapter_type(outline) or outline.get("rhythm_type") or "未定",
+        "rhythm_focus": outline.get("rhythm_focus", ""),
+        "hook_type": outline.get("hook_type", ""),
+        "hook": outline.get("hook", ""),
+        "scenes": [
+            {key: scene.get(key, "") for key in ("goal", "action", "choice", "result")}
+            for scene in rows(outline.get("scenes"))
+        ],
+        "relationship_change": outline.get("relationship_change"),
+    }
+
+
 def writer_rhythm_instruction(outline):
     kind = chapter_type(outline) or outline.get("rhythm_type") or "未定"
-    instruction = f"\n本章章型：{kind}。"
+    contract = json.dumps(writer_main_scene_contract(outline), ensure_ascii=False, separators=(",", ":"))
+    instruction = "本章主场景硬合同（优先于文风与局部措辞，必须由两场主场景实际完成）：" + contract
+    instruction += f"\n本章章型：{kind}。"
     if kind in NONCOMBAT:
         instruction += (
             "本章不安排正面打斗；对手只能作为消息或远处压力，不得在两场戏中到场动手、追杀、突围或反杀。"

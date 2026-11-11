@@ -3,7 +3,7 @@
 from copy import deepcopy
 import json
 
-from .chapter_rhythm import RULE, VERSION, chapter_type
+from .chapter_rhythm import RULE, VERSION, chapter_type, normalize_chapter_type
 from .q1_schema import DATA, integer, model_value, rows
 from .text import pack
 
@@ -81,7 +81,7 @@ def model_review_issues(batch, review):
     for row in rows(review):
         number = integer(row.get("number"))
         expected = planned.get(number, "")
-        observed = "情感" if row.get("content_type") == "关系" else row.get("content_type", "")
+        observed = normalize_chapter_type(row.get("content_type", ""))
         if not expected or row.get("status") != "mismatch" or observed == expected:
             continue
         issues.append(

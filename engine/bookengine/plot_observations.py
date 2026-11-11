@@ -14,12 +14,17 @@ from .contracts import observations
 from .core_ability import core_source, verify_core_use
 from .longutil import ask as engine_ask
 from .solution_substance import observe_solutions, rows
+from .solution_sequences import validate_solution_sequence
 from .storage import load, save
 
 AUTHORITY = "agent_editorial_not_human"
 SCHEMA = json.dumps(
     dict(
         solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
+        solution_sequence=dict(
+            steps=[dict(role="感知", pattern="直接观察", quote="")],
+            surface_nouns=[],
+        ),
         core_use=dict(decisive=None, mechanism=None, action_quote=None, result_quote=None),
     ),
     ensure_ascii=False,
@@ -33,6 +38,12 @@ INSTRUCTION = (
     "并逐字出现在action_quote原文，不用顿号合并机制名称；action_quote逐字引用实际能力操作；"
     "result_quote须逐字包含实际结果及使/令/让/因此/从而/终于/迫使/才/随之/于是等原文因果词，"
     "没有就Unknown，不能把无关结果、失败或普通替代手段算作能力成功。"
+    "另抽主要解法solution_sequence，steps必须依次为感知/判断/行动/结果；pattern分别从："
+    "感知=借用感官/直接观察/询问证人/工具测量/主动试验/查阅记录；"
+    "判断=辨认线索/比较证据/推断原因/识破伪装/权衡风险/破解规则；"
+    "行动=选择路径/设置机关/正面对抗/谈判交换/救援转移/操作物件/联合他人/隐蔽绕行；"
+    "结果=识破陷阱/打开通路/制伏对手/救出目标/取得资源/脱离危险/揭开事实/改变关系中选择。"
+    "每步quote逐字引用对应动作，surface_nouns只列正文里的具体能力、物件、地点或对象名。"
     "仅提及、设想、计划或否定不算使用。缺失、不确定就填null或空列表，不编造引文，不补写缺失语义。"
 )
 
@@ -81,6 +92,7 @@ def _validated(raw, text, bible, number, fallback_core=None):
         )
     return dict(
         solutions=observations(observed, text, number)["solutions"],
+        solution_sequence=validate_solution_sequence(raw.get("solution_sequence"), text),
         core_use=core,
         authority=AUTHORITY,
     )

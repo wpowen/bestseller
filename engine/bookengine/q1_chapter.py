@@ -19,6 +19,7 @@ from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_st
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .planning_drift import observe_plan_alignment
 from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
+from .solution_sequences import repair_solution_sequence, writer_solution_sequence_context
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -142,6 +143,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
     sections = with_completed_action_context(sections, out, idx)
     sections.extend(speech_context(bible, idx))
+    sections.extend(writer_solution_sequence_context(out, idx, bible))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
     cleaning = dict(draft={})
@@ -267,6 +269,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     text, raw, failed, exit_tail_repair = guarded(repair_exit_tail)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["solution_sequence"] = guarded(repair_solution_sequence)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
     )
     text, raw, failed, story_payoffs = guarded(repair_story_payoffs)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask

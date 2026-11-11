@@ -17,8 +17,8 @@ from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
 from .stage_transition import planning_transition_issues, complete_transitions
 from .retired_opponents import stage_constraints
-from .solution_substance import solution_context, solution_issues, chapter_nouns
-from .ability_methods import primary_target
+from .solution_substance import solution_issues
+from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
 from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
@@ -233,7 +233,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
-    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r, bible), target=primary_target(r)) for r in prior]
+    plot_history = solution_plot_history(bible, prior)
     dynamic_issues = cache_replan_issues(bible, prior, cached)
     plot_stale = bool(cached and dynamic_issues)
     revision_suffix = ""
@@ -249,6 +249,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                     planning_transition_issues(bible, cached["chapters"])
                     + ability_issues(bible, prior, cached["chapters"])
                     + solution_issues(bible, prior, cached["chapters"])
+                    + solution_sequence_issues(bible, prior, cached["chapters"])
                 )
             )
         )
@@ -314,8 +315,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     sections = [
         (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
-            "主要解法必须给solution_target作用对象及solution_method手段核心名词；普通手段同阶段同名词最多3次；圣经核心能力及子能力另计，同阶段同能力组合对同类对象最多2次；超额换实际手段或作用对象，不只换标签",
-            solution_context(bible, prior, start),
+            "主要解法给对象、手段名词和感知/判断/行动/结果四步；名词按既有上限，四步结构同阶段不得重复，换名词不算换结构",
+            planning_solution_context(bible, prior, start),
         ),
         (RHYTHM_RULE, window_stage_content(stage_skeleton, start, end)),
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
@@ -395,8 +396,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             [
                 (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
                 (
-                    "普通手段名词阶段上限3次，核心能力组合对同类对象阶段上限2次；重写实际动作，解法附solution_target/solution_method",
-                    solution_context(bible, prior, start),
+                    "普通手段名词及能力组合遵守既有上限；解法附对象、手段和四步结构，四步不得只换名词重复",
+                    planning_solution_context(bible, prior, start),
                 ),
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
@@ -487,7 +488,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         report = json.loads(Path(source_path or path).read_text())
         report["rhythm_contract_version"] = RHYTHM_VERSION
         report["plot_history"] = plot_history
-        report["plot_issues_after"] = solution_issues(bible, prior, result) + ability_issues(bible, prior, result)
+        plot_issues = solution_issues(bible, prior, result) + solution_sequence_issues(bible, prior, result)
+        report["plot_issues_after"] = plot_issues + ability_issues(bible, prior, result)
         report["rhythm_issues_after"] = final_rhythm_issues
         report["opponent_issues_after"] = opponent_presence_issues(bible, result)
         report["replan_issues"] = dynamic_issues

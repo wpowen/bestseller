@@ -11,6 +11,7 @@ from .storage import save
 from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
+from .solution_sequences import solution_sequence_issues
 from .core_ability import ability_issues
 from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_content, chapter_type, rhythm_issues
 
@@ -18,7 +19,7 @@ from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_con
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
-STRUCTURE_CHECKS_VERSION = 6
+STRUCTURE_CHECKS_VERSION = 7
 
 
 def title_terms(title, supplied=()):
@@ -196,6 +197,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             + opponent_presence_issues(bible or {}, current)
             + planning_transition_issues(bible or {}, current)
             + solution_issues(bible or {}, history, current)
+            + solution_sequence_issues(bible or {}, history, current)
             + ability_issues(bible or {}, history, current)
             + rhythm_issues(bible or {}, history, current)
         )
@@ -254,6 +256,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 + opponent_presence_issues(bible or {}, current)
                 + planning_transition_issues(bible or {}, current)
                 + solution_issues(bible or {}, history, current)
+                + solution_sequence_issues(bible or {}, history, current)
                 + ability_issues(bible or {}, history, current)
                 + rhythm_issues(bible or {}, history, current)
             )
@@ -277,6 +280,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 + opponent_presence_issues(bible or {}, current)
                 + planning_transition_issues(bible or {}, current)
                 + solution_issues(bible or {}, history, current)
+                + solution_sequence_issues(bible or {}, history, current)
                 + ability_issues(bible or {}, history, current)
                 + rhythm_issues(bible or {}, history, current)
             )

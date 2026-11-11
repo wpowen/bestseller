@@ -438,6 +438,10 @@ schemas:
       opening_conflict: ''
       callback_events: []
       solution_type: null
+      solution_steps:
+      - role: 感知
+        pattern: 直接观察
+        detail: ''
   rhythm_review:
     chapters:
     - number: 1

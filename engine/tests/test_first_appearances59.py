@@ -29,23 +29,32 @@ def test_eval57_first_level_use_and_unnamed_other_beast_are_detected():
     findings = check_world_first_appearances(EVAL57_CHAPTER_7, registry)
     unresolved = check_world_first_appearances(EVAL57_CHAPTER_40, registry)
 
-    assert registry["醒脉"]["definition"].startswith("境界序列第1阶")
+    assert "第1阶" not in registry["醒脉"]["definition"]
     assert {row["term"] for row in findings if row["kind"] == "term_first_use_missing"} == {"醒脉", "凝纹"}
     assert any(row["kind"] == "unresolved_entity_reference" and row["term"] == "另一头契兽" for row in unresolved)
 
 
 def test_definition_must_be_bound_at_first_use_not_added_after_the_term_is_already_used():
     registry = world_term_registry(bible())
-    grounded = "醒脉是境界序列第一阶，散力刚能沿经脉流动。"
+    grounded = "他催动醒脉的散力顶住石门，门缝只挪开半寸，显然还压不住阵纹。"
     late = "醒脉的散力沉入旧轨。后来他解释，醒脉是境界第一阶。"
 
     assert check_world_first_appearances(grounded, registry)[0]["kind"] == "term_introduction_present"
     assert check_world_first_appearances(late, registry)[0]["kind"] == "term_first_use_missing"
 
 
+def test_instruction_manual_realm_sentence_is_not_first_use_evidence():
+    registry = world_term_registry(bible())
+    manual = "他修习的醒脉，是宗门境界序列的第一阶；再往上的凝纹，是承接醒脉的第二阶境界。"
+    dialogue = "师姐按住他的腕脉：‘你才醒脉，催不动这道阵；等凝纹后再来。’"
+
+    assert check_world_first_appearances(manual, registry)[0]["kind"] == "term_first_use_missing"
+    assert {row["kind"] for row in check_world_first_appearances(dialogue, registry)} == {"term_introduction_present"}
+
+
 def test_fake_repair_inserts_grounded_term_definition_and_clears_issue(tmp_path):
     original = "醒脉的散力沉入旧轨。"
-    replacement = "醒脉是境界序列第一阶，散力沿经脉沉入旧轨。"
+    replacement = "顾立谦催动醒脉散力去推旧轨，热力才沉入半寸便散开，仍托不起粮车。"
     calls = []
 
     def ask(client, key, instruction, sections, schema, **kwargs):
@@ -73,6 +82,21 @@ def test_fake_repair_inserts_grounded_term_definition_and_clears_issue(tmp_path)
     assert changed == replacement and raw["events"] == [] and failed is False
     assert note["status"] == "checked" and note["after"] == []
     assert calls == ["r2-ch7-first-appearance-repair"]
+
+
+def test_writer_and_repair_prompts_forbid_copying_realm_definitions_as_exposition(tmp_path):
+    from bookengine.first_appearances import writer_first_appearance_instruction
+
+    instruction = writer_first_appearance_instruction(
+        tmp_path,
+        1,
+        bible(),
+        {"number": 1, "scenes": [{"action": "顾立谦尝试催动醒脉"}]},
+    )
+
+    assert "不得照抄定义" in instruction
+    assert "第1阶" not in instruction
+    assert "修炼动作、受限结果或人物对白" in instruction
 
 
 def test_character_first_mentioned_in_dialogue_gets_identity_at_that_mention(tmp_path):

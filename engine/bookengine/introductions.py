@@ -284,12 +284,10 @@ def world_term_registry(bible):
     world = bible.get("world", {}) if isinstance(bible.get("world"), dict) else {}
     levels = world.get("levels", [])
     levels = levels if isinstance(levels, list) else []
-    for index, level in enumerate(levels, 1):
+    for level in levels:
         term = level.get("name") if isinstance(level, dict) else level
         supplied = level.get("definition", level.get("effect")) if isinstance(level, dict) else None
-        previous = levels[index - 2] if index > 1 else None
-        previous = previous.get("name") if isinstance(previous, dict) else previous
-        definition = supplied or f"境界序列第{index}阶" + (f"，承接{previous}" if previous else "")
+        definition = supplied or "修行层级；须由修炼动作、可用能力或受限结果体现层级差别"
         add(term, "level", definition)
     factions = world.get("factions", []) if isinstance(world.get("factions"), list) else []
     for faction in factions:
@@ -317,6 +315,19 @@ def _term_sentence(text, offset):
 def _term_is_bound(term, card, sentence):
     if re.search(r"不是|并非|[？?]", sentence):
         return False
+    if card.get("kind") == "level":
+        if re.search(
+            re.escape(term) + r"[^。！？!?]{0,24}(?:是|属于|境界序列|第[一二三四五六七八九十\d]+(?:阶|层|级)|承接)",
+            sentence,
+        ):
+            return False
+        return bool(
+            re.search(
+                r"催动|运转|修炼|突破|晋升|压制|挡住|顶住|推开|劈开|施展|只能|尚不能|还不能|"
+                r"催不动|压不住|托不起|撑不开|破不开|够不着",
+                sentence,
+            )
+        )
     if re.search(re.escape(term) + r"(?:是|即|指|属于|叫作|名为)", sentence):
         return True
     definition = card.get("definition", "")

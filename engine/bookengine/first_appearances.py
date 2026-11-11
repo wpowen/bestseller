@@ -59,9 +59,15 @@ def writer_first_appearance_instruction(out, number, bible, outline):
     due = due_first_appearances(out, number, bible, outline)
     if not due:
         return ""
+    lines = []
+    for row in due:
+        if row.get("kind") == "level":
+            lines.append(f"- {row['term']}：用修炼动作、受限结果或人物对白显示其层级作用")
+        else:
+            lines.append(f"- {row['term']}：{row['definition']}")
     return (
-        "\n本章首次使用以下世界术语时，第一次写出它的句子就用动作、对白或一句叙述说明它是什么；"
-        "不得先裸用、后补定义：\n" + "\n".join(f"- {row['term']}：{row['definition']}" for row in due)
+        "\n本章首次使用以下世界术语时，第一次写出它的句子就融入动作或对白说明它是什么；"
+        "不得先裸用、后补定义，也不得照抄定义写成‘某词是第几阶/承接上一阶’的说明书句：\n" + "\n".join(lines)
     )
 
 
@@ -113,7 +119,8 @@ def repair_first_appearances(client, prefix, text, raw, failed, state, bible, ou
         ask,
         client,
         prefix + "-first-appearance-repair",
-        "只改首次出现所在段：术语或人物第一次出现的句子就用自然动作、对白或一句叙述交代所给定义/身份；"
+        "只改首次出现所在段：术语或人物第一次出现的句子就用自然动作或对白交代所给定义/身份；"
+        "境界词必须通过正在修炼、能力受限、突破结果或人物判断来体现，不得写‘某词是第几阶/承接上一阶’的说明书句；"
         "指称不明时改用已有人物或生物原名，不造新实体。保留段内事件、人物、数字和结果。",
         [
             ("缺失项及圣经定义", before),

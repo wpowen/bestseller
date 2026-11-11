@@ -28,7 +28,7 @@ from .q1_repetition import repair_repetitions
 from .q1_cast import chapter_cast, previous_cast, cast_findings, remaining_cast_problems, seen_in
 from .q1_cast import CAST_OBSERVATION_VERSION
 from .cast_consistency import repair_cast_consistency
-from .text_hygiene import repair_text
+from .text_hygiene import repair_text, require_publishable
 from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_rhythm_instruction
@@ -279,6 +279,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)
     final_handoff = evaluate_handoff(state, boundaries, text, bible, outline)

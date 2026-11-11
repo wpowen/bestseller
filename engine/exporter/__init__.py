@@ -169,6 +169,15 @@ def export_book(bookdir, formats=FORMATS, version="final", out=None):
     ):
         raise ValueError("Output must not contain symlinks")
     title, rows = read_book(bookdir, version)
+    from bookengine.model_notes import publication_blocks
+
+    blocked = [(number, publication_blocks(body)) for number, _, body in rows]
+    blocked = [(number, hits) for number, hits in blocked if hits]
+    if blocked:
+        details = "; ".join(
+            f"chapter {number}: {', '.join(hit['kind'].replace('_', ' ') for hit in hits)}" for number, hits in blocked
+        )
+        raise ValueError("Export refused; " + details)
     total = load(bookdir / "run.json").get("book", {}).get("chapters", max(r[0] for r in rows))
     missing = sorted(set(range(1, total + 1)) - {r[0] for r in rows})
     if missing:

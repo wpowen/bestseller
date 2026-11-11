@@ -194,3 +194,118 @@
 - `ruff format --check .`：最终提交前重新执行。
 - 工作树未 push、未合并 main。
 
+## 返工二
+
+状态：返工二完成，待监工网页真机验收。
+
+### 结论与验收边界
+
+返工二的 P0–P2 已有代码和离线契约测试。真书试写的执行分工在 2026-11-11 调整为：监工只通过框架网页的建书、写书流程驱动真机，Codex 不再启动或续写真书。因此本节只报告代码证据、既有目录的只读离线重算和未完成试跑数据；速度目标、故事层指标和读者质量均保留为 **Unknown，等待监工网页真机验收**。
+
+`f59-real20c-20261111` 在调整分工时已中止并原样保留：14 个调用记录为 12 `ok`、1 `invalid_stage_output`、1 `pending`；没有落盘章节元数据或正文，`runner.lock` 保留。最后一项是 `r2-ch1-finish` 的未完成请求。该目录不续写、不清锁，也不把未完成数据计作 20c 验收。中止前章纲请求已是 `chapters-1-5`，且只有 1 次 11.73 秒的定向重排；这只能证明入口使用了五章窗口，不能证明整书速度或质量。
+
+返工二相关提交：
+
+| 提交 | 内容 |
+| --- | --- |
+| `2a641251a` | 关系主场景目标扩至最多 16 段、长章至少 8 段 |
+| `c66858aa1` | 五章窗口、硬约束付费门、一次/两目标、截断分类、写手主场景合同 |
+| `e63b02926` | 相邻开头地点/修改范围与跨章全命中修复 |
+| `a95aaa769` | 关系修复回滚原因细分 |
+| `4d3bedca4` | 原始速度诊断归档 |
+| `ab5f6bf53` | 单一标准章型词表、体检统一、确定性章名与重排决定账本补齐 |
+
+### P0–P2 代码与测试核对
+
+| 项 | 实现 | 契约证据 | 状态 |
+| --- | --- | --- | --- |
+| P0-1 统一章型词表 | `chapter_rhythm.normalize_chapter_type` 是唯一入口；规划排期、章纲、正文抽取、语义复核和体检均在比较前调用。标准值只有对抗/谋划/情感/日常/揭秘/收获；`打/救/动作/爽点/能力兑现/关系推进` 等归一，私有词变 Unknown。原 `growth_extract.yaml` 的第二套别名表已删除。 | `test_speed_rework59.py` 覆盖旧词、返工样本词、抽取、排期与体检同一结果；`test_minimal_b_part2.py` 覆盖未知私有词。 | 完成 |
+| P0-2 章名重复不重排 | `rename_repeated_titles` 在付费判定前本地处理；为避免删一个字生成“断取痕”一类残题，命中章确定性改为中性 `第N章`，并记录 `title_renames/action=deterministic_title_rename`。 | `test_speed_rework59.py` 和 `test_outline_diversity.py` 断言重写客户端不会被调用。 | 完成；中性标题文学性待网页真机评审 |
+| P0-3 五章窗口与截断 | `planning_window_end` 同时约束章节主循环和 `q1_plan.outlines`，窗口最多 5 章。provider `finish_reason=length` 记 `status=truncated`，抛 `TruncatedOutput`，不再覆盖成 `invalid_stage_output`，也不以同一整批提示重试。 | `test_speed_rework59.py` 断言 1–20 只取 1–5，截断只请求 1 次且账本为 `truncated`。 | 完成 |
+| P1-4 仅硬约束触发 | `hard_replan_issues` 只接收阶段缺关系主章、连续对抗超 3、兑现位置丢失、对手结局丢失。章型/钩子/结构对齐仍记录，但不使缓存失效；语义章型模型复核从生产规划链移除。 | 测试把 `title_keyword`、`rhythm_content_mismatch`、`rhythm_model_mismatch` 与四类硬问题同批输入，只返回四类硬问题。 | 完成 |
+| P1-5 只改 1–2 章 | 同一 hard kind 聚合为一个阶段级问题，`replan_targets` 总数最多 2；上下文只带目标及前后章。 | `test_speed_rework59.py` 断言实际传给 rewrite 的目标数为 1–2。 | 完成 |
+| P1-6 最多一次 | `MAX_REWRITE_CALLS=1`；一次不合格即保留原稿。报告新增 `replan_decisions`，逐目标记录 `accepted_model_replan` 或 `kept_original`、次数和原因。 | 失败客户端只被调用 1 次，原章纲不变，决定为 `kept_original/attempts=1`。 | 完成 |
+| P1-7 主场景合同前置 | 写手 instruction 的第一段是“不截断的本章主场景硬合同”，逐字包含标准章型、`rhythm_focus`、两场 goal/action/choice/result、`hook_type` 和 hook；同一合同也是第一个 section，优先于文风。 | `test_minimal_b.py` 走真实 `chapter → ask → Client.stage` 拼装路径，断言具体钩子、动作、结果在 prompt 中且合同位于文风前。 | 代码完成；真实 `plan_alignment >=15/20` 待网页真机 |
+| P2 关系修复 | 完整正文和最多 16 个分散段送模，长章至少 8 个有效编辑；禁止把定规则、排路线、分工作为主结果。回滚拆分为 `after_type_mismatch/state_recheck_failed/lost_grounded_payoff/hard_fact_conflict`。 | `test_relationship_rhythm59.py` 覆盖全章材料、分散段、采用与回滚。 | 代码完成；真机成功率待网页验收 |
+| P2 相邻开头 | 补齐“深处/入口/站台”和“钻入/退到”等真实样本；框架固定只改第一段，不再让模型自报 `replace_count` 后合并两段、遗留旧第二段。 | `test_opening_recheck39.py` 覆盖四组真实父子地点及框架拥有修改范围。 | 完成 |
+| P2 跨章衔接 | `adjacent_opening_hits` 不再首命中即 `break`，一次返回前两段全部重复句；替换段数必须精确覆盖全部命中段。 | `test_final_hygiene_58_openings.py` 覆盖 A/B 两句同时重放、一次修复和少改一段时回滚。 | 完成 |
+
+### P2 原始回滚账与已有提交验证
+
+按 `calls.json` 和 `chapters/*.json` 逐章回读，`speed-plan-20261111.md` 中“相邻开头 6/10、跨章衔接 5/10”的旧摘要与目录原始记录不一致。真实口径如下：
+
+| 目录 / 修复 | 逻辑触发 | API 请求 | 采用 | 回滚 | Unknown |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| attempt1 关系主场景 | 8 | 8 | 0 | 8 | 0 |
+| attempt1 相邻开头 | 9 | 9 | 1 | 8 | 0 |
+| attempt1 跨章衔接 | 10 | 11 | 4 | 6 | 0 |
+| 中止 20b 关系主场景（已落盘 1–11 章） | 1 | 1 | 0 | 1 | 0 |
+| 中止 20b 相邻开头（已落盘 1–11 章） | 5 | 5 | 2 | 3 | 0 |
+| 中止 20b 跨章衔接（已落盘 1–11 章） | 2 | 3 | 0 | 2 | 0 |
+| 中止 20b 第 12 章相邻开头 | 1 | 1 | 0 | 0 | 1 |
+
+attempt1 关系回滚为 6 次 `relationship_recheck_failed`、2 次 `invalid_edit_target`；相邻开头为 5 次 `opening_still_disconnected`、3 次 `introduced_repetition`；跨章 6 次均为 `opening_recheck_failed`，其中 5 次是修掉首个重复后才暴露第二个。中止 20b 第 12 章只有请求，没有章节落盘，严格保持 Unknown。
+
+- `67d9cbe48` 的材料覆盖已在中止 20b 第 4 章生效：关系修复 `input_chars=3490`，实际返回 7 个编辑；但整章仍抽成“谋划”，所以结果是“材料覆盖生效、关系验收未生效”，不能报成功。
+- `2a641251a` 在上述证据后把上限扩为 16 段、长章最低 8 段并排除“规则/路线/分工”主结果；尚无网页真机成功证据。
+- `f78b361e2` 在中止 20b 第 4 章生效：章纲不再同时携带战斗兑现/对手结局与关系合同；正文仍没写成情感章，所以只证明合同分离，不证明关系章成功。
+- 三项修复均保留。若监工网页真机中关系修复仍超过 50% 回滚，建议继续仅在“规划明确为关系主章且正文非情感”的硬触发下运行；相邻开头和跨章衔接已有确定性根因修复，不建议停跑。
+
+### attempt1 / 中止 20b 离线重算
+
+方法：只读加载两个目录的 `story_bible.yaml`、`outline-diversity/*.json`、`writing_outlines/*.json` 和 `chapters/*.json` 最终正文观察；在内存中先执行当前的确定性标题改名、能力合同和书名承诺投影，再运行当前全部规划检查，最后只把 `hard_replan_issues` 送入最多两目标/一次调用策略。没有模型调用，没有改写源目录。旧目录由旧算法产生大量相互重叠的后缀窗口，因此“新付费调用”是对这些旧报告逐个重算的保守上限，不等价于一次全新五章窗口运行。
+
+| 指标 | attempt1 | 中止 20b |
+| --- | ---: | ---: |
+| 旧 `outline-diversity` 报告 | 14 | 2 |
+| 旧 attempt 记录 / 有目标 | 51 / 43 | 8 / 8 |
+| 旧 diversity API 请求 | 47（37 ok） | 12（6 ok） |
+| 旧目标槽位（终止轮前） | 206 | 48 |
+| 旧语义章型复核请求 | 14 | 2 |
+| 新规则仍会付费的报告上限 | 6 | 2 |
+| 新目标槽位上限 | 6 | 2 |
+| API 请求降幅 | 87.2% | 83.3% |
+| 目标槽位降幅 | 97.1% | 95.8% |
+| 本地确定性章名改名 | 11 | 8 |
+
+attempt1 新规则仍触发的只有关系主章缺失：旧重叠报告 `001-010`、`002-010-observed2`、`003-010-observed3`、`004-010-observed4` 各只指向第 5 章，`011-020`、`012-020-observed7` 各只指向第 15 章。兑现位置和“被杀”元数据在当前确定性合同投影后不再需要模型重排。中止 20b 只剩 `001-010` 的第 10 章连续对抗硬问题，以及 `011-020` 的第 15 章关系主章硬问题。
+
+attempt1 的 93 条旧 `rhythm_replans` 决定中，否决原因包含章名重复 30 条、`rhythm_content_mismatch` 22 条。22 条里 13 条在统一词表后直接消失：
+
+| 旧 allowed → observed | 条数 | 新判定 |
+| --- | ---: | --- |
+| 救 → 对抗 | 2 | 对抗 = 对抗 |
+| 能力 → 对抗 | 2 | 对抗 = 对抗 |
+| 爽点 → 对抗 | 2 | 对抗 = 对抗 |
+| 动作 / 打 / 收束 / 能力兑现 / 对抗兑现 / 阶段兑现 → 对抗 | 各 1，共 6 | 对抗 = 对抗 |
+| 关系推进 → 情感 | 1 | 情感 = 情感 |
+
+其余 9 条是真实内容与标签不同，仍保留为诊断，但不再触发重排。中止 20b 的 `rhythm_replans` 决定中没有这类同义词否决；attempt issue 池里有 1 条“能力兑现 → 对抗”，在新入口同样会于判断前消失。章名重复旧决定在 attempt1 / 中止 20b 分别为 30 / 12 条；新规则只产生 11 / 8 次内存改名，付费请求均为 0。
+
+### `c66858aa1` 对 `q1.py` / `client.py` 的必要性与边界
+
+`q1.py` 是唯一逐章调度循环，仅有以下调度改动：
+
+1. 导入 `planning_window_end`，让生产循环和可单测的 `q1_plan.outlines` 共用五章上限。
+2. 删除 `solution_issues` import；它原先令任一剩余解法诊断在每写完一章后重开保存窗口，正是逐章重排的入口。诊断本身仍在规划报告中，没有删除。
+3. 把三分支重开条件改为“当前 batch 为空或不含本章”后才规划；不再因软诊断每章重开。
+4. 把 `idx + 9` 改为 `planning_window_end(...)`，实际生产请求最多 5 章。没有改正文写手、修复器、状态合并、导出或书稿保存。
+
+这几行必须位于 `q1.py`：只在 `q1_plan` 内截断 end，不能阻止逐章循环先因 `solution_issues` 反复进入规划，也不能保证所有生产调用者采用同一窗口。
+
+`client.py` 是 provider 响应和 `calls.json` 状态落账的唯一边界，仅有以下记账改动：
+
+1. 新增 `TruncatedOutput(ProjectError)`，把输出上限与模型内容不合格分开。
+2. `finish_reason=length` 时先写 `status=truncated`，再抛该异常；不再走 `Retryable("truncated_return")`。
+3. 异常分派让 `TruncatedOutput` 原样上抛，避免后续宽泛 `ValueError` 分支覆盖成 `invalid_output/invalid_stage_output` 并重发同一整批。
+
+没有改密钥读取、请求 payload、网络 408/429/5xx 退避、额度判断或正常坏 JSON 重试。因此 `q1.py` 的变更只限调度，`client.py` 的变更只限截断分类和调用账本。
+
+### 验证与 Unknown
+
+- 全量测试：`1766 passed, 2 skipped, 751 subtests passed`。
+- `check_scope.py`：PASS；最大 Python 文件 499 行，无 `bestseller` import、无 bookengine/deai 交叉 import。
+- `ruff format --check .`：PASS，298 个文件均已格式化。
+- 未 push，未合并 main；未改 `deai/`、`tools/webui/` 或真实书库。
+- **Unknown**：监工网页真机的平均每章耗时、规划占比、作废重排率、截断数、`plan_alignment`、关系章、连续对抗、兑现位置、被杀、术语铺垫、解释密度，以及三类修复的新回滚率。
+- **Unknown**：真人对中性 `第N章` 确定性改名的接受度；它满足“不为章名重复付费重排”的框架合同，不等于文学标题验收。

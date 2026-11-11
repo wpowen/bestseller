@@ -5,7 +5,7 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 11
+VERSION = 12
 CANONICAL_TYPES = ("对抗", "谋划", "情感", "日常", "揭秘", "收获")
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
@@ -150,14 +150,57 @@ def relationship_contract(row):
     if not isinstance(value, dict):
         return None
     people = value.get("people") if isinstance(value.get("people"), list) else []
+    labelled_relationship = normalize_chapter_type(row.get("type") or row.get("rhythm_type") or "") == "情感"
+    if not people and labelled_relationship:
+        for alias in ("characters", "pair"):
+            if isinstance(value.get(alias), list):
+                people = value[alias]
+                break
+    if not people and labelled_relationship:
+        scene_cast = [
+            name
+            for scene in rows(row.get("scenes"))[:2]
+            for name in (scene.get("characters") if isinstance(scene.get("characters"), list) else [])
+            if isinstance(name, str)
+        ]
+        people = list(dict.fromkeys(scene_cast))[:2]
     people = [name for name in people if isinstance(name, str) and name.strip()]
-    fields = {
-        key: value.get(key, "").strip() if isinstance(value.get(key), str) else ""
-        for key in ("cause", "before", "after")
-    }
-    if len(set(people)) != 2 or not all(fields.values()) or fields["before"] == fields["after"]:
+    cause = value.get("cause", "").strip() if isinstance(value.get("cause"), str) else ""
+    if not cause and labelled_relationship:
+        for fallback in (value.get("turning_point"), row.get("opening_conflict"), row.get("conflict")):
+            if isinstance(fallback, str) and fallback.strip():
+                cause = fallback.strip()
+                break
+    fields = {key: value.get(key, "").strip() if isinstance(value.get(key), str) else "" for key in ("before", "after")}
+    if len(set(people)) != 2 or not cause or not all(fields.values()) or fields["before"] == fields["after"]:
         return None
-    return dict(people=people, **fields)
+    return dict(people=people, cause=cause, **fields)
+
+
+_PROSE_RELATION = re.compile(
+    r"坦白|承认|信任|隐瞒|瞒着|原谅|疏远|和解|顾虑|承诺|拒绝|允许|接受|让步|道歉|试探|质问|"
+    r"回应|边界|同伴|伙伴|同行|合作|分开|靠近|选择|决定|告诉|资格|权利"
+)
+_PROSE_COMBAT = re.compile(
+    r"敌人|追兵|伏兵|围攻|追杀|搏杀|交战|厮杀|拔剑|挥剑|反杀|突围|冲杀|迎战|开战|"
+    r"攻来|扑来|杀来|刀锋|剑锋|铜镜|斩(?:断|开|下)|切(?:断|下)|救(?:人|下|出|弟子)|"
+    r"弟子[^。！？]{0,16}(?:被控|勒住|僵住|脱困)|断(?:开|裂)[^。！？]{0,6}(?:丝|线)"
+)
+
+
+def observed_chapter_type(observed, text, outline):
+    """Conservatively correct a relationship false negative without relabeling battles."""
+    fallback = chapter_type(observed if isinstance(observed, dict) else {})
+    contract = relationship_contract(outline)
+    if not contract or not isinstance(text, str) or any(person not in text for person in contract["people"]):
+        return fallback
+    paragraphs = [paragraph for paragraph in text.split("\n\n") if paragraph.strip()]
+    relationship = sum(bool(_PROSE_RELATION.search(_positive(paragraph))) for paragraph in paragraphs)
+    combat = sum(
+        bool(_COMBAT.search(_positive(paragraph)) or _PROSE_COMBAT.search(_positive(paragraph)))
+        for paragraph in paragraphs
+    )
+    return "情感" if relationship >= 4 and relationship > combat else fallback
 
 
 def relationship_outline_issues(row):

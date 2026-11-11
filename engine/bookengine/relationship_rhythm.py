@@ -1,7 +1,7 @@
 """Bounded prose repair when a planned relationship chapter becomes another type."""
 
 from .checks import high_confidence
-from .chapter_rhythm import chapter_type, relationship_contract
+from .chapter_rhythm import chapter_type, observed_chapter_type, relationship_contract
 from .promise_io import precise_ask
 from .text import _paragraph_spans
 from tools.book_checkup import clean_prose
@@ -21,7 +21,7 @@ def _spread(indexes, limit=16):
 
 def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     contract = relationship_contract(outline)
-    before_type = chapter_type(raw if isinstance(raw, dict) else {})
+    before_type = observed_chapter_type(raw, text, outline)
     note = {
         "status": "checked",
         "planned": contract,

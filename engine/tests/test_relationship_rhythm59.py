@@ -2,7 +2,14 @@
 
 import json
 
-from bookengine.chapter_rhythm import chapter_type, relationship_outline_issues, rhythm_issues, rhythm_slots
+from bookengine.chapter_rhythm import (
+    chapter_type,
+    observed_chapter_type,
+    relationship_contract,
+    relationship_outline_issues,
+    rhythm_issues,
+    rhythm_slots,
+)
 from bookengine.planning_policy import hard_replan_issues
 from bookengine.q1_prepare import _ask
 from bookengine.relationship_rhythm import repair_relationship_rhythm
@@ -145,6 +152,91 @@ def test_relationship_contract_overrides_a_conflicting_combat_label():
     instruction = writer_rhythm_instruction(outline)
     assert "本章章型：情感" in instruction
     assert "把人物关系从变化前推到变化后" in instruction
+
+
+def test_saved_web_relationship_contract_shapes_are_normalized_before_use():
+    chapter4 = {
+        "type": "情感",
+        "opening_conflict": "顾长风想以隐瞒保护木岳霖，木岳霖却拒绝被排除在真相外。",
+        "relationship_change": {
+            "before": "顾长风隐瞒残线，木岳霖只能猜测危险。",
+            "after": "顾长风主动坦白，木岳霖取得制止其独行的资格。",
+            "turning_point": "木岳霖指出保护也在剥夺他的选择。",
+        },
+        "scenes": [
+            {"characters": ["顾长风", "木岳霖"], "action": "顾长风坦白隐瞒", "choice": "木岳霖选择追问"},
+            {"characters": ["顾长风", "木岳霖"], "action": "木岳霖提出边界", "choice": "顾长风接受制止"},
+        ],
+    }
+    chapter6 = {
+        "type": "情感",
+        "relationship_change": {
+            "characters": ["顾长风", "木手"],
+            "cause": "顾长风承认残线风险。",
+            "before": "彼此不信任。",
+            "after": "接受对方决定次序。",
+        },
+    }
+    stale_chapter8 = {
+        "type": "揭秘",
+        "relationship_change": {
+            "pair": ["顾长风", "木岳霖"],
+            "before": "尚未主动承担风险。",
+            "after": "形成明确分工。",
+        },
+    }
+
+    assert relationship_contract(chapter4) == {
+        "people": ["顾长风", "木岳霖"],
+        "cause": "木岳霖指出保护也在剥夺他的选择。",
+        "before": "顾长风隐瞒残线，木岳霖只能猜测危险。",
+        "after": "顾长风主动坦白，木岳霖取得制止其独行的资格。",
+    }
+    assert relationship_contract(chapter6)["people"] == ["顾长风", "木手"]
+    assert relationship_contract(stale_chapter8) is None
+
+
+def test_observed_type_treats_sustained_relationship_change_as_emotional_but_not_a_battle():
+    outline = relationship_outline()
+    relationship_body = "\n\n".join(
+        [
+            "顾立谦向霜团坦白自己一直隐瞒借力代价。",
+            "霜团质问他为何替自己决定去留。",
+            "顾立谦承认保护也剥夺了她的选择。",
+            "霜团没有原谅，只要求他今后先告诉自己。",
+            "顾立谦接受她随时制止借力的权利。",
+            "两人重新约定同行边界，信任与此前不同。",
+        ]
+    )
+    battle_body = (
+        relationship_body
+        + "\n\n"
+        + "\n\n".join(
+            [
+                "敌人拔剑扑来，顾立谦挥刀迎战。",
+                "追兵围攻，霜团被迫突围。",
+                "顾立谦斩断敌人的刀，击退三名追兵。",
+                "伏兵再度冲杀，两人破阵夺门。",
+                "敌人围堵出口，顾立谦反杀领头人。",
+                "余下追兵追杀到山口，双方再次交战。",
+                "顾立谦挥剑逼退敌人，带霜团突围。",
+            ]
+        )
+    )
+
+    assert observed_chapter_type({"type": "对抗"}, relationship_body, outline) == "情感"
+    assert observed_chapter_type({"type": "对抗"}, battle_body, outline) == "对抗"
+
+
+def test_extract_prompt_defines_verbal_relationship_conflict_separately_from_hostile_combat():
+    import yaml
+    from bookengine.q1_extract import DATA
+
+    prompt = yaml.safe_load((DATA.parent / "growth_extract.yaml").read_text())["prompt"]
+
+    assert "言语冲突和信任变化" in prompt
+    assert "敌对势力" in prompt
+    assert "正面冲突" in prompt
 
 
 def test_eval57_style_planned_relationship_but_actual_combat_gets_targeted_main_scene_rewrite():
@@ -311,3 +403,41 @@ def test_checkup_separates_approved_and_unapproved_excess_runs(tmp_path):
 
     assert rhythm["approved_excess_runs"] == [[17, 18, 19, 20]]
     assert rhythm["unapproved_excess_runs"] == [[16, 17, 18, 19, 20]]
+
+
+def test_checkup_uses_grounded_relationship_body_rule_for_distribution_and_runs(tmp_path):
+    from tools.book_checkup import check_book
+    import yaml
+
+    (tmp_path / "story_bible.yaml").write_text(
+        yaml.safe_dump({"volumes": [{"number": 1, "start": 1, "end": 4}]}, allow_unicode=True)
+    )
+    (tmp_path / "chapters").mkdir()
+    (tmp_path / "writing_outlines").mkdir()
+    for number in range(1, 5):
+        body = "敌人拔剑扑来，顾立谦挥刀迎战。"
+        outline = {"number": number, "type": "对抗"}
+        if number == 4:
+            body = "\n\n".join(
+                [
+                    "顾立谦向霜团坦白自己一直隐瞒借力代价。",
+                    "霜团质问他为何替自己决定去留。",
+                    "顾立谦承认保护也剥夺了她的选择。",
+                    "霜团没有原谅，只要求他今后先告诉自己。",
+                    "顾立谦接受她随时制止借力的权利。",
+                    "两人重新约定同行边界，信任与此前不同。",
+                ]
+            )
+            outline = relationship_outline(number)
+        (tmp_path / f"chapter-{number:03d}.body.md").write_text(body)
+        (tmp_path / f"chapters/{number:03d}.json").write_text(
+            json.dumps({"number": number, "type": "对抗"}, ensure_ascii=False)
+        )
+        (tmp_path / f"writing_outlines/{number:03d}.json").write_text(json.dumps(outline, ensure_ascii=False))
+
+    rhythm = check_book(tmp_path, source="draft")["chapter_rhythm"]
+
+    assert rhythm["distribution"] == {"关系": 1, "对抗": 3}
+    assert rhythm["stages"][0]["relationship_chapters"] == [4]
+    assert rhythm["longest_confrontation"] == 3
+    assert rhythm["excess_runs"] == []

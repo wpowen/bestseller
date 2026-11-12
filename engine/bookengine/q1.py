@@ -45,6 +45,8 @@ from .q1_extract import (
 )
 from .q1_chapter import REVISION, supplement, amend, chapter_record, chapter
 from .structure_planning import stage_for_chapter, final_stage_start
+from .q1_prepare import _ask as plan_ask
+from .story_design import ensure_story_design
 from tools.book_checkup import write_checkup
 
 
@@ -159,6 +161,14 @@ def _run(book, out, env, assets, timeout, style, stop):
         meta.update(status="failed", stop_reason=str(exc), usage=usage_report(client.calls))
         save(path, meta)
         raise
+    design = ensure_story_design(
+        lambda kind, key, sections, redo: plan_ask(client, kind, key, sections, redo),
+        bible,
+        threads,
+        book.chapters,
+        out,
+    )
+    bible = dict(bible, story_design=design)
     canon = dict(
         bible["canon"],
         solution_menu=GROWTH["packs"][book.prompt_pack]["solution_menu"],

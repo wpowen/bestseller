@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 import yaml
+from design_support import complete_design
 
 from bookengine.client import Client
 from tools.runtime_support import ProjectError
@@ -188,7 +189,7 @@ class PrepareIdentityTests(unittest.TestCase):
                 self.assertFalse(client.relaxed)
 
     def test_one_bad_then_valid_parse_succeeds_and_resume_has_no_requests(self):
-        raw = "```yaml\n" + yaml.safe_dump(dict(bible=bible(), threads=[]), allow_unicode=True) + "```"
+        raw = "```yaml\n" + yaml.safe_dump(complete_design(dict(bible=bible(), threads=[])), allow_unicode=True) + "```"
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory) / "book"
             out.mkdir()

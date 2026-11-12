@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from design_support import complete_design
 from pathlib import Path
 
 import pytest
@@ -106,7 +107,7 @@ def test_prepare_repairs_only_structure_three_times_and_records_failure(tmp_path
 
     def reply(name, prompt):
         if name == "plan-q1-prepare":
-            return dict(bible=original, threads={})
+            return complete_design(dict(bible=original, threads={}))
         assert "location" in prompt
         if not repair_success:
             return {}

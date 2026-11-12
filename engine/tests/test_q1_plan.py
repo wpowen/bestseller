@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 import yaml
+from design_support import complete_design
 
 from bookengine.config import Book
 from bookengine import q1_plan as q1
@@ -177,19 +178,21 @@ class StageInterfaceTests(unittest.TestCase):
         self.assertTrue(canon["solution_aliases"])
         fixture = StageFixture(
             yaml.safe_dump(
-                dict(
-                    bible=dict(
-                        title="新书",
-                        characters=[
-                            dict(name="周远舟", role="protagonist", voice="短句直说", desire="救回妹妹"),
-                            dict(name="赵听禾", role="support", voice="爱反问", desire="保住药铺"),
-                            dict(name="王见微", role="antagonist", voice="慢声威胁", desire="夺下城门"),
-                        ],
-                        initial_dashboard=dict(strength="一阶"),
-                        world=dict(levels=generated_strength),
-                        summary="字" * 2000,
-                    ),
-                    threads=[],
+                complete_design(
+                    dict(
+                        bible=dict(
+                            title="新书",
+                            characters=[
+                                dict(name="周远舟", role="protagonist", voice="短句直说", desire="救回妹妹"),
+                                dict(name="赵听禾", role="support", voice="爱反问", desire="保住药铺"),
+                                dict(name="王见微", role="antagonist", voice="慢声威胁", desire="夺下城门"),
+                            ],
+                            initial_dashboard=dict(strength="一阶"),
+                            world=dict(levels=generated_strength),
+                            summary="字" * 2000,
+                        ),
+                        threads=[],
+                    )
                 ),
                 allow_unicode=True,
             )

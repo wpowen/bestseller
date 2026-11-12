@@ -42,6 +42,7 @@ from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
 from .model_notes import repair_model_notes
 from .repair_placement import place_tail_bounded_patch
+from .story_duties import with_story_duties, writer_sections, writer_instruction, record_story_duties
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
@@ -126,13 +127,14 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     outline = writer_identity_outline(outline, bible)
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
-    outline = prepare_writer_payoffs(outline)
+    outline = with_story_duties(prepare_writer_payoffs(outline), bible, out)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
     sections.insert(
         0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(writer_main_scene_contract(outline)))
     )
+    sections[1:1] = writer_sections(outline, bible)
     sections = with_completed_action_context(sections, out, idx)
     sections.extend(speech_context(bible, idx))
     sections.extend(writer_solution_sequence_context(out, idx, bible))
@@ -145,7 +147,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         + data[style]
         + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
-    instruction += writer_payoff_instruction(outline)
+    instruction += writer_payoff_instruction(outline) + writer_instruction(outline, bible)
     instruction += writer_first_appearance_instruction(out, idx, bible, outline)
 
     def write_draft(suffix):
@@ -434,6 +436,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     row.update(observations(raw, text, idx) if not failed else {})
     row["solutions"] = [x for x in current.get("solutions", []) if x["chapter"] == idx]
+    row["story_duties"] = record_story_duties(out, idx, text, outline)
     save(out / f"chapter-{idx:03d}.body.md", text)
     save(path, row)
     return row

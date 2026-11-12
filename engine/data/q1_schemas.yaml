@@ -89,10 +89,9 @@ instructions:
     每卷至少一场不靠打架或开门解决的公开分歧，配角不同方案至少两次改变决策；钩子轮换，避免反复另一个我、又醒了。
 
     '
-  structure: '只返回bible.volumes、bible.antagonists及threads。逐项修复错误清单，使用指定阶段边界。
+  structure: '只返回bible.volumes、bible.antagonists；threads留空数组，线索节拍沿用原设计并由程序保留。逐项修复错误清单，使用指定阶段边界。
     每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
     每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
-    threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。
     每阶段promise_payoffs至少两项且都用primary主承诺，章号不同：阶段中段一项scale=小兑现，末两章一项scale=大兑现。action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写升级。
     书名或selling_points字面含“杀”时，至少一个opponent_resolution.type必须是被杀，不能全部改成被擒或失势。
     每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
@@ -131,11 +130,11 @@ instructions:
     address放在说话人卡，address_target填被称呼者真名，address_origin填来历；
     不能说人话的非人角色不得填写address/address_target/address_origin；称号只作旁白或由其他可说话人物使用。
     不得把目标的称呼复制到目标卡。主角另有active_desire/personality_tags/catchphrase/never_do。
-    主角主动欲望必须尖锐，不能靠服从团队复核推进；设定必须按选定高概念，不转入救援维保审计档案。'
+    主角主动欲望必须尖锐，不能靠服从团队复核推进；主角desire写他本人此刻最想要的一件具体的事，不照抄简介；能力的效果写成当场看得见的后果（谁因此做了什么、失去了什么），不用制度性的抽象名词概括；每个配角和反派都要有只属于自己、会让他主动行动的欲望；设定必须按选定高概念，不转入救援维保审计档案。'
   volume: '严格遵守antagonists.stage/exit，低层对手退场后只可背景提及，不再安排为现场characters或主导冲突。
     在指定阶段范围内安排真实转折：公开分歧无法靠打架/开门解决；不同配角提出与主角不同且真正改变决策的方案；主角因既有能力代价误判重要关系或行动并付出后果。不能靠开会、核表或讲原则完成。
 
-    每卷必须明确主角赢得的实力、资源、地位或盟友，卷末交代实际所得；代价按卷递增，不逐章加残疾或扣寿。遵守continuity封禁、左右手和余额，不凭空恢复。
+    每卷必须明确主角赢得的实力、资源、地位或盟友，卷末交代实际所得；代价按卷递增，不逐章加残疾或扣寿。遵守continuity封禁、左右手和余额，不凭空恢复。主角同一时间未愈的伤残最多一处，终局之前不得失去行动能力或核心能力的全部用法；代价可以是失去的东西、关系或机会，不必都是身体伤残。
 
     只展开指定阶段范围；旧书沿用保存的25章卷纲，领取本卷固定线索节拍，不改圣经、线索或旧章。
 
@@ -157,7 +156,7 @@ instructions:
     固定人物卡含identity和aliases；identity只写职业、经历和关系事实，不写“他是……也是……”式可照抄同位语句；
     首次登场用introductions列表标注name/identity来历，并在场景设计交代；
     称呼只用原名、合法aliases或说话人卡上目标一致的address，不得凭空造外号。
-    本批完整范围的count条章纲必须全部返回，不能只写前几章。每章恰好两场，场内goal/obstacle/choice/emotion各≤25字，压短JSON但不省略章号。固定人物卡最高优先，所有scene.characters只用卡上的原名，不得改名换姓或凭空增主要角色。growth_setup=true的章必须出现具体卡关或蓄势但不升级；upgrade_due=true才安排升级，每次最多一级并正面展示。不得按五章固定循环爽点，按所给槽位设计实际行动。末章两场只结清既有角色的本单元矛盾，不提出新目的地、新失踪者、新幕后人。structure从8种结构池逐章选择，相邻不得同结构；严禁连续重复遇袭—协作破门—得到新线索。结构是本章冲突展开方式，不是换地名重复打斗。
+    本批完整范围的count条章纲必须全部返回，不能只写前几章。每章恰好两场，场内goal/obstacle/choice/emotion各≤25字，压短JSON但不省略章号。每场另给inner与subtext各≤25字：inner写视角人物此刻心里最想要和最怕的一件事，subtext写他嘴上说的与心里想的差在哪。冲突的结局由主角的行动和对手、旁观者的当场反应构成，不安排第三方出面裁决收场；情感章的关系变化由两人之间的言行造成，不靠交换物证、上报或审查推进。固定人物卡最高优先，所有scene.characters只用卡上的原名，不得改名换姓或凭空增主要角色。growth_setup=true的章必须出现具体卡关或蓄势但不升级；upgrade_due=true才安排升级，每次最多一级并正面展示。不得按五章固定循环爽点，按所给槽位设计实际行动。末章两场只结清既有角色的本单元矛盾，不提出新目的地、新失踪者、新幕后人。structure从8种结构池逐章选择，相邻不得同结构；严禁连续重复遇袭—协作破门—得到新线索。结构是本章冲突展开方式，不是换地名重复打斗。
 
     新术语每章最多1个，首次一句白话解释；优先旧术语。不得临时造规则解围。结尾同语义类型十章最多2次，双身/复醒全书最多3次；正文承担已规划轮换，不只更换标签。
 
@@ -450,6 +449,8 @@ schemas:
         action: ''
         result: ''
         emotion: ''
+        inner: ''
+        subtext: ''
         kind: action
       relationship_change: {}
       threads: []

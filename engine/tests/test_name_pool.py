@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import yaml
+from design_support import complete_design
 
 from bookengine import q1_plan
 from bookengine.config import Book
@@ -71,7 +72,7 @@ class NamePoolTests(unittest.TestCase):
         }
 
     def prepare(self, out, response=None):
-        fixture = StageFixture(yaml.safe_dump(response or self.response, allow_unicode=True))
+        fixture = StageFixture(yaml.safe_dump(complete_design(response or self.response), allow_unicode=True))
         result = q1_plan.prepare(fixture, self.book, out, ROOT / "config")
         return fixture, result
 

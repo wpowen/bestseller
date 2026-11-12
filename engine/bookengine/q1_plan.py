@@ -37,6 +37,7 @@ from .outline_diversity import (
 from .rhythm_replanning import RELATIONSHIP_REWRITE_RULE, observed_rows, replan_context
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
 from .planning_drift import cache_replan_issues, cached_contract_stale
+from .story_duties import planner_sections
 from .planning_policy import planning_window_end
 
 
@@ -331,6 +332,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ),
         ("固定成长阶梯与当前仪表盘", [profile.get("canon"), state.get("dashboard")]),
         ("本阶段固定节拍", _beats(threads, integer(volume.get("number")), state)),
+        *planner_sections(bible, getattr(client, "out", None), start, end, integer(volume.get("number"))),
         ("爽点落实标准", GROWTH.get("payoff_criteria", {})),
         ("警报与已用解法", [alerts, state.get("solutions", [])[-29:]]),
         ("圣经摘要", bible.get("summary", "")[:1800]),

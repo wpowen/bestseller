@@ -11,8 +11,9 @@ from .quote_text import literal_quote
 DEVELOPMENT = ("new_use", "new_cost", "new_limit")
 RULE = (
     "每阶段至少50%章节由核心能力直接解决主要冲突，core_application写操作及决定结果的因果，不能只提能力。"
-    "core_development给new_use/new_cost/new_limit，逐阶段至少一项发生具体升级，不能仅换措辞。"
-    "core_application及对应scenes.choice须逐字带入本阶段new_use/new_cost/new_limit的具体内容，写出解决结果。"
+    "core_development的new_use必填，写本阶段能力的新用法，逐阶段要有具体变化，不能仅换措辞；"
+    "new_cost与new_limit只在故事确实需要时写，可以留空，不要为了填栏硬造代价或限制。"
+    "core_application及对应scenes.choice须带入本阶段new_use的具体内容，写出解决结果。"
 )
 
 
@@ -56,8 +57,8 @@ def development_issues(bible):
     for index, stage in enumerate(rows(bible.get("volumes")), 1):
         development = stage.get("core_development")
         development = development if isinstance(development, dict) else {}
-        valid = all(isinstance(development.get(k), str) and len(development[k].strip()) >= 5 for k in DEVELOPMENT)
-        repeated = previous is not None and all(development.get(k) == previous.get(k) for k in DEVELOPMENT)
+        valid = isinstance(development.get("new_use"), str) and len(development["new_use"].strip()) >= 5
+        repeated = previous is not None and development.get("new_use") == previous.get("new_use")
         if not valid or repeated:
             issues.append(
                 dict(
@@ -114,10 +115,9 @@ def application_valid(row, development):
     )
     if re.search(r"不使用|不用核心|未使用|没有使用|改用普通|仅靠普通", application + scenes):
         return False
-    return all(
-        isinstance(development.get(k), str) and development[k] in application and development[k] in scenes
-        for k in DEVELOPMENT
-    )
+    # new_use is required; a cost or limit only binds the plan when this story actually has one.
+    stated = [development.get(k) for k in DEVELOPMENT if k == "new_use" or str(development.get(k) or "").strip()]
+    return all(isinstance(value, str) and value in application and value in scenes for value in stated)
 
 
 def ability_issues(bible, history, batch):
@@ -257,9 +257,11 @@ def enforce_ability_plan(bible, batch):
         scenes = rows(row.get("scenes")) or [dict(goal=row.get("opening_conflict") or "解决本章主要阻碍")]
         scene = scenes[0]
         goal = scene.get("goal") or row.get("opening_conflict") or "解决本章主要阻碍"
-        causal = f"实际运用{application}，使{goal}得以实现；受{development.get('new_limit') or '圣经既有限制'}约束，并付出{development.get('new_cost') or '圣经既定代价'}。"
+        limit, cost = (str(development.get(k) or "").strip() for k in ("new_limit", "new_cost"))
+        causal = f"实际运用{application}，使{goal}得以实现"
+        causal += (f"；受{limit}约束" if limit else "") + (f"，并付出{cost}" if cost else "") + "。"
         row["core_application"] = causal
-        scene.update(choice=causal, action=causal, result=f"因本阶段能力操作实现{goal}，保留具体代价")
+        scene.update(choice=causal, action=causal, result=f"因本阶段能力操作实现{goal}")
         row["scenes"] = scenes
         row["core_plan_repair"] = dict(status="deterministic_plan_completion", authority="plan_not_observation")
     return result

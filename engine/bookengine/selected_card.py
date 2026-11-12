@@ -57,7 +57,7 @@ def facts(client, card):
         "selected-card-facts",
         RULE + "逐字提取主角姓名name（没有姓名留空，后续允许命名）、职业identity、开场地点setting、核心物件object。"
         "未说明的字段留空，不编造。keywords给身份、地点、物件、规则各1至4个关键原文词组；卡片未说明该项时keywords用空数组；写明“无”时使用“无”。"
-        "规则词组必须覆盖能力、限制和代价。只返回JSON。卡片：" + source,
+        "规则词组覆盖能力本身，以及卡片写明的限制或代价；卡片没写的不要补。只返回JSON。卡片：" + source,
         json.dumps(schema, ensure_ascii=False),
         parser=model_value,
         validate=validate,

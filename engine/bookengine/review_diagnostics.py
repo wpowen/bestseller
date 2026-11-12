@@ -8,7 +8,8 @@ from .opening_promises import _positive_quote
 
 
 def design_findings(bible, chapters):
-    costs = cost_issues(bible)
+    # The fixed cost format only applies to books planned under it; story-led books have no format to violate.
+    costs = [] if bible.get("story_layer_version") else cost_issues(bible)
     addresses = address_issues(bible)
     corpus = {c["number"]: c["text"] for c in chapters}
     reviews = []

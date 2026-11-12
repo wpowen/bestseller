@@ -8,6 +8,9 @@ acceptance of its emotional weight. Existing saved bibles are never rewritten.
 from copy import deepcopy
 import re
 
+# New books: whether an ability has a price, and how that price changes, is the story's call.
+STORY_LED_NOTE = "阶段cost可留空：只在故事确实需要时，写主角在这一阶段失去或付出了什么；内容随剧情变化，不要求每个阶段都有，也不要求逐级加重。"
+# Legacy fixed format, kept for diagnosing books written under it.
 FORMAT = (
     "cost保持字符串，格式：损失：具体失去什么；心理：性格/记忆/情感/身份的具体改变及行为后果；"
     "等级：正整数；升级：上一阶段心理字段原句→本阶段心理字段原句（第一阶段写首次代价）。"

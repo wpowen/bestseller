@@ -94,12 +94,19 @@ def opening_contract(bible):
                     source=core,
                     requirement="本章至少实际使用一次书名或设定中的核心能力，造成实际结果；否定、设想、解释不算使用",
                 ),
-                dict(
-                    id=f"cost-{chapter}",
-                    chapter=chapter,
-                    kind="visible_cost",
-                    source=core,
-                    requirement="本章使用核心能力时付出可见代价，展示具体损失或后果；预告代价不算兑现",
+                # Books prepared before the story-led policy keep the visible-cost item they were planned with.
+                *(
+                    []
+                    if bible.get("story_layer_version")
+                    else [
+                        dict(
+                            id=f"cost-{chapter}",
+                            chapter=chapter,
+                            kind="visible_cost",
+                            source=core,
+                            requirement="本章使用核心能力时付出可见代价，展示具体损失或后果；预告代价不算兑现",
+                        )
+                    ]
                 ),
             ]
         )
@@ -148,7 +155,7 @@ def _review_batch(ask, client, key, items, text, chapter):
         client,
         key,
         "逐项核对承诺，不确定返回unknown。必须引用原文章号和逐字证据，不得编造。"
-        "仅核验给定完整章节，核心能力必须实际使用，代价必须已经可见。"
+        "仅核验给定完整章节，核心能力必须实际使用并产生结果；清单里要求代价的条目，代价必须已经可见。"
         "核心能力须引用完整肯定叙述，说明实际操作及造成的结果；至少8个汉字，响声或拿起道具的短片段不算证据。"
         "缺失项给出本章可定向修补段号（从1起）。状态仅fulfilled/missing/unknown。",
         [("逐项验收", json.dumps(items, ensure_ascii=False)), ("本章正文", text), ("验收章号", str(chapter))],

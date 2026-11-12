@@ -180,7 +180,11 @@ def _run(book, out, env, assets, timeout, style, stop):
     client.glossary = bible.get("glossary", {})
     client.plan_suffix = "-growth2"
     client.prefix = pack(
-        dict(reader_expectation=bible.get("reader_expectation"), anti_patterns=profile.get("anti_patterns", []))
+        dict(
+            reader_expectation=bible.get("reader_expectation"),
+            # A story the user picked is not judged against the genre pack's house preferences.
+            anti_patterns=[] if bible.get("selected_card") else profile.get("anti_patterns", []),
+        )
     )[:650]
     rows = []
     history = []

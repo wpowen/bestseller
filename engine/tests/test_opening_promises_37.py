@@ -290,6 +290,8 @@ def test_prepare_persists_contract_and_resume_preserves_design_without_calls(tmp
     assets = Path(__file__).resolve().parents[2] / "config"
     result, _, _ = prepare(c, book, tmp_path, assets)
     assert result["opening_contract"] == opening_contract(result)
+    # A newly prepared book is planned under the story-led policy: no forced visible cost in the opening.
+    assert result["story_layer_version"] and all(item["kind"] != "visible_cost" for item in result["opening_contract"])
     before = (tmp_path / "story_bible.yaml").read_bytes()
     prepare(c, book, tmp_path, assets)
     assert len(c.calls) == 1

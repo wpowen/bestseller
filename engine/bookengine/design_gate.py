@@ -18,8 +18,8 @@ def _text(value):
     return value.strip() if isinstance(value, str) else ""
 
 
-def thread_issues(threads):
-    """Every thread kind needs real, mutually different beats."""
+def thread_issues(threads, optional=()):
+    """Every thread kind the story uses needs real, mutually different beats."""
     lines = rows(threads.get("threads")) if isinstance(threads, dict) else rows(threads)
     issues = []
     described = []
@@ -32,7 +32,7 @@ def thread_issues(threads):
         ]
         filled = [text for text in beats if text]
         described.extend(filled)
-        if not filled:
+        if not filled and kind not in optional:
             issues.append(f"threads.{kind}：没有任何带具体事件的节拍")
     if described and len(set(described)) < len(described) * MIN_DISTINCT_BEAT_SHARE:
         issues.append("threads：多个节拍的description相同，每个节拍须是不同的具体事件")
@@ -49,11 +49,6 @@ def bible_issues(bible):
     factions = [row for row in rows(world.get("factions")) if _text(row.get("name")) and _text(row.get("interest"))]
     if len(factions) < MIN_FACTIONS:
         issues.append(f"world.factions：至少{MIN_FACTIONS}个势力，各写name与interest")
-    # A book without any special ability has nothing to price; a described ability needs its price and ceiling.
-    if any(power.values()):
-        for key in ("cost", "limit"):
-            if not _text(power.get(key)):
-                issues.append(f"power.{key}：不能为空")
     foreshadows = [row for row in rows(bible.get("main_foreshadows")) if _text(row.get("description"))]
     if len(foreshadows) < MIN_FORESHADOWS:
         issues.append(f"main_foreshadows：至少{MIN_FORESHADOWS}条带具体物件或事件的主伏笔")
@@ -65,7 +60,10 @@ def bible_issues(bible):
 
 
 def design_issues(bible, threads):
-    return bible_issues(bible if isinstance(bible, dict) else {}) + thread_issues(threads)
+    bible = bible if isinstance(bible, dict) else {}
+    # A love interest is the story's choice; without one the romance line may stay empty.
+    has_romance = any(card.get("role") == "romance" for card in rows(bible.get("characters")))
+    return bible_issues(bible) + thread_issues(threads, optional=() if has_romance else ("romance",))
 
 
 def gate_record(attempts, final_issues):

@@ -15,7 +15,13 @@ from .recovery import StepFormatError, parse, read, save, step, update_topic
 SCORES = ("不可补全", "点击欲", "长篇引擎", "好懂")
 
 
+AUTHORED = ("variable", "desire", "payoff")
+AUTHORED_LIMIT = 24
+USED_VARIABLES_LIMIT = 40
+
+
 def axes_for(data, market):
+    """Code fixes only the familiar shell and the title form; the story idea itself is the model's."""
     rng = random.Random(data["seed"])
     pools = load("pools")
     shells = list(
@@ -26,19 +32,7 @@ def axes_for(data, market):
     rng.shuffle(shells)
     shells = shells[:12] * 2
     rng.shuffle(shells)
-    variables = [(group, v) for group, items in load("variables").items() for v in items]
-    rng.shuffle(variables)
-    pack = Path(__file__).resolve().parents[2] / "config/prompt_packs" / (data["genre"] + ".yaml")
-    import yaml
-
-    content = yaml.safe_load(pack.read_text("utf-8")) if pack.exists() else {}
-    payoffs = list(dict.fromkeys(content.get("q1", {}).get("payoff_types", []) + pools["payoffs"]))
-    axes = [
-        dict(shell=s, variable=v, variable_type=g, payoff=rng.choice(payoffs), desire=rng.choice(pools["desires"]))
-        for s, (g, v) in zip(shells, variables)
-    ]
-    for n, axis in enumerate(axes):
-        axis["title_form"] = ("短名", "两段式", "反问感叹")[n % 3]
+    axes = [dict(shell=s, title_form=("短名", "两段式", "反问感叹")[n % 3]) for n, s in enumerate(shells)]
     direction = data.get("direction")
     if direction:
         source = direction["candidate"]["axes"]
@@ -46,15 +40,42 @@ def axes_for(data, market):
         for n, axis in enumerate(axes):
             keep_shell = mode == "shell" or (mode == "both" and n % 6 < 3)
             axis["variant"] = "shell" if keep_shell else "variable"
-            axis["shell" if keep_shell else "variable"] = source["shell" if keep_shell else "variable"]
             if keep_shell:
-                if axis["variable"] == source["variable"]:
-                    axis["variable"] = variables[-1][1]
+                axis["shell"] = source["shell"]
+                axis["avoid_variable"] = source["variable"]
             else:
+                axis["variable"] = source["variable"]
                 axis["variable_type"] = source.get("variable_type", "方向")
                 if axis["shell"] == source["shell"]:
                     axis["shell"] = next(s for s in shells if s != source["shell"])
     return axes
+
+
+def used_variables(history):
+    """New ideas already shown in recent batches, so the model can steer away from them."""
+    seen = []
+    for card in history:
+        value = card.get("axes", {}).get("variable") if isinstance(card, dict) else None
+        if isinstance(value, str) and value.strip() and value not in seen:
+            seen.append(value.strip())
+    return seen[:USED_VARIABLES_LIMIT]
+
+
+def bind_axes(candidate, axis):
+    """Move the model-authored idea fields into the card's axes; fixed axis values always win."""
+    if not isinstance(candidate, dict):
+        return candidate
+    card = {k: v for k, v in candidate.items() if k not in AUTHORED}
+    axes = {k: v for k, v in axis.items() if k != "avoid_variable"}
+    axes["authored"] = "variable" not in axes
+    for key in AUTHORED:
+        value = candidate.get(key)
+        text = value.strip()[:AUTHORED_LIMIT] if isinstance(value, str) else ""
+        axes.setdefault(key, text)
+    if not axes["variable"]:
+        axes["variable"] = str(card.get("hook", ""))[:AUTHORED_LIMIT]
+    axes.setdefault("variable_type", "构思")
+    return dict(card, axes=axes)
 
 
 def select(cards, data, ordered=False):
@@ -71,21 +92,26 @@ def select(cards, data, ordered=False):
 
 
 def generation_prompt(data, axes, market):
-    # Deliberate allow-list: no raw snapshot, anchors, blacklist or sample titles.
-    categories = {k: market.get(k, []) for k in ("tags", "rules")}
+    # Deliberate allow-list: no raw snapshot, anchors, blacklist, sample titles or mechanism templates.
     return (
-        "你是中文网文创意编辑。只返回JSON数组。每组四轴写成一个具体故事，严格使用指定熟壳、唯一新变量、情绪型与欲望；"
-        + "用户想法固定为主轴，其余轴围绕它变化。人物以具体职业、亲属或社会身份称谓辨识，称谓前后一致。每项按顺序对应一组轴，书名严格采用该组title_form结构，不添加第二个陌生概念。"
-        + "除tags为数组外，所有字段均为有内容的字符串；无超能力时golden_finger_rule为字符串“无”。字段title（40字内，按卖点选两段式、反问式或短名，六项在三种书名形态间分配，每种至少一项、最多三项；反问式采用单句问句，短名采用无标点短语）、hook（30字内）、"
-        + "tags（3至5个简体中文卖点）、premise（120字内，人物、欲望、阻碍）、golden_finger_rule（具体规则，没有写无）、"
-        + "opening（一句开场画面）、engine（进度条和前三级问题梯，30章起必填，240字内）。全文简体中文。"
+        "你是中文网文创意编辑。只返回JSON数组，每项按顺序对应一组轴。"
+        + "每组轴只固定熟壳和书名形态：熟壳必须使用。轴里带variable的，把它作为这个故事唯一的新变量；"
+        + "没带的由你自己构思一个新变量——它可以来自人物处境、人物关系、能力、世界设定或一件事，要和这个题材相称，"
+        + "读者一句话能转述，六项之间互不相同，并避开“已用新变量”和该组的avoid_variable。主角的欲望和读者得到的情绪回报也由你按故事决定，六项尽量不同。"
+        + "用户想法固定为主轴，其余围绕它变化。人物以具体职业、亲属或社会身份称谓辨识，称谓前后一致。书名严格采用该组title_form结构，不添加第二个陌生概念。"
+        + "除tags为数组外，所有字段均为字符串。字段title（40字内，按卖点选两段式、反问式或短名，六项在三种书名形态间分配，每种至少一项、最多三项；反问式采用单句问句，短名采用无标点短语）、hook（30字内）、"
+        + "tags（3至5个简体中文卖点）、premise（120字内，人物、欲望、阻碍）、"
+        + "golden_finger_rule（故事确实需要特殊能力时写它的具体规则；不需要就写“无”，不要为了填这一栏硬造能力）、"
+        + "opening（一句开场画面）、engine（这本书靠什么能一直写下去：主角的长期目标，和前三个一级比一级大的难题；30章起必填，240字内，用平常的句子写）、"
+        + "variable（你为这个故事定的新变量，20字内）、desire（主角最想要的事，12字内）、payoff（读者得到的情绪回报，8字内）。全文简体中文。"
         + json.dumps(
             dict(
                 题材=data["genre"],
                 频道=data.get("channel", ""),
                 章数=data["chapters"],
                 想法=data["idea"],
-                类别特征=categories,
+                市场常见标签=market.get("tags", []),
+                已用新变量=used_variables(data.get("history", [])),
                 轴组合=axes,
             ),
             ensure_ascii=False,
@@ -167,10 +193,7 @@ def run(folder, client, market_root):
             result = step(
                 folder, f"generate-{n}", generation_prompt(data, axes, data["features"]), client, 4200, validate
             )
-            return [
-                dict(candidate, axes=axis) if isinstance(candidate, dict) else candidate
-                for candidate, axis in zip(result, axes)
-            ]
+            return [bind_axes(candidate, axis) for candidate, axis in zip(result, axes)]
 
         # Publish the first valid group immediately; displayed card indices never change.
         batches, raw, visible, rejected = {}, [], list(data.get("candidates", [])), []

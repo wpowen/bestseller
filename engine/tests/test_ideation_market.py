@@ -241,12 +241,9 @@ def test_data_contracts_cover_every_web_genre():
     for genre in GENRES:
         assert 1 <= len(mapping[genre]) <= 3
         assert len(set(pools["shells"][genre])) >= 12, genre
-    variables = market._data("variables")
-    assert set(variables) == {"职业", "地域民俗", "时代", "物件", "规则", "关系动态"}
-    assert all(
-        len(set(items)) >= 30 and all(isinstance(v, str) and len(v) > 1 for v in items) for items in variables.values()
-    )
-    assert len(set(pools["payoffs"])) >= 15 and len(set(pools["desires"])) >= 15
+    # The new idea, the desire and the payoff are authored by the model; no fixed pools may come back.
+    assert set(pools) == {"shells"}
+    assert not (Path(market.__file__).resolve().parents[1] / "data/ideation/variables.yaml").exists()
     names = market._data("names")
     assert "苏小满" in names["blacklist"] and isinstance(names["traditional"], str)
     assert "體" in names["traditional"] and "体" not in names["traditional"]

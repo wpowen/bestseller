@@ -23,6 +23,18 @@ def similarity(a, b):
     return len(a & b) / len(a | b) if a and b else 0
 
 
+def same_idea(card, old):
+    """Two cards whose model-authored new idea is the same are one direction, however their titles differ.
+
+    An idea fixed by the axis (the user asked to keep it across new shells) is shared on purpose.
+    """
+    axes = [c.get("axes") if isinstance(c.get("axes"), dict) else {} for c in (card, old)]
+    if not axes[0].get("authored"):
+        return False
+    new, seen = (str(a.get("variable") or "") for a in axes)
+    return bool(new and seen) and (new == seen or similarity(new, seen) >= 0.5)
+
+
 def validate(card, chapters, allow_names=False):
     if not isinstance(card, dict):
         return ["字段"]
@@ -73,6 +85,9 @@ def screen(raw, chapters, genre, history, market):
             for old in history + accepted:
                 if any(similarity(item[k], old.get(k, "")) >= 0.5 for k in ("title", "hook")):
                     errors.append("历史或批内重复")
+                    break
+                if same_idea(item, old):
+                    errors.append("新变量重复")
                     break
             collision = next((b["title"] for b in market if similarity(item["title"], b["title"]) >= 0.5), None)
             if collision:

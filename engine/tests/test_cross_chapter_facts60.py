@@ -173,6 +173,35 @@ def test_c1_final_guard_covers_rewrites_added_by_any_repair_stage():
     assert note["status"] == "rolled_back" and note["reason"] == "rewrites_prior_event"
 
 
+def test_c1_final_guard_rolls_back_only_bad_paragraph_and_keeps_good_gender_repair():
+    original_bad = "韩朔言被擒，偏道恢复安静。"
+    original_gender = "薛欣妍仍站在阵中，禁军不再听从她的调动。"
+    repaired_gender = "薛欣妍仍站在阵中，禁军不再听从他的调动。"
+    original = original_bad + "\n\n" + original_gender
+    candidate = CH15_REWRITE + "\n\n" + repaired_gender
+    bible = {"characters": [{"name": "薛欣妍", "gender": "男", "role": "antagonist"}]}
+
+    def ask(_client, _key, _instruction, sections, _schema, **_kwargs):
+        facts = json.loads(dict(sections)["前文已发生的关键事件"])
+        return {
+            "findings": [
+                {
+                    "previous_chapter": 11,
+                    "previous_quote": facts[0]["quote"],
+                    "current_quote": CH15_REWRITE,
+                    "reason": "修复新增文字改写前文行动",
+                }
+            ]
+        }
+
+    text, note = guard_all_repairs(ask, None, "ch15-final", original, candidate, _event_state(), 15, bible=bible)
+
+    assert text == original_bad + "\n\n" + repaired_gender
+    assert note["status"] == "partially_rolled_back"
+    assert note["rolled_back_paragraphs"] == [{"candidate": 1, "original": 1}]
+    assert note["deterministic_checks"]["gender_pronoun"] == 0
+
+
 def test_c2_quote_grounded_permanent_loss_enters_ledger_and_writer_context():
     state = _permanent_state()
     saved = state["continuity_ledger"]["permanent_states"][0]

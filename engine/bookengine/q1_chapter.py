@@ -321,9 +321,16 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx)
+    text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx, bible=bible)
     if notes["repair_history"]["status"] == "rolled_back":
         raw, failed = original_raw, initial_failed
+    elif notes["repair_history"]["status"] == "partially_rolled_back":
+        raw, failed, _ = extract_state(
+            client, prefix + "-repair-history-state", text, state, bible, outline, [], final=True
+        )
+        if failed:
+            text, raw, failed = original, original_raw, initial_failed
+            notes["repair_history"].update(status="rolled_back", reason="repair_history_state_failed")
     require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

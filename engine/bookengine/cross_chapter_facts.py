@@ -1,6 +1,7 @@
 """Quote-grounded facts that later prose and repair text must not rewrite."""
 
 from copy import deepcopy
+from difflib import SequenceMatcher
 import json
 import re
 
@@ -170,13 +171,105 @@ def review_repair_continuity(ask, client, prefix, original, candidate, state, ch
     return list(unique.values())
 
 
-def guard_all_repairs(ask, client, prefix, original, candidate, state, chapter):
-    """Keep the draft when any later repair rewrites a quote-grounded prior event."""
+def _paragraph_spans(text):
+    return [(match.start(), match.end()) for match in re.finditer(r"\S[\s\S]*?(?=\n\s*\n|$)", text)]
+
+
+def _paragraph_mapping(original, candidate):
+    old_spans, new_spans = _paragraph_spans(original), _paragraph_spans(candidate)
+    old = [original[start:end] for start, end in old_spans]
+    new = [candidate[start:end] for start, end in new_spans]
+    mapping = {}
+    for tag, old_start, old_end, new_start, new_end in SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        old_count, new_count = old_end - old_start, new_end - new_start
+        if tag == "equal" or tag == "replace" and old_count == new_count:
+            mapping.update({new_start + offset: old_start + offset for offset in range(new_count)})
+    return old_spans, new_spans, mapping
+
+
+def _restore_finding_paragraphs(original, candidate, findings):
+    old_spans, new_spans, mapping = _paragraph_mapping(original, candidate)
+    targets = set()
+    for finding in findings:
+        quote = finding.get("current_quote")
+        if not isinstance(quote, str) or not quote:
+            return None, []
+        position = candidate.find(quote)
+        paragraph = next((index for index, (start, end) in enumerate(new_spans) if start <= position < end), None)
+        if paragraph is None or paragraph not in mapping:
+            return None, []
+        targets.add(paragraph)
+    restored = candidate
+    rows = []
+    for paragraph in sorted(targets, reverse=True):
+        start, end = new_spans[paragraph]
+        original_paragraph = mapping[paragraph]
+        old_start, old_end = old_spans[original_paragraph]
+        restored = restored[:start] + original[old_start:old_end] + restored[end:]
+        rows.append({"candidate": paragraph + 1, "original": original_paragraph + 1})
+    return restored, sorted(rows, key=lambda row: row["candidate"])
+
+
+def _deterministic_chapter_checks(original, text, state, chapter, bible):
+    from .cast_consistency import cast_findings
+    from .permanent_facts import permanent_state_findings
+    from .plot_progression import plot_replay_findings
+    from .prose_repetition import clean_repetitions
+    from .quote_text import unclosed_quote_hits
+    from .text_hygiene import summarize_chapters
+    from tools.book_checkup import clean_prose
+
+    cast = cast_findings(text, bible or {}, chapter=chapter)
+    repetition = clean_repetitions(text, remove_safe=False)["counts"]
+    hygiene = summarize_chapters([{"number": chapter, "text": text}])
+    _, prose = clean_prose(text)
+    return {
+        "rewritten_prior_events": len(deterministic_rewrite_findings(original, text, state, chapter)),
+        "permanent_state_conflicts": len(permanent_state_findings(text, state, chapter)),
+        "plot_replays": len(plot_replay_findings(text, state, chapter)),
+        "gender_pronoun": len([row for row in cast if row["kind"] == "gender_pronoun" and row["status"] == "Evidence"]),
+        "unclosed_quotes": len(unclosed_quote_hits(text)),
+        "prose_cleanups": prose["total"],
+        "sentence_repetitions": repetition["sentence_repetitions"],
+        "narrative_repetitions": repetition["narrative_repetitions"],
+        "dialogue_repetitions": repetition["dialogue_repetitions"],
+        "english_fragments": hygiene["english_fragments"],
+    }
+
+
+def guard_all_repairs(ask, client, prefix, original, candidate, state, chapter, *, bible=None):
+    """Restore only repair paragraphs that rewrite a quote-grounded prior event."""
     if candidate == original:
         return candidate, {"status": "unchanged", "findings": []}
     findings = review_repair_continuity(ask, client, prefix, original, candidate, state, chapter)
     if findings:
-        return original, {"status": "rolled_back", "reason": "rewrites_prior_event", "findings": findings}
+        restored, paragraphs = _restore_finding_paragraphs(original, candidate, findings)
+        if restored is None:
+            checks = _deterministic_chapter_checks(original, original, state, chapter, bible)
+            return original, {
+                "status": "rolled_back",
+                "reason": "rewrites_prior_event",
+                "fallback": "paragraph_alignment_failed",
+                "findings": findings,
+                "rolled_back_paragraphs": [],
+                "deterministic_checks": checks,
+            }
+        checks = _deterministic_chapter_checks(original, restored, state, chapter, bible)
+        if checks["rewritten_prior_events"]:
+            return original, {
+                "status": "rolled_back",
+                "reason": "rewrite_recheck_failed",
+                "findings": findings,
+                "rolled_back_paragraphs": paragraphs,
+                "deterministic_checks": checks,
+            }
+        return restored, {
+            "status": "partially_rolled_back",
+            "reason": "rewrites_prior_event",
+            "findings": findings,
+            "rolled_back_paragraphs": paragraphs,
+            "deterministic_checks": checks,
+        }
     return candidate, {"status": "checked", "findings": []}
 
 

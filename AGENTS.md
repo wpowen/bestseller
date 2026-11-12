@@ -22,6 +22,7 @@
 
 当前模块边界：
 - `bookengine/q1.py` 只负责整书调度；单章逻辑在 `q1_chapter.py`，上下文与提取在 `q1_extract.py`，设计/规划/schema 在 `q1_prepare.py`、`q1_plan.py`、`q1_schema.py`。
+- 故事设计层在 `design_gate.py`（开写前完整性检查）、`story_design.py`（带章号的排期，只生成一次）、`story_duties.py`（每章义务与写后账本）、`story_report.py`（体检统计）。选题卡对齐和结构重规划只能改对不上的字段，不得整体替换世界设定、能力或线索节拍。
 - CLI 只接受显式 `--q1 --style b`，保留 `--extend-to` 和 Q1 `--batch`；不得恢复已删除的非 Q1 管线或 legacy 文风入口。
 - `tools/runtime_support.py`、`tools/chapter_outputs.py` 提供共享协议，不反向依赖 bookengine/deai；`tools/webui/` 后端与 JS/HTML/CSS 分开维护，书库缓存只是派生视图，文件仍为恢复依据。
 - 当前待办只在 `engine/INBOX.md`；已结束或被取代的指令原文见 `engine/reports/inbox-archive-2026-11.md`，历史 PLAN 和报告不能覆盖当前约定。

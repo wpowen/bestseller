@@ -5,6 +5,8 @@ import re
 from .q1_schema import model_value
 from .storage import save
 
+# Only these mean the model told a different story. A missing identity or object keyword is fixed in place.
+MECHANISM_DRIFT = {"setting", "rule"}
 RULE = "用户已选定故事。以下卡片事实只可扩写，禁止替换、重新选题或改名（包括名字黑名单）。"
 
 
@@ -98,24 +100,31 @@ def enforce(bible, threads, card, locked, drift=()):
     hero["identity"] = locked["identity"]
     if locked["identity"]:
         hero["occupation"] = locked["identity"]
+    designed = bible.get("summary") if isinstance(bible.get("summary"), str) else ""
+    keep_summary = designed.strip() and designed.strip() != card["premise"] and not set(drift) & MECHANISM_DRIFT
     bible.update(
         title=card["title"],
         premise=card["premise"],
-        summary=card["premise"],
+        summary=card["premise"] + ("\n" + designed.strip() if keep_summary else ""),
         selected_card=card,
         selected_card_rule_points=list(dict.fromkeys(locked.get("keywords", {}).get("rule", []))),
     )
     for key in ("opening", "hook", "axes"):
         if key in card:
             bible[key] = card[key]
-    if drift:
-        # Failed designs must not keep a second mechanism or location beside the fixed fields.
-        bible["world"] = dict(levels=bible["world"].get("levels", []), rules=[card["premise"]])
+    # Repair only the field that drifted. The rest of the design (factions, truth layers,
+    # thread beats, the hero's own desire) is the story and must survive a keyword miss.
+    drift = set(drift)
+    bible["world"] = dict(bible.get("world") or {})
+    bible["power"] = dict(bible.get("power") or {})
+    if "setting" in drift:
+        bible["world"]["rules"] = [card["premise"]]
+    if "rule" in drift:
         bible["power"] = {}
-        hero.update(desire=card["premise"], goal=card["premise"])
-        for line in threads.get("threads", []):
-            for beat in line.get("beats", []):
-                beat["description"] = card.get("engine") or card["premise"]
+    keywords = locked.get("keywords", {})
+    for key, target in (("identity", hero), ("setting", bible["world"]), ("object", bible["power"])):
+        if key in drift and keywords.get(key):
+            target["locked_keywords"] = list(dict.fromkeys(keywords[key]))
     bible["world"]["setting"] = locked["setting"]
     rule = card.get("golden_finger_rule", "无")
     bible["power"].update(object=locked["object"], rule=rule)

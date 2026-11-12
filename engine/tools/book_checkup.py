@@ -471,7 +471,9 @@ def check_book(book, *, source="final"):
 
 def write_checkup(book, *, source="final"):
     """Write only book_checkup.json; never alter prose, plans or checkpoints."""
-    report = check_book(book, source=source)
+    from bookengine.story_report import story_report
+
+    report = dict(check_book(book, source=source), story_design=story_report(book, source=source))
     destination = Path(book) / "book_checkup.json"
     temporary = None
     try:

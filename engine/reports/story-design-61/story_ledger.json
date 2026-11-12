@@ -1,0 +1,82 @@
+{
+  "policy": "done=锚点词出现在正文并附原句；unverified=相关人物在场但无法用锚点确认；missing=未写出，顺延。仅供参考，不代替读者验收",
+  "duties": {
+    "app-木元铮": {
+      "kind": "appearance",
+      "scheduled": 1,
+      "text": "首次出场：木元铮在本章正面出场并开口或行动，带出他想要的东西——保住残存意识，不再被任何傀儡术抹去。",
+      "status": "done",
+      "chapter": 1,
+      "quote": "他最怕的不是疼，而是握不住木元铮递来的木牌，让那孩子最后一点清醒随之散去。",
+      "attempts": [
+        1
+      ]
+    },
+    "app-陆兆川": {
+      "kind": "appearance",
+      "scheduled": 1,
+      "text": "首次出场：陆兆川在本章正面出场并开口或行动，带出他想要的东西——维持对宗门弟子与傀儡的绝对支配。",
+      "status": "done",
+      "chapter": 1,
+      "quote": "四周挤满弟子，高台首席席空着，陆兆川却站在席前，手中垂线分别连着场中傀儡。",
+      "attempts": [
+        1
+      ]
+    },
+    "app-苏亦衡": {
+      "kind": "appearance",
+      "scheduled": 2,
+      "text": "首次出场：苏亦衡在本章正面出场并开口或行动，带出他想要的东西——查明刑律堂被掩盖的失踪案。",
+      "status": "done",
+      "chapter": 2,
+      "quote": "苏亦衡立在柱下，手中封签折成三角：“刑律堂收到三具断手傀儡。",
+      "attempts": [
+        2
+      ]
+    },
+    "app-柳以宁": {
+      "kind": "appearance",
+      "scheduled": 2,
+      "text": "首次出场：柳以宁在本章正面出场并开口或行动，带出他想要的东西——找到被官坊销毁的师门机关图。",
+      "status": "done",
+      "chapter": 2,
+      "quote": "柳以宁抱着一卷焦黑机关图闯进来，衣袖尽是炉灰，发梢带着火气。",
+      "attempts": [
+        2
+      ]
+    },
+    "villain-1-1": {
+      "kind": "villain_move",
+      "scheduled": 2,
+      "text": "反派出招：陆兆川本章正面出场并主动出手（可以是下令、设局、带走某人或夺走一件东西，不必开打），让主角吃亏或被迫改变打算。",
+      "status": "unverified",
+      "chapter": 2,
+      "quote": "",
+      "attempts": [
+        2
+      ]
+    },
+    "F1-plant": {
+      "kind": "plant",
+      "scheduled": 3,
+      "text": "埋伏笔：让“双重脉纹”在本章一场戏里自然出现，读者此时只会以为它是——断指后渗出的木纹，像是控制线留下的灼痕。。只带一笔，不解释，不点破。",
+      "status": "missing",
+      "chapter": null,
+      "quote": "",
+      "attempts": [
+        3
+      ]
+    },
+    "app-沈允禾": {
+      "kind": "appearance",
+      "scheduled": 3,
+      "text": "首次出场：沈允禾在本章正面出场并开口或行动，带出他想要的东西——夺回被削去姓名的宗室武籍。",
+      "status": "done",
+      "chapter": 3,
+      "quote": "沈允禾站在阶下，手里捧着一卷缺了姓名的宗室武籍。",
+      "attempts": [
+        3
+      ]
+    }
+  }
+}

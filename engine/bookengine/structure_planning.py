@@ -107,6 +107,30 @@ def structure_issues(bible, total):
     return issues + combat_exemption_issues(bible) + structure_promise_issues(bible, total)
 
 
+def reschedule_threads(lines, patch):
+    """A structure repair may move saved beats to new stage boundaries; it never replaces the designed beats."""
+    result = deepcopy(lines)
+    container = result.get("threads") if isinstance(result, dict) else result
+    patch = patch.get("threads") if isinstance(patch, dict) else patch
+    moved = {
+        beat.get("id"): beat
+        for line in rows(patch)
+        for beat in rows(line.get("beats"))
+        if isinstance(beat.get("id"), str) and beat.get("id")
+    }
+    for line in rows(container):
+        for beat in rows(line.get("beats")):
+            update = moved.get(beat.get("id"))
+            if not update:
+                continue
+            for key in ("volume", "reveal_not_before"):
+                if integer(update.get(key)) > 0:
+                    beat[key] = integer(update[key])
+            if not beat.get("description") and isinstance(update.get("description"), str):
+                beat["description"] = update["description"]
+    return result
+
+
 def repair_structure(bible, threads, total, ask, out):
     """Regenerate structural fields at most three times, recording a nonfatal failure."""
     current, lines = ensure_reader_promise_contract(deepcopy(bible), total), deepcopy(threads)
@@ -140,8 +164,8 @@ def repair_structure(bible, threads, total, ask, out):
             for key in ("volumes", "antagonists"):
                 if isinstance(patch.get(key), list):
                     current[key] = deepcopy(patch[key])
-        if isinstance(raw, dict) and isinstance(raw.get("threads"), (dict, list)):
-            lines = deepcopy(raw["threads"])
+        if isinstance(raw, dict):
+            lines = reschedule_threads(lines, raw.get("threads"))
     # Fixed boundaries are executable even when content checks exhausted their repair budget.
     supplied = rows(current.get("volumes"))
     template = DATA["schemas"]["prepare"]["bible"]["volumes"][0]

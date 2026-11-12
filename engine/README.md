@@ -35,6 +35,7 @@ PYTHONPATH=engine python -m ideation --env .env --books books --out books/topics
 ## 文件与恢复
 
 - `story_bible.yaml`、`threads.yaml`：故事圣经与多线排期；已有设计只读，显式续写另存 continuation。
+- `story_design.yaml`、`story_ledger.json`、`design-gate.json`：新开的书在第 1 章前生成一次故事设计（伏笔埋设/提醒/兑现章、真相揭开章、人物往事与习惯、关系台阶、首次出场章）；账本记录每条义务是否写进正文并附原句；此前已准备或已开写的书没有这一层，照旧运行。
 - `steps/`、`responses/`、`calls.json`：阶段检查点、原始响应、写作用量，已完成步骤复用，未知用量保持未知。
 - `chapter-NNN.body.md`、`chapters/NNN.json`、`state.json`、`run.json`：正文、完章记录、派生状态和整书进度；正文与完成检查点落盘后，watcher 才处理。
 - `final/chapter-NNN.md` 和 `.deai.json`：有效终稿及去 AI 检查记录；`final/book.md`、`SUMMARY.md` 提供整书结果。已有终稿不重复处理或覆盖。
@@ -51,6 +52,7 @@ PYTHONPATH=engine python -m ideation --env .env --books books --out books/topics
 | `bookengine/q1.py`、`q1_chapter.py`、`q1_extract.py` | 整书调度、单章生成与修补、上下文及事实提取 |
 | `bookengine/q1_plan.py`、`q1_prepare.py`、`q1_schema.py` | 按需卷章规划、不可覆盖的故事设计、结构归一化 |
 | `bookengine/q1_quality.py`、`contracts.py` 等 | 人物/时间/状态一致性、兑现与成长的程序检查 |
+| `bookengine/design_gate.py`、`story_design.py`、`story_duties.py`、`story_report.py` | 开写前的设计完整性检查；伏笔、真相、人物内里、关系台阶的带章号排期；每章义务与写后账本；体检里的故事层统计 |
 | `deai/` | 独立检测、局部修复、复检与回滚，不导入 bookengine |
 | `ideation/` | 市场快照、抽轴发散、去重筛选、选题卡与盲选 |
 | `exporter/` | MD、DOCX、TXT、EPUB、番茄分章 ZIP，仅导出终稿 |

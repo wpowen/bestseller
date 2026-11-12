@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from design_support import complete_design
 from pathlib import Path
 
 import pytest
@@ -282,7 +283,7 @@ def test_prepare_persists_contract_and_resume_preserves_design_without_calls(tmp
             assert "第1章必须实际展示" in prompt
             assert "address_target" in schema
             self.calls.append(key)
-            return kwargs["parser"](json.dumps(dict(bible=b, threads={}), ensure_ascii=False))
+            return kwargs["parser"](json.dumps(complete_design(dict(bible=b, threads={})), ensure_ascii=False))
 
     c = Client()
     book = Book("suspense-mystery", 3, 2200, "")

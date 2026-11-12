@@ -1,0 +1,116 @@
+# 故事设计层：把圣经里的伏笔、真相、人物内里和关系变成带章号的排期。
+# 这里的检测词表只用于体检统计，不进任何提示词。
+
+instruction: '只为已有圣经补“故事设计”，不改人物姓名、身份、能力规则、阶段边界和反派结局。全部用具体的人、物、地点和动作，不写抽象概括。
+
+  characters：圣经里每个人物一项，name照抄。wound写一件造成他现在执念的具体往事（何时、何地、谁、发生了什么，40字内）；
+  cares_for写他最在乎的一个具体的人或物，以及可能怎样失去；contrast写别人以为他怎样、实际怎样；
+  habits恰好3条，只有他会有的小动作或说话习惯，每条12字内，人物之间不重复。
+
+  foreshadows：圣经main_foreshadows每条一项，id照抄。anchor是这条伏笔在正文里一定会出现的实物或称呼，2—6字，全书唯一；
+  surface写读者第一次看到时以为它是什么；truth写兑现时它其实是什么；
+  plant是埋设章号，reminders是两个提醒章号，payoff是兑现章号，须plant<提醒<payoff，payoff落在该伏笔close_volume所在阶段。
+
+  truth_reveals：圣经truth_layers每层一项。chapter是揭开章号，不早于该层reveal_not_before，三层分散在不同阶段；
+  overturns写这一层推翻了读者此前相信的哪件事；anchor是揭开时在场的关键实物或称呼，2—6字。
+
+  arc：主角三项。kind=flaw_cost：他的缺陷第一次造成真实损失，排在前两个阶段内；kind=fear_faced：他正面面对自己最怕的事，排在最后一个阶段、末章之前；
+  kind=growth_end：他完成圣经growth_end的那个选择，排在最后三章内。event写当场发生的具体事。
+
+  relationships：主角与恋爱对象、主角与每个主要配角各一项，people恰好两人。steps每阶段至多一级，stage是阶段号；
+  event写两人之间发生的一件事（不是交换物证、上报或审查），before与after写态度变化且前后不同。
+
+  appearances：圣经里除主角外每个人物一项，first_chapter是首次正面出场章号；反派落在自己所属阶段的前三章内，配角不晚于其exit_volume所在阶段。
+
+  stage_progress：每阶段一项。goal_line是读者能一句话复述的阶段目标；marker是看得见的进度物（如还差几道门、几个人、几件东西），写清起点与终点数量。
+
+  只返回JSON。'
+
+schema:
+  characters:
+  - name: ''
+    wound: ''
+    cares_for: ''
+    contrast: ''
+    habits: ['', '', '']
+  foreshadows:
+  - id: ''
+    anchor: ''
+    surface: ''
+    truth: ''
+    plant: 1
+    reminders: [1, 1]
+    payoff: 1
+  truth_reveals:
+  - layer: 1
+    chapter: 1
+    overturns: ''
+    anchor: ''
+  arc:
+  - kind: flaw_cost
+    chapter: 1
+    event: ''
+  relationships:
+  - people: ['', '']
+    steps:
+    - stage: 1
+      event: ''
+      before: ''
+      after: ''
+  appearances:
+  - name: ''
+    first_chapter: 1
+  stage_progress:
+  - stage: 1
+    goal_line: ''
+    marker: ''
+
+# 每章最多交给写手的义务条数，其余顺延。
+max_duties_per_chapter: 3
+# 过了截止章还没写出来，再顺延这么多章后记为“未写出”。
+carry_chapters: 3
+# 每阶段反派正面出场并主动出招的最少次数。
+villain_moves_per_stage: 2
+
+priority: [payoff, truth, arc, plant, relationship, appearance, remind, villain_move]
+
+duty_text:
+  plant: '埋伏笔：让“{anchor}”这几个字原样在本章一场戏里自然出现，读者此时只会以为它是——{surface}。只带一笔，不解释，不点破。'
+  remind: '提醒伏笔：让“{anchor}”这几个字原样再出现一次，带一点和上次不同的细节，仍不解释。'
+  payoff: '兑现伏笔：本章揭开“{anchor}”的真相——{truth}。让人物当场看见并作出反应，并用一句话让读者想起它此前出现过。'
+  truth: '揭开第{layer}层真相，现场要有“{anchor}”。它推翻此前的判断：{overturns}。由人物亲眼所见或亲耳所闻带出，不用旁白总结。'
+  flaw_cost: '人物考验：主角的缺陷在本章造成一次真实损失——{event}。损失要落到他在乎的人或物上，他当场意识到是自己造成的。'
+  fear_faced: '人物考验：主角正面面对自己最怕的事——{event}。写他犹豫、想退，然后作出选择。'
+  growth_end: '人物落点：主角作出完成成长的那个选择——{event}。用一个动作收住，不写总结句。'
+  relationship: '关系台阶（{people}）：两人之间发生——{event}。态度从“{before}”变成“{after}”。靠两人之间的言行推进，不靠交换物证、上报或审查。'
+  appearance: '首次出场：{name}在本章正面出场并开口或行动，带出他想要的东西——{desire}。'
+  villain_move: '反派出招：{name}本章正面出场并主动出手（可以是下令、设局、带走某人或夺走一件东西，不必开打），让主角吃亏或被迫改变打算。'
+
+writer:
+  soul_heading: '人物内里，只用来决定他怎么想、怎么说、怎么做，不要照抄成句子'
+  duty_heading: '本章故事义务，逐条写进两场戏里，不改变章纲的事件和结局'
+  general: '
+
+    写人不写流程：每场戏至少两处写出视角人物此刻心里想要什么、怕什么，用他自己的口气，一两句即可；
+    对白要占到全章四成左右，让人物用各自的说话习惯交锋，允许斗嘴、玩笑和脾气。
+    规则、身份、制度只在人物用到的那一刻带一句，不单独成段解释；把制度性的抽象名词换成眼前的人、物和动作。
+    冲突的胜负由主角的行动造成，由对手和旁观者的当场反应体现，不让第三方出面宣布裁决来结束冲突。'
+  opening: '
+
+    本章属于开篇三章：先让读者看见这个人，再看见规则。前三百字内写出主角正在失去的一样具体东西，或他在乎的一个具体的人；
+    解释规则的句子全章不超过一句；章末停在读者在乎的人或一个没答完的问题上。'
+  payoff: '
+
+    本章是兑现章，按四步写足：先让读者看见主角受的不公；再让读者先于对手知道主角手里有什么；
+    然后当众兑现，写出对手实际失去的东西、旁观者的反应、主角拿到手的东西；最后留一点余味。
+    本章不新增伤残和代价，也不在兑现当场补削弱结果的限定语；代价留到下一章开头再写。'
+
+planner:
+  duty_heading: '本批故事义务：按章号排进对应章的两场戏，不改变章型、对手与阶段结局；标注overdue的优先安排'
+  stage_heading: '本阶段明线目标与进度物：每章章纲要能看出进度从哪到哪'
+  relationship_heading: '本阶段关系台阶：排进本阶段的情感章，关系靠两人之间的事推进'
+
+# 体检统计用词表（只统计，不拦截，不进提示词）。
+metrics:
+  interior: ['心想', '心里', '心头', '心底', '想起', '记得', '忽然明白', '意识到', '不由得', '忍不住', '舍不得', '不敢', '害怕', '后悔']
+  institutional: ['权限', '卷宗', '名册', '核查', '核验', '上报', '登记', '备案', '凭牒', '令牌', '印记', '程序', '条例', '审查']

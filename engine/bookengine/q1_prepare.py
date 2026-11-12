@@ -9,7 +9,7 @@ from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
 from .identity import repair_companion_roles, validate_bible, validate_cast_contract
 from .nonhuman_speech import normalize_speech_contracts
-from .selected_card import selected_card, facts, differences, enforce, record, RULE
+from .selected_card import selected_card, facts, differences, enforce, record, RULE, MECHANISM_DRIFT
 from .longmemory import long_context
 from .storage import save
 from .text import pack
@@ -19,6 +19,7 @@ from .rename_addresses import rename_addresses
 from .opening_promises import opening_contract
 from .cost_design import has_cost_source, repair_costs
 from .core_ability import repair_development, core_source, RULE as CORE_RULE
+from .design_gate import design_issues, gate_record, STORY_LAYER_VERSION
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 
 
@@ -304,6 +305,7 @@ def prepare(client, book, out, assets, design=False):
         ]
         previous_error = ""
         alignment = []
+        gate_attempts = []
         for redo in range(4 if card else 6):
             extra = (
                 [("关键结构重试", previous_error + "。请给完整人物卡，保留 voice/desire，不要默认空卡。")]
@@ -319,8 +321,15 @@ def prepare(client, book, out, assets, design=False):
                 if card:
                     drift = differences(bible, card, locked)
                     alignment.append(dict(stage="plan-q1-prepare", regeneration=redo, differences=drift))
-                    if drift and redo < 3:
+                    if MECHANISM_DRIFT & set(drift) and redo < 3:
                         previous_error = "卡片锁定字段不一致：" + ", ".join(drift) + "；以用户卡片为准，不能换故事。"
+                        continue
+                if values[0] is None and values[1] is None:
+                    designed = normalize_threads(raw.get("threads", {}), count, book.chapters, profile, stages=stages)
+                    gaps = design_issues(bible, designed)
+                    gate_attempts.append(dict(regeneration=redo, issues=gaps))
+                    if gaps and redo < (3 if card else 5):
+                        previous_error = "设计不完整，逐项补齐并保留已合格部分：" + "；".join(gaps)
                         continue
                 break
             except ValueError as exc:
@@ -424,6 +433,10 @@ def prepare(client, book, out, assets, design=False):
             )
             generated[0]["plot_contract_version"] = 1
             save(Path(out) / "core-development.json", core_note)
+        if values[0] is None:
+            generated[0]["story_layer_version"] = STORY_LAYER_VERSION
+        if gate_attempts:
+            save(Path(out) / "design-gate.json", gate_record(gate_attempts, design_issues(*generated)))
         save(Path(out) / "prepared-design.json", generated)
         for i, path in enumerate(paths):
             if values[i] is None:

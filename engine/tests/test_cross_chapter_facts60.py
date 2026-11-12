@@ -2,17 +2,20 @@
 
 import json
 
+from bookengine.cast_consistency import repair_cast_consistency
 from bookengine.cross_chapter_facts import (
     cross_chapter_checkup,
     guard_all_repairs,
     merge_cross_chapter_delta,
 )
+from bookengine.opening_styles import repair_opening_style
 from bookengine.permanent_facts import (
     merge_permanent_delta,
     permanent_state_findings,
     repair_permanent_states,
     writer_permanent_facts,
 )
+from bookengine.plot_progression import repair_plot_replay
 from bookengine.story_payoffs import repair_story_payoffs
 
 
@@ -290,3 +293,34 @@ def test_c2_targeted_repair_is_rechecked_and_bad_recheck_rolls_back():
     )
     assert rejected[0] == CH39_RESTORE
     assert rejected[-1]["status"] == "rolled_back" and rejected[-1]["reason"] == "permanent_recheck_failed"
+
+
+def test_instruction60_no_hit_model_call_count_uses_only_three_review_stages(tmp_path):
+    state = _event_state()
+    state["continuity_ledger"]["permanent_states"] = _permanent_state()["continuity_ledger"]["permanent_states"]
+    text = "顾长风清点木手。"
+    bible = {"characters": [{"name": "顾长风", "gender": "男", "role": "protagonist"}]}
+    outline = {"number": 40}
+    stages = []
+
+    def ask(_client, key, _instruction, _sections, _schema, **_kwargs):
+        stages.append(key)
+        return {"findings": []}
+
+    def no_extract(*_args, **_kwargs):
+        raise AssertionError("no-hit review must not extract state")
+
+    repair_plot_replay(None, "r2-ch40", text, {}, False, state, bible, outline, no_extract, ask)
+    repair_permanent_states(None, "r2-ch40", text, {}, False, state, bible, outline, no_extract, ask)
+    repair_cast_consistency(None, "r2-ch40", text, {}, False, state, bible, outline, no_extract, ask)
+    repair_opening_style(None, "r2-ch40", text, {}, False, state, bible, outline, tmp_path, no_extract, ask)
+    guard_all_repairs(ask, None, "r2-ch40", "顾长风查看木手。", text, state, 40, bible=bible)
+
+    assert stages == [
+        "r2-ch40-plot-replay-review",
+        "r2-ch40-permanent-review",
+        "r2-ch40-conflict-continuity-recheck",
+    ]
+
+    guard_all_repairs(ask, None, "r2-ch40", text, text, state, 40, bible=bible)
+    assert len(stages) == 3

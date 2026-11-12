@@ -75,8 +75,8 @@ villain_moves_per_stage: 2
 priority: [payoff, truth, arc, plant, relationship, appearance, remind, villain_move]
 
 duty_text:
-  plant: '埋伏笔：让“{anchor}”在本章一场戏里自然出现，读者此时只会以为它是——{surface}。只带一笔，不解释，不点破。'
-  remind: '提醒伏笔：让“{anchor}”再出现一次，带一点和上次不同的细节，仍不解释。'
+  plant: '埋伏笔：让“{anchor}”这几个字原样在本章一场戏里自然出现，读者此时只会以为它是——{surface}。只带一笔，不解释，不点破。'
+  remind: '提醒伏笔：让“{anchor}”这几个字原样再出现一次，带一点和上次不同的细节，仍不解释。'
   payoff: '兑现伏笔：本章揭开“{anchor}”的真相——{truth}。让人物当场看见并作出反应，并用一句话让读者想起它此前出现过。'
   truth: '揭开第{layer}层真相，现场要有“{anchor}”。它推翻此前的判断：{overturns}。由人物亲眼所见或亲耳所闻带出，不用旁白总结。'
   flaw_cost: '人物考验：主角的缺陷在本章造成一次真实损失——{event}。损失要落到他在乎的人或物上，他当场意识到是自己造成的。'

@@ -9,7 +9,7 @@ from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
 from .identity import repair_companion_roles, validate_bible, validate_cast_contract
 from .nonhuman_speech import normalize_speech_contracts
-from .selected_card import selected_card, facts, differences, enforce, record, RULE
+from .selected_card import selected_card, facts, differences, enforce, record, RULE, MECHANISM_DRIFT
 from .longmemory import long_context
 from .storage import save
 from .text import pack
@@ -321,7 +321,7 @@ def prepare(client, book, out, assets, design=False):
                 if card:
                     drift = differences(bible, card, locked)
                     alignment.append(dict(stage="plan-q1-prepare", regeneration=redo, differences=drift))
-                    if drift and redo < 3:
+                    if MECHANISM_DRIFT & set(drift) and redo < 3:
                         previous_error = "卡片锁定字段不一致：" + ", ".join(drift) + "；以用户卡片为准，不能换故事。"
                         continue
                 if values[0] is None and values[1] is None:

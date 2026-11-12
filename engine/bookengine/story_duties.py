@@ -17,7 +17,7 @@ LEDGER = "story_ledger.json"
 CLOSED = ("done", "unverified")
 MUST_CLOSE = ("payoff", "truth", "flaw_cost", "fear_faced", "growth_end")
 VILLAIN_TYPES = ("对抗", "谋划", "揭秘")
-SOUL_LIMIT = 900
+SOUL_LIMIT = 600
 PLANNER_LIMIT = 900
 SENTENCE = re.compile(r"[^。！？\n]*[。！？]?")
 

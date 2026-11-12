@@ -172,7 +172,7 @@ def test_identity_keyword_miss_no_longer_wipes_the_designed_story():
     bible["summary"] = "模型写的五百字梗概"
     assert differences(bible | dict(title="木偶师"), card, locked) == ["identity"]
 
-    fixed, kept = enforce(bible, threads, card, locked, ["identity"])
+    fixed, kept = enforce(bible, threads, card, locked, ["identity", "object"])
 
     assert differences(fixed, card, locked) == []
     assert len(fixed["world"]["truth_layers"]) == 3 and len(fixed["world"]["factions"]) == 3

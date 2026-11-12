@@ -5,7 +5,8 @@ import re
 from .q1_schema import model_value
 from .storage import save
 
-MECHANISM_DRIFT = {"setting", "rule", "object"}
+# Only these mean the model told a different story. A missing identity or object keyword is fixed in place.
+MECHANISM_DRIFT = {"setting", "rule"}
 RULE = "用户已选定故事。以下卡片事实只可扩写，禁止替换、重新选题或改名（包括名字黑名单）。"
 
 
@@ -118,7 +119,7 @@ def enforce(bible, threads, card, locked, drift=()):
     bible["power"] = dict(bible.get("power") or {})
     if "setting" in drift:
         bible["world"]["rules"] = [card["premise"]]
-    if drift & {"rule", "object"}:
+    if "rule" in drift:
         bible["power"] = {}
     keywords = locked.get("keywords", {})
     for key, target in (("identity", hero), ("setting", bible["world"]), ("object", bible["power"])):

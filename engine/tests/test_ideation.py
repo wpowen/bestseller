@@ -103,6 +103,19 @@ class IdeationContracts(unittest.TestCase):
         kept = dict(second, axes=dict(second["axes"], authored=False))
         self.assertEqual(len(screen([first, kept], 100, "xuanhuan-power-fantasy", [], [])[0]), 2)
 
+    def test_one_motif_family_appears_at_most_once_per_batch(self):
+        ledger = card(1, title="家族债簿", hook="少主先被全族逼着还债")
+        another = card(2, title="宗门账房", hook="他管灵石也管谁被逐出山门")
+        plain = card(3, title="边关铁骑", hook="军匠听见兵器的第一声裂响")
+        good, bad = screen([ledger, another, plain], 100, "xuanhuan-power-fantasy", [], [])
+        self.assertEqual([c["title"] for c in good], ["家族债簿", "边关铁骑"])
+        self.assertEqual(bad[0]["reasons"], ["母题重复:账债"])
+        good, bad = screen([another, plain], 100, "xuanhuan-power-fantasy", [], [], shown=[ledger])
+        self.assertEqual([c["title"] for c in good], ["边关铁骑"])
+        # Earlier batches do not use up this batch's allowance.
+        good, _ = screen([another], 100, "xuanhuan-power-fantasy", [dict(ledger, title="旧批次", hook="旧钩子")], [])
+        self.assertEqual(len(good), 1)
+
     def test_axes_reproducible_and_max_two(self):
         data = dict(genre="xuanhuan-power-fantasy", seed=87)
         axes = axes_for(data, {})

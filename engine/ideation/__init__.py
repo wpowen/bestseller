@@ -210,7 +210,12 @@ def run(folder, client, market_root):
                     or not any(all(c.get(k) == old.get(k) for k in FIELDS) for old in visible)
                 ]
                 cards, bad = screen(
-                    fresh, data["chapters"], data["genre"], data["history"] + visible, data["market"].get("books", [])
+                    fresh,
+                    data["chapters"],
+                    data["genre"],
+                    data["history"] + visible,
+                    data["market"].get("books", []),
+                    shown=visible,
                 )
                 rejected.extend(bad)
                 for candidate in select(cards, data):

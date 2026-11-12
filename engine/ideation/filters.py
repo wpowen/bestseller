@@ -75,8 +75,16 @@ def shape(title):
     return "短名"
 
 
-def screen(raw, chapters, genre, history, market):
+def motifs(card):
+    """Motif families a card belongs to, by detector vocabulary only."""
+    text = "".join(str(card.get(k, "")) for k in ("title", "hook", "premise", "golden_finger_rule"))
+    return {name for name, tokens in load("motifs")["families"].items() if any(token in text for token in tokens)}
+
+
+def screen(raw, chapters, genre, history, market, shown=()):
+    """``shown`` are the cards already displayed in this batch; motif caps count them too."""
     accepted, rejected = [], []
+    cap = load("motifs")["cap"]
     combos = load("cliche")
     combos = combos.get(genre, combos.get("default", []))
     for item in raw:
@@ -92,6 +100,12 @@ def screen(raw, chapters, genre, history, market):
             collision = next((b["title"] for b in market if similarity(item["title"], b["title"]) >= 0.5), None)
             if collision:
                 errors.append("撞车:" + collision)
+        if not errors:
+            crowded = sorted(
+                name for name in motifs(item) if sum(name in motifs(c) for c in [*shown, *accepted]) >= cap
+            )
+            if crowded:
+                errors.append("母题重复:" + "、".join(crowded))
         if errors:
             rejected.append(dict(title=item.get("title", "") if isinstance(item, dict) else "", reasons=errors))
             continue

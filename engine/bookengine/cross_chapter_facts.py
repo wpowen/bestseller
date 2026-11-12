@@ -201,8 +201,12 @@ def cross_chapter_checkup(chapters):
                 and not _NON_COMPLETION.search(current)
             ):
                 history.append({"chapter": number, "quote": current})
+    from .permanent_facts import permanent_state_checkup
+
+    permanent = permanent_state_checkup(chapters)
     return {
-        "counts": {"rewritten_prior_events": len(issues)},
+        "counts": {"rewritten_prior_events": len(issues), "permanent_state_conflicts": len(permanent)},
         "rewritten_prior_events": issues,
+        "permanent_state_conflicts": permanent,
         "authority": "deterministic_explicit_denial",
     }

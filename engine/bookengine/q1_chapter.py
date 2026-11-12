@@ -38,6 +38,7 @@ from .title_promises import writer_title_contract
 from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
+from .permanent_facts import repair_permanent_states
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
@@ -282,6 +283,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     # Content repairs first; text hygiene last so it also cleans what they rewrote.
     text, raw, failed, cleaning["model_notes"] = guarded(repair_model_notes)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["permanent_states"] = guarded(repair_permanent_states)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(

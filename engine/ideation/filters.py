@@ -23,6 +23,18 @@ def similarity(a, b):
     return len(a & b) / len(a | b) if a and b else 0
 
 
+def same_idea(card, old):
+    """Two cards whose model-authored new idea is the same are one direction, however their titles differ.
+
+    An idea fixed by the axis (the user asked to keep it across new shells) is shared on purpose.
+    """
+    axes = [c.get("axes") if isinstance(c.get("axes"), dict) else {} for c in (card, old)]
+    if not axes[0].get("authored"):
+        return False
+    new, seen = (str(a.get("variable") or "") for a in axes)
+    return bool(new and seen) and (new == seen or similarity(new, seen) >= 0.5)
+
+
 def validate(card, chapters, allow_names=False):
     if not isinstance(card, dict):
         return ["字段"]
@@ -63,8 +75,16 @@ def shape(title):
     return "短名"
 
 
-def screen(raw, chapters, genre, history, market):
+def motifs(card):
+    """Motif families a card belongs to, by detector vocabulary only."""
+    text = "".join(str(card.get(k, "")) for k in ("title", "hook", "premise", "golden_finger_rule"))
+    return {name for name, tokens in load("motifs")["families"].items() if any(token in text for token in tokens)}
+
+
+def screen(raw, chapters, genre, history, market, shown=()):
+    """``shown`` are the cards already displayed in this batch; motif caps count them too."""
     accepted, rejected = [], []
+    cap = load("motifs")["cap"]
     combos = load("cliche")
     combos = combos.get(genre, combos.get("default", []))
     for item in raw:
@@ -74,9 +94,18 @@ def screen(raw, chapters, genre, history, market):
                 if any(similarity(item[k], old.get(k, "")) >= 0.5 for k in ("title", "hook")):
                     errors.append("历史或批内重复")
                     break
+                if same_idea(item, old):
+                    errors.append("新变量重复")
+                    break
             collision = next((b["title"] for b in market if similarity(item["title"], b["title"]) >= 0.5), None)
             if collision:
                 errors.append("撞车:" + collision)
+        if not errors:
+            crowded = sorted(
+                name for name in motifs(item) if sum(name in motifs(c) for c in [*shown, *accepted]) >= cap
+            )
+            if crowded:
+                errors.append("母题重复:" + "、".join(crowded))
         if errors:
             rejected.append(dict(title=item.get("title", "") if isinstance(item, dict) else "", reasons=errors))
             continue

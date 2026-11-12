@@ -23,7 +23,7 @@ def card(n=0, **extra):
         golden_finger_rule="无",
         opening="陈禾在山门前拦住送葬队。",
         engine="从村镇到王朝再到异界，依次争取粮食、地位与自由。",
-        axes=dict(shell=str(n), variable="纸扎"),
+        axes=dict(shell=str(n), variable=chr(0x4E00 + n % 2000) + chr(0x5E00 + n % 2000)),
     )
     value.update(extra)
     return value
@@ -38,8 +38,83 @@ class IdeationContracts(unittest.TestCase):
         prompt = generation_prompt(data, [dict(shell="民俗")], market)
         self.assertNotIn("唯一真实", prompt)
         self.assertNotIn("另一真实", prompt)
+        self.assertNotIn("返还", prompt)
         self.assertNotIn("废柴", prompt)
         self.assertIn("失踪的家人", prompt)
+
+    def test_model_authors_the_idea_and_fixed_axis_values_win(self):
+        from ideation import bind_axes, used_variables
+
+        free = bind_axes(
+            dict(card(), variable="会说谎的界碑", desire="带妹妹出山", payoff="守护成功"),
+            dict(shell="边关", title_form="短名"),
+        )
+        self.assertEqual(
+            free["axes"],
+            dict(
+                shell="边关",
+                title_form="短名",
+                variable="会说谎的界碑",
+                desire="带妹妹出山",
+                payoff="守护成功",
+                variable_type="构思",
+                authored=True,
+            ),
+        )
+        self.assertTrue(all(key not in free for key in ("variable", "desire", "payoff")))
+        fixed = bind_axes(
+            dict(card(), variable="模型想换掉"),
+            dict(shell="宗门", variable="纸扎", variable_type="职业", avoid_variable="不该外露"),
+        )
+        self.assertEqual((fixed["axes"]["variable"], fixed["axes"]["variable_type"]), ("纸扎", "职业"))
+        self.assertNotIn("avoid_variable", fixed["axes"])
+        self.assertFalse(fixed["axes"]["authored"])
+        silent = bind_axes(card(hook="她在雨里等回一封家书"), dict(shell="民俗"))
+        self.assertEqual(silent["axes"]["variable"], "她在雨里等回一封家书")
+        self.assertEqual(bind_axes("broken", dict(shell="民俗")), "broken")
+        history = [free, fixed, free, dict(title="旧卡没有轴")]
+        self.assertEqual(used_variables(history), ["会说谎的界碑", "纸扎"])
+
+    def test_prompt_has_no_fixed_idea_pools_and_lists_used_ideas(self):
+        data = dict(
+            genre="xuanhuan-power-fantasy",
+            chapters=50,
+            idea="",
+            seed=87,
+            history=[dict(axes=dict(variable="会说谎的界碑"))],
+        )
+        axes = axes_for(data, {})[:6]
+        prompt = generation_prompt(data, axes, dict(tags=["成长"], rules=["倍率结算", "资源返还"]))
+        for polluted in ("倍率结算", "资源返还", "偿清债务", "修伞匠", "木制算盘", "进度条", "类别特征"):
+            self.assertNotIn(polluted, prompt)
+        self.assertIn("会说谎的界碑", prompt)
+        self.assertIn("不要为了填这一栏硬造能力", prompt)
+
+    def test_same_new_idea_is_one_direction(self):
+        def idea(shell, variable):
+            return dict(shell=shell, variable=variable, authored=True)
+
+        first = card(1, axes=idea("宗门", "会说谎的界碑"))
+        second = card(2, title="另一个书名完全不同", hook="钩子也完全是别的内容", axes=idea("边关", "会说谎的界碑"))
+        third = card(3, title="第三个书名并不相同", hook="第三个钩子说的是别的", axes=idea("边关", "倒着走的年历"))
+        good, bad = screen([first, second, third], 100, "xuanhuan-power-fantasy", [], [])
+        self.assertEqual([c["title"] for c in good], [first["title"], third["title"]])
+        self.assertEqual(bad[0]["reasons"], ["新变量重复"])
+        kept = dict(second, axes=dict(second["axes"], authored=False))
+        self.assertEqual(len(screen([first, kept], 100, "xuanhuan-power-fantasy", [], [])[0]), 2)
+
+    def test_one_motif_family_appears_at_most_once_per_batch(self):
+        ledger = card(1, title="家族债簿", hook="少主先被全族逼着还债")
+        another = card(2, title="宗门账房", hook="他管灵石也管谁被逐出山门")
+        plain = card(3, title="边关铁骑", hook="军匠听见兵器的第一声裂响")
+        good, bad = screen([ledger, another, plain], 100, "xuanhuan-power-fantasy", [], [])
+        self.assertEqual([c["title"] for c in good], ["家族债簿", "边关铁骑"])
+        self.assertEqual(bad[0]["reasons"], ["母题重复:账债"])
+        good, bad = screen([another, plain], 100, "xuanhuan-power-fantasy", [], [], shown=[ledger])
+        self.assertEqual([c["title"] for c in good], ["边关铁骑"])
+        # Earlier batches do not use up this batch's allowance.
+        good, _ = screen([another], 100, "xuanhuan-power-fantasy", [dict(ledger, title="旧批次", hook="旧钩子")], [])
+        self.assertEqual(len(good), 1)
 
     def test_axes_reproducible_and_max_two(self):
         data = dict(genre="xuanhuan-power-fantasy", seed=87)
@@ -47,15 +122,16 @@ class IdeationContracts(unittest.TestCase):
         self.assertEqual(axes, axes_for(data, {}))
         self.assertEqual(len(axes), 24)
         self.assertLessEqual(max(Counter(a["shell"] for a in axes).values()), 2)
-        self.assertGreaterEqual(len(set(a["variable"] for a in axes)), 18)
+        self.assertTrue(all(set(a) == {"shell", "title_form"} for a in axes))
 
     def test_direction_both(self):
         source = dict(shell="宗门", variable="纸扎", variable_type="职业")
         data = dict(genre="xuanhuan-power-fantasy", seed=87, direction=dict(mode="both", candidate=dict(axes=source)))
         axes = axes_for(data, {})[:12]
         self.assertEqual(sum(a["shell"] == source["shell"] for a in axes), 6)
-        self.assertEqual(sum(a["variable"] == source["variable"] for a in axes), 6)
-        self.assertTrue(all(a["variable"] != "纸扎" for a in axes if a["variant"] == "shell"))
+        self.assertEqual(sum(a.get("variable") == source["variable"] for a in axes), 6)
+        kept_shell = [a for a in axes if a["variant"] == "shell"]
+        self.assertTrue(all("variable" not in a and a["avoid_variable"] == "纸扎" for a in kept_shell))
 
     def test_fields_language_and_length(self):
         self.assertEqual(validate(card(), 100), [])

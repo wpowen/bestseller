@@ -257,7 +257,7 @@ def test_eval52_explicit_named_subject_binds_following_pronoun_despite_other_peo
         ]
 
 
-def test_web59c_named_female_subject_pronouns_are_evidence_and_not_ambiguous():
+def test_web59c_named_female_subject_pronouns_preserve_quote_ambiguity():
     value = {
         "characters": [
             {"name": "顾长风", "gender": "男", "role": "protagonist"},
@@ -277,9 +277,10 @@ def test_web59c_named_female_subject_pronouns_are_evidence_and_not_ambiguous():
     findings = [row for text in samples for row in cast_findings(text, value, chapter=1)]
 
     assert len(findings) == 6
-    assert all(row["status"] == "Evidence" and row["expected"] == "她" for row in findings)
+    assert len([row for row in findings if row["status"] == "Evidence" and row["expected"] == "她"]) == 5
+    assert len([row for row in findings if row["status"] == "Unknown"]) == 1
     assert [row["name"] for row in findings] == [
-        "沈展尧",
+        "",
         "沈展尧",
         "陶慕桐",
         "陶慕桐",
@@ -287,7 +288,8 @@ def test_web59c_named_female_subject_pronouns_are_evidence_and_not_ambiguous():
         "沈展尧",
     ]
     checkup = cast_checkup(value, [{"number": 1, "text": "\n\n".join(samples)}])
-    assert checkup["evidence_counts"]["gender_pronoun"] == 6
+    assert checkup["evidence_counts"]["gender_pronoun"] == 5
+    assert checkup["unknown_counts"]["gender_pronoun"] == 1
     assert checkup["inference_counts"].get("gender_pronoun", 0) == 0
 
 

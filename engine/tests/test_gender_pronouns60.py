@@ -13,6 +13,7 @@ CARDS = {
     "characters": [
         {"name": "顾长风", "gender": "男", "role": "protagonist"},
         {"name": "沈展尧", "gender": "女", "role": "support"},
+        {"name": "韩朔言", "gender": "男", "role": "support"},
         {"name": "崔林霏", "gender": "男", "role": "antagonist"},
         {"name": "薛欣妍", "gender": "男", "role": "antagonist"},
     ]
@@ -31,6 +32,7 @@ CH40 = (
     "顾长风点头，目光落向正在缓慢熄灭的主纹。薛欣妍仍站在阵中，禁军与边军却已不再听从她的调动。"
     "他失去了的并非一件兵器，而是作为节度使对整支军队的控制。"
 )
+CH5_SPEAKER_QUOTE = "沈展尧将铜片收入袖中，道：“你若跪下，他便能借席纹逼你起手。”"
 
 
 def _gender_rows(text, chapter):
@@ -48,13 +50,26 @@ def test_c3_original_clause_shapes_bind_ch25_ch28_ch29_and_ch40_without_extra_re
         assert [(row["name"], row["observed"], row["expected"]) for row in rows] == [expected_wrong[chapter]]
 
     assert _gender_rows(CH28, 28) == []
-    bindings = pronoun_bindings(CH28, CARDS["characters"], 28)
-    assert any(row["name"] == "崔林霏" and row["observed"] == "他" and row["correct"] for row in bindings)
+    assert pronoun_bindings(CH28, CARDS["characters"], 28) == []
+    unknown = [
+        row
+        for row in cast_findings(CH28, CARDS, chapter=28)
+        if row["kind"] == "gender_pronoun" and row["status"] == "Unknown"
+    ]
+    assert len(unknown) == 1
 
 
 def test_c3_clause_binding_keeps_known_ambiguous_and_object_pronouns_out_of_evidence():
     safe = "顾长风看向她。她脸色苍白，却没有退缩。沈展尧扶住顾长风，两人一起越过断桥。他回头看了一眼。"
     assert _gender_rows(safe, 30) == []
+
+
+def test_c3_third_person_inside_speakers_quote_never_binds_to_the_speaker():
+    findings = [row for row in cast_findings(CH5_SPEAKER_QUOTE, CARDS, chapter=5) if row["kind"] == "gender_pronoun"]
+
+    assert not [row for row in findings if row["status"] == "Evidence"]
+    assert [(row["status"], row["observed"], row["name"]) for row in findings] == [("Unknown", "他", "")]
+    assert pronoun_bindings(CH5_SPEAKER_QUOTE, CARDS["characters"], 5) == []
 
 
 def test_c3_gender_errors_use_targeted_leaf_repair_and_recheck_clean():

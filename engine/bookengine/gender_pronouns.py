@@ -88,6 +88,28 @@ def _inline_pronoun_match(sentence, card):
     )
 
 
+def _inside_quote(text, position):
+    before = text[:position]
+    return before.rfind("“") > before.rfind("”") or before.rfind("‘") > before.rfind("’") or before.count('"') % 2 == 1
+
+
+def _quote_external_target(text, start, end, people, speaker):
+    outside = "".join(
+        char if char not in "“”‘’\"'" and not _inside_quote(text, start + offset) else " "
+        for offset, char in enumerate(text[start:end])
+    )
+    candidates = []
+    for card in people:
+        if card is speaker or card["name"] not in outside:
+            continue
+        name = re.escape(card["name"])
+        if _subject_bound(outside, card["name"]) or re.search(
+            rf"(?:指着|指向|看向|望向|提到|说起|问起|谈及)[^，,。！？]{{0,12}}{name}", outside
+        ):
+            candidates.append(card)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _scan_bindings(text, cards, spans):
     rows = []
     bound = None
@@ -99,12 +121,23 @@ def _scan_bindings(text, cards, spans):
         match = _pronoun_match(sentence, bound)
         inline_match = _inline_pronoun_match(sentence, explicit) if explicit is not None else None
         if inline_match is not None:
+            inline_offset = sentence.find(inline_match.string) + inline_match.start(1)
+            if _inside_quote(text, start + inline_offset):
+                inline_match = None
+        if inline_match is not None:
             match = inline_match
         inline = inline_match is not None
         match_offset = sentence.find(match.string) if match and match.string is not sentence else 0
+        pronoun_position = start + match_offset + match.start(1) if match else -1
+        quoted = match is not None and _inside_quote(text, pronoun_position)
         resolved = explicit if inline else None
         unknown = False
-        if match and resolved is None and index:
+        unknown_reason = ""
+        if quoted:
+            resolved = _quote_external_target(text, start, end, people, explicit)
+            unknown = resolved is None
+            unknown_reason = "引语内第三人称没有引语外另一具名人物的明确语法证据"
+        elif match and resolved is None and index:
             previous = text[slice(*spans[index - 1])]
             prior_people = [card for card in _mentioned(previous, cards) if card.get("gender") in GENDER]
             prior_explicit = _explicit_subject(previous, prior_people)
@@ -114,6 +147,7 @@ def _scan_bindings(text, cards, spans):
                 resolved = bound
             elif len(prior_people) > 1:
                 unknown = True
+                unknown_reason = "前句出现多名人物，代词指代不清"
         if match:
             rows.append(
                 {
@@ -122,8 +156,9 @@ def _scan_bindings(text, cards, spans):
                     "end": end,
                     "resolved": resolved,
                     "unknown": unknown,
+                    "unknown_reason": unknown_reason,
                     "observed": match[1],
-                    "pronoun_start": start + match_offset + match.start(1),
+                    "pronoun_start": pronoun_position,
                     "pronoun_end": start + match_offset + match.end(1),
                 }
             )
@@ -178,7 +213,7 @@ def pronoun_findings(text, cards, chapter, spans, finding):
                     "Unknown",
                     row["observed"],
                     "",
-                    "前句出现多名人物，代词指代不清",
+                    row["unknown_reason"],
                     text,
                     index + 1,
                     start,

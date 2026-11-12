@@ -6,7 +6,7 @@ import re
 
 from .address_contracts import address_issues, address_rows
 from .cast_repair import apply_cast_edits, registered_labels
-from .gender_pronouns import pronoun_findings
+from .gender_pronouns import pronoun_bindings, pronoun_findings
 from .nonhuman_speech import identity_literal_findings, speech_findings
 from .precision import _sentences
 from .unregistered_names import name_findings
@@ -230,8 +230,11 @@ def cast_findings(text, bible, *, chapter=None):
 
 def cast_checkup(bible, chapters):
     findings = []
+    bindings = []
+    cards = _cards(bible)
     unregistered = set()
     for chapter in chapters:
+        bindings.extend(pronoun_bindings(chapter["text"], cards, chapter["number"]))
         for row in cast_findings(chapter["text"], bible, chapter=chapter["number"]):
             if row["kind"] == "unregistered_name":
                 if row["name"] in unregistered:
@@ -257,6 +260,7 @@ def cast_checkup(bible, chapters):
         inference_counts=dict(Counter(row["kind"] for row in findings if row["status"] == "Inference")),
         unknown_counts=dict(Counter(row["kind"] for row in findings if row["status"] == "Unknown")),
         findings=findings,
+        gender_pronoun_bindings=bindings,
         address_contract=dict(
             semantic_rows=list(address_rows(bible)), issue_count=len(logical_contract_issues), issues=contract_issues
         ),

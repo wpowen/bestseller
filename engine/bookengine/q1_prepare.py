@@ -7,7 +7,13 @@ import re
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .client import SYSTEM
-from .identity import repair_companion_roles, validate_bible, validate_cast_contract
+from .identity import (
+    annotate_name_gender_notes,
+    name_gender_mismatch,
+    repair_companion_roles,
+    validate_bible,
+    validate_cast_contract,
+)
 from .nonhuman_speech import normalize_speech_contracts
 from .selected_card import selected_card, facts, differences, enforce, record, RULE
 from .longmemory import long_context
@@ -383,7 +389,12 @@ def prepare(client, book, out, assets, design=False):
                     )
                 ):
                     mapping[name] = next(
-                        ((name[:-2] or name[:1]) + n[-2:] for n in pool if not any(n[-2:] == u[-2:] for u in used)),
+                        (
+                            (name[:-2] or name[:1]) + n[-2:]
+                            for n in pool
+                            if not name_gender_mismatch(n, c.get("gender"), rules)
+                            and not any(n[-2:] == u[-2:] for u in used)
+                        ),
                         name,
                     )
                     used.add(mapping[name])
@@ -405,6 +416,8 @@ def prepare(client, book, out, assets, design=False):
             generated = list(enforce(*generated, card, locked, corrected))
             generated[0]["canon"]["seed"] = card["title"]
             record(Path(out), alignment, corrected)
+        if values[0] is None:
+            generated[0] = annotate_name_gender_notes(generated[0], rules)
         validate_bible(generated[0])
         if values[0] is None:
             if address_issues(generated[0]):

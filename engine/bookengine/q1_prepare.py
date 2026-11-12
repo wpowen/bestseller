@@ -17,7 +17,6 @@ from .structure_planning import stage_ranges, stage_for_chapter, repair_structur
 from .address_contracts import repair_addresses, address_issues
 from .rename_addresses import rename_addresses
 from .opening_promises import opening_contract
-from .cost_design import has_cost_source, repair_costs
 from .core_ability import repair_development, core_source, RULE as CORE_RULE
 from .design_gate import design_issues, gate_record, STORY_LAYER_VERSION
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
@@ -142,7 +141,7 @@ def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
     if kind == "prepare":
         instruction += (
             "\nreader_expectation和opening_promises逐项列可检查的开篇承诺，别把后期承诺塞进前三章。"
-            "第1章必须实际展示书名或设定核心能力，前三章每章展示实际使用和可见代价。"
+            "第1章必须实际展示书名或设定核心能力，前三章每章展示实际使用和当场结果。"
             "每条称呼都按说话人→被称呼者→称呼→来历填写：address放在说话人的人物卡，"
             "address_target写被称呼者真名；address须从目标姓名派生，否则address_origin写具体来历并在首次使用章交代。"
         )
@@ -300,7 +299,10 @@ def prepare(client, book, out, assets, design=False):
             ("成长阶梯：非空沿用；strength为空则按generation为本书生成world.levels", profile["canon"]["ladder"]),
             ("题材", book.prompt_pack),
             ("选定高概念", selected),
-            ("读者承诺", source.get("writing_profile_overrides", {})),
+            (
+                "题材包的读者承诺，仅在用户没有选定故事时参考",
+                {} if card else source.get("writing_profile_overrides", {}),
+            ),
             ("已有只读设计", values),
         ]
         previous_error = ""
@@ -416,25 +418,20 @@ def prepare(client, book, out, assets, design=False):
             record(Path(out), alignment, corrected)
         validate_bible(generated[0])
         if values[0] is None:
+            # Set before any contract is derived: contracts differ for books planned under the story-led policy.
+            generated[0]["story_layer_version"] = STORY_LAYER_VERSION
             if address_issues(generated[0]):
                 generated[0], address_note = repair_addresses(
                     generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
                 )
                 save(Path(out) / "address-design.json", address_note)
             generated[0]["opening_contract"] = opening_contract(generated[0])
-            if has_cost_source(generated[0]):
-                generated[0], cost_note = repair_costs(
-                    generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
-                )
-                save(Path(out) / "cost-design.json", cost_note)
         if values[0] is None and core_source(generated[0]):
             generated[0], core_note = repair_development(
                 generated[0], lambda kind, key, sections, redo: _ask(client, kind, key, sections, redo)
             )
             generated[0]["plot_contract_version"] = 1
             save(Path(out) / "core-development.json", core_note)
-        if values[0] is None:
-            generated[0]["story_layer_version"] = STORY_LAYER_VERSION
         if gate_attempts:
             save(Path(out) / "design-gate.json", gate_record(gate_attempts, design_issues(*generated)))
         save(Path(out) / "prepared-design.json", generated)

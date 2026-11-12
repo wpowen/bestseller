@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import yaml
 from .longutil import loose_object
-from .cost_design import FORMAT as COST_FORMAT
+from .cost_design import FORMAT as COST_FORMAT, STORY_LED_NOTE as COST_NOTE
 
 DATA = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/q1_schemas.yaml").read_text(encoding="utf-8"))
 FIX = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/fix100.yaml").read_text())
@@ -21,7 +21,7 @@ DATA["instructions"]["address_design"] = (
 )
 DATA["schemas"]["cost_design"] = {"cost": ""}
 DATA["instructions"]["cost_design"] = "只返回当前指定阶段的新cost字符串，其他字段只读。" + COST_FORMAT
-DATA["instructions"]["prepare"] += "\n阶段cost约束：" + COST_FORMAT
+DATA["instructions"]["prepare"] += "\n" + COST_NOTE
 
 
 def parse(value):

@@ -206,6 +206,12 @@ def test_structure_repair_cannot_replace_designed_beats():
 
 def test_design_gate_names_each_hollow_layer():
     assert design_issues(make_bible(), make_threads()) == []
+    costless = make_bible()
+    costless["power"] = dict(object="木手", rule="断一线接一线")
+    costless["characters"] = [c for c in costless["characters"] if c["role"] != "romance"]
+    no_romance = dict(threads=[line for line in make_threads()["threads"] if line["kind"] != "romance"])
+    assert design_issues(costless, no_romance) == []
+    assert "threads.romance" in "\n".join(design_issues(make_bible(), no_romance))
 
     hollow = make_bible()
     hollow["world"] = dict(rules=[hollow["premise"]])
@@ -222,8 +228,6 @@ def test_design_gate_names_each_hollow_layer():
     for expected in (
         "truth_layers",
         "factions",
-        "power.cost",
-        "power.limit",
         "main_foreshadows",
         "desire",
         "threads.dark",

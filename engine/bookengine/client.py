@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 from .storage import load, now, save
+from .call_timeout import CallTimeout, read_with_deadline, stage_timeout
 from .text import parse_json
 from .retries import next_network_wait
 from tools.runtime_support import QuotaExhausted, ProjectError, classify_api_error, extract_api_error
@@ -102,8 +103,10 @@ class Client:
         api_base=None,
         provider="MiniMax",
         system=SYSTEM,
+        total_timeouts=None,
     ):
         self.out, self.prefix, self.timeout = Path(out), prefix, timeout
+        self.total_timeouts = total_timeouts
         self.model, self.provider, self.system = model, provider, system
         self.context_limit = None
         self.clip_context = False
@@ -136,6 +139,7 @@ class Client:
         system = getattr(self, "system", SYSTEM)
         if self.context_limit and len(system) + len(prompt) > self.context_limit:
             raise RuntimeError("Context exceeds configured character limit: " + stage)
+        timeout_phase, total_timeout = stage_timeout(stage, getattr(self, "total_timeouts", None))
         entry = dict(
             seq=len(self.calls) + 1,
             stage=stage,
@@ -145,6 +149,8 @@ class Client:
             started=now(),
             status="pending",
             effort=effort,
+            timeout_phase=timeout_phase,
+            total_timeout_seconds=total_timeout,
         )
         self.calls.append(entry)
         save(self.history_path, self.calls)
@@ -172,8 +178,9 @@ class Client:
         )
         start = time.monotonic()
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                result = json.loads(response.read())
+            idle_timeout = getattr(self, "timeout", 180)
+            with urllib.request.urlopen(request, timeout=min(idle_timeout, total_timeout)) as response:
+                result = json.loads(read_with_deadline(response, total_timeout, idle_timeout))
             entry["usage"] = result.get("usage") or {}
             entry["model"] = result.get("model")
             entry["finish_reason"] = (result.get("choices") or [{}])[0].get("finish_reason")
@@ -220,6 +227,10 @@ class Client:
                 entry["status"] = "content_rejected"
                 raise ContentRejected(f"{stage}: HTTP {exc.code}; {message}") from None
             raise ProjectError(f"{stage}: HTTP {exc.code}; {message}") from None
+        except CallTimeout:
+            entry["status"] = "timeout"
+            entry["error_type"] = CallTimeout.__name__
+            raise NetworkRetry("call_timeout") from None
         except (socket.timeout, TimeoutError, urllib.error.URLError, ConnectionError, HTTPException) as exc:
             entry["status"] = "transport_error"
             detail = exc.reason if isinstance(exc, urllib.error.URLError) else exc

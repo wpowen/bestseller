@@ -50,13 +50,8 @@ def test_c3_original_clause_shapes_bind_ch25_ch28_ch29_and_ch40_without_extra_re
         assert [(row["name"], row["observed"], row["expected"]) for row in rows] == [expected_wrong[chapter]]
 
     assert _gender_rows(CH28, 28) == []
-    assert pronoun_bindings(CH28, CARDS["characters"], 28) == []
-    unknown = [
-        row
-        for row in cast_findings(CH28, CARDS, chapter=28)
-        if row["kind"] == "gender_pronoun" and row["status"] == "Unknown"
-    ]
-    assert len(unknown) == 1
+    bindings = pronoun_bindings(CH28, CARDS["characters"], 28)
+    assert any(row["name"] == "崔林霏" and row["observed"] == "他" and row["correct"] for row in bindings)
 
 
 def test_c3_clause_binding_keeps_known_ambiguous_and_object_pronouns_out_of_evidence():

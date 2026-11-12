@@ -110,6 +110,14 @@ def _quote_external_target(text, start, end, people, speaker):
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _prior_explicit_other(text, span, cards, speaker):
+    start, end = span
+    previous = text[start:end]
+    people = [card for card in _mentioned(previous, cards) if card.get("gender") in GENDER]
+    resolved = _explicit_subject(previous, people)
+    return resolved if resolved is not None and resolved is not speaker else None
+
+
 def _scan_bindings(text, cards, spans):
     rows = []
     bound = None
@@ -135,6 +143,8 @@ def _scan_bindings(text, cards, spans):
         unknown_reason = ""
         if quoted:
             resolved = _quote_external_target(text, start, end, people, explicit)
+            if resolved is None and index:
+                resolved = _prior_explicit_other(text, spans[index - 1], cards, explicit)
             unknown = resolved is None
             unknown_reason = "引语内第三人称没有引语外另一具名人物的明确语法证据"
         elif match and resolved is None and index:

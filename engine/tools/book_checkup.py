@@ -291,6 +291,7 @@ def check_book(book, *, source="final"):
     from bookengine.first_appearances import first_appearance_checkup
     from bookengine.explanation_density import explanation_density_checkup
     from tools.book_cast_stats import cast_stats
+    from bookengine.opening_styles import opening_style_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -367,6 +368,7 @@ def check_book(book, *, source="final"):
         ),
         adjacent_opening_repetitions=adjacent_openings,
         repeated_arrivals=repeated_arrivals,
+        opening_style_diversity=opening_style_checkup(chapters),
         text_hygiene=summarize_chapters(chapters),
         format_residue=dict(
             total=sum(c["total"] for c in residue),

@@ -166,5 +166,7 @@ def complete_transitions(batch, history=()):
             scenes = scenes if isinstance(scenes, list) else []
             actions = " ".join(str(s.get("action", "")) for s in scenes if isinstance(s, dict))
             if not (old in actions and new in actions and _transition_quotes(actions)):
-                row["transition"] = f"交代离开{old}、抵达{new}的移动过程、耗时和原因，落实在开头300字。"
+                row["transition"] = (
+                    f"场景切换类别：移动衔接。参考地点：{old}；本章地点：{new}；交代过程、耗时和原因，开头300字内完成。"
+                )
     return result

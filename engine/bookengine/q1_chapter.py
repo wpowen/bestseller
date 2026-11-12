@@ -40,6 +40,7 @@ from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
 from .permanent_facts import repair_permanent_states
 from .plot_progression import repair_plot_replay
+from .opening_styles import repair_opening_style, writer_opening_style_context
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
@@ -137,6 +138,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(writer_main_scene_contract(outline)))
     )
     sections = with_completed_action_context(sections, out, idx)
+    sections.extend(writer_opening_style_context(out, idx))
     sections.extend(speech_context(bible, idx))
     sections.extend(writer_solution_sequence_context(out, idx, bible))
     if book.style_reference:
@@ -244,6 +246,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["cross_chapter_opening"] = guarded(repair_cross_chapter_opening)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
+    )
+    text, raw, failed, notes["opening_style"] = guarded(repair_opening_style)(
         client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
     )
     text, raw, failed, opponent_repair = guarded(repair_retired)(

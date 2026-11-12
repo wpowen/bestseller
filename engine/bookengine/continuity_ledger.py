@@ -6,6 +6,7 @@ import re
 
 from .precision import _sentences, apply as sentence_edits
 from .continuity_checkup import merge_accident_delta
+from .cross_chapter_facts import merge_cross_chapter_delta
 
 
 LEDGER_VERSION = 1
@@ -34,9 +35,16 @@ def extraction_contract():
         "body_structures仅正文明确身体构造时给name/form/limb_count/limb_name/quote。"
         "consumed_memories只记主角已经永久献祭、再也无法完整想起的记忆，给name/summary/quote；"
         "只是回忆、想起、计划献祭或代价不明一律不记。accidents给name/part/cause/quote，只记本章实际发生的意外。"
+        "critical_events只记本章已经真实完成、后文不可否定或改写的关键行动与结果，给summary/quote。"
         "所有quote必须是正文连续逐字原文，找不到引文就省略该项。"
     )
-    schema = {"characters": [], "body_structures": [], "consumed_memories": [], "accidents": []}
+    schema = {
+        "characters": [],
+        "body_structures": [],
+        "consumed_memories": [],
+        "accidents": [],
+        "critical_events": [],
+    }
     return instruction, schema
 
 
@@ -173,7 +181,7 @@ def merge_continuity_delta(state, delta, text, bible, chapter):
     _merge_memories(ledger, delta.get("consumed_memories", []), text, bible, chapter)
     merge_accident_delta(ledger, delta, text, bible, chapter)
     result["continuity_ledger"] = ledger
-    return result
+    return merge_cross_chapter_delta(result, delta, text, chapter)
 
 
 def _person_fact(name, record):

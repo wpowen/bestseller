@@ -37,6 +37,7 @@ from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
+from .cross_chapter_facts import guard_all_repairs
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
@@ -307,6 +308,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx)
+    if notes["repair_history"]["status"] == "rolled_back":
+        raw, failed = original_raw, initial_failed
     require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

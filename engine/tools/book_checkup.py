@@ -359,6 +359,7 @@ def check_book(book, *, source="final"):
     from bookengine.title_promises import title_promise_checkup
     from bookengine.hook_momentum import book_momentum
     from bookengine.continuity_checkup import continuity_checkup
+    from bookengine.cross_chapter_facts import cross_chapter_checkup as fact_checkup
     from bookengine.endings import final_closure_checkup
     from bookengine.quote_text import quote_checkup
     from bookengine.dialogue_hygiene import dialogue_checkup
@@ -452,6 +453,7 @@ def check_book(book, *, source="final"):
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         cast_consistency=cast_checkup(bible, chapters),
         continuity_ledger=continuity_checkup(bible, chapters),
+        cross_chapter_facts=fact_checkup(chapters),
         title_promises=title_promise_checkup(bible, chapters),
         final_chapter_new_suspense=final_closure_checkup(chapters),
         unclosed_quotes=quote_checkup(chapters),

@@ -1,3 +1,5 @@
+import json
+
 from bookengine.solution_substance import solution_nouns, solution_issues, solution_context, observe_solutions
 from bookengine.contracts import observations
 from bookengine.outline_diversity import repair_batch
@@ -51,7 +53,7 @@ def test_recent_ten_context_and_stage_cap_are_independent():
     assert solution_context(bible(), history, 10)["stage_counts"] == {"钥匙": 3}
 
 
-def test_batch_rewrites_actual_substance_before_persisting(tmp_path):
+def test_solution_substance_is_reported_without_paid_rewrite(tmp_path):
     history = [dict(number=n, solution_method="阵眼") for n in range(1, 4)]
     batch = [dict(number=4, title="远航", solution_method="阵钉")]
     calls = []
@@ -61,8 +63,10 @@ def test_batch_rewrites_actual_substance_before_persisting(tmp_path):
         return {"chapters": [dict(batch[0], solution_method="账本")]}
 
     result = repair_batch(tmp_path, "004-004", history, batch, rewrite, bible=bible())
-    assert result[0]["solution_method"] == "账本"
-    assert any(i["kind"] == "solution_substance" for i in calls[0])
+    assert result[0]["solution_method"] == "阵钉"
+    assert calls == []
+    report = json.loads((tmp_path / "outline-diversity/004-004.json").read_text())
+    assert any(i["kind"].startswith("solution_") for i in report["issues"])
 
 
 def test_new_plan_cannot_evade_cap_by_omitting_substance():

@@ -75,6 +75,10 @@ class NetworkRetry(Retryable):
     pass
 
 
+class TruncatedOutput(ProjectError):
+    """Provider stopped at its output limit; this is not invalid model content."""
+
+
 def retry_after(value):
     try:
         return max(0, float(value))
@@ -192,7 +196,8 @@ class Client:
             if not content_of(result):
                 raise Retryable("empty_return")
             if entry["finish_reason"] == "length":
-                raise Retryable("truncated_return")
+                entry["status"] = "truncated"
+                raise TruncatedOutput(f"{stage}: truncated_return")
             entry["status"] = "ok"
             return content_of(result)
         except urllib.error.HTTPError as exc:
@@ -221,7 +226,7 @@ class Client:
             entry["error_type"] = type(detail).__name__
             entry["error_number"] = getattr(detail, "errno", None)
             raise NetworkRetry("timeout_or_connection_error") from None
-        except NetworkRetry:
+        except (NetworkRetry, TruncatedOutput):
             raise
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             entry["status"] = "invalid_output"
@@ -374,6 +379,11 @@ class Client:
                     write_runtime(self.out, "error", name, error=str(exc))
                     raise
                 full = base_full + RESTRAINT_NOTE
+            except TruncatedOutput:
+                # Ledger keeps status=truncated; retry once more with the enlarged cap instead of killing the book.
+                output_failures += 1
+                detail = "output reached the token cap"
+                full = base_full + "\n上次输出在长度上限处被截断，请更简洁地完整输出。"
             except (QuotaExhausted, ProjectError) as exc:
                 kind = "quota_exhausted" if isinstance(exc, QuotaExhausted) else "error"
                 write_runtime(self.out, kind, name, error=str(exc))

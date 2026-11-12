@@ -144,6 +144,7 @@ class GrowthContractTests(unittest.TestCase):
     def setUp(self):
         registry = yaml.safe_load((Path(__file__).parents[1] / "data/growth_payoff.yaml").read_text())
         self.canon = copy.deepcopy(registry["packs"]["xuanhuan-power-fantasy"])
+        self.canon["ladder"]["strength"] = ["引息", "锻脉", "刻印", "聚灵", "化铠", "镇岳", "开天", "归真"]
         self.types = {"升级", "打脸", "收获", "身份抬升", "碾压"}
 
     def test_five_canonical_types_obey_every_sliding_ten_chapter_window(self):

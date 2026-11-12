@@ -5,11 +5,13 @@ from copy import deepcopy
 from .q1_schema import defaults, integer, rows, DATA
 from .storage import save
 from .title_promises import (
+    enforce_promise_positions,
     ensure_reader_promise_contract,
     normalize_promise_references,
     planning_promise_issues,
     structure_promise_issues,
 )
+from .chapter_rhythm import combat_exemption_issues
 
 
 def stage_ranges(total):
@@ -102,7 +104,7 @@ def structure_issues(bible, total):
         name = stage.get("antagonist")
         if not isinstance(name, str) or name not in by_name or integer(by_name[name].get("stage")) != n:
             issues.append(f"stage {n}: antagonist缺分级或被安排跨阶段出场")
-    return issues + structure_promise_issues(bible, total)
+    return issues + combat_exemption_issues(bible) + structure_promise_issues(bible, total)
 
 
 def repair_structure(bible, threads, total, ask, out):
@@ -110,7 +112,7 @@ def repair_structure(bible, threads, total, ask, out):
     current, lines = ensure_reader_promise_contract(deepcopy(bible), total), deepcopy(threads)
     attempts = []
     for retry in range(4):
-        current = normalize_promise_references(current)
+        current = enforce_promise_positions(normalize_promise_references(current), total)
         issues = structure_issues(current, total)
         attempts.append(dict(regeneration=retry, issues=issues))
         save(

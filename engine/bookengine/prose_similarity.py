@@ -17,7 +17,17 @@ from .text import _paragraph_spans
 
 
 RULES = dict(
-    ngram=3, jaccard_min=0.32, containment_min=0.7, paragraph_distance=3, min_characters=10, card_repair_above=1
+    ngram=3,
+    jaccard_min=0.32,
+    containment_min=0.7,
+    paragraph_distance=3,
+    min_characters=10,
+    adjacent_min_characters=40,
+    adjacent_jaccard_min=0.15,
+    adjacent_containment_min=0.35,
+    card_repair_above=1,
+    card_rule_ratio=0.68,
+    card_rule_containment=0.72,
 )
 _QUOTES = set("“”‘’「」『』\"'«»＂＇")
 _AS_ROLE = re.compile(r"作为[^，,。！？!?；;：:\n]{2,30}[，,]\s*(?:他|她|其)")
@@ -61,6 +71,44 @@ def _identity_matches(node, identities):
     return matches
 
 
+def _power_rules(bible):
+    if not isinstance(bible, dict):
+        return []
+    selected = bible.get("selected_card") if isinstance(bible.get("selected_card"), dict) else {}
+    power = bible.get("power") if isinstance(bible.get("power"), dict) else {}
+    values = [selected.get("golden_finger_rule"), power.get("rule")]
+    return list(
+        dict.fromkeys(value.strip() for value in values if isinstance(value, str) and len(_normalize(value)) >= 16)
+    )
+
+
+def _rule_copy(node, rules):
+    candidate = _normalize(node["text"])
+    if len(candidate) < 16:
+        return None
+    best = None
+    for source in rules:
+        normalized = _normalize(source)
+        matcher = SequenceMatcher(None, normalized, candidate, autojunk=False)
+        ratio = matcher.ratio()
+        containment = matcher.find_longest_match().size / min(len(normalized), len(candidate))
+        if ratio >= RULES["card_rule_ratio"] or containment >= RULES["card_rule_containment"]:
+            value = (ratio, containment, source)
+            best = max(best, value) if best else value
+    if not best:
+        return None
+    ratio, containment, source = best
+    return dict(
+        node,
+        kind="card_rule_copy",
+        template="selected_card_power_rule",
+        similarity=round(ratio, 4),
+        containment=round(containment, 4),
+        source_chars=len(source),
+        status="Inference",
+    )
+
+
 def analyze_prose(text, bible=None):
     """Locate nearby paraphrases and card templates without changing any bytes.
 
@@ -72,8 +120,9 @@ def analyze_prose(text, bible=None):
     paragraphs = _paragraph_spans(text)
     sentences = _sentences(text, paragraphs)
     identities = _identity_windows(bible)
+    power_rules = _power_rules(bible)
     narrative = {}
-    cards = []
+    cards, rule_copies = [], []
     for number, (start, end) in enumerate(paragraphs, 1):
         passage = text[start:end]
         nodes = [n for n in sentences if start <= n["start"] < end]
@@ -84,6 +133,9 @@ def analyze_prose(text, bible=None):
                 grams = {normalized[i : i + size] for i in range(len(normalized) - size + 1)}
                 narrative[number] = (normalized, grams)
         for node in nodes:
+            copied_rule = _rule_copy(node, power_rules)
+            if copied_rule:
+                rule_copies.append(copied_rule)
             if node["quoted"] or any(c in _QUOTES for c in node["text"]):
                 continue
             matches = _identity_matches(node, identities)
@@ -116,7 +168,10 @@ def analyze_prose(text, bible=None):
             intersection = len(left & right)
             jaccard = intersection / len(left | right)
             containment = intersection / min(len(left), len(right))
-            if jaccard < RULES["jaccard_min"] or containment < RULES["containment_min"]:
+            adjacent = second == first + 1 and min(len(old), len(normalized)) >= RULES["adjacent_min_characters"]
+            jaccard_min = RULES["adjacent_jaccard_min"] if adjacent else RULES["jaccard_min"]
+            containment_min = RULES["adjacent_containment_min"] if adjacent else RULES["containment_min"]
+            if jaccard < jaccard_min or containment < containment_min:
                 continue
             occurrences = [_position(text, *paragraphs[n - 1], n) for n in (first, second)]
             occurrences[-1].update(action="repair", reasons=["near_paragraph"], status="Inference")
@@ -125,6 +180,7 @@ def analyze_prose(text, bible=None):
                     kind="near_paragraph",
                     jaccard=jaccard,
                     containment=containment,
+                    rule="adjacent_semantic" if adjacent else "nearby_lexical",
                     occurrences=occurrences,
                     status="Inference",
                 )
@@ -132,9 +188,14 @@ def analyze_prose(text, bible=None):
             pending.append(occurrences[-1])
     if len(cards) > RULES["card_repair_above"]:
         pending.extend(dict(c, action="repair", reasons=["card_explanation"]) for c in cards)
+    pending.extend(dict(row, action="repair", reasons=["card_rule_copy"]) for row in rule_copies)
     return dict(
-        counts=dict(near_paragraph_pairs=len(pairs), card_explanations=len(cards)),
-        records=[*pairs, *cards],
+        counts=dict(
+            near_paragraph_pairs=len(pairs),
+            card_explanations=len(cards),
+            card_rule_copies=len(rule_copies),
+        ),
+        records=[*pairs, *cards, *rule_copies],
         needs_repair=sorted(pending, key=lambda n: n["start"]),
         rules=dict(RULES),
         status="Inference",
@@ -186,7 +247,6 @@ def adjacent_opening_hits(previous, current):
                     status="Inference",
                 )
             )
-            break
     return result
 
 
@@ -240,21 +300,18 @@ def _places(text):
 
 
 def with_completed_action_context(sections, out, chapter):
-    """Add completed-action guidance inside the existing previous-ending block."""
+    """Keep prior prose out of the writer prompt; only retain deterministic place facts."""
     history = _history(out, chapter)
     if not history:
         return list(sections)
-    previous = history[-1][1]
-    spans = _paragraph_spans(previous)
-    tail = previous[spans[-3][0] :] if len(spans) >= 3 else previous
     places = sorted({place for _, text in history for place in _places(text)})
-    value = "上一章末场已发生，开头不得重写同一动作或时间起句：\n" + tail[-1200:]
+    value = "上一章末场已发生；不提供上一章原句。开头只承接已保存的结局事实，不得复述同一动作或时间起句。"
     if places:
         value += "\n此前到过的地点（再次到达必须写明折返理由）：" + "、".join(places[-20:])
     result = list(sections)
     for index, (title, current) in enumerate(result):
         if title == "上章结尾":
-            result[index] = (title, current + "\n" + value)
+            result[index] = (title, value)
             break
     return result
 
@@ -279,12 +336,13 @@ def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible
     value = ask(
         client,
         prefix + "-cross-chapter-opening",
-        "只改本章开头命中段：不要重复上一章已完成的动作或相同时间起句；再次到旧地点必须写明返回原因。"
+        f"只改本章开头命中段，必须恰好{target_paragraph}个自然段："
+        "不要重复上一章已完成的动作或相同时间起句；再次到旧地点必须写明返回原因。"
         "保留本章既定人物、目标、事实和开头之后的原文，不增事件。返回JSON。",
         [
-            ("问题", json.dumps(issues, ensure_ascii=False)),
-            ("历史正文", "\n\n".join(t for _, t in history)[-3000:]),
-            ("本章", text),
+            ("历史命中诊断，只用于避开不得复制", json.dumps(issues, ensure_ascii=False)),
+            ("本章待改开头", text[:end]),
+            ("本章合同与当前状态", [outline, state]),
         ],
         '{"text":"改写后的开头段"}',
         cap=1400,
@@ -292,8 +350,20 @@ def repair_cross_chapter_opening(client, prefix, text, raw, failed, state, bible
         max_attempts=1,
     )
     replacement = value.get("text") if isinstance(value, dict) else None
-    if not isinstance(replacement, str) or not replacement.strip() or len(_paragraph_spans(replacement)) > 3:
-        return text, raw, failed, dict(note, status="rolled_back", reason="invalid_opening_patch")
+    replacement_count = len(_paragraph_spans(replacement)) if isinstance(replacement, str) else 0
+    if not isinstance(replacement, str) or not replacement.strip() or replacement_count != target_paragraph:
+        return (
+            text,
+            raw,
+            failed,
+            dict(
+                note,
+                status="rolled_back",
+                reason="invalid_opening_patch",
+                expected_paragraphs=target_paragraph,
+                returned_paragraphs=replacement_count,
+            ),
+        )
     candidate = replacement.strip() + text[end:]
     remaining = [
         *(adjacent_opening_hits(previous, candidate) if previous else []),

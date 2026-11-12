@@ -42,6 +42,8 @@ def writer_identity_cards(bible):
         identity = card.pop("identity", "") if isinstance(card, dict) else ""
         if identity:
             card["identity_keywords"] = identity_keywords(identity, card.get("occupation", ""))
+        if card.get("gender") in ("男", "女"):
+            card["pronoun"] = "他" if card["gender"] == "男" else "她"
     return cards
 
 
@@ -135,6 +137,13 @@ def validate_cast_contract(bible):
             raise ValueError("Critical story bible: address and known address_target must be paired")
         labels = [part.strip() for part in re.split(r"[/／、，,；;]", address) if part.strip()]
         for label in labels:
+            formal_owners = {
+                owner.get("name")
+                for owner in cards
+                if label == owner.get("name") or label in (owner.get("aliases") or [])
+            }
+            if len(formal_owners) == 1 and target not in formal_owners:
+                raise ValueError("Critical story bible: formal name or alias must target its registered owner")
             derived = [name for name in names if derived_address(label, name)]
             if len(derived) == 1 and target == card.get("name") and derived[0] != target:
                 raise ValueError(

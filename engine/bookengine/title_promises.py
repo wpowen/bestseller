@@ -7,6 +7,7 @@ import re
 RESOLUTION_TYPES = {"被杀", "被擒", "被废", "当众击败后失势"}
 GROWTH_DIMENSIONS = {"力量", "身份", "关系"}
 _VIOLENT = re.compile(r"杀|复仇|报仇|击败|清算|镇压|审判")
+_PAYOFF_COMBAT = re.compile(r"杀|击败|击退|争夺|赢下|冲破|闯过|夺回|反制|围困|伏击|追杀")
 FIXED_STAGE_FIELDS = (
     "location",
     "antagonist",
@@ -16,6 +17,7 @@ FIXED_STAGE_FIELDS = (
     "promise_payoffs",
     "opponent_resolution",
     "ending_contract",
+    "combat_run_exemption",
 )
 PROMPT_STAGE_FIELDS = ("number", "start", "end", "stage", "cost", *FIXED_STAGE_FIELDS)
 
@@ -62,7 +64,7 @@ def extract_reader_promises(bible):
             candidates.extend((_text(value), "selling_point") for value in extras if _text(value))
     unique = []
     for text, source in candidates:
-        text = re.sub(r"\s+", "", text)[:40]
+        text = re.sub(r"\s+", "", text)
         if len(text) >= 2 and text not in {row[0] for row in unique}:
             unique.append((text, source))
         if len(unique) == 3:
@@ -80,7 +82,7 @@ def ensure_reader_promise_contract(bible, total):
     """Attach immutable planning grounds; model-authored schedules remain empty until validated."""
     current = deepcopy(bible) if isinstance(bible, dict) else {}
     current["reader_promises"] = extract_reader_promises(current)
-    current["reader_promise_contract_version"] = 1
+    current["reader_promise_contract_version"] = 2
     current["reader_promise_total"] = _integer(total)
     return current
 
@@ -98,10 +100,40 @@ def normalize_promise_references(bible):
             if reference in ids:
                 continue
             alias = re.sub(r"[\s_-]+", "", reference).casefold()
-            match = primary if alias in {"mainpromise", "primarypromise", "primary", "主承诺"} else None
+            match = primary if alias in {"p01", "p1", "mainpromise", "primarypromise", "primary", "主承诺"} else None
             match = match or next((row for row in ordered if _text(row.get("text")) in reference), None)
             if match:
                 payoff["promise_id"] = match["id"]
+    return current
+
+
+def enforce_promise_positions(bible, total):
+    """Project invalid primary-payoff chapter numbers into their stage windows."""
+    current = deepcopy(bible) if isinstance(bible, dict) else {}
+    if _integer(current.get("reader_promise_contract_version")) < 2:
+        return current
+    primary = _primary_id(current)
+    for stage in _rows(current.get("volumes")):
+        start, end = (_integer(stage.get(key)) for key in ("start", "end"))
+        if start <= 0 or end < start:
+            continue
+        midpoint = start + (end - start) // 2
+        resolution = stage.get("opponent_resolution") if isinstance(stage.get("opponent_resolution"), dict) else {}
+        resolution_chapter = _integer(resolution.get("chapter"))
+        for payoff in _rows(stage.get("promise_payoffs")):
+            if payoff.get("promise_id") != primary:
+                continue
+            chapter = _integer(payoff.get("chapter"))
+            if payoff.get("scale") == "小兑现" and not start <= chapter <= midpoint:
+                payoff["chapter"] = midpoint
+            elif payoff.get("scale") == "大兑现" and not end - 1 <= chapter <= end:
+                payoff["chapter"] = (
+                    resolution_chapter
+                    if end - 1 <= resolution_chapter <= end
+                    else end - 1
+                    if end == _integer(total) and end > start
+                    else end
+                )
     return current
 
 
@@ -126,9 +158,28 @@ def structure_promise_issues(bible, total):
         payoffs = _rows(stage.get("promise_payoffs"))
         if not payoffs or not any(row.get("promise_id") == primary for row in payoffs):
             issues.append(f"stage {number}: reader promise正面兑现缺失，必须安排主承诺")
+        if _integer(bible.get("reader_promise_contract_version")) >= 2:
+            primary_payoffs = [row for row in payoffs if row.get("promise_id") == primary]
+            chapters = [_integer(row.get("chapter")) for row in primary_payoffs]
+            scales = {row.get("scale") for row in primary_payoffs}
+            midpoint = start + (end - start) // 2
+            if len(primary_payoffs) < 2:
+                issues.append(f"stage {number}: 主承诺必须有中段小兑现和阶段末大兑现两个兑现点")
+            elif len(set(chapters)) < 2:
+                issues.append(f"stage {number}: 两个主承诺兑现点章号不同，不能挤在同一章")
+            if scales != {"小兑现", "大兑现"}:
+                issues.append(f"stage {number}: promise_payoffs须分别标小兑现与大兑现")
+            small = next((row for row in primary_payoffs if row.get("scale") == "小兑现"), {})
+            large = next((row for row in primary_payoffs if row.get("scale") == "大兑现"), {})
+            if small and not start <= _integer(small.get("chapter")) <= midpoint:
+                issues.append(f"stage {number}: 小兑现须安排在阶段中段")
+            if large and not end - 1 <= _integer(large.get("chapter")) <= end:
+                issues.append(f"stage {number}: 大兑现须安排在阶段末两章")
         for payoff in payoffs:
             chapter = _integer(payoff.get("chapter"))
             fields = ("promise_id", "action", "target", "result", "escalation")
+            if _integer(bible.get("reader_promise_contract_version")) >= 2:
+                fields += ("scale",)
             if not start <= chapter <= end or any(not _text(payoff.get(key)) for key in fields):
                 issues.append(f"stage {number}: reader promise payoff字段或章号无效")
         resolution = stage.get("opponent_resolution") if isinstance(stage.get("opponent_resolution"), dict) else {}
@@ -160,6 +211,12 @@ def structure_promise_issues(bible, total):
         issues.append("ending_contract: 末章须回应书名承诺，并让力量、身份或关系至少一项实质变化")
     if _text(ending.get("new_burden_or_mystery")):
         issues.append("ending_contract: 末章不能留下新污名或新谜团")
+    kill_text = _text(bible.get("title")) + "".join(_text(value) for value in bible.get("selling_points", []))
+    if "杀" in kill_text and not any(
+        isinstance(stage.get("opponent_resolution"), dict) and stage["opponent_resolution"].get("type") == "被杀"
+        for stage in stages
+    ):
+        issues.append("title promise: 书名或卖点含杀，至少一个阶段反派被杀")
     return issues
 
 
@@ -179,8 +236,11 @@ def planning_promise_issues(bible, batch):
             if number not in mapped:
                 continue
             row = mapped[number]
+            fields = ("action", "target", "result", "escalation")
+            if _integer(bible.get("reader_promise_contract_version")) >= 2:
+                fields += ("scale",)
             valid = row.get("reader_promise_id") == promise_id and _same_fields(
-                row.get("promise_payoff"), payoff, ("action", "target", "result", "escalation")
+                row.get("promise_payoff"), payoff, fields
             )
             if not valid:
                 issues.append(
@@ -221,6 +281,9 @@ def planning_promise_issues(bible, batch):
 def bind_title_contracts(bible, batch):
     """Project validated stage schedules onto exact chapters after bounded rewrite fallback."""
     current = deepcopy(batch)
+    for row in current:
+        for key in ("reader_promise_id", "promise_payoff", "opponent_resolution"):
+            row.pop(key, None)
     mapped = {_integer(row.get("number")): row for row in current if isinstance(row, dict)}
     for stage in _rows(bible.get("volumes")):
         for payoff in _rows(stage.get("promise_payoffs")):
@@ -228,11 +291,19 @@ def bind_title_contracts(bible, batch):
             if row is None:
                 continue
             row["reader_promise_id"] = payoff.get("promise_id")
-            row["promise_payoff"] = {key: payoff.get(key) for key in ("action", "target", "result", "escalation")}
+            row["promise_payoff"] = {
+                key: payoff.get(key) for key in ("action", "target", "result", "escalation", "scale")
+            }
+            payoff_text = "".join(_text(payoff.get(key)) for key in ("action", "result"))
+            if _PAYOFF_COMBAT.search(payoff_text):
+                row.update(type="对抗", rhythm_type="对抗")
+                row.pop("relationship_change", None)
         resolution = stage.get("opponent_resolution") if isinstance(stage.get("opponent_resolution"), dict) else {}
         row = mapped.get(_integer(resolution.get("chapter")))
         if row is not None:
             row["opponent_resolution"] = {key: resolution.get(key) for key in ("name", "type", "outcome")}
+            row.update(type="对抗", rhythm_type="对抗")
+            row.pop("relationship_change", None)
     total = _integer(
         bible.get("reader_promise_total"),
         max([_integer(stage.get("end")) for stage in _rows(bible.get("volumes"))] or [0]),
@@ -300,6 +371,37 @@ def title_promise_checkup(bible, chapters=()):
     )
     from .story_payoffs import story_payoff_checkup
 
+    density = []
+    normalized = normalize_promise_references(bible)
+    primary = _primary_id(normalized)
+    for stage in _rows(normalized.get("volumes")):
+        payoffs = [row for row in _rows(stage.get("promise_payoffs")) if row.get("promise_id") == primary]
+        payoff_chapters = [_integer(row.get("chapter")) for row in payoffs]
+        scales = {row.get("scale") for row in payoffs}
+        start, end = _integer(stage.get("start")), _integer(stage.get("end"))
+        midpoint = start + (end - start) // 2
+        small = next((row for row in payoffs if row.get("scale") == "小兑现"), {})
+        large = next((row for row in payoffs if row.get("scale") == "大兑现"), {})
+        if len(payoffs) < 2 or len(set(payoff_chapters)) < 2:
+            density_status = "missing_two_points"
+        elif scales != {"小兑现", "大兑现"}:
+            density_status = "invalid_scales"
+        elif (
+            not start <= _integer(small.get("chapter")) <= midpoint
+            or not end - 1 <= _integer(large.get("chapter")) <= end
+        ):
+            density_status = "invalid_positions"
+        else:
+            density_status = "met"
+        density.append(
+            {
+                "stage": stage.get("number"),
+                "count": len(payoffs),
+                "chapters": payoff_chapters,
+                "status": density_status,
+            }
+        )
+    kill_required = "杀" in (_text(bible.get("title")) + "".join(_text(v) for v in bible.get("selling_points", [])))
     return {
         "status": "planned" if complete else "Unknown",
         "basis": "saved_planning_fields_only; reference_not_reader_acceptance",
@@ -307,5 +409,8 @@ def title_promise_checkup(bible, chapters=()):
         "scheduled_payoffs": scheduled,
         "opponent_resolutions": resolutions,
         "ending_contract": ending or "Unknown",
+        "payoff_density": density,
+        "kill_required": kill_required,
+        "kill_scheduled": any(row["resolution_type"] == "被杀" for row in resolutions),
         "prose_contracts": story_payoff_checkup(bible, chapters),
     }

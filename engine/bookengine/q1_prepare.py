@@ -1,6 +1,7 @@
 """Q1 immutable book preparation and shared planning request adapter."""
 
 from pathlib import Path
+from copy import deepcopy
 import json
 import re
 import yaml
@@ -19,6 +20,32 @@ from .opening_promises import opening_contract
 from .cost_design import has_cost_source, repair_costs
 from .core_ability import repair_development, core_source, RULE as CORE_RULE
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
+
+
+def bind_generated_strength_ladder(bible, canon):
+    """Bind a new book's model-authored realm names to a shape-only canon template."""
+    result = deepcopy(canon)
+    ladder = result.get("ladder") if isinstance(result.get("ladder"), dict) else {}
+    spec = ladder.get("strength_generation") if isinstance(ladder.get("strength_generation"), dict) else None
+    if not spec:
+        return result
+    levels = bible.get("world", {}).get("levels", []) if isinstance(bible.get("world"), dict) else []
+    names = [row.get("name") if isinstance(row, dict) else row for row in levels if isinstance(row, (str, dict))]
+    names = [name.strip() for name in names if isinstance(name, str) and name.strip()]
+    count = integer(spec.get("count"))
+    minimum = integer(spec.get("name_min_chars"), 2)
+    maximum = integer(spec.get("name_max_chars"), 4)
+    ordinal = re.compile(r"(?:第)?[一二三四五六七八九十百\d]+(?:阶|级|层|境)|(?:初|中|高|终)阶")
+    if (
+        count <= 0
+        or len(names) != count
+        or len(set(names)) != count
+        or any(not minimum <= len(name) <= maximum or ordinal.fullmatch(name) for name in names)
+    ):
+        raise ValueError(f"本书成长阶梯须生成{count}个不重复的{minimum}—{maximum}字专名，不用数字序号或占位名")
+    ladder["strength"] = names
+    result["ladder"] = ladder
+    return result
 
 
 def _library_names(out):
@@ -269,7 +296,7 @@ def prepare(client, book, out, assets, design=False):
             else ("用户要求", vars(book)),
             ("书籍篇幅要求", dict(chapters=book.chapters, words_per_chapter=book.words_per_chapter)),
             ("本书固定阶段边界，threads.volume是阶段号", stages or "已有旧书，保留原25章边界"),
-            ("固定成长阶梯", profile["canon"]["ladder"]),
+            ("成长阶梯：非空沿用；strength为空则按generation为本书生成world.levels", profile["canon"]["ladder"]),
             ("题材", book.prompt_pack),
             ("选定高概念", selected),
             ("读者承诺", source.get("writing_profile_overrides", {})),
@@ -288,6 +315,7 @@ def prepare(client, book, out, assets, design=False):
             bible = defaults(raw.get("bible", raw.get("story_bible", raw)), DATA["schemas"]["prepare"]["bible"])
             try:
                 validate_bible(bible)
+                bind_generated_strength_ladder(bible, profile["canon"])
                 if card:
                     drift = differences(bible, card, locked)
                     alignment.append(dict(stage="plan-q1-prepare", regeneration=redo, differences=drift))
@@ -314,6 +342,8 @@ def prepare(client, book, out, assets, design=False):
             )
         else:
             bible, new_threads = defaults(values[0], DATA["schemas"]["prepare"]["bible"]), raw.get("threads", {})
+        if values[0] is None:
+            profile["canon"] = bind_generated_strength_ladder(bible, profile["canon"])
         bible["canon"] = profile["canon"]
         bible["initial_dashboard"].update(
             strength=bible["initial_dashboard"]["strength"]

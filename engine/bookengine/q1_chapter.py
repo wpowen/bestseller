@@ -19,6 +19,10 @@ from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_st
 from .opening_promises import repair_opening_promises, previous_promise_context
 from .planning_drift import observe_plan_alignment
 from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_payoff_instruction
+from .solution_sequences import repair_solution_sequence, writer_solution_sequence_context
+from .first_appearances import repair_first_appearances, writer_first_appearance_instruction
+from .explanation_density import repair_explanation_density
+from .relationship_rhythm import repair_relationship_rhythm
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -31,35 +35,21 @@ from .cast_consistency import repair_cast_consistency
 from .text_hygiene import repair_text, require_publishable
 from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
-from .rhythm_writer import writer_rhythm_instruction
+from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
 from .model_notes import repair_model_notes
+from .repair_placement import place_tail_bounded_patch
 from tools.book_checkup import clean_prose
 
 REVISION = "growth-payoff-3"
 
 
 def supplement(text, value):
-    spans = _paragraph_spans(text)
-    idx = value.get("after")
-    patch = value.get("text")
-    if (
-        type(idx) is int
-        and 1 <= idx <= len(spans)
-        and isinstance(patch, str)
-        and 0 < len(patch.strip()) <= 400
-        and "\n" not in patch
-    ):
-        a, b = spans[idx - 1]
-        return clean(
-            text[:a] + patch.strip() + text[b:]
-            if value.get("replace") is True
-            else text[:b] + "\n\n" + patch.strip() + text[b:]
-        ), True
-    return text, False
+    changed, placement = place_tail_bounded_patch(text, value, max_chars=400)
+    return (clean(changed), True) if placement["status"] == "placed" else (text, False)
 
 
 def amend(text, raw, bible, state, outline):
@@ -140,17 +130,23 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
+    sections.insert(
+        0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(writer_main_scene_contract(outline)))
+    )
     sections = with_completed_action_context(sections, out, idx)
     sections.extend(speech_context(bible, idx))
+    sections.extend(writer_solution_sequence_context(out, idx, bible))
     if book.style_reference:
         sections.append(("授权参考的统计风格特征", pack(reference_features(book.style_reference))))
     cleaning = dict(draft={})
     instruction = (
-        data[style]
+        writer_rhythm_instruction(outline)
+        + "\n"
+        + data[style]
         + f"\n目标{target}汉字，合格{low}—{high}，本章正文{2000 if target == 2200 else low}—{2400 if target == 2200 else high}汉字，只写两场戏，各约{round(target * 0.46)}—{round(target * 0.5)}字，用空行转场，不加小标题、分隔线或emoji；最多新增1处伤病/代价。到本章情节完成立即收笔，直接输出正文。"
     )
-    instruction += writer_rhythm_instruction(outline)
     instruction += writer_payoff_instruction(outline)
+    instruction += writer_first_appearance_instruction(out, idx, bible, outline)
 
     def write_draft(suffix):
         saved = client.prefix
@@ -268,6 +264,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, exit_tail_repair = guarded(repair_exit_tail)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, notes["first_appearances"] = guarded(repair_first_appearances)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
+    )
+    text, raw, failed, notes["solution_sequence"] = guarded(repair_solution_sequence)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
+    )
     text, raw, failed, story_payoffs = guarded(repair_story_payoffs)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -285,6 +287,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["relationship_rhythm"] = guarded(repair_relationship_rhythm)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, cleaning["explanation_density"] = guarded(repair_explanation_density)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["final_closure"] = guarded(repair_final_closure)(

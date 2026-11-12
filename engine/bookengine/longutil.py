@@ -15,6 +15,31 @@ class Recovered(dict):
     recovered_output = True
 
 
+def normalize_sections(sections):
+    """Serialize structured section bodies before the text-only context packer."""
+    if isinstance(sections, dict):
+        sections = sections.items()
+    try:
+        supplied = iter(sections)
+    except TypeError:
+        return []
+    result = []
+    for section in supplied:
+        if not isinstance(section, (list, tuple)) or len(section) != 2:
+            continue
+        heading, body = section
+        if not isinstance(heading, str):
+            continue
+        if not isinstance(body, str):
+            try:
+                body = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+            except (TypeError, ValueError):
+                continue
+        if body.strip():
+            result.append((heading, body))
+    return result
+
+
 def recover_fields(raw):
     decoder = json.JSONDecoder()
     result = {}
@@ -83,7 +108,7 @@ def loose_object(raw):
 
 def ask(client, stage, instruction, sections, schema=None, input_limit=30000, **kwargs):
     overhead = len(client.prefix) + len(SYSTEM) + len(instruction) + len(schema or "") + 350
-    context = long_context(sections, max(0, min(30000, input_limit) - overhead))
+    context = long_context(normalize_sections(sections), max(0, min(30000, input_limit) - overhead))
     return client.stage(stage, instruction + "\n" + context, schema, parser=loose_object, **kwargs)
 
 

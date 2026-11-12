@@ -10,12 +10,16 @@ class MinimalBTestsPart1(MinimalBTests):
             type="情感",
             rhythm_type="情感",
             rhythm_focus="说清隐瞒并重新约定分工",
+            hook_type="choice",
+            hook="阿宁把钥匙推回桌边，等她决定是否坦白。",
             scenes=[
                 {
                     "characters": ["阿宁"],
                     "goal": "坦白此前隐瞒",
                     "obstacle": "同伴不再信任她",
                     "choice": "交出路线决定权",
+                    "action": "当面承认隐瞒",
+                    "result": "阿宁收回离开的决定",
                 }
             ],
         )
@@ -27,6 +31,9 @@ class MinimalBTestsPart1(MinimalBTests):
         assert "本章章型：情感" in prompt
         assert "本章不安排正面打斗" in prompt
         assert "对手只能作为消息或远处压力" in prompt
+        assert "阿宁把钥匙推回桌边，等她决定是否坦白。" in prompt
+        assert "当面承认隐瞒" in prompt and "阿宁收回离开的决定" in prompt
+        assert prompt.index("本章主场景硬合同") < prompt.index(self.data["b"][:20])
         assert all(term not in prompt for term in ("原章", "程序判定", "重规划"))
 
     def test_writer_has_four_blocks_without_style_or_prefix_leak(self):
@@ -39,11 +46,19 @@ class MinimalBTestsPart1(MinimalBTests):
                 prompt = client.calls[0]["prompt"]
                 self.assertEqual(
                     re.findall(r"^## (.+)$", prompt, re.M),
-                    ["本章章纲", "出场人物档案、口吻卡与当前状态", "上章结尾", "本章推进线"],
+                    [
+                        "本章主场景硬合同，章型、两场行动与末钩必须逐项落实",
+                        "本章章纲",
+                        "出场人物档案、口吻卡与当前状态",
+                        "上章结尾",
+                        "本章推进线",
+                    ],
                 )
                 self.assertIn("目标200汉字", prompt.split("## ", 1)[0])
-                for required in ("只写两场戏", "说话直接，先问再答。", self.previous, "阿宁在院里等她，要求一起回家"):
+                for required in ("只写两场戏", "说话直接，先问再答。", "阿宁在院里等她，要求一起回家"):
                     self.assertIn(required, prompt)
+                self.assertNotIn(self.previous, prompt)
+                self.assertIn("不提供上一章原句", prompt)
                 for forbidden in (
                     "PREFIX_SENTINEL",
                     "BIBLE_SENTINEL",
@@ -101,7 +116,9 @@ class MinimalBTestsPart1(MinimalBTests):
         hero = dict(
             self.bible["characters"][0], desire="主动欲望" * 180, fear="具体恐惧" * 180, gender="女", address="阿宁"
         )
-        support = [dict(name=f"配角{i}", role="support", voice="说话直接", desire="各自目标") for i in range(3)]
+        support = [
+            dict(name=f"配角{i}", role="support", voice="说话直接", desire="各自目标", gender="女") for i in range(3)
+        ]
         bible = dict(self.bible, characters=[*support, hero])
         dashboard = dict(
             strength=self.bible["canon"]["ladder"]["strength"][0],
@@ -122,6 +139,7 @@ class MinimalBTestsPart1(MinimalBTests):
         self.assertEqual(dropped[0], "阿宁.dashboard:compressed")
         self.assertLess(dropped.index("阿宁.realm_ability"), dropped.index("配角2.current"))
         self.assertTrue(all(card["voice"] == "说话直接" for card in cards[1:]))
+        self.assertTrue(all(card["gender"] == "女" and card["pronoun"] == "她" for card in cards[1:]))
         self.assertEqual((bible, state, chapter), before)
         fallback = dict(
             q1.context(
@@ -192,7 +210,7 @@ class MinimalBTestsPart1(MinimalBTests):
                     patch_value.update(text=draft.split("\n\n")[0], replace=True)
                 first = self.extraction(patch=patch_value, state={"characters": {"阿宁": {"location": "初提地点"}}})
                 payoff = (
-                    dict(type=kind, fulfilled=True, pid=2)
+                    dict(type=kind, fulfilled=True, pid=3)
                     if evidence == "pid"
                     else dict(type=kind, fulfilled=True, quote=addition)
                 )
@@ -211,7 +229,7 @@ class MinimalBTestsPart1(MinimalBTests):
                 self.assert_calls(
                     client, ["r2-ch1-draft", "r2-ch1-finish"] + (["r2-ch1-final-state"] if changed else [])
                 )
-                expected = draft.replace("\n\n", "\n\n" + addition + "\n\n", 1) if changed else draft
+                expected = draft + "\n\n" + addition if changed else draft
                 self.assert_saved(row, expected, 1)
                 self.assertEqual((self.out / "chapter-001.r2.draft.md").read_text(), draft)
                 self.assertEqual(row["outside_calls"], 2 + int(changed))

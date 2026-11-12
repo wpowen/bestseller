@@ -29,14 +29,40 @@ def chapter(n, kind="对抗"):
         "日常": ("在驿站休整疗伤", "吃饭后整理行装再赶路"),
     }
     goal, choice = intentions.get(kind, ("击败守卫", "拔剑击退守卫"))
-    return dict(
+    scenes = [dict(where="河岸", characters=["主角", "同伴"], goal=goal, choice=choice)]
+    if kind in ("情感", "关系"):
+        scenes = [
+            dict(
+                where="河岸",
+                characters=["主角", "同伴"],
+                goal="说清此前隐瞒",
+                action="主角坦白自己隐瞒了伤势",
+                choice="同伴接受坦白但保留拒绝同行的权利",
+            ),
+            dict(
+                where="避风处",
+                characters=["主角", "同伴"],
+                goal="重新约定边界",
+                action="同伴说出不愿再被蒙在鼓里的顾虑",
+                choice="主角承诺以后先说明代价再由对方选择",
+            ),
+        ]
+    row = dict(
         number=n,
         title=chr(0x4E00 + n),
         type=kind,
         conflict_type=str(n),
         opening_conflict="守卫阻拦主角取回行李",
-        scenes=[dict(where="河岸", characters=["主角", "同伴"], goal=goal, choice=choice)],
+        scenes=scenes,
     )
+    if kind in ("情感", "关系"):
+        row["relationship_change"] = {
+            "people": ["主角", "同伴"],
+            "cause": "主角坦白此前隐瞒",
+            "before": "两人互不信任",
+            "after": "两人重新约定分工",
+        }
+    return row
 
 
 class OfflineClient:
@@ -102,7 +128,7 @@ def test_existing_emotional_or_relationship_main_scenes_satisfy_stage_contract()
         assert (history, current) == before
 
 
-def test_exhausted_model_repair_keeps_original_after_two_attempts_and_records(tmp_path):
+def test_exhausted_model_repair_keeps_original_after_one_attempt_and_records(tmp_path):
     module, design = rhythm(), bible((4,))
     batch = [chapter(n) for n in range(1, 5)]
     batch[-1].update(transition="沿河岸走到旧栈桥", core_required=True, core_application="借影复制开锁动作使铁门打开")
@@ -113,7 +139,7 @@ def test_exhausted_model_repair_keeps_original_after_two_attempts_and_records(tm
         return dict(chapters=[dict(r, type="情感") for r in current if r["number"] in targets])
 
     result = diversity.repair_batch(tmp_path, "001-004", [], batch, relabel, bible=design)
-    assert calls == [1, 2]
+    assert calls == [1]
     assert result == before
     report = json.loads((tmp_path / "outline-diversity/001-004.json").read_text())
     assert report["rhythm_contract_version"] == module.VERSION
@@ -184,7 +210,8 @@ def test_normalization_filled_types_are_checked_and_restart_reuses_result_withou
     args = ({}, {}, DATA["profile"], dict(number=1, end=25))
     result = q1_plan.outlines(client, *args, 1, 10, {}, [], [], [])
     assert not module.rhythm_issues({}, [], result)
-    report = json.loads((tmp_path / "outline-diversity/001-010.json").read_text())
+    assert [row["number"] for row in result] == [1, 2, 3, 4, 5]
+    report = json.loads((tmp_path / "outline-diversity/001-005.json").read_text())
     assert not report["rhythm_repairs"]
     assert not report["rhythm_issues_after"]
     resumed = OfflineClient(tmp_path)
@@ -194,7 +221,6 @@ def test_normalization_filled_types_are_checked_and_restart_reuses_result_withou
 
 def test_relationship_alias_survives_normalization_and_retains_real_scene_intent(tmp_path):
     design, row = bible((1,)), chapter(1, "关系")
-    row["scenes"] = [dict(goal="向同伴坦白隐瞒并恢复信任", choice="同伴拒绝原来的分工，双方重新约定边界")]
     client = OfflineClient(tmp_path, [dict(chapters=[row])])
     result = plan(client, design, 1, 1)
     assert result[0]["type"] == "情感"
@@ -231,7 +257,7 @@ def test_completed_chapter_matching_saved_plan_does_not_retry_exhausted_future_i
     assert client.calls == []
 
 
-def test_completed_chapter_type_drift_replans_the_affected_future_suffix(tmp_path):
+def test_completed_chapter_type_drift_is_diagnostic_and_does_not_replan(tmp_path):
     module, design = rhythm(), bible((5,))
     batch = [chapter(1), chapter(2), chapter(3, "谋划"), chapter(4, "情感"), chapter(5)]
     save(
@@ -248,19 +274,17 @@ def test_completed_chapter_type_drift_replans_the_affected_future_suffix(tmp_pat
     )
     save(tmp_path / "writing_outlines/001.json", batch[0])
     save(tmp_path / "chapters/001.json", dict(batch[0], type="谋划", fact_source="final_body"))
-    replacement = chapter(2, "谋划")
-    client = OfflineClient(tmp_path, [dict(chapters=[replacement])])
+    client = OfflineClient(tmp_path)
 
     result = plan(client, design, 2, 5)
 
-    assert client.calls
-    assert result[0]["number"] == 2 and result[0]["type"] == "谋划"
-    assert [(row["number"], row["title"], row["type"]) for row in result[1:]] == [
-        (row["number"], row["title"], row["type"]) for row in batch[2:]
+    assert not client.calls
+    assert [(row["number"], row["title"], row["type"]) for row in result] == [
+        (row["number"], row["title"], row["type"]) for row in batch[1:]
     ]
 
 
-def test_observed_drift_issue_keeps_semantic_observed_scalar_for_diversity_fallback(tmp_path):
+def test_observed_type_and_hook_drift_do_not_invalidate_cached_plan(tmp_path):
     from bookengine.planning_drift import cache_replan_issues
 
     batch = [chapter(1), chapter(2, "谋划")]
@@ -279,13 +303,7 @@ def test_observed_drift_issue_keeps_semantic_observed_scalar_for_diversity_fallb
     )
     cached = dict(path=str(report_path), chapters=[batch[1]])
 
-    issue = next(
-        row for row in cache_replan_issues({}, [observed], cached) if row["kind"] == "rhythm_observed_plan_drift"
-    )
-
-    assert issue["observed"] == "谋划"
-    assert issue["observed_mismatches"] == observed["plan_alignment"]["mismatches"]
-    assert hash(issue["observed"])
+    assert cache_replan_issues({}, [observed], cached) == []
 
 
 def test_plan_alignment_uses_explicit_observations_and_keeps_missing_events_unknown():

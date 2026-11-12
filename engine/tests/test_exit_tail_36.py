@@ -33,7 +33,7 @@ def test_exit_plus_one_cast_is_checked_without_stage_metadata():
 
 
 @pytest.mark.parametrize("version", [1, 2])
-def test_future_cached_boundary_cast_is_superseded_without_overwriting_history(tmp_path, monkeypatch, version):
+def test_future_cached_boundary_cast_is_not_paid_replanned_for_label_scope(tmp_path, monkeypatch, version):
     folder = tmp_path / "outline-diversity"
     folder.mkdir()
     path = folder / "011-011.json"
@@ -55,8 +55,8 @@ def test_future_cached_boundary_cast_is_superseded_without_overwriting_history(t
 
     monkeypatch.setattr(q1_plan, "_ask", ask)
     result = q1_plan.outlines(Client(), bible, {}, {}, dict(number=2, start=11, end=20), 11, 11, {}, [], [], [])
-    assert requested
-    assert result[0]["characters"] == ["何晏"]
+    assert not requested
+    assert result[0]["characters"] == ["石头领"]
     assert path.read_bytes() == before
 
 

@@ -3,12 +3,29 @@
 import json
 from pathlib import Path
 
-from .chapter_rhythm import rhythm_issues
+from .chapter_rhythm import VERSION as RHYTHM_VERSION, normalize_chapter_type, rhythm_issues
 from .core_ability import ability_issues
-from .ability_methods import primary_target
 from .q1_schema import integer, rows
-from .solution_substance import chapter_nouns, solution_issues
+from .solution_substance import solution_issues
+from .solution_sequences import solution_plot_history, solution_sequence_issues
+from .stage_transition import planning_transition_issues
 from .structure_planning import opponent_presence_issues
+from .planning_policy import hard_replan_issues
+
+
+def cached_contract_stale(bible, prior, cached, structure_version):
+    """Return whether an old cache violates a current hard planning contract."""
+    if not cached:
+        return False
+    chapters = cached.get("chapters", [])
+    rhythm_stale = cached.get("rhythm_contract_version", 0) < RHYTHM_VERSION and rhythm_issues(bible, prior, chapters)
+    structural = cached.get("structure_checks_version", 0) < structure_version and hard_replan_issues(
+        planning_transition_issues(bible, chapters)
+        + ability_issues(bible, prior, chapters)
+        + solution_issues(bible, prior, chapters)
+        + solution_sequence_issues(bible, prior, chapters)
+    )
+    return bool(rhythm_stale or structural)
 
 
 def observe_plan_alignment(outline, observed):
@@ -16,6 +33,8 @@ def observe_plan_alignment(outline, observed):
     checks, mismatches, unknown = {}, [], []
     for field in ("type", "hook_type", "structure"):
         expected, actual = outline.get(field), observed.get(field)
+        if field == "type":
+            expected, actual = normalize_chapter_type(expected), normalize_chapter_type(actual)
         if expected in (None, ""):
             continue
         if actual in (None, ""):
@@ -110,15 +129,23 @@ def cache_replan_issues(bible, prior, cached):
         return []
     report = _report(cached)
     chapters = cached.get("chapters", [])
-    plot = solution_issues(bible, prior, chapters) + ability_issues(bible, prior, chapters)
-    plot_history = [
-        dict(number=row["number"], nouns=chapter_nouns(row, bible), target=primary_target(row)) for row in prior
-    ]
+    plot = (
+        solution_issues(bible, prior, chapters)
+        + solution_sequence_issues(bible, prior, chapters)
+        + ability_issues(bible, prior, chapters)
+    )
+    plot_history = solution_plot_history(bible, prior)
     rhythm = rhythm_issues(bible, prior, chapters)
     opponents = opponent_presence_issues(bible, chapters)
-    return [
-        *_observed_drift(cached, prior, report),
-        *(_new_issues(plot, report.get("plot_issues_after", [])) if report.get("plot_history") != plot_history else []),
-        *_new_issues(rhythm, report.get("rhythm_issues_after", [])),
-        *_new_issues(opponents, report.get("opponent_issues_after", [])),
-    ]
+    return hard_replan_issues(
+        [
+            # Body type/hook/structure drift remains an alignment diagnostic. It must not reopen a paid plan window.
+            *(
+                _new_issues(plot, report.get("plot_issues_after", []))
+                if report.get("plot_history") != plot_history
+                else []
+            ),
+            *_new_issues(rhythm, report.get("rhythm_issues_after", [])),
+            *_new_issues(opponents, report.get("opponent_issues_after", [])),
+        ]
+    )

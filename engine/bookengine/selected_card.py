@@ -98,7 +98,13 @@ def enforce(bible, threads, card, locked, drift=()):
     hero["identity"] = locked["identity"]
     if locked["identity"]:
         hero["occupation"] = locked["identity"]
-    bible.update(title=card["title"], premise=card["premise"], summary=card["premise"], selected_card=card)
+    bible.update(
+        title=card["title"],
+        premise=card["premise"],
+        summary=card["premise"],
+        selected_card=card,
+        selected_card_rule_points=list(dict.fromkeys(locked.get("keywords", {}).get("rule", []))),
+    )
     for key in ("opening", "hook", "axes"):
         if key in card:
             bible[key] = card[key]
@@ -106,19 +112,13 @@ def enforce(bible, threads, card, locked, drift=()):
         # Failed designs must not keep a second mechanism or location beside the fixed fields.
         bible["world"] = dict(levels=bible["world"].get("levels", []), rules=[card["premise"]])
         bible["power"] = {}
-        hero.update(desire=card["premise"], goal=card["premise"], address=hero["name"])
-        for volume in bible.get("volumes", []):
-            for key in list(volume):
-                if isinstance(volume[key], str):
-                    volume[key] = card["premise"]
+        hero.update(desire=card["premise"], goal=card["premise"])
         for line in threads.get("threads", []):
             for beat in line.get("beats", []):
                 beat["description"] = card.get("engine") or card["premise"]
     bible["world"]["setting"] = locked["setting"]
     rule = card.get("golden_finger_rule", "无")
     bible["power"].update(object=locked["object"], rule=rule)
-    if drift:
-        bible["power"].update(ability=rule, cost=rule, limit=rule)
     return bible, threads
 
 

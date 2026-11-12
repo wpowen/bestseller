@@ -9,7 +9,7 @@ from tools.book_checkup import check_book
 from test_retired_opponents_35 import design
 
 
-def test_planning_repairs_missing_transition_and_context_retains_it(tmp_path, monkeypatch):
+def test_missing_transition_is_reported_without_paid_replan(tmp_path, monkeypatch):
     requests = []
 
     def ask(client, kind, key, sections, redo=False):
@@ -26,10 +26,9 @@ def test_planning_repairs_missing_transition_and_context_retains_it(tmp_path, mo
 
     bible = design()
     result = q1_plan.outlines(Client(), bible, {}, {}, bible["volumes"][1], 11, 11, {}, [], [], [])
-    assert len(requests) == 2
-    assert "transition" in result[0]
-    sections = context(bible, {}, {"number": 2}, result[0], {}, [], [], "")
-    assert result[0]["transition"] in json.dumps(sections, ensure_ascii=False)
+    assert len(requests) == 1
+    report = json.loads(next((tmp_path / "outline-diversity").glob("*.json")).read_text())
+    assert any(issue["kind"] == "missing_stage_transition_plan" for issue in report["issues"])
     assert "已离开" in json.dumps(requests, ensure_ascii=False)
 
 
@@ -44,7 +43,7 @@ def test_checkup_reports_stage_jump_without_grounded_metadata(tmp_path):
 
 
 @pytest.mark.parametrize("version", [0, 1])
-def test_cached_future_window_cannot_bypass_new_stage_constraints(tmp_path, monkeypatch, version):
+def test_cached_future_stage_warning_does_not_trigger_paid_replan(tmp_path, monkeypatch, version):
     folder = tmp_path / "outline-diversity"
     folder.mkdir()
     (folder / "011-011.json").write_text(
@@ -69,6 +68,5 @@ def test_cached_future_window_cannot_bypass_new_stage_constraints(tmp_path, monk
     monkeypatch.setattr(q1_plan, "_ask", ask)
     before = (folder / "011-011.json").read_bytes()
     actual = q1_plan.outlines(Client(), design(), {}, {}, design()["volumes"][1], 11, 11, {}, [], [], [])
-    assert actual[0]["conflict"] == "何晏拦船"
-    assert actual[0]["transition"]
+    assert actual[0]["conflict"] == "石远封城"
     assert (folder / "011-011.json").read_bytes() == before

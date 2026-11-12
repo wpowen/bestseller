@@ -27,7 +27,7 @@ def fake_extract(client, name, text, state, bible, outline, rows, final=False):
     return raw, False, 0
 
 
-def test_missing_due_payoff_gets_one_grounded_patch_without_changing_tail():
+def test_missing_due_payoff_is_appended_after_all_existing_events():
     original = "顾冬岚推开石门。\n\n门外的追兵已经举刀。"
     client = FakeClient([{"patch": {"after": 1, "text": "顾冬岚夺回三枚灵石。"}}])
     changed, raw, failed, note = repair_after_draft(
@@ -51,12 +51,57 @@ def test_missing_due_payoff_gets_one_grounded_patch_without_changing_tail():
         fake_ask,
     )
     assert "顾冬岚夺回三枚灵石" in changed
-    assert changed.endswith("门外的追兵已经举刀。")
+    assert changed.index("门外的追兵已经举刀。") < changed.index("顾冬岚夺回三枚灵石")
+    assert changed.endswith("顾冬岚夺回三枚灵石。")
     assert note["payoff"]["status"] == "repaired"
     assert note["hook"]["status"] == "kept"
     assert raw["payoff"]["fulfilled"] is True
     assert client.names == ["r2-ch1-momentum-payoff-repair"]
     assert not failed
+
+
+def test_due_payoff_patch_is_relocated_to_final_three_paragraphs_before_recheck():
+    paragraphs = [f"第{number}段仍在推进争执。" for number in range(1, 9)]
+    original = "\n\n".join(paragraphs)
+    client = FakeClient([{"patch": {"after": 1, "text": "顾冬岚夺回三枚灵石。"}}])
+
+    changed, raw, failed, note = repair_after_draft(
+        client,
+        "r2-ch4",
+        original,
+        {"state": {}, "payoff": {}},
+        False,
+        {},
+        {},
+        {
+            "number": 4,
+            "hook": "迫近危险：追兵举刀",
+            "ending_type": "平收",
+            "payoff_due": True,
+            "payoff_type": "得到回报",
+        },
+        {},
+        [],
+        fake_extract,
+        fake_ask,
+    )
+
+    assert changed.index("第8段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石")
+    assert note["payoff"]["requested_after"] == 1
+    assert note["payoff"]["effective_after"] == 8
+    assert note["payoff"]["placement"] == "relocated_to_tail"
+    assert not failed
+
+
+def test_finish_extraction_patch_uses_the_same_tail_placement_guard():
+    from bookengine.q1_chapter import supplement
+
+    original = "\n\n".join(f"第{number}段。" for number in range(1, 9))
+
+    changed, accepted = supplement(original, {"after": 1, "text": "兑现结果。"})
+
+    assert accepted is True
+    assert changed.index("第8段。") < changed.index("兑现结果。")
 
 
 def test_repair_does_nothing_when_hook_and_payoff_are_already_grounded():

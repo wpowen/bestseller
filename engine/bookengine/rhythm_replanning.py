@@ -3,9 +3,14 @@
 from copy import deepcopy
 import json
 
-from .chapter_rhythm import RULE, VERSION, chapter_type
+from .chapter_rhythm import RULE, VERSION, chapter_type, normalize_chapter_type
 from .q1_schema import DATA, integer, model_value, rows
 from .text import pack
+
+RELATIONSHIP_REWRITE_RULE = (
+    "action只写两人之间的坦白、试探、拒绝、让步或和解；choice另写对方的当场选择，不得复制action。"
+    "追杀、闯关、受控搏斗与正面打斗只能是一句背景压力。"
+)
 
 
 def _outline_summary(row):
@@ -19,6 +24,7 @@ def _outline_summary(row):
         "conflict",
         "scenes",
         "hook",
+        "relationship_change",
     )
     result = {field: deepcopy(row[field]) for field in fields if row.get(field) not in (None, "", [])}
     result["summary"] = row.get("summary") or row.get("opening_conflict") or row.get("conflict") or ""
@@ -47,7 +53,15 @@ def replan_context(history, batch, targets, observed=(), required=(), *, stage_s
                 after_summary=_outline_summary(combined.get(number + 1, {})).get("summary", ""),
                 must_preserve={
                     field: deepcopy(combined.get(number, {}).get(field))
-                    for field in ("threads", "required_event", "payoff", "payoff_type", "hook", "ending_content")
+                    for field in (
+                        "threads",
+                        "required_event",
+                        "payoff",
+                        "payoff_type",
+                        "hook",
+                        "ending_content",
+                        "relationship_change",
+                    )
                     if combined.get(number, {}).get(field) not in (None, "", [])
                 },
             )
@@ -72,7 +86,7 @@ def model_review_issues(batch, review):
     for row in rows(review):
         number = integer(row.get("number"))
         expected = planned.get(number, "")
-        observed = "情感" if row.get("content_type") == "关系" else row.get("content_type", "")
+        observed = normalize_chapter_type(row.get("content_type", ""))
         if not expected or row.get("status") != "mismatch" or observed == expected:
             continue
         issues.append(

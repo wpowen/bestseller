@@ -362,6 +362,9 @@ def check_book(book, *, source="final"):
     from bookengine.endings import final_closure_checkup
     from bookengine.quote_text import quote_checkup
     from bookengine.dialogue_hygiene import dialogue_checkup
+    from bookengine.solution_sequences import solution_sequence_checkup
+    from bookengine.first_appearances import first_appearance_checkup
+    from bookengine.explanation_density import explanation_density_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -431,6 +434,7 @@ def check_book(book, *, source="final"):
         prose_similarity=dict(
             near_paragraph_pairs=sum(r["counts"]["near_paragraph_pairs"] for r in similarity),
             card_explanations=sum(r["counts"]["card_explanations"] for r in similarity),
+            card_rule_copies=sum(r["counts"]["card_rule_copies"] for r in similarity),
             rules=dict(RULES),
             status="Inference",
             chapters=[r for r in similarity if r["records"]],
@@ -452,6 +456,9 @@ def check_book(book, *, source="final"):
         final_chapter_new_suspense=final_closure_checkup(chapters),
         unclosed_quotes=quote_checkup(chapters),
         dialogue_repetitions=dialogue_checkup(bible, chapters),
+        solution_sequences=solution_sequence_checkup(bible, chapters, book),
+        world_introductions=first_appearance_checkup(bible, chapters),
+        explanation_density=explanation_density_checkup(chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

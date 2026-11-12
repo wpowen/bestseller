@@ -25,7 +25,12 @@ CAST = [
 
 
 def bible():
-    return dict(title="固定人物测试", characters=deepcopy(CAST), volumes=[dict(number=1, start=1, end=20)])
+    return dict(
+        title="固定人物测试",
+        characters=deepcopy(CAST),
+        volumes=[dict(number=1, start=1, end=20)],
+        world={"levels": ["引息", "锻脉", "刻印", "聚灵", "化铠", "镇岳", "开天", "归真"]},
+    )
 
 
 class ScriptedClient(Client):

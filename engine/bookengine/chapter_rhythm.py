@@ -5,11 +5,13 @@ import re
 
 from .q1_schema import integer, rows
 
-VERSION = 8
+VERSION = 12
+CANONICAL_TYPES = ("对抗", "谋划", "情感", "日常", "揭秘", "收获")
 BREAK_TYPES = ("收获", "情感", "揭秘", "谋划")
 RULE = (
     "连续对抗最多3章，随后必须以收获/人物关系/揭秘/谋划之一为主章，日常标签不能代替。"
     "每阶段至少1章人物关系主章，情感即关系；阶段第4章前预留，短阶段在尾章落实。"
+    "关系章必须给两名人物、起因及不同的变化前后状态，两场都落实且不安排正面打斗。"
     "rhythm_type和rhythm_focus须落实到多数场景的goal/choice，不能仅改type标签或附加一场关系戏。"
 )
 FOCUS = {
@@ -30,6 +32,11 @@ _CUES = {
 _COMBAT = re.compile(
     r"击败|击退|围攻|围堵|拆阵|破阵|夺门|追杀|搏杀|交战|厮杀|拔剑|挥剑|偷袭|斩杀|"
     r"反杀|突围|伏击|围杀|冲杀|扑杀|迎战|开战|动手|强攻|割开.{0,4}(?:咽喉|喉咙)"
+    r"|撞开.{0,6}(?:门|关|阵)|闯关|受控搏斗|握刀|持刀|反扭.{0,4}刀|追兵.{0,10}(?:封|赶到|抵达)"
+)
+_RELATION_CHANGE = re.compile(
+    r"坦白|承认|信任|隐瞒|原谅|疏远|和解|顾虑|承诺|拒绝|允许|接受|让步|道歉|试探|质问|回应|"
+    r"边界|同伴|伙伴|同行|合作|分开|靠近|共同|分工|选择|决定|权利"
 )
 INTERNAL_TERMS = ("原章", "原定场景", "原定目标", "已登场同伴")
 _WRITER_FIELDS = (
@@ -43,10 +50,50 @@ _WRITER_FIELDS = (
     "scenes",
 )
 
+TYPE_ALIASES = {
+    "战斗": "对抗",
+    "打斗": "对抗",
+    "打": "对抗",
+    "救": "对抗",
+    "爽点": "对抗",
+    "能力": "对抗",
+    "动作": "对抗",
+    "收束": "对抗",
+    "能力兑现": "对抗",
+    "对抗兑现": "对抗",
+    "阶段兑现": "对抗",
+    "关系": "情感",
+    "关系推进": "情感",
+    "情感推进": "情感",
+    "人物关系": "情感",
+    "关系章": "情感",
+    "解谜": "揭秘",
+    "推理": "揭秘",
+    "身份揭露": "揭秘",
+    "潜入揭密": "揭秘",
+    "谋略": "谋划",
+    "骗": "对抗",
+    "潜入营救": "对抗",
+    "救援推进": "对抗",
+    "连续闯关": "对抗",
+    "潜入试探": "对抗",
+}
+
+
+def normalize_chapter_type(value):
+    """Normalize every planner/extractor/checkup label before it is compared."""
+    value = value.strip() if isinstance(value, str) else ""
+    value = TYPE_ALIASES.get(value, value)
+    return value if value in CANONICAL_TYPES else ""
+
 
 def chapter_type(row):
-    value = row.get("type", "")
-    return "情感" if value == "关系" else value
+    # A complete relationship contract is an obligation, not optional metadata.
+    # It must control planning, writer guidance, repair, and diagnostics alike.
+    if relationship_contract(row):
+        return "情感"
+    value = row.get("type") or row.get("rhythm_type") or ""
+    return normalize_chapter_type(value)
 
 
 def _scene_intention(scene):
@@ -64,6 +111,8 @@ def _combat_scene(scene):
 def content_type(row):
     """Infer an outline type from planned actions; return empty when content is indeterminate."""
     scenes = rows(row.get("scenes"))
+    if relationship_contract(row) and _focused(row, "情感"):
+        return "情感"
     combat = sum(_combat_scene(scene) for scene in scenes)
     conflict = "；".join(str(row.get(k) or "") for k in ("opening_conflict", "conflict"))
     if combat and (combat * 2 >= len(scenes) or _COMBAT.search(_positive(conflict))):
@@ -96,11 +145,140 @@ def _stages(bible):
     return [s for s in rows(bible.get("volumes")) if 0 < integer(s.get("start")) <= integer(s.get("end"))]
 
 
+def relationship_contract(row):
+    value = row.get("relationship_change") if isinstance(row, dict) else None
+    if not isinstance(value, dict):
+        return None
+    people = value.get("people") if isinstance(value.get("people"), list) else []
+    labelled_relationship = normalize_chapter_type(row.get("type") or row.get("rhythm_type") or "") == "情感"
+    if not people and labelled_relationship:
+        for alias in ("characters", "pair"):
+            if isinstance(value.get(alias), list):
+                people = value[alias]
+                break
+    if not people and labelled_relationship:
+        scene_cast = [
+            name
+            for scene in rows(row.get("scenes"))[:2]
+            for name in (scene.get("characters") if isinstance(scene.get("characters"), list) else [])
+            if isinstance(name, str)
+        ]
+        people = list(dict.fromkeys(scene_cast))[:2]
+    people = [name for name in people if isinstance(name, str) and name.strip()]
+    cause = value.get("cause", "").strip() if isinstance(value.get("cause"), str) else ""
+    if not cause and labelled_relationship:
+        for fallback in (value.get("turning_point"), row.get("opening_conflict"), row.get("conflict")):
+            if isinstance(fallback, str) and fallback.strip():
+                cause = fallback.strip()
+                break
+    fields = {key: value.get(key, "").strip() if isinstance(value.get(key), str) else "" for key in ("before", "after")}
+    if len(set(people)) != 2 or not cause or not all(fields.values()) or fields["before"] == fields["after"]:
+        return None
+    return dict(people=people, cause=cause, **fields)
+
+
+_PROSE_RELATION = re.compile(
+    r"坦白|承认|信任|隐瞒|瞒着|原谅|疏远|和解|顾虑|承诺|拒绝|允许|接受|让步|道歉|试探|质问|"
+    r"回应|边界|同伴|伙伴|同行|合作|分开|靠近|选择|决定|告诉|资格|权利"
+)
+_PROSE_COMBAT = re.compile(
+    r"敌人|追兵|伏兵|围攻|追杀|搏杀|交战|厮杀|拔剑|挥剑|反杀|突围|冲杀|迎战|开战|"
+    r"攻来|扑来|杀来|刀锋|剑锋|铜镜|斩(?:断|开|下)|切(?:断|下)|救(?:人|下|出|弟子)|"
+    r"弟子[^。！？]{0,16}(?:被控|勒住|僵住|脱困)|断(?:开|裂)[^。！？]{0,6}(?:丝|线)"
+)
+
+
+def observed_chapter_type(observed, text, outline):
+    """Conservatively correct a relationship false negative without relabeling battles."""
+    fallback = chapter_type(observed if isinstance(observed, dict) else {})
+    contract = relationship_contract(outline)
+    if not contract or not isinstance(text, str) or any(person not in text for person in contract["people"]):
+        return fallback
+    paragraphs = [paragraph for paragraph in text.split("\n\n") if paragraph.strip()]
+    relationship = sum(bool(_PROSE_RELATION.search(_positive(paragraph))) for paragraph in paragraphs)
+    combat = sum(
+        bool(_COMBAT.search(_positive(paragraph)) or _PROSE_COMBAT.search(_positive(paragraph)))
+        for paragraph in paragraphs
+    )
+    return "情感" if relationship >= 4 and relationship > combat else fallback
+
+
+def relationship_outline_issues(row):
+    """Return deterministic main-scene defects before a relationship outline reaches the writer."""
+    if not relationship_contract(row):
+        return []
+    issues = []
+    scenes = rows(row.get("scenes"))[:2]
+    if len(scenes) != 2:
+        return [dict(scene=0, reason="missing_main_scenes")]
+    for index, scene in enumerate(scenes, 1):
+        action = str(scene.get("action") or "").strip()
+        choice = str(scene.get("choice") or "").strip()
+        main = _positive("；".join((action, choice)))
+        if not choice:
+            issues.append(dict(scene=index, reason="missing_choice"))
+        if action and action == choice:
+            issues.append(dict(scene=index, reason="choice_duplicates_action"))
+        if _COMBAT.search(main):
+            issues.append(dict(scene=index, reason="combat_main_action"))
+        if not action or not _RELATION_CHANGE.search(_positive(action)):
+            issues.append(dict(scene=index, reason="action_not_interpersonal"))
+        if not choice or not _RELATION_CHANGE.search(_positive(choice)):
+            issues.append(dict(scene=index, reason="choice_not_interpersonal"))
+    return issues
+
+
+def combat_run_exemption(bible, number=None):
+    stages = _stages(bible)
+    if not stages:
+        return None
+    stage = max(stages, key=lambda row: integer(row.get("end")))
+    value = stage.get("combat_run_exemption")
+    if not isinstance(value, dict):
+        return None
+    chapters = value.get("chapters") if isinstance(value.get("chapters"), list) else []
+    chapters = [integer(chapter) for chapter in chapters]
+    reason = value.get("reason", "").strip() if isinstance(value.get("reason"), str) else ""
+    valid = (
+        len(chapters) >= 4
+        and chapters == list(range(chapters[0], chapters[-1] + 1))
+        and integer(stage.get("start")) <= chapters[0]
+        and chapters[-1] == integer(stage.get("end"))
+        and len(reason) >= 6
+    )
+    if not valid or number is not None and number not in chapters:
+        return None
+    return dict(stage=stage.get("number"), chapters=chapters, reason=reason)
+
+
+def combat_exemption_issues(bible):
+    stages = _stages(bible)
+    final = max(stages, key=lambda row: integer(row.get("end"))) if stages else None
+    issues = []
+    for stage in stages:
+        if stage.get("combat_run_exemption") in (None, "", {}):
+            continue
+        if stage is not final or combat_run_exemption(bible) is None:
+            issues.append(
+                f"stage {stage.get('number')}: combat_run_exemption只允许末阶段连续高潮章，章号须连续至末章且理由不少于6字"
+            )
+    return issues
+
+
 def _focused(row, kind):
     """Conservative scene intent check, not a semantic or reader acceptance score."""
     scenes = rows(row.get("scenes"))
     if not scenes or kind not in _CUES:
         return False
+    if kind == "情感":
+        contract = relationship_contract(row)
+        if contract:
+            matches = []
+            for scene in scenes:
+                intention = _positive(_scene_intention(scene))
+                main_action = _positive("；".join(str(scene.get(key) or "") for key in ("action", "choice", "result")))
+                matches.append(bool(_RELATION_CHANGE.search(intention)) and not _COMBAT.search(main_action))
+            return matches[0] and sum(matches) > len(matches) // 2
     matches = []
     for scene in scenes:
         intention = _scene_intention(scene)
@@ -126,6 +304,8 @@ def _requirement(bible, previous, number):
         if not _relation_seen(previous, stage):
             return ("情感",), "rhythm_stage_relation"
     if all(chapter_type(previous.get(n, {})) == "对抗" for n in range(number - 3, number)):
+        if combat_run_exemption(bible, number):
+            return (), "rhythm_combat_exempt"
         return BREAK_TYPES, "rhythm_combat_run"
     return (), ""
 
@@ -146,6 +326,8 @@ def rhythm_slots(bible, start, end, history=(), preferred=()):
             rhythm_focus=FOCUS.get(kind, "保留本章主场景行动与人物选择"),
             rhythm_contract_version=VERSION,
             rhythm_reason=reason,
+            combat_exempt=bool(combat_run_exemption(bible, n)),
+            combat_exemption_reason=(combat_run_exemption(bible, n) or {}).get("reason", ""),
         )
         result.append(slot)
         # Slots are reservations only; this synthetic scene records intent, not an observed relationship.
@@ -156,6 +338,7 @@ def rhythm_slots(bible, start, end, history=(), preferred=()):
 def rhythm_issues(bible, history, batch):
     targets = {integer(r.get("number")) for r in batch}
     combined = {integer(r.get("number")): r for r in [*history, *batch]}
+    named_cast = [card.get("name") for card in rows(bible.get("characters")) if isinstance(card.get("name"), str)]
     previous, issues = {}, []
     for n, row in sorted(combined.items()):
         kind = chapter_type(row)
@@ -179,6 +362,39 @@ def rhythm_issues(bible, history, batch):
                 issues.append(dict(kind=reason, targets=[n], allowed=list(allowed), requirement=RULE))
             elif kind in BREAK_TYPES and not _focused(row, kind):
                 issues.append(dict(kind="rhythm_scene_focus", targets=[n], allowed=[kind], requirement=RULE))
+            if (
+                kind == "情感"
+                and len(named_cast) >= 2
+                and (bible.get("structure_version") or integer(row.get("rhythm_contract_version")) >= VERSION)
+                and relationship_contract(row) is None
+            ):
+                issues.append(
+                    dict(
+                        kind="rhythm_relationship_contract",
+                        targets=[n],
+                        allowed=[kind],
+                        requirement="关系章必须写明两名人物、变化起因、变化前与变化后，且前后不同。" + RULE,
+                    )
+                )
+            relationship_scene_issues = (
+                relationship_outline_issues(row)
+                if kind == "情感"
+                and (bible.get("structure_version") or integer(row.get("rhythm_contract_version")) >= VERSION)
+                else []
+            )
+            if relationship_scene_issues:
+                issues.append(
+                    dict(
+                        kind="rhythm_relationship_scene",
+                        targets=[n],
+                        allowed=[kind],
+                        defects=relationship_scene_issues,
+                        requirement=(
+                            "关系章两场的action与choice必须分别写人物间的坦白、试探、让步、拒绝、接受或和解；"
+                            "choice不能复制action，正面打斗、追杀、闯关和受控搏斗只能作背景压力。" + RULE
+                        ),
+                    )
+                )
             terms = internal_terms(row)
             if terms:
                 issues.append(

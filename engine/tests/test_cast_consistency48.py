@@ -92,12 +92,12 @@ def test_eval39_gendered_address_pronoun_and_enemy_leader_are_found():
         "他隔着风雪朝这边看了一眼，随即转身，指挥众人把最后两块挡路石推入矿道，出口被彻底封死。"
     )
     findings = cast_findings(text, bible(), chapter=8)
-    assert {row["kind"] for row in findings if row["status"] == "Inference"} >= {
+    assert {row["kind"] for row in findings if row["status"] in ("Evidence", "Inference")} >= {
         "gendered_address",
         "gender_pronoun",
         "identity_drift",
     }
-    assert all(row["name"] == "沈夏珩" for row in findings if row["status"] == "Inference")
+    assert all(row["name"] == "沈夏珩" for row in findings if row["status"] in ("Evidence", "Inference"))
 
 
 def test_f42_single_subject_pronoun_drift_is_repairable():
@@ -137,7 +137,12 @@ def test_eval49_pronoun_subject_carries_only_through_a_bound_pronoun_sentence():
 
     findings = cast_findings(text, value, chapter=6)
 
-    assert [(row["observed"], row["expected"]) for row in findings] == [("她", "他"), ("她", "他"), ("她", "他")]
+    assert [(row["observed"], row["expected"]) for row in findings] == [
+        ("她", "他"),
+        ("她", "他"),
+        ("她", "他"),
+        ("她", "他"),
+    ]
 
 
 def test_named_man_looking_at_a_woman_does_not_bind_her_next_pronoun_to_him():
@@ -248,8 +253,68 @@ def test_eval52_explicit_named_subject_binds_following_pronoun_despite_other_peo
     for chapter, text in samples.items():
         findings = cast_findings(text, value, chapter=chapter)
         assert [(row["status"], row["name"], row["observed"], row["expected"]) for row in findings] == [
-            ("Inference", "沈弘策", "他", "她")
+            ("Evidence", "沈弘策", "他", "她")
         ]
+
+
+def test_web59c_named_female_subject_pronouns_are_evidence_and_not_ambiguous():
+    value = {
+        "characters": [
+            {"name": "顾长风", "gender": "男", "role": "protagonist"},
+            {"name": "沈展尧", "gender": "女", "role": "support"},
+            {"name": "陶慕桐", "gender": "女", "role": "support"},
+        ]
+    }
+    samples = (
+        "沈展尧亲自带人巡院。陶慕桐压低声音，‘他是内门执律弟子。’",
+        "沈展尧拔出短剑，却没有去斩顾长风的腕。他以剑格抵住木手手腕。",
+        "陶慕桐从废料架后探出脸。他压低声音。",
+        "陶慕桐在暗道尽头摸到出口闩。外面没有火，只有暮风。他攥紧衣襟里的拓样。",
+        "陶慕桐拖着发黑的脚踝走下坡。风把他衣襟吹开一角。",
+        "沈展尧取出证匣里的抄页对照。他没有追问。",
+    )
+
+    findings = [row for text in samples for row in cast_findings(text, value, chapter=1)]
+
+    assert len(findings) == 6
+    assert all(row["status"] == "Evidence" and row["expected"] == "她" for row in findings)
+    assert [row["name"] for row in findings] == [
+        "沈展尧",
+        "沈展尧",
+        "陶慕桐",
+        "陶慕桐",
+        "陶慕桐",
+        "沈展尧",
+    ]
+    checkup = cast_checkup(value, [{"number": 1, "text": "\n\n".join(samples)}])
+    assert checkup["evidence_counts"]["gender_pronoun"] == 6
+    assert checkup["inference_counts"].get("gender_pronoun", 0) == 0
+
+
+def test_web59c_multi_person_scene_keeps_pronoun_bound_to_named_male_subject():
+    value = {
+        "characters": [
+            {"name": "顾长风", "gender": "男", "role": "protagonist"},
+            {"name": "沈展尧", "gender": "女", "role": "support"},
+            {"name": "陶慕桐", "gender": "女", "role": "support"},
+        ]
+    }
+    text = "沈展尧将证匣递给顾长风。顾长风点头。他先引第一具木偶越过石阶。陶慕桐守在门边。"
+
+    assert cast_findings(text, value, chapter=8) == []
+
+
+def test_web59c_quoted_pronoun_after_female_speaker_can_refer_to_named_male():
+    value = {
+        "characters": [
+            {"name": "顾长风", "gender": "男", "role": "protagonist"},
+            {"name": "沈展尧", "gender": "女", "role": "support"},
+            {"name": "裴晏竹", "gender": "男", "role": "antagonist"},
+        ]
+    }
+    text = "沈展尧拾起落在地上的半截主线，对着阵盘核验了两遍。“主线曾牵着他的木手，也牵过替身。”她看向跪地的裴晏竹。"
+
+    assert cast_findings(text, value, chapter=10) == []
 
 
 def test_eval52_explicit_named_subject_pronouns_receive_deterministic_leaf_repairs():

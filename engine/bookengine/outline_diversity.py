@@ -11,14 +11,23 @@ from .storage import save
 from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
+from .solution_sequences import solution_sequence_issues
 from .core_ability import ability_issues
-from .chapter_rhythm import FOCUS, VERSION as RHYTHM_VERSION, align_label_to_content, chapter_type, rhythm_issues
+from .chapter_rhythm import (
+    FOCUS,
+    VERSION as RHYTHM_VERSION,
+    align_label_to_content,
+    chapter_type,
+    relationship_outline_issues,
+    rhythm_issues,
+)
+from .planning_policy import MAX_REWRITE_CALLS, hard_replan_issues, replan_targets
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
-STRUCTURE_CHECKS_VERSION = 6
+STRUCTURE_CHECKS_VERSION = 7
 
 
 def title_terms(title, supplied=()):
@@ -105,6 +114,44 @@ def diversity_issues(history, batch):
     return issues
 
 
+def rename_repeated_titles(history, batch):
+    """Record surface title repetition without a paid rewrite and without destroying titles.
+
+    Earlier versions deleted a character (broken titles) or replaced the title with a bare ordinal,
+    which erased real chapter titles from the book. Repetition is now a non-blocking diagnostic.
+    """
+    current = deepcopy(batch)
+    decisions = [
+        dict(
+            number=number,
+            keyword=issue.get("keyword"),
+            title=str(next((row.get("title") for row in current if integer(row.get("number")) == number), "")),
+            action="kept_title_diagnostic",
+        )
+        for issue in diversity_issues(history, current)
+        if issue.get("kind") == "title_keyword"
+        for number in sorted(set(issue.get("chapters", [])[2:]))
+        if any(integer(row.get("number")) == number for row in current)
+    ]
+    return current, decisions
+
+
+def remove_retired_presence(batch, issues):
+    """Apply the old safe opponent-scope cleanup without a paid outline rewrite."""
+    current = deepcopy(batch)
+    for issue in issues:
+        if issue.get("kind") != "opponent_scope":
+            continue
+        for chapter in current:
+            if chapter.get("number") not in issue.get("targets", []):
+                continue
+            for scene in [chapter, *rows(chapter.get("scenes"))]:
+                if isinstance(scene.get("characters"), list):
+                    scene["characters"] = [name for name in scene["characters"] if name not in issue.get("labels", [])]
+            chapter.setdefault("background_only", []).append(issue.get("name"))
+    return current
+
+
 def historical_outlines(out, start, recent=()):
     """Read ALL saved windows and chapters, retaining metadata absent from old chapter rows."""
     merged = {}
@@ -171,6 +218,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
     """Only replace offending current chapters; persist decisions for no-call recovery."""
     path = Path(out) / "outline-diversity" / (key + ".json") if out is not None else None
     current, original_chapters = deepcopy(batch), deepcopy(batch)
+    current, title_renames = rename_repeated_titles(history, current)
     attempts, resume, rhythm_replans = [], 0, []
     rhythm_attempts, model_resolved, locked = {}, set(), set()
     if path and path.exists():
@@ -186,34 +234,51 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
         rhythm_attempts = {int(k): int(v) for k, v in report.get("rhythm_replan_attempts", {}).items()}
         model_resolved = set(report.get("rhythm_model_resolved", []))
         locked = set(report.get("rhythm_locked", []))
+        title_renames = report.get("title_renames", title_renames)
         initial_issues = report.get("initial_rhythm_issues", initial_issues)
         model_review = report.get("rhythm_model_review", model_review)
     originals = {integer(row.get("number")): deepcopy(row) for row in original_chapters}
     used = used_vocabulary(history)
-    for retry in range(resume, 4):
+    for retry in range(resume, MAX_REWRITE_CALLS + 1):
         deterministic = (
             diversity_issues(history, current)
             + opponent_presence_issues(bible or {}, current)
             + planning_transition_issues(bible or {}, current)
             + solution_issues(bible or {}, history, current)
+            + solution_sequence_issues(bible or {}, history, current)
             + ability_issues(bible or {}, history, current)
             + rhythm_issues(bible or {}, history, current)
         )
+        if any(issue.get("kind") == "opponent_scope" for issue in deterministic):
+            current = remove_retired_presence(current, deterministic)
+            deterministic = (
+                diversity_issues(history, current)
+                + opponent_presence_issues(bible or {}, current)
+                + planning_transition_issues(bible or {}, current)
+                + solution_issues(bible or {}, history, current)
+                + solution_sequence_issues(bible or {}, history, current)
+                + ability_issues(bible or {}, history, current)
+                + rhythm_issues(bible or {}, history, current)
+            )
         pending_model = [
             issue
             for issue in initial_issues
             if any(number not in model_resolved and number not in locked for number in issue.get("targets", []))
         ]
         issues = deterministic + [issue for issue in pending_model if issue not in deterministic]
+        paid_issues = hard_replan_issues(issues)
         rhythm_targets = {
-            number for issue in issues if issue["kind"].startswith("rhythm_") for number in issue.get("targets", [])
+            number
+            for issue in paid_issues
+            if issue["kind"].startswith("rhythm_")
+            for number in issue.get("targets", [])
         }
         recorded = {row["number"] for row in rhythm_replans}
         for number in sorted(set(rhythm_attempts).difference(rhythm_targets, locked, recorded)):
             rhythm_replans.append(
                 dict(number=number, attempts=rhythm_attempts[number], action="accepted_model_replan", reason=[])
             )
-        exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= 2}
+        exhausted = {number for number in rhythm_targets if rhythm_attempts.get(number, 0) >= MAX_REWRITE_CALLS}
         for number in sorted(exhausted - locked):
             original_row = deepcopy(originals[number])
             aligned = align_label_to_content(original_row)
@@ -254,13 +319,14 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 + opponent_presence_issues(bible or {}, current)
                 + planning_transition_issues(bible or {}, current)
                 + solution_issues(bible or {}, history, current)
+                + solution_sequence_issues(bible or {}, history, current)
                 + ability_issues(bible or {}, history, current)
                 + rhythm_issues(bible or {}, history, current)
             )
             issues = deterministic + [issue for issue in pending_model if issue not in deterministic]
-        targets = sorted({number for issue in issues for number in issue["targets"] if number not in locked})
+        targets = replan_targets(paid_issues, locked)
         attempts.append(dict(regeneration=retry, issues=issues, targets=targets))
-        if retry == 3:
+        if retry == MAX_REWRITE_CALLS:
             for issue in issues:
                 if issue["kind"] != "opponent_scope":
                     continue
@@ -277,13 +343,36 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 + opponent_presence_issues(bible or {}, current)
                 + planning_transition_issues(bible or {}, current)
                 + solution_issues(bible or {}, history, current)
+                + solution_sequence_issues(bible or {}, history, current)
                 + ability_issues(bible or {}, history, current)
                 + rhythm_issues(bible or {}, history, current)
             )
             # Existing cleanup warnings stay auditable even if removing a retired name cleared them.
             issues = [i for i in issues if not i["kind"].startswith("rhythm_")]
             issues += [i for i in final_issues if i not in issues]
-        terminal = retry == 3 or bool(issues and not targets)
+        terminal = retry == MAX_REWRITE_CALLS or bool(issues and not targets)
+        attempted_targets = sorted(
+            {
+                number
+                for attempt in attempts
+                if attempt.get("regeneration", MAX_REWRITE_CALLS) < MAX_REWRITE_CALLS
+                for number in attempt.get("targets", [])
+            }
+        )
+        unresolved_targets = {number for issue in paid_issues for number in issue.get("targets", [])}
+        replan_decisions = (
+            [
+                dict(
+                    number=number,
+                    attempts=1,
+                    action="kept_original" if number in unresolved_targets else "accepted_model_replan",
+                    reason=[issue for issue in paid_issues if number in issue.get("targets", [])],
+                )
+                for number in attempted_targets
+            ]
+            if terminal
+            else []
+        )
         report = dict(
             structure_checks_version=STRUCTURE_CHECKS_VERSION,
             rhythm_contract_version=RHYTHM_VERSION,
@@ -294,6 +383,9 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             rhythm_model_resolved=sorted(model_resolved),
             rhythm_locked=sorted(locked),
             initial_rhythm_issues=list(initial_issues),
+            title_renames=title_renames,
+            paid_replan_issues=paid_issues,
+            replan_decisions=replan_decisions,
             original_chapters=original_chapters,
             status="passed" if not issues else "failed_continued" if terminal else "repairing",
             used=used,
@@ -327,6 +419,8 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 continue
             proposed["title_keywords"] = title_terms(proposed.get("title"), replacements[number].get("title_keywords"))
             if number in attempted_rhythm:
+                if chapter_type(proposed) == "情感" and relationship_outline_issues(proposed):
+                    continue
                 kind = chapter_type(proposed)
                 proposed.update(
                     rhythm_type=kind,
@@ -337,4 +431,6 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             current[index] = proposed
             if number in attempted_rhythm:
                 model_resolved.add(number)
+        current, new_title_renames = rename_repeated_titles(history, current)
+        title_renames.extend(new_title_renames)
     return current

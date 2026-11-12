@@ -25,6 +25,7 @@ from .solution_substance import observe_solutions
 from .core_ability import core_source
 from .character_context import catchphrase_context, identity_keywords, trim_dossier
 from .continuity_ledger import extraction_contract, writer_continuity_facts
+from .writer_context import power_writer_view, previous_outcome_facts, selected_card_writer_view
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -83,6 +84,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             identity_keywords=identity_keywords(c.get("identity", ""), c.get("occupation", "")),
             voice=c.get("voice", "")[:100],
             gender=c.get("gender") or "未知",
+            pronoun="他" if c.get("gender") == "男" else "她" if c.get("gender") == "女" else "未知",
             address=c.get("address") or c["name"],
             aliases=c.get("aliases", []),
         )
@@ -110,7 +112,7 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
                     ),
                     object_hook=lambda d: {k: v for k, v in d.items() if k != "最后更新"},
                 ),
-                power=bible.get("power", {}),
+                power=power_writer_view(bible),
                 realm_ability=next(
                     (
                         str(v)[:160]
@@ -203,11 +205,15 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
     handoff_keys = ("开场必须承接", "上章地点未知", "上章结尾地点候选，仅供参考不当作事实")
     outline = {**{k: outline[k] for k in handoff_keys if k in outline}, **outline}
     return [
-        *([("用户选定事实，只可扩写不可替换", pack(bible["selected_card"]))] if bible.get("selected_card") else []),
+        *(
+            [("用户选定事实，只可扩写不可替换；规则只给要点", pack(selected_card_writer_view(bible)))]
+            if bible.get("selected_card")
+            else []
+        ),
         ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
         *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
-        ("上章结尾", previous[-900:]),
+        ("上章结尾", previous_outcome_facts(state, history, rows)),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),
     ]
 
@@ -217,11 +223,10 @@ def normalize_extract(raw):
         return raw
     fields = recover_fields(pack(raw))
     result = dict(raw)
-    result.update(
-        {"type": EXTRACT.get("type_aliases", {}).get(raw["type"], raw["type"])}
-        if isinstance(raw.get("type"), str)
-        else {}
-    )
+    if isinstance(raw.get("type"), str):
+        from .chapter_rhythm import normalize_chapter_type
+
+        result["type"] = normalize_chapter_type(raw["type"])
     for key in (
         "gains",
         "costs",

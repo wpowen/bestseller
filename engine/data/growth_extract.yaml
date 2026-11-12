@@ -1,11 +1,5 @@
 effort: low
-type_aliases:
-  解谜: 揭秘
-  推理: 揭秘
-  战斗: 对抗
-  打斗: 对抗
-  谋略: 谋划
-prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
+prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；按占正文主要篇幅的主场景判章型：两人围绕隐瞒、选择、信任或边界发生的言语冲突和信任变化属于情感，即使争执激烈也不算对抗；对抗只指与敌对势力的正面冲突、追杀、搏斗或突围。若后半章由敌人到场并展开大段战斗，仍判对抗，不能因开头谈关系改判情感。hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
 
   state仅实际变化，未知保旧：dashboard的strength/wealth/status/affiliation/stage用短规范值与带单位财富；实力只用阶梯，每次最多一级。power_status仅代价/限制/封禁/余额/当前状态/境界，各{值,最后更新}≤50字；continuity仅blocked/limbs/balances/released，不编治愈。characters记录本章在场角色所在地/在场，objects最多3个关键物品owner/location，clock只明确day/minute，伏笔open/closed。不要复制旧状态和整段对白。
 
@@ -22,7 +16,7 @@ prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，stat
   3. 其他问题：edits为{id:S句号,text:新句}，只改程序点名句；多出新增伤病只改多出的那句，英文残片改成自然中文，不删词蒙混。rename为{卡外误称:固定卡原名}，不新增主要角色。缺指定爽点/新境界展示/禁用主手法用patch={after:P整数,text:≤400字符一个自然段,replace:布尔}，只补或替该段。edits和patch可针对不同位置同时返回。不要改未点名句，不补新谜。
 
   没修订则body空、scene=null、rename={}、edits=[]、patch=null。上一章失败正文若存在，可在同次previous_delta补提该旧章（quote复制旧章原句），判不明留{}，不造达标。'
-final_prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
+final_prompt: '只据编号正文回JSON，先完整返回type/hook_type/payoff，state放最后。type只用对抗/谋划/情感/日常/揭秘/收获；按占正文主要篇幅的主场景判章型：两人围绕隐瞒、选择、信任或边界发生的言语冲突和信任变化属于情感，即使争执激烈也不算对抗；对抗只指与敌对势力的正面冲突、追杀、搏斗或突围。若后半章由敌人到场并展开大段战斗，仍判对抗，不能因开头谈关系改判情感。hook_type按实际结尾合法值，末章确已收束用完结收束，不能空。payoff按已兑现主类{type,fulfilled,pid}，未兑现为无兑现/false；不把待采用修订当事实。pid只用P段号整数，S为句号，quote不用抄，程序从正文取。summary≤50汉字。
 
   state仅实际变化，未知保旧：dashboard的strength/wealth/status/affiliation/stage用短规范值与带单位财富；实力只用阶梯，每次最多一级。power_status仅代价/限制/封禁/余额/当前状态/境界，各{值,最后更新}≤50字；continuity仅blocked/limbs/balances/released，不编治愈。characters记录本章在场角色所在地/在场，objects最多3个关键物品owner/location，clock只明确day/minute，伏笔open/closed。不要复制旧状态和整段对白。
 

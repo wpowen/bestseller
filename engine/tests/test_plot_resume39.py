@@ -6,7 +6,7 @@ from bookengine.q1_schema import DATA
 from test_chapter_rhythm39 import OfflineClient, chapter
 
 
-def test_same_version_cache_rechecks_changed_actual_methods_and_reuses_exhaustion(tmp_path):
+def test_same_version_cache_reports_changed_methods_without_paid_replan(tmp_path):
     bible = dict(volumes=[dict(number=1, start=1, end=10)])
     original = dict(chapter(5), solution_method="阵钉", solution_target="门锁")
     save(
@@ -32,8 +32,8 @@ def test_same_version_cache_rechecks_changed_actual_methods_and_reuses_exhaustio
     value = q1_plan.outlines(
         client, bible, {}, DATA["profile"], dict(number=1, start=1, end=10), 5, 5, {}, recent, [], []
     )
-    assert client.calls
-    assert not solution_issues(bible, recent, value)
+    assert not client.calls
+    assert solution_issues(bible, recent, value)
     exhausted = dict(value[0], solution_method="阵钉")
     latest = max((tmp_path / "outline-diversity").glob("*.json"), key=lambda p: p.stat().st_mtime_ns)
     import json

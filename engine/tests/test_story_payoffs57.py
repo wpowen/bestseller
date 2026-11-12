@@ -108,6 +108,58 @@ def test_missing_payoff_rewrites_escape_and_its_consequences_before_recheck():
     assert sum(key.endswith("-conflict-repair") for key in calls) == 1
 
 
+def test_ambiguous_scheduled_death_is_rewritten_but_rechecked_strictly():
+    original = "雪妖群退回岩缝。\n\n邢烈倒在巢口，再不可能搜捕矿工。"
+    replacement = "邢烈倒在巢口，已当场死亡；矿监腰牌从尸身旁落入雪中。"
+    planned = {
+        "number": 10,
+        "opponent_resolution": {
+            "name": "邢烈",
+            "type": "被杀",
+            "outcome": "邢烈当场死亡，无法再搜捕矿工",
+        },
+    }
+    reviews = 0
+
+    def ask(client, key, instruction, sections, schema, **kwargs):
+        nonlocal reviews
+        if key.endswith("-conflict-repair"):
+            allowed = json.loads(dict(sections)["可修改的冲突段落及其后果"])
+            target = next(row for row in allowed if "倒在巢口" in row["original"])
+            return {"edits": [{"id": target["id"], "original": target["original"], "text": replacement}]}
+        reviews += 1
+        item = json.loads(dict(sections)["本章必须发生的事"])[0]
+        if reviews == 1:
+            return {
+                "items": [
+                    {
+                        "id": item["id"],
+                        "status": "unknown",
+                        "evidence": [{"chapter": 10, "quote": "邢烈倒在巢口，再不可能搜捕矿工。"}],
+                    }
+                ]
+            }
+        return {
+            "items": [{"id": item["id"], "status": "fulfilled", "evidence": [{"chapter": 10, "quote": replacement}]}]
+        }
+
+    changed, _, failed, note = repair_story_payoffs(
+        None,
+        "ch10",
+        original,
+        {"events": []},
+        False,
+        {},
+        {},
+        planned,
+        lambda *args, **kwargs: ({"events": []}, False, 0),
+        ask,
+    )
+
+    assert replacement in changed and failed is False
+    assert note["status"] == "checked" and note["after"]["items"][0]["status"] == "fulfilled"
+
+
 @pytest.mark.parametrize("grounded", [False, True])
 def test_payoff_repair_rolls_back_when_quote_or_final_state_recheck_fails(grounded):
     original = "矿民守住坡口。\n\n岑烈的身影很快消失在风雪中。"

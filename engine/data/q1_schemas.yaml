@@ -93,10 +93,12 @@ instructions:
     每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
     每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
     threads的volume是阶段号，隐藏线reveal_not_before是绝对章号，按新边界同步排期。
-    每阶段promise_payoffs至少一项且包含标为primary的书名承诺：章号在本阶段内，action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写相较上一阶段如何升级。
+    每阶段promise_payoffs至少两项且都用primary主承诺，章号不同：阶段中段一项scale=小兑现，末两章一项scale=大兑现。action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写升级。
+    书名或selling_points字面含“杀”时，至少一个opponent_resolution.type必须是被杀，不能全部改成被擒或失势。
     每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
-    最后阶段ending_contract回应书名承诺；growth_dimension只用力量/身份/关系，before与after写实质变化；new_burden_or_mystery必须为空。'
-  prepare: 'world.levels严格逐条用固定实力阶梯规范名，initial_dashboard.strength从第一阶开始；不可另创境界。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
+    最后阶段ending_contract回应书名承诺；growth_dimension只用力量/身份/关系，before与after写实质变化；new_burden_or_mystery必须为空。
+    末阶段确需连续四章以上对抗时才给combat_run_exemption，chapters为连续至末章的高潮章号，reason写不可拆开的具体收束理由；其他阶段留空。'
+  prepare: '成长阶梯strength非空时，world.levels严格逐条沿用；strength为空且有strength_generation时，必须为本书按count生成独有world.levels，名称长度和构词风格遵守规格，不用数字序号、通用占位名或其他书的字面阶梯。initial_dashboard.strength从本书第一阶开始。优先返回完整bible.characters，人物卡必须非空，恰好1名protagonist，至少2名support/romance/antagonist，每人name/voice/desire必填。全书名字固定，不用代号替代姓名。JSON语法完整，字段与字符串内部英文双引号须转义。人物卡放最前。summary≤500汉字，每条角色字段≤40字；threads每类每卷仅1–3个节拍，节拍是卷级转折，禁止逐章20条，description≤50字，不写章节细纲。threads的kind只准main/dark/hidden/romance/growth/support六类，不能换名power/foreshadow/companion；逐卷列具体节拍，不得空description。
 
     initial_dashboard各项用可对账短值，实力写等级，财富写数值和单位，地位/名声写等级，归属和舞台用规范名；禁止把动作情绪写成长句。
 
@@ -197,6 +199,7 @@ instructions:
   rhythm_review: '只复核章型标签与两场主要场景是否一致，不改写章纲。先看characters确认对手是否在场，再以goal/choice/action/result实际发生什么为准；obstacle里只提到战斗或远处压力不等于对抗主章。
     content_type只用对抗/谋划/情感/日常/揭秘/收获；status只用consistent/mismatch/unknown。情感/日常/收获/揭秘/谋划章都不能以对手到场动手、交战、突围、追杀或反杀为主要行动。reason一句话说明主要场景依据。只返回{chapters:[{number,content_type,status,reason}]}，不得改用reviews或chapter字段。'
   rhythm_skeleton: '先为指定整阶段排内容，再由后续步骤展开逐章章纲。严格按节奏槽位决定哪些章打、哪些章不打；不打的章具体发生什么：关系怎么变、得到什么并怎么用、揭开什么或如何比较方案。
+    情感章必须给relationship_change，people恰好两名既有人物，cause/before/after具体且前后不同；两场都围绕这段变化，不安排正面打斗。每场action写两人之间实际发生的言行，choice另写对方如何接受、拒绝、让步或设下边界；choice不得复制action。
     非打斗章不得以对手到场动手、追杀、突围或反杀为主要行动；战斗可放在上一章末或下一章开头，本章写余波、疗伤、分配、对质、和解、试用、查证或取舍。每章给两场简短但可执行的goal/obstacle/action/result，不能只换type标签。'
 schemas:
   continuation:
@@ -219,6 +222,7 @@ schemas:
         goal: ''
         gain: ''
         cost: ''
+        combat_run_exemption: null
       world:
         stages:
         - volume: 1
@@ -309,6 +313,7 @@ schemas:
         goal: ''
         change: ''
         cost: ''
+        combat_run_exemption: null
     threads:
       threads:
       - id: main
@@ -333,6 +338,14 @@ schemas:
         promise_payoffs:
         - promise_id: ''
           chapter: 10
+          scale: 小兑现
+          action: ''
+          target: ''
+          result: ''
+          escalation: ''
+        - promise_id: ''
+          chapter: 12
+          scale: 大兑现
           action: ''
           target: ''
           result: ''
@@ -348,6 +361,7 @@ schemas:
           before: ''
           after: ''
           new_burden_or_mystery: ''
+        combat_run_exemption: null
       antagonists:
       - name: ''
         tier: 1
@@ -362,9 +376,11 @@ schemas:
     stage: ''
     goal: ''
     cost: ''
+    combat_run_exemption: null
     promise_payoffs:
     - promise_id: ''
       chapter: 10
+      scale: 小兑现
       action: ''
       target: ''
       result: ''
@@ -415,6 +431,7 @@ schemas:
         target: ''
         result: ''
         escalation: ''
+        scale: ''
       opponent_resolution:
         name: ''
         type: ''
@@ -434,10 +451,15 @@ schemas:
         result: ''
         emotion: ''
         kind: action
+      relationship_change: {}
       threads: []
       opening_conflict: ''
       callback_events: []
       solution_type: null
+      solution_steps:
+      - role: 感知
+        pattern: 直接观察
+        detail: ''
   rhythm_review:
     chapters:
     - number: 1
@@ -450,9 +472,11 @@ schemas:
       type: ''
       conflict: ''
       result: ''
+      relationship_change: {}
       scenes:
       - goal: ''
         obstacle: ''
+        choice: ''
         action: ''
         result: ''
 plan_card_fields:

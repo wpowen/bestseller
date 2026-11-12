@@ -15,10 +15,10 @@ from .text import pack
 from .q1_schema import DATA, FIX, GROWTH, BORROWED, parse, rows, model_value, integer, defaults, normalize_threads
 from .q1_prepare import _ask, prepare
 from .structure_planning import stage_by_number, opponent_presence_issues
-from .stage_transition import planning_transition_issues, complete_transitions
+from .stage_transition import complete_transitions
 from .retired_opponents import stage_constraints
-from .solution_substance import solution_context, solution_issues, chapter_nouns
-from .ability_methods import primary_target
+from .solution_substance import solution_issues
+from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
 from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .character_context import schedule_catchphrases
@@ -34,9 +34,10 @@ from .outline_diversity import (
     title_terms,
     conflict_type,
 )
-from .rhythm_replanning import model_review_issues, observed_rows, replan_context, semantic_review
+from .rhythm_replanning import RELATIONSHIP_REWRITE_RULE, observed_rows, replan_context
 from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_contracts
-from .planning_drift import cache_replan_issues
+from .planning_drift import cache_replan_issues, cached_contract_stale
+from .planning_policy import planning_window_end
 
 
 def _beats(threads, number, state=None):
@@ -147,11 +148,11 @@ def schedule(start, end, profile, recent=(), state=None, *, stage_start=None, st
     }
     reservation = dict(state or {}, solutions=list((state or {}).get("solutions", [])))
     for n in range(start, end + 1):
-        choices = [k for k in weights if len(previous) < 2 or not all(r.get("type") == k for r in previous[-2:])]
+        choices = [k for k in weights if len(previous) < 2 or not all(chapter_type(r) == k for r in previous[-2:])]
         kind = max(
             choices,
             key=lambda k: (
-                (len(previous) + 1) * weights[k] / sum(weights.values()) - sum(r.get("type") == k for r in previous)
+                (len(previous) + 1) * weights[k] / sum(weights.values()) - sum(chapter_type(r) == k for r in previous)
             ),
         )
         hooks = DATA["hook_types"]
@@ -228,31 +229,18 @@ def beat_slice(threads, vol, chapter, state):
 
 
 def outlines(client, bible, threads, profile, volume, start, end, state, recent, history, alerts, redo=False):
-    end = min(end, start + 9, integer(volume.get("end"), end))
+    end = planning_window_end(start, end, integer(volume.get("end"), end))
     if end < start:
         return []
     prior = historical_outlines(getattr(client, "out", None), start, recent)
     cached = terminal_window(getattr(client, "out", None), start, end) if not redo else None
-    plot_history = [dict(number=r["number"], nouns=chapter_nouns(r, bible), target=primary_target(r)) for r in prior]
+    plot_history = solution_plot_history(bible, prior)
     dynamic_issues = cache_replan_issues(bible, prior, cached)
     plot_stale = bool(cached and dynamic_issues)
     revision_suffix = ""
     if plot_stale and getattr(client, "out", None):
         revision_suffix = "-observed" + str(len(list((Path(client.out) / "outline-diversity").glob("*.json"))) + 1)
-    superseded = bool(
-        cached
-        and (
-            plot_stale
-            or (
-                cached.get("structure_checks_version", 0) < STRUCTURE_CHECKS_VERSION
-                and (
-                    planning_transition_issues(bible, cached["chapters"])
-                    + ability_issues(bible, prior, cached["chapters"])
-                    + solution_issues(bible, prior, cached["chapters"])
-                )
-            )
-        )
-    )
+    superseded = bool(cached and (plot_stale or cached_contract_stale(bible, prior, cached, STRUCTURE_CHECKS_VERSION)))
     stale = cached if superseded else None
     if superseded:
         end = cached["end"]
@@ -314,11 +302,12 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     sections = [
         (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
-            "主要解法必须给solution_target作用对象及solution_method手段核心名词；普通手段同阶段同名词最多3次；圣经核心能力及子能力另计，同阶段同能力组合对同类对象最多2次；超额换实际手段或作用对象，不只换标签",
-            solution_context(bible, prior, start),
+            "主要解法给对象、手段名词和感知/判断/行动/结果四步；名词按既有上限，四步结构同阶段不得重复，换名词不算换结构",
+            planning_solution_context(bible, prior, start),
         ),
         (RHYTHM_RULE, window_stage_content(stage_skeleton, start, end)),
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
+        ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
         (
@@ -343,7 +332,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("固定成长阶梯与当前仪表盘", [profile.get("canon"), state.get("dashboard")]),
         ("本阶段固定节拍", _beats(threads, integer(volume.get("number")), state)),
         ("爽点落实标准", GROWTH.get("payoff_criteria", {})),
-        ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
         ("警报与已用解法", [alerts, state.get("solutions", [])[-29:]]),
         ("圣经摘要", bible.get("summary", "")[:1800]),
         ("能力", bible.get("power", {})),
@@ -365,14 +353,13 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
         candidates.append(candidate)
     candidates = bind_stage_content(candidates, [row for row in stage_skeleton if row.get("_model_planned")])
-    candidates = enforce_ability_plan(bible, candidates)
+    candidates = bind_title_contracts(bible, enforce_ability_plan(bible, candidates))
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
     if superseded:
         key += f"-redo-structure35v{STRUCTURE_CHECKS_VERSION}" + revision_suffix
-    deterministic_review = rhythm_issues(bible, prior, candidates)
-    review = semantic_review(client, key, candidates, deterministic_review)
-    review_issues = model_review_issues(candidates, review)
+    review = []
+    review_issues = []
     observed = observed_rows(recent, history)
 
     def rewrite(current, issues, targets, vocabulary, attempt):
@@ -395,12 +382,13 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             [
                 (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
                 (
-                    "普通手段名词阶段上限3次，核心能力组合对同类对象阶段上限2次；重写实际动作，解法附solution_target/solution_method",
-                    solution_context(bible, prior, start),
+                    "普通手段名词及能力组合遵守既有上限；解法附对象、手段和四步结构，四步不得只换名词重复",
+                    planning_solution_context(bible, prior, start),
                 ),
                 (RHYTHM_RULE, [r for r in scene_slots if r["number"] in targets]),
                 ("只重写本批相关章，完整返回这些章号，禁止改其他章与历史", targets),
                 ("每章重写两场场景，冲突、障碍、选择和行动后果必须与要求章型一致", targets),
+                ("情感章本地定向重写硬约束", RELATIONSHIP_REWRITE_RULE),
                 ("逐项错误清单，必须更改场景行动与后果，不能只换conflict_type标签", issues),
                 ("目标章原内容、要求章型、前后章摘要与必须保留事实，只能改目标章", context),
                 ("固定人物卡与阶段约束", [cards, stage_contract, bible.get("selected_card", {})]),
@@ -487,7 +475,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         report = json.loads(Path(source_path or path).read_text())
         report["rhythm_contract_version"] = RHYTHM_VERSION
         report["plot_history"] = plot_history
-        report["plot_issues_after"] = solution_issues(bible, prior, result) + ability_issues(bible, prior, result)
+        plot_issues = solution_issues(bible, prior, result) + solution_sequence_issues(bible, prior, result)
+        report["plot_issues_after"] = plot_issues + ability_issues(bible, prior, result)
         report["rhythm_issues_after"] = final_rhythm_issues
         report["opponent_issues_after"] = opponent_presence_issues(bible, result)
         report["replan_issues"] = dynamic_issues

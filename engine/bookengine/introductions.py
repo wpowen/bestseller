@@ -263,3 +263,133 @@ def check_introductions(text, cards, previously_seen=(), names=()):
 def repair_issues(findings):
     """Messages for existing repair prompts, including Unknown without inventing facts."""
     return [f"[{row['status']}] {row['message']}" for row in findings if row["status"] != "Evidence"]
+
+
+def world_term_registry(bible):
+    """Build a conservative glossary from explicit world-design fields."""
+    result = {}
+
+    def add(term, kind, definition):
+        if isinstance(term, str) and term.strip() and len(term.strip()) <= 24:
+            result.setdefault(term.strip(), dict(kind=kind, definition=str(definition or "").strip()))
+
+    glossary = bible.get("glossary", {}) if isinstance(bible, dict) else {}
+    if isinstance(glossary, dict):
+        for term, definition in glossary.items():
+            add(term, "glossary", definition)
+    elif isinstance(glossary, list):
+        for row in glossary:
+            if isinstance(row, dict):
+                add(row.get("term", row.get("name")), row.get("kind", "glossary"), row.get("definition"))
+    world = bible.get("world", {}) if isinstance(bible.get("world"), dict) else {}
+    levels = world.get("levels", [])
+    levels = levels if isinstance(levels, list) else []
+    for level in levels:
+        term = level.get("name") if isinstance(level, dict) else level
+        supplied = level.get("definition", level.get("effect")) if isinstance(level, dict) else None
+        definition = supplied or "修行层级；须由修炼动作、可用能力或受限结果体现层级差别"
+        add(term, "level", definition)
+    factions = world.get("factions", []) if isinstance(world.get("factions"), list) else []
+    for faction in factions:
+        if isinstance(faction, dict):
+            add(faction.get("name"), "faction", f"组织势力，目标是{faction.get('interest', '')}".rstrip("是"))
+    stages = world.get("stages", []) if isinstance(world.get("stages"), list) else []
+    for stage in stages:
+        if isinstance(stage, dict):
+            term = stage.get("stage", stage.get("location", stage.get("name")))
+            add(term, "location", stage.get("description") or "当前故事所在的地区或舞台")
+        elif isinstance(stage, str):
+            add(stage, "location", "故事中的地区或舞台")
+    power = bible.get("power", {}) if isinstance(bible.get("power"), dict) else {}
+    add(power.get("name"), "system", power.get("rule") or power.get("limit") or "主角使用的能力体系")
+    return result
+
+
+def _term_sentence(text, offset):
+    for match in re.finditer(r"[^。！？!?\n]+[。！？!?]?", text):
+        if match.start() <= offset < match.end():
+            return match
+    return None
+
+
+def _term_is_bound(term, card, sentence):
+    if re.search(r"不是|并非|[？?]", sentence):
+        return False
+    if card.get("kind") == "level":
+        if re.search(
+            re.escape(term) + r"[^。！？!?]{0,24}(?:是|属于|境界序列|第[一二三四五六七八九十\d]+(?:阶|层|级)|承接)",
+            sentence,
+        ):
+            return False
+        if re.match(r"\s*[“‘\"']", sentence) and re.search(
+            re.escape(term) + r"[^。！？!?]{0,24}(?:能|可|可以|只能|不能|借|使|让)", sentence
+        ):
+            return True
+        return bool(
+            re.search(
+                r"催动|运转|修炼|突破|晋升|压制|挡住|顶住|推开|劈开|施展|只能|尚不能|还不能|"
+                r"催不动|压不住|托不起|撑不开|破不开|够不着",
+                sentence,
+            )
+        )
+    if re.search(re.escape(term) + r"(?:是|即|指|属于|叫作|名为)", sentence):
+        return True
+    definition = card.get("definition", "")
+    if definition and definition in sentence:
+        return True
+    cues = {
+        "level": r"境界|第[一二三四五六七八九十\d]+(?:阶|层|级)",
+        "faction": r"宗门|组织|势力|帮会|学派",
+        "location": r"位于|坐落|地区|城|镇|山|谷|驿|州|国",
+        "system": r"能力|术法|体系|规则|借用|催动",
+        "glossary": r"意思是|也就是|用来|能够|不能",
+    }
+    return bool(re.search(cues.get(card.get("kind"), r"意思是|也就是"), sentence))
+
+
+_UNRESOLVED_ENTITY = re.compile(r"(?:另一|第二|其余)(?:头|只|名|个)(?:契兽|灵兽|妖兽|雪兽|同伴|弟子|守卫)")
+
+
+def check_world_first_appearances(text, registry, previous_text="", character_names=()):
+    """Check a term exactly where it first appears; later explanation does not rewrite history."""
+    findings = []
+    for term, card in registry.items():
+        if term in previous_text or term not in text:
+            continue
+        offset = text.find(term)
+        sentence = _term_sentence(text, offset)
+        if sentence is None:
+            continue
+        present = _term_is_bound(term, card, sentence.group())
+        findings.append(
+            dict(
+                kind="term_introduction_present" if present else "term_first_use_missing",
+                term=term,
+                category=card.get("kind"),
+                definition=card.get("definition", ""),
+                status="Evidence" if present else "Inference",
+                quote=sentence.group(),
+                start=sentence.start(),
+                end=sentence.end(),
+            )
+        )
+    names = [name for name in character_names if isinstance(name, str) and name]
+    for match in _UNRESOLVED_ENTITY.finditer(text):
+        sentence = _term_sentence(text, match.start())
+        local = sentence.group() if sentence else match.group()
+        tail = text[match.end() : sentence.end()] if sentence else ""
+        if any(name in tail for name in names):
+            continue
+        findings.append(
+            dict(
+                kind="unresolved_entity_reference",
+                term=match.group(),
+                category="entity_reference",
+                definition="用已登场实体的名字或唯一身份说明所指对象",
+                status="Inference",
+                quote=local,
+                start=sentence.start() if sentence else match.start(),
+                end=sentence.end() if sentence else match.end(),
+            )
+        )
+    return findings

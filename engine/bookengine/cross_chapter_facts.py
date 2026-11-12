@@ -64,6 +64,12 @@ def critical_events(state):
     return [row for row in rows or [] if isinstance(row, dict) and row.get("quote") and row.get("chapter")]
 
 
+def writer_critical_events(state, chapter):
+    number = chapter.get("number", 0) if isinstance(chapter, dict) else 0
+    rows = [row for row in critical_events(state) if row.get("chapter", number) < number][-12:]
+    return [f"已完成事件，不得重新当作进行中的任务：第{row['chapter']}章 {row['summary']}" for row in rows]
+
+
 def _bigrams(text):
     compact = re.sub(r"[^\u4e00-\u9fff]", "", text)
     return {compact[index : index + 2] for index in range(len(compact) - 1)}
@@ -174,7 +180,7 @@ def guard_all_repairs(ask, client, prefix, original, candidate, state, chapter):
     return candidate, {"status": "checked", "findings": []}
 
 
-def cross_chapter_checkup(chapters):
+def cross_chapter_checkup(chapters, book=None):
     """Offline evidence for explicit later denials of an earlier completed action."""
     history = []
     issues = []
@@ -202,11 +208,18 @@ def cross_chapter_checkup(chapters):
             ):
                 history.append({"chapter": number, "quote": current})
     from .permanent_facts import permanent_state_checkup
+    from .plot_progression import plot_progression_checkup
 
     permanent = permanent_state_checkup(chapters)
+    progression = plot_progression_checkup(chapters, book=book)
     return {
-        "counts": {"rewritten_prior_events": len(issues), "permanent_state_conflicts": len(permanent)},
+        "counts": {
+            "rewritten_prior_events": len(issues),
+            "permanent_state_conflicts": len(permanent),
+            "plot_replays": progression["counts"]["plot_replays"],
+        },
         "rewritten_prior_events": issues,
         "permanent_state_conflicts": permanent,
+        "plot_replays": progression["plot_replays"],
         "authority": "deterministic_explicit_denial",
     }

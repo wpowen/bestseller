@@ -255,82 +255,6 @@ def _breaks(chapters, bible=None):
     return breaks(chapters, bible)
 
 
-def _aliases(card):
-    values = [card.get("name", "")]
-    aliases = card.get("aliases", [])
-    values.extend([aliases] if isinstance(aliases, str) else aliases if isinstance(aliases, list) else [])
-    return [s for s in values if isinstance(s, str) and s]
-
-
-def _cast_stats(bible, chapters):
-    cards = _rows(bible.get("characters", bible.get("character_cards")))
-    missing, introduced, alias_issues = [], [], []
-    registered = [s for card in cards for s in [*_aliases(card), card.get("address", "")] if isinstance(s, str) and s]
-    for card in cards:
-        names = _aliases(card)
-        occurrence = next(
-            (
-                (c, min((c["text"].find(n), n) for n in names if n in c["text"]))
-                for c in chapters
-                if any(n in c["text"] for n in names)
-            ),
-            None,
-        )
-        if not occurrence:
-            continue
-        chapter, (offset, name) = occurrence
-        text = chapter["text"]
-        start = max(text.rfind("。", 0, offset), text.rfind("\n", 0, offset), offset - 60) + 1
-        sentence_end = re.search(r"[。！？\n]", text[offset:])
-        end = offset + sentence_end.end() if sentence_end else min(len(text), offset + 160)
-        quote = text[start:end]
-        origin = any(
-            re.search(re.escape(n) + r"(?:[，, ]?(?:原来|本来|原本|他|她))?(?:是|原是|本是|曾是|来自|出身)", quote)
-            or re.search(r"(?:掌柜|账房|矿奴|监工|头目|医师|大夫|弟子|师父|商人|侍卫|村民|捕快)" + re.escape(n), quote)
-            for n in names
-        )
-        identity = next(
-            (card.get(k) for k in ("identity", "origin", "background") if isinstance(card.get(k), str) and card[k]),
-            None,
-        )
-        origin = origin or bool(identity and any(identity + n in quote for n in names))
-        if re.search(r"不是|并非|[？?]", quote):
-            origin = False
-        row = dict(
-            name=card.get("name"), chapter=chapter["number"], quote=quote, status="Evidence" if origin else "Inference"
-        )
-        (introduced if origin else missing).append(row)
-    for chapter in chapters:
-        text = chapter["text"]
-        candidates = [
-            (m[1], m.start(), m.end())
-            for m in re.finditer(
-                r"(?:^|[“‘\"'，。！？\n])(?:叫我|喊我|我叫|称我为|自称|人称)([\u4e00-\u9fff]{1,8})(?=[，。！？、”’\s]|$)",
-                text,
-            )
-        ]
-        candidates += [
-            (m[1], m.start(), m.end())
-            for m in re.finditer(
-                r"(?:跟|听|找|叫|给)([\u4e00-\u9fff]{1,3}(?:哥|姐|爷|叔|姨))(?:走|来|去|说|[，。！？”\s])", text
-            )
-        ]
-        for alias, start, end in candidates:
-            if alias not in ("哥哥", "姐姐", "自己") and not any(alias in s for s in registered):
-                alias_issues.append(
-                    dict(
-                        chapter=chapter["number"],
-                        alias=alias,
-                        quote=text[max(0, start - 20) : end + 20],
-                        status="Inference",
-                    )
-                )
-    return (
-        dict(missing=missing, introduced=introduced, coverage="registered_cast_only" if cards else "Unknown"),
-        dict(issues=alias_issues, coverage="registered_aliases_and_explicit_self_names" if cards else "Unknown"),
-    )
-
-
 def check_book(book, *, source="final"):
     """Analyze without writing. Prefer final per chapter, falling back to draft.
 
@@ -366,6 +290,7 @@ def check_book(book, *, source="final"):
     from bookengine.solution_sequences import solution_sequence_checkup
     from bookengine.first_appearances import first_appearance_checkup
     from bookengine.explanation_density import explanation_density_checkup
+    from tools.book_cast_stats import cast_stats
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -388,7 +313,7 @@ def check_book(book, *, source="final"):
     ]
     similarity = [dict(chapter=c["number"], **analyze_prose(clean_prose(c["text"])[0], bible=bible)) for c in chapters]
     adjacent_openings, repeated_arrivals = cross_chapter_checkup(chapters)
-    intros, aliases = _cast_stats(bible, chapters)
+    intros, aliases = cast_stats(bible, chapters)
     from bookengine.character_diagnostics import character_reference
 
     model_evaluation = (
@@ -453,7 +378,7 @@ def check_book(book, *, source="final"):
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         cast_consistency=cast_checkup(bible, chapters),
         continuity_ledger=continuity_checkup(bible, chapters),
-        cross_chapter_facts=fact_checkup(chapters),
+        cross_chapter_facts=fact_checkup(chapters, book=book),
         title_promises=title_promise_checkup(bible, chapters),
         final_chapter_new_suspense=final_closure_checkup(chapters),
         unclosed_quotes=quote_checkup(chapters),

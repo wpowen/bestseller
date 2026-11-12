@@ -6,7 +6,7 @@ import re
 
 from .precision import _sentences, apply as sentence_edits
 from .continuity_checkup import merge_accident_delta
-from .cross_chapter_facts import merge_cross_chapter_delta
+from .cross_chapter_facts import merge_cross_chapter_delta, writer_critical_events
 from .permanent_facts import merge_permanent_delta, writer_permanent_facts
 
 
@@ -233,6 +233,7 @@ def writer_continuity_facts(state, bible, chapter):
     if memories:
         lines.append("已消耗记忆，不能再次献祭或当作完整记忆想起：" + "；".join(dict.fromkeys(memories)))
     lines.extend(writer_permanent_facts(state))
+    lines.extend(writer_critical_events(state, chapter))
     return lines
 
 

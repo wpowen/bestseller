@@ -306,9 +306,6 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
-        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
-    )
     text, raw, failed, cleaning["relationship_rhythm"] = guarded(repair_relationship_rhythm)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -325,6 +322,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["cast_consistency"] = guarded(repair_cast_consistency)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx, bible=bible)

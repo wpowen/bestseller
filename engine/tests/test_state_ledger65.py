@@ -1,7 +1,9 @@
 """Instruction 65: normalized permanent, quantity, level, and pronoun state."""
 
 import json
+import inspect
 
+from bookengine.cast_consistency import cast_checkup, cast_findings, repair_cast_consistency
 from bookengine.cross_chapter_facts import cross_chapter_checkup
 from bookengine.permanent_facts import (
     merge_permanent_delta,
@@ -16,6 +18,7 @@ from bookengine.state_values import (
     state_value_findings,
     writer_state_value_facts,
 )
+from bookengine import q1_chapter
 
 
 BIBLE = {
@@ -279,3 +282,70 @@ def test_d2_d3_clean_chapter_adds_zero_model_calls():
 
     assert result[-1]["status"] == "checked"
     assert calls == []
+
+
+D4_BIBLE = {
+    "characters": [
+        {"name": "林遥", "gender": "女", "role": "protagonist"},
+        {"name": "顾以宁", "gender": "女", "role": "support"},
+        {"name": "姬子翎", "gender": "女", "role": "antagonist"},
+    ]
+}
+D4_DRAFT = "姬子翎不需要真正得到所有人的同意，他只需拿走几个人的声音，再把剩下的沉默涂成顺从。"
+D4_FINAL = (
+    "林遥望着核上的十二道环形纹，低声道：“姬子翎不必真正得到所有人的同意。"
+    "他只要拿走几个人的声音，就能把剩下的沉默涂成顺从。”\n\n"
+    "公开争论仍从远处传来，姬子翎也仍能听见。林遥站在众人的议论声里，终于看清其中的手段："
+    "他只需截取彼此的矛盾，替所有人判定谁才是多数。即便众人已经退出旧阵位，他也能把那些沉默重新涂成顺从。"
+)
+
+
+def _d4_evidence(text):
+    return [
+        row
+        for row in cast_findings(text, D4_BIBLE, chapter=38)
+        if row["kind"] == "gender_pronoun" and row["status"] == "Evidence"
+    ]
+
+
+def test_d4_named_subject_inside_and_outside_quotes_binds_every_wrong_pronoun_to_ji_ziling():
+    assert [(row["name"], row["observed"], row["expected"]) for row in _d4_evidence(D4_DRAFT)] == [
+        ("姬子翎", "他", "她")
+    ]
+
+    rows = _d4_evidence(D4_FINAL)
+    assert [(row["name"], row["observed"], row["expected"]) for row in rows] == [
+        ("姬子翎", "他", "她"),
+        ("姬子翎", "他", "她"),
+        ("姬子翎", "他", "她"),
+    ]
+    assert not [row for row in rows if row["name"] == "林遥"]
+    report = cast_checkup(D4_BIBLE, [{"number": 38, "text": D4_FINAL}])
+    assert report["evidence_counts"]["gender_pronoun"] == 3
+
+
+def test_d4_targeted_leaf_repair_fixes_all_pronouns_and_shared_recheck_passes():
+    repaired, _, failed, note = repair_cast_consistency(
+        None,
+        "r2-ch38",
+        D4_FINAL,
+        {"events": []},
+        False,
+        {},
+        D4_BIBLE,
+        {"number": 38},
+        lambda *_args, **_kwargs: ({"events": []}, False, 0),
+        lambda *_args, **_kwargs: {"edits": []},
+    )
+
+    assert repaired.count("她只") == 2 and "她也能" in repaired
+    assert _d4_evidence(repaired) == []
+    assert failed is False and note["status"] == "repaired"
+
+
+def test_d4_cast_repair_runs_after_other_content_rewriters():
+    source = inspect.getsource(q1_chapter.chapter)
+    cast = source.index("repair_cast_consistency")
+
+    assert cast > source.index("repair_relationship_rhythm")
+    assert cast > source.index("repair_explanation_density")

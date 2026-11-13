@@ -265,6 +265,30 @@ def test_d2_d3_targeted_repair_rechecks_and_rolls_back_if_value_still_conflicts(
     assert rejected[-1]["reason"] == "state_value_recheck_failed"
 
 
+def test_d3_targeted_level_repair_rechecks_to_zero():
+    replacement = "她便以血弦境的真元稳住台脚。"
+
+    def ask(_client, _key, _instruction, sections, _schema, **_kwargs):
+        target = json.loads(dict(sections)["待修状态句"])[0]
+        return {"edits": [{"id": target["id"], "text": replacement}]}
+
+    repaired, _, failed, note = repair_state_values(
+        None,
+        "r2-ch38",
+        CH38_THUNDER,
+        {"state": {}, "continuity_delta": {}},
+        False,
+        _value_state(),
+        BIBLE,
+        {"number": 38},
+        lambda *_args, **_kwargs: ({"state": {}, "continuity_delta": {}}, False, 0),
+        ask,
+    )
+
+    assert repaired == replacement
+    assert failed is False and note["status"] == "repaired" and note["after"] == []
+
+
 def test_d2_d3_clean_chapter_adds_zero_model_calls():
     calls = []
     result = repair_state_values(

@@ -37,6 +37,10 @@ from .nonhuman_speech import speech_context, writer_speech_bible
 from .title_promises import writer_title_contract
 from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
+from .cross_chapter_facts import guard_all_repairs
+from .permanent_facts import repair_permanent_states
+from .plot_progression import repair_plot_replay
+from .opening_styles import repair_opening_style, writer_opening_style_context
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
 from .quote_text import repair_unclosed_quotes
 from .dialogue_hygiene import repair_dialogue_repetitions
@@ -136,6 +140,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     sections[1:1] = writer_sections(outline, bible)
     sections = with_completed_action_context(sections, out, idx)
+    sections.extend(writer_opening_style_context(out, idx))
     sections.extend(speech_context(bible, idx))
     sections.extend(writer_solution_sequence_context(out, idx, bible))
     if book.style_reference:
@@ -245,6 +250,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, notes["cross_chapter_opening"] = guarded(repair_cross_chapter_opening)(
         client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
     )
+    text, raw, failed, notes["opening_style"] = guarded(repair_opening_style)(
+        client, prefix, text, raw, failed, state, bible, outline, out, extract_state, ask
+    )
     text, raw, failed, opponent_repair = guarded(repair_retired)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -285,6 +293,12 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, cleaning["model_notes"] = guarded(repair_model_notes)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, notes["plot_progression"] = guarded(repair_plot_replay)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["permanent_states"] = guarded(repair_permanent_states)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
@@ -309,6 +323,16 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, cleaning["text_hygiene"] = guarded(repair_text)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx, bible=bible)
+    if notes["repair_history"]["status"] == "rolled_back":
+        raw, failed = original_raw, initial_failed
+    elif notes["repair_history"]["status"] == "partially_rolled_back":
+        raw, failed, _ = extract_state(
+            client, prefix + "-repair-history-state", text, state, bible, outline, [], final=True
+        )
+        if failed:
+            text, raw, failed = original, original_raw, initial_failed
+            notes["repair_history"].update(status="rolled_back", reason="repair_history_state_failed")
     require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

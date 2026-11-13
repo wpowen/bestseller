@@ -5,6 +5,7 @@ import re
 from copy import deepcopy
 
 from .checks import high_confidence
+from .cross_chapter_facts import review_repair_continuity
 from .promise_io import precise_ask
 from .retired_opponents import opponent_hits
 from .text import _sentences
@@ -215,7 +216,8 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
         client,
         prefix + "-conflict-repair",
         "改写每个冲突段，让缺失事件在现场自然发生；必要时连同其后直到章末的后果一起重写，不能只在末段追加。"
-        "保留不冲突的人物、地点和既有行动。返回一到多项edit，每项id和original逐字对应允许段，text只含一个完整自然段。",
+        "保留不冲突的人物、地点和既有行动。不得用揭示、真相或新增解释改写前文已发生的行动和结果。"
+        "返回一到多项edit，每项id和original逐字对应允许段，text只含一个完整自然段。",
         [
             ("缺失事件", json.dumps(missing, ensure_ascii=False)),
             ("必须改写的冲突段落", json.dumps(conflicts, ensure_ascii=False)),
@@ -232,6 +234,10 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     note.update(edits=edits, repair_reason=reason)
     if reason != "valid" or clean_prose(candidate)[0] != candidate:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_conflict_rewrite")
+    rewrite_findings = review_repair_continuity(ask, client, prefix, text, candidate, state, outline.get("number", 0))
+    note["prior_event_findings"] = rewrite_findings
+    if rewrite_findings:
+        return text, raw, failed, dict(note, status="rolled_back", reason="rewrites_prior_event")
     remaining = conflicting_payoff_paragraphs(candidate, outline)
     note["conflicts_after"] = remaining
     if remaining:

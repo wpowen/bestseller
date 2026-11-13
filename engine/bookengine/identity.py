@@ -12,6 +12,32 @@ _NONHUMAN_COMPANION = re.compile(r"契兽|灵宠|幼兽|兽宠|宠兽|战宠|灵
 _ROMANCE_ROLE = re.compile(r"恋爱对象|感情对象|恋人|爱情线|感情线|官配|CP|相恋|谈恋爱")
 
 
+def name_gender_impression(name, rules):
+    """Return only an explicitly catalogued common impression for a generated given name."""
+    given = name[-2:] if isinstance(name, str) else ""
+    groups = rules.get("given_name_gender") if isinstance(rules, dict) else None
+    if not isinstance(groups, dict):
+        return ""
+    matches = [gender for gender in ("男", "女") if given in groups.get(gender, [])]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def name_gender_mismatch(name, gender, rules):
+    impression = name_gender_impression(name, rules)
+    return bool(impression and gender in ("男", "女") and impression != gender)
+
+
+def annotate_name_gender_notes(bible, rules):
+    """Record a category fact when an authorized or unavoidable name has an opposite common impression."""
+    result = deepcopy(bible)
+    for card in result.get("characters", []) if isinstance(result, dict) else []:
+        if not isinstance(card, dict):
+            continue
+        if name_gender_mismatch(card.get("name"), card.get("gender"), rules):
+            card["name_gender_note"] = "姓名常见印象与人物卡性别不一致；写作以人物卡性别和代词为准"
+    return result
+
+
 def _identity_replacements(bible):
     result = {}
     for card in bible.get("characters", []) if isinstance(bible, dict) else []:

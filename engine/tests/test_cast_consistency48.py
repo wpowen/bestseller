@@ -257,7 +257,7 @@ def test_eval52_explicit_named_subject_binds_following_pronoun_despite_other_peo
         ]
 
 
-def test_web59c_named_female_subject_pronouns_are_evidence_and_not_ambiguous():
+def test_web59c_named_female_subject_pronouns_use_external_named_subject():
     value = {
         "characters": [
             {"name": "顾长风", "gender": "男", "role": "protagonist"},

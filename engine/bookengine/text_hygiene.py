@@ -355,9 +355,10 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
     if _quote_balance_worse(text, candidate):
         return text, raw, failed, dict(note, status="rolled_back", reason="punctuation_recheck_failed")
     names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
-    if _last_paragraph(candidate) != _last_paragraph(text) or any(
-        name in text and name not in candidate for name in names
-    ):
+    # The ending is protected, unless the ending itself is what has to be cleaned.
+    ending_dirty = any(inspect_text(_last_paragraph(text))["counts"].values())
+    ending_changed = not ending_dirty and _last_paragraph(candidate) != _last_paragraph(text)
+    if ending_changed or any(name in text and name not in candidate for name in names):
         return text, raw, failed, dict(note, status="rolled_back", reason="character_or_ending_changed")
     checked, invalid, _ = extract(
         client, prefix + "-text-hygiene-recheck", candidate, state, bible, outline, [], final=True

@@ -134,10 +134,13 @@ def _clause_subject(sentence, people, stop=None):
             continue
         card = candidates[0]
         before = clause[: clause.find(card["name"])]
-        if re.search(r"(?:看向|望向|问|告诉|交给|递给|跟随|追赶|抓住|扶住)$", before):
+        if re.search(r"(?:看向|望向|问|告诉|交给|递给|跟随|追赶|抓住|扶住|找|借)[^，,；;：:]*$", before):
             continue
         tail = clause[clause.find(card["name"]) + len(card["name"]) :]
-        if not (_subject_bound(clause, card["name"]) or re.match(r"(?:不必|不需要|(?:也)?仍能|只需|只要)", tail)):
+        if not (
+            _subject_bound(clause, card["name"])
+            or re.match(r"(?:不必|不需要|(?:也)?仍能|只需|只要|若(?:只是|要|能|想|再))", tail)
+        ):
             continue
         return card
     return None
@@ -145,12 +148,13 @@ def _clause_subject(sentence, people, stop=None):
 
 def _prior_quoted_subject(text, span, cards):
     start, end = span
+    previous = text[start:end]
     people = []
-    for card in _mentioned(text[start:end], cards):
+    for card in _mentioned(previous, cards):
         position = text.find(card["name"], start, end)
         if position >= 0 and _inside_quote(text, position):
             people.append(card)
-    return people[0] if len(people) == 1 else None
+    return _clause_subject(previous, people) if people else None
 
 
 def _scan_bindings(text, cards, spans):

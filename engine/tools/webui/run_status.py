@@ -47,6 +47,18 @@ def alive(pid):
         return True
 
 
+def fresh_process_namespace():
+    """True when this service is PID 1, i.e. it just started a new container.
+
+    Nothing a previous container started can still be running, so a PID saved by it only
+    names whatever unrelated process reused that number.
+    """
+    return os.getpid() == 1
+
+
+STALE_ORPHAN_REASON = "旧子进程或写作锁仍在使用，未重复启动"
+
+
 def clear_runner_lock(library, folder):
     """An absent PID alone is insufficient if another runner still holds its lock."""
     path = library.safe(folder / "runner.lock")
@@ -65,6 +77,7 @@ def recover(library):
     from pipeline import enabled, migrate, runtime_folder
     from tools.chapter_outputs import finished
 
+    fresh = fresh_process_namespace()
     for folder in library.own.iterdir():
         if not folder.is_dir() or folder.is_symlink() or folder.name.startswith("."):
             continue
@@ -76,16 +89,18 @@ def recover(library):
         run = read(library.safe(folder / "run.json"), {})
         if enabled(data) and state == "complete" and not finished(folder):
             state = data["status"] = "queued"
+        # A book wrongly marked as orphaned by a reused PID is re-evaluated once a new container starts.
+        stale_orphan = fresh and state == "orphaned" and data.get("reason") == STALE_ORPHAN_REASON
         if (
             enabled(data)
             and data.get("pipeline_version") == 1
-            and state not in ("complete", "paused", "budget_paused", "orphaned")
+            and (state not in ("complete", "paused", "budget_paused", "orphaned") or stale_orphan)
         ):
             stages = data.setdefault("pipeline", {})
-            writer_alive = alive(stages.get("book", {}).get("pid"))
-            polisher_alive = alive(stages.get("polish", {}).get("pid"))
+            writer_alive = not fresh and alive(stages.get("book", {}).get("pid"))
+            polisher_alive = not fresh and alive(stages.get("polish", {}).get("pid"))
             if polisher_alive or (not writer_alive and not clear_runner_lock(library, folder)):
-                data.update(status="orphaned", reason="旧子进程或写作锁仍在使用，未重复启动")
+                data.update(status="orphaned", reason=STALE_ORPHAN_REASON)
             else:
                 for stage in ("book", "polish"):
                     saved = stages.get(stage, {})
@@ -105,8 +120,8 @@ def recover(library):
             continue
         if state in STOPPED or (state not in ACTIVE and run.get("status") not in ACTIVE):
             continue
-        if alive(data.get("pid", run.get("pid"))) or not clear_runner_lock(library, folder):
-            data.update(status="orphaned", reason="旧子进程或写作锁仍在使用，未重复启动")
+        if (not fresh and alive(data.get("pid", run.get("pid")))) or not clear_runner_lock(library, folder):
+            data.update(status="orphaned", reason=STALE_ORPHAN_REASON)
         else:
             kind = "queued_polish" if state in {"polishing", "queued_polish"} else "queued"
             if run.get("status") == "complete":

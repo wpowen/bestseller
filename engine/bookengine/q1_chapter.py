@@ -39,6 +39,7 @@ from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
 from .permanent_facts import repair_permanent_states
+from .state_values import repair_state_values
 from .plot_progression import repair_plot_replay
 from .opening_styles import repair_opening_style, writer_opening_style_context
 from .prose_similarity import repair_cross_chapter_opening, with_completed_action_context
@@ -297,6 +298,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["permanent_states"] = guarded(repair_permanent_states)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["state_values"] = guarded(repair_state_values)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(

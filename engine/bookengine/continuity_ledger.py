@@ -8,6 +8,8 @@ from .precision import _sentences, apply as sentence_edits
 from .continuity_checkup import merge_accident_delta
 from .cross_chapter_facts import merge_cross_chapter_delta, writer_critical_events
 from .permanent_facts import merge_permanent_delta, writer_permanent_facts
+from .continuity_contract import extraction_contract
+from .state_values import merge_state_value_delta, writer_state_value_facts
 
 
 LEDGER_VERSION = 1
@@ -25,31 +27,6 @@ _NUMBERS = {2: "两", 3: "三", 4: "四", 5: "五", 6: "六", 8: "八"}
 _CN_NUMBERS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 _MODEL_KINDS = {"injury_side", "life_status", "location_status", "consumed_memory", "limb_count"}
 _BODY_PART = re.compile(r"(左|右|双侧)?(肩背|前腿|后腿|手臂|手掌|肩|背|手|腿|臂|脚|掌|蹄|角)")
-
-
-def extraction_contract():
-    instruction = (
-        "\ncontinuity_delta只提取本章逐字引文能证明的变化，不复制旧账本、不从章纲推测。"
-        "characters每项name/field/value/quote；field仅life_status/location/injury。"
-        "life_status只用alive/missing/dead；location另给travel_status（随行/同行/离队/失踪/留守/死亡/未知）；"
-        "injury另给part/side（左/右/双侧/无）/condition/severity。"
-        "body_structures仅正文明确身体构造时给name/form/limb_count/limb_name/quote。"
-        "consumed_memories只记主角已经永久献祭、再也无法完整想起的记忆，给name/summary/quote；"
-        "只是回忆、想起、计划献祭或代价不明一律不记。accidents给name/part/cause/quote，只记本章实际发生的意外。"
-        "critical_events只记本章已经真实完成、后文不可否定或改写的关键行动与结果，给summary/quote。"
-        "permanent_states只记永久失去或获得的身份、能力、肢体、权限，给name/category/subject/change/summary/quote；"
-        "change只用lost/gained。"
-        "所有quote必须是正文连续逐字原文，找不到引文就省略该项。"
-    )
-    schema = {
-        "characters": [],
-        "body_structures": [],
-        "consumed_memories": [],
-        "accidents": [],
-        "critical_events": [],
-        "permanent_states": [],
-    }
-    return instruction, schema
 
 
 def _cards(bible):
@@ -185,7 +162,8 @@ def merge_continuity_delta(state, delta, text, bible, chapter):
     _merge_memories(ledger, delta.get("consumed_memories", []), text, bible, chapter)
     merge_accident_delta(ledger, delta, text, bible, chapter)
     result["continuity_ledger"] = ledger
-    return merge_permanent_delta(merge_cross_chapter_delta(result, delta, text, chapter), delta, text, chapter, bible)
+    result = merge_permanent_delta(merge_cross_chapter_delta(result, delta, text, chapter), delta, text, chapter, bible)
+    return merge_state_value_delta(result, delta, text, bible, chapter)
 
 
 def _person_fact(name, record):
@@ -233,6 +211,7 @@ def writer_continuity_facts(state, bible, chapter):
     if memories:
         lines.append("已消耗记忆，不能再次献祭或当作完整记忆想起：" + "；".join(dict.fromkeys(memories)))
     lines.extend(writer_permanent_facts(state, bible))
+    lines.extend(writer_state_value_facts(state, bible))
     lines.extend(writer_critical_events(state, chapter))
     return lines
 

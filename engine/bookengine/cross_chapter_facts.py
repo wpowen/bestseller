@@ -302,17 +302,22 @@ def cross_chapter_checkup(chapters, book=None, bible=None, state=None):
                 history.append({"chapter": number, "quote": current})
     from .permanent_facts import permanent_state_checkup
     from .plot_progression import plot_progression_checkup
+    from .state_values import state_value_checkup
 
     permanent = permanent_state_checkup(chapters, bible, state)
+    values = state_value_checkup(chapters, bible or {})
     progression = plot_progression_checkup(chapters, book=book)
     return {
         "counts": {
             "rewritten_prior_events": len(issues),
             "permanent_state_conflicts": len(permanent),
+            "quantity_state_conflicts": len(values["quantity_state_conflicts"]),
+            "level_state_conflicts": len(values["level_state_conflicts"]),
             "plot_replays": progression["counts"]["plot_replays"],
         },
         "rewritten_prior_events": issues,
         "permanent_state_conflicts": permanent,
+        **values,
         "plot_replays": progression["plot_replays"],
         "authority": "deterministic_explicit_denial",
     }

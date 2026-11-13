@@ -185,7 +185,7 @@ def merge_continuity_delta(state, delta, text, bible, chapter):
     _merge_memories(ledger, delta.get("consumed_memories", []), text, bible, chapter)
     merge_accident_delta(ledger, delta, text, bible, chapter)
     result["continuity_ledger"] = ledger
-    return merge_permanent_delta(merge_cross_chapter_delta(result, delta, text, chapter), delta, text, chapter)
+    return merge_permanent_delta(merge_cross_chapter_delta(result, delta, text, chapter), delta, text, chapter, bible)
 
 
 def _person_fact(name, record):
@@ -232,7 +232,7 @@ def writer_continuity_facts(state, bible, chapter):
     ]
     if memories:
         lines.append("已消耗记忆，不能再次献祭或当作完整记忆想起：" + "；".join(dict.fromkeys(memories)))
-    lines.extend(writer_permanent_facts(state))
+    lines.extend(writer_permanent_facts(state, bible))
     lines.extend(writer_critical_events(state, chapter))
     return lines
 

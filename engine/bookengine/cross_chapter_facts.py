@@ -273,7 +273,7 @@ def guard_all_repairs(ask, client, prefix, original, candidate, state, chapter, 
     return candidate, {"status": "checked", "findings": []}
 
 
-def cross_chapter_checkup(chapters, book=None):
+def cross_chapter_checkup(chapters, book=None, bible=None, state=None):
     """Offline evidence for explicit later denials of an earlier completed action."""
     history = []
     issues = []
@@ -303,7 +303,7 @@ def cross_chapter_checkup(chapters, book=None):
     from .permanent_facts import permanent_state_checkup
     from .plot_progression import plot_progression_checkup
 
-    permanent = permanent_state_checkup(chapters)
+    permanent = permanent_state_checkup(chapters, bible, state)
     progression = plot_progression_checkup(chapters, book=book)
     return {
         "counts": {

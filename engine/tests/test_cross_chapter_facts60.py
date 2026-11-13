@@ -236,9 +236,9 @@ def test_c2_original_repeated_losses_and_groundless_restore_are_detected():
 
 
 def test_c2_targeted_repair_is_rechecked_and_bad_recheck_rolls_back():
-    replacement = "顾长风以军阵调兵纹接入双环，宗门身份与功法依旧无法使用。"
+    good_replacement = "顾长风以军阵调兵纹接入双环，宗门身份与功法依旧无法使用。"
 
-    def run(recheck_findings):
+    def run(replacement):
         stages = []
 
         def ask(_client, key, _instruction, sections, _schema, **_kwargs):
@@ -259,7 +259,7 @@ def test_c2_targeted_repair_is_rechecked_and_bad_recheck_rolls_back():
             if key.endswith("-permanent-repair"):
                 sentence = json.loads(dict(sections)["允许修改的命中句"])[0]
                 return {"edits": [{"id": sentence["id"], "text": replacement}]}
-            return {"findings": recheck_findings}
+            return {"findings": []}
 
         result = repair_permanent_states(
             None,
@@ -275,27 +275,17 @@ def test_c2_targeted_repair_is_rechecked_and_bad_recheck_rolls_back():
         )
         return result, stages
 
-    repaired, stages = run([])
-    assert repaired[0] == replacement and repaired[-1]["status"] == "repaired"
-    assert stages == ["r2-ch39-permanent-review", "r2-ch39-permanent-repair", "r2-ch39-permanent-recheck"]
+    repaired, stages = run(good_replacement)
+    assert repaired[0] == good_replacement and repaired[-1]["status"] == "repaired"
+    assert stages == ["r2-ch39-permanent-review", "r2-ch39-permanent-repair"]
 
-    rejected, _ = run(
-        [
-            {
-                "id": 1,
-                "kind": "groundless_restore",
-                "previous_chapter": 31,
-                "previous_quote": CH31_COST,
-                "current_quote": replacement,
-                "reason": "改写后仍恢复权限",
-            }
-        ]
-    )
+    rejected, rejected_stages = run(CH37_REPEAT)
     assert rejected[0] == CH39_RESTORE
     assert rejected[-1]["status"] == "rolled_back" and rejected[-1]["reason"] == "permanent_recheck_failed"
+    assert rejected_stages[-1] == "r2-ch39-permanent-recheck"
 
 
-def test_instruction60_no_hit_model_call_count_uses_only_three_review_stages(tmp_path):
+def test_instruction60_no_hit_permanent_state_prefilter_adds_no_model_call(tmp_path):
     state = _event_state()
     state["continuity_ledger"]["permanent_states"] = _permanent_state()["continuity_ledger"]["permanent_states"]
     text = "顾长风清点木手。"
@@ -318,9 +308,8 @@ def test_instruction60_no_hit_model_call_count_uses_only_three_review_stages(tmp
 
     assert stages == [
         "r2-ch40-plot-replay-review",
-        "r2-ch40-permanent-review",
         "r2-ch40-conflict-continuity-recheck",
     ]
 
     guard_all_repairs(ask, None, "r2-ch40", text, text, state, 40, bible=bible)
-    assert len(stages) == 3
+    assert len(stages) == 2

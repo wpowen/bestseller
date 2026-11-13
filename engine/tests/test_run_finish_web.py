@@ -238,6 +238,42 @@ class RunFinishWebTests(WebFixture):
         self.assertEqual(self.lib.meta(folder)["status"], "quota_exhausted")
         self.spawn.assert_not_called()
 
+    def test_new_container_treats_saved_pids_as_stale_and_releases_a_wrongly_orphaned_book(self):
+        run_status = sys.modules["run_status"]
+        folder = self.book(status="orphaned")
+        data = library.read(folder / "web.json")
+        data.update(
+            auto_deai=True,
+            pipeline_version=1,
+            reason=run_status.STALE_ORPHAN_REASON,
+            pipeline=dict(
+                book=dict(status="error", reason="chapter 30 unfinalized"), polish=dict(status="running", pid=7)
+            ),
+        )
+        put(folder / "web.json", data)
+        put(folder / "runtime.json", dict(kind="error", stage="r2-ch30-text-hygiene", error="chapter 30 unfinalized"))
+        # PID 7 exists in the new container, but it is some unrelated process.
+        self.kill.side_effect = None
+        self.restart()
+        self.assertEqual(library.read(folder / "web.json")["status"], "orphaned")
+        with mock.patch.object(run_status, "fresh_process_namespace", return_value=True):
+            self.restart()
+        recovered = library.read(folder / "web.json")
+        self.assertNotEqual(recovered["status"], "orphaned")
+        self.assertEqual(recovered["pipeline"]["book"]["status"], "error")
+        self.assertNotIn("pid", recovered["pipeline"]["polish"])
+
+    def test_new_container_still_respects_a_runner_lock_that_is_really_held(self):
+        run_status = sys.modules["run_status"]
+        folder = self.book(status="queued")
+        lockpath = folder / "runner.lock"
+        with lockpath.open("a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with mock.patch.object(run_status, "fresh_process_namespace", return_value=True):
+                self.restart()
+            self.assertEqual(self.lib.meta(folder)["status"], "orphaned")
+            self.assertTrue(lockpath.exists())
+
     def test_held_runner_lock_without_pid_prevents_recovery_from_deleting_the_lock(self):
         folder = self.book(status="queued")
         lockpath = folder / "runner.lock"

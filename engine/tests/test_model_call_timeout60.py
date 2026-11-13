@@ -1,6 +1,7 @@
 """Instruction 60 C6: one HTTP call has a phase-specific wall-clock deadline."""
 
 import json
+import socket
 from unittest.mock import patch
 
 import pytest
@@ -108,3 +109,55 @@ def test_c6_slow_finalization_stream_uses_shorter_limit_and_records_timeout(tmp_
     assert c.calls[0]["timeout_phase"] == "finalization"
     assert c.calls[0]["total_timeout_seconds"] == 2.0
     assert c.calls[0]["error_type"] == CallTimeout.__name__
+
+
+def test_d6_socket_timeout_at_total_deadline_is_accounted_as_timeout(tmp_path, monkeypatch):
+    clock = Clock()
+    c = client(tmp_path, {"planning": 5.0, "finalization": 2.0})
+    monkeypatch.setattr("bookengine.client.time.monotonic", clock)
+
+    def timeout_at_deadline(*_args, **_kwargs):
+        clock.value = 2.0
+        raise TimeoutError("timed out")
+
+    with patch("bookengine.client.urllib.request.urlopen", side_effect=timeout_at_deadline):
+        with pytest.raises(NetworkRetry, match="call_timeout"):
+            c.request("r2-ch7-finish", "定稿", 1000, "low", 1)
+
+    assert c.calls[0]["status"] == "timeout"
+    assert c.calls[0]["error_type"] == CallTimeout.__name__
+
+
+def test_d6_early_idle_timeout_remains_transport_error(tmp_path, monkeypatch):
+    clock = Clock()
+    c = client(tmp_path, {"planning": 5.0, "finalization": 2.0})
+    monkeypatch.setattr("bookengine.client.time.monotonic", clock)
+
+    def idle_timeout(*_args, **_kwargs):
+        clock.value = 0.5
+        raise socket.timeout("idle")
+
+    with patch("bookengine.client.urllib.request.urlopen", side_effect=idle_timeout):
+        with pytest.raises(NetworkRetry, match="timeout_or_connection_error"):
+            c.request("r2-ch7-finish", "定稿", 1000, "low", 1)
+
+    assert c.calls[0]["status"] == "transport_error"
+    assert c.calls[0]["error_type"] == "TimeoutError"
+
+
+def test_d6_response_read_uses_only_time_remaining_from_the_whole_call(tmp_path, monkeypatch):
+    clock = Clock()
+    c = client(tmp_path, {"planning": 5.0, "finalization": 2.0})
+    monkeypatch.setattr("bookengine.client.time.monotonic", clock)
+    monkeypatch.setattr("bookengine.call_timeout.time.monotonic", clock)
+
+    def late_response(*_args, **_kwargs):
+        clock.value = 1.5
+        return SlowReply(answer(), clock, 0.6)
+
+    with patch("bookengine.client.urllib.request.urlopen", side_effect=late_response):
+        with pytest.raises(NetworkRetry, match="call_timeout"):
+            c.request("r2-ch7-finish", "定稿", 1000, "low", 1)
+
+    assert c.calls[0]["status"] == "timeout"
+    assert c.calls[0]["seconds"] < 3.0

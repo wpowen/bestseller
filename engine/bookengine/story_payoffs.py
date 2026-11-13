@@ -9,6 +9,7 @@ from .promise_io import precise_ask
 from .retired_opponents import opponent_hits
 from .text import _sentences
 from tools.book_checkup import clean_prose
+from .model_notes import english_rows
 
 
 def review_schema(number):
@@ -232,6 +233,9 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     note.update(edits=edits, repair_reason=reason)
     if reason != "valid" or clean_prose(candidate)[0] != candidate:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_conflict_rewrite")
+    if len(english_rows(candidate)) > len(english_rows(text)):
+        # A rewrite that drifts into English would later block the chapter from being published.
+        return text, raw, failed, dict(note, status="rolled_back", reason="repair_introduced_english")
     remaining = conflicting_payoff_paragraphs(candidate, outline)
     note["conflicts_after"] = remaining
     if remaining:

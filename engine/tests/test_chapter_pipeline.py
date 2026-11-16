@@ -132,7 +132,7 @@ class PipelineTests(WebFixture):
         first = self.pipeline_book()
         second = self.book("webui/zz-second", final=False, total=3)
         put(second / "web.json", dict(library.read(second / "web.json"), auto_deai=True, polish=True))
-        children = [mock.Mock(pid=900000 + n, returncode=None) for n in range(4)]
+        children = [mock.Mock(pid=900000 + n, returncode=None) for n in range(5)]
         for child in children:
             child.poll.return_value = None
         self.spawn.side_effect = children
@@ -151,7 +151,9 @@ class PipelineTests(WebFixture):
             child.returncode = 0
         self.queue.tick()
         self.assertEqual(self.killpg.call_count, 4)
-        self.assertEqual(self.spawn.call_count, 4)
+        # The fifth process is the checkup of the first book's final text (instruction 69), not a job slot.
+        self.assertEqual(self.spawn.call_count, 5)
+        self.assertEqual(self.spawn.call_args.args[0][2:4], ["tools.book_checkup", str(first)])
         self.assertTrue(all(not i["paused"] for i in self.queue.processes.values()))
 
     def test_restart_keeps_failed_stage_stopped_and_resumes_healthy_writer(self):

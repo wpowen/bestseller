@@ -15,6 +15,7 @@ from tools.runtime_support import ProjectError, QuotaExhausted, write_runtime
 from .version import VERSION
 from .parallel import collect
 from .adoption import deterministic_choices, entities as _entities, factcheck as _factcheck, final_adoption
+from .adoption import spill_reasons
 from .hygiene import reject_introduced
 
 DATA = Path(__file__).resolve().parent / "data"
@@ -346,7 +347,7 @@ def polish(text, ctx, llm):
             choices = deterministic + choices
             candidates = []
             for choice in dict.fromkeys(choices):
-                if invariant(hit["text"], choice, ctx, entities):
+                if invariant(hit["text"], choice, ctx, entities) or spill_reasons(original, hit, choice):
                     continue
                 revised = replace(original, [dict(hit, replacement=choice)])
                 if invariant(original, revised, ctx, entities, True):

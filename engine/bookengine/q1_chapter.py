@@ -39,6 +39,7 @@ from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
 from .repair_additions import guard_repair_additions
+from .life_status import repair_premature_death, writer_survival_instruction
 from .permanent_facts import repair_permanent_states
 from .state_values import repair_state_values
 from .plot_progression import repair_plot_replay
@@ -156,6 +157,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     )
     instruction += writer_payoff_instruction(outline) + writer_instruction(outline, bible)
     instruction += writer_first_appearance_instruction(out, idx, bible, outline)
+    instruction += writer_survival_instruction(bible, idx)
 
     def write_draft(suffix):
         saved = client.prefix
@@ -302,6 +304,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["state_values"] = guarded(repair_state_values)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
+    text, raw, failed, notes["premature_death"] = guarded(repair_premature_death)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(

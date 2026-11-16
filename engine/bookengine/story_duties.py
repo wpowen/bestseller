@@ -10,6 +10,7 @@ import json
 import re
 from .chapter_rhythm import chapter_type
 from .q1_schema import integer, rows
+from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
 from .storage import save
 from .story_design import SPEC, stage_list
 
@@ -19,6 +20,10 @@ MUST_CLOSE = ("payoff", "truth", "flaw_cost", "fear_faced", "growth_end")
 VILLAIN_TYPES = ("对抗", "谋划", "揭秘")
 SOUL_LIMIT = 600
 PLANNER_LIMIT = 900
+LEDGER_POLICY = (
+    "done=锚点词出现在正文并附原句（early=在排期章之前已写出）；unverified=相关人物在场但无法用锚点确认；"
+    "missing=未写出，顺延。仅供参考，不代替读者验收"
+)
 SENTENCE = re.compile(r"[^。！？\n]*[。！？]?")
 
 
@@ -186,14 +191,53 @@ def _rank(duty):
     return "arc" if duty["kind"] in ("flaw_cost", "fear_faced", "growth_end") else duty["kind"]
 
 
+def _saved_bodies(out, before):
+    for path in sorted(Path(out).glob("chapter-*.body.md")):
+        number = integer(path.name[len("chapter-") : -len(".body.md")])
+        if 0 < number < before:
+            yield number, path.read_text(encoding="utf-8")
+
+
+def settle_early_plants(out, design, bible, number):
+    """A plant already written before its scheduled chapter is closed with that chapter and quote.
+
+    Without this the writer is asked to plant the same thing again and the ledger reports it missing.
+    """
+    if not out:
+        return []
+    ledger = load_ledger(out)
+    waiting = [
+        duty
+        for duty in all_duties(design, bible)
+        if duty["kind"] == "plant" and duty["chapter"] <= number and _open(duty, ledger.get(duty["id"]), number)
+    ]
+    settled = []
+    for duty in waiting:
+        for chapter, text in _saved_bodies(out, number):
+            word = next((word for word in duty["anchors"] if word in text), "")
+            if word:
+                entry = dict(
+                    ledger.get(duty["id"], {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"]
+                )
+                entry.update(status="done", chapter=chapter, quote=_quote(text, word), early=True)
+                ledger[duty["id"]] = entry
+                settled.append(duty["id"])
+                break
+    if settled:
+        save(Path(out) / LEDGER, dict(policy=LEDGER_POLICY, duties=ledger))
+    return settled
+
+
 def with_story_duties(outline, bible, out):
     """Attach this chapter's obligations to its writing outline."""
     design = bible.get("story_design") if isinstance(bible.get("story_design"), dict) else {}
     if not design:
         return outline
+    settle_early_plants(out, design, bible, integer(outline.get("number")))
+    outline = record_side_names(out, outline, bible)
     kind = chapter_type(outline) or outline.get("rhythm_type") or ""
     duties = due_duties(design, bible, integer(outline.get("number")), kind, load_ledger(out))
-    return dict(outline, story_duties=duties)
+    return dict(outline, story_duties=duties, side_names=load_side_cast(out) if out else {})
 
 
 def _present_names(outline):
@@ -225,7 +269,7 @@ def writer_sections(outline, bible):
     if duties:
         lines = "\n".join(f"{index}. {duty['text']}" for index, duty in enumerate(duties, 1))
         sections.append((SPEC["writer"]["duty_heading"], lines))
-    return sections
+    return sections + writer_section(outline.get("side_names"))
 
 
 def is_payoff_chapter(outline):
@@ -280,7 +324,7 @@ def planner_sections(bible, out, start, end, stage_number):
     ]
     if steps:
         sections.append((SPEC["planner"]["relationship_heading"], steps))
-    return sections
+    return sections + planner_section(out, bible, start)
 
 
 def _quote(text, word):
@@ -311,11 +355,5 @@ def record_story_duties(out, number, text, outline):
         entry["attempts"] = tried
         ledger[duty["id"]] = entry
         results.append(dict(id=duty["id"], kind=duty["kind"], status=entry["status"]))
-    save(
-        path,
-        dict(
-            policy="done=锚点词出现在正文并附原句；unverified=相关人物在场但无法用锚点确认；missing=未写出，顺延。仅供参考，不代替读者验收",
-            duties=ledger,
-        ),
-    )
+    save(path, dict(policy=LEDGER_POLICY, duties=ledger))
     return results

@@ -39,6 +39,7 @@ from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
 from .repair_additions import guard_repair_additions
+from .name_slips import fix_name_slips
 from .life_status import repair_premature_death, writer_survival_instruction
 from .permanent_facts import repair_permanent_states
 from .state_values import repair_state_values
@@ -345,6 +346,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         if failed:
             text, raw, failed = original, original_raw, initial_failed
             notes["repair_history"].update(status="rolled_back", reason="repair_history_state_failed")
+    text, notes["name_slips"] = fix_name_slips(text, bible, idx)
     require_publishable(text, idx, out)
     boundaries = boundary_facts(raw, text)
     boundaries = with_ending_candidate(boundaries, text, bible, state)

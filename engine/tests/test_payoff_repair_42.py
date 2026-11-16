@@ -28,7 +28,8 @@ def fake_extract(client, name, text, state, bible, outline, rows, final=False):
 
 
 def test_missing_due_payoff_is_appended_after_all_existing_events():
-    original = "顾冬岚推开石门。\n\n门外的追兵已经举刀。"
+    # Instruction 68: a closing hook stays last, so this ending is deliberately not one.
+    original = "顾冬岚推开石门。\n\n门后的人把木箱抬了出来。"
     client = FakeClient([{"patch": {"after": 1, "text": "顾冬岚夺回三枚灵石。"}}])
     changed, raw, failed, note = repair_after_draft(
         client,
@@ -51,7 +52,7 @@ def test_missing_due_payoff_is_appended_after_all_existing_events():
         fake_ask,
     )
     assert "顾冬岚夺回三枚灵石" in changed
-    assert changed.index("门外的追兵已经举刀。") < changed.index("顾冬岚夺回三枚灵石")
+    assert changed.index("门后的人把木箱抬了出来。") < changed.index("顾冬岚夺回三枚灵石")
     assert changed.endswith("顾冬岚夺回三枚灵石。")
     assert note["payoff"]["status"] == "repaired"
     assert note["hook"]["status"] == "kept"

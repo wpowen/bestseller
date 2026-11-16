@@ -420,7 +420,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
-            "\n人物首次出现需一句与卡片一致的身份或来历，用叙述或旁人称呼带出，不改成人物自报。missing_introduction/unregistered_alias与其他问题在本轮"
+            "\n人物首次出现需一句与卡片一致的身份或来历，用叙述或旁人称呼带出，不改成人物自报；身份和姓名分开写，不把所属、职位和姓名连成一个长称呼。missing_introduction/unregistered_alias与其他问题在本轮"
             "统一用edits修复，id用候选句的S编号；补身份只在该句自然交代，卡外外号或自称改为卡片name/address/aliases。"
             "未知身份不编造，不把英语role当身份。"
         )

@@ -17,6 +17,7 @@ FILE = "story_design.yaml"
 VERSION = 1
 TEXT_LIMIT = 80
 ANCHOR_RANGE = (2, 6)
+ALIAS_LIMIT = 3
 MODEL_ATTEMPTS = 2
 
 
@@ -35,6 +36,18 @@ def _clamp(value, low, high, default):
 def _anchor(value):
     text = _text(value, 12)
     return text if ANCHOR_RANGE[0] <= len(text) <= ANCHOR_RANGE[1] else ""
+
+
+def _aliases(values, anchor, taken):
+    """Other natural names the prose may use for one foreshadowed thing; each must stay unambiguous."""
+    if not anchor or not isinstance(values, list):
+        return []
+    result = []
+    for value in values:
+        alias = _anchor(value)
+        if alias and alias != anchor and alias not in taken and alias not in result:
+            result.append(alias)
+    return result[:ALIAS_LIMIT]
 
 
 def stage_list(bible, total):
@@ -71,6 +84,8 @@ def _foreshadows(raw, bible, stages, total):
     sources = [row for row in rows(bible.get("main_foreshadows")) if row.get("id")]
     result = []
     used_anchors = set()
+    # Every foreshadow's own anchor is reserved first, so no alias can point at a different thing.
+    reserved = {_anchor(supplied.get(source["id"], {}).get("anchor")) for source in sources} - {""}
     for index, source in enumerate(sources):
         row = supplied.get(source["id"], {})
         close = _stage(stages, source.get("close_volume"))
@@ -90,11 +105,14 @@ def _foreshadows(raw, bible, stages, total):
         if anchor in used_anchors:
             anchor = ""
         used_anchors.add(anchor)
+        aliases = _aliases(row.get("aliases"), anchor, used_anchors | reserved)
+        used_anchors.update(aliases)
         result.append(
             dict(
                 id=source["id"],
                 description=_text(source.get("description")),
                 anchor=anchor,
+                aliases=aliases,
                 surface=_text(row.get("surface")),
                 truth=_text(row.get("truth")),
                 plant=plant,

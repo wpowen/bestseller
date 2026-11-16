@@ -82,7 +82,7 @@ def all_duties(design, bible):
     duties = []
     for row in rows(design.get("foreshadows")):
         label = row.get("anchor") or row.get("description") or row["id"]
-        anchors = [row.get("anchor")]
+        anchors = [row.get("anchor"), *row.get("aliases", [])]
         fields = dict(
             anchor=label,
             surface=row.get("surface") or "一件不起眼的东西",
@@ -243,6 +243,8 @@ def writer_instruction(outline, bible):
         text += rules["opening"]
     if is_payoff_chapter(outline):
         text += rules["payoff"]
+    if outline.get("ending"):
+        text += rules["ending"]
     return text
 
 

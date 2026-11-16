@@ -107,9 +107,25 @@ def final_closure_hits(text):
             "end": start + match.end(),
             "paragraph": next(i for i, (a, b) in enumerate(spans, 1) if a <= start + match.start() < b),
         }
-        for kind in ("new_mystery", "new_identity", "new_task", "new_stigma")
+        for kind in ("new_mystery", "new_identity", "new_task", "new_stigma", "withheld_secret")
         for match in re.finditer(rules[kind], tail)
-    ]
+    ] + _procedural_ending(text, spans, rules)
+
+
+def _procedural_ending(text, spans, rules):
+    """The last paragraphs close on bookkeeping instead of people."""
+    last = spans[-int(rules["procedural_tail_paragraphs"]) :]
+    start = last[0][0]
+    return [
+        {
+            "kind": "procedural_ending",
+            "text": match[0],
+            "start": start + match.start(),
+            "end": start + match.end(),
+            "paragraph": next(i for i, (a, b) in enumerate(spans, 1) if a <= start + match.start() < b),
+        }
+        for match in re.finditer(rules["procedural_ending"], text[start:])
+    ][:1]
 
 
 def final_closure_checkup(chapters):
@@ -139,8 +155,9 @@ def repair_final_closure(client, prefix, text, raw, failed, state, bible, outlin
     value = ask(
         client,
         prefix + "-final-closure",
-        "只改末章给出的尾段，删去新谜团、新身份、新追查任务和新污名。"
-        "改成回应书名承诺和人物成长落点的现场动作或对白；不改前文，不增事实、人物、物件或后续任务。返回JSON。",
+        "只改末章给出的尾段，删去新谜团、新身份、新追查任务、新污名和主角藏着不说的新秘密；"
+        "不以清点、核验、登记收尾。改成主角和他在乎的人之间、回应书名承诺和人物成长落点的现场动作或对白；"
+        "不改前文，不增事实、人物、物件或后续任务。返回JSON。",
         [
             ("书名与末章契约", json.dumps({"title": bible.get("title"), "contract": contract}, ensure_ascii=False)),
             ("只读前文", text[max(0, start - 1200) : start]),

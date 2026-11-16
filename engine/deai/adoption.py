@@ -65,3 +65,33 @@ def deterministic_choices(hit, rules):
         if changed != hit["text"]:
             choices.append(changed)
     return choices
+
+
+QUOTE_PAIRS = (("“", "”"), ("「", "」"), ("『", "』"), ("‘", "’"))
+SPILL_MIN = 4
+
+
+def _balance(text):
+    return tuple(text.count(left) - text.count(right) for left, right in QUOTE_PAIRS)
+
+
+def _shared_edge(choice, outside, at_end):
+    """Longest run of the neighbouring source text that the choice repeats at its own edge."""
+    for size in range(min(len(choice), len(outside)), SPILL_MIN - 1, -1):
+        edge = outside[:size] if at_end else outside[-size:]
+        if (choice.endswith(edge) if at_end else choice.startswith(edge)) and edge.strip():
+            return edge
+    return ""
+
+
+def spill_reasons(original, hit, choice):
+    """Why a replacement for one span would damage the text around it."""
+    reasons = []
+    if _balance(choice) != _balance(hit["text"]):
+        reasons.append("quote_balance")
+    before, after = original[: hit["start"]], original[hit["end"] :]
+    if _shared_edge(choice, after, True) and not _shared_edge(hit["text"], after, True):
+        reasons.append("repeats_following_text")
+    if _shared_edge(choice, before, False) and not _shared_edge(hit["text"], before, False):
+        reasons.append("repeats_preceding_text")
+    return reasons

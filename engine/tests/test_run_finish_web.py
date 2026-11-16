@@ -194,7 +194,10 @@ class RunFinishWebTests(WebFixture):
         self.child.poll.return_value = 0
         self.child.returncode = 0
         self.queue.tick()
-        self.assertEqual(self.spawn.call_args.args[0][2], "deai")
+        # After de-AI the finished book gets one checkup of its final text (instruction 69).
+        self.assertEqual(
+            [c.args[0][2] for c in self.spawn.call_args_list], ["bookengine", "deai", "tools.book_checkup"]
+        )
         self.assertTrue(library.read(folder / "web.json")["auto_deai"])
 
     def test_successful_exit_clears_stale_waiting_and_complete_metadata_ignores_old_errors(self):

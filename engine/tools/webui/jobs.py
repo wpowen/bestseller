@@ -17,6 +17,7 @@ import pipeline
 from job_inputs import finite, whole, check_card
 from topic_worker import run_topic
 from process_logs import spawn
+from final_checkup import start_final_checkup
 
 
 class Queue:
@@ -358,6 +359,8 @@ class Queue:
                     next_polish = item["kind"] == "book" and (auto_deai(data) or data.get("polish"))
                     data.update(status="queued_polish" if next_polish else "complete", reason="")
                     save(folder / "runtime.json", {})
+                    if item["kind"] == "polish":
+                        start_final_checkup(self, folder)
                 elif runtime.get("kind") in ("quota_exhausted", "error"):
                     data.update(status=runtime["kind"], reason=runtime.get("error") or "CLI退出；可从检查点继续")
                 else:

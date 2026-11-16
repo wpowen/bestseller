@@ -7,6 +7,7 @@ from process_logs import spawn as spawn_logged
 import sys
 import time
 
+from final_checkup import start_final_checkup
 from library import costs, read, save
 from tools.chapter_outputs import finished
 
@@ -224,6 +225,7 @@ def tick(queue):
             start(queue, folder, data)
             if previous != "complete" and data.get("status") == "complete":
                 queue.library.static()
+                start_final_checkup(queue, folder)
 
 
 def action(queue, folder, data, name):

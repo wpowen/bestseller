@@ -380,7 +380,12 @@ def check_book(book, *, source="final"):
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         cast_consistency=cast_checkup(bible, chapters),
         continuity_ledger=continuity_checkup(bible, chapters),
-        cross_chapter_facts=fact_checkup(chapters, book=book),
+        cross_chapter_facts=fact_checkup(
+            chapters,
+            book=book,
+            bible=bible,
+            state=_read(book / "state.json", unknown),
+        ),
         title_promises=title_promise_checkup(bible, chapters),
         final_chapter_new_suspense=final_closure_checkup(chapters),
         unclosed_quotes=quote_checkup(chapters),

@@ -8,9 +8,11 @@ from .precision import _sentences
 GENDER = {"男": ("他", "她"), "女": ("她", "他")}
 _FRONTED = re.compile(
     r"[\s“‘\"']*(?:[^，,。！？!?]{1,40}[，,]\s*)?"
-    r"(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])"
+    r"(?:(?:可|但|却|而|只是|然而|不过|随后|接着)\s*)?([他她])(?!们)"
 )
-_EARLY_POSSESSIVE = re.compile(r"[^。！？!?]{0,12}?(?:把|将)([他她])(?:的)?[\u3400-\u9fff]")
+_EARLY_POSSESSIVE = re.compile(r"[^。！？!?]{0,12}?(?:把|将)([他她])(?!们)(?:的)?[\u3400-\u9fff]")
+_CLAUSE_PRONOUN = re.compile(r"[，,；;：:]\s*([他她])(?!们)(?:只|也|仍|又|便|才|已|正|会|能|可|却|把|将|被)")
+_OBSERVER = re.compile(r"(?:看清|看出|发现|识破|明白|知道)[^。！？]{0,18}(?:手段|做法|计划|意图)[：:]$")
 
 
 def _subject_bound(sentence, name):
@@ -68,6 +70,9 @@ def _pronoun_match(sentence, bound):
     match = _FRONTED.match(sentence)
     if match:
         return match
+    match = _CLAUSE_PRONOUN.search(sentence)
+    if match:
+        return match
     if bound is not None:
         match = _EARLY_POSSESSIVE.match(sentence)
         if match:
@@ -83,9 +88,9 @@ def _inline_pronoun_match(sentence, card):
     if start < len(card["name"]):
         return None
     tail = sentence[start:]
-    return re.search(r"[，,；;]\s*(?:(?:却|而|随后|于是)\s*)?([他她])(?:被|把|将|仍|又|才|便)", tail) or re.search(
-        r"[，,；;][^。！？!?]{0,50}?(?:听从|服从|受制于|归还给)([他她])的", tail
-    )
+    return re.search(
+        r"[，,；;]\s*(?:(?:却|而|随后|于是)\s*)?([他她])(?!们)(?:被|把|将|仍|又|才|便)", tail
+    ) or re.search(r"[，,；;][^。！？!?]{0,50}?(?:听从|服从|受制于|归还给)([他她])(?!们)的", tail)
 
 
 def _inside_quote(text, position):
@@ -118,6 +123,40 @@ def _prior_explicit_other(text, span, cards, speaker):
     return resolved if resolved is not None and resolved is not speaker else None
 
 
+def _clause_subject(sentence, people, stop=None):
+    prefix = sentence[:stop] if type(stop) is int and stop >= 0 else sentence
+    if type(stop) is int and re.search(r"若|如果|一旦|倘若", prefix):
+        return None
+    clauses = [part.strip(" \t\r\n“”‘’\"'") for part in re.split(r"[，,；;：:]", prefix)]
+    for clause in reversed([part for part in clauses if part]):
+        candidates = [card for card in people if card["name"] in clause]
+        if len(candidates) != 1:
+            continue
+        card = candidates[0]
+        before = clause[: clause.find(card["name"])]
+        if re.search(r"(?:看向|望向|问|告诉|交给|递给|跟随|追赶|抓住|扶住|找|借)[^，,；;：:]*$", before):
+            continue
+        tail = clause[clause.find(card["name"]) + len(card["name"]) :]
+        if not (
+            _subject_bound(clause, card["name"])
+            or re.match(r"(?:不必|不需要|(?:也)?仍能|只需|只要|若(?:只是|要|能|想|再))", tail)
+        ):
+            continue
+        return card
+    return None
+
+
+def _prior_quoted_subject(text, span, cards):
+    start, end = span
+    previous = text[start:end]
+    people = []
+    for card in _mentioned(previous, cards):
+        position = text.find(card["name"], start, end)
+        if position >= 0 and _inside_quote(text, position):
+            people.append(card)
+    return _clause_subject(previous, people) if people else None
+
+
 def _scan_bindings(text, cards, spans):
     rows = []
     bound = None
@@ -125,12 +164,12 @@ def _scan_bindings(text, cards, spans):
     for index, (start, end) in enumerate(spans):
         sentence = text[start:end]
         people = [card for card in _mentioned(sentence, cards) if card.get("gender") in GENDER]
-        explicit = _explicit_subject(sentence, people)
+        explicit = _clause_subject(sentence, people) or _explicit_subject(sentence, people)
         match = _pronoun_match(sentence, bound)
         inline_match = _inline_pronoun_match(sentence, explicit) if explicit is not None else None
         if inline_match is not None:
             inline_offset = sentence.find(inline_match.string) + inline_match.start(1)
-            if _inside_quote(text, start + inline_offset):
+            if _inside_quote(text, start + inline_offset) or re.search(r"若|如果|一旦|倘若", sentence[:inline_offset]):
                 inline_match = None
         if inline_match is not None:
             match = inline_match
@@ -138,11 +177,16 @@ def _scan_bindings(text, cards, spans):
         match_offset = sentence.find(match.string) if match and match.string is not sentence else 0
         pronoun_position = start + match_offset + match.start(1) if match else -1
         quoted = match is not None and _inside_quote(text, pronoun_position)
-        resolved = explicit if inline else None
+        relative_pronoun = pronoun_position - start if match else None
+        observer = bool(match and _OBSERVER.search(sentence[:relative_pronoun]))
+        local = None if quoted or observer else _clause_subject(sentence, people, relative_pronoun)
+        resolved = explicit if inline else local
         unknown = False
         unknown_reason = ""
         if quoted:
             resolved = _quote_external_target(text, start, end, people, explicit)
+            if resolved is None and index:
+                resolved = _prior_quoted_subject(text, spans[index - 1], cards)
             if resolved is None and index:
                 resolved = _prior_explicit_other(text, spans[index - 1], cards, explicit)
             unknown = resolved is None
@@ -151,10 +195,12 @@ def _scan_bindings(text, cards, spans):
             previous = text[slice(*spans[index - 1])]
             prior_people = [card for card in _mentioned(previous, cards) if card.get("gender") in GENDER]
             prior_explicit = _explicit_subject(previous, prior_people)
-            if prior_explicit is not None:
-                resolved = prior_explicit
-            elif not prior_people and bound is not None and neutral_gap <= 1:
+            if observer and bound is not None:
                 resolved = bound
+            elif not people and bound is not None and neutral_gap <= 1:
+                resolved = bound
+            elif prior_explicit is not None:
+                resolved = prior_explicit
             elif len(prior_people) > 1:
                 unknown = True
                 unknown_reason = "前句出现多名人物，代词指代不清"
@@ -172,10 +218,10 @@ def _scan_bindings(text, cards, spans):
                     "pronoun_end": start + match_offset + match.end(1),
                 }
             )
-        if explicit is not None:
-            bound, neutral_gap = explicit, 0
-        elif match and resolved is not None:
+        if match and resolved is not None:
             bound, neutral_gap = resolved, 0
+        elif not match and explicit is not None:
+            bound, neutral_gap = explicit, 0
         elif not people and bound is not None and not match:
             neutral_gap += 1
             if neutral_gap > 1:

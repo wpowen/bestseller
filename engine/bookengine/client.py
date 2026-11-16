@@ -180,7 +180,10 @@ class Client:
         try:
             idle_timeout = getattr(self, "timeout", 180)
             with urllib.request.urlopen(request, timeout=min(idle_timeout, total_timeout)) as response:
-                result = json.loads(read_with_deadline(response, total_timeout, idle_timeout))
+                remaining = total_timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    raise CallTimeout("call_total_timeout")
+                result = json.loads(read_with_deadline(response, remaining, min(idle_timeout, remaining)))
             entry["usage"] = result.get("usage") or {}
             entry["model"] = result.get("model")
             entry["finish_reason"] = (result.get("choices") or [{}])[0].get("finish_reason")
@@ -232,8 +235,15 @@ class Client:
             entry["error_type"] = CallTimeout.__name__
             raise NetworkRetry("call_timeout") from None
         except (socket.timeout, TimeoutError, urllib.error.URLError, ConnectionError, HTTPException) as exc:
-            entry["status"] = "transport_error"
             detail = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            total_expired = (
+                isinstance(detail, (socket.timeout, TimeoutError)) and time.monotonic() - start >= total_timeout
+            )
+            if total_expired:
+                entry["status"] = "timeout"
+                entry["error_type"] = CallTimeout.__name__
+                raise NetworkRetry("call_timeout") from None
+            entry["status"] = "transport_error"
             entry["error_type"] = type(detail).__name__
             entry["error_number"] = getattr(detail, "errno", None)
             raise NetworkRetry("timeout_or_connection_error") from None

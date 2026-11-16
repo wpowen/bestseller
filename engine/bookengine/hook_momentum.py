@@ -377,9 +377,7 @@ def repair_after_draft(
                 reason = "state_recheck_failed" if candidate_failed else "payoff_regressed"
                 note["hook"] = {"status": "rolled_back", "reason": reason}
         else:
-            reason = (
-                "adjacent_semantic_repetition" if adjacent else regression or "hook_recheck_flat_or_mismatched"
-            )
+            reason = "adjacent_semantic_repetition" if adjacent else regression or "hook_recheck_flat_or_mismatched"
             note["hook"] = {"status": "rolled_back", "reason": reason}
     note["after"] = dict(
         ending=diagnose_ending(current),

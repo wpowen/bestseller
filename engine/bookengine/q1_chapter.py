@@ -38,6 +38,7 @@ from .title_promises import writer_title_contract
 from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .continuity_ledger import repair_continuity_ledger
 from .cross_chapter_facts import guard_all_repairs
+from .repair_additions import guard_repair_additions
 from .permanent_facts import repair_permanent_states
 from .state_values import repair_state_values
 from .plot_progression import repair_plot_replay
@@ -328,9 +329,11 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, notes["repair_history"] = guard_all_repairs(ask, client, prefix, original, text, state, idx, bible=bible)
-    if notes["repair_history"]["status"] == "rolled_back":
-        raw, failed = original_raw, initial_failed
-    elif notes["repair_history"]["status"] == "partially_rolled_back":
+    restored, notes["repair_additions"] = guard_repair_additions(original, text)
+    if notes["repair_history"]["status"] == "rolled_back" or restored == original != text:
+        text, raw, failed = original, original_raw, initial_failed
+    elif notes["repair_history"]["status"] == "partially_rolled_back" or restored != text:
+        text = restored
         raw, failed, _ = extract_state(
             client, prefix + "-repair-history-state", text, state, bible, outline, [], final=True
         )

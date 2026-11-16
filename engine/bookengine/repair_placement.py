@@ -24,7 +24,11 @@ def place_tail_bounded_patch(text, value, *, max_chars=500, keep_final=False):
         changed = text[:end] + "\n\n" + patch.strip() + text[end:]
     return changed, dict(
         status="placed",
-        placement="requested" if effective == requested else "before_final" if effective < len(spans) else "relocated_to_tail",
+        placement="requested"
+        if effective == requested
+        else "before_final"
+        if effective < len(spans)
+        else "relocated_to_tail",
         requested_after=requested,
         effective_after=effective,
     )

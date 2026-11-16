@@ -6,6 +6,7 @@ import json
 import re
 import yaml
 from tools.runtime_support import ProjectError, QuotaExhausted
+from .name_pool import clashes, naming_profile
 from .client import SYSTEM
 from .identity import (
     annotate_name_gender_notes,
@@ -210,8 +211,7 @@ def prepare(client, book, out, assets, design=False):
         profile["canon"] = values[0]["canon"]
     rules = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/polish_rules.yaml").read_text())
     current_book, names = _library_names(out)
-    profile["name_pool"] = rules["given_names"]
-    profile["unavailable_names"] = [x for x in names if x["book"] != current_book]
+    profile.update(naming_profile(rules, names, current_book))
     continuations = sorted(Path(out).glob("continuation-*.yaml"), key=lambda p: integer(p.stem.split("-")[-1]))
     if values[0] and book.chapters > max(v.get("end", 0) for v in values[0].get("volumes", [])):
         continuations = list(
@@ -390,15 +390,7 @@ def prepare(client, book, out, assets, design=False):
             mapping = {}
             for c in bible["characters"]:
                 name = c["name"]
-                if (
-                    name
-                    and not (card and name in json.dumps(card, ensure_ascii=False))
-                    and (
-                        name[-2:] not in {n[-2:] for n in pool}
-                        or name in used
-                        or any(name[-2:] == n[-2:] for n in used)
-                    )
-                ):
+                if name and not (card and name in json.dumps(card, ensure_ascii=False)) and clashes(name, used):
                     mapping[name] = next(
                         (
                             (name[:-2] or name[:1]) + n[-2:]

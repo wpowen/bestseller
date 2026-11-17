@@ -150,7 +150,9 @@ class Queue:
             index = data.get("candidate")
             if type(index) is not int or not 0 <= index < len(topic.get("candidates", [])):
                 raise ValueError("请先点击选择一个候选题")
-            if topic.get("book_id"):
+            opened = str(topic.get("book_id") or "").rpartition("/")[2]
+            # A book moved to the trash (or purged) no longer blocks its topic; an archived one still does.
+            if opened and any((root / opened).is_dir() for root in (self.library.own, self.library.own / ".archive")):
                 raise ValueError("此选题已开书，请到书库继续")
             if topic.get("status") not in ("ready", "complete"):
                 raise ValueError("请等待选题完成")

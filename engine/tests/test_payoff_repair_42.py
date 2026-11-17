@@ -52,8 +52,9 @@ def test_missing_due_payoff_is_appended_after_all_existing_events():
         fake_ask,
     )
     assert "顾冬岚夺回三枚灵石" in changed
-    assert changed.index("门后的人把木箱抬了出来。") < changed.index("顾冬岚夺回三枚灵石")
-    assert changed.endswith("顾冬岚夺回三枚灵石。")
+    # Instruction 68: the patch goes after every earlier event but never after the writer's last paragraph.
+    assert changed.index("顾冬岚推开石门。") < changed.index("顾冬岚夺回三枚灵石")
+    assert changed.endswith("门后的人把木箱抬了出来。")
     assert note["payoff"]["status"] == "repaired"
     assert note["hook"]["status"] == "kept"
     assert raw["payoff"]["fulfilled"] is True
@@ -87,10 +88,11 @@ def test_due_payoff_patch_is_relocated_to_final_three_paragraphs_before_recheck(
         fake_ask,
     )
 
-    assert changed.index("第8段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石")
+    # Instruction 68: relocated to the tail, but before the writer's last paragraph.
+    assert changed.index("第7段仍在推进争执") < changed.index("顾冬岚夺回三枚灵石") < changed.index("第8段仍在推进争执")
     assert note["payoff"]["requested_after"] == 1
-    assert note["payoff"]["effective_after"] == 8
-    assert note["payoff"]["placement"] == "relocated_to_tail"
+    assert note["payoff"]["effective_after"] == 7
+    assert note["payoff"]["placement"] == "before_final"
     assert not failed
 
 

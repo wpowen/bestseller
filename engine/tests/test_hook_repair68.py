@@ -93,3 +93,13 @@ def test_payoff_patch_never_lands_after_a_closing_hook():
     assert changed.endswith("门外的追兵已经举刀，正朝他逼近。")
     assert changed.index("雷九抬起了棍。") < changed.index("石子翎接下了雷九的拳。")
     assert note["hook"]["status"] == "kept"
+
+
+def test_payoff_patch_stays_before_a_last_paragraph_no_keyword_recognises():
+    # 《末世零件铺》 chapter 26: the patch was appended after this closing beat.
+    text = "周铁匠扣紧最后一包轴承。\n\n唐岚没有再追问，只把那把旧钥匙攥进掌心。金属硌着伤口，她却没松手。"
+    changed, note, _ = _run(
+        text, [{"patch": {"after": 1, "text": "石子翎接下了雷九的拳。"}}], payoff_due=True, payoff_type="收获"
+    )
+    assert note["payoff"]["status"] == "repaired"
+    assert changed.endswith("金属硌着伤口，她却没松手。")

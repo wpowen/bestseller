@@ -222,11 +222,6 @@ def tail_regression(before, after):
     return None
 
 
-def _final_paragraph_is_hook(text):
-    paragraphs = _paragraphs(text)
-    return bool(paragraphs) and any(re.search(pattern, paragraphs[-1]) for pattern in _RULES["signals"].values())
-
-
 def _within_saved_maximum(text, outline):
     word_range = outline.get("word_range")
     return not (
@@ -304,7 +299,7 @@ def repair_after_draft(
             candidate, placement = place_tail_bounded_patch(
                 current,
                 answer.get("patch") if isinstance(answer, dict) else None,
-                keep_final=_final_paragraph_is_hook(current),
+                keep_final=True,  # the writer's last paragraph stays last, whatever a keyword check makes of it
             )
             changed = placement["status"] == "placed"
             candidate_raw, candidate_failed, _ = _extract(

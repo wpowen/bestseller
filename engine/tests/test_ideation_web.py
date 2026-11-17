@@ -107,6 +107,24 @@ class IdeationWebTests(WebFixture):
         self.assertEqual(topic["market"], internal["market"])
         self.assertEqual(topic["axes"], internal["axes"])
 
+    def test_topic_can_open_a_book_again_once_its_book_is_in_the_trash(self):
+        data, _ = self.rich_topic()
+        first = self.queue.create(data)
+        with self.assertRaisesRegex(ValueError, "此选题已开书"):
+            self.queue.create(data)
+        book = self.lib.folder(first["id"])
+        archive = self.lib.own / ".archive"
+        archive.mkdir(exist_ok=True)
+        book.rename(archive / book.name)
+        with self.assertRaisesRegex(ValueError, "此选题已开书"):
+            self.queue.create(data)
+        trash = self.lib.own / ".trash"
+        trash.mkdir(exist_ok=True)
+        (archive / book.name).rename(trash / ("20261117T000000000000Z--" + book.name))
+        second = self.queue.create(data)
+        self.assertNotEqual(second["id"], first["id"])
+        self.assertTrue(self.lib.folder(second["id"]).is_dir())
+
     def test_unedited_card_keeps_all_fields_including_reference_metadata(self):
         data, folder = self.rich_topic()
         original = library.read(folder / "topic.json")

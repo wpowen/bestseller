@@ -3,6 +3,7 @@
 from copy import deepcopy
 import re
 
+from .relationship_shapes import canonical_relationship_change
 from .q1_schema import integer, rows
 
 VERSION = 12
@@ -146,7 +147,7 @@ def _stages(bible):
 
 
 def relationship_contract(row):
-    value = row.get("relationship_change") if isinstance(row, dict) else None
+    value = canonical_relationship_change(row.get("relationship_change") if isinstance(row, dict) else None)
     if not isinstance(value, dict):
         return None
     people = value.get("people") if isinstance(value.get("people"), list) else []

@@ -2,7 +2,7 @@
 
 import json
 
-from .chapter_rhythm import chapter_type
+from .chapter_rhythm import chapter_type, relationship_contract
 from .q1_schema import rows
 
 
@@ -27,7 +27,7 @@ def writer_main_scene_contract(outline):
             {key: scene.get(key, "") for key in ("goal", "action", "choice", "result")}
             for scene in rows(outline.get("scenes"))
         ],
-        "relationship_change": outline.get("relationship_change"),
+        "relationship_change": relationship_contract(outline) or outline.get("relationship_change"),
     }
 
 
@@ -41,8 +41,8 @@ def writer_rhythm_instruction(outline):
             "本章不安排正面打斗；对手只能作为消息或远处压力，不得在两场戏中到场动手、追杀、突围或反杀。"
             "若章纲中的局部动作与本章章型冲突，保留必须推进的剧情事实，但不得照抄与章型冲突的动作。" + FOCUS[kind]
         )
-    if kind == "情感" and isinstance(outline.get("relationship_change"), dict):
-        change = outline["relationship_change"]
+    change = relationship_contract(outline) or outline.get("relationship_change")
+    if kind == "情感" and isinstance(change, dict) and change:
         people = "、".join(change.get("people", [])) if isinstance(change.get("people"), list) else ""
         instruction += (
             f"关系变化合同：人物={people}；起因={change.get('cause', '')}；"

@@ -204,6 +204,24 @@ def _apply_hook_tail(text, value, bible=None):
     return candidate, changed, adjacent
 
 
+def needs_hook_repair(diagnosis):
+    """Rewrite an ending only on positive evidence that it is flat, not on a missing keyword."""
+    if diagnosis["classification"] != "flat_candidate":
+        return False
+    return _RULES.get("repair_trigger") != "explicit_flat" or bool(diagnosis.get("explicit_flat"))
+
+
+def tail_regression(before, after):
+    """Why a rewritten two-paragraph tail is worse than the one it replaces, or None."""
+    old, new = _paragraphs(before)[-2:], _paragraphs(after)[-2:]
+    if re.search(_RULES["summary_tail"], "\n".join(new)) and not re.search(_RULES["summary_tail"], "\n".join(old)):
+        return "summary_tail"
+    growth = float(_RULES.get("max_tail_growth", 0) or 0)
+    if growth and chinese_count("".join(new)) > max(120, growth * chinese_count("".join(old))):
+        return "tail_bloat"
+    return None
+
+
 def _within_saved_maximum(text, outline):
     word_range = outline.get("word_range")
     return not (
@@ -279,7 +297,9 @@ def repair_after_draft(
                 max_attempts=1,
             )
             candidate, placement = place_tail_bounded_patch(
-                current, answer.get("patch") if isinstance(answer, dict) else None
+                current,
+                answer.get("patch") if isinstance(answer, dict) else None,
+                keep_final=True,  # the writer's last paragraph stays last, whatever a keyword check makes of it
             )
             changed = placement["status"] == "placed"
             candidate_raw, candidate_failed, _ = _extract(
@@ -305,7 +325,7 @@ def repair_after_draft(
     diagnosis = diagnose_ending(current)
     payoff_before_hook = payoff_evidence(current, dict(observed, payoff_due=outline.get("payoff_due")))
     if (
-        diagnosis["classification"] == "flat_candidate"
+        needs_hook_repair(diagnosis)
         and not outline.get("ending")
         and outline.get("hook")
         and outline.get("ending_type") != FLAT_TYPE
@@ -330,9 +350,11 @@ def repair_after_draft(
             current, _tail_patch(answer.get("tail") if isinstance(answer, dict) else None), bible
         )
         recheck = diagnose_ending(candidate)
+        regression = tail_regression(current, candidate) if changed else None
         if (
             changed
             and not adjacent
+            and not regression
             and _within_saved_maximum(candidate, outline)
             and recheck["classification"] == "hook_candidate"
         ):
@@ -350,7 +372,7 @@ def repair_after_draft(
                 reason = "state_recheck_failed" if candidate_failed else "payoff_regressed"
                 note["hook"] = {"status": "rolled_back", "reason": reason}
         else:
-            reason = "adjacent_semantic_repetition" if adjacent else "hook_recheck_flat_or_mismatched"
+            reason = "adjacent_semantic_repetition" if adjacent else regression or "hook_recheck_flat_or_mismatched"
             note["hook"] = {"status": "rolled_back", "reason": reason}
     note["after"] = dict(
         ending=diagnose_ending(current),

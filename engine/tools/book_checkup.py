@@ -292,6 +292,7 @@ def check_book(book, *, source="final"):
     from bookengine.explanation_density import explanation_density_checkup
     from tools.book_cast_stats import cast_stats
     from bookengine.opening_styles import opening_style_checkup
+    from bookengine.checkup68 import people_and_repairs_checkup
 
     regressions = [issue for c in chapters if (issue := location_regression(bible, c["number"], *_boundary(c, "end")))]
     handoffs = _breaks(chapters, bible)
@@ -393,6 +394,7 @@ def check_book(book, *, source="final"):
         solution_sequences=solution_sequence_checkup(bible, chapters, book),
         world_introductions=first_appearance_checkup(bible, chapters),
         explanation_density=explanation_density_checkup(chapters),
+        **people_and_repairs_checkup(book, bible, chapters),
         unknown=unknown,
         limitations=[
             "Counts are references, not reader acceptance.",

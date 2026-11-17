@@ -10,6 +10,7 @@ from .cross_chapter_facts import merge_cross_chapter_delta, writer_critical_even
 from .permanent_facts import merge_permanent_delta, writer_permanent_facts
 from .continuity_contract import extraction_contract
 from .state_values import merge_state_value_delta, writer_state_value_facts
+from .life_status import dead_person_acts
 
 
 LEDGER_VERSION = 1
@@ -73,6 +74,9 @@ def _merge_character(ledger, row, text, chapter, cards):
     name = row["name"]
     target = ledger["characters"].setdefault(name, {})
     field = row.get("field")
+    dead = isinstance(target.get("life_status"), dict) and target["life_status"].get("value") == "dead"
+    if dead and (field == "life_status" or row.get("travel_status") == "死亡"):
+        return  # The first recorded death stands; later chapters cannot move or undo it.
     if field == "life_status" and row.get("value") in _LIFE:
         target["life_status"] = _record(_LIFE[row["value"]], chapter, quote)
     elif field == "location" and isinstance(row.get("value"), str) and row["value"].strip():
@@ -80,6 +84,8 @@ def _merge_character(ledger, row, text, chapter, cards):
             **_record(row["value"].strip()[:80], chapter, quote),
             "travel_status": row.get("travel_status") if row.get("travel_status") in _TRAVEL else "未知",
         }
+        if row.get("travel_status") == "死亡":
+            target["life_status"] = _record("dead", chapter, quote)
     elif field == "injury":
         value = str(row.get("value") or "")
         match = _BODY_PART.search(str(row.get("part") or "") + value + quote)
@@ -318,8 +324,8 @@ def _status_findings(text, chapter, name, record, spans):
                     "暗示已死亡",
                 )
             )
-        if life.get("value") == "dead" and not re.search(r"回忆|尸体|遗体|死讯|生前", sentence):
-            if re.search(re.escape(name) + r"[^。！？]{0,16}(?:说|问|答|走|跑|抬|抓|握|看|站|坐)", sentence):
+        if life.get("value") == "dead" and chapter > life.get("chapter", chapter):
+            if dead_person_acts(name, sentence):
                 result.append(
                     _finding(
                         "life_status",

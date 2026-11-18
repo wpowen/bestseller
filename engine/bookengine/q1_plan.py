@@ -314,6 +314,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
+        *([("开篇承诺：第1–3章逐章兑现，三章事件不重复", bible.get("opening_promises"))] if start <= 3 else []),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
         (
             "阶段首章transition必填：一两句交代从上一阶段实际终点到本阶段起点的移动、时间与原因；开头300字落实",

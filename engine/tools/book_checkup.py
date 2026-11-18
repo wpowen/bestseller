@@ -21,6 +21,20 @@ _EMOJI = re.compile(_EMOJI_UNIT + r"(?:\u200d" + _EMOJI_UNIT + r")*|[\ufe0f\u200
 _PRIVATE = re.compile(r"[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]")
 
 
+def _pair_ascii_quotes(text):
+    """Turn paired ASCII double quotes into “”, paragraph by paragraph; odd counts stay untouched (eval-75 ch3)."""
+    changed = 0
+    lines = []
+    for line in text.split("\n"):
+        count = line.count('"')
+        if count and count % 2 == 0:
+            parts = line.split('"')
+            line = "".join(part + ("“" if i % 2 == 0 else "”") for i, part in enumerate(parts[:-1])) + parts[-1]
+            changed += count
+        lines.append(line)
+    return "\n".join(lines), changed
+
+
 def clean_prose(text):
     """Return (text, counts); remove only standalone structure and unwanted glyphs.
 
@@ -29,6 +43,8 @@ def clean_prose(text):
     No filesystem or model calls; safe for both writing and polishing clients.
     """
     counts = dict(markdown_headings=0, chapter_headings=0, separators=0, emoji=0, private_use=0, paragraph_markers=0)
+    text, counts["bold_markers"] = re.subn(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"\1", text)
+    text, counts["ascii_quotes"] = _pair_ascii_quotes(text)
 
     def strip_markers(match):
         counts["paragraph_markers"] += len(re.findall(r"\[[PS]\d+\]", match[2], re.I))

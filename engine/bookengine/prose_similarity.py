@@ -77,9 +77,17 @@ def _power_rules(bible):
     selected = bible.get("selected_card") if isinstance(bible.get("selected_card"), dict) else {}
     power = bible.get("power") if isinstance(bible.get("power"), dict) else {}
     values = [selected.get("golden_finger_rule"), power.get("rule")]
+    # Opening promises are planning text too; eval-75 ch2 pasted “顾寒再扫七阶，第二招剑痕在眼底成形” into a fight.
+    promises = bible.get("opening_promises") if isinstance(bible.get("opening_promises"), list) else []
+    values += [clause for value in promises if isinstance(value, str) for clause in _promise_clauses(value)]
     return list(
         dict.fromkeys(value.strip() for value in values if isinstance(value, str) and len(_normalize(value)) >= 16)
     )
+
+
+def _promise_clauses(value):
+    """Clauses of one promise without its 第N章 label, each long enough to compare with a sentence."""
+    return [part for part in re.split(r"[；;。]", re.sub(r"^第\d+章", "", value.strip())) if part.strip()]
 
 
 def _rule_copy(node, rules):
@@ -295,6 +303,17 @@ def _history(out, chapter):
     return rows
 
 
+def _previous_hanging_ending(out, chapter):
+    """The previous chapter's planned unresolved ending (planning text, never prose); '' when it closed flat."""
+    path = Path(out) / "writing_outlines" / f"{chapter - 1:03d}.json"
+    try:
+        outline = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return ""
+    content = str(outline.get("ending_content") or "").strip() if isinstance(outline, dict) else ""
+    return "" if not content or outline.get("ending_type") in ("平收", "", None) else content[:120]
+
+
 def _places(text):
     return sorted({match[1] for pattern in _LOCATION_MENTIONS for match in pattern.finditer(text)})
 
@@ -308,6 +327,13 @@ def with_completed_action_context(sections, out, chapter):
     value = "上一章末场已发生；不提供上一章原句。开头只承接已保存的结局事实，不得复述同一动作或时间起句。"
     if places:
         value += "\n此前到过的地点（再次到达必须写明折返理由）：" + "、".join(places[-20:])
+    hanging = _previous_hanging_ending(out, chapter)
+    if hanging:
+        # eval-75: ch1 ended with two thieves blocking the lane; ch2 never said what happened to them.
+        value += (
+            "\n上一章停在未了的局面：" + hanging + "。本章开头几段先用当场动作交代这个局面怎样收场或怎样被打断，"
+            "不复述上章经过，再进入本章章纲。"
+        )
     result = list(sections)
     for index, (title, current) in enumerate(result):
         if title == "上章结尾":

@@ -36,7 +36,7 @@ class MinimalBTestsPart1(MinimalBTests):
         assert prompt.index("本章主场景硬合同") < prompt.index(self.data["b"][:20])
         assert all(term not in prompt for term in ("原章", "程序判定", "重规划"))
 
-    def test_writer_has_four_blocks_without_style_or_prefix_leak(self):
+    def test_writer_receives_speaker_briefs_without_style_or_prefix_leak(self):
         for dialogue in (30, 60):
             with self.subTest(dialogue=dialogue), tempfile.TemporaryDirectory() as directory:
                 self.out = Path(directory)
@@ -48,6 +48,7 @@ class MinimalBTestsPart1(MinimalBTests):
                     re.findall(r"^## (.+)$", prompt, re.M),
                     [
                         "本章主场景硬合同，章型、两场行动与末钩必须逐项落实",
+                        "本章开口人物：声口与当场目的",
                         "本章章纲",
                         "出场人物档案、口吻卡与当前状态",
                         "上章结尾",

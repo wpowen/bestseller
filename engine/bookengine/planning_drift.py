@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from .adjacent_conflicts import adjacent_conflict_issues
 from .chapter_rhythm import VERSION as RHYTHM_VERSION, normalize_chapter_type, rhythm_issues
 from .core_ability import ability_issues
 from .q1_schema import integer, rows
@@ -24,6 +25,7 @@ def cached_contract_stale(bible, prior, cached, structure_version):
         + ability_issues(bible, prior, chapters)
         + solution_issues(bible, prior, chapters)
         + solution_sequence_issues(bible, prior, chapters)
+        + adjacent_conflict_issues(prior, chapters)
     )
     return bool(rhythm_stale or structural)
 

@@ -12,6 +12,7 @@ HARD_REPLAN_KINDS = {
     "rhythm_relationship_scene",
     "reader_promise_payoff",
     "opponent_resolution",
+    "adjacent_conflict",
 }
 
 
@@ -24,13 +25,13 @@ def hard_replan_issues(issues):
     result, seen = [], set()
     for issue in rows(issues):
         kind = issue.get("kind")
-        if kind not in HARD_REPLAN_KINDS or kind in seen:
+        targets = sorted(set(issue.get("targets", [])))[:1]
+        # Several neighboring chapters can independently copy the previous scene.
+        key = (kind, tuple(targets)) if kind == "adjacent_conflict" else kind
+        if kind not in HARD_REPLAN_KINDS or key in seen or not targets:
             continue
-        seen.add(kind)
-        normalized = dict(issue)
-        normalized["targets"] = sorted(set(issue.get("targets", [])))[:1]
-        if normalized["targets"]:
-            result.append(normalized)
+        seen.add(key)
+        result.append(dict(issue, targets=targets))
     return result
 
 

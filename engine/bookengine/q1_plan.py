@@ -21,6 +21,7 @@ from .solution_substance import solution_issues
 from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
 from .hook_momentum import apply_ending_contract, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
+from .adjacent_conflicts import RULE as ADJACENT_CONFLICT_RULE, planned_conflict
 from .character_context import schedule_catchphrases
 from .chapter_rhythm import RULE as RHYTHM_RULE, VERSION as RHYTHM_VERSION, apply_contract, chapter_type, rhythm_issues
 from .rhythm_skeleton import bind_stage_content, coordinate_core_rhythm, stage_content_skeleton, window_stage_content
@@ -305,6 +306,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     ]
     cards = [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]
     sections = [
+        (ADJACENT_CONFLICT_RULE, [planned_conflict(row) for row in prior[-1:]]),
         (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
             "主要解法给对象、手段名词和感知/判断/行动/结果四步；名词按既有上限，四步结构同阶段不得重复，换名词不算换结构",

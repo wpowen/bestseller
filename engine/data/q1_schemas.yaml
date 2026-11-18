@@ -91,7 +91,7 @@ instructions:
     '
   structure: '只返回bible.volumes、bible.antagonists；threads留空数组，线索节拍沿用原设计并由程序保留。逐项修复错误清单，使用指定阶段边界。
     每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同；每阶段10–12章，末尾可不足10。
-    每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。不得改标题、人物卡或用户锁定事实。
+    每个antagonist有name/tier/stage/exit，退场章在所属阶段内，之后只能背景提及。沿用既定voice/desire；新对手补其独有说话方式和具体私心。不得改标题、人物卡或用户锁定事实。
     每阶段promise_payoffs至少两项且都用primary主承诺，章号不同：阶段中段一项scale=小兑现，末两章一项scale=大兑现。action写主角如何驱使核心能力正面行动，target必须是具名敌人，result写明确胜负，escalation写升级。
     书名或selling_points字面含“杀”时，至少一个opponent_resolution.type必须是被杀，不能全部改成被擒或失势。
     每阶段opponent_resolution与本阶段antagonist同名，type只用被杀/被擒/被废/当众击败后失势，chapter与antagonist.exit相同，outcome写不可逆后果；终局反派须在末章前清算。最后阶段exit_chapter仍是全书末章，只把终局antagonist.exit和opponent_resolution.chapter排到末章前。
@@ -103,7 +103,7 @@ instructions:
 
     开书仅一次生成bible与threads，可同一响应列出全部卷走向，不列100章章纲。
 
-    新书volumes表示阶段，每10–12章一个，末尾不足10章可单独收束；严格覆盖指定阶段边界。每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同。antagonists每个有name/tier/stage/exit，低层对手在所属阶段内退场，之后只能作为背景提及。章数≥30，阶段至少ceil(章数/12)。
+    新书volumes表示阶段，每10–12章一个，末尾不足10章可单独收束；严格覆盖指定阶段边界。每阶段location/antagonist/goal/climax/exit_chapter必填，相邻location不同。antagonists每个有name/tier/stage/exit；没有完整人物卡的阶段对手也要给独有说话方式voice和具体私心desire。低层对手在所属阶段内退场，之后只能作为背景提及。章数≥30，阶段至少ceil(章数/12)。
 
     圣经含卖点/读者期待、金手指的用法与边界（有没有代价、代价是什么由这个故事决定，可以没有）、世界规则等级、3—6势力各自利益、三层真相。
 
@@ -176,6 +176,8 @@ instructions:
 
     场景给where/characters/goal/obstacle/choice/emotion/kind，会议kind必须标meeting。
 
+    每场characters列实际在场的具名人物，含当场开口的首次出场者和本阶段对手，不列只被谈及的人。给有对白的具名人物逐人列speaker_intents，每项含name和goal。goal写这一刻想让对方做什么、答什么或想对谁瞒什么，不写整章目标或台词。有人物卡沿用声口；无卡时补一句简短voice说明他在这段关系里怎么说话。
+
     全部前三章前300字进入当下冲突，第三章最迟首次兑现小目标并抛长线悬念。
 
     章纲threads只用线id或节拍id；暗线每10章内至少推进一次，感情按profile上限安排。
@@ -209,6 +211,8 @@ schemas:
         tier: 1
         stage: 1
         exit: 12
+        voice: ''
+        desire: ''
       volumes:
       - number: 1
         start: 1
@@ -300,6 +304,8 @@ schemas:
         tier: 1
         stage: 1
         exit: 12
+        voice: ''
+        desire: ''
       volumes:
       - number: 1
         start: 1
@@ -443,6 +449,10 @@ schemas:
       scenes:
       - where: ''
         characters: []
+        speaker_intents:
+        - name: ''
+          goal: ''
+          voice: ''
         goal: ''
         obstacle: ''
         choice: ''

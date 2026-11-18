@@ -14,7 +14,8 @@ RULE = (
     "每阶段至少50%章节由核心能力直接解决主要冲突，core_application写操作及决定结果的因果，不能只提能力。"
     "core_development的new_use必填，写本阶段能力的新用法，逐阶段要有具体变化，不能仅换措辞；"
     "new_cost与new_limit只在故事确实需要时写，可以留空，不要为了填栏硬造代价或限制。"
-    "core_application及对应scenes.choice写出本阶段new_use怎样用、解决了什么；代价和限制不必写进场景。"
+    "core_application写本章能力怎样用、解决了什么。scenes.ability_use可记录本阶段new_use；"
+    "对应的choice和action只写本场独有选择与动作，不逐章复述阶段的动作流程、代价和限制。"
 )
 
 

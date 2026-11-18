@@ -12,7 +12,8 @@ from .structure_planning import opponent_presence_issues
 from .stage_transition import planning_transition_issues
 from .solution_substance import solution_issues
 from .solution_sequences import solution_sequence_issues
-from .core_ability import ability_issues
+from .core_ability import ability_issues, enforce_ability_plan
+from .adjacent_conflicts import adjacent_conflict_issues
 from .chapter_rhythm import (
     FOCUS,
     VERSION as RHYTHM_VERSION,
@@ -27,7 +28,7 @@ from .planning_policy import MAX_REWRITE_CALLS, hard_replan_issues, replan_targe
 FUNCTION_WORDS = set(
     "的了着过得地吗呢吧啊呀哦与和或及而却也又再才就都很更最不没无是有在把被让给向从为将以于其之乎者也我你他她它们这那哪谁几一二三四五六七八九十百千万两"
 )
-STRUCTURE_CHECKS_VERSION = 7
+STRUCTURE_CHECKS_VERSION = 8
 
 
 def title_terms(title, supplied=()):
@@ -111,7 +112,7 @@ def diversity_issues(history, batch):
                     targets=sorted(targets.intersection(window)),
                 )
             )
-    return issues
+    return issues + adjacent_conflict_issues(history, batch)
 
 
 def rename_repeated_titles(history, batch):
@@ -162,6 +163,8 @@ def historical_outlines(out, start, recent=()):
             if 0 < number < start:
                 previous = merged.setdefault(number, {})
                 previous.update({k: v for k, v in row.items() if v not in (None, "", [])})
+                if isinstance(row.get("scenes"), list) and row["scenes"]:
+                    previous["planned_scenes"] = row["scenes"]
 
     include(list(recent))
     if out is not None:
@@ -401,6 +404,10 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
         source = rows(raw.get("chapters")) if isinstance(raw, dict) else rows(raw)
         replacements = {integer(r.get("number")): r for r in source}
         conflict_targets = {n for issue in issues if issue["kind"] == "conflict_run" for n in issue["targets"]}
+        adjacent_targets = {
+            n for issue in paid_issues if issue["kind"] == "adjacent_conflict" for n in issue["targets"]
+        }
+        other_targets = {n for issue in paid_issues if issue["kind"] != "adjacent_conflict" for n in issue["targets"]}
         attempted_rhythm = rhythm_targets.intersection(targets)
         for number in attempted_rhythm:
             rhythm_attempts[number] = rhythm_attempts.get(number, 0) + 1
@@ -408,7 +415,14 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
             number = integer(old.get("number"))
             if number not in targets or number not in replacements:
                 continue
-            proposed = dict(old, **replacements[number])
+            replacement = replacements[number]
+            if number in adjacent_targets and number not in other_targets:
+                replacement = {k: v for k, v in replacement.items() if k in ("opening_conflict", "conflict", "scenes")}
+            proposed = dict(old, **replacement)
+            if number in adjacent_targets:
+                proposed = enforce_ability_plan(bible or {}, [proposed])[0]
+                if adjacent_conflict_issues([*history, *current[:index]], [proposed]):
+                    continue
             if number in conflict_targets and all(
                 proposed.get(k) == old.get(k) for k in ("opening_conflict", "scenes", "payoff", "hook")
             ):
@@ -417,7 +431,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 proposed.get(k) == old.get(k) for k in ("opening_conflict", "conflict", "scenes", "payoff", "hook")
             ):
                 continue
-            proposed["title_keywords"] = title_terms(proposed.get("title"), replacements[number].get("title_keywords"))
+            proposed["title_keywords"] = title_terms(proposed.get("title"), replacement.get("title_keywords"))
             if number in attempted_rhythm:
                 if chapter_type(proposed) == "情感" and relationship_outline_issues(proposed):
                     continue

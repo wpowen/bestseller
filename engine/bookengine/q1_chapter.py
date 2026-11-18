@@ -11,6 +11,8 @@ from .precision import _sentences, apply as sentence_edits
 from .craft import reference_features
 from .q1_plan import GROWTH
 from .character_context import schedule_catchphrases
+from .speaker_context import GUIDANCE as SPEAKER_GUIDANCE, HEADING as SPEAKER_HEADING, speaker_briefs
+from .adjacent_conflicts import previous_conflict_context
 from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
@@ -141,6 +143,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     outline = with_story_duties(prepare_writer_payoffs(outline), bible, out)
     outline = apply_rhythm_contracts(client, bible, outline, state, chapter=idx, kind="writer")
     outline = apply_life_constraints(client, bible, outline, state, chapter=idx)
+    outline["speaker_briefs"] = speaker_briefs(outline, bible, state.get("present"), out=out)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
@@ -148,6 +151,9 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(writer_main_scene_contract(outline)))
     )
     sections[1:1] = writer_sections(outline, bible)
+    sections[1:1] = previous_conflict_context(out, idx)
+    if outline["speaker_briefs"]:
+        sections.insert(1, (SPEAKER_HEADING, SPEAKER_GUIDANCE + "\n" + pack(outline["speaker_briefs"])))
     sections = with_completed_action_context(sections, out, idx)
     sections.extend(writer_opening_style_context(out, idx))
     sections.extend(speech_context(bible, idx))

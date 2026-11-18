@@ -16,6 +16,7 @@ from .identity import (
     validate_cast_contract,
 )
 from .nonhuman_speech import normalize_speech_contracts
+from .card_motifs import best_attempt, foreign_motifs, retry_note
 from .selected_card import selected_card, facts, differences, enforce, record, RULE, MECHANISM_DRIFT
 from .longmemory import long_context
 from .storage import save
@@ -314,6 +315,7 @@ def prepare(client, book, out, assets, design=False):
         previous_error = ""
         alignment = []
         gate_attempts = []
+        tried = []
         for redo in range(4 if card else 6):
             extra = (
                 [("关键结构重试", previous_error + "。请给完整人物卡，保留 voice/desire，不要默认空卡。")]
@@ -328,10 +330,30 @@ def prepare(client, book, out, assets, design=False):
                 bind_generated_strength_ladder(bible, profile["canon"])
                 if card:
                     drift = differences(bible, card, locked)
-                    alignment.append(dict(stage="plan-q1-prepare", regeneration=redo, differences=drift))
-                    if MECHANISM_DRIFT & set(drift) and redo < 3:
-                        previous_error = "卡片锁定字段不一致：" + ", ".join(drift) + "；以用户卡片为准，不能换故事。"
+                    foreign = foreign_motifs(raw, card)
+                    mechanism = sorted(MECHANISM_DRIFT & set(drift))
+                    alignment.append(
+                        dict(
+                            stage="plan-q1-prepare",
+                            regeneration=redo,
+                            differences=drift,
+                            foreign_motifs=sorted(foreign),
+                        )
+                    )
+                    tried.append(dict(redo=redo, raw=raw, bible=bible, foreign=foreign, mechanism=mechanism))
+                    if (mechanism or foreign) and redo < 3:
+                        notes = (
+                            ["卡片锁定字段不一致：" + ", ".join(drift) + "；以用户卡片为准，不能换故事"]
+                            if mechanism
+                            else []
+                        )
+                        previous_error = "。".join(notes + ([retry_note(foreign)] if foreign else []))
                         continue
+                    # A retry must not leave the book worse than an earlier attempt.
+                    best = best_attempt(tried)
+                    if best["redo"] != redo:
+                        raw, bible = best["raw"], best["bible"]
+                        alignment[-1]["kept_regeneration"] = best["redo"]
                 if values[0] is None and values[1] is None:
                     designed = normalize_threads(raw.get("threads", {}), count, book.chapters, profile, stages=stages)
                     gaps = design_issues(bible, designed)

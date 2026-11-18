@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from .introductions import check_introductions, check_world_first_appearances, world_term_registry
+from .introductions import check_world_first_appearances, world_term_registry
 from .promise_io import precise_ask
 from .text import _paragraph_spans
 from tools.book_checkup import clean_prose
@@ -57,22 +57,34 @@ def due_first_appearances(out, number, bible, outline):
 
 def writer_first_appearance_instruction(out, number, bible, outline):
     due = due_first_appearances(out, number, bible, outline)
-    if not due:
-        return ""
+    terms = [row for row in due if row.get("kind") != "character"]
+    people = [row["term"] for row in due if row.get("kind") == "character"]
     lines = []
-    for row in due:
+    for row in terms:
         if row.get("kind") == "level":
             lines.append(f"- {row['term']}：用修炼动作、受限结果或人物对白显示其层级作用")
         else:
             lines.append(f"- {row['term']}：{row['definition']}")
-    return (
+    text = (
         "\n本章首次使用以下世界术语时，第一次写出它的句子就融入动作或对白说明它是什么；"
         "不得先裸用、后补定义，也不得照抄定义写成‘某词是第几阶/承接上一阶’的说明书句：\n" + "\n".join(lines)
+        if lines
+        else ""
     )
+    if people:
+        text += (
+            "\n本章首次出场："
+            + "、".join(people)
+            + "。他们的身份由他们正在做的事、手里的东西、别人怎么称呼和对待他们让读者看出来；"
+            "不单独写一句交代某人是谁、干什么、干了多少年，本章说不清的可以留到后文。"
+        )
+    return text
 
 
-def _problems(text, bible, prior, *, include_characters=True):
-    world = [
+def _problems(text, bible, prior):
+    # Characters are no longer repaired here: requiring a card identity at every first mention is
+    # what made chapters open like a cast list. Stand-alone identity sentences go through q1_cast.
+    return [
         row
         for row in check_world_first_appearances(
             text,
@@ -82,16 +94,6 @@ def _problems(text, bible, prior, *, include_characters=True):
         )
         if row["status"] != "Evidence"
     ]
-    if not include_characters:
-        return world
-    cards = _character_cards(bible)
-    seen = [card["name"] for card in cards if card["name"] in prior]
-    characters = [
-        row
-        for row in check_introductions(text, cards, previously_seen=seen)
-        if row.get("kind") == "missing_introduction"
-    ]
-    return world + characters
 
 
 def _targets(text, issues):
@@ -106,11 +108,7 @@ def _targets(text, issues):
 
 def repair_first_appearances(client, prefix, text, raw, failed, state, bible, outline, out, extract, ask):
     prior = _prior_text(out, outline["number"])
-    # The finish extraction can already carry a cast edit through the older
-    # amend/recheck path. Do not pay for a second character rewrite after that
-    # path attempted (and possibly rolled back) the same introduction.
-    attempted_cast_edit = isinstance(raw, dict) and bool(raw.get("edits"))
-    before = _problems(text, bible, prior, include_characters=not attempted_cast_edit)
+    before = _problems(text, bible, prior)
     note = {"status": "checked" if not before else "unfulfilled", "before": before, "after": before, "edits": []}
     if not before:
         return text, raw, failed, note
@@ -119,7 +117,7 @@ def repair_first_appearances(client, prefix, text, raw, failed, state, bible, ou
         ask,
         client,
         prefix + "-first-appearance-repair",
-        "只改首次出现所在段：术语或人物第一次出现的句子就用自然动作或对白交代所给定义/身份；"
+        "只改首次出现所在段：术语第一次出现的句子就用自然动作或对白交代所给定义；"
         "境界词必须通过正在修炼、能力受限、突破结果或人物判断来体现，不得写‘某词是第几阶/承接上一阶’的说明书句；"
         "同章出现多个境界层级时逐个处理；境界词所在句本身必须写出人物催动、运转、借用等动作及其受限结果，"
         "不能只在相邻句补动作；"
@@ -152,7 +150,7 @@ def repair_first_appearances(client, prefix, text, raw, failed, state, bible, ou
             return text, raw, failed, dict(note, status="rolled_back", reason="invalid_edit_target")
         start, end = spans[edit["id"] - 1]
         candidate = candidate[:start] + replacement.strip() + candidate[end:]
-    after = _problems(candidate, bible, prior, include_characters=not attempted_cast_edit)
+    after = _problems(candidate, bible, prior)
     note.update(after=after, edits=edits)
     if after or clean_prose(candidate)[0] != candidate:
         return text, raw, failed, dict(note, status="rolled_back", reason="first_appearance_recheck_failed")

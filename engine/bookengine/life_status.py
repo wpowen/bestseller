@@ -51,9 +51,10 @@ def _dies(name: str, sentence: str) -> bool:
 def must_survive(bible: dict, chapter: int) -> dict[str, int]:
     """Opponents whose planned exit is after this chapter, with that exit chapter."""
     result = {}
+    dead = bible.get("life_constraints", {}) if isinstance(bible, dict) else {}
     for row in bible.get("antagonists", []) if isinstance(bible, dict) else []:
         name, exit_at = (row.get("name"), row.get("exit")) if isinstance(row, dict) else (None, None)
-        if isinstance(name, str) and name and type(exit_at) is int and exit_at > chapter:
+        if isinstance(name, str) and name and name not in dead and type(exit_at) is int and exit_at > chapter:
             result[name] = exit_at
     return result
 

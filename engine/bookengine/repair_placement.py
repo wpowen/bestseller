@@ -3,7 +3,7 @@
 from .text import _paragraph_spans
 
 
-def place_tail_bounded_patch(text, value, *, max_chars=500, keep_final=False):
+def place_tail_bounded_patch(text, value, *, max_chars=500, keep_final=True):
     """Append insertions after existing events and report any model-position relocation.
 
     keep_final leaves the last paragraph last, so an insertion never lands after the chapter's closing beat.
@@ -15,6 +15,8 @@ def place_tail_bounded_patch(text, value, *, max_chars=500, keep_final=False):
         return text, dict(status="invalid", reason="invalid_after", requested_after=requested)
     if not isinstance(patch, str) or not patch.strip() or "\n" in patch or len(patch) > max_chars:
         return text, dict(status="invalid", reason="invalid_patch_text", requested_after=requested)
+    if keep_final and len(spans) == 1 and value.get("replace") is not True:
+        return text, dict(status="invalid", reason="no_room_before_final", requested_after=requested)
     tail = len(spans) - 1 if keep_final and len(spans) > 1 else len(spans)
     effective = requested if value.get("replace") is True else tail
     start, end = spans[effective - 1]

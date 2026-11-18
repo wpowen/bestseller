@@ -210,7 +210,7 @@ class MinimalBTestsPart1(MinimalBTests):
                     patch_value.update(text=draft.split("\n\n")[0], replace=True)
                 first = self.extraction(patch=patch_value, state={"characters": {"阿宁": {"location": "初提地点"}}})
                 payoff = (
-                    dict(type=kind, fulfilled=True, pid=3)
+                    dict(type=kind, fulfilled=True, pid=2)
                     if evidence == "pid"
                     else dict(type=kind, fulfilled=True, quote=addition)
                 )
@@ -229,7 +229,8 @@ class MinimalBTestsPart1(MinimalBTests):
                 self.assert_calls(
                     client, ["r2-ch1-draft", "r2-ch1-finish"] + (["r2-ch1-final-state"] if changed else [])
                 )
-                expected = draft + "\n\n" + addition if changed else draft
+                opening, ending = draft.rsplit("\n\n", 1)
+                expected = opening + "\n\n" + addition + "\n\n" + ending if changed else draft
                 self.assert_saved(row, expected, 1)
                 self.assertEqual((self.out / "chapter-001.r2.draft.md").read_text(), draft)
                 self.assertEqual(row["outside_calls"], 2 + int(changed))

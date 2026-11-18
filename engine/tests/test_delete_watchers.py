@@ -26,7 +26,9 @@ class DeleteWatcherTests(WebFixture):
         data.update(polish=True, pipeline_version=1, pipeline=dict(book=dict(status="complete")))
         with mock.patch("pipeline.finished", side_effect=[False, True, True]):
             pipeline.start(self.queue, folder, data)
-        self.spawn.assert_not_called()
+        self.spawn.assert_called_once()
+        command = self.spawn.call_args.args[0]
+        self.assertEqual(command[2:], ["tools.book_checkup", str(folder), "--source", "final"])
         self.assertEqual(library.read(folder / "web.json")["status"], "complete")
 
     def test_delete_stops_only_own_watcher_and_does_not_resurrect_book(self):

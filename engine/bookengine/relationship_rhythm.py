@@ -10,7 +10,9 @@ from tools.book_checkup import clean_prose
 def _grounded_payoff(raw, text):
     payoff = raw.get("payoff") if isinstance(raw, dict) else None
     quote = payoff.get("quote") if isinstance(payoff, dict) else None
-    return bool(payoff and payoff.get("fulfilled") is True and isinstance(quote, str) and quote in text)
+    return bool(
+        payoff and payoff.get("fulfilled") is True and isinstance(quote, str) and quote.strip() and quote in text
+    )
 
 
 def _spread(indexes, limit=16):
@@ -19,9 +21,15 @@ def _spread(indexes, limit=16):
     return sorted({indexes[round(position * (len(indexes) - 1) / (limit - 1))] for position in range(limit)})
 
 
-def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+def repair_relationship_rhythm(
+    client, prefix, text, raw, failed, state, bible, outline, extract, ask, *, protected_tail=False
+):
     contract = relationship_contract(outline)
     before_type = observed_chapter_type(raw, text, outline)
+    if protected_tail:
+        from .chapter_rhythm import normalize_chapter_type
+
+        before_type = normalize_chapter_type(raw.get("type"))
     note = {
         "status": "checked",
         "planned": contract,
@@ -39,7 +47,11 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     selected = _spread(matching)
     if len(selected) < min(16, len(spans)):
         selected = _spread(sorted(set(selected + list(range(1, len(spans) + 1)))))
+    if protected_tail:
+        selected = [index for index in selected if index < len(spans)]
     targets = [dict(id=index, original=text[spans[index - 1][0] : spans[index - 1][1]]) for index in selected]
+    if not targets:
+        return text, raw, failed, dict(note, status="skipped", reason="no_editable_main_scene")
     response = precise_ask(
         ask,
         client,
@@ -52,6 +64,8 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         cap=6500,
         required_sources=[row["original"] for row in targets],
     )
+    if isinstance(response, dict) and response.get("context_unknown"):
+        return text, raw, failed, dict(note, status="skipped", reason="incomplete_source_context")
     if isinstance(response, dict) and response.get("status") == "skipped":
         return text, raw, failed, dict(note, status="skipped", reason=response.get("reason"))
     edits = response.get("edits") if isinstance(response, dict) else None
@@ -64,6 +78,16 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
     valid_edits, rejected_edits = [], []
     seen = set()
     for edit in edits:
+        if not isinstance(edit, dict):
+            rejected_edits.append(dict(id=None, reason="invalid_edit_shape"))
+            continue
+        if protected_tail and (
+            type(edit.get("id")) is not int
+            or not isinstance(edit.get("text"), str)
+            or len(_paragraph_spans(edit["text"])) != 1
+        ):
+            rejected_edits.append(dict(id=edit.get("id"), reason="invalid_edit_shape"))
+            continue
         source = by_id.get(edit.get("id"))
         replacement = edit.get("text")
         reason = (
@@ -87,6 +111,10 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
             failed,
             dict(note, status="rolled_back", reason="invalid_edit_target", rejected_edits=rejected_edits),
         )
+    if protected_tail:
+        valid_edits = [edit for edit in valid_edits if edit["text"].strip() != by_id[edit["id"]]["original"]]
+        if len(valid_edits) < minimum_edits:
+            return text, raw, failed, dict(note, status="rolled_back", reason="insufficient_main_scene_edits")
     candidate = text
     for edit in sorted(valid_edits, key=lambda row: row.get("id", 0), reverse=True):
         replacement = edit["text"]
@@ -98,6 +126,8 @@ def repair_relationship_rhythm(client, prefix, text, raw, failed, state, bible, 
         client, prefix + "-relationship-final-state", candidate, state, bible, outline, [], final=True
     )
     after_type = chapter_type(checked if isinstance(checked, dict) else {})
+    if protected_tail:
+        after_type = normalize_chapter_type(checked.get("type") if isinstance(checked, dict) else None)
     note.update(after_type=after_type, edits=valid_edits, rejected_edits=rejected_edits)
     payoff_lost = _grounded_payoff(raw, text) and not _grounded_payoff(checked, candidate)
     reason = (

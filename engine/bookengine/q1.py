@@ -47,6 +47,7 @@ from .q1_chapter import REVISION, supplement, amend, chapter_record, chapter
 from .structure_planning import stage_for_chapter, final_stage_start
 from .q1_prepare import _ask as plan_ask
 from .story_design import ensure_story_design
+from .life_planning import apply_life_constraints, confirmed_deaths
 from tools.book_checkup import write_checkup
 
 
@@ -195,6 +196,7 @@ def _run(book, out, env, assets, timeout, style, stop):
     feedback = []
     alerts = []
     for idx in range(1, book.chapters + 1):
+        bible = dict(bible, life_constraints=confirmed_deaths(out, state, chapter=idx))
         stage = stage_for_chapter(bible, idx, book.chapters)
         vn = stage["number"]
         saved = out / f"chapters/{idx:03d}.json"
@@ -209,6 +211,10 @@ def _run(book, out, env, assets, timeout, style, stop):
                 if m.get("end") == idx:
                     history = [h for h in history if h["number"] != m["number"]] + [m]
             continue
+        if cached_record:
+            # An unsettled checkpoint needs accounting, never fresh creative planning.
+            vol = {key: stage[key] for key in ("number", "start", "end")}
+            batch = [dict(number=idx)]
         if not vol or vol.get("number") != vn:
             before = deepcopy(
                 next(
@@ -220,8 +226,12 @@ def _run(book, out, env, assets, timeout, style, stop):
             if history and history[-1].get("volume_issues"):
                 vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback, redo=True)
         if not batch or not any(c.get("number") == idx for c in batch):
+            vol = apply_life_constraints(client, bible, vol, state, chapter=idx, kind="volume")
             end = planning_window_end(idx, book.chapters, vol.get("end", stage["end"]))
             batch = outlines(client, bible, threads, profile, vol, idx, end, state, rows[-29:], history, alerts)
+        if not cached_record:
+            vol = apply_life_constraints(client, bible, vol, state, chapter=idx, kind="volume")
+            batch = apply_life_constraints(client, bible, batch, state, chapter=idx)
         if rows and not state.get("realm_progress"):
             level = state.get("dashboard", {}).get("strength")
             at = (
@@ -289,6 +299,8 @@ def _run(book, out, env, assets, timeout, style, stop):
             updated=now(),
         )
         save(path, meta)
+        if cached_record:
+            vol, batch = {}, []
         print(
             f"chapter={idx} chars={row['chars']} dialogue={row['style']['dialogue_ratio']:.3f} elapsed={seconds:.1f}s",
             flush=True,
@@ -310,6 +322,7 @@ def _run(book, out, env, assets, timeout, style, stop):
     )
     meta.update(
         status="complete" if all(r["status"] == "complete" for r in rows) else "incomplete",
+        completed_chapters=sum(r["status"] == "complete" for r in rows),
         finished=now(),
         acceptance=meta["quality"],
     )

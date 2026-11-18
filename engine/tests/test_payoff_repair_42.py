@@ -104,7 +104,7 @@ def test_finish_extraction_patch_uses_the_same_tail_placement_guard():
     changed, accepted = supplement(original, {"after": 1, "text": "兑现结果。"})
 
     assert accepted is True
-    assert changed.index("第8段。") < changed.index("兑现结果。")
+    assert changed.index("第7段。") < changed.index("兑现结果。") < changed.index("第8段。")
 
 
 def test_repair_does_nothing_when_hook_and_payoff_are_already_grounded():

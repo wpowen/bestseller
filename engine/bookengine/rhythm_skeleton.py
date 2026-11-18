@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from .chapter_rhythm import FOCUS, VERSION, rhythm_slots
+from .chapter_rhythm import FOCUS, VERSION, rhythm_slots, relationship_contract
 from .q1_prepare import _ask
 from .q1_schema import integer, rows
 
@@ -56,13 +56,16 @@ def bind_stage_content(chapters, skeleton):
             continue
         kind = anchor.get("rhythm_type") or anchor.get("type") or chapter.get("type", "")
         conflict = anchor.get("conflict") or chapter.get("opening_conflict") or chapter.get("conflict", "")
+        relationship = anchor.get("relationship_change", chapter.get("relationship_change"))
+        if kind == "情感" and not relationship_contract(anchor) and relationship_contract(chapter):
+            relationship = chapter["relationship_change"]
         chapter.update(
             type=kind,
             rhythm_type=kind,
             rhythm_focus=anchor.get("content_requirement") or chapter.get("rhythm_focus", ""),
             opening_conflict=conflict,
             conflict=conflict,
-            relationship_change=deepcopy(anchor.get("relationship_change", chapter.get("relationship_change"))),
+            relationship_change=deepcopy(relationship),
         )
         detailed = rows(chapter.get("scenes"))
         bound = []

@@ -14,6 +14,10 @@ from .character_context import schedule_catchphrases
 from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import pack, ask, clean, body_of, context, ground, prose_hits, extract_state
 from .storage import load, save
+from .life_planning import apply_life_constraints
+from .scene_repair import repair_scene_consistency
+from .rhythm_contract_repair import apply_rhythm_contracts
+from .chapter_type_repair import repair_chapter_type
 from .text import chinese_count, _paragraph_spans
 from .q1_continuity import repair_opening, evaluate_handoff, advance_boundary_state, with_ending_candidate
 from .opening_promises import repair_opening_promises, previous_promise_context
@@ -22,7 +26,6 @@ from .story_payoffs import prepare_writer_payoffs, repair_story_payoffs, writer_
 from .solution_sequences import repair_solution_sequence, writer_solution_sequence_context
 from .first_appearances import repair_first_appearances, writer_first_appearance_instruction
 from .explanation_density import repair_explanation_density
-from .relationship_rhythm import repair_relationship_rhythm
 from .structure_planning import final_stage_start
 from .core_evidence import observe_core_use
 from .content_guard import guarded, draft_until_readable, RESTRAINED_DRAFT
@@ -136,6 +139,8 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     outline = schedule_catchphrases(outline, bible)
     outline = writer_title_contract(outline)
     outline = with_story_duties(prepare_writer_payoffs(outline), bible, out)
+    outline = apply_rhythm_contracts(client, bible, outline, state, chapter=idx, kind="writer")
+    outline = apply_life_constraints(client, bible, outline, state, chapter=idx)
     save(out / f"writing_outlines/{idx:03d}.json", outline)
     writer_bible = writer_identity_bible(writer_speech_bible(bible))
     sections = context(writer_bible, threads, vol, outline, state, history, rows, previous, drops)
@@ -310,10 +315,13 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     text, raw, failed, notes["premature_death"] = guarded(repair_premature_death)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
+    text, raw, failed, notes["scene_consistency"] = guarded(repair_scene_consistency)(
+        client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
+    )
     text, raw, failed, notes["continuity_ledger"] = guarded(repair_continuity_ledger)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
-    text, raw, failed, cleaning["relationship_rhythm"] = guarded(repair_relationship_rhythm)(
+    text, raw, failed, cleaning["relationship_rhythm"] = guarded(repair_chapter_type)(
         client, prefix, text, raw, failed, state, bible, outline, extract_state, ask
     )
     text, raw, failed, cleaning["explanation_density"] = guarded(repair_explanation_density)(

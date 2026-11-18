@@ -172,6 +172,9 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
+    if isinstance(outline.get("core_development"), dict):
+        # The writer gets the stage's new use only; cost and limit restated every chapter (eval-74).
+        outline["core_development"] = {"new_use": outline["core_development"].get("new_use", "")}
     if chapter["number"] <= 3 and (bible.get("title") or bible.get("power")):
         requirements = [
             {k: item[k] for k in ("id", "requirement")}

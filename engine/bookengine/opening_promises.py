@@ -123,20 +123,20 @@ def opening_contract(bible):
                 clause = clause.strip()
                 if not clause or re.search(r"此后|终局|终章|后续|每十章|每\d+章", clause):
                     continue
-                # Preserve the original clause as source, split conjunctions so
-                # a success in one half cannot hide an unfulfilled other half.
-                for atom in re.split(r"[与及、]|以及", clause):
-                    if atom.strip():
-                        result.append(
-                            dict(
-                                id=f"reader-{len(result)}",
-                                chapter=3,
-                                kind="reader",
-                                source_field=field,
-                                source=clause,
-                                requirement=atom.strip(),
-                            )
-                        )
+                # Whole clauses: splitting on 、/与/及 cut noun lists into fragments such as
+                # “同时见证杂役”. A clause naming 第N章 is due in that chapter, so the chapter-1
+                # writer sees “第1章展示……” instead of meeting it only at the chapter-3 review.
+                named = re.match(r"第([123])章", clause)
+                result.append(
+                    dict(
+                        id=f"reader-{len(result)}",
+                        chapter=int(named.group(1)) if named else 3,
+                        kind="reader",
+                        source_field=field,
+                        source=clause,
+                        requirement=clause,
+                    )
+                )
     return result
 
 

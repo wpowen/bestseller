@@ -150,6 +150,9 @@ def _ask(client, kind, key, sections, redo=False, *, seed_text=""):
         instruction += (
             "\nreader_expectation和opening_promises逐项列可检查的开篇承诺，别把后期承诺塞进前三章。"
             "第1章必须实际展示书名或设定核心能力，前三章每章展示实际使用和当场结果。"
+            "opening_promises按“第1章……”“第2章……”“第3章……”各写一条：第1章让选题卡开场画面当场发生，"
+            "能力第一次起效并让对手或旁观者看到结果；第2、3章各给一个新的进展（新的一招、新用法或更强的对手），"
+            "三章事件、对手处境和赌注逐章升级，不围着同一次触发打转；代价和限制在前三章至多点到一次，不压过爽点。"
             "每条称呼都按说话人→被称呼者→称呼→来历填写：address放在说话人的人物卡，"
             "address_target写被称呼者真名；address须从目标姓名派生，否则address_origin写具体来历并在首次使用章交代。"
         )

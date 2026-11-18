@@ -57,5 +57,5 @@ def power_writer_view(bible):
         key: power.get(key) for key in ("name", "object") if isinstance(power.get(key), str) and power[key].strip()
     } | {
         "rule_points": selected_card_writer_view(bible)["核心规则要点"],
-        "rule": "禁止照搬选题卡规则原句；用本章具体操作、限制与后果体现。",
+        "rule": "禁止照搬选题卡规则原句；用本章具体操作和当场结果体现，限制只在本章剧情用得上时出现。",
     }

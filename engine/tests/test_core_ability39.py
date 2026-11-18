@@ -113,7 +113,7 @@ def test_application_must_use_current_stage_development_and_scene_action():
     assert ability_issues(source, [], [stale])
     current = enforce_ability_plan(source, [stale])
     assert "同时借两人的影子" in str(current[0]["scenes"])
-    assert "须有两盏火光" in str(current[0]["scenes"])
+    assert "须有两盏火光" not in str(current[0]["scenes"])  # eval-74: limits stay out of scenes
     assert not ability_issues(source, [], current)
 
 

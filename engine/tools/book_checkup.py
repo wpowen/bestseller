@@ -289,6 +289,7 @@ def check_book(book, *, source="final"):
     from bookengine.dialogue_hygiene import dialogue_checkup
     from bookengine.solution_sequences import solution_sequence_checkup
     from bookengine.first_appearances import first_appearance_checkup
+    from bookengine.identity_statements import book_identity_statements
     from bookengine.explanation_density import explanation_density_checkup
     from tools.book_cast_stats import cast_stats
     from bookengine.opening_styles import opening_style_checkup
@@ -377,6 +378,7 @@ def check_book(book, *, source="final"):
             heading_chapters=[c["chapter"] for c in residue if c["markdown_headings"] or c["chapter_headings"]],
         ),
         introductions=intros,
+        identity_statements=book_identity_statements(bible.get("characters") or [], chapters),
         aliases=aliases,
         character_diagnostics=dict(reference=character_reference(bible, chapters), model_evaluation=model_evaluation),
         cast_consistency=cast_checkup(bible, chapters),

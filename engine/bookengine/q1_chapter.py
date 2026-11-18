@@ -202,7 +202,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     cast_target_ids = {
         h["id"]
         for h in prose_hits(original, bible, state)
-        if h.get("kind") in ("missing_introduction", "unregistered_alias")
+        if h.get("kind") in ("identity_statement", "unregistered_alias")
     }
     carry = raw.get("previous_delta")
     carry_full = raw.get("_previous_complete")

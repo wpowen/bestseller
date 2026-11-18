@@ -139,14 +139,13 @@ def test_writer_and_repair_prompts_forbid_copying_realm_definitions_as_expositio
     assert "修炼动作、受限结果或人物对白" in instruction
 
 
-def test_character_first_mentioned_in_dialogue_gets_identity_at_that_mention(tmp_path):
+def test_character_first_mention_is_not_repaired_into_an_identity_sentence(tmp_path):
+    """Instruction 71: the repair used to write “沈照霜是驭兽宗女药师” into the first mention."""
     character_bible = {"characters": [{"name": "沈照霜", "identity": "驭兽宗女药师"}]}
     original = "“你认识沈照霜？”陶七问。"
-    replacement = "沈照霜是驭兽宗女药师，先前替伤员配过药。陶七问：“你认识她？”"
 
-    def ask(client, key, instruction, sections, schema, **kwargs):
-        target = dict(sections)["只可修改的首次出现段"][0]
-        return {"edits": [{"id": target["id"], "original": target["original"], "text": replacement}]}
+    def ask(*args, **kwargs):
+        raise AssertionError("no model call for a character's first mention")
 
     changed, raw, failed, note = repair_first_appearances(
         None,
@@ -162,8 +161,8 @@ def test_character_first_mentioned_in_dialogue_gets_identity_at_that_mention(tmp
         ask,
     )
 
-    assert changed == replacement and raw["events"] == [] and failed is False
-    assert note["status"] == "checked" and note["after"] == []
+    assert changed == original and failed is False
+    assert note["status"] == "checked" and note["before"] == []
 
 
 def test_checkup_registers_term_and_unresolved_reference_findings(tmp_path):

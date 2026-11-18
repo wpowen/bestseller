@@ -1,9 +1,13 @@
 """Connect conservative cast findings to the existing sentence repair round."""
 
+from .identity_statements import identity_statements
 from .introductions import annotate_introductions, check_introductions
 from .precision import _sentences
 
 CAST_OBSERVATION_VERSION = 2
+# A first mention without an identity is fine: who someone is shows in what they do. The repair
+# round fixes stand-alone identity sentences and unregistered aliases, never adds identities.
+REPAIR_KINDS = ("identity_statement", "unregistered_alias")
 
 
 def seen_in(text, cards):
@@ -36,19 +40,32 @@ def chapter_cast(outline, bible, seen):
 
 
 def cast_findings(text, bible, state, outline=None):
-    return check_introductions(
-        text,
-        bible.get("characters", []),
-        state.get("seen_characters", []),
-        names=(outline or {}).get("introductions", []),
-    )
+    cards = bible.get("characters", [])
+    seen = state.get("seen_characters", [])
+    findings = [
+        row
+        for row in check_introductions(text, cards, seen, names=(outline or {}).get("introductions", []))
+        if row["kind"] != "missing_introduction"
+    ]
+    return findings + [
+        dict(
+            kind="identity_statement",
+            name=row["name"],
+            status="Inference",
+            message=f"{row['name']}刚出场就单独用一句交代身份；改成他正在做的事或旁人的反应带出，或删去",
+            quote=row["quote"],
+            start=row["start"],
+            end=row["end"],
+        )
+        for row in identity_statements(text, cards, seen)
+    ]
 
 
 def cast_hits(text, bible, state):
     spans = _sentences(text)
     result = []
     for finding in cast_findings(text, bible, state):
-        if finding["kind"] not in ("missing_introduction", "unregistered_alias"):
+        if finding["kind"] not in REPAIR_KINDS:
             continue
         for number, (start, end) in enumerate(spans, 1):
             if start <= finding["start"] < end:
@@ -68,4 +85,4 @@ def cast_hits(text, bible, state):
 
 
 def remaining_cast_problems(findings):
-    return {(f["kind"], f["name"]) for f in findings if f["kind"] in ("missing_introduction", "unregistered_alias")}
+    return {(f["kind"], f["name"]) for f in findings if f["kind"] in REPAIR_KINDS}

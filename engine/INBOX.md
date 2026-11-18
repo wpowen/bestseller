@@ -1262,7 +1262,7 @@ Evidence（`books/webui/c517201b-…`，`rhythm-revisions/contract-attempt-014.j
 
 ## 2026-11-18-73：性别称呼修复在整本书里一次都没成功——待修句被输入截断（用户 2026-11-18：“你继续帮我推动 Codex，完成问题的开发和修复以及验证”）
 
-状态：已修，待合并部署（分支 `fix/cast-repair-73`）。
+状态：已修，已合并进 main 并部署 8787（`c6e224ffe`，main 全套 2085 通过）；待下一本真书确认性别称呼真正修上。
 
 Evidence（《扫雪剑起》`books/webui/c517201b-…`）：
 1. 成书里女主陆青禾在第 3、7、47 章被叫“陆师兄”，第 3 章还写成“他”；男执事沈和笙在第 10 章被写成“她”“沈师姐”。四章的 `polish.cast_consistency` 都是 `rolled_back / deterministic_recheck`。

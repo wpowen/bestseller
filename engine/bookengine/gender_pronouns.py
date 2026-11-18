@@ -294,4 +294,34 @@ def pronoun_findings(text, cards, chapter, spans, finding):
                 )
                 result.update(pronoun_start=row["pronoun_start"], pronoun_end=row["pronoun_end"])
                 results.append(result)
+    seen = {row.get("pronoun_start") for row in results}
+    results.extend(row for row in _self_named(text, cards, chapter, spans, finding) if row["pronoun_start"] not in seen)
+    return results
+
+
+def _self_named(text, cards, chapter, spans, finding):
+    """A speaker naming themself (“由我沈照雪拿”) binds the narration pronoun next to that line (eval-75 ch2)."""
+    gendered = [card for card in cards if card.get("gender") in GENDER and card.get("name")]
+    results = []
+    for paragraph in re.finditer(r"[^\n]+", text):
+        body, offset = paragraph.group(), paragraph.start()
+        quotes = list(re.finditer(r"“[^”]*”", body))
+        named = {card["name"]: card for card in gendered for q in quotes if "我" + card["name"] in q.group()}
+        narration = re.sub(r"“[^”]*”", "", body)
+        if len(named) != 1 or any(card["name"] in narration for card in gendered):
+            continue
+        card = next(iter(named.values()))
+        expected, wrong = GENDER[card["gender"]]
+        for match in re.finditer(r"(?:^|”)([他她])(?!们)|([他她])(?!们)[^“”]{0,12}[：:，,]?“", body):
+            position = match.start(1) if match.group(1) else match.start(2)
+            if body[position] != wrong or _inside_quote(body, position):
+                continue
+            start = offset + position
+            index, (a, b) = next((i, span) for i, span in enumerate(spans) if span[0] <= start < span[1])
+            row = finding(
+                "gender_pronoun", chapter, card["name"], "Inference", wrong, expected,
+                "说话人在台词中自报姓名，旁边的叙述代词与其性别不符", text, index + 1, a, b,
+            )  # fmt: skip
+            row.update(pronoun_start=start, pronoun_end=start + 1)
+            results.append(row)
     return results

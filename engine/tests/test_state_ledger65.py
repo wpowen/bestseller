@@ -371,5 +371,5 @@ def test_d4_cast_repair_runs_after_other_content_rewriters():
     source = inspect.getsource(q1_chapter.chapter)
     cast = source.index("repair_cast_consistency")
 
-    assert cast > source.index("repair_relationship_rhythm")
+    assert cast > source.index("repair_chapter_type")
     assert cast > source.index("repair_explanation_density")

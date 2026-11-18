@@ -71,16 +71,23 @@ def added_paragraph_findings(original: str, candidate: str) -> list[dict]:
 
 
 def guard_repair_additions(original: str, candidate: str) -> tuple[str, dict]:
-    """Drop inserted repair paragraphs that duplicate the chapter; restore rewritten ones to the draft."""
+    """Drop duplicate insertions; restore contiguous rewritten blocks containing a duplicate.
+
+    Adjacent replacements can depend on each other: restoring only the copied-dialogue
+    paragraph can leave its repeated action in the next rewritten paragraph.
+    """
     findings = added_paragraph_findings(original, candidate)
     if not findings:
         return candidate, {"status": "checked", "findings": []}
     old, new = _paragraphs(original), _paragraphs(candidate)
     mapping = {}
+    flagged = {row["paragraph"] - 1 for row in findings}
     for tag, old_start, old_end, new_start, new_end in SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         if tag == "replace" and old_end - old_start == new_end - new_start:
             mapping.update({new_start + offset: old_start + offset for offset in range(new_end - new_start)})
-    flagged = {row["paragraph"] - 1 for row in findings}
+            block = set(range(new_start, new_end))
+            if block & flagged:
+                flagged.update(block)
     kept = [old[mapping[index]] if index in flagged and index in mapping else paragraph
             for index, paragraph in enumerate(new) if index not in flagged or index in mapping]  # fmt: skip
     restored = "\n\n".join(part.strip() for part in kept)

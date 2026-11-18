@@ -183,14 +183,16 @@ class LegacyWatcherTests(WebFixture):
         self.spawn.assert_called_once()
         self.assertEqual(self.spawn.call_args.args[0][2], "deai")
 
-    def test_all_existing_finals_are_preserved_without_spawning_any_process(self):
+    def test_all_existing_finals_are_preserved_without_spawning_writer_or_watcher(self):
         folder = self.book(status="complete")
         put(folder / "run.json", dict(status="complete", book=dict(chapters=2)))
         put(folder / "web.json", dict(library.read(folder / "web.json"), polish=True))
         before = snapshot(folder / "final")
         self.queue.action("webui/story", "resume")
         self.queue.tick()
-        self.spawn.assert_not_called()
+        self.spawn.assert_called_once()
+        command = self.spawn.call_args.args[0]
+        self.assertEqual(command[2:], ["tools.book_checkup", str(folder), "--source", "final"])
         self.assertEqual(snapshot(folder / "final"), before)
         self.assertEqual(library.read(folder / "web.json")["status"], "complete")
 

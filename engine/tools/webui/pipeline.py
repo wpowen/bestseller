@@ -154,6 +154,7 @@ def spawn(queue, folder, data, stage):
 
 
 def start(queue, folder, data):
+    previous = data.get("status")
     migrate(folder, data)
     data["pipeline_version"] = 1
     if data.get("auto_deai") is True:
@@ -172,6 +173,9 @@ def start(queue, folder, data):
             if not any(i["kind"] == stage and i["p"].poll() is None for i in items(queue, folder)):
                 spawn(queue, folder, data, stage)
     update(folder, data)
+    if previous != "complete" and data.get("status") == "complete":
+        queue.library.static()
+        start_final_checkup(queue, folder)
 
 
 def update(folder, data):
@@ -221,11 +225,7 @@ def tick(queue):
             if not any(i["paused"] for i in items(queue, folder)):
                 start(queue, folder, data)
         elif data.get("status") not in ("paused", "budget_paused", "concurrency_paused", "orphaned"):
-            previous = data.get("status")
             start(queue, folder, data)
-            if previous != "complete" and data.get("status") == "complete":
-                queue.library.static()
-                start_final_checkup(queue, folder)
 
 
 def action(queue, folder, data, name):

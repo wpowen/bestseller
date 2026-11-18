@@ -39,6 +39,8 @@ from .title_promises import FIXED_STAGE_FIELDS, PROMPT_STAGE_FIELDS, bind_title_
 from .planning_drift import cache_replan_issues, cached_contract_stale
 from .story_duties import planner_sections
 from .planning_policy import planning_window_end
+from .life_planning import apply_life_constraints
+from .rhythm_contract_repair import apply_rhythm_contracts
 
 
 def _beats(threads, number, state=None):
@@ -119,7 +121,7 @@ def volume(client, bible, threads, number, total, state, history, feedback, redo
     if target:
         value["expected_dashboard"] = dict(value.get("expected_dashboard") or {}, strength=target)
     value["callback_events"] = events
-    return value
+    return apply_life_constraints(client, bible, value, state, chapter=boundary["start"], kind="volume")
 
 
 def schedule(start, end, profile, recent=(), state=None, *, stage_start=None, stage_end=None):
@@ -248,12 +250,14 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         cached = None
     if cached:
         if cached["normalized"]:
-            return apply_ending_contract(
+            normalized = apply_ending_contract(
                 complete_transitions(
                     cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)
                 ),
                 stage_end=integer(volume.get("end"), end),
             )
+            normalized = apply_rhythm_contracts(client, bible, normalized, state, chapter=start)
+            return apply_life_constraints(client, bible, normalized, state, chapter=start)
         end = cached["end"]
     used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(
@@ -485,4 +489,5 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         if source_path:
             report.update(source_report=source_path, chapters=result)
         save(path, dict(report, planned_chapters=result))
-    return result
+    result = apply_rhythm_contracts(client, bible, result, state, chapter=start)
+    return apply_life_constraints(client, bible, result, state, chapter=start)

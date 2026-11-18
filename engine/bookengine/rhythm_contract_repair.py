@@ -74,6 +74,21 @@ def _design_contract(bible, outline, number):
     return (best[0][1], best[0][2]) if len(best) == 1 and best[0][0] == 2 else (None, "")
 
 
+_SCENE_TEXT = ("goal", "obstacle", "choice", "action", "result")
+
+
+def _cast_named_in_text(scenes, people):
+    """Main scenes whose text names a contract person but whose cast list omits them (eval-72 ch14)."""
+    result = deepcopy(scenes)
+    for scene in rows(result)[:2]:
+        cast = scene.get("characters") if isinstance(scene.get("characters"), list) else []
+        text = "".join(str(scene.get(key) or "") for key in _SCENE_TEXT)
+        missing = [name for name in people if name not in cast and name in text]
+        if missing:
+            scene["characters"] = cast + missing
+    return result
+
+
 def _scene_patch(original, response, people):
     """Only action/choice/goal/result may change inside existing scene objects."""
     supplied = response.get("scenes")
@@ -82,11 +97,17 @@ def _scene_patch(original, response, people):
     scenes = original.get("scenes")
     if not isinstance(scenes, list) or not isinstance(supplied, list) or len(scenes) != len(supplied):
         return None
-    result = deepcopy(scenes)
+    result = _cast_named_in_text(scenes, people)
     for old, new in zip(result, supplied):
         if not isinstance(old, dict) or not isinstance(new, dict):
             return None
-        for key in ("characters", "where", "location"):
+        if "characters" in new:
+            cast, supplied_cast = old.get("characters") or [], new["characters"]
+            # The model may echo the planned cast or add the contract pair; it may not drop or invent anyone.
+            if not isinstance(supplied_cast, list) or not set(supplied_cast) <= set(cast) | set(people):
+                return None
+            old["characters"] = list(dict.fromkeys(cast + supplied_cast))
+        for key in ("where", "location"):
             if key in new and new[key] != old.get(key):
                 return None
         for key in ("goal", "action", "choice", "result"):
@@ -112,6 +133,8 @@ def _complete(client, bible, original, state, number, kind):
         fulfilled=False,
         model_attempted=False,
     )
+    if planned == "情感" and relationship_contract(original) and isinstance(result.get("scenes"), list):
+        result["scenes"] = _cast_named_in_text(result.get("scenes", []), relationship_contract(original)["people"])
     if planned != "情感" or note["writer_ready"]:
         result.setdefault("rhythm_contract_repair", note)
         return result
@@ -134,6 +157,7 @@ def _complete(client, bible, original, state, number, kind):
     locked_contract = contract
     if contract:
         result["relationship_change"] = contract
+        result["scenes"] = _cast_named_in_text(result.get("scenes", []), contract["people"])
         note.update(status="restored", source=source, writer_ready=not relationship_outline_issues(result))
     if not note["writer_ready"] and previous and previous["note"].get("status") not in ("waiting", "attempting"):
         note.update(previous["note"])
@@ -170,9 +194,14 @@ def _complete(client, bible, original, state, number, kind):
                 bounded_ask,
                 client,
                 f"rhythm-contract-{number}-repair",
-                "只补该章空的relationship_change：两名已登记且本章可出场人物、起因、不同的before/after。"
-                "仅在必要时改现有scenes的goal/action/choice/result，使两场主戏落实关系变化；"
-                "返回相同数量的scenes，不改人物、地点、标题、章型、兑现、末钩及其他字段。不把计划标为已兑现。",
+                (
+                    "relationship_change已定（只读，原样返回）；只改两场主戏的goal/action/choice/result，"
+                    "让主要动作和选择落在这两人的关系变化上，可把这两人补进该场characters；"
+                    if locked_contract
+                    else "只补该章空的relationship_change：两名已登记且本章可出场人物、起因、不同的before/after。"
+                    "仅在必要时改现有scenes的goal/action/choice/result，使两场主戏落实关系变化；"
+                )
+                + "返回相同数量的scenes，不删改已有人物、不改地点、标题、章型、兑现、末钩及其他字段。不把计划标为已兑现。",
                 [
                     ("目标章纲完整只读", result),
                     (
@@ -210,7 +239,9 @@ def _complete(client, bible, original, state, number, kind):
             response = response if isinstance(response, dict) else {}
             contract = relationship_contract(dict(relationship_change=response.get("relationship_change")))
             if locked_contract:
-                contract = locked_contract if not contract or contract == locked_contract else None
+                # The outline already decided the relationship; a reworded copy from the model is not a new
+                # decision and must not void its scene fixes (eval-72: the book stopped at chapter 14).
+                contract = locked_contract
             known = {c.get("name") for c in rows(bible.get("characters"))}
             if contract and known and not set(contract["people"]) <= known:
                 contract = None
@@ -259,7 +290,12 @@ def _complete(client, bible, original, state, number, kind):
         if not any(load(path).get("original") == source_outline for path in saved):
             revision = revisions / f"{number:03d}-{len(saved) + 1:03d}.json"
             save(revision, dict(original=source_outline, outline=result, note=note))
-    if kind == "writer" and not note["writer_ready"]:
+    if kind == "writer" and not note["writer_ready"] and relationship_contract(result):
+        # A contract exists; only the main-scene wording missed the check. Write with the obligation and
+        # keep the shortfall on record instead of stopping a book that has to be finished.
+        note["writer_proceeded_with_contract"] = True
+        result["rhythm_contract_repair"] = note
+    elif kind == "writer" and not note["writer_ready"]:
         raise ProjectError(f"第{number}章情感章关系合同缺失：{note.get('reason', 'unknown')}；见rhythm-revisions")
     return result
 

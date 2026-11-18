@@ -299,6 +299,13 @@ def _repair_targets(text, findings):
     return sorted(targets.values(), key=lambda row: (row["id"], row["kind"]))
 
 
+def _target_cards(cards, targets):
+    """Cards of the people named in the sentences to fix; all cards when none is named."""
+    quotes = "".join(str(row.get("quote", "")) + str(row.get("name", "")) for row in targets)
+    named = [card for card in cards if isinstance(card, dict) and card.get("name") and card["name"] in quotes]
+    return named or cards
+
+
 def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """One sentence-only model repair; any failed deterministic recheck rolls back."""
     from .checks import high_confidence
@@ -327,10 +334,12 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         "若人物被串成敌方领头人，依章纲把错误人物从整段追兵身份链移除，恢复为章纲中的匿名对手；"
         "不得只添加人物身份同位语。每个edit.id必须逐字复制待修句中的真实id，不得使用示例id；"
         "不确定不改，其他句逐字保留。",
+        # Sentences to fix go first: packing stops at the first oversized section, and with cards and
+        # outline first the targets were cut to 31 characters in every chapter of eval-73.
         [
-            ("固定人物卡", json.dumps(writer_identity_cards(bible), ensure_ascii=False)),
-            ("本章固定章纲", json.dumps(writer_identity_outline(outline, bible), ensure_ascii=False)),
             ("待修句", json.dumps(repair_targets, ensure_ascii=False)),
+            ("固定人物卡", json.dumps(_target_cards(writer_identity_cards(bible), repair_targets), ensure_ascii=False)),
+            ("本章固定章纲", json.dumps(writer_identity_outline(outline, bible), ensure_ascii=False)),
             ("只读正文", text),
         ],
         '{"edits":[{"id":1,"text":"替换后的完整句"}]}',
@@ -358,6 +367,8 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
             replacement = target["quote"][:relative] + target["expected"] + target["quote"][relative + 1 :]
         elif target["kind"] == "pronoun_name_residue":
             replacement = target["quote"].replace(target["observed"], target["expected"], 1)
+        elif target["kind"] == "gendered_address" and target["observed"] in target["quote"]:
+            replacement = target["quote"].replace(target["observed"], target["expected"])
         else:
             continue
         proposed = [row for row in proposed if row.get("id") != target["id"]]

@@ -147,11 +147,14 @@ def _stages(bible):
 
 
 def relationship_contract(row):
-    value = canonical_relationship_change(row.get("relationship_change") if isinstance(row, dict) else None)
+    value = row.get("relationship_change") if isinstance(row, dict) else None
     if not isinstance(value, dict):
         return None
-    people = value.get("people") if isinstance(value.get("people"), list) else []
     labelled_relationship = normalize_chapter_type(row.get("type") or row.get("rhythm_type") or "") == "情感"
+    # Variant shapes are read only for chapters already planned as 情感. On any other chapter they are a side
+    # note, and reading them as a contract made chapter_type relabel the chapter without rewriting its scenes.
+    value = canonical_relationship_change(value) if labelled_relationship else value
+    people = value.get("people") if isinstance(value.get("people"), list) else []
     if not people and labelled_relationship:
         for alias in ("characters", "pair"):
             if isinstance(value.get(alias), list):

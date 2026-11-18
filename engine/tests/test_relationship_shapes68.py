@@ -1,6 +1,6 @@
 """Instruction 68 (E4): relationship_change values copied from saved writing outlines of four books."""
 
-from bookengine.chapter_rhythm import relationship_contract
+from bookengine.chapter_rhythm import apply_contract, chapter_type, relationship_contract
 from bookengine.relationship_shapes import canonical_relationship_change
 from bookengine.rhythm_writer import writer_rhythm_instruction
 
@@ -49,3 +49,24 @@ def test_writer_receives_the_relationship_duty_for_a_variant_shape():
     change = {"秦野与韩和笙": {"before": "互不信任", "after": "有限互信", "cause": "秦野坦白反冲风险"}}
     instruction = writer_rhythm_instruction(_outline(change))
     assert "人物=秦野、韩和笙" in instruction and "变化后=有限互信" in instruction
+
+
+def _side_note(kind, change):
+    return {"type": kind, "rhythm_type": kind, "scenes": SCENES, "relationship_change": change}
+
+
+def test_variant_side_note_on_a_non_emotion_chapter_does_not_turn_it_into_an_emotion_chapter():
+    # 《摆摊真的能转运吗》 chapters 36 (日常, chase scenes) and 8 (收获): the side note was read as a full
+    # contract, apply_contract relabelled both as 情感 without touching the scenes, and both were written as 谋划.
+    pair = {"pair": ["陆青", "林小夏"], "cause": "陆青拒绝接管纸条", "before": "等待指令", "after": "相信自己"}
+    keyed = {"陆青与林小夏": {"before": "林小夏只替陆夏修旧物", "after": "开始参与纸条校验", "cause": "共同承担"}}
+    for kind, change in (("日常", pair), ("收获", keyed), ("对抗", pair)):
+        row = _side_note(kind, change)
+        assert relationship_contract(row) is None
+        assert chapter_type(row) == kind
+        assert apply_contract(dict(row))["type"] == kind
+
+
+def test_canonical_contract_still_makes_an_emotion_chapter_as_before_instruction_68():
+    canonical = {"people": ["秦野", "苏以宁"], "cause": "伤势恶化", "before": "当成伤者", "after": "允许知情"}
+    assert chapter_type(_side_note("对抗", canonical)) == "情感"

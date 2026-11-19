@@ -1340,3 +1340,11 @@ Evidence：第 24 章章纲的 relationship_change 写成 `{"顾寒与裴煦阳"
 已改：别名加入“前”“后”。`tests/test_relationship_shapes68.py` 新增一条，旧代码上红；真实第 24 章原文现在能读出完整合同。全套 2091 通过。
 
 部署说明：main 工作区里有 Codex 未提交的改动（explanation_density、plot_progression、q1_chapter、adjacent_replay、opening_exposition）。这两次镜像都从干净 worktree 构建，镜像里不含这些未提交改动，它们仍在工作区里，没有提交。
+
+## 2026-11-19-77c：新书第 24 章重新规划后再次停写——关系变化写成一句“由……转为……”
+
+状态：已修，已合并进 main 并部署 8787（`f9ba5f087`），已在网页上再次点“从保存的进度重试”。
+
+Evidence：77b 部署后续写，规划重排第 24–25 章，第 24 章写成 `{"顾寒与裴煦阳": "由互相防备、各自打算，转为承认伤势与剑招限制后的有限同行。"}`，仍读不出合同。旧的修补记录对应的是改写前的章纲，结论 `already_attempted` 沿用下来，书再次停下。“同一章已尝试过就不再调模型”这条规则有两个测试专门保护（`test_rhythm_resume70`、`test_rhythm_completion70`），这次没改。
+
+已改（`relationship_shapes.py`）：配对键下如果是一句“由/从……转为/变为/到……”，拆成 before/after；起因沿用原有回退（取开篇冲突），只对已标为情感章的章生效。新增测试一条，旧代码上红；真实第 24 章现在能读出完整合同，第 25 章（对抗章）仍不按关系合同读。全套 2092 通过。

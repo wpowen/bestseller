@@ -6,6 +6,8 @@ writer gets no relationship duty and the repair is skipped, which is how planned
 written as fights.
 """
 
+import re
+
 _ALIASES = {
     "people": ("people", "characters", "pair", "人物"),
     "cause": ("cause", "trigger", "turning_point", "起因"),
@@ -23,6 +25,12 @@ def _pair(key: str) -> list[str]:
     return []
 
 
+def _from_to(text: str) -> dict | str:
+    """Read “由甲，转为乙” / “从甲到乙” written as one sentence (instruction 77c)."""
+    match = re.match(r"^\s*[由从](.+?)[，,]?\s*(?:转为|转成|变为|变成|到)(.+?)[。.]?\s*$", text)
+    return dict(before=match.group(1).strip(), after=match.group(2).strip()) if match else text
+
+
 def _first(value: dict, keys: tuple[str, ...]):
     return next((value[key] for key in keys if value.get(key)), None)
 
@@ -35,6 +43,7 @@ def canonical_relationship_change(value: object) -> object:
     if not any(key in value for keys in _ALIASES.values() for key in keys):
         for key, inner in value.items():
             names = _pair(key) if isinstance(key, str) else []
+            inner = _from_to(inner) if isinstance(inner, str) else inner
             if isinstance(inner, dict) and len(names) == 2:
                 people, value = names, inner
                 break

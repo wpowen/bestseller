@@ -47,7 +47,8 @@ def test_apply_ending_contract_adds_specific_writer_instruction_and_repairs_bad_
     assert "章末留下什么" in result[0]["hook"]
     assert "具体内容" in result[0]["hook"]
     assert result[0]["ending_type"] != result[1]["ending_type"]
-    assert result[0]["ending_type"] in diagnose_ending(result[0]["ending_content"])["types"]
+    # Instruction 77: an empty ending takes the last scene's planned facts, not a sentence about endings.
+    assert result[0]["ending_content"].startswith("石门后传来陌生呼吸")
     assert result[1]["ending_type"] in diagnose_ending(result[1]["ending_content"])["types"]
     assert all(len(row["ending_content"]) <= 160 for row in result)
 

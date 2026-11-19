@@ -19,7 +19,7 @@ from .stage_transition import complete_transitions
 from .retired_opponents import stage_constraints
 from .solution_substance import solution_issues
 from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
-from .hook_momentum import apply_ending_contract, schedule_ending_types
+from .hook_momentum import apply_ending_contract, planned_ending_type, schedule_ending_types
 from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
 from .adjacent_conflicts import RULE as ADJACENT_CONFLICT_RULE, planned_conflict
 from .character_context import schedule_catchphrases
@@ -450,7 +450,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             required_event=slot["required_event"],
             payoff_due=slot["payoff_due"],
             payoff_type=slot.get("payoff_type"),
-            ending_type=slot["ending_type"],
+            ending_type=planned_ending_type(chapter, slot["ending_type"]),
             ending_content=chapter.get("ending_content") or chapter.get("hook"),
             hook=chapter.get("hook")
             if chapter["hook_type"] == slot["hook_type"]

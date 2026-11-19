@@ -119,45 +119,71 @@ def _brief(value, default, limit=60):
     return text[:limit] or default
 
 
-def _fallback_content(chapter, kind):
+# Older plans filled a missing ending with these fill-in sentences; writers printed them verbatim.
+_TEMPLATE_MARKERS = (
+    "背后还有未说明的事实",
+    "动作停在结果发生前",
+    "尚未查明原因",
+    "关系留下裂痕",
+    "之间当场选一项",
+    "仍在逼近，尚未脱险",
+    "完成本阶段行动",
+)
+
+
+def planned_ending_type(chapter, scheduled):
+    """Keep the planner's own ending type; the schedule only fills a missing or unknown one."""
+    kind = chapter.get("ending_type") if isinstance(chapter, dict) else None
+    return kind if kind in (*ACTIVE_TYPES, FLAT_TYPE) else scheduled
+
+
+def _fallback_content(chapter):
+    """Use the last scene's planned outcome, never a sentence about the ending itself."""
     scene = next((row for row in reversed(chapter.get("scenes", [])) if isinstance(row, dict)), {})
-    actor = _brief(next(iter(scene.get("characters", []) or []), "主角"), "主角", 20)
-    place = _brief(scene.get("where") or chapter.get("title"), "末场", 40)
-    obstacle = _brief(scene.get("obstacle"), "眼前冲突")
-    choice = _brief(scene.get("choice") or scene.get("goal"), "处理眼前冲突")
-    goal = _brief(scene.get("goal"), "保住本章目标")
-    templates = {
-        "迫近危险": f"{actor}发现{obstacle}仍在逼近，尚未脱险",
-        "刚揭事实": f"{actor}这才发现，{obstacle}背后还有未说明的事实",
-        "悬停动作": f"{actor}刚要{choice}，动作停在结果发生前",
-        "两难选择": f"{actor}只能先在{goal}与{obstacle}之间当场选一项",
-        "反常物件": f"{place}的既有物件忽然出现反常变化，{actor}尚未查明原因",
-        "关系裂痕": f"{actor}没有回答关于{choice}的追问，关系留下裂痕",
-        FLAT_TYPE: f"{actor}完成本阶段行动，在{place}平静收束",
-    }
-    return templates[kind]
+    for key in ("result", "obstacle"):
+        text = _brief(scene.get(key), "", 80)
+        if text and not any(marker in text for marker in _TEMPLATE_MARKERS):
+            return text
+    return ""
+
+
+def _valid_planned_type(chapter, stage_end):
+    kind = chapter.get("ending_type")
+    if kind == FLAT_TYPE:
+        return kind if chapter.get("number") == stage_end else None
+    return kind if kind in ACTIVE_TYPES else None
+
+
+def _planned_content(chapter):
+    content = chapter.get("ending_content") or chapter.get("hook") or ""
+    if str(content).startswith("章末留下什么：") and "；具体内容：" not in str(content):
+        return ""
+    content = re.sub(r"^章末留下什么：[^；]+；具体内容：", "", str(content)).strip().rstrip("。")
+    return "" if any(marker in content for marker in _TEMPLATE_MARKERS) else content
 
 
 def apply_ending_contract(chapters, *, stage_end=None):
-    """Normalize plan fields before prose generation, retaining model-specific content."""
+    """Normalize ending labels before prose generation; the planner's ending sentence is kept."""
     result, counts = [], Counter()
     previous = None
-    for chapter in deepcopy(chapters):
-        number = chapter.get("number")
-        kind = chapter.get("ending_type")
-        content = chapter.get("ending_content") or chapter.get("hook") or ""
-        content = re.sub(r"^章末留下什么：[^；]+；具体内容：", "", str(content)).strip().rstrip("。")
-        detected = diagnose_ending(content)["types"]
-        invalid_flat = kind == FLAT_TYPE and number != stage_end
-        if kind not in (*ACTIVE_TYPES, FLAT_TYPE) or invalid_flat or kind == previous or counts[kind] >= 2:
-            eligible = [value for value in detected if value != previous and counts[value] < 2]
-            kind = eligible[0] if eligible else schedule_ending_types(number, number, recent=result)[0]["ending_type"]
-        if not content or kind in ACTIVE_TYPES and kind not in detected:
-            content = _fallback_content(chapter, kind)
+    chapters = deepcopy(chapters)
+    planned = [_valid_planned_type(row, stage_end) for row in chapters]
+    for index, chapter in enumerate(chapters):
+        kind = planned[index]
+        content = _planned_content(chapter) or _fallback_content(chapter)
+        following = planned[index + 1] if index + 1 < len(planned) else None
+        if kind is None or kind == previous or counts[kind] >= 2:
+            avoid = {previous} if kind else {previous, following}
+            detected = diagnose_ending(content)["types"]
+            eligible = [value for value in detected if value not in avoid and counts[value] < 2]
+            free = [value for value in ACTIVE_TYPES if value not in avoid and counts[value] < 2]
+            free = free or [value for value in ACTIVE_TYPES if value != previous]
+            kind = (eligible or sorted(free, key=lambda value: (counts[value], ACTIVE_TYPES.index(value))))[0]
+        detail = f"；具体内容：{content}" if content else "；用本章末场已有的人物、冲突和物件写出具体局面"
         chapter.update(
             ending_type=kind,
             ending_content=content,
-            hook=f"章末留下什么：{kind}；具体内容：{content}。只用本章既有人物、冲突和物件落实。",
+            hook=f"章末留下什么：{kind}{detail}。只用本章既有人物、冲突和物件落实。",
         )
         counts[kind] += 1
         previous = kind

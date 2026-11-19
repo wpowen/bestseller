@@ -70,3 +70,24 @@ def test_variant_side_note_on_a_non_emotion_chapter_does_not_turn_it_into_an_emo
 def test_canonical_contract_still_makes_an_emotion_chapter_as_before_instruction_68():
     canonical = {"people": ["秦野", "苏以宁"], "cause": "伤势恶化", "before": "当成伤者", "after": "允许知情"}
     assert chapter_type(_side_note("对抗", canonical)) == "情感"
+
+
+def test_short_chinese_before_after_keys_are_read_instruction_77b():
+    # 《扫雪剑起》 24ddbcc8 stopped before chapter 24: the planner wrote 起因/前/后 under a "甲与乙" key.
+    from bookengine.rhythm_contract_repair import relationship_contract
+
+    row = {
+        "type": "情感",
+        "relationship_change": {
+            "顾寒与裴煦阳": {
+                "起因": "后廊剑鸣失控，两人必须共同压阵",
+                "前": "顾寒追斩，裴煦阳只顾夺回残片",
+                "后": "两人暂以旧阵止鸣为条件合作",
+            }
+        },
+        "scenes": [],
+    }
+    contract = relationship_contract(row)
+    assert contract and contract["people"] == ["顾寒", "裴煦阳"]
+    assert contract["before"] == "顾寒追斩，裴煦阳只顾夺回残片"
+    assert contract["after"] == "两人暂以旧阵止鸣为条件合作"

@@ -91,3 +91,20 @@ def test_short_chinese_before_after_keys_are_read_instruction_77b():
     assert contract and contract["people"] == ["顾寒", "裴煦阳"]
     assert contract["before"] == "顾寒追斩，裴煦阳只顾夺回残片"
     assert contract["after"] == "两人暂以旧阵止鸣为条件合作"
+
+
+def test_pair_key_with_a_from_to_sentence_is_read_instruction_77c():
+    # Re-planned chapter 24 of 24ddbcc8 wrote the change as one sentence under the pair key.
+    from bookengine.rhythm_contract_repair import relationship_contract
+
+    row = {
+        "type": "情感",
+        "opening_conflict": "后廊剑鸣失控，两人必须共同压阵",
+        "relationship_change": {"顾寒与裴煦阳": "由互相防备、各自打算，转为承认伤势与剑招限制后的有限同行。"},
+        "scenes": [],
+    }
+    contract = relationship_contract(row)
+    assert contract and contract["people"] == ["顾寒", "裴煦阳"]
+    assert contract["before"] == "互相防备、各自打算"
+    assert contract["after"] == "承认伤势与剑招限制后的有限同行"
+    assert contract["cause"]

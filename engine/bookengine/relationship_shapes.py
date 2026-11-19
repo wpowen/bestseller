@@ -9,8 +9,8 @@ written as fights.
 _ALIASES = {
     "people": ("people", "characters", "pair", "人物"),
     "cause": ("cause", "trigger", "turning_point", "起因"),
-    "before": ("before", "from", "变化前"),
-    "after": ("after", "to", "变化后"),
+    "before": ("before", "from", "变化前", "前"),
+    "after": ("after", "to", "变化后", "后"),
 }
 _SEPARATORS = ("与", "和", "、")  # in this order: 韩和笙 is one name, 秦野与韩和笙 is two
 

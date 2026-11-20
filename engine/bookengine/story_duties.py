@@ -324,6 +324,7 @@ def planner_sections(bible, out, start, end, stage_number):
     ]
     if steps:
         sections.append((SPEC["planner"]["relationship_heading"], steps))
+    sections.append((SPEC["planner"]["device_heading"], SPEC["planner"]["device_rule"]))
     return sections + planner_section(out, bible, start)
 
 

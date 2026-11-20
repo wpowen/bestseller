@@ -244,14 +244,14 @@ def test_extractor_metadata_cannot_override_actual_observed_type(tmp_path):
     assert changed == text and note["reason"] == "after_type_mismatch"
 
 
-def test_writer_fallback_stops_after_recorded_source_failure(tmp_path):
-    from tools.runtime_support import ProjectError
-
+def test_writer_fallback_records_source_failure_and_continues(tmp_path):
+    # Instruction 79 (user 2026-11-20: “修补失败就降级续写”): record the failure, write, never call twice.
     client = OfflineClient(tmp_path, [dict(relationship_change={})])
-    with pytest.raises(ProjectError, match="关系合同缺失"):
-        apply_rhythm_contracts(client, enabled(), outline(), {}, chapter=34, kind="writer")
-    with pytest.raises(ProjectError, match="invalid_model_contract"):
-        apply_rhythm_contracts(client, enabled(), outline(), {}, chapter=34, kind="writer")
+    for _ in range(2):
+        note = apply_rhythm_contracts(client, enabled(), outline(), {}, chapter=34, kind="writer")[
+            "rhythm_contract_repair"
+        ]
+        assert note["reason"] == "invalid_model_contract" and note["writer_proceeded_without_contract"] is True
     assert len(client.calls) == 1
 
 
@@ -267,9 +267,11 @@ def test_planner_rejects_scene_scope_or_semantic_violations(tmp_path, change):
         scenes.pop()
     client = OfflineClient(tmp_path, [dict(relationship_change=CONTRACT, scenes=scenes)])
     result = apply_rhythm_contracts(client, enabled(), source, {})
-    assert result["relationship_change"] == {}
+    # Instruction 79: the rejected scenes are not applied, but the usable contract is kept for the writer.
+    assert result["relationship_change"] == CONTRACT
     assert result["scenes"] == source["scenes"]
     assert result["rhythm_contract_repair"]["writer_ready"] is False
+    assert result["rhythm_contract_repair"]["degraded"] is True
 
 
 def test_ambiguous_design_contract_uses_bounded_planning_instead_of_arbitrary_pair(tmp_path):

@@ -171,6 +171,11 @@ def _complete(client, bible, original, state, number, kind):
                 writer_ready=False,
                 source_failure_reason=previous["note"].get("reason"),
             )
+            saved = relationship_contract(
+                dict(relationship_change=previous.get("patch", {}).get("relationship_change"))
+            )
+            if saved and not relationship_contract(result):
+                result["relationship_change"] = saved
     elif not note["writer_ready"]:
         note.update(
             status="attempting",
@@ -261,6 +266,11 @@ def _complete(client, bible, original, state, number, kind):
                 result.update(relationship_change=contract, scenes=scenes)
                 note.update(status="repaired", writer_ready=True)
                 note.pop("reason", None)
+            if note["status"] == "failed" and contract:
+                # Instruction 79: keep a usable contract even when the scenes miss the check; the writer
+                # still gets the obligation and the shortfall stays on record.
+                result["relationship_change"] = contract  # the rejected scene text is not applied
+                note["degraded"] = True
         except (QuotaExhausted, ProjectError) as exc:
             note.update(status="waiting", reason="source_model_failed:" + type(exc).__name__)
             memory[number] = dict(original=source_outline, note=deepcopy(note), patch={})
@@ -278,7 +288,7 @@ def _complete(client, bible, original, state, number, kind):
             note["reason"] = "source_model_failed:" + type(exc).__name__
         patch = (
             {key: result[key] for key in ("relationship_change", "scenes") if key in result}
-            if note["writer_ready"]
+            if note["writer_ready"] or note.get("degraded")
             else {}
         )
         memory[number] = dict(original=source_outline, note=deepcopy(note), patch=patch)
@@ -293,10 +303,13 @@ def _complete(client, bible, original, state, number, kind):
     if kind == "writer" and not note["writer_ready"] and relationship_contract(result):
         # A contract exists; only the main-scene wording missed the check. Write with the obligation and
         # keep the shortfall on record instead of stopping a book that has to be finished.
-        note["writer_proceeded_with_contract"] = True
+        note.update(writer_proceeded_with_contract=True, degraded=True)
         result["rhythm_contract_repair"] = note
     elif kind == "writer" and not note["writer_ready"]:
-        raise ProjectError(f"第{number}章情感章关系合同缺失：{note.get('reason', 'unknown')}；见rhythm-revisions")
+        # Instruction 79 (user 2026-11-20: “修补失败就降级续写”): a book has to be finished, so a failed
+        # relationship repair is recorded and the chapter is written from its plan instead of stopping.
+        note.update(writer_proceeded_without_contract=True, degraded=True)
+        result["rhythm_contract_repair"] = note
     return result
 
 

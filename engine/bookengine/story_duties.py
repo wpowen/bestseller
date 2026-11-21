@@ -8,6 +8,8 @@ as ``unverified``. Nothing here blocks or rewrites a chapter: an open duty is ca
 from pathlib import Path
 import json
 import re
+
+from .arc_runs import planner_arc_section
 from .chapter_rhythm import chapter_type
 from .q1_schema import integer, rows
 from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
@@ -325,7 +327,7 @@ def planner_sections(bible, out, start, end, stage_number):
     if steps:
         sections.append((SPEC["planner"]["relationship_heading"], steps))
     sections.append((SPEC["planner"]["device_heading"], SPEC["planner"]["device_rule"]))
-    return sections + planner_section(out, bible, start)
+    return sections + planner_section(out, bible, start) + planner_arc_section(out, start)
 
 
 def _quote(text, word):

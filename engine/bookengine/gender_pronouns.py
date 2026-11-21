@@ -98,6 +98,12 @@ def _inside_quote(text, position):
     return before.rfind("“") > before.rfind("”") or before.rfind("‘") > before.rfind("’") or before.count('"') % 2 == 1
 
 
+def _after_vocative(text, position):
+    """The pronoun follows a short form of address that opens the quote (instruction 80, re-test ch21)."""
+    opening = text.rfind("“", 0, position)
+    return opening >= 0 and bool(re.fullmatch(r"“[^，,。！？“”]{1,6}[，,]\s*", text[opening:position]))
+
+
 def _quote_external_target(text, start, end, people, speaker):
     outside = "".join(
         char if char not in "“”‘’\"'" and not _inside_quote(text, start + offset) else " "
@@ -185,9 +191,11 @@ def _scan_bindings(text, cards, spans):
         unknown_reason = ""
         if quoted:
             resolved = _quote_external_target(text, start, end, people, explicit)
-            if resolved is None and index:
+            # “沈首席，他仍是杂役！”: the addressee is not the 他, so the earlier subject is no evidence.
+            guess = bool(index) and not _after_vocative(text, pronoun_position)
+            if resolved is None and guess:
                 resolved = _prior_quoted_subject(text, spans[index - 1], cards)
-            if resolved is None and index:
+            if resolved is None and guess:
                 resolved = _prior_explicit_other(text, spans[index - 1], cards, explicit)
             unknown = resolved is None
             unknown_reason = "引语内第三人称没有引语外另一具名人物的明确语法证据"

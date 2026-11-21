@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import re
 
-from .arc_runs import planner_arc_section
+from .arc_runs import planner_arc_section, planner_obstacle_section
 from .chapter_rhythm import chapter_type
 from .q1_schema import integer, rows
 from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
@@ -301,8 +301,10 @@ def planner_sections(bible, out, start, end, stage_number):
         return []
     ledger = load_ledger(out)
     total = integer(design.get("total"))
+    duties = all_duties(design, bible)
+    villain_chapters = {duty["chapter"] for duty in duties if duty["kind"] == "villain_move"}
     items = []
-    for duty in sorted(all_duties(design, bible), key=lambda d: d["chapter"]):
+    for duty in sorted(duties, key=lambda d: d["chapter"]):
         if duty["chapter"] > end or not _open(duty, ledger.get(duty["id"]), start) or _expired(duty, start, total):
             continue
         if duty["kind"] == "relationship":
@@ -327,7 +329,12 @@ def planner_sections(bible, out, start, end, stage_number):
     if steps:
         sections.append((SPEC["planner"]["relationship_heading"], steps))
     sections.append((SPEC["planner"]["device_heading"], SPEC["planner"]["device_rule"]))
-    return sections + planner_section(out, bible, start) + planner_arc_section(out, start)
+    return (
+        sections
+        + planner_section(out, bible, start)
+        + planner_arc_section(out, start)
+        + planner_obstacle_section(bible, out, start, end, villain_chapters)
+    )
 
 
 def _quote(text, word):

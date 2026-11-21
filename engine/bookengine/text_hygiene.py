@@ -15,6 +15,7 @@ from .model_notes import model_note_hits, repair_model_notes, require_publishabl
 
 
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())
+STRUCTURE_FIX = "删掉words里的词；“上章/上一章/下一章”改成故事里的时间说法（先前、方才、昨夜、稍后），不改其他字"
 _STRUCTURE = re.compile(
     r"第\s*[0-9０-９零〇一二两三四五六七八九十百千]+\s*场戏|"
     r"场景\s*[0-9０-９零〇一二两三四五六七八九十百千]+|本章|章纲|原章|上一?章|下一章"
@@ -254,6 +255,10 @@ def _repair_targets(text, findings, bible):
             )
             target["kinds"].append(kind)
             target["kind"] = "+".join(sorted(set(target["kinds"])))
+            if kind == "structure":
+                # Name the offending word: without it the model returned 第23章's sentence unchanged.
+                target["words"] = list(dict.fromkeys([*target.get("words", []), row["text"]]))
+                target["fix"] = STRUCTURE_FIX
     targets.extend(grouped.values())
     targets.sort(key=lambda row: row["start"])
     for number, row in enumerate(targets, 1):

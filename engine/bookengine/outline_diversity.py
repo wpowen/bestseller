@@ -14,6 +14,7 @@ from .solution_substance import solution_issues
 from .solution_sequences import solution_sequence_issues
 from .core_ability import ability_issues, enforce_ability_plan
 from .adjacent_conflicts import adjacent_conflict_issues
+from .arc_runs import opponent_run_issues
 from .chapter_rhythm import (
     FOCUS,
     VERSION as RHYTHM_VERSION,
@@ -217,6 +218,19 @@ def terminal_window(out, start, end):
     return None
 
 
+def _planning_issues(bible, history, current):
+    return (
+        diversity_issues(history, current)
+        + opponent_run_issues(bible, history, current)
+        + opponent_presence_issues(bible, current)
+        + planning_transition_issues(bible, current)
+        + solution_issues(bible, history, current)
+        + solution_sequence_issues(bible, history, current)
+        + ability_issues(bible, history, current)
+        + rhythm_issues(bible, history, current)
+    )
+
+
 def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(), model_review=()):
     """Only replace offending current chapters; persist decisions for no-call recovery."""
     path = Path(out) / "outline-diversity" / (key + ".json") if out is not None else None
@@ -243,26 +257,10 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
     originals = {integer(row.get("number")): deepcopy(row) for row in original_chapters}
     used = used_vocabulary(history)
     for retry in range(resume, MAX_REWRITE_CALLS + 1):
-        deterministic = (
-            diversity_issues(history, current)
-            + opponent_presence_issues(bible or {}, current)
-            + planning_transition_issues(bible or {}, current)
-            + solution_issues(bible or {}, history, current)
-            + solution_sequence_issues(bible or {}, history, current)
-            + ability_issues(bible or {}, history, current)
-            + rhythm_issues(bible or {}, history, current)
-        )
+        deterministic = _planning_issues(bible or {}, history, current)
         if any(issue.get("kind") == "opponent_scope" for issue in deterministic):
             current = remove_retired_presence(current, deterministic)
-            deterministic = (
-                diversity_issues(history, current)
-                + opponent_presence_issues(bible or {}, current)
-                + planning_transition_issues(bible or {}, current)
-                + solution_issues(bible or {}, history, current)
-                + solution_sequence_issues(bible or {}, history, current)
-                + ability_issues(bible or {}, history, current)
-                + rhythm_issues(bible or {}, history, current)
-            )
+            deterministic = _planning_issues(bible or {}, history, current)
         pending_model = [
             issue
             for issue in initial_issues
@@ -317,15 +315,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                 decision["content_type"] = chapter_type(fallback)
             rhythm_replans.append(decision)
         if exhausted:
-            deterministic = (
-                diversity_issues(history, current)
-                + opponent_presence_issues(bible or {}, current)
-                + planning_transition_issues(bible or {}, current)
-                + solution_issues(bible or {}, history, current)
-                + solution_sequence_issues(bible or {}, history, current)
-                + ability_issues(bible or {}, history, current)
-                + rhythm_issues(bible or {}, history, current)
-            )
+            deterministic = _planning_issues(bible or {}, history, current)
             issues = deterministic + [issue for issue in pending_model if issue not in deterministic]
         targets = replan_targets(paid_issues, locked)
         attempts.append(dict(regeneration=retry, issues=issues, targets=targets))
@@ -341,15 +331,7 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                             scene["characters"] = [n for n in scene["characters"] if n not in issue["labels"]]
                     chapter.setdefault("background_only", []).append(issue["name"])
             # Recheck every contract after scene rewriting, without laundering old failures as passed.
-            final_issues = (
-                diversity_issues(history, current)
-                + opponent_presence_issues(bible or {}, current)
-                + planning_transition_issues(bible or {}, current)
-                + solution_issues(bible or {}, history, current)
-                + solution_sequence_issues(bible or {}, history, current)
-                + ability_issues(bible or {}, history, current)
-                + rhythm_issues(bible or {}, history, current)
-            )
+            final_issues = _planning_issues(bible or {}, history, current)
             # Existing cleanup warnings stay auditable even if removing a retired name cleared them.
             issues = [i for i in issues if not i["kind"].startswith("rhythm_")]
             issues += [i for i in final_issues if i not in issues]

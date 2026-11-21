@@ -303,6 +303,9 @@ def _history(out, chapter):
     return rows
 
 
+CHOICE_NOTE = "（这是两难选择：开头两段写明主角当场选了哪一边、为此放下了什么，不能跳过选择直接写结果）"
+
+
 def _previous_hanging_ending(out, chapter):
     """The previous chapter's planned unresolved ending (planning text, never prose); '' when it closed flat."""
     path = Path(out) / "writing_outlines" / f"{chapter - 1:03d}.json"
@@ -311,7 +314,12 @@ def _previous_hanging_ending(out, chapter):
     except (OSError, ValueError):
         return ""
     content = str(outline.get("ending_content") or "").strip() if isinstance(outline, dict) else ""
-    return "" if not content or outline.get("ending_type") in ("平收", "", None) else content[:120]
+    if not content or outline.get("ending_type") in ("平收", "", None):
+        return ""
+    if outline.get("ending_type") == "两难选择":
+        # Instruction 80: ch42 ended on "带弟子离开，还是立刻追进去"; ch43 opened already inside, choice skipped.
+        return content[:120] + CHOICE_NOTE
+    return content[:120]
 
 
 def _places(text):

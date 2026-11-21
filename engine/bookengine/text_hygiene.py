@@ -17,7 +17,7 @@ from .model_notes import model_note_hits, repair_model_notes, require_publishabl
 _RULES = yaml.safe_load((Path(__file__).resolve().parents[1] / "data/ending_rules.yaml").read_text())
 _STRUCTURE = re.compile(
     r"第\s*[0-9０-９零〇一二两三四五六七八九十百千]+\s*场戏|"
-    r"场景\s*[0-9０-９零〇一二两三四五六七八九十百千]+|本章|章纲|原章"
+    r"场景\s*[0-9０-９零〇一二两三四五六七八九十百千]+|本章|章纲|原章|上一?章|下一章"
 )
 _MIN_EXACT_LENGTH = 10
 _MIN_NEAR_LENGTH = 20
@@ -310,8 +310,28 @@ def _quote_balance_worse(before, after):
     return after.count('"') % 2 > before.count('"') % 2
 
 
+def nest_inner_quotes(text):
+    """Instruction 80: “ inside an open “…” becomes ‘…’ (ch27 had ““剑影最亮的地方没有阵纹……”你催了……”)."""
+    lines = []
+    for line in text.split("\n"):
+        depth, chars = 0, []
+        for char in line:
+            if char == "“":
+                chars.append("‘" if depth == 1 else char)
+                depth = min(depth + 1, 2)
+            elif char == "”":
+                chars.append("’" if depth == 2 else char)
+                depth = max(depth - 1, 0)
+            else:
+                chars.append(char)
+        # Leave unbalanced lines alone; the quote checks report them.
+        lines.append("".join(chars) if depth == 0 else line)
+    return "\n".join(lines)
+
+
 def repair_text(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """Make one targeted repair attempt and adopt only a fully clean recheck."""
+    text = nest_inner_quotes(text)
     text, raw, failed, model_notes = repair_model_notes(
         client, prefix, text, raw, failed, state, bible, outline, extract, ask
     )

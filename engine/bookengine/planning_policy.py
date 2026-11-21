@@ -13,6 +13,7 @@ HARD_REPLAN_KINDS = {
     "reader_promise_payoff",
     "opponent_resolution",
     "adjacent_conflict",
+    "opponent_run",
 }
 
 

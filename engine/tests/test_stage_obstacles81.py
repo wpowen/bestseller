@@ -97,3 +97,33 @@ def test_structure_repair_target_names_the_meta_word():
     findings = inspect_text(text)
     [target] = [row for row in _repair_targets(text, findings, {}) if "structure" in row["kind"]]
     assert target["words"] == ["上章"] and "先前" in target["fix"]
+
+
+def test_antagonist_leading_two_stages_is_still_checked():
+    """3f3950ba listed 裴照夜 for stages 2 and 3; he faced the hero in 15–19 and 26–30 unchecked."""
+    bible = dict(
+        antagonists=[dict(name="裴照夜", stage=2, exit=20), dict(name="裴照夜", stage=3, exit=30)],
+        volumes=[
+            dict(number=2, start=11, end=20, antagonist="裴照夜"),
+            dict(number=3, start=21, end=30, antagonist="裴照夜"),
+        ],
+    )
+    history = [dict(number=n, opponent="裴照夜") for n in (15, 16, 17)]
+    [issue] = opponent_run_issues(
+        bible, history, [dict(number=18, opponent="裴照夜"), dict(number=19, opponent="裴照夜")]
+    )
+    assert issue["targets"] == [18]
+    history = [dict(number=n, opponent="裴照夜") for n in (17, 18, 19)]
+    # Chapter 20 is no exit: he leads the next stage as well.
+    [issue] = opponent_run_issues(bible, history, [dict(number=20, opponent="裴照夜")])
+    assert issue["targets"] == [20]
+
+
+def test_hygiene_keeps_a_fix_when_another_hit_stays():
+    """3f3950ba ch22: 上章→先前 was correct but rolled back because a near-repeat sentence remained."""
+    from bookengine.text_hygiene import _improved
+
+    before = dict(structural_notes=1, near_sentence_repetitions=1, sentence_repetitions=1)
+    assert _improved(before, dict(structural_notes=0, near_sentence_repetitions=1, sentence_repetitions=1))
+    assert not _improved(before, before)
+    assert not _improved(before, dict(structural_notes=0, near_sentence_repetitions=2, sentence_repetitions=2))

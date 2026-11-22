@@ -35,11 +35,15 @@ PLANNER_RULE = (
 
 
 def antagonist_names(bible):
-    return [
-        row["name"]
-        for row in rows(bible.get("antagonists"))
-        if isinstance(row.get("name"), str) and row["name"].strip()
-    ]
+    # One antagonist may lead two stages (3f3950ba lists 裴照夜 for stages 2 and 3); a repeated name
+    # made direct_opponent see two matches and call every chapter ambiguous.
+    return list(
+        dict.fromkeys(
+            row["name"]
+            for row in rows(bible.get("antagonists"))
+            if isinstance(row.get("name"), str) and row["name"].strip()
+        )
+    )
 
 
 def direct_opponent(row, names):
@@ -62,9 +66,7 @@ def _protected(row, name):
 
 
 def _exit_chapters(bible):
-    return {
-        integer(row.get("exit")): row.get("name") for row in rows(bible.get("antagonists")) if integer(row.get("exit"))
-    }
+    return {number: name for name, number in _exit_by_name(bible).items() if number}
 
 
 def stage_row(bible, number):
@@ -122,7 +124,7 @@ def opponent_schedule(bible, out, start, end, villain_chapters=()):
             continue
         if name != current:
             current, run = name, _before_run(out, number, name) if number == start else 0
-        exit_chapter = integer(_exit_by_name(bible).get(name))
+        exit_chapter = _exit_by_name(bible).get(name, 0)
         if exit_chapter and number > exit_chapter:
             continue
         forced = _forced(bible, stage, name, villain_chapters)
@@ -149,7 +151,12 @@ def planner_obstacle_section(bible, out, start, end, villain_chapters=()):
 
 
 def _exit_by_name(bible):
-    return {row.get("name"): row.get("exit") for row in rows(bible.get("antagonists"))}
+    """A name listed for several stages leaves at its last listed exit."""
+    exits = {}
+    for row in rows(bible.get("antagonists")):
+        name = row.get("name")
+        exits[name] = max(exits.get(name, 0), integer(row.get("exit")))
+    return exits
 
 
 def opponent_run_issues(bible, history, batch):

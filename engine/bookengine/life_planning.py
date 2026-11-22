@@ -58,7 +58,7 @@ def _candidate(source, reply, hits, bible):
         return None, "empty_changes"
     allowed = {tuple(row["path"]) for row in hits}
     original = dict(leaves(source))
-    result, seen, deletions = deepcopy(source), set(), []
+    result, seen, deletions, ignored = deepcopy(source), set(), [], []
     names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
     dead = {row["name"] for row in hits}
     for change in changes:
@@ -67,8 +67,15 @@ def _candidate(source, reply, hits, bible):
         path, replacement = tuple(change["path"]), change.get("value")
         if any(type(key) not in (str, int) for key in path):
             return None, "invalid_path"
-        if path not in allowed or path in seen:
+        # A one-chapter batch: the model often drops the leading chapter index (5d560fa1 chapter 50).
+        if path not in allowed and isinstance(source, list) and len(source) == 1 and (0, *path) in allowed:
+            path = (0, *path)
+        if path in seen:
             return None, "unrelated_or_invalid_field"
+        if path not in allowed:
+            # Edits outside the hit fields are never applied; the hit fields are still rechecked.
+            ignored.append(list(path))
+            continue
         old = original[path]
         # Outline batches are lists, so the field path starts after the chapter index.
         field = path[1:] if isinstance(source, list) and path and type(path[0]) is int else path
@@ -173,7 +180,7 @@ def apply_life_constraints(client, bible, value, state, *, chapter, kind="outlin
                 "已写最终正文的死亡事实不可撤销。只定向重排命中字段中的未写剧情，保留原章型、地点、目标、能力、线索和其他字段。"
                 "用死者留下的既有影响或在场人物面对的新后果推进，不得让死者行动、说话、发令；不得复活、假死、替身、"
                 "硬换姓名或让另一个角色原样接替动作。人物名单中的死者只能用value:null精确删除，不得换成遗体或另一个姓名。"
-                "不改已写章、圣经、故事设计、义务ID或历史引文。仅返回命中path的changes。",
+                "不改已写章、圣经、故事设计、义务ID或历史引文。仅返回命中path的changes，path照抄（含开头的章序号）。",
                 [("已确认死亡与最终正文引文", deaths), ("唯一允许修改的字段", hits), ("相关未写规划", value)],
                 '{"changes":[{"path":["scenes",0,"action"],"value":"修订内容"},'
                 '{"path":["scenes",0,"characters",1],"value":null}]}',

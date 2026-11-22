@@ -21,6 +21,7 @@ def test_things_the_dead_left_behind_are_not_actions():
     assert not _hits("裴照夜遗留的血染缺页被顾寒寻获。")
     assert not _hits("顾寒循裴照夜夺册时留下的断剑刻痕追回名册。")
     assert not _hits("裴照夜死亡后，线索指向戒律堂。")
+    assert not _hits("顾寒终结闻人照引发的仙盟余波。", {"闻人照": DEATH["裴照夜"]})
 
 
 def test_the_dead_still_cannot_act_or_return():
@@ -51,3 +52,35 @@ def test_antagonist_dying_at_planned_exit_leaves_the_stage_summary_alone():
     assert _died_on_schedule(bible, "裴照夜", {"chapter": 30})
     assert not _died_on_schedule(bible, "裴照夜", {"chapter": 22})
     assert not _died_on_schedule({"antagonists": []}, "沈嘉屿", {"chapter": 30})
+
+
+def test_outline_rewrite_for_a_dead_final_opponent_is_adopted():
+    """5d560fa1 chapter 50: two valid rewrites were rejected (null opponent, object kept the same ending)."""
+    deaths = {"闻人照": {"chapter": 49, "quote": "闻人照倒下。", "status": "Evidence"}}
+    batch = [
+        {
+            "number": 50,
+            "opponent": "闻人照",
+            "background_only": ["闻人照"],
+            "scenes": [{"speaker_intents": [{"name": "闻人照", "goal": "逼顾寒认输"}, {"name": "沈青梧"}]}],
+            "after": "两人的共同作战成为击败闻人照的必要条件。",
+        }
+    ]
+    hits = validate_life_constraints(batch, deaths)
+    reply = {
+        "changes": [
+            {"path": [0, "opponent"], "value": None},
+            {"path": [0, "background_only", 0], "value": None},
+            {"path": [0, "scenes", 0, "speaker_intents", 0, "name"], "value": None},
+            {"path": [0, "after"], "value": "两人的共同作战成为斩断仙盟残余剑势的必要条件。"},
+        ]
+    }
+    adopted, reason = _candidate(batch, reply, [h for h in hits if h["path"][-1] != "goal"], {})
+    assert reason == ""
+    assert adopted[0]["opponent"] == "" and adopted[0]["background_only"] == []
+    assert adopted[0]["scenes"][0]["speaker_intents"] == [{"name": "沈青梧"}]
+    swap = {"changes": [{"path": [0, "after"], "value": "两人的共同作战成为击败韩某的必要条件。"}]}
+    assert _candidate(batch, swap, hits, {"characters": [{"name": "韩某"}]})[1] == "hard_role_swap"
+    subject = [{"number": 50, "plan": "闻人照率剑使封住山门。"}]
+    moved = {"changes": [{"path": [0, "plan"], "value": "仙盟长老率剑使封住山门。"}]}
+    assert _candidate(subject, moved, validate_life_constraints(subject, deaths), {})[1] == "hard_role_swap"

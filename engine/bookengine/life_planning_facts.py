@@ -13,7 +13,7 @@ PASSIVE_AFTER = re.compile(
 # A clause about what the dead person left behind or did before dying, e.g. “裴照夜遗留的缺页”,
 # “裴照夜夺册时留下的刻痕” (3f3950ba chapter 31, rejected twice although nothing had him act).
 PAST_CLAUSE = re.compile(
-    r"^[^，,：:]{0,8}?(?:留下的|遗留的?|遗弃的?|遗下的?|所留|生前|死前|死亡|昔日|当年|曾经?|早先|旧日)"
+    r"^[^，,：:]{0,8}?(?:留下的|遗留的?|遗弃的?|遗下的?|所留|引发的|造成的|布下的|所布|生前|死前|死亡|昔日|当年|曾经?|早先|旧日)"
 )
 PRESENT_AFTER_DEATH = re.compile(
     r"^(?:的)?(?:死后|遗体|尸体|尸首|尸身)"

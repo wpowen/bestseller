@@ -70,19 +70,28 @@ def _candidate(source, reply, hits, bible):
         if path not in allowed or path in seen:
             return None, "unrelated_or_invalid_field"
         old = original[path]
+        # Outline batches are lists, so the field path starts after the chapter index.
+        field = path[1:] if isinstance(source, list) and path and type(path[0]) is int else path
         participant = (
             len(path) >= 2
             and type(path[-1]) is int
-            and path[-2] in {"characters", "participants", "names", "cast", "present"}
+            and path[-2] in {"characters", "participants", "names", "cast", "present", "background_only"}
             and old in dead
         )
-        if participant:
+        speaker = (
+            len(field) == 5
+            and field[0] == "scenes"
+            and field[2] == "speaker_intents"
+            and field[4] == "name"
+            and old in dead
+        )
+        if participant or speaker:
             if replacement is not None:
                 return None, "participant_must_be_deleted"
-            deletions.append(path)
+            deletions.append(path[:-1] if speaker else path)
             seen.add(path)
             continue
-        if replacement is None and _role_slot(path) and old in dead:
+        if replacement is None and _role_slot(field) and old in dead:
             replacement = ""
         elif not isinstance(replacement, str) or not replacement.strip():
             return None, "invalid_replacement"
@@ -90,8 +99,9 @@ def _candidate(source, reply, hits, bible):
             old.endswith(suffix) and replacement.endswith(suffix) and replacement != old and who not in replacement
             for who in dead
             if who in old
-            for suffix in [old.split(who, 1)[1]]
-            if len(suffix) >= 4
+            for prefix, suffix in [old.split(who, 1)]
+            # Only a swapped subject keeps the same action; the dead as object (“击败闻人照的必要条件”) is not.
+            if len(suffix) >= 4 and (not prefix or prefix[-1] in "，,。；;：:")
         ):
             return None, "hard_role_swap"
         if any(

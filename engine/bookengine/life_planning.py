@@ -9,9 +9,39 @@ from .longutil import ask
 from .storage import load, save
 
 
+# A dead antagonist's role slot may be emptied (null) instead of renamed: 5d560fa1 chapter 50 had a valid
+# “闻人照生前布下的…” rewrite rejected only because it nulled “antagonist”.
+ROLE_SLOTS = {("antagonist",), ("opponent",), ("opponent_resolution", "name")}
+
+
+def _role_slot(path):
+    return path in ROLE_SLOTS or (len(path) == 3 and path[0] == "promise_payoffs" and path[2] == "target")
+
+
+def _died_on_schedule(bible, name, fact):
+    """An antagonist killed at or after his planned exit: the stage summary already played out.
+
+    Chapter outlines are still checked, so he cannot act again; only the stage-level goal/climax that
+    describe his defeat are left as written (5d560fa1: 闻人照 died in 49, exit 49, book stopped at 50).
+    """
+    exits = [
+        row.get("exit")
+        for row in bible.get("antagonists", []) or []
+        if isinstance(row, dict) and row.get("name") == name and type(row.get("exit")) is int
+    ]
+    return bool(exits) and fact.get("chapter", 0) >= max(exits)
+
+
 def _future(value, out, chapter, kind):
     if kind == "volume":
-        return lambda path: True
+        # Promise payoffs scheduled before this chapter are already written history.
+        payoffs = value.get("promise_payoffs") if isinstance(value, dict) else None
+        written = {
+            index
+            for index, row in enumerate(payoffs if isinstance(payoffs, list) else [])
+            if isinstance(row, dict) and type(row.get("chapter")) is int and row["chapter"] < chapter
+        }
+        return lambda path: not (len(path) >= 2 and path[0] == "promise_payoffs" and path[1] in written)
     values = value if isinstance(value, list) else [value]
     excluded = {
         i
@@ -52,7 +82,9 @@ def _candidate(source, reply, hits, bible):
             deletions.append(path)
             seen.add(path)
             continue
-        if not isinstance(replacement, str) or not replacement.strip():
+        if replacement is None and _role_slot(path) and old in dead:
+            replacement = ""
+        elif not isinstance(replacement, str) or not replacement.strip():
             return None, "invalid_replacement"
         if any(
             old.endswith(suffix) and replacement.endswith(suffix) and replacement != old and who not in replacement
@@ -92,6 +124,8 @@ def apply_life_constraints(client, bible, value, state, *, chapter, kind="outlin
     """
     out = getattr(client, "out", None)
     deaths = confirmed_deaths(out, state, chapter=chapter)
+    if kind == "volume":
+        deaths = {name: fact for name, fact in deaths.items() if not _died_on_schedule(bible, name, fact)}
     if not deaths:
         return value
     future = _future(value, out, chapter, kind)

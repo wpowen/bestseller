@@ -334,6 +334,17 @@ def nest_inner_quotes(text):
     return "\n".join(lines)
 
 
+def _improved(before, after):
+    """Adopt a fix that clears some hits and adds none.
+
+    Chapter 22 of 3f3950ba lost a correct 上章→先前 fix because a near-duplicate sentence in the same call
+    stayed; requiring a fully clean recheck threw both away.
+    """
+    keys = set(before) | set(after)
+    worse = any(after.get(key, 0) > before.get(key, 0) for key in keys)
+    return not worse and sum(after.values()) < sum(before.values())
+
+
 def repair_text(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """Make one targeted repair attempt and adopt only a fully clean recheck."""
     text = nest_inner_quotes(text)
@@ -364,7 +375,7 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
     if candidate == text or not edits:
         return text, raw, failed, dict(note, status="rolled_back", reason="invalid_or_empty_targeted_edits")
     after = inspect_text(candidate)
-    if any(after["counts"].values()):
+    if not _improved(before["counts"], after["counts"]):
         return (
             text,
             raw,
@@ -396,5 +407,11 @@ def repair_text(client, prefix, text, raw, failed, state, bible, outline, extrac
         candidate,
         checked,
         False,
-        dict(note, status="repaired", after=after["counts"], edits=edits, repair_call=prefix + "-text-hygiene"),
+        dict(
+            note,
+            status="repaired" if not any(after["counts"].values()) else "partly_repaired",
+            after=after["counts"],
+            edits=edits,
+            repair_call=prefix + "-text-hygiene",
+        ),
     )

@@ -55,6 +55,11 @@ class QClient(Client):
     """Production writer retains the shared transport and cost ledger."""
 
 
+# User 2026-11-25: 10000 left volume-end and final chapters several hundred characters short, so their
+# cross-volume source passages were dropped first and the final chapter could not be written.
+WRITER_CONTEXT_LIMIT = 12000
+
+
 def acceptance(rows, history, client, bible, threads, profile, base=0):
     new = [r for r in rows if r["number"] > base]
     return dict(
@@ -148,7 +153,7 @@ def _run(book, out, env, assets, timeout, style, stop):
     save(path, meta)
     data = yaml.safe_load(DATA.read_text())
     client = QClient(out, env, "", timeout)
-    client.context_limit = 10000
+    client.context_limit = WRITER_CONTEXT_LIMIT
     client.clip_context = True
     client.relaxed = True
     client.style_b = False

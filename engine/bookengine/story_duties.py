@@ -7,11 +7,10 @@ from pathlib import Path
 import json
 import re
 
-from tools.chapter_files import chapter_files, chapter_number
-
 from .arc_runs import planner_arc_section, planner_obstacle_section
 from .chapter_rhythm import chapter_type
-from .foreshadow_verification import VERIFIED_KINDS, plant_observation, verify_foreshadows
+from .early_plant_scan import scan_early_plant
+from .foreshadow_verification import VERIFIED_KINDS, verify_foreshadows
 from .q1_schema import integer, rows
 from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
 from .storage import save
@@ -172,12 +171,16 @@ def all_duties(design, bible):
     return duties + _villain_duties(bible, stages)
 
 
-def load_ledger(out):
+def _load_ledger_state(out):
     path = Path(out) / LEDGER if out else None
     if not path or not path.exists():
         return {}
     value = json.loads(path.read_text(encoding="utf-8"))
-    return value.get("duties", {}) if isinstance(value, dict) else {}
+    return value if isinstance(value, dict) else {}
+
+
+def load_ledger(out):
+    return _load_ledger_state(out).get("duties", {})
 
 
 def _open(duty, entry, number):
@@ -242,41 +245,32 @@ def _rank(duty):
     return "arc" if duty["kind"] in ("flaw_cost", "fear_faced", "growth_end") else duty["kind"]
 
 
-def _saved_bodies(out, before):
-    for path in chapter_files(out, "chapter-*.body.md"):
-        number = chapter_number(path, "chapter-*.body.md")
-        if number >= before:
-            break
-        yield number, path.read_text(encoding="utf-8")
-
-
 def settle_early_plants(out, design, bible, number):
-    """A plant already written before its scheduled chapter is closed with that chapter and quote.
-
-    Without this the writer is asked to plant the same thing again and the ledger reports it missing.
-    """
+    """Close planted clues found in committed prose before the current chapter."""
     if not out:
         return []
-    ledger = load_ledger(out)
+    state = _load_ledger_state(out)
+    ledger = state.get("duties", {})
+    cursors = state.get("early_checked_up_to", {})
     waiting = [
         duty
         for duty in all_duties(design, bible)
         if duty["kind"] == "plant" and duty["chapter"] <= number and _open(duty, ledger.get(duty["id"]), number)
     ]
-    settled = []
+    settled, advanced = [], dict(cursors)
     for duty in waiting:
-        for chapter, text in _saved_bodies(out, number):
-            proof = plant_observation(duty, chapter, text)
-            if proof["status"] == "done":
-                entry = dict(
-                    ledger.get(duty["id"], {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"]
-                )
-                entry.update(proof, early=True)
-                ledger[duty["id"]] = entry
-                settled.append(duty["id"])
-                break
-    if settled:
-        save(Path(out) / LEDGER, dict(policy=LEDGER_POLICY, duties=ledger))
+        ident = duty["id"]
+        checked = integer(cursors.get(ident))
+        through, proof = scan_early_plant(Path(out), duty, number, checked if 0 <= checked < number else 0)
+        if through:
+            advanced[ident] = max(checked, through)
+        if proof:
+            entry = dict(ledger.get(ident, {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"])
+            ledger[ident] = dict(entry, **proof, early=True)
+            settled.append(ident)
+    if settled or advanced != cursors:
+        state.update(policy=LEDGER_POLICY, duties=ledger, early_checked_up_to=advanced)
+        save(Path(out) / LEDGER, state)
     return settled
 
 
@@ -405,7 +399,8 @@ def record_story_duties(out, number, text, outline, *, payoff_review=None, clien
     if not duties or not out:
         return []
     path = Path(out) / LEDGER
-    ledger = load_ledger(out)
+    state = _load_ledger_state(out)
+    ledger = state.get("duties", {})
     verified = verify_foreshadows(client, prefix, ask, number, text, duties)
     results = []
     for duty in duties:
@@ -427,5 +422,6 @@ def record_story_duties(out, number, text, outline, *, payoff_review=None, clien
         entry["attempts"] = tried
         ledger[duty["id"]] = entry
         results.append(dict(id=duty["id"], kind=duty["kind"], status=entry["status"]))
-    save(path, dict(policy=LEDGER_POLICY, duties=ledger))
+    state.update(policy=LEDGER_POLICY, duties=ledger)
+    save(path, state)
     return results

@@ -80,3 +80,28 @@ def test_review_accepts_the_tail_of_a_sentence_without_negation(tmp_path):
 def test_review_rejects_a_fragment_cut_from_a_negated_sentence(tmp_path):
     text = "她并没有拆开蓝信封，只把它压在砚台下。"
     assert _review(tmp_path, "plant", ["蓝信封"], text, "拆开蓝信封，只把它压在砚台下。") == "unverified"
+
+
+def test_payoff_review_accepts_a_question_followed_by_a_completed_action(tmp_path):
+    text = "“原来是你？”他拆开蓝信封，落款正是韩三。"
+    assert _review(tmp_path, "payoff", ["蓝信封"], text, text) == "done"
+
+
+def test_payoff_review_accepts_unrelated_negation_before_the_action(tmp_path):
+    text = "他不敢再拖，拆开蓝信封，看清落款是韩三。"
+    assert _review(tmp_path, "payoff", ["蓝信封"], text, text) == "done"
+
+
+def test_review_rejects_a_question_without_a_completed_action(tmp_path):
+    text = "他问：“拆开蓝信封后，落款真是韩三？”"
+    assert _review(tmp_path, "payoff", ["蓝信封"], text, text) == "unverified"
+
+
+def test_review_rejects_an_action_subject_to_a_prior_condition(tmp_path):
+    text = "如果他再敢说谎，她就拆开蓝信封，落款会证明一切。"
+    assert _review(tmp_path, "payoff", ["蓝信封"], text, "拆开蓝信封，落款会证明一切。") == "unverified"
+
+
+def test_review_rejects_a_negated_opening_even_with_a_sender_named(tmp_path):
+    text = "她没有拆开蓝信封，外头的署名写着韩三。"
+    assert _review(tmp_path, "payoff", ["蓝信封"], text, text) == "unverified"

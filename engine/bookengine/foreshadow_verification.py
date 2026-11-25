@@ -115,6 +115,28 @@ def _names_anchor(duty, quote):
     return any(a in quote or any(a[i : i + 2] in quote for i in range(len(a) - 1)) for a in anchors)
 
 
+_REVIEW_FRAME = re.compile(r"如果|假如|倘若|要是|等到明日|听说|传闻|据说|(?:打算|计划|准备)\s*[，,：:]|[？?]")
+
+
+def _review_evidence(duty, passage):
+    confirmed = []
+    for start, end in _sentences(passage):
+        sentence = passage[start:end]
+        # A preceding condition governs the rest of its sentence. Questions supply context only.
+        if _REVIEW_FRAME.search(sentence):
+            continue
+        clauses = re.split(r"[，,；;]", sentence)
+        affirmative = [clause for clause in clauses if not _NON_EVENT.search(clause)]
+        blocked = (clause for clause in clauses if _NON_EVENT.search(clause))
+        if any(_names_anchor(duty, clause) or _ACTION_OR_RESULT.search(clause) for clause in blocked):
+            continue
+        confirmed.extend(affirmative)
+    evidence = "，".join(confirmed)
+    if not evidence or (duty["kind"] != "truth" and not _names_anchor(duty, evidence)):
+        return False
+    return duty["kind"] != "payoff" or bool(_ACTION_OR_RESULT.search(evidence))
+
+
 def _review_quote(item, number, duty, allowed_spans):
     """Trust the reviewer's verbatim quote; reject only what the quote itself shows is not an event.
 
@@ -125,17 +147,14 @@ def _review_quote(item, number, duty, allowed_spans):
     if not isinstance(item, dict) or item.get("chapter") != number or item.get("status") != "fulfilled":
         return ""
     quote = item.get("quote")
-    if not isinstance(quote, str) or not quote or _NON_EVENT.search(quote):
+    if not isinstance(quote, str) or not _review_evidence(duty, quote):
         return ""
-    if duty["kind"] != "truth" and not _names_anchor(duty, quote):
-        return ""
-    if duty["kind"] == "payoff" and not _ACTION_OR_RESULT.search(quote):
-        return ""
-    # Reject snippets that could omit a preceding negation or make a hypothetical event sound real.
     if quote in allowed_spans:
         return quote
-    # A tail or middle of a sentence counts only if the whole sentence carries no negation or plan.
-    return quote if any(quote in span and not _NON_EVENT.search(span) for span in allowed_spans) else ""
+    # Use the smallest matching context so a fragment cannot borrow a later sentence's evidence.
+    containing = [span for span in allowed_spans if quote in span]
+    shortest = min(map(len, containing), default=0)
+    return quote if any(len(span) == shortest and _review_evidence(duty, span) for span in containing) else ""
 
 
 def _review_result(raw):

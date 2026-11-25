@@ -19,7 +19,7 @@ include = ["bookengine*", "deai*", "exporter*", "ideation*", "tools"]
 version = {attr = "tools.version.__version__"}
 
 [tool.setuptools.package-data]
-deai = ["data/*.yaml"]
+deai = ["data/*.yaml", "data/story_deslop/*.md", "data/story_deslop/references/*.md", "data/story_deslop/scripts/*.js"]
 
 [tool.ruff]
 line-length = 120

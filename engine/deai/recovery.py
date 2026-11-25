@@ -72,10 +72,10 @@ def _attempt(result, text, ctx):
     return detail
 
 
-def run(polish, text, ctx, llm, work, recovery):
+def run(polish, text, ctx, llm, work, recovery, *, retry_chapter=True):
     first = polish(text, ctx, llm)
     attempt = _attempt(first, text, ctx)
-    if first.status not in ("retained", "partial") or "failure" not in attempt:
+    if not retry_chapter or first.status not in ("retained", "partial") or "failure" not in attempt:
         return first
     recovery.update(strategy="single_item", attempts=[attempt], status="retrying")
     save(work, "attempt-initial.json", dataclasses.asdict(first) if dataclasses.is_dataclass(first) else vars(first))

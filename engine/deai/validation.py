@@ -21,7 +21,11 @@ def coverage(value, parts, partial=False):
 
 
 def validate_response(stage, value, data, *, partial_coverage=False):
-    if "paragraphs" in data and "examples" in data:
+    if stage.startswith("story-deslop-"):
+        from .story_deslop import validate_stage
+
+        validate_stage(stage, value, data)
+    elif "paragraphs" in data and "examples" in data:
         coverage(value, data["paragraphs"], partial=partial_coverage)
         ids = {
             row["sid"]

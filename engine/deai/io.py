@@ -85,9 +85,9 @@ def chapters(book):
     return sorted(found.items(), key=lambda item: int(item[0]))
 
 
-def policy(book, mode, model):
+def policy(book, mode, model, editor="recall"):
     data = Path(__file__).parent / "data"
-    return dict(
+    configuration = dict(
         version=VERSION,
         mode=mode,
         model=model,
@@ -96,6 +96,13 @@ def policy(book, mode, model):
             n: read_text(Path(book) / n) for n in ("story_bible.yaml", "deai-context.json") if (Path(book) / n).exists()
         },
     )
+    if editor == "story-deslop":
+        from .story_deslop import identity
+
+        whitelist = safe(book, ".deslop-whitelist")
+        configuration["editor"] = identity()
+        configuration["whitelist"] = read_text(whitelist).splitlines() if whitelist.is_file() else []
+    return configuration
 
 
 def reusable(root, number, text, configuration):
@@ -139,13 +146,29 @@ def summarize(book, statuses):
         r = read_json(safe(book, f"final/chapter-{n}.deai.json"), {})
         c = r.get("checks", {})
         final = safe(book, f"final/chapter-{n}.md")
+        if final.exists():
+            bodies.append(f"## 第{int(n)}章\n\n" + read_text(final))
+        skill = c.get("story_deslop")
+        if isinstance(skill, dict):
+            rows.append(
+                f"| [{n}](chapter-{n}.md) | {statuses.get(n, r.get('status', '等待'))} | "
+                f"{c.get('original_chars', '?')}→{c.get('final_chars', '?')} | — | — | — | {r.get('seconds', '?')} |"
+            )
+            notes.append(
+                f"- 第{int(n)}章段落审改：提案 {skill.get('proposed_paragraphs', '未记录')} 段，"
+                f"实质改写 {skill.get('prose_edits', '未记录')} 段，仅标点或空白 "
+                f"{skill.get('punctuation_edits', '未记录') if 'prose_edits' in skill else '未记录'} 段。"
+            )
+            for finding in skill.get("findings", []):
+                if finding.get("route") in ("return_to_planning", "insufficient_context"):
+                    action = "回查章纲" if finding["route"] == "return_to_planning" else "补充上下文"
+                    notes.append(f"  - {finding['id']} {action}：{finding['quote']}")
+            continue
         before = len({h["sid"] for h in r.get("hits", [])})
         after = len({h["sid"] for h in c.get("remaining_hits", [])})
         rows.append(
             f"| [{n}](chapter-{n}.md) | {statuses.get(n, r.get('status', '等待'))} | {c.get('original_chars', '?')}→{c.get('final_chars', '?')} | {before}→{after} | {r.get('before_score', '?')}→{r.get('after_score', '?')} | {len(r.get('edits', []))} | {r.get('seconds', '?')} |"
         )
-        if final.exists():
-            bodies.append(f"## 第{int(n)}章\n\n" + read_text(final))
         d = c.get("diagnostics", {})
         risks = d.get("chapter", {}).get("risks", [])
         if d.get("status") != "checked" or d.get("facts") or risks:
@@ -166,7 +189,18 @@ def summarize(book, statuses):
 
 
 def process(
-    book, number, source, env, mode, polish, client, model="MiniMax-M3.1-Flash", *, preserve=False, original=False
+    book,
+    number,
+    source,
+    env,
+    mode,
+    polish,
+    client,
+    model="MiniMax-M3.1-Flash",
+    *,
+    preserve=False,
+    original=False,
+    editor="recall",
 ):
     import fcntl
 
@@ -185,7 +219,13 @@ def process(
             if not text.strip():
                 return "waiting"
             final = safe(root, f"final/chapter-{number}.md")
-            configuration = policy(root, mode, model)
+            configuration = policy(root, mode, model, editor)
+            if editor == "story-deslop" and not original:
+                from .story_deslop_evidence import chapter_actions
+
+                configuration["chapter_actions"] = chapter_actions(
+                    read_json(safe(root, f"chapters/{number}.json"), {}), text, number
+                )
             if reusable(root, number, text, configuration):
                 return "cached"
             ctx = read_json(safe(root, "deai-context.json"), {})
@@ -211,9 +251,16 @@ def process(
             else:
                 from .recovery import run
 
+                if editor == "story-deslop":
+                    from .story_deslop import polish
+
+                    ctx["chapter_actions"] = configuration["chapter_actions"]
+                    ctx["deslop_whitelist"] = [
+                        row.strip() for row in configuration["whitelist"] if row.strip() and not row.startswith("#")
+                    ]
                 llm = client(work, env, model=model)
                 recovery = {}
-                result = run(polish, text, ctx, llm, work, recovery)
+                result = run(polish, text, ctx, llm, work, recovery, retry_chapter=editor != "story-deslop")
             report = dataclasses.asdict(result) if dataclasses.is_dataclass(result) else vars(result).copy()
             report["deai_version"] = configuration["version"]
             calls = getattr(llm, "calls", [])

@@ -8,6 +8,10 @@ from pathlib import Path
 import json
 import re
 import yaml
+
+from tools.chapter_files import chapter_files, chapter_number
+
+from .foreshadow_verification import VERIFIED_KINDS
 from .q1_schema import integer, rows
 from .story_design import SPEC, load_story_design
 from .story_duties import CLOSED, all_duties, load_ledger
@@ -26,13 +30,12 @@ def _load_yaml(path):
 
 def _chapters(book, source):
     book = Path(book)
-    pattern = "final/chapter-*.md" if source == "final" and (book / "final").is_dir() else "chapter-*.body.md"
-    texts = {}
-    for path in sorted(book.glob(pattern)):
-        found = re.search(r"chapter-(\d+)", path.name)
-        if found:
-            texts[int(found.group(1))] = path.read_text(encoding="utf-8")
-    return texts
+    folder, pattern = (
+        (book / "final", "chapter-*.md")
+        if source == "final" and (book / "final").is_dir()
+        else (book, "chapter-*.body.md")
+    )
+    return {chapter_number(path, pattern): path.read_text(encoding="utf-8") for path in chapter_files(folder, pattern)}
 
 
 def thread_summary(threads):
@@ -117,7 +120,7 @@ def duty_summary(design, bible, ledger, written, texts=None):
             )
         counts[status] += 1
         by_kind.setdefault(duty["kind"], Counter())[status] += 1
-        if status in ("missing", "not_issued"):
+        if status in ("missing", "not_issued") or status == "unverified" and duty["kind"] in VERIFIED_KINDS:
             open_items.append(
                 dict(
                     id=duty["id"],

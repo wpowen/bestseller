@@ -7,7 +7,7 @@ from .longmemory import long_context
 from .longutil import normalize_sections
 
 
-def precise_ask(ask, client, key, instruction, sections, schema, cap=2500, *, required_sources=None):
+def precise_ask(ask, client, key, instruction, sections, schema, cap=2500, *, required_sources=None, parser=None):
     limit = min(10000, getattr(client, "context_limit", None) or 10000)
     supplied_sections = list(sections.items()) if isinstance(sections, dict) else list(sections)
     serialized_sections = normalize_sections(supplied_sections)
@@ -29,7 +29,8 @@ def precise_ask(ask, client, key, instruction, sections, schema, cap=2500, *, re
         if clipped is not None:
             client.clip_context = False
     try:
-        return ask(client, key, instruction, supplied_sections, schema, cap=cap, input_limit=limit)
+        options = {"parser": parser} if parser is not None else {}
+        return ask(client, key, instruction, supplied_sections, schema, cap=cap, input_limit=limit, **options)
     finally:
         if client is not None:
             client.prefix = saved

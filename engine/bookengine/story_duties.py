@@ -1,15 +1,17 @@
 """Per-chapter story obligations derived from the story design, and the ledger of what was written.
 
-Anchored events keep their matching sentence. A private choice or consequence instead needs
-a reviewed action and outcome grounded in the adopted text. Unverified observations are kept.
+Foreshadows and private choices retain grounded evidence from the adopted text.
 """
 
 from pathlib import Path
 import json
 import re
 
+from tools.chapter_files import chapter_files, chapter_number
+
 from .arc_runs import planner_arc_section, planner_obstacle_section
 from .chapter_rhythm import chapter_type
+from .foreshadow_verification import VERIFIED_KINDS, plant_observation, verify_foreshadows
 from .q1_schema import integer, rows
 from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
 from .storage import save
@@ -23,7 +25,8 @@ VILLAIN_TYPES = ("对抗", "谋划", "揭秘")
 SOUL_LIMIT = 600
 PLANNER_LIMIT = 900
 LEDGER_POLICY = (
-    "done=锚点词附正文原句（early=提前写出），或配角私愿在本章有核实的行动与后果；unverified=已调度但兑现证据不足；"
+    "伏笔及真相done=正文明示或逐字核对确认，锚点提及保留为unverified且可续发；early=提前写出；"
+    "配角私愿done=本章有核实的行动与后果；unverified=已调度但兑现证据不足；"
     "missing=未写出，顺延。仅供参考，不代替读者验收"
 )
 SENTENCE = re.compile(r"[^。！？\n]*[。！？]?")
@@ -103,7 +106,12 @@ def all_duties(design, bible):
                 _duty(f"{row['id']}-remind{index}", "remind", chapter, chapter + 2, _fill("remind", **fields), anchors)
             )
         duties.append(
-            _duty(f"{row['id']}-payoff", "payoff", row["payoff"], row["payoff"], _fill("payoff", **fields), anchors)
+            dict(
+                _duty(
+                    f"{row['id']}-payoff", "payoff", row["payoff"], row["payoff"], _fill("payoff", **fields), anchors
+                ),
+                proof_event=fields["truth"],
+            )
         )
     for row in rows(design.get("truth_reveals")):
         fields = dict(
@@ -112,13 +120,16 @@ def all_duties(design, bible):
             overturns=row.get("overturns") or row.get("truth"),
         )
         duties.append(
-            _duty(
-                f"truth-{row['layer']}",
-                "truth",
-                row["chapter"],
-                row["chapter"],
-                _fill("truth", **fields),
-                [row.get("anchor")],
+            dict(
+                _duty(
+                    f"truth-{row['layer']}",
+                    "truth",
+                    row["chapter"],
+                    row["chapter"],
+                    _fill("truth", **fields),
+                    [row.get("anchor")],
+                ),
+                proof_event=row.get("truth") or row.get("overturns"),
             )
         )
     for row in rows(design.get("arc")):
@@ -171,7 +182,8 @@ def load_ledger(out):
 
 def _open(duty, entry, number):
     """A duty closed by the chapter being (re)written is open again for that chapter."""
-    return not entry or entry.get("status") not in CLOSED or integer(entry.get("chapter")) >= number
+    closed = ("done",) if duty["kind"] in VERIFIED_KINDS else CLOSED
+    return not entry or entry.get("status") not in closed or integer(entry.get("chapter")) >= number
 
 
 def _expired(duty, number, total):
@@ -222,10 +234,11 @@ def _rank(duty):
 
 
 def _saved_bodies(out, before):
-    for path in sorted(Path(out).glob("chapter-*.body.md")):
-        number = integer(path.name[len("chapter-") : -len(".body.md")])
-        if 0 < number < before:
-            yield number, path.read_text(encoding="utf-8")
+    for path in chapter_files(out, "chapter-*.body.md"):
+        number = chapter_number(path, "chapter-*.body.md")
+        if number >= before:
+            break
+        yield number, path.read_text(encoding="utf-8")
 
 
 def settle_early_plants(out, design, bible, number):
@@ -244,12 +257,12 @@ def settle_early_plants(out, design, bible, number):
     settled = []
     for duty in waiting:
         for chapter, text in _saved_bodies(out, number):
-            word = next((word for word in duty["anchors"] if word in text), "")
-            if word:
+            proof = plant_observation(duty, chapter, text)
+            if proof["status"] == "done":
                 entry = dict(
                     ledger.get(duty["id"], {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"]
                 )
-                entry.update(status="done", chapter=chapter, quote=_quote(text, word), early=True)
+                entry.update(proof, early=True)
                 ledger[duty["id"]] = entry
                 settled.append(duty["id"])
                 break
@@ -377,13 +390,14 @@ def _quote(text, word):
     return ""
 
 
-def record_story_duties(out, number, text, outline, *, payoff_review=None):
+def record_story_duties(out, number, text, outline, *, payoff_review=None, client=None, prefix="", ask=None):
     """Close what the finished chapter actually contains; leave the rest open for later chapters."""
     duties = outline.get("story_duties") or []
     if not duties or not out:
         return []
     path = Path(out) / LEDGER
     ledger = load_ledger(out)
+    verified = verify_foreshadows(client, prefix, ask, number, text, duties)
     results = []
     for duty in duties:
         entry = dict(ledger.get(duty["id"], {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"])
@@ -391,6 +405,10 @@ def record_story_duties(out, number, text, outline, *, payoff_review=None):
         anchor = next((word for word in duty["anchors"] if word in text), "")
         if duty["kind"] in KINDS:
             entry.update(support_entry(duty, number, text, payoff_review or {}))
+        elif duty["id"] in verified:
+            proof = verified[duty["id"]]
+            if proof["status"] != "missing" or entry.get("status") != "unverified":
+                entry.update(proof)
         elif anchor:
             entry.update(status="done", chapter=number, quote=_quote(text, anchor))
         elif not duty["anchors"] and duty["names"] and all(name in text for name in duty["names"]):

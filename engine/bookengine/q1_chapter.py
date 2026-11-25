@@ -427,8 +427,6 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
         writer="minimal-b",
         fact_source="final_body",
         revision=REVISION,
-        seconds=round(time.monotonic() - started, 3),
-        outside_calls=max(0, len(getattr(client, "calls", [])) - calls_before - 1),
         injuries_count=current.get("injuries_count", 0) if not failed else None,
         ending_candidates=ending_candidates(text, bible, outline) if outline["ending"] else [],
         opens_new_mainline=raw.get("opens_new_mainline") if outline["ending"] else False,
@@ -462,7 +460,11 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
     if outline.get("disclosure_context"):
         row["disclosure_effect"] = disclosure_effect(outline, raw if not failed else {}, text)
     row["solutions"] = [x for x in current.get("solutions", []) if x["chapter"] == idx]
-    row["story_duties"] = record_story_duties(out, idx, text, outline, payoff_review=story_payoffs)
+    row["story_duties"] = record_story_duties(
+        out, idx, text, outline, payoff_review=story_payoffs, client=client, prefix=prefix, ask=ask
+    )
+    row["seconds"] = round(time.monotonic() - started, 3)
+    row["outside_calls"] = max(0, len(getattr(client, "calls", [])) - calls_before - 1)
     save(out / f"chapter-{idx:03d}.body.md", text)
     save(path, row)
     return row

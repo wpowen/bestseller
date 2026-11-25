@@ -151,7 +151,18 @@ def _writer_context(sections, budget, drops):
     return context, ""
 
 
-def ask(client, stage, instruction, sections, schema=None, input_limit=30000, *, writer_drops=None, **kwargs):
+def ask(
+    client,
+    stage,
+    instruction,
+    sections,
+    schema=None,
+    input_limit=30000,
+    *,
+    writer_drops=None,
+    parser=loose_object,
+    **kwargs,
+):
     sections = normalize_sections(sections)
     writer = any(name == "本章章纲" for name, _ in sections)
     limit = min(30000, input_limit)
@@ -165,7 +176,7 @@ def ask(client, stage, instruction, sections, schema=None, input_limit=30000, *,
             kwargs["input_error"] = error
     else:
         context = long_context(sections, max(0, budget))
-    return client.stage(stage, instruction + "\n" + context, schema, parser=loose_object, **kwargs)
+    return client.stage(stage, instruction + "\n" + context, schema, parser=parser, **kwargs)
 
 
 def costs(client):

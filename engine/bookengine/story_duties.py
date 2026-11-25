@@ -25,7 +25,7 @@ VILLAIN_TYPES = ("对抗", "谋划", "揭秘")
 SOUL_LIMIT = 600
 PLANNER_LIMIT = 900
 LEDGER_POLICY = (
-    "伏笔及真相done=正文明示或逐字核对确认，锚点提及保留为unverified且可续发；early=提前写出；"
+    "伏笔及真相done=正文明示或逐字核对确认，锚点提及记unverified，原定章后3章内续发，续发后仍未核实即转报告待复核；early=提前写出；"
     "配角私愿done=本章有核实的行动与后果；unverified=已调度但兑现证据不足；"
     "missing=未写出，顺延。仅供参考，不代替读者验收"
 )
@@ -181,9 +181,18 @@ def load_ledger(out):
 
 
 def _open(duty, entry, number):
-    """A duty closed by the chapter being (re)written is open again for that chapter."""
-    closed = ("done",) if duty["kind"] in VERIFIED_KINDS else CLOSED
-    return not entry or entry.get("status") not in closed or integer(entry.get("chapter")) >= number
+    """A duty closed by the chapter being (re)written is open again for that chapter.
+
+    An unverified foreshadow gets one follow-up window after its deadline; after that it goes
+    to the report for review, so old payoffs never crowd out every later chapter's duties.
+    """
+    if not entry or integer(entry.get("chapter")) >= number:
+        return True
+    status = entry.get("status")
+    if duty["kind"] not in VERIFIED_KINDS or status != "unverified":
+        return status not in (("done",) if duty["kind"] in VERIFIED_KINDS else CLOSED)
+    window = duty["deadline"] + SPEC["carry_chapters"]
+    return integer(entry.get("chapter")) <= duty["deadline"] and number <= window
 
 
 def _expired(duty, number, total):

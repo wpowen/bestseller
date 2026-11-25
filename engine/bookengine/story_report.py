@@ -120,16 +120,18 @@ def duty_summary(design, bible, ledger, written, texts=None):
             )
         counts[status] += 1
         by_kind.setdefault(duty["kind"], Counter())[status] += 1
-        if status in ("missing", "not_issued") or status == "unverified" and duty["kind"] in VERIFIED_KINDS:
-            open_items.append(
-                dict(
-                    id=duty["id"],
-                    kind=duty["kind"],
-                    scheduled=duty["chapter"],
-                    status=status,
-                    tried=entry.get("attempts", []),
-                )
+        review = status == "unverified" and duty["kind"] in VERIFIED_KINDS
+        if status in ("missing", "not_issued") or review:
+            item = dict(
+                id=duty["id"],
+                kind=duty["kind"],
+                scheduled=duty["chapter"],
+                status=status,
+                tried=entry.get("attempts", []),
             )
+            if review:
+                item.update(needs_review=True, chapter=entry.get("chapter"), quote=entry.get("quote", ""))
+            open_items.append(item)
     return dict(
         total=sum(counts.values()),
         status=dict(counts),

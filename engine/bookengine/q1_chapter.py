@@ -16,6 +16,7 @@ from .speaker_context import speaker_briefs
 from .q1_quality import metrics, merge_state, progress, normalize_scenes
 from .q1_extract import ask, clean, body_of, ground, prose_hits, extract_state
 from .storage import load, save
+from .longutil import WRITER_CONTEXT_LIMIT
 from .life_planning import apply_life_constraints
 from .scene_repair import repair_scene_consistency
 from .rhythm_contract_repair import apply_rhythm_contracts
@@ -129,7 +130,7 @@ def chapter(client, book, bible, threads, profile, vol, outline, state, history,
                     instruction + (RESTRAINED_DRAFT if suffix else ""),
                     sections,
                     cap=6500,
-                    input_limit=10000,
+                    input_limit=WRITER_CONTEXT_LIMIT,
                     writer_drops=drops,
                     max_attempts=1,
                 ),

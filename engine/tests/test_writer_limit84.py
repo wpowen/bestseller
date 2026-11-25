@@ -28,14 +28,25 @@ def _final_chapter_sections():
 
 
 def test_final_chapter_material_fits_the_writer_limit():
-    from bookengine.q1 import WRITER_CONTEXT_LIMIT
+    from bookengine.longutil import WRITER_CONTEXT_LIMIT
 
     client, seen = _client(WRITER_CONTEXT_LIMIT)
-    ask(client, "r2-ch25-draft", "指令" * 700, _final_chapter_sections(), input_limit=30000)
+    ask(client, "r2-ch25-draft", "指令" * 700, _final_chapter_sections(), input_limit=WRITER_CONTEXT_LIMIT)
     assert "input_error" not in seen
 
 
 def test_old_limit_reproduces_the_stop():
     client, seen = _client(10000)
-    ask(client, "r2-ch25-draft", "指令" * 700, _final_chapter_sections(), input_limit=30000)
+    ask(client, "r2-ch25-draft", "指令" * 700, _final_chapter_sections(), input_limit=10000)
     assert "写手必要材料需要" in seen.get("input_error", "")
+
+
+def test_production_draft_call_uses_the_shared_limit():
+    # The first raise to 12000 changed only the client; the draft call still passed input_limit=10000.
+    from pathlib import Path
+
+    import bookengine.q1_chapter as chapter
+
+    source = Path(chapter.__file__).read_text(encoding="utf-8")
+    draft = source[source.index('prefix + "-draft" + suffix') :][:400]
+    assert "input_limit=WRITER_CONTEXT_LIMIT" in draft

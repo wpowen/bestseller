@@ -13,6 +13,9 @@ from .text import pack, parse_json
 
 
 WRITER_CALLBACK_HEADING = "本章点名的跨卷回调原文"
+# User 2026-11-25: 10000 left volume-end and final chapters several hundred characters short, so their
+# cross-volume source passages were dropped first and the final chapter could not be written.
+WRITER_CONTEXT_LIMIT = 12000
 
 
 class Recovered(dict):

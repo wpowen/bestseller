@@ -48,16 +48,12 @@ from .structure_planning import stage_for_chapter, final_stage_start
 from .q1_prepare import _ask as plan_ask
 from .story_design import ensure_story_design
 from .life_planning import apply_life_constraints, confirmed_deaths
+from .longutil import WRITER_CONTEXT_LIMIT
 from tools.book_checkup import write_checkup
 
 
 class QClient(Client):
     """Production writer retains the shared transport and cost ledger."""
-
-
-# User 2026-11-25: 10000 left volume-end and final chapters several hundred characters short, so their
-# cross-volume source passages were dropped first and the final chapter could not be written.
-WRITER_CONTEXT_LIMIT = 12000
 
 
 def acceptance(rows, history, client, bible, threads, profile, base=0):

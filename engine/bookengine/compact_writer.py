@@ -6,6 +6,7 @@ from .choice_cost import HEADING as CHOICE_COST_HEADING
 from .disclosure_choices import HEADING as DISCLOSURE_HEADING
 from .longmemory import compact_state
 from .q1_schema import rows
+from .speaker_context import voice_once
 from .story_payoffs import due_story_payoffs
 from .text import pack
 
@@ -128,7 +129,7 @@ def compact_prompt(book, outline, contract, sections, state, previous, pending, 
     if people or settings:
         cast.append(pack({"人物": people, "设定与当前能力": settings}))
     if speakers := outline.get("speaker_briefs"):
-        cast.append("开口人物当场想争取的事\n" + pack(speakers))
+        cast.append("开口人物当场想争取的事\n" + pack(voice_once(speakers)))
     for heading in ("非人角色表达限制", "授权参考的统计风格特征"):
         if material.get(heading):
             cast.append(material[heading])

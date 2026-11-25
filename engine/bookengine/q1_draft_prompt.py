@@ -18,7 +18,7 @@ from .q1_extract import context, pack
 from .relationship_revisit import relationship_revisit
 from .rhythm_writer import writer_main_scene_contract, writer_rhythm_instruction
 from .solution_sequences import writer_solution_sequence_context
-from .speaker_context import GUIDANCE as SPEAKER_GUIDANCE, HEADING as SPEAKER_HEADING
+from .speaker_context import GUIDANCE as SPEAKER_GUIDANCE, HEADING as SPEAKER_HEADING, voice_once
 from .story_duties import writer_instruction, writer_sections
 from .story_payoffs import writer_payoff_instruction
 
@@ -40,7 +40,7 @@ def production_prompt(book, bible, threads, vol, outline, state, history, rows, 
     sections.insert(0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(contract)))
     sections[1:1] = writer_sections(outline, bible)
     if outline.get("speaker_briefs"):
-        sections.insert(1, (SPEAKER_HEADING, SPEAKER_GUIDANCE + "\n" + pack(outline["speaker_briefs"])))
+        sections.insert(1, (SPEAKER_HEADING, SPEAKER_GUIDANCE + "\n" + pack(voice_once(outline["speaker_briefs"]))))
     prior = rows[-1] if rows else {}
     saved_outcome = (
         prior.get("number") == idx - 1

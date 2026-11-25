@@ -123,3 +123,19 @@ def _brief(name, card, intent, goal, opponent):
     if not goal:
         goal = f"从在意的事（{desire}）出发，先向在场的人争取一件具体小事" if desire else "只为眼前阻碍问、答或表态"
     return dict(name=name, voice=voice, goal=goal)
+
+
+def voice_once(briefs):
+    """Give each speaker's voice at the first scene only; later scenes keep the goal (and a changed voice)."""
+    seen, result = {}, []
+    for scene in rows(briefs):
+        speakers = []
+        for speaker in rows(scene.get("speakers")):
+            name, voice = speaker.get("name"), speaker.get("voice")
+            if name and voice and seen.get(name) == voice:
+                speaker = {k: v for k, v in speaker.items() if k != "voice"}
+            elif name and voice:
+                seen[name] = voice
+            speakers.append(speaker)
+        result.append(dict(scene, speakers=speakers))
+    return result

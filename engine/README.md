@@ -15,6 +15,8 @@ PYTHONPATH=engine python -m bookengine engine/examples/realistic-life.yaml --q1 
 PYTHONPATH=engine python -m bookengine --q1 --style b --batch engine/examples/q1/batch.yaml --jobs 2 --env .env --out books/my-batch
 # 独立去 AI；也支持单个 Markdown、--chapters 1-10、--model MiniMax-M3
 PYTHONPATH=engine python -m deai run books/my-book --env .env
+# 使用书库自动去 AI 同款段落审改
+PYTHONPATH=engine python -m deai run books/my-book --env .env --editor story-deslop
 # 与写手同时运行，只读已完成检查点，最多并发三章
 PYTHONPATH=engine python -m deai run books/my-book --watch --pipeline --concurrency 3 --env .env
 # CLI 原文写作与独立去 AI 分别运行；关闭去 AI 时网页会直接发布原稿终稿
@@ -40,7 +42,20 @@ PYTHONPATH=engine python -m ideation --env .env --books books --out books/topics
 - `final/chapter-NNN.md` 和 `.deai.json`：有效终稿及去 AI 检查记录；`final/book.md`、`SUMMARY.md` 提供整书结果。已有终稿不重复处理或覆盖。
 - `runtime.json` 与 `.pipeline/polish/runtime.json`：写作、去 AI 各自的等待/错误状态；`web.json` 保存网页队列及流水线状态。
 
-去 AI 只改命中句，保留数字、实体、事实、段落结构和末场画面，字数在原稿 ±10% 内；不合格回滚。单章模型坏返回耗尽重试时记录失败并用原稿终稿，继续下一章；额度、接口和代码错误按对应状态处理。程序检测分与判官分不能代替人审。
+Q1/B 起草允许人物说出读者还不知道的顾虑，动作或对白已表明的意思可省去旁白复述。人物、地点、前情和章纲仍随写作请求传入。
+
+书库勾选自动去 AI 时使用段落编辑器 `story-deslop`。每章先扫描原文。对重复解释，扫描须指出目标段和另一处已经表达同一意思的原句。局部表达问题可定点改写一次，再核对人物、事实、时间和伏笔。结构问题和上下文不足的段落保留原文，建议记入报告。扫描无可改项、回执无效或复检失败时保留原文。关闭自动去 AI 可直接生成原稿终稿。独立 CLI 保留原有句级编辑入口。
+
+每章 `final/chapter-NNN.deai.json` 保存引文、去向、改动及复检。全书 `final/SUMMARY.md` 分别统计提案、实质改写、仅标点或空白的段数。已经完成的流水线终稿在续跑时复用。读者盲评可在书库外离线进行：
+
+```sh
+PYTHONPATH=engine python -m tools.deai_reader_trial prepare samples.json trial --repeat scene1 raw
+PYTHONPATH=engine python -m tools.deai_reader_trial score trial/组织者/盲号.json trial/反馈.txt --pair raw edit
+```
+
+`samples.json` 提供 `samples` 数组，每项有 `group`、`arm` 和 `text`。将读本和反馈表交给读者，填写后再对照盲号。完全相同的重复文本可测同一读者两次评分的波动。
+
+去 AI 保护数字、实体、事实和章末钩子，字数维持在原稿 ±10% 内。单章复检或模型坏返回耗尽重试时保留原稿继续下一章，额度、接口和代码错误按对应状态处理。程序检测结果仅供读者验收时参考。
 
 选题、写作、去 AI 均无金额预算，费用照常记账和显示。书一旦开写便持续写完；接口等待持续退避（最长 10 分钟、无总时限），额度用尽充值后继续，项目错误修复后继续。用户暂停与并发排队保留。服务重启分别恢复两条进程，旧书缺 watcher 时补齐；千章级任务开跑前仍须告知用户。
 

@@ -38,6 +38,7 @@ def main(argv=None):
     run.add_argument("--chapters", type=chapter_range)
     run.add_argument("--model", choices=("MiniMax-M3.1-Flash", "MiniMax-M3"), default="MiniMax-M3.1-Flash")
     run.add_argument("--dialogue-mode", choices=("local", "scene", "actor"), default="local")
+    run.add_argument("--editor", choices=("recall", "story-deslop"), default="recall")
     args = parser.parse_args(argv)
     single = args.bookdir.resolve() if args.bookdir.is_file() else None
     if single and single.suffix.lower() != ".md":
@@ -60,6 +61,8 @@ def main(argv=None):
             raise InterruptedError("Interrupted")
         try:
             options = dict(preserve=args.pipeline, original=args.original) if args.pipeline or args.original else {}
+            if args.editor == "story-deslop" and not args.original:
+                options["editor"] = args.editor
             return process(
                 args.bookdir, number, source, args.env, args.dialogue_mode, polish, MiniMax, args.model, **options
             )
@@ -83,6 +86,9 @@ def main(argv=None):
                         path = single.parent / name
                         if path.exists():
                             save(args.bookdir, name, read_text(path))
+                    if args.editor == "story-deslop" and not args.original:
+                        whitelist = single.parent / ".deslop-whitelist"
+                        save(args.bookdir, ".deslop-whitelist", read_text(whitelist) if whitelist.is_file() else "")
                 pending = []
                 for number, source in chapters(args.bookdir):
                     if args.chapters and int(number) not in args.chapters:

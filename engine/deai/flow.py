@@ -69,7 +69,9 @@ class Session:
 
             return ask_narrow(self, stage, prompt, data, cap, partial_coverage)
         previous = ""
-        for attempt in range(6):
+        # An optional prose edit can retain the source on a malformed verdict.
+        # Other editors retain their existing format-recovery policy.
+        for attempt in range(1 if stage.startswith("story-deslop-") else 6):
             self.calls += 1
             feedback = f"\n上次返回失败：{previous}。请直接输出完整JSON。" if previous else ""
             messages = [

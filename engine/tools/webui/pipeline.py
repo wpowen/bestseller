@@ -140,6 +140,8 @@ def spawn(queue, folder, data, stage):
         env["DEAI_RUNTIME_DIR"] = str(runtime)
         if not (data.get("auto_deai") is True or data.get("polish") is True):
             command.append("--original")
+        else:
+            command.extend(("--editor", "story-deslop"))
     try:
         child = spawn_logged(
             command, folder / f"web-{stage}.log", queue.env, cwd=queue.engine.parent, env=env, start_new_session=True

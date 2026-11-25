@@ -135,12 +135,6 @@ def _writer_context(sections, budget, drops):
             blocks = [(heading, block) for heading, block in blocks if heading != name]
             record_drop(name)
     if sum(len(block) + 2 for _, block in blocks) - 2 > budget:
-        # Lossless before any further loss: JSON indentation carries no content (84 real run, chapter 22
-        # stopped 52 characters over with a 3418-character indented outline).
-        blocks = [(name, re.sub(r"\n[ \t]+", "\n", block)) for name, block in blocks]
-        if drops is not None and "压缩缩进" not in drops:
-            drops.append("压缩缩进")  # Lossless, so recorded for the call log but never warned about.
-    if sum(len(block) + 2 for _, block in blocks) - 2 > budget:
         callbacks = [(name, block) for name, block in blocks if name.startswith(WRITER_CALLBACK_HEADING)]
         blocks = [(name, block) for name, block in blocks if not name.startswith(WRITER_CALLBACK_HEADING)]
         size = sum(len(block) + 2 for _, block in blocks) - 2

@@ -11,7 +11,7 @@ from .text import pack
 
 
 _SCENE_FIELDS = ("where", "pov", "characters", "goal", "obstacle", "choice", "action", "result")
-_PLAN_FIELDS = ("number", "title", "transition", "must_respond", "closing", "callback_events", "introductions")
+_PLAN_FIELDS = ("number", "title", "transition", "must_respond", "closing", "introductions")
 _PERSON_FIELDS = (
     "name",
     "identity_keywords",

@@ -12,6 +12,9 @@ from .longmemory import long_context
 from .text import pack, parse_json
 
 
+WRITER_CALLBACK_HEADING = "本章点名的跨卷回调原文"
+
+
 class Recovered(dict):
     recovered_output = True
 
@@ -118,15 +121,29 @@ def _writer_context(sections, budget, drops):
         "上章冲突及写作避重约束",
         "人物内里，只用来决定他怎么想、怎么说、怎么做，不要照抄成句子",
     )
+
+    def record_drop(name):
+        if drops is None:
+            warnings.warn(f"写手输入省略 {name}", RuntimeWarning, stacklevel=4)
+        elif name not in drops:
+            drops.append(name)
+
     for name in optional:
         if sum(len(block) + 2 for _, block in blocks) - 2 <= budget:
             break
         if any(heading == name for heading, _ in blocks):
             blocks = [(heading, block) for heading, block in blocks if heading != name]
-            if drops is None:
-                warnings.warn(f"写手输入省略 {name}", RuntimeWarning, stacklevel=3)
-            elif name not in drops:
-                drops.append(name)
+            record_drop(name)
+    if sum(len(block) + 2 for _, block in blocks) - 2 > budget:
+        callbacks = [(name, block) for name, block in blocks if name.startswith(WRITER_CALLBACK_HEADING)]
+        blocks = [(name, block) for name, block in blocks if not name.startswith(WRITER_CALLBACK_HEADING)]
+        size = sum(len(block) + 2 for _, block in blocks) - 2
+        for name, block in callbacks:
+            if len(block) + 2 <= budget - size:
+                blocks.append((name, block))
+                size += len(block) + 2
+            else:
+                record_drop(name)
     context = "\n\n".join(block for _, block in blocks)
     if len(context) > budget:
         sizes = "、".join(f"{name} {len(block)}" for name, block in blocks)

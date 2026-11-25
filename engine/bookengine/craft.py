@@ -4,6 +4,7 @@ from collections import Counter
 import re
 from pathlib import Path
 
+from .chapter_callbacks import recall_events as recall_events
 from .q1_quality import metrics
 
 
@@ -72,24 +73,6 @@ def surface_hits(text, cards=()):
                 )
             )
     return result
-
-
-def recall_events(out, history, chapter, total, volume_end):
-    from .q1_plan import callbacks
-
-    if chapter < total * 0.9 and chapter < volume_end - 2:
-        return []
-    result = []
-    for event in callbacks(history):
-        path = Path(out) / f"chapter-{event['chapter']:03d}.body.md"
-        if not path.exists():
-            continue
-        words = set(re.findall(r"[\u4e00-\u9fff]{2}", event["event"]))
-        parts = path.read_text().split("\n\n")
-        chosen = sorted(enumerate(parts), key=lambda p: sum(w in p[1] for w in words), reverse=True)[:3]
-        excerpt = chosen[0][1][:300] if chosen else ""
-        result.append(dict(chapter=event["chapter"], event=event["event"][:120], original_excerpt=excerpt))
-    return result[:3]
 
 
 def reference_fragments(references, body, source):

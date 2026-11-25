@@ -5,6 +5,8 @@ import json
 import re
 import yaml
 from .client import SYSTEM
+from .chapter_callbacks import callbacks as callbacks
+from .chapter_callbacks import outline_callbacks, planning_callbacks
 from tools.runtime_support import ProjectError, QuotaExhausted
 from .contracts import choose_contract
 from .identity import validate_bible
@@ -64,30 +66,11 @@ def _beats(threads, number, state=None):
     ]
 
 
-def callbacks(history):
-    """Only observed first-volume events, never future plans."""
-    if isinstance(history, dict):
-        history = history.get("events", history.get("chapters", list(history.values())))
-    result = []
-    for row in rows(history):
-        if isinstance(row.get("events"), list):
-            items = callbacks(row["events"])
-        else:
-            n = integer(row.get("chapter", row.get("number")))
-            event = row.get("event") or row.get("summary")
-            items = (
-                [dict(chapter=n, event=event)]
-                if not {"start", "end"} & row.keys() and 1 <= n <= 25 and isinstance(event, str) and event.strip()
-                else []
-            )
-        result.extend(x for x in items if x not in result)
-    return result[:3]
-
-
 def volume(client, bible, threads, number, total, state, history, feedback, redo=False):
     skeleton = next((x for x in rows(bible.get("volumes")) if integer(x.get("number")) == number), {})
     boundary = stage_by_number(bible, number, total)
-    beats, events = _beats(threads, number, state), callbacks(history)
+    beats = _beats(threads, number, state)
+    events = callbacks(history, out=getattr(client, "out", None), before=boundary["start"])
     ladder = bible.get("canon", {}).get("ladder", {}).get("strength", [])
     old = state.get("dashboard", {}).get("strength")
     target = ladder[min(ladder.index(old) + 1, len(ladder) - 1)] if old in ladder else None
@@ -253,17 +236,25 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         end = cached["end"]
         cached = None
     if cached:
-        if cached["normalized"]:
-            normalized = apply_ending_contract(
-                complete_transitions(
-                    cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)
-                ),
-                stage_end=integer(volume.get("end"), end),
-            )
-            normalized = apply_rhythm_contracts(client, bible, normalized, state, chapter=start)
-            normalized = apply_life_constraints(client, bible, normalized, state, chapter=start)
-            return [chapter_ability_view(bible, row) for row in bind_opening_events(bible, normalized)]
-        end = cached["end"]
+        end = integer(cached.get("end"), end)
+    total = integer(
+        bible.get("chapters", bible.get("total_chapters")),
+        max(v.get("end", 0) for v in bible.get("volumes", []) or [{}]),
+    )
+    before = integer(volume.get("start")) or stage_by_number(bible, volume.get("number", 1), total)["start"]
+    events = planning_callbacks(
+        getattr(client, "out", None), history, before, bible.get("story_design") or {}, start, end
+    )
+    if cached and cached["normalized"]:
+        normalized = apply_ending_contract(
+            complete_transitions(cached["chapters"], historical_outlines(getattr(client, "out", None), start, recent)),
+            stage_end=integer(volume.get("end"), end),
+        )
+        normalized = apply_rhythm_contracts(client, bible, normalized, state, chapter=start)
+        normalized = apply_life_constraints(client, bible, normalized, state, chapter=start)
+        for row in normalized:
+            row["callback_events"] = outline_callbacks(row, events, total, volume["end"])
+        return [chapter_ability_view(bible, row) for row in bind_opening_events(bible, normalized)]
     used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(
         start,
@@ -286,24 +277,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         slot["threads"] = [x["thread"] for x in selected]
         for item in selected:
             planned_state["ledger"].setdefault(item["thread"], {})["last"] = slot["number"]
-    from .craft import recall_events
-
-    total = integer(
-        bible.get("chapters", bible.get("total_chapters")),
-        max(v.get("end", 0) for v in bible.get("volumes", []) or [{}]),
-    )
-    saved = (
-        [json.loads(p.read_text()) for p in sorted((client.out / "chapters").glob("*.json"))][:25]
-        if getattr(client, "out", None)
-        else []
-    )
-    events = (
-        recall_events(client.out, history or saved, end, total, volume["end"])
-        if getattr(client, "out", None)
-        else callbacks(history)
-        if start <= 100 <= end
-        else []
-    )
     stage_contract = {k: volume.get(k) for k in PROMPT_STAGE_FIELDS}
     opponents = [
         {k: opponent.get(k) for k in ("name", "tier", "stage", "exit")} for opponent in rows(bible.get("antagonists"))
@@ -319,7 +292,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ),
         (RHYTHM_RULE, window_stage_content(stage_skeleton, start, end)),
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
-        ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
+        ("跨卷回调候选。本章用到哪条，就将其chapter、source_quote原样写入该章callback_events", events),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
         (
@@ -468,7 +441,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         chapter["scenes"] = [
             defaults(x, DATA["schemas"]["outlines"]["chapters"][0]["scenes"][0]) for x in rows(chapter["scenes"])
         ]
-        chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
+        chapter["callback_events"] = outline_callbacks(chapter, events, total, volume["end"])
         result.append(chapter)
     result = [schedule_catchphrases(chapter, bible) for chapter in result]
     result = bind_opening_events(bible, [apply_contract(chapter) for chapter in result])

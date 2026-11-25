@@ -168,7 +168,6 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             "threads",
             "must_respond",
             "closing",
-            "callback_events",
             "opening_conflict",
             "structure",
         )

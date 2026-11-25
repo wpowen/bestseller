@@ -1,6 +1,7 @@
 """Assemble the Q1 writer input used for production chapters and matched sample runs."""
 
 from .adjacent_conflicts import previous_conflict_context
+from .chapter_callbacks import writer_callback_section
 from .choice_cost import choice_cost_context
 from .compact_writer import compact_prompt
 from .core_ability import chapter_ability_view
@@ -61,12 +62,13 @@ def production_prompt(book, bible, threads, vol, outline, state, history, rows, 
         sections.insert(1, (DISCLOSURE_HEADING, pack(focus) + "\n" + DISCLOSURE_GUIDANCE))
     if revisit:
         sections.insert(0, ("上次交谈的原话", "\n".join(revisit["prior_exchange"])))
+    callback = writer_callback_section(out, bible, vol, outline, getattr(book, "chapters", idx))
     pending = opening_choice(out, prior, previous, outline) if saved_outcome else None
     if getattr(book, "writer_input", "full") == "compact":
         instruction, compact = compact_prompt(book, outline, contract, sections, state, previous, pending, low, high)
         instruction += writer_first_appearance_instruction(out, idx, bible, outline)
         instruction += writer_survival_instruction(bible, idx)
-        return instruction, compact
+        return instruction, [*compact, *callback]
     instruction = (
         writer_rhythm_instruction(outline, revisit=revisit)
         + "\n"
@@ -78,4 +80,4 @@ def production_prompt(book, bible, threads, vol, outline, state, history, rows, 
     instruction += writer_survival_instruction(bible, idx)
     if pending:
         instruction = pending + "\n" + instruction
-    return instruction, sections
+    return instruction, [*sections, *callback]

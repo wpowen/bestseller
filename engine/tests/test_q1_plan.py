@@ -75,7 +75,7 @@ class ParsingTests(unittest.TestCase):
         self.assertTrue(all(x["max_gap"] >= 1 for x in lines))
         self.assertEqual(source["threads"][0]["id"], "same")
 
-    def test_callbacks_only_use_first_volume_historical_events(self):
+    def test_callbacks_use_observed_historical_events(self):
         history = [dict(chapter=n, summary=f"发生{n}") for n in (1, 2, 25, 26)]
         history += [dict(number=3, payoff="未来兑现", expected_dashboard={"strength": "强"}), {"summary": "无章号"}]
         self.assertEqual(q1.callbacks(history), [dict(chapter=n, event=f"发生{n}") for n in (1, 2, 25)])
@@ -282,7 +282,7 @@ class StageInterfaceTests(unittest.TestCase):
         self.assertTrue(all(x["callback_events"] == [] for x in value[:-1]))
         self.assertEqual(value[-1]["callback_events"], q1.callbacks(history))
         self.assertEqual(len(value[-1]["callback_events"]), 3)
-        self.assertIn("尾章必须融入当下冲突的首卷事实与原文", fixture.calls[0][1])
+        self.assertIn("跨卷回调候选", fixture.calls[0][1])
 
     def test_empty_window_never_calls_stage(self):
         fixture = StageFixture()

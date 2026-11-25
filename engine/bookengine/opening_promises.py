@@ -3,6 +3,7 @@
 import json
 import re
 from pathlib import Path
+from tools.chapter_files import chapter_files, chapter_number
 
 from .address_contracts import address_findings
 from .promise_io import precise_ask
@@ -59,9 +60,9 @@ def previous_promise_context(out, number):
     """Read saved bodies and grounded promise evidence without rewriting checkpoints."""
     context = PromiseContext(
         {
-            int(p.name.split("-")[1].split(".")[0]): p.read_text(encoding="utf-8")
-            for p in sorted(Path(out).glob("chapter-*.body.md"))
-            if p.name.split("-")[1].split(".")[0].isdigit() and int(p.name.split("-")[1].split(".")[0]) < number
+            chapter: p.read_text(encoding="utf-8")
+            for p in chapter_files(out, "chapter-*.body.md")
+            if (chapter := chapter_number(p, "chapter-*.body.md")) < number
         }
     )
     for chapter in context:

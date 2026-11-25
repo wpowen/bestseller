@@ -3,6 +3,7 @@
 import json
 from collections import Counter
 from pathlib import Path
+from tools.chapter_files import chapter_files
 
 import yaml
 
@@ -22,7 +23,7 @@ def _plan(book, number):
 
 def _plan_content(book):
     outlines = []
-    for path in sorted((Path(book) / "writing_outlines").glob("[0-9][0-9][0-9].json")):
+    for path in chapter_files(Path(book) / "writing_outlines", "*.json"):
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):

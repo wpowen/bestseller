@@ -11,7 +11,7 @@ function renderTOC() {
  nav.replaceChildren();
  let volume;
  for (const c of chapters().filter((c) => `${c.number} ${c.title}`.includes($('toc-search').value))) {
-  const v = c.volume || Math.ceil(c.number / 25);
+  const v = c.volume || state.book?.chapter_volumes?.[c.number] || Math.ceil(c.number / 25);
   if (v !== volume) {
    nav.append(el('h4', `第 ${v} 卷`));
    volume = v;

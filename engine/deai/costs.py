@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 import argparse
 import json
 from pathlib import Path
+from tools.chapter_files import chapter_files
 
 
 def _phase(stage):
@@ -64,7 +65,7 @@ def analyze_book(book):
     adopted_chapters = defaultdict(set)
     statuses = Counter()
     failures = []
-    for path in sorted((book / "final").glob("chapter-*.deai.json")):
+    for path in chapter_files(book / "final", "chapter-*.deai.json"):
         report = json.loads(path.read_text(encoding="utf-8"))
         chapter = path.name.removeprefix("chapter-").removesuffix(".deai.json")
         statuses[str(report.get("status") or "unknown")] += 1

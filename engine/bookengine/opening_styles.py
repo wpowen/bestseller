@@ -1,7 +1,7 @@
 """Rolling chapter-opening categories and bounded style repair."""
 
 import re
-from pathlib import Path
+from tools.chapter_files import chapter_files, chapter_number
 
 from .text import _paragraph_spans
 
@@ -23,10 +23,10 @@ def opening_style(text):
 
 def _history(out, chapter):
     rows = []
-    for path in sorted(Path(out).glob("chapter-*.body.md")):
-        match = re.fullmatch(r"chapter-(\d+)\.body\.md", path.name)
-        if match and chapter - WINDOW < int(match[1]) < chapter:
-            rows.append({"number": int(match[1]), "text": path.read_text("utf-8")})
+    for path in chapter_files(out, "chapter-*.body.md"):
+        number = chapter_number(path, "chapter-*.body.md")
+        if chapter - WINDOW < number < chapter:
+            rows.append({"number": number, "text": path.read_text("utf-8")})
     return rows
 
 

@@ -14,6 +14,7 @@ import zipfile
 from library import GENRES, Library, read, text, save
 from job_inputs import whole
 from jobs import Queue, topic_worker
+from tools.chapter_files import chapter_files
 from tools.version import __version__
 from tools.books_guard import check_test_root
 
@@ -86,7 +87,7 @@ def export_bytes(detail, version, fmt):
             return (out / ("book." + fmt)).read_bytes()
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted((out / "fanqie").glob("*.txt")):
+            for path in chapter_files(out / "fanqie", "*-*.txt"):
                 archive.write(path, "fanqie/" + path.name)
         return data.getvalue()
 

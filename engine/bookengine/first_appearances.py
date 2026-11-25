@@ -1,7 +1,7 @@
 """Writer context, bounded repair and checkup for first-use world terms."""
 
 import json
-from pathlib import Path
+from tools.chapter_files import chapter_files, chapter_number
 
 from .introductions import check_world_first_appearances, world_term_registry
 from .promise_io import precise_ask
@@ -11,11 +11,8 @@ from tools.book_checkup import clean_prose
 
 def _prior_text(out, number):
     parts = []
-    for path in sorted(Path(out).glob("chapter-*.body.md")):
-        try:
-            chapter = int(path.name.removeprefix("chapter-").removesuffix(".body.md"))
-        except ValueError:
-            continue
+    for path in chapter_files(out, "chapter-*.body.md"):
+        chapter = chapter_number(path, "chapter-*.body.md")
         if chapter < number:
             parts.append(path.read_text("utf-8"))
     return "\n".join(parts)

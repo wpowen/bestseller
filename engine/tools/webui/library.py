@@ -10,6 +10,8 @@ import re
 import tempfile
 import yaml
 from book_cache import BookCache
+from chapter_volumes import chapter_volumes
+from tools.chapter_files import chapter_files, chapter_number
 from tools.chapter_outputs import committed, finalized
 from tools.books_guard import check_test_root
 
@@ -196,12 +198,9 @@ class Library:
 
     def chapters(self, folder, include_drafts=True):
         result = []
-        for source in sorted(folder.glob("chapter-*.body.md")):
-            m = re.fullmatch(r"chapter-(\d{3,})\.body\.md", source.name)
-            if not m:
-                continue
-            number = int(m[1])
-            n = m[1]
+        for source in chapter_files(folder, "chapter-*.body.md"):
+            n = source.name.removeprefix("chapter-").removesuffix(".body.md")
+            number = int(n)
             row = read(self.safe(folder / f"chapters/{n}.json"), {})
             report = read(self.safe(folder / f"final/chapter-{n}.deai.json"), row)
             final = text(self.safe(folder / f"final/chapter-{n}.md"))
@@ -228,18 +227,17 @@ class Library:
                 )
             )
         if not result:
-            for source in sorted(folder.glob("chapter-*.md")):
-                m = re.fullmatch(r"chapter-(\d{3,})\.md", source.name)
-                if m:
-                    result.append(
-                        dict(
-                            number=int(m[1]),
-                            title=f"第{int(m[1])}章",
-                            draft=text(self.safe(source)) if include_drafts else "",
-                            final="",
-                            report={},
-                        )
+            for source in chapter_files(folder, "chapter-*.md"):
+                number = chapter_number(source, "chapter-*.md")
+                result.append(
+                    dict(
+                        number=number,
+                        title=f"第{number}章",
+                        draft=text(self.safe(source)) if include_drafts else "",
+                        final="",
+                        report={},
                     )
+                )
         for row in result:
             row.update(
                 status="final" if row["final"] else "draft", words=len(re.findall(r"[\u3400-\u9fff]", row["final"]))
@@ -391,7 +389,9 @@ class Library:
 
     def detail(self, key):
         folder = self.folder(key)
-        characters = bible_data(self.safe(folder / "story_bible.yaml")).get("characters", [])
+        bible_path = self.safe(folder / "story_bible.yaml")
+        bible = bible_data(bible_path)
+        characters = bible.get("characters", [])
         if isinstance(characters, dict):
             characters = [
                 dict(value, name=value.get("name", name))
@@ -400,16 +400,23 @@ class Library:
             ]
         if not isinstance(characters, list):
             characters = []
+        meta = self.meta(folder)
+        chapters = self.chapters(folder)
+        volumes = chapter_volumes(folder, bible, meta["total"], self.safe)
+        for chapter in chapters:
+            chapter["volume"] = volumes.get(chapter["number"])
+        outlines = chapter_files(self.safe(folder / "writing_outlines"), "*.json")
         return dict(
-            meta=self.meta(folder),
-            chapters=self.chapters(folder),
+            meta=meta,
+            chapters=chapters,
+            chapter_volumes=volumes,
             characters=[c for c in characters if isinstance(c, dict)],
-            bible=text(self.safe(folder / "story_bible.yaml")),
+            bible=text(bible_path),
             selected_card=read(self.safe(folder / "web.json"), {}).get("selected_card"),
             checkup=read(self.safe(folder / "book_checkup.json")),
-            bible_view=bible_data(self.safe(folder / "story_bible.yaml")),
-            outline_view=[read(self.safe(p), {}) for p in sorted(folder.glob("writing_outlines/*.json"))],
-            outline="\n\n".join(text(self.safe(p)) for p in sorted(folder.glob("writing_outlines/*.json"))),
+            bible_view=bible,
+            outline_view=[read(self.safe(p), {}) for p in outlines],
+            outline="\n\n".join(text(self.safe(p)) for p in outlines),
         )
 
     def static(self):

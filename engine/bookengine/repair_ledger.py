@@ -6,6 +6,7 @@ Reference only. "adopted" means the repaired text was kept; it does not mean the
 from collections import Counter
 import json
 from pathlib import Path
+from tools.chapter_files import chapter_files
 import re
 
 from .hook_momentum import tail_regression
@@ -44,7 +45,7 @@ def repair_ledger(book: Path | str) -> dict:
     stages = Counter(m[1] for row in calls if isinstance(row, dict) and (m := _STAGE.match(str(row.get("stage")))))
     outcomes: dict[str, Counter] = {}
     reasons: dict[str, Counter] = {}
-    for path in sorted((book / "chapters").glob("[0-9][0-9][0-9].json")):
+    for path in chapter_files(book / "chapters", "*.json"):
         for name, note in _notes(_load(path) or {}):
             outcomes.setdefault(name, Counter())[note["status"]] += 1
             if note.get("reason"):
@@ -59,7 +60,7 @@ def repair_ledger(book: Path | str) -> dict:
                     reasons.setdefault("momentum_" + part, Counter())[str(note[part]["reason"])] += 1
     after = Counter()
     chapters = 0
-    for body in sorted(book.glob("chapter-[0-9][0-9][0-9].body.md")):
+    for body in chapter_files(book, "chapter-*.body.md"):
         draft = body.with_name(body.name.replace(".body.md", ".r2.draft.md"))
         if not draft.is_file():
             continue

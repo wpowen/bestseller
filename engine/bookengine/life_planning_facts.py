@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+from tools.chapter_files import chapter_files
 
 from .storage import load
 
@@ -46,10 +47,10 @@ def confirmed_deaths(out, state=None, *, chapter):
         return {}
     out = Path(out)
     records = {}
-    for path in sorted((out / "chapters").glob("[0-9]*.json")):
-        if not path.stem.isdigit() or int(path.stem) >= chapter:
-            continue
+    for path in chapter_files(out / "chapters", "*.json"):
         number = int(path.stem)
+        if number >= chapter:
+            break
         row = completed_record(out, number)
         body = out / f"chapter-{number:03d}.body.md"
         if row and body.exists():

@@ -11,6 +11,7 @@ import re
 import json
 from difflib import SequenceMatcher
 from pathlib import Path
+from tools.chapter_files import chapter_files, chapter_number
 
 from .prose_repetition import _normalize, _position, _sentences
 from .text import _paragraph_spans
@@ -294,12 +295,11 @@ def repeated_arrival_hits(history, chapter, current):
 
 
 def _history(out, chapter):
-    root = Path(out)
     rows = []
-    for path in sorted(root.glob("chapter-*.body.md")):
-        match = re.fullmatch(r"chapter-(\d+)\.body\.md", path.name)
-        if match and int(match[1]) < chapter:
-            rows.append((int(match[1]), path.read_text("utf-8")))
+    for path in chapter_files(out, "chapter-*.body.md"):
+        number = chapter_number(path, "chapter-*.body.md")
+        if number < chapter:
+            rows.append((number, path.read_text("utf-8")))
     return rows
 
 

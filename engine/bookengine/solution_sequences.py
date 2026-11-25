@@ -3,6 +3,7 @@
 from collections import defaultdict
 import json
 from pathlib import Path
+from tools.chapter_files import chapter_files
 import re
 
 from .promise_io import precise_ask
@@ -227,7 +228,7 @@ def infer_solution_sequence(text):
 def _saved_sequences(out, number, bible):
     stage = stage_key(bible, number)
     found = []
-    for path in sorted((Path(out) / "chapters").glob("[0-9][0-9][0-9].json")):
+    for path in chapter_files(Path(out) / "chapters", "*.json"):
         try:
             row = load(path)
         except (OSError, ValueError):

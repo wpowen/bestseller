@@ -11,9 +11,10 @@ says which card it is or gives it a name written as ``名字（称呼）``. The 
 import json
 import re
 from pathlib import Path
+from tools.chapter_files import chapter_files
 
 from .identity import RULES
-from .q1_schema import integer, rows
+from .q1_schema import rows
 from .storage import save
 
 SIDE_CAST = "side_cast.json"
@@ -62,10 +63,10 @@ def recurring_unnamed(out, bible, before):
         return []
     known, named = _known(bible), load_side_cast(out)
     seen = {}
-    for path in sorted((Path(out) / "chapters").glob("*.json")):
-        number = integer(path.stem)
-        if not 0 < number < before:
-            continue
+    for path in chapter_files(Path(out) / "chapters", "*.json"):
+        number = int(path.stem)
+        if number >= before:
+            break
         present = json.loads(path.read_text(encoding="utf-8")).get("present") or []
         for label in {p for p in present if _role_label(p, known, named)}:
             seen.setdefault(label, []).append(number)

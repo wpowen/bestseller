@@ -11,6 +11,7 @@ import yaml
 from .q1_schema import integer, rows
 from .story_design import SPEC, load_story_design
 from .story_duties import CLOSED, all_duties, load_ledger
+from .support_stakes import KINDS, classify
 
 QUOTED = re.compile(r"“[^”]*”")
 PER = 10000
@@ -72,11 +73,12 @@ def reader_metrics(texts, bible):
     )
 
 
-def duty_summary(design, bible, ledger, written):
+def duty_summary(design, bible, ledger, written, texts=None):
     """Where every scheduled obligation stands after the chapters written so far."""
     counts = Counter()
     by_kind = {}
     open_items = []
+    support = []
     for duty in all_duties(design, bible):
         entry = ledger.get(duty["id"], {})
         if entry.get("status") in CLOSED:
@@ -87,6 +89,32 @@ def duty_summary(design, bible, ledger, written):
             status = "missing"
         else:
             status = "not_issued"
+        if duty["kind"] in KINDS:
+            observed = entry.get("goal_state", "unknown")
+            if texts is not None and entry.get("status") in CLOSED:
+                chapter = entry.get("chapter")
+                text = texts.get(chapter, "")
+                evidence = entry.get("evidence") or []
+                if not all(proof.get("chapter") == chapter and proof.get("quote") in text for proof in evidence):
+                    evidence = []
+                verified, observed = classify(
+                    dict(kind=duty["kind"], owner=duty["names"][0], target=duty.get("target", "")),
+                    observed,
+                    evidence,
+                    text,
+                )
+                status = "done" if verified == "fulfilled" else "unverified"
+            support.append(
+                dict(
+                    id=duty["id"],
+                    owner=duty["names"][0],
+                    desire=duty["desire"],
+                    chapter=entry.get("chapter"),
+                    scheduled=duty["chapter"],
+                    status=status,
+                    goal_state=observed,
+                )
+            )
         counts[status] += 1
         by_kind.setdefault(duty["kind"], Counter())[status] += 1
         if status in ("missing", "not_issued"):
@@ -104,6 +132,7 @@ def duty_summary(design, bible, ledger, written):
         status=dict(counts),
         by_kind={kind: dict(value) for kind, value in by_kind.items()},
         open=open_items,
+        support_stakes=support,
     )
 
 
@@ -125,7 +154,7 @@ def story_report(book, source="final"):
         reader_metrics=reader_metrics(texts, bible) if texts else {},
     )
     if design:
-        report["duties"] = duty_summary(design, bible, load_ledger(book), max(texts, default=0))
+        report["duties"] = duty_summary(design, bible, load_ledger(book), max(texts, default=0), texts)
         report["schedule"] = dict(
             foreshadows=[
                 {k: row.get(k) for k in ("id", "anchor", "plant", "reminders", "payoff")}

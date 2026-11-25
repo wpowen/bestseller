@@ -3,10 +3,22 @@
 import io
 import xml.etree.ElementTree as ET
 import zipfile
-from test_webui_contracts import WebFixture
+from test_webui_contracts import WebFixture, put
 
 
 class WebExportTests(WebFixture):
+    def test_blank_chapter_titles_download_by_number_and_keep_final_text(self):
+        folder = self.book(total=4)
+        for n, title in enumerate(("", "  ", None), 1):
+            put(folder / f"chapters/{n:03d}.json", {"title": title, "status": "complete"})
+        status, _, data = self.download(fmt="md")
+        self.assertEqual(status, 200)
+        content = data.decode()
+        for n in (1, 2, 3):
+            self.assertIn(f"## 第{n}章\n\n定稿{n}", content)
+        self.assertIn("## 第4章 潮声4\n\n定稿4", content)
+        self.assertNotIn("草稿", content)
+
     def test_epub_and_fanqie_preserve_selected_version(self):
         self.book()
         for version, word, excluded in [("draft", "定稿", "草稿"), ("final", "定稿", "草稿")]:

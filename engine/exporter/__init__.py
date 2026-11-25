@@ -19,9 +19,11 @@ def load(path):
 
 
 def heading(number, title):
-    title = str(title).strip()
-    if not title or "\n" in title or "\r" in title:
-        raise ValueError("Chapter title must be one nonempty line")
+    title = str(title or "").strip()
+    if not title:
+        return f"第{number}章"
+    if "\n" in title or "\r" in title:
+        raise ValueError("Chapter title must be one line")
     return title if re.match(r"^第[0-9一二三四五六七八九十百千万零〇两]+章(?:\s|$)", title) else f"第{number}章 {title}"
 
 
@@ -64,15 +66,13 @@ def read_book(folder, version="final"):
             continue
         base = folder / f"chapter-{n:03d}"
         wrapped = base.with_suffix(".md")
-        label = load(folder / f"chapters/{n:03d}.json").get("title")
+        label = str(load(folder / f"chapters/{n:03d}.json").get("title") or "").strip()
         if wrapped.is_file() and not label:
             wrapped_label, wrapped_body = chapter_file(wrapped)
-            label = label or wrapped_label
+            label = wrapped_label.strip()
         if not label:
             outline = load(folder / "steps/04-outline.json").get("chapters", [])
             label = next((r.get("title") for r in outline if r.get("number") == n), None)
-        if not label:
-            raise ValueError(f"Missing chapter title: {n}")
         if version in ("final", "polished"):
             source = folder / f"final/chapter-{n:03d}.md"
             rows.append((n, heading(n, label), read(source)))

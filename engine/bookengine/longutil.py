@@ -2,6 +2,7 @@
 
 import json
 import re
+import warnings
 
 import yaml
 
@@ -106,9 +107,47 @@ def loose_object(raw):
     return Recovered(result) if recovered and isinstance(result, dict) else result
 
 
-def ask(client, stage, instruction, sections, schema=None, input_limit=30000, **kwargs):
-    overhead = len(client.prefix) + len(SYSTEM) + len(instruction) + len(schema or "") + 350
-    context = long_context(normalize_sections(sections), max(0, min(30000, input_limit) - overhead))
+def _writer_context(sections, budget, drops):
+    """Keep the whole scene, facts and obligations. Sacrifice advisory sections first."""
+    blocks = [(name, f"## {name}\n{body}") for name, body in sections]
+    optional = (
+        "授权参考的统计风格特征",
+        "章首句式类别约束",
+        "本阶段已用解法步骤，不能只换名词照搬",
+        # This comparison uses the prior plan. Keep the separate factual handoff.
+        "上章冲突及写作避重约束",
+        "人物内里，只用来决定他怎么想、怎么说、怎么做，不要照抄成句子",
+    )
+    for name in optional:
+        if sum(len(block) + 2 for _, block in blocks) - 2 <= budget:
+            break
+        if any(heading == name for heading, _ in blocks):
+            blocks = [(heading, block) for heading, block in blocks if heading != name]
+            if drops is None:
+                warnings.warn(f"写手输入省略 {name}", RuntimeWarning, stacklevel=3)
+            elif name not in drops:
+                drops.append(name)
+    context = "\n\n".join(block for _, block in blocks)
+    if len(context) > budget:
+        sizes = "、".join(f"{name} {len(block)}" for name, block in blocks)
+        return "", f"写手必要材料需要 {len(context)} 字符，只剩 {budget}；各节字符数：{sizes}"
+    return context, ""
+
+
+def ask(client, stage, instruction, sections, schema=None, input_limit=30000, *, writer_drops=None, **kwargs):
+    sections = normalize_sections(sections)
+    writer = any(name == "本章章纲" for name, _ in sections)
+    limit = min(30000, input_limit)
+    if writer:
+        limit = min(limit, getattr(client, "context_limit", None) or limit)
+    system = getattr(client, "system", SYSTEM) if writer else SYSTEM
+    budget = limit - len(client.prefix) - len(system) - len(instruction) - len(schema or "") - 350
+    if writer:
+        context, error = _writer_context(sections, budget, writer_drops)
+        if error:
+            kwargs["input_error"] = error
+    else:
+        context = long_context(sections, max(0, budget))
     return client.stage(stage, instruction + "\n" + context, schema, parser=loose_object, **kwargs)
 
 

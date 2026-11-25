@@ -88,7 +88,11 @@ def previous_conflict_context(out, chapter):
     number = chapter - 1
     path = Path(out) / f"chapters/{number:03d}.json"
     previous = load(path) if path.is_file() else {}
-    if previous.get("fact_source") != "final_body" or previous.get("status") != "complete":
+    if (
+        previous.get("fact_source") != "final_body"
+        or previous.get("status") != "complete"
+        or previous.get("state_failed")
+    ):
         return []
     outline = Path(out) / f"writing_outlines/{number:03d}.json"
     plan = load(outline) if outline.is_file() else {}

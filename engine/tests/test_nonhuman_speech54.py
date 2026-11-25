@@ -97,14 +97,14 @@ def test_prepare_response_normalizes_missing_nonhuman_speech_contract():
 
 
 def test_q1_chapter_appends_nonhuman_speech_context_to_writer_prompt(monkeypatch):
-    from bookengine import q1_chapter
+    from bookengine import q1_draft_prompt
     from support_minimal_b import CaptureClient, MinimalBTests, body
 
     fixture = MinimalBTests()
     fixture.setUp()
     try:
         monkeypatch.setattr(
-            q1_chapter,
+            q1_draft_prompt,
             "speech_context",
             lambda _bible, chapter: [("非人角色表达限制", f"SPEECH_CONTEXT_SENTINEL_{chapter}")],
         )

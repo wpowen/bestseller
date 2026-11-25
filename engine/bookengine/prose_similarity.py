@@ -306,7 +306,7 @@ def _history(out, chapter):
 CHOICE_NOTE = "（这是两难选择：开头两段写明主角当场选了哪一边、为此放下了什么，不能跳过选择直接写结果）"
 
 
-def _previous_hanging_ending(out, chapter):
+def _previous_hanging_ending(out, chapter, *, choice_is_reference=False):
     """The previous chapter's planned unresolved ending (planning text, never prose); '' when it closed flat."""
     path = Path(out) / "writing_outlines" / f"{chapter - 1:03d}.json"
     try:
@@ -317,33 +317,49 @@ def _previous_hanging_ending(out, chapter):
     if not content or outline.get("ending_type") in ("平收", "", None):
         return ""
     if outline.get("ending_type") == "两难选择":
+        if choice_is_reference:
+            return (
+                "上章预排的取舍，仅供核对："
+                + content[:120]
+                + "。若已经选过，沿既成后果写；换了视角或章纲明示留待后面揭晓时，可以继续悬着。"
+            )
         # Instruction 80: ch42 ended on "带弟子离开，还是立刻追进去"; ch43 opened already inside, choice skipped.
-        return content[:120] + CHOICE_NOTE
-    return content[:120]
+        content = content[:120] + CHOICE_NOTE
+    else:
+        content = content[:120]
+    return (
+        "上章预排的收尾："
+        + content
+        + "。以已成事实为准。若此事仍悬而未决，本章开头几段用当场动作交代怎样收场或怎样被打断，不复述上章经过，再进入本章章纲。"
+    )
 
 
 def _places(text):
     return sorted({match[1] for pattern in _LOCATION_MENTIONS for match in pattern.finditer(text)})
 
 
-def with_completed_action_context(sections, out, chapter):
-    """Keep prior prose out of the writer prompt; only retain deterministic place facts."""
+def with_completed_action_context(sections, out, chapter, *, saved_outcome=False, choice_is_reference=False):
+    """Use the completed ending first. Older records without outcomes retain the planning fallback."""
+    result = list(sections)
+    if saved_outcome:
+        for index, section in enumerate(result):
+            if section[0] == "上章结尾":
+                result.pop(index)
+                result.insert(1, section)
+                break
+        return result
     history = _history(out, chapter)
     if not history:
-        return list(sections)
+        return result
     places = sorted({place for _, text in history for place in _places(text)})
     value = "上一章末场已发生；不提供上一章原句。开头只承接已保存的结局事实，不得复述同一动作或时间起句。"
     if places:
         value += "\n此前到过的地点（再次到达必须写明折返理由）：" + "、".join(places[-20:])
-    hanging = _previous_hanging_ending(out, chapter)
+    hanging = _previous_hanging_ending(out, chapter, choice_is_reference=choice_is_reference)
     if hanging:
         # eval-75: ch1 ended with two thieves blocking the lane; ch2 never said what happened to them.
-        value += (
-            "\n上一章停在未了的局面：" + hanging + "。本章开头几段先用当场动作交代这个局面怎样收场或怎样被打断，"
-            "不复述上章经过，再进入本章章纲。"
-        )
-    result = list(sections)
-    for index, (title, current) in enumerate(result):
+        value += "\n" + hanging
+    for index, (title, _) in enumerate(result):
         if title == "上章结尾":
             result[index] = (title, value)
             break

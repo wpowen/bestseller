@@ -22,10 +22,12 @@ from .opening_promises import opening_contract
 from .prose_repetition import clean_repetitions
 from .q1_continuity import OPENING_RULE
 from .solution_substance import observe_solutions
-from .core_ability import core_source
+from .core_ability import chapter_ability_view, core_source
 from .character_context import catchphrase_context, identity_keywords, trim_dossier
+from .disclosure_choices import disclosure_extraction
 from .continuity_ledger import extraction_contract, writer_continuity_facts
 from .writer_context import power_writer_view, previous_outcome_facts, selected_card_writer_view
+from .rhythm_writer import remaining_outline
 from tools.book_checkup import clean_prose
 
 DATA = Path(__file__).resolve().parents[1] / "data/q1_style.yaml"
@@ -64,8 +66,9 @@ def body_of(value, client, cleaning=None):
     return clean(value)
 
 
-def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None):
+def context(bible, threads, vol, chapter, state, history, rows, previous, dropped=None, *, scene_contract=None):
     dropped = [] if dropped is None else dropped
+    chapter = chapter_ability_view(bible, chapter)
     continuity_facts = writer_continuity_facts(state, bible, chapter)
     names = pack(chapter.get("scenes", []))
     people = sorted(
@@ -146,7 +149,6 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             "solution_method",
             "core_required",
             "core_application",
-            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -172,9 +174,8 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
         )
         if k in chapter
     }
-    if isinstance(outline.get("core_development"), dict):
-        # The writer gets the stage's new use only; cost and limit restated every chapter (eval-74).
-        outline["core_development"] = {"new_use": outline["core_development"].get("new_use", "")}
+    if scene_contract is not None:
+        outline = remaining_outline(outline, scene_contract)
     if chapter["number"] <= 3 and (bible.get("title") or bible.get("power")):
         requirements = [
             {k: item[k] for k in ("id", "requirement")}
@@ -213,10 +214,10 @@ def context(bible, threads, vol, chapter, state, history, rows, previous, droppe
             if bible.get("selected_card")
             else []
         ),
-        ("本章章纲", pack(outline)[:2500] + "\n阶段退场约束：" + pack(constraints)),
+        ("本章章纲", pack(outline) + "\n阶段退场约束：" + pack(constraints)),
         *([("人物当前事实，不得违背", "\n".join(continuity_facts))] if continuity_facts else []),
         ("出场人物档案、口吻卡与当前状态", pack(dossier)),
-        ("上章结尾", previous_outcome_facts(state, history, rows)),
+        ("上章结尾", previous_outcome_facts(state, history, rows, chapter["number"], previous, dropped)),
         ("本章推进线", pack(beat_slice(threads, vol, chapter, state))[:1000]),
     ]
 
@@ -328,8 +329,9 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
     previous = rows[-1] if rows and rows[-1].get("state_failed") and not rows[-1].get("carry_attempted") else None
     prior = (client.out / f"chapter-{previous['number']:03d}.body.md").read_text() if previous else ""
     hits = prose_hits(text, bible, state) if not final else []
+    chapter = chapter_ability_view(bible, outline)
     contract = {
-        k: outline.get(k)
+        k: chapter.get(k)
         for k in (
             "number",
             "payoff_due",
@@ -340,7 +342,6 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             "solution_method",
             "core_required",
             "core_application",
-            "core_development",
             "solution_avoid",
             "group_allowed",
             "growth_obligation",
@@ -419,7 +420,8 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
         "每个名词只填一个原词，不能用顿号合并或拼接引文，primary标主要解法。"
     )
     continuity_prompt, continuity_schema = extraction_contract()
-    prompt += continuity_prompt
+    disclosure_prompt, disclosure_schema = disclosure_extraction(outline)
+    prompt += continuity_prompt + disclosure_prompt
     if not final:
         prompt += (
             "\nprose_repetition是整句/邻段复述：仅改后一次，保留主体指代与衔接，不能删掉被前后句依赖的事实。"
@@ -427,13 +429,10 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             "改成该人物此刻的动作或旁人的反应带出，或删去该句，不新增身份句；身份和姓名分开写，不连成长称呼；unregistered_alias把卡外外号或自称改为卡片name/address/aliases。"
             "这两类与其他问题在本轮统一用edits修复，id用候选句的S编号；不编造身份，不把英语role当身份。"
         )
-    if (
-        not final
-        and not outline.get("word_range", [1870, 2700])[0]
-        <= outline.get("actual_chars", 2200)
-        <= outline.get("word_range", [1870, 2700])[1]
-    ):
-        prompt = EXTRACT["length_first"] + prompt
+    low, high = outline.get("word_range", [1870, 2700])
+    actual, target = outline.get("actual_chars", 2200), outline.get("target_chars", 2200)
+    if not final and not low <= actual <= high:
+        prompt = EXTRACT["length_first"].format(actual=actual, target=target, low=low, high=high) + prompt
     schema = pack(
         dict(
             {
@@ -456,6 +455,7 @@ def extract_state(client, name, text, state, bible, outline, rows, final=False):
             solutions=[dict(type=None, content=None, primary=False, target_noun=None, method_noun=None, quote=None)],
             core_use=dict(decisive=None, mechanism="", action_quote="", result_quote=""),
             continuity_delta=continuity_schema,
+            **disclosure_schema,
         )
     )
     saved = client.prefix

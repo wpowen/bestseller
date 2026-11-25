@@ -20,6 +20,10 @@ instruction: '只为已有圣经补“故事设计”，不改人物姓名、身
   relationships：主角与恋爱对象、主角与每个主要配角各一项，people恰好两人。steps每阶段至多一级，stage是阶段号；
   event写两人之间发生的一件事（不是交换物证、上报或审查），before与after写态度变化且前后不同。
 
+  support_stakes：从已有重要配角的私人愿望中选真正影响本书的零至两条。姓名、愿望沿用人物卡，不另造副线。
+  target原样摘取愿望中所指的人或事物（2—8字）。choice章写此人为了愿望或放弃机会而亲自做的选择；consequence排在之后仍能看到其影响的一章，
+  用具体行动交代愿望达成、落空或被迫延期后的真实代价。可以失败。两章落在出场之后、退场之前，尽量嵌入已有支线。
+
   appearances：圣经里除主角外每个人物一项，first_chapter是首次正面出场章号；反派落在自己所属阶段的前三章内，配角不晚于其exit_volume所在阶段。
 
   stage_progress：每阶段一项。goal_line是读者能一句话复述的阶段目标；marker是看得见的进度物（如还差几道门、几个人、几件东西），写清起点与终点数量。
@@ -58,6 +62,13 @@ schema:
       event: ''
       before: ''
       after: ''
+  support_stakes:
+  - name: ''
+    target: ''
+    choice_chapter: 0
+    choice: ''
+    consequence_chapter: 0
+    consequence: ''
   appearances:
   - name: ''
     first_chapter: 1
@@ -73,7 +84,7 @@ carry_chapters: 3
 # 每阶段反派正面出场并主动出招的最少次数。
 villain_moves_per_stage: 2
 
-priority: [payoff, truth, arc, plant, relationship, appearance, remind, villain_move]
+priority: [payoff, truth, support_consequence, support_choice, arc, plant, relationship, appearance, remind, villain_move]
 
 duty_text:
   plant: '埋伏笔：让{anchor}这件东西在本章一场戏里自然出现，读者此时只会以为它是——{surface}。只带一笔，不点破；可以用平常的叫法称呼它，不要把它的名字刻在、写在它身上，也不要用引号把名字框起来。'

@@ -1,6 +1,10 @@
+import json
 import unittest
-from bookengine.benchmarking import rank_concepts, SCORE_KEYS
+from unittest.mock import Mock, patch
+
 from bookengine.batch import usage_report
+from bookengine.benchmarking import LEGACY_SCALE, SCORE_KEYS, concept_design, rank_concepts
+from bookengine.config import Book
 from bookengine.craft import surface_hits
 
 
@@ -36,3 +40,31 @@ class BenchmarkTests(unittest.TestCase):
         hits = surface_hits("他先复核了一遍。他又说待核。她要按他判断。")
         self.assertEqual(len(hits), 2)
         self.assertTrue(all("restraint" in h["categories"] for h in hits))
+
+
+def test_concept_score_matches_requested_length_and_resumes_old_checkpoints(tmp_path):
+    client = Mock(out=tmp_path)
+    for chapters, historical in ((1, False), (10, False), (600, False), (10, True)):
+        client.out = tmp_path / f"{chapters}-{historical}"
+        keys = (*SCORE_KEYS[:-1], LEGACY_SCALE) if historical else SCORE_KEYS
+        cards = [
+            dict(
+                id=i,
+                pitch="卖点",
+                gift="借力",
+                first_payoff="发现",
+                titles=["题一", "题二"],
+                scores=dict.fromkeys(keys, 5),
+            )
+            for i in range(1, 13)
+        ]
+        cards[-1]["scores"][keys[-1]] = 10
+        with patch("bookengine.benchmarking.ask", return_value={"concepts": cards}) as ask:
+            book = Book("xuanhuan-power-fantasy", chapters, 2000, "依照实际章数收束")
+            assert concept_design(client, book)["id"] == 12
+            _, _, prompt, _, schema = ask.call_args.args
+            assert f"这部{chapters}章" in prompt and f"前{min(3, chapters)}章" in prompt
+            assert LEGACY_SCALE not in prompt + schema
+            assert set(json.loads(schema)["concepts"][0]["scores"]) == set(SCORE_KEYS)
+            assert concept_design(client, book) == cards[-1]
+            ask.assert_called_once()

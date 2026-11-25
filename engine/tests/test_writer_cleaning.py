@@ -26,8 +26,11 @@ def test_discarded_body_candidate_does_not_inflate_adopted_prose_cleaning():
     fixture.setUp()
     try:
         first = fixture.extraction(body="丢弃的草稿🏼。", patch=dict(after=1, text="她停下脚步。"))
-        client = CaptureClient(fixture.out, [body(60)], {"r2-ch2-finish": first})
+        retained = "r2-ch2-retained-state-1"
+        client = CaptureClient(fixture.out, [body(60)], {"r2-ch2-finish": first, retained: fixture.extraction()})
         row = fixture.run_chapter(client)
         assert row["cleaning"]["total"] == 0
+        assert sum(call["stage"] == retained for call in client.calls) == 1
+        assert "丢弃的草稿" not in (fixture.out / "chapter-002.body.md").read_text()
     finally:
         fixture.doCleanups()

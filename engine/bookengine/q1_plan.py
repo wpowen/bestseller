@@ -20,11 +20,13 @@ from .retired_opponents import stage_constraints
 from .solution_substance import solution_issues
 from .solution_sequences import planning_solution_context, solution_plot_history, solution_sequence_issues
 from .hook_momentum import apply_ending_contract, planned_ending_type, schedule_ending_types
-from .core_ability import ability_slots, ability_issues, core_source, enforce_ability_plan, RULE as CORE_RULE
+from .core_ability import RULE as CORE_RULE
+from .core_ability import ability_issues, ability_slots, chapter_ability_view, core_source, enforce_ability_plan
 from .adjacent_conflicts import RULE as ADJACENT_CONFLICT_RULE, planned_conflict
 from .character_context import schedule_catchphrases
 from .chapter_rhythm import RULE as RHYTHM_RULE, VERSION as RHYTHM_VERSION, apply_contract, chapter_type, rhythm_issues
 from .rhythm_skeleton import bind_stage_content, coordinate_core_rhythm, stage_content_skeleton, window_stage_content
+from .rhythm_skeleton import bind_opening_events, opening_plan_sections
 from .outline_diversity import (
     STRUCTURE_CHECKS_VERSION,
     historical_outlines,
@@ -42,6 +44,7 @@ from .story_duties import planner_sections
 from .planning_policy import planning_window_end
 from .life_planning import apply_life_constraints
 from .rhythm_contract_repair import apply_rhythm_contracts
+from .outline_coverage import complete_details, indexed_rows
 
 
 def _beats(threads, number, state=None):
@@ -258,7 +261,8 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
                 stage_end=integer(volume.get("end"), end),
             )
             normalized = apply_rhythm_contracts(client, bible, normalized, state, chapter=start)
-            return apply_life_constraints(client, bible, normalized, state, chapter=start)
+            normalized = apply_life_constraints(client, bible, normalized, state, chapter=start)
+            return [chapter_ability_view(bible, row) for row in bind_opening_events(bible, normalized)]
         end = cached["end"]
     used = prompt_vocabulary(used_vocabulary(prior))
     rhythm = schedule(
@@ -306,6 +310,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
     ]
     cards = [{k: c.get(k) for k in DATA["plan_card_fields"]} for c in bible.get("characters", [])]
     sections = [
+        *opening_plan_sections(bible.get("opening_promises"), start, end, include_general=True),
         (ADJACENT_CONFLICT_RULE, [planned_conflict(row) for row in prior[-1:]]),
         (CORE_RULE, dict(source=core_source(bible), required=core_slots)),
         (
@@ -316,7 +321,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("本批完整范围", dict(start=start, end=end, count=end - start + 1)),
         ("尾章必须融入当下冲突的首卷事实与原文，不复述梗概", events),
         ("用户选定事实，只可扩写不可替换", bible.get("selected_card", {})),
-        *([("开篇承诺：第1–3章逐章兑现，三章事件不重复", bible.get("opening_promises"))] if start <= 3 else []),
         ("阶段地点、对手、目标与收束固定约束", stage_contract),
         (
             "阶段首章transition必填：一两句交代从上一阶段实际终点到本阶段起点的移动、时间与原因；开头300字落实",
@@ -347,10 +351,10 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         ("实际状态及近章", [state, {r.get("number"): r.get("summary") for r in recent[-5:]}]),
     ]
     raw = stale or cached or _ask(client, "outlines", f"chapters-{start}-{end}", sections, redo)
-    source = rows(raw.get("chapters")) if isinstance(raw, dict) else rows(raw)
-    mapped = {}
-    for i, item in enumerate(source):
-        mapped.setdefault(integer(item.get("number"), start + i), item)
+    if cached or stale:
+        mapped = indexed_rows(raw, list(range(start, end + 1)))
+    else:
+        mapped = complete_details(client, _ask, raw, start, end, sections, redo)
 
     candidates = []
     for slot in rhythm:
@@ -361,7 +365,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         candidate.setdefault("rhythm_focus", slot["rhythm_focus"])
         candidate.setdefault("rhythm_contract_version", RHYTHM_VERSION)
         candidates.append(candidate)
-    candidates = bind_stage_content(candidates, [row for row in stage_skeleton if row.get("_model_planned")])
+    candidates = bind_stage_content(candidates, [row for row in stage_skeleton if row.get("_model_planned")], bible)
     candidates = bind_title_contracts(bible, enforce_ability_plan(bible, candidates))
 
     key = f"{start:03d}-{end:03d}" + (f"-redo{redo}" if redo else "")
@@ -443,7 +447,6 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             type=chapter_type(chapter)
             if chapter_type(chapter) in DATA["profile"]["chapter_type_mix"]
             else slot["type"],
-            hook_type=chapter["hook_type"] if chapter["hook_type"] in DATA["hook_types"] else slot["hook_type"],
         )
         chapter.update(
             structure=slot["structure"],
@@ -452,10 +455,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             payoff_type=slot.get("payoff_type"),
             ending_type=planned_ending_type(chapter, slot["ending_type"]),
             ending_content=chapter.get("ending_content") or chapter.get("hook"),
-            hook=chapter.get("hook")
-            if chapter["hook_type"] == slot["hook_type"]
-            else "末钩目标" + slot["hook_type"] + "，用本场面既有冲突重构，不沿用旧结尾。",
-            hook_type=slot["hook_type"],
+            hook_type=None if chapter.get("ending_content") else slot["hook_type"],
             structure_rewrite="指定结构" + slot["structure"] + "优先覆盖冲突旧场景，必须围绕它重新设计行动后果。",
         )
         chapter["solution_type"] = chapter.get("solution_type") or slot.get("solution_type")
@@ -471,7 +471,7 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
         chapter["callback_events"] = events if n == total else events[:1] if n == volume["end"] else []
         result.append(chapter)
     result = [schedule_catchphrases(chapter, bible) for chapter in result]
-    result = [apply_contract(chapter) for chapter in result]
+    result = bind_opening_events(bible, [apply_contract(chapter) for chapter in result])
     result = complete_transitions(result, prior)
     result = apply_ending_contract(result, stage_end=integer(volume.get("end"), end))
     result = bind_title_contracts(bible, result)
@@ -493,4 +493,5 @@ def outlines(client, bible, threads, profile, volume, start, end, state, recent,
             report.update(source_report=source_path, chapters=result)
         save(path, dict(report, planned_chapters=result))
     result = apply_rhythm_contracts(client, bible, result, state, chapter=start)
-    return apply_life_constraints(client, bible, result, state, chapter=start)
+    result = apply_life_constraints(client, bible, result, state, chapter=start)
+    return [chapter_ability_view(bible, row) for row in bind_opening_events(bible, result)]

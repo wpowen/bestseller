@@ -232,9 +232,19 @@ def test_whole_q1_book_finishes_after_twenty_429_with_quality_warnings(tmp_path,
 
 
 def test_whole_q1_quota_then_resume_preserves_completed_prose_bytes(tmp_path, monkeypatch):
+    from copy import deepcopy
+
     from tools.runtime_support import QuotaExhausted
 
     q1, c, config, draft, extracted = q1_fixture(tmp_path, monkeypatch)
+    volume_states = []
+    plan_volume = q1.volume
+
+    def record_volume(client, bible, threads, number, size, state, *args, **kwargs):
+        volume_states.append(deepcopy(state))
+        return plan_volume(client, bible, threads, number, size, state, *args, **kwargs)
+
+    monkeypatch.setattr(q1, "volume", record_volume)
     quota = Reply({"base_resp": {"status_code": 1008, "status_msg": "insufficient balance"}})
     with patch("urllib.request.urlopen", side_effect=[good(draft), good(extracted), quota]):
         with pytest.raises(QuotaExhausted):
@@ -247,6 +257,9 @@ def test_whole_q1_quota_then_resume_preserves_completed_prose_bytes(tmp_path, mo
     assert result["status"] == "complete" and result["completed_chapters"] == 2
     assert (tmp_path / "chapter-001.body.md").read_bytes() == saved
     assert (tmp_path / "chapters/001.json").read_bytes() == row
+    assert len(volume_states) == 2
+    assert volume_states[0] == volume_states[1]
+    assert json.loads(row)["state"] != volume_states[0]
 
 
 def test_invalid_old_stage_is_retained_and_repaired_without_overwrite(tmp_path):

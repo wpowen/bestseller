@@ -17,6 +17,18 @@ def test_real_library_smoke():
     assert result["fixture_unchanged"]
 
 
+def test_smoke_accepts_new_book_without_bible_or_chapters(tmp_path):
+    key = "webui/new-book"
+    folder = tmp_path / key
+    folder.mkdir(parents=True)
+    (folder / "web.json").write_text(json.dumps({"title": "新书", "status": "queued"}), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(json.dumps({"books": [{"id": key}]}), encoding="utf-8")
+    result = smoke(tmp_path)
+    assert result["books"] == 1 and result["reader_chapters"] == 0
+    assert result["models_started"] == 0 and result["fixture_unchanged"]
+    assert not (folder / "story_bible.yaml").exists()
+
+
 def test_real_snapshots_are_bounded_and_exclude_raw_calls():
     paths = [p for p in FIXTURES.rglob("*") if p.is_file()]
     assert sum(p.stat().st_size for p in paths) <= 3 * 1024 * 1024

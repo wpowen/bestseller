@@ -288,6 +288,7 @@ class Client:
         max_attempts=6,
         parser=None,
         cumulative_output_failures=False,
+        input_error=None,
     ):
         max_attempts = max(6, max_attempts)
         target = self.out / "steps" / (name + (".json" if schema else ".md"))
@@ -330,7 +331,7 @@ class Client:
         if schema:
             full += "\n只返回完整JSON，结构：\n" + schema
         system = getattr(self, "system", SYSTEM)
-        if self.context_limit and len(system) + len(full) + 256 > self.context_limit:
+        if not input_error and self.context_limit and len(system) + len(full) + 256 > self.context_limit:
             if self.clip_context:
                 full = full[: max(0, self.context_limit - len(system) - 256)]
             else:
@@ -354,6 +355,9 @@ class Client:
                     return value
                 except (ValueError, KeyError, TypeError, AttributeError):
                     pass
+        if input_error:
+            write_runtime(self.out, "error", name, error=input_error)
+            raise ProjectError(f"{name}: {input_error}")
         retry_path = self.out / "steps" / (name + ".retry.json")
         network = load(retry_path) if retry_path.exists() else dict(failures=0, waited=0)
         self.wait_network(name, network, retry_path)

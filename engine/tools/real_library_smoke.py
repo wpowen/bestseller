@@ -120,7 +120,9 @@ def smoke(fixtures):
                 assert request(asset, binary=True)
             listed = request("/api/books")["books"]
             metrics["books"] = len(listed)
-            assert metrics["books"] == 4
+            expected_books = {book["id"] for book in read(fixtures / "manifest.json")["books"]}
+            assert expected_books and metrics["books"] == len(expected_books)
+            assert {book["id"] for book in listed} == expected_books
             for row in listed:
                 detail = request("/api/book?" + urlencode(dict(id=row["id"])))
                 folder = lib.folder(row["id"])
@@ -196,21 +198,29 @@ def smoke(fixtures):
             web = read(folder / "web.json")
             save(folder / "web.json", dict(web, display_title="回归重命名"))
             assert request("/api/book?" + urlencode(dict(id=key)))["meta"]["title"] == "回归重命名"
-            original_bible = (folder / "story_bible.yaml").read_text("utf-8")
-            (folder / "story_bible.yaml").unlink()
+            bible_path = folder / "story_bible.yaml"
+            original_bible = bible_path.read_bytes() if bible_path.is_file() else None
+            bible_path.unlink(missing_ok=True)
             web.pop("display_title", None)
-            web.update(title="回归选题卡", polish=True, auto_deai=False)
+            web.update(title="回归旧书名", selected_card={"title": "回归选题卡"}, polish=True, auto_deai=False)
             web.pop("pipeline_version", None)
             web.pop("pipeline", None)
             save(folder / "web.json", web)
             assert request("/api/book?" + urlencode(dict(id=key)))["meta"]["title"] == "回归选题卡"
-            (folder / "story_bible.yaml").write_text(original_bible, encoding="utf-8")
+            if original_bible is not None:
+                bible_path.write_bytes(original_bible)
+            # A newly listed book may have neither a bible nor a first chapter yet.
+            key = next((r["id"] for r in listed if any(lib.folder(r["id"]).glob("chapter-*.body.md"))), key)
+            folder = lib.folder(key)
             for path in (folder / "final").glob("chapter-*.md"):
                 path.unlink()
             empty = request("/api/book?" + urlencode(dict(id=key)))
             assert not any(c["final"] for c in empty["chapters"])
             assert all(c["status"] == "draft" for c in empty["chapters"])
-            assert b"\xe6\xad\xa3\xe5\x9c\xa8\xe5\x8e\xbb AI" in request("/LIBRARY.html", binary=True)
+            offline = request("/LIBRARY.html", binary=True).decode("utf-8")
+            assert html.escape(empty["meta"]["title"]) in offline
+            if empty["chapters"]:
+                assert "本章正在去 AI，完成后显示" in offline
             metrics["models_started"] += server.queue.models_started
             assert metrics["models_started"] == 0
     metrics["fixture_unchanged"] = before == manifest(fixtures)

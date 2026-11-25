@@ -130,6 +130,19 @@ class ExportTests(unittest.TestCase):
         self.cli("--formats", "txt", "--out", str(self.root / "download"))
         self.assertIn(self.labels[-1], (self.root / "download/book.txt").read_text())
 
+    def test_empty_titles_keep_wrapped_and_planned_names_before_chapter_number(self):
+        (self.book / "chapters").mkdir()
+        (self.book / "steps").mkdir()
+        for n, title in enumerate((" ", None, ""), 1):
+            (self.book / f"chapters/{n:03d}.json").write_text(json.dumps({"title": title}))
+        for n in (2, 3):
+            (self.book / f"chapter-{n:03d}.md").unlink()
+        (self.book / "steps/04-outline.json").write_text(json.dumps({"chapters": [{"number": 2, "title": "合井"}]}))
+        self.cli("--formats", "md")
+        exported = self.book / "exports/final"
+        for n, label in enumerate((self.labels[0], "第2章 合井", "第3章"), 1):
+            self.assertEqual((exported / f"chapter-{n:03d}.md").read_text(), f"## {label}\n\n{self.bodies[n - 1]}\n\n")
+
     def test_fanqie_removes_markup_and_keeps_literal_punctuation(self):
         (self.book / "chapter-001.md").write_text(
             "## 第1章 灯/盐:*?\n\n# 灯\n**粗体**与_斜体_，`盐`。\n> 引用\n---\n[门](https://example.org)\n3 * 5 = 15，x_y，#号。\n\n"

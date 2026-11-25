@@ -26,6 +26,8 @@ PYTHONPATH=engine python -m exporter books/my-book
 
 `--batch` 支持 1–6 个并发子进程，书内顺序、书间并发，一本失败不影响其他本；续跑保留旧账、旧正文和检查点。`--q1` 必填，`--style` 仅接受 `b`。
 
+新书 YAML 可选 `writer_input: compact`，用于试读版正文输入。它把已确认前情、当章场景和当场用到的人物信息交给写手，后续仍使用 Q1/B 审校。缺省为 `full`。输入模式随书的检查点保存，从同一目录续跑时沿用原模式。
+
 选题工坊独立运行：
 
 ```sh

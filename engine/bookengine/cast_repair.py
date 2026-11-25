@@ -3,6 +3,20 @@
 from .precision import apply as sentence_edits
 
 
+def pronoun_replacement(target, proposals, names):
+    """A direct disagreement about the actor leaves the source sentence intact."""
+    relative = target.get("pronoun_start", -1) - target["start"]
+    quote = target["quote"]
+    if relative < 0 or quote[relative : relative + 1] != target["observed"]:
+        return None
+    left, right = quote[:relative], quote[relative + 1 :]
+    suggested = {row["text"] for row in proposals if row.get("id") == target["id"] and isinstance(row.get("text"), str)}
+    if any(left + name + right in suggested for name in names if name != target["name"]):
+        return None
+    named = left + target["name"] + right
+    return named if named in suggested else left + target["expected"] + right
+
+
 def apply_cast_edits(text, proposed, targets):
     direct_kinds = {"nonhuman_speech", "nonhuman_speech_origin"}
     direct_targets = {row["id"]: row for row in targets if row["kind"] in direct_kinds}

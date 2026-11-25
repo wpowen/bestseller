@@ -53,19 +53,21 @@ def test_ability_plan_keeps_the_scene_and_leaves_cost_and_limit_out():
     planned = enforce_ability_plan(bible(), rows)
     first = planned[0]["scenes"][0]
     assert first["action"] == scene["action"] and first["choice"] == scene["choice"]
-    assert first["ability_use"] == DEVELOPMENT["new_use"]
+    assert "ability_use" not in first
+    assert planned[0]["core_application"] == scene["action"]
     text = str([row["scenes"] for row in planned] + [row["core_application"] for row in planned])
     assert POWER["cost"] not in text and POWER["limit"] not in text and "实际运用" not in text
     assert not ability_issues(bible(), [], planned)
     writer = dict(context(bible(), {}, {"number": 1}, planned[0], {}, [], [], ""))["本章章纲"]
-    assert DEVELOPMENT["new_use"] in writer and POWER["cost"] not in writer and POWER["limit"] not in writer
+    assert scene["action"] in writer and all(value not in writer for value in DEVELOPMENT.values())
 
 
-def test_negated_use_is_still_replaced():
+def test_negated_use_stays_visible_for_replanning():
     rows = [dict(number=1, scenes=[dict(goal="开门", choice="改用普通钥匙，不使用核心能力")])]
     planned = enforce_ability_plan(bible(), rows)
-    assert "不使用" not in planned[0]["scenes"][0]["choice"]
-    assert not ability_issues(bible(), [], planned)
+    assert planned[0]["scenes"] == rows[0]["scenes"]
+    assert planned[0]["core_plan_repair"]["status"] == "pending_safe_action"
+    assert ability_issues(bible(), [], planned)
 
 
 def test_prompts_no_longer_name_the_fear_desire_template():

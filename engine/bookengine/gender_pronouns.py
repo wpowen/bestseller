@@ -13,6 +13,7 @@ _FRONTED = re.compile(
 _EARLY_POSSESSIVE = re.compile(r"[^。！？!?]{0,12}?(?:把|将)([他她])(?!们)(?:的)?[\u3400-\u9fff]")
 _CLAUSE_PRONOUN = re.compile(r"[，,；;：:]\s*([他她])(?!们)(?:只|也|仍|又|便|才|已|正|会|能|可|却|把|将|被)")
 _OBSERVER = re.compile(r"(?:看清|看出|发现|识破|明白|知道)[^。！？]{0,18}(?:手段|做法|计划|意图)[：:]$")
+_RELATIVE_POSITION = re.compile(r"(?<!其)([他她])(?:的)?(?:身前|身后|身旁|身边|面前|背后|怀里|怀中)")
 
 
 def _subject_bound(sentence, name):
@@ -167,9 +168,16 @@ def _scan_bindings(text, cards, spans):
     rows = []
     bound = None
     neutral_gap = 0
+    paragraph_names = set()
     for index, (start, end) in enumerate(spans):
         sentence = text[start:end]
         people = [card for card in _mentioned(sentence, cards) if card.get("gender") in GENDER]
+        previous_paragraph = set()
+        if index and re.search(r"\n\s*\n", text[spans[index - 1][1] : start]):
+            previous_paragraph, paragraph_names = paragraph_names, set()
+            if len(previous_paragraph) > 1:
+                bound = None
+        paragraph_names.update(card["name"] for card in people)
         explicit = _clause_subject(sentence, people) or _explicit_subject(sentence, people)
         match = _pronoun_match(sentence, bound)
         inline_match = _inline_pronoun_match(sentence, explicit) if explicit is not None else None
@@ -212,6 +220,22 @@ def _scan_bindings(text, cards, spans):
             elif len(prior_people) > 1:
                 unknown = True
                 unknown_reason = "前句出现多名人物，代词指代不清"
+            if resolved is not None and (
+                len(previous_paragraph) > 1
+                or sum(_subject_bound(previous, card["name"]) for card in prior_people) > 1
+                or (
+                    prior_explicit is resolved
+                    and any(
+                        m[1] != GENDER[resolved["gender"]][0]
+                        and not _inside_quote(text, spans[index - 1][0] + m.start(1))
+                        for m in _RELATIVE_POSITION.finditer(previous)
+                    )
+                )
+            ):
+                # Across a cut, the last named subject may simply be watching the other actor.
+                resolved = None
+                unknown = True
+                unknown_reason = "上文有多名人物，本句没有明确动作执行者"
         if match:
             rows.append(
                 {

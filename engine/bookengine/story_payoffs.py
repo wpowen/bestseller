@@ -8,14 +8,18 @@ from .checks import high_confidence
 from .cross_chapter_facts import review_repair_continuity
 from .promise_io import precise_ask
 from .retired_opponents import opponent_hits
+from .support_stakes import KINDS, REVIEW, classify
 from .text import _sentences
 from tools.book_checkup import clean_prose
 from .model_notes import english_rows
 
 
-def review_schema(number):
+def review_schema(number, support=False):
+    item = {"id": "", "status": "unknown", "evidence": [{"chapter": number, "quote": ""}], "reason": ""}
+    if support:
+        item["goal_state"] = "unknown"
     return json.dumps(
-        {"items": [{"id": "", "status": "unknown", "evidence": [{"chapter": number, "quote": ""}], "reason": ""}]},
+        {"items": [item]},
         ensure_ascii=False,
     )
 
@@ -52,6 +56,17 @@ def due_story_payoffs(outline):
                 ),
             }
         )
+    for duty in outline.get("story_duties", []):
+        if duty.get("kind") in KINDS:
+            items.append(
+                dict(
+                    id=duty["id"],
+                    kind=duty["kind"],
+                    owner=duty["names"][0],
+                    target=duty.get("target", ""),
+                    requirement=duty["text"],
+                )
+            )
     return items
 
 
@@ -107,7 +122,7 @@ def prepare_writer_payoffs(outline):
 
 def writer_payoff_instruction(outline):
     """Put due events in the untruncated writer instruction, ahead of optional hooks."""
-    items = due_story_payoffs(outline)
+    items = [item for item in due_story_payoffs(outline) if item["kind"] not in KINDS]
     if not items:
         return ""
     requirements = "\n".join(f"- {item['requirement']}" for item in items)
@@ -136,6 +151,11 @@ def _verified(response, item, text, number):
         if isinstance(evidence, list)
         else []
     )
+    if item["kind"] in KINDS:
+        status, state = classify(item, row.get("goal_state"), grounded, text)
+        if status == "fulfilled" and row.get("status") != "fulfilled":
+            status, state = "unknown", "unknown"
+        return dict(item, status=status, goal_state=state, evidence=grounded, reason=row.get("reason", ""))
     status = (
         "fulfilled"
         if row.get("status") == "fulfilled" and grounded
@@ -150,18 +170,19 @@ def review_story_payoffs(client, prefix, text, outline, ask):
     items = due_story_payoffs(outline)
     if not items:
         return {"status": "not_due", "items": []}
+    support = any(item["kind"] in KINDS for item in items)
     response = precise_ask(
         ask,
         client,
         prefix + "-prose-review",
         "逐项核对这些事件是否已在本章真实发生。只引用本章逐字原文；计划、设想、转述和对手自行离开不算。"
-        "不确定返回unknown，状态只用fulfilled/missing/unknown。",
+        "不确定返回unknown，状态只用fulfilled/missing/unknown。" + (REVIEW if support else ""),
         [
             ("本章必须发生的事", json.dumps(items, ensure_ascii=False)),
             ("本章正文", text),
             ("章号", str(outline["number"])),
         ],
-        review_schema(outline["number"]),
+        review_schema(outline["number"], support),
     )
     checked = [_verified(response, item, text, outline["number"]) for item in items]
     return {
@@ -201,7 +222,9 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
     resolution = outline.get("opponent_resolution") if isinstance(outline, dict) else None
     death_due = isinstance(resolution, dict) and resolution.get("type") == "被杀"
     missing = [
-        item for item in before["items"] if item["status"] == "missing" or death_due and item["status"] == "unknown"
+        item
+        for item in before["items"]
+        if item["kind"] not in KINDS and (item["status"] == "missing" or death_due and item["status"] == "unknown")
     ]
     if before["status"] != "unfulfilled" or not missing:
         return text, raw, failed, note
@@ -248,7 +271,11 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
         return text, raw, failed, dict(note, status="rolled_back", reason="conflicting_paragraphs_remain")
     after = review_story_payoffs(client, prefix + "-recheck", candidate, outline, ask)
     note["after"] = after
-    if after["status"] != "checked":
+    previously_fulfilled = {item["id"] for item in before["items"] if item["status"] == "fulfilled"}
+    if any(
+        item["status"] != "fulfilled" and (item["kind"] not in KINDS or item["id"] in previously_fulfilled)
+        for item in after["items"]
+    ):
         return text, raw, failed, dict(note, status="rolled_back", reason="payoff_recheck_failed")
     checked, invalid, _ = extract(
         client, prefix + "-payoff-final-state", candidate, state, bible, outline, [], final=True
@@ -272,7 +299,7 @@ def repair_story_payoffs(client, prefix, text, raw, failed, state, bible, outlin
                 continuity_failures=continuity_failures,
             ),
         )
-    return candidate, checked, False, dict(note, status="checked", repair="adopted")
+    return candidate, checked, False, dict(note, status=after["status"], repair="adopted")
 
 
 _RESOLUTION_WORDS = {

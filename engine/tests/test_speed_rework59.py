@@ -205,4 +205,5 @@ def test_writer_contract_leads_with_exact_type_hook_and_scene_actions():
     assert contract["hook"] == outline["hook"]
     assert contract["scenes"][0]["action"] == "顾川序承认隐瞒"
     assert instruction.startswith("本章主场景硬合同")
-    assert all(value in instruction for value in (outline["hook"], "顾川序承认隐瞒", "交出路线决定权"))
+    assert all(value not in instruction for value in (outline["hook"], "顾川序承认隐瞒", "交出路线决定权"))
+    assert contract["scenes"][0]["choice"] == "交出路线决定权"

@@ -11,7 +11,7 @@ import yaml
 from .endings import apply_tail
 from .storage import save
 from .text import _paragraph_spans, chinese_count
-from .repair_placement import place_tail_bounded_patch
+from .repair_placement import place_guarded_patch
 from .prose_similarity import analyze_prose
 
 
@@ -322,9 +322,12 @@ def repair_after_draft(
                 input_limit=10000,
                 max_attempts=1,
             )
-            candidate, placement = place_tail_bounded_patch(
+            candidate, placement = place_guarded_patch(
                 current,
                 answer.get("patch") if isinstance(answer, dict) else None,
+                raw=payoff_meta,
+                outline=outline,
+                future_outline=next_outline,
                 keep_final=True,  # the writer's last paragraph stays last, whatever a keyword check makes of it
             )
             changed = placement["status"] == "placed"

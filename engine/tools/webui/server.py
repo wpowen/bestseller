@@ -70,7 +70,11 @@ def docx(markdown):
 def export_bytes(detail, version, fmt):
     from exporter import render, heading
 
-    rows = [(r["number"], heading(r["number"], r["title"]), r["final"]) for r in detail["chapters"] if r["final"]]
+    rows = []
+    for chapter in detail["chapters"]:
+        if chapter["final"]:
+            number = chapter["number"]
+            rows.append((number, heading(number, chapter["title"]), chapter["final"]))
     missing = sorted(set(range(1, detail["meta"]["total"] + 1)) - {r[0] for r in rows})
     if missing:
         title = "导出说明：仅含终稿；缺少第 " + "、".join(map(str, missing)) + " 章"

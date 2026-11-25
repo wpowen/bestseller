@@ -9,12 +9,12 @@ from .solution_substance import rows
 from .quote_text import literal_quote
 
 DEVELOPMENT = ("new_use", "new_cost", "new_limit")
-_NON_USE = r"不使用|不用核心|未使用|没有使用|改用普通|仅靠普通"
+_EXPLICIT_NON_USE = re.compile(r"不使用核心|不用核心|未使用核心|没有使用核心|改用普通|仅靠普通")
 RULE = (
     "每阶段至少50%章节由核心能力直接解决主要冲突，core_application写操作及决定结果的因果，不能只提能力。"
     "core_development的new_use必填，写本阶段能力的新用法，逐阶段要有具体变化，不能仅换措辞；"
     "new_cost与new_limit只在故事确实需要时写，可以留空，不要为了填栏硬造代价或限制。"
-    "core_application写本章能力怎样用、解决了什么。scenes.ability_use可记录本阶段new_use；"
+    "core_application写本章能力怎样用、解决了什么。scenes.ability_use只写本章使用的能力动作，不复制整段阶段new_use；"
     "对应的choice和action只写本场独有选择与动作，不逐章复述阶段的动作流程、代价和限制。"
 )
 
@@ -106,23 +106,52 @@ def repair_development(bible, ask):
     return current, dict(status="failed_continued" if remaining else "passed", issues=remaining, attempts=attempts)
 
 
+def _copied_stage(value, development):
+    if not isinstance(value, str) or not isinstance(development, dict):
+        return False
+    return any(
+        isinstance(term, str) and len(term.strip()) >= 4 and term.strip() in value
+        for term in (development.get(key) for key in DEVELOPMENT)
+    )
+
+
+def _scene_action(scene):
+    action = scene.get("action") or (scene.get("choice") if scene.get("result") else "")
+    return action.strip() if isinstance(action, str) and not _EXPLICIT_NON_USE.search(action) else ""
+
+
+def _local_use(scene, development):
+    use = development.get("new_use") if isinstance(development, dict) else None
+    action, result = scene.get("action"), scene.get("result")
+    return bool(
+        isinstance(use, str)
+        and use
+        and not re.search(r"[，；;。！？]", use.rstrip("。"))
+        and isinstance(action, str)
+        and use in action
+        and not action.startswith("用" + use + "解决：")
+        and isinstance(result, str)
+        and result.strip()
+        and result != use
+    )
+
+
 def application_valid(row, development):
     application = row.get("core_application")
-    if row.get("core_required") is not True or not isinstance(application, str) or len(application.strip()) < 8:
-        return False
-    if not development:
-        return True
-    scenes = "；".join(
-        str(scene.get(k) or "")
-        for scene in rows(row.get("scenes"))
-        for k in ("choice", "action", "result", "ability_use")
+    return bool(
+        row.get("core_required") is True
+        and isinstance(application, str)
+        and len(application.strip()) >= 8
+        and not _EXPLICIT_NON_USE.search(application)
+        and (
+            not _copied_stage(application, development)
+            or any(
+                _local_use(scene, development) and application.startswith(_scene_action(scene))
+                for scene in rows(row.get("scenes"))
+            )
+        )
+        and any(len(_scene_action(scene)) >= 4 for scene in rows(row.get("scenes")))
     )
-    if re.search(_NON_USE, application + scenes):
-        return False
-    # Only the stage's new use binds the plan. Cost and limit stay in the bible: copied into every
-    # scene they made the writer restate them in every chapter (eval-74, 《扫雪剑起》 ch1-3).
-    new_use = development.get("new_use")
-    return isinstance(new_use, str) and new_use in application and new_use in scenes
 
 
 def ability_issues(bible, history, batch):
@@ -240,33 +269,107 @@ def verify_core_use(raw, text, bible):
     return dict(result, reason="missing_or_noncausal_verbatim_evidence")
 
 
-def enforce_ability_plan(bible, batch):
-    """Repair missing planning obligations without claiming an observed action/result."""
-    result = deepcopy(batch)
-    slots = {
-        r["number"]: r
-        for r in ability_slots(
-            bible, min((r["number"] for r in batch), default=1), max((r["number"] for r in batch), default=0)
-        )
+def _local_scene(scenes, method, aliases):
+    """Use an existing action. Prefer the scene whose wording supports the planned method."""
+
+    def rank(scene):
+        content = _scene_action(scene) + str(scene.get("choice") or "")
+        pairs = {content[i : i + 2] for i in range(len(content) - 1)}
+        return (sum(pair in method for pair in pairs), sum(word in content for word in aliases))
+
+    candidates = [scene for scene in scenes if len(_scene_action(scene)) >= 4]
+    return max(candidates, key=rank, default=None)
+
+
+def _reconcile_failed_scene_plan(current, development, scenes):
+    # A failed scene replan can leave the former conflict in summary fields beside
+    # the replacement scenes. Restrict recovery to unsupported stage wording.
+    repair = current.get("rhythm_contract_repair") or {}
+    if not scenes or repair.get("status") not in ("failed", "degraded") or not isinstance(development, dict):
+        return
+    if current.get("opponent_resolution") or current.get("promise_payoff"):
+        return
+    stage = str(development.get("new_use") or "")
+    local = "".join(str(scene.get(k) or "") for scene in scenes for k in ("goal", "action", "choice", "result"))
+    unsupported = {
+        stage[i : i + 4]
+        for i in range(len(stage) - 3)
+        if re.fullmatch(r"[一-龥]{4}", stage[i : i + 4]) and stage[i : i + 4] not in local
     }
-    for row in result:
-        slot = slots.get(row["number"], {})
-        if not slot.get("core_required"):
-            continue
-        row["core_required"] = True
-        row["core_development"] = slot.get("core_development", {})
-        if application_valid(row, slot.get("core_development", {})):
-            continue
-        development = slot.get("core_development", {})
-        application = development.get("new_use") or str(core_source(bible).get("name", "核心能力"))
-        scenes = rows(row.get("scenes")) or [dict(goal=row.get("opening_conflict") or "解决本章主要阻碍")]
-        scene = scenes[0]
-        goal = scene.get("goal") or row.get("opening_conflict") or "解决本章主要阻碍"
-        row["core_application"] = f"用{application}解决：{goal}"
-        scene = dict(scene, ability_use=application)
-        # Keep the model's own action and choice; replace them only when they rule the ability out.
-        if re.search(_NON_USE, "".join(str(scene.get(k) or "") for k in ("choice", "action"))):
-            scene.update(choice=row["core_application"], action=row["core_application"])
-        row["scenes"] = [scene, *scenes[1:]]
-        row["core_plan_repair"] = dict(status="ability_use_added", authority="plan_not_observation")
-    return result
+    last = scenes[-1]
+    for key, field in (
+        ("payoff", "result"),
+        ("solution_target", "goal"),
+        ("solution_method", "action"),
+        ("core_application", None),
+    ):
+        value = current.get(key)
+        if isinstance(value, str) and any(term in value for term in unsupported):
+            if field and last.get(field):
+                current[key] = last[field]
+            else:
+                current.pop(key, None)
+
+
+def _project_chapter(row, development, required, aliases):
+    current = deepcopy(row)
+    current.pop("core_development", None)
+    scenes = rows(current.get("scenes"))
+    for scene in scenes:
+        if _copied_stage(scene.get("ability_use"), development):
+            scene.pop("ability_use")
+        for key in ("goal", "obstacle", "choice", "action", "result"):
+            value = scene.get(key)
+            if not _copied_stage(value, development):
+                continue
+            # Historical deterministic fallback appended the local goal after the entire stage.
+            if value.startswith("用") and "解决：" in value:
+                scene[key] = value.rsplit("解决：", 1)[1].strip()
+                continue
+            for field in DEVELOPMENT:
+                term = development.get(field)
+                if not isinstance(term, str) or len(term.strip()) < 4:
+                    continue
+                # An independently planned action can legitimately realize the same
+                # short ability at the due scene. Preserve it where its own result is present.
+                if field == "new_use" and key in ("action", "choice", "result") and _local_use(scene, development):
+                    continue
+                value = value.replace(term.strip(), "")
+            scene[key] = value.strip(" ，,；;：:。")
+    application = current.get("core_application")
+    if _copied_stage(application, development):
+        current.pop("core_application", None)
+    if required is not None:
+        current["core_required"] = required
+    if not required:
+        _reconcile_failed_scene_plan(current, development, scenes)
+        return current
+    if application_valid(current, development):
+        return current
+    scene = _local_scene(scenes, str(current.get("solution_method") or ""), aliases)
+    status = "pending_safe_action"
+    if scene:
+        action, result = _scene_action(scene), scene.get("result")
+        application = action
+        if isinstance(result, str) and result.strip() and result not in action:
+            application = action.rstrip("。；") + "；" + result
+        current["core_application"] = application
+        status = "chapter_scene_selected"
+    current["core_plan_repair"] = dict(status=status, authority="plan_not_observation")
+    return current
+
+
+def chapter_ability_view(bible, row):
+    """Project a saved plan for this chapter without changing the checkpoint or the stage bible."""
+    n = row.get("number")
+    slots = ability_slots(bible, n, n) if type(n) is int else []
+    slot = slots[0] if slots else {}
+    development = row.get("core_development") or slot.get("core_development")
+    if not development and not slot:
+        return deepcopy(row)
+    return _project_chapter(row, development, slot.get("core_required", row.get("core_required")), ability_terms(bible))
+
+
+def enforce_ability_plan(bible, batch):
+    """A stage describes the planner's destination. Only local actions can fill a chapter."""
+    return [chapter_ability_view(bible, row) for row in batch]

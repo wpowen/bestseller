@@ -199,6 +199,10 @@ def _run(book, out, env, assets, timeout, style, stop):
         bible = dict(bible, life_constraints=confirmed_deaths(out, state, chapter=idx))
         stage = stage_for_chapter(bible, idx, book.chapters)
         vn = stage["number"]
+        # A cached volume was planned from the state at its opening. Later deaths
+        # still constrain the next unwritten chapter below.
+        if idx == 1 or idx == stage["start"]:
+            volume_bible, volume_state = bible, deepcopy(state)
         saved = out / f"chapters/{idx:03d}.json"
         cached_record = saved.exists() and load(saved).get("fact_source") == "final_body"
         cached = cached_record and idx <= meta.get("completed_chapters", 0)
@@ -206,10 +210,12 @@ def _run(book, out, env, assets, timeout, style, stop):
             row = chapter_record(out, idx)
             rows.append(row)
             state = row["state"]
+            alerts = row.get("issues", [])
             for p in (out / "volumes").glob("*.json"):
                 m = load(p)
                 if m.get("end") == idx:
                     history = [h for h in history if h["number"] != m["number"]] + [m]
+                    feedback = [*m.get("feedback", []), *m.get("volume_issues", []), *alerts]
             continue
         if cached_record:
             # An unsettled checkpoint needs accounting, never fresh creative planning.
@@ -222,9 +228,11 @@ def _run(book, out, env, assets, timeout, style, stop):
                     bible.get("initial_dashboard", {}) if vn == 1 else state.get("dashboard", {}),
                 )
             )
-            vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback)
+            vol = volume(client, volume_bible, threads, vn, book.chapters, volume_state, history, feedback)
             if history and history[-1].get("volume_issues"):
-                vol = volume(client, bible, threads, vn, book.chapters, state, history, feedback, redo=True)
+                vol = volume(
+                    client, volume_bible, threads, vn, book.chapters, volume_state, history, feedback, redo=True
+                )
         if not batch or not any(c.get("number") == idx for c in batch):
             vol = apply_life_constraints(client, bible, vol, state, chapter=idx, kind="volume")
             end = planning_window_end(idx, book.chapters, vol.get("end", stage["end"]))

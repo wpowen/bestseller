@@ -5,7 +5,7 @@ import json
 import re
 
 from .address_contracts import address_issues, address_rows
-from .cast_repair import apply_cast_edits, registered_labels
+from .cast_repair import apply_cast_edits, pronoun_replacement, registered_labels
 from .gender_pronouns import pronoun_bindings, pronoun_findings
 from .nonhuman_speech import identity_literal_findings, speech_findings
 from .precision import _sentences
@@ -348,7 +348,8 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     )
     proposed = response.get("edits", []) if isinstance(response, dict) else []
     proposed = [row for row in proposed if isinstance(row, dict)]
-    labels = registered_labels(_cards(bible))
+    cards = _cards(bible)
+    labels = registered_labels(cards)
     protected_names = {
         target["id"]
         for target in repair_targets
@@ -361,10 +362,7 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
     ]
     for target in repair_targets:
         if target["kind"] == "gender_pronoun":
-            relative = target.get("pronoun_start", -1) - target["start"]
-            if relative < 0 or target["quote"][relative : relative + 1] != target["observed"]:
-                continue
-            replacement = target["quote"][:relative] + target["expected"] + target["quote"][relative + 1 :]
+            replacement = pronoun_replacement(target, proposed, (card["name"] for card in cards))
         elif target["kind"] == "pronoun_name_residue":
             replacement = target["quote"].replace(target["observed"], target["expected"], 1)
         elif target["kind"] == "gendered_address" and target["observed"] in target["quote"]:
@@ -372,7 +370,8 @@ def repair_cast_consistency(client, prefix, text, raw, failed, state, bible, out
         else:
             continue
         proposed = [row for row in proposed if row.get("id") != target["id"]]
-        proposed.append(dict(id=target["id"], text=replacement))
+        if replacement is not None:
+            proposed.append(dict(id=target["id"], text=replacement))
     candidate, edits = apply_cast_edits(text, proposed, repair_targets)
     after = cast_findings(candidate, bible, chapter=chapter)
     remaining = {(row["kind"], row["name"]) for row in after if row["status"] in ("Evidence", "Inference")}

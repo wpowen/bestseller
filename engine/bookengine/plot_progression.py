@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 
+from .adjacent_replay import repair_adjacent_replay
 from .cross_chapter_facts import critical_events
 from .precision import apply as span_edits
 from .storage import load
@@ -119,7 +120,20 @@ def _review(ask, client, prefix, text, state, chapter, suffix):
     )
 
 
-def repair_plot_replay(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+def repair_plot_replay(client, prefix, text, raw, failed, state, bible, outline, extract, ask, *, out=None):
+    """Keep the completed-event guard and compare adjacent prose for a replayed conflict."""
+    text, raw, failed, note = _repair_completed_event(
+        client, prefix, text, raw, failed, state, bible, outline, extract, ask
+    )
+    if out is not None:
+        text, raw, failed, adjacent = repair_adjacent_replay(
+            client, prefix, text, raw, failed, state, bible, outline, extract, ask, out=out
+        )
+        note["adjacent_semantic"] = adjacent
+    return text, raw, failed, note
+
+
+def _repair_completed_event(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
     """Rewrite only replaying opening paragraphs, recheck, and otherwise roll back."""
     chapter = outline.get("number", 0)
     before = _review(ask, client, prefix, text, state, chapter, "-plot-replay-review")

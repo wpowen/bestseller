@@ -59,15 +59,16 @@ def test_plan_requires_actual_application_and_stage_development():
     assert not development_issues(bible())
 
 
-def test_exhausted_application_repair_still_reserves_concrete_scene_plan():
+def test_exhausted_plan_reserves_the_slot_and_reports_missing_action():
     from bookengine.core_ability import enforce_ability_plan
 
     source = bible()
     bad = [dict(number=n, type="对抗", scenes=[dict(goal="打开封门", conflict="守卫拦路")]) for n in range(1, 6)]
     planned = enforce_ability_plan(source, bad)
     assert len([r for r in planned if r.get("core_required")]) >= 3
-    assert not ability_issues(source, [], planned)
-    assert any("复制影主开锁动作" in str(r["scenes"]) for r in planned)
+    assert {i["targets"][0] for i in ability_issues(source, [], planned)} == {1, 2, 3, 5}
+    assert all("复制影主开锁动作" not in str(r) for r in planned)
+    assert all(r["core_plan_repair"]["status"] == "pending_safe_action" for r in planned if r["core_required"])
     assert all("core_required" not in r for r in bad)
 
 
@@ -112,8 +113,12 @@ def test_application_must_use_current_stage_development_and_scene_action():
     )
     assert ability_issues(source, [], [stale])
     current = enforce_ability_plan(source, [stale])
-    assert "同时借两人的影子" in str(current[0]["scenes"])
+    assert current[0]["scenes"] == stale["scenes"]
+    assert current[0]["core_plan_repair"]["status"] == "pending_safe_action"
     assert "须有两盏火光" not in str(current[0]["scenes"])  # eval-74: limits stay out of scenes
+    assert ability_issues(source, [], current)
+    current[0]["scenes"][0].update(action="她跟着两道倒影分开手腕，同时扳开门闩。", result="同伴溜出牢房。")
+    current[0]["core_application"] = "把两名巡守的手势拆开再合上，让门闩同时松动。"
     assert not ability_issues(source, [], current)
 
 
@@ -131,4 +136,45 @@ def test_development_in_obstacle_cannot_mask_non_use_in_action():
 
     from bookengine.core_ability import enforce_ability_plan
 
-    assert not ability_issues(source, [], enforce_ability_plan(source, [stale]))
+    repaired = enforce_ability_plan(source, [stale])
+    assert ability_issues(source, [], repaired)
+    assert references not in str(repaired)
+    assert repaired[0]["scenes"][0]["choice"] == stale["scenes"][0]["choice"]
+
+
+def test_scheduled_action_can_realize_a_short_stage_goal_in_its_own_scene():
+    from bookengine.core_ability import enforce_ability_plan
+
+    source = bible()
+    stage = source["volumes"][0]["core_development"]
+    use = stage["new_use"]
+    local = dict(action="阿墨当场" + use, result="门闩转开，学徒带着伤员穿过铁门。")
+    supplied = dict(number=5, scenes=[local])
+    planned = enforce_ability_plan(source, [supplied])[0]
+    assert planned["scenes"] == [local]
+    assert use in planned["core_application"]
+    assert not ability_issues(source, [], [planned])
+
+
+def test_long_stage_starting_with_victory_cannot_supply_any_early_chapter_action():
+    from bookengine.core_ability import chapter_ability_view
+
+    source = bible()
+    stage = source["volumes"][0]["core_development"]
+    stage["new_use"] = "打败巡守夺回旧钟，守门人当众交出印信，整个城里的人到桥头为幸存者摆酒庆祝。"
+    early = dict(
+        number=1,
+        core_application=stage["new_use"],
+        scenes=[
+            dict(
+                goal="避开巡守",
+                action="她贴墙捕捉钥匙相碰的声响。",
+                result="辨明巡守还在楼上。",
+                ability_use=stage["new_use"],
+            )
+        ],
+    )
+    view = chapter_ability_view(source, early)
+    assert "打败巡守" not in str(view) and "夺回旧钟" not in str(view)
+    assert view["scenes"][0]["result"] in view["core_application"]
+    assert early["scenes"][0]["ability_use"] == stage["new_use"]

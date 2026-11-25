@@ -4,6 +4,7 @@ import re
 
 from .checks import high_confidence
 from .introductions import world_term_registry
+from .opening_exposition import repair_opening_explanations
 from .promise_io import precise_ask
 from .text import _paragraph_spans
 from tools.book_checkup import clean_prose
@@ -126,8 +127,13 @@ def _protected_literals(text, bible):
 
 
 def repair_explanation_density(client, prefix, text, raw, failed, state, bible, outline, extract, ask):
+    text, raw, failed, opening = repair_opening_explanations(
+        client, prefix, text, raw, failed, state, bible, outline, extract, ask
+    )
     before = analyze_explanation_density(text)
     note = {"status": before["tier"], "before": before, "after": before, "edits": []}
+    if opening is not None:
+        note["opening"] = opening
     if before["tier"] != "dense":
         return text, raw, failed, note
     targets = [dict(id=row["id"], original=row["quote"], category=row["category"]) for row in before["issues"]]

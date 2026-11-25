@@ -220,10 +220,40 @@ def _progress(raw, stages):
     ]
 
 
+def _support_stakes(raw, bible, stages, appearances):
+    cards = {card.get("name"): card for card in rows(bible.get("characters")) if card.get("role") == "support"}
+    starts = {row["name"]: row["first_chapter"] for row in appearances}
+    result = {}
+    for row in rows(raw.get("support_stakes")):
+        name = _text(row.get("name"))
+        card = cards.get(name, {})
+        desire = _text(card.get("desire"))
+        target = _text(row.get("target"))
+        if not 2 <= len(target) <= 8 or target not in desire:
+            continue
+        choice, consequence = (_text(row.get(key)) for key in ("choice", "consequence"))
+        first, later = (integer(row.get(key)) for key in ("choice_chapter", "consequence_chapter"))
+        end = _stage(stages, card.get("exit_volume"))["end"]
+        if name not in result and desire and choice and consequence and starts.get(name, 1) <= first < later <= end:
+            result[name] = dict(
+                name=name,
+                desire=desire,
+                target=target,
+                choice=choice,
+                choice_chapter=first,
+                consequence=consequence,
+                consequence_chapter=later,
+            )
+        if len(result) == 2:
+            break
+    return list(result.values())
+
+
 def normalize(raw, bible, total):
     """Bind a model design to the fixed bible; code owns every chapter number."""
     raw = raw if isinstance(raw, dict) else {}
     stages = stage_list(bible, total)
+    appearances = _appearances(raw, bible, stages)
     return dict(
         version=VERSION,
         total=total,
@@ -232,7 +262,8 @@ def normalize(raw, bible, total):
         truth_reveals=_truths(raw, bible, stages, total),
         arc=_arc(raw, stages, total),
         relationships=_relationships(raw, bible, stages),
-        appearances=_appearances(raw, bible, stages),
+        appearances=appearances,
+        support_stakes=_support_stakes(raw, bible, stages, appearances),
         stage_progress=_progress(raw, stages),
     )
 

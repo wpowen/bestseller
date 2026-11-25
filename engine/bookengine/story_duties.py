@@ -1,8 +1,7 @@
 """Per-chapter story obligations derived from the story design, and the ledger of what was written.
 
-A duty is closed only by what the chapter text contains. An anchor word found in the text
-closes it as ``done`` with the quoted sentence; a duty without an anchor can only be closed
-as ``unverified``. Nothing here blocks or rewrites a chapter: an open duty is carried forward.
+Anchored events keep their matching sentence. A private choice or consequence instead needs
+a reviewed action and outcome grounded in the adopted text. Unverified observations are kept.
 """
 
 from pathlib import Path
@@ -15,6 +14,7 @@ from .q1_schema import integer, rows
 from .side_cast import load_side_cast, planner_section, record_side_names, writer_section
 from .storage import save
 from .story_design import SPEC, stage_list
+from .support_stakes import KINDS, support_entry
 
 LEDGER = "story_ledger.json"
 CLOSED = ("done", "unverified")
@@ -23,7 +23,7 @@ VILLAIN_TYPES = ("对抗", "谋划", "揭秘")
 SOUL_LIMIT = 600
 PLANNER_LIMIT = 900
 LEDGER_POLICY = (
-    "done=锚点词出现在正文并附原句（early=在排期章之前已写出）；unverified=相关人物在场但无法用锚点确认；"
+    "done=锚点词附正文原句（early=提前写出），或配角私愿在本章有核实的行动与后果；unverified=已调度但兑现证据不足；"
     "missing=未写出，顺延。仅供参考，不代替读者验收"
 )
 SENTENCE = re.compile(r"[^。！？\n]*[。！？]?")
@@ -146,6 +146,18 @@ def all_duties(design, bible):
         duties.append(
             _duty(f"app-{name}", "appearance", row["first_chapter"], row["first_chapter"] + 2, text, [name], [name])
         )
+    for stake in rows(design.get("support_stakes")):
+        name = stake["name"]
+        for phase in ("choice", "consequence"):
+            number = stake[phase + "_chapter"]
+            stage = next((s for s in stages if s["start"] <= number <= s["end"]), None)
+            if not stage:
+                continue
+            deadline = min(stage["end"], stake["consequence_chapter"] - 1) if phase == "choice" else stage["end"]
+            kind = "support_" + phase
+            text = f"{name}一直想{stake['desire']}。{stake[phase]}"
+            duty = _duty(f"support-{name}-{phase}", kind, number, deadline, text, names=[name])
+            duties.append(dict(duty, desire=stake["desire"], target=stake.get("target", "")))
     return duties + _villain_duties(bible, stages)
 
 
@@ -163,6 +175,8 @@ def _open(duty, entry, number):
 
 
 def _expired(duty, number, total):
+    if duty["kind"] in KINDS:
+        return number > duty["deadline"]
     limit = total if duty["kind"] in MUST_CLOSE else duty["deadline"] + SPEC["carry_chapters"]
     return number > limit
 
@@ -177,6 +191,20 @@ def due_duties(design, bible, number, kind, ledger):
             continue
         if duty["types"] and kind not in duty["types"] and number < duty["deadline"]:
             continue
+        if duty["kind"] == "support_consequence":
+            prior = ledger.get(f"support-{duty['names'][0]}-choice") or {}
+            if 0 < integer(prior.get("chapter")) < number and prior.get("goal_state") not in (None, "unknown"):
+                label = {
+                    "stated": "本人说明愿望",
+                    "promised": "仅有承诺",
+                    "progressed": "已有部分进展",
+                    "chose": "已作选择",
+                    "achieved": "愿望已经达成",
+                    "lost": "机会已经失去",
+                    "deferred_with_cost": "已因代价延期",
+                }.get(prior["goal_state"])
+                if label:
+                    duty = dict(duty, text=f"{duty['text']}（第{prior['chapter']}章{label}；承接其后果。）")
         waiting.append(duty)
     # A relationship step is the point of an emotional chapter, so it goes first there.
     waiting.sort(
@@ -304,18 +332,23 @@ def planner_sections(bible, out, start, end, stage_number):
     duties = all_duties(design, bible)
     villain_chapters = {duty["chapter"] for duty in duties if duty["kind"] == "villain_move"}
     items = []
-    for duty in sorted(duties, key=lambda d: d["chapter"]):
+    # Reserve room for selected private stakes before a backlog fills the outline window.
+    for duty in sorted(duties, key=lambda d: (d["kind"] not in KINDS, d["chapter"])):
         if duty["chapter"] > end or not _open(duty, ledger.get(duty["id"]), start) or _expired(duty, start, total):
             continue
         if duty["kind"] == "relationship":
             continue
-        item = dict(chapter=max(duty["chapter"], start), duty=duty["text"].split("。")[0])
+        item = dict(
+            chapter=max(duty["chapter"], start),
+            duty=duty["text"] if duty["kind"] in KINDS else duty["text"].split("。")[0],
+        )
         items.append(dict(item, overdue=True) if duty["chapter"] < start else item)
     packed = []
     for item in items:
         if len(json.dumps(packed + [item], ensure_ascii=False)) > PLANNER_LIMIT:
             break
         packed.append(item)
+    packed.sort(key=lambda item: item["chapter"])
     sections = [(SPEC["planner"]["duty_heading"], packed)] if packed else []
     progress = next((row for row in rows(design.get("stage_progress")) if row.get("stage") == stage_number), {})
     if progress.get("goal_line") or progress.get("marker"):
@@ -344,7 +377,7 @@ def _quote(text, word):
     return ""
 
 
-def record_story_duties(out, number, text, outline):
+def record_story_duties(out, number, text, outline, *, payoff_review=None):
     """Close what the finished chapter actually contains; leave the rest open for later chapters."""
     duties = outline.get("story_duties") or []
     if not duties or not out:
@@ -356,7 +389,9 @@ def record_story_duties(out, number, text, outline):
         entry = dict(ledger.get(duty["id"], {}), kind=duty["kind"], scheduled=duty["chapter"], text=duty["text"])
         tried = sorted({*entry.get("attempts", []), number})
         anchor = next((word for word in duty["anchors"] if word in text), "")
-        if anchor:
+        if duty["kind"] in KINDS:
+            entry.update(support_entry(duty, number, text, payoff_review or {}))
+        elif anchor:
             entry.update(status="done", chapter=number, quote=_quote(text, anchor))
         elif not duty["anchors"] and duty["names"] and all(name in text for name in duty["names"]):
             entry.update(status="unverified", chapter=number, quote="")

@@ -17,9 +17,15 @@ class Book:
     words_per_chapter: int
     user_input: str
     style_reference: str | None = None
+    writer_input: str = "full"
 
     def record(self):
-        return {k: v for k, v in vars(self).items() if k != "style_reference" or v is not None}
+        record = dict(vars(self))
+        if self.style_reference is None:
+            record.pop("style_reference")
+        if self.writer_input == "full":
+            record.pop("writer_input")
+        return record
 
     @classmethod
     def read(cls, path):
@@ -35,6 +41,8 @@ class Book:
             raise ValueError("words_per_chapter must be 200–6000")
         if not isinstance(book.user_input, str) or not book.user_input.strip():
             raise ValueError("user_input is required")
+        if book.writer_input not in ("full", "compact"):
+            raise ValueError("writer_input must be full or compact")
         return book
 
 

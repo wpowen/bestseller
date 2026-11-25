@@ -43,6 +43,11 @@
 - 有意不改：`quality_mode=closure`、persona 软熔断、reader-judge 影子、scene 密度加分。回归 `tests/unit/test_genre_neutral_defaults.py`。
 - 对照稿：`docs/框架深度排查与开源对照分析-20260817.md`（§0.2）。
 
+## List-level Novel Ability Research (2026-09-10)
+- 画布：`canvases/list-level-novel-research.canvas.tsx`。结论：榜单级=漏斗留存竞争力，不是设定齐全；能力=锦标赛压众数+分槽卖点+合同化长篇+lean正文+读感门禁+榜单盲评闭环。
+- 读者层：快感按钮（危险/地位/财富/竞争/美/归属）+ 黄金三章接钩 + 赢被看见且账上可带走；免费平台更吃即时爽，付费更吃长线逻辑。
+- 提示词：禁贴榜单原句进 prompt；禁三槽混写；卖点 90–160 字含可升级外挂演示；writer system≤700。
+
 ## Ranking Conception / Quality Research (2026-08-17)
 - 生成书「平庸无逻辑不可读」首先是概念层均值回归，不是缺标签。铁律在 `concept_tournament.py`：不可自动补全 / 反共识非反处境 / 杂交新物种 / 概念自带长篇引擎。批量 12 候选才能压众数（单条玄幻死亡族 60% vs 一次 12 条 7.5%）；干涸保底仍会发货众数概念。
 - 爽文是正交轴 `题材 × 爽度档`，不是官方标签。章级唯一共识：赢落到有名字的人脸上 + 被具体的人看见 + 账上留下能带走的东西。A 碾压 / B 智斗 / C 关系，不定档就判等于掷骰子。碾压密度是属性标记不是质量标记。
@@ -63,6 +68,11 @@
 - 用户评 V01–V06 太短、不是卖点。加长为完整安利段 W01–W06（约 90–160 字）：`canvases/conception-selling-points.canvas.tsx`。章末钩 ≠ 卖点。
 - 用户评 W01 无爽感：还药是报复循环不是金手指；「谁A就B」是定罪句。玄幻卖点必须有可升级外挂 + 当场多出能数的好处。画布 `canvases/xuanhuan-shuanggan-analysis.canvas.tsx`。
 - 创意层修复计划：先改 HOOK_DISTILL（90–160 字卖点 + 金手指演示）和项目卡 golden_finger；蒸馏后跑定罪句式/negated_definition；无冠军不保底。不先开 logline 硬杀。画布 `canvases/conception-repair-plan.canvas.tsx`。
+
+## Throughput Diagnosis (2026-10-17)
+- 现存唯一书 `recovered-production-20261015`：50 章目标，ch1–2 为 revision；ch2 `chapter_pipeline` 终态 `machine_blocked`，链路 `critic_evidence_unknown → chapter_adoption_required`，`final_verdict=unknown`，审稿恢复策略已到 v11。瓶颈在「审稿判不出结论就不采纳」，不是写不出正文。
+- 模式：每修一个失败就加一层协议/版本（世界条款重述 v1–v4、审稿恢复策略 v11），产出长期停在 0–2 章。建议先统计各门禁拦截率，并给「无法判定」设可通过的降级出口。
+- `drafts.py` 的 F821 `SoftTrimReport` 只出现在返回类型注解里（文件有 `from __future__ import annotations` + 函数内导入），运行时不报错，只是 lint 问题。
 
 ## Working Conventions
 - **交接文档（2026-07-24）**：完整进展/未完成项见 `docs/plans/2026-07-24-quality-remediation-handoff.md`（给下一任模型）。结项卡在真书验收（≥10章）与 B1/B2 校准，不是 A1–A5 代码。

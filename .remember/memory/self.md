@@ -55,6 +55,12 @@ Correct:
 
 ---
 
+Mistake: 本机未同意 Xcode license 时，`git` 与系统 `python3`（Xcode 桩）都直接退出 69，误判为脚本错误。
+Wrong: 连续用 `git status` / `python3 -` 做统计。
+Correct: Python 一律用 `.venv/bin/python`；git 不可用时用文件 mtime 判断最近改动，并提醒用户执行 `sudo xcodebuild -license`。
+
+---
+
 Mistake: Use `str.maketrans` with multi-character keys (for example `——`).
 Wrong: Build one translation table containing both single-char and multi-char punctuation mappings, which raises `ValueError`.
 Correct:

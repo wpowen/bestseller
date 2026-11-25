@@ -24,6 +24,7 @@ from .chapter_rhythm import (
     rhythm_issues,
 )
 from .planning_policy import MAX_REWRITE_CALLS, hard_replan_issues, replan_targets
+from .outline_coverage import has_scene_detail
 
 # Without a segmenter, title words are conservative surface candidates, not a semantic verdict.
 FUNCTION_WORDS = set(
@@ -219,8 +220,10 @@ def terminal_window(out, start, end):
 
 
 def _planning_issues(bible, history, current):
+    gaps = [row["number"] for row in current if row.get("detail_outline_missing")]
     return (
-        diversity_issues(history, current)
+        ([dict(kind="missing_detail_outline", targets=gaps)] if gaps else [])
+        + diversity_issues(history, current)
         + opponent_run_issues(bible, history, current)
         + opponent_presence_issues(bible, current)
         + planning_transition_issues(bible, current)
@@ -424,6 +427,8 @@ def repair_batch(out, key, history, batch, rewrite, bible=None, initial_issues=(
                     or FOCUS.get(kind, "保留本章主场景行动与人物选择"),
                     rhythm_contract_version=RHYTHM_VERSION,
                 )
+            if has_scene_detail(replacement):
+                proposed.pop("detail_outline_missing", None)
             current[index] = proposed
             if number in attempted_rhythm:
                 model_resolved.add(number)

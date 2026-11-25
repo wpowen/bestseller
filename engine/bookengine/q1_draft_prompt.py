@@ -1,5 +1,7 @@
 """Assemble the Q1 writer input used for production chapters and matched sample runs."""
 
+import json
+
 from .adjacent_conflicts import previous_conflict_context
 from .chapter_callbacks import writer_callback_section
 from .choice_cost import choice_cost_context
@@ -27,6 +29,16 @@ def word_band(target):
     return (1870, 2700) if target == 2200 else (round(target * 0.85), round(target * 1.15))
 
 
+def _dossier_voices(sections):
+    """Voices the writer already reads on the cast cards (84 real run, chapter 24 over budget)."""
+    body = dict(sections).get("出场人物档案、口吻卡与当前状态")
+    try:
+        cards = json.loads(body).get("characters", []) if body else []
+    except (ValueError, AttributeError):
+        return {}
+    return {c["name"]: c["voice"] for c in cards if isinstance(c, dict) and c.get("name") and c.get("voice")}
+
+
 def production_prompt(book, bible, threads, vol, outline, state, history, rows, previous, drops, out, style, data):
     outline = chapter_ability_view(bible, outline)
     idx = outline["number"]
@@ -40,7 +52,8 @@ def production_prompt(book, bible, threads, vol, outline, state, history, rows, 
     sections.insert(0, ("本章主场景硬合同，章型、两场行动与末钩必须逐项落实", pack(contract)))
     sections[1:1] = writer_sections(outline, bible)
     if outline.get("speaker_briefs"):
-        sections.insert(1, (SPEAKER_HEADING, SPEAKER_GUIDANCE + "\n" + pack(voice_once(outline["speaker_briefs"]))))
+        briefs = voice_once(outline["speaker_briefs"], known=_dossier_voices(sections))
+        sections.insert(1, (SPEAKER_HEADING, SPEAKER_GUIDANCE + "\n" + pack(briefs)))
     prior = rows[-1] if rows else {}
     saved_outcome = (
         prior.get("number") == idx - 1

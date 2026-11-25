@@ -125,14 +125,19 @@ def _brief(name, card, intent, goal, opponent):
     return dict(name=name, voice=voice, goal=goal)
 
 
-def voice_once(briefs):
-    """Give each speaker's voice at the first scene only; later scenes keep the goal (and a changed voice)."""
+def voice_once(briefs, known=None):
+    """Give each speaker's voice once per chapter; later scenes keep the goal (and a changed voice).
+
+    `known` maps names to voices the writer already reads in the dossier; those are not repeated.
+    """
+    known = known or {}
     seen, result = {}, []
     for scene in rows(briefs):
         speakers = []
         for speaker in rows(scene.get("speakers")):
             name, voice = speaker.get("name"), speaker.get("voice")
-            if name and voice and seen.get(name) == voice:
+            repeated = seen.get(name) == voice or (isinstance(voice, str) and voice in known.get(name, ""))
+            if name and voice and repeated:
                 speaker = {k: v for k, v in speaker.items() if k != "voice"}
             elif name and voice:
                 seen[name] = voice

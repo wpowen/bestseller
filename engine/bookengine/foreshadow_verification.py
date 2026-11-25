@@ -109,19 +109,33 @@ def plant_observation(duty, number, text):
     return _local(duty, number, text, spans, framed)[0]
 
 
+def _names_anchor(duty, quote):
+    """A full anchor, or a two-character piece of one (“半截焦黑灯芯” for 灯芯残片)."""
+    anchors = [a for a in duty.get("anchors", []) if isinstance(a, str)]
+    return any(a in quote or any(a[i : i + 2] in quote for i in range(len(a) - 1)) for a in anchors)
+
+
 def _review_quote(item, number, duty, allowed_spans):
+    """Trust the reviewer's verbatim quote; reject only what the quote itself shows is not an event.
+
+    The 84 real run (e09db97a) rejected seven correct verdicts on a verb list, a full-anchor match and
+    a same-paragraph rule. Each verb list missed the next real wording, so only a payoff, the one kind
+    a mere sighting can fake, still needs an action or result. Truth reveals often never name the anchor.
+    """
     if not isinstance(item, dict) or item.get("chapter") != number or item.get("status") != "fulfilled":
         return ""
     quote = item.get("quote")
     if not isinstance(quote, str) or not quote or _NON_EVENT.search(quote):
         return ""
-    if not any(anchor in quote for anchor in duty.get("anchors", [])):
+    if duty["kind"] != "truth" and not _names_anchor(duty, quote):
         return ""
-    evidence = _SCENE_PRESENCE if duty["kind"] == "plant" else _ACTION_OR_RESULT
-    if not evidence.search(quote):
+    if duty["kind"] == "payoff" and not _ACTION_OR_RESULT.search(quote):
         return ""
     # Reject snippets that could omit a preceding negation or make a hypothetical event sound real.
-    return quote if quote in allowed_spans else ""
+    if quote in allowed_spans:
+        return quote
+    # A tail or middle of a sentence counts only if the whole sentence carries no negation or plan.
+    return quote if any(quote in span and not _NON_EVENT.search(span) for span in allowed_spans) else ""
 
 
 def _review_result(raw):
@@ -170,7 +184,7 @@ def verify_foreshadows(client, prefix, ask, number, text, duties):
         return results
     allowed = {text[start:end] for index, (start, end) in enumerate(spans) if not framed[index]}
     for index, ((start, end), (next_start, next_end)) in enumerate(zip(spans, spans[1:])):
-        if not (framed[index] or framed[index + 1]) and "\n\n" not in text[end:next_start]:
+        if not (framed[index] or framed[index + 1]):
             allowed.add(text[start:next_end])
     for duty in pending:
         ident = duty["id"]

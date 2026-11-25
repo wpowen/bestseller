@@ -174,12 +174,20 @@ def outline_callbacks(chapter, candidates, total, end):
     number = chapter["number"]
     due = [item for item in candidates if number in item.get("due", [])]
     if due or requested:
+        # The planner model often paraphrases a candidate or cites a same-volume chapter (84 real run,
+        # chapters 13-17). Only verified candidates reach the writer; a request picks one by chapter.
+        verified = {}
+        for item in candidates:
+            verified.setdefault(integer(item.get("chapter")), []).append(item)
         chosen = {}
         for item in [*due, *requested]:
+            options = verified.get(integer(item.get("chapter")), [])
             quote = item.get("source_quote") or item.get("original_excerpt") or item.get("event")
-            key = (integer(item.get("chapter")), quote if isinstance(quote, str) else "")
-            if key[0] and key[1]:
-                chosen.setdefault(key, item)
+            # A verbatim excerpt of a verified quote is kept as the model wrote it.
+            exact = isinstance(quote, str) and quote and any(quote in row.get("source_quote", "") for row in options)
+            match = item if exact else (options[0] if options else None)
+            if match is not None:
+                chosen.setdefault((integer(match["chapter"]), match.get("source_quote", "")), match)
         return list(chosen.values())[:3]
     general = [item for item in candidates if not item.get("due")]
     return general[:3] if number == total else general[:1] if number == end else []

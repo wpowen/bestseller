@@ -159,4 +159,4 @@ def test_writer_omits_an_oversized_callback_whole_and_preserves_the_next_one(tmp
     prompt = fake.calls[0]["prompt"]
     assert PASSAGE in prompt
     assert "大段旧史" not in prompt
-    assert drops == ["本章点名的跨卷回调原文（第36章）"]
+    assert drops == ["压缩缩进", "本章点名的跨卷回调原文（第36章）"]

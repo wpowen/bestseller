@@ -11,9 +11,30 @@ from .longutil import ask
 from .storage import load, save
 
 
+def _died_on_schedule(bible, name, fact):
+    """An antagonist killed at or after his planned exit: the stage summary already played out.
+
+    Chapter outlines are still checked, so he cannot act again; only the stage-level goal/climax that
+    describe his defeat are left as written (5d560fa1: 闻人照 died in 49, exit 49, book stopped at 50).
+    """
+    exits = [
+        row.get("exit")
+        for row in bible.get("antagonists", []) or []
+        if isinstance(row, dict) and row.get("name") == name and type(row.get("exit")) is int
+    ]
+    return bool(exits) and fact.get("chapter", 0) >= max(exits)
+
+
 def _future(value, out, chapter, kind):
     if kind == "volume":
-        return lambda path: True
+        # Promise payoffs scheduled before this chapter are already written history.
+        payoffs = value.get("promise_payoffs") if isinstance(value, dict) else None
+        written = {
+            index
+            for index, row in enumerate(payoffs if isinstance(payoffs, list) else [])
+            if isinstance(row, dict) and type(row.get("chapter")) is int and row["chapter"] < chapter
+        }
+        return lambda path: not (len(path) >= 2 and path[0] == "promise_payoffs" and path[1] in written)
     values = value if isinstance(value, list) else [value]
     excluded = {
         i
@@ -24,13 +45,13 @@ def _future(value, out, chapter, kind):
     return lambda path: (path[0] not in excluded) if isinstance(value, list) and path else not excluded
 
 
-def _candidate(source, reply, hits, bible, kind):
+def _candidate(source, reply, hits, bible, kind="outlines"):
     changes = reply.get("changes") if isinstance(reply, dict) else None
     if not isinstance(changes, list) or not changes:
         return None, "empty_changes"
     allowed = {tuple(row["path"]) for row in hits}
     original = dict(leaves(source))
-    result, seen, deletions = deepcopy(source), set(), []
+    result, seen, deletions, ignored = deepcopy(source), set(), [], []
     names = [row.get("name") for row in bible.get("characters", []) if isinstance(row, dict) and row.get("name")]
     dead = {row["name"] for row in hits}
     for change in changes:
@@ -41,8 +62,15 @@ def _candidate(source, reply, hits, bible, kind):
         path, replacement = tuple(change["path"]), change["value"]
         if any(type(key) not in (str, int) for key in path):
             return None, "invalid_path"
-        if path not in allowed or path in seen:
+        # A one-chapter batch: the model often drops the leading chapter index (5d560fa1 chapter 50).
+        if path not in allowed and isinstance(source, list) and len(source) == 1 and (0, *path) in allowed:
+            path = (0, *path)
+        if path in seen:
             return None, "unrelated_or_invalid_field"
+        if path not in allowed:
+            # Edits outside the hit fields are never applied; the hit fields are still rechecked.
+            ignored.append(list(path))
+            continue
         old = original[path]
         field = path[1:] if isinstance(source, list) else path
         dead_speaker = (
@@ -147,6 +175,8 @@ def apply_life_constraints(client, bible, value, state, *, chapter, kind="outlin
     """
     out = getattr(client, "out", None)
     deaths = confirmed_deaths(out, state, chapter=chapter)
+    if kind == "volume":
+        deaths = {name: fact for name, fact in deaths.items() if not _died_on_schedule(bible, name, fact)}
     if not deaths:
         return value
     future = _future(value, out, chapter, kind)

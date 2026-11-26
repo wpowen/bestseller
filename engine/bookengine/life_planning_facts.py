@@ -12,6 +12,11 @@ AFTER_DEATH = r"(?:死后|战殁后|身亡后|战死后)"
 PASSIVE_AFTER = re.compile(
     rf"^(?:的)?(?:生前|死前|{AFTER_DEATH}|已死|之死|死讯|遗物|遗体|尸体|尸首|尸身|留下的|遗留的|遗下的|所留|残留|余党|旧阵)"
 )
+# A clause about what the dead person left behind or did before dying, e.g. “裴照夜遗留的缺页”,
+# “裴照夜夺册时留下的刻痕” (3f3950ba chapter 31, rejected twice although nothing had him act).
+PAST_CLAUSE = re.compile(
+    r"^[^，,：:]{0,8}?(?:留下的|遗留的?|遗弃的?|遗下的?|所留|引发的|造成的|布下的|所布|生前|死前|死亡|败亡|身死|陨落|昔日|当年|曾经?|早先|旧日)"
+)
 PRESENT_AFTER_DEATH = re.compile(
     rf"^(?:的)?(?:{AFTER_DEATH}|遗体|尸体|尸首|尸身)"
     r"(?:[，, ]|仍然|依然|竟然|正在|仍|还|又|却|就|便)*"
@@ -113,7 +118,11 @@ def validate_life_constraints(value, deaths):
                 for match in re.finditer(re.escape(name), sentence):
                     before = re.split(r"[，,：:]", sentence[: match.start()])[-1]
                     after = sentence[match.end() :]
-                    passive = PASSIVE_AFTER.search(after) or re.search(r"回忆|想起|追忆|谈及", before)
+                    passive = (
+                        PASSIVE_AFTER.search(after)
+                        or PAST_CLAUSE.search(after)
+                        or re.search(r"回忆|想起|追忆|谈及|当年|昔日|早年|那年|曾经", before)
+                    )
                     if not passive or PRESENT_AFTER_DEATH.search(after):
                         invalid = True
                 if invalid:

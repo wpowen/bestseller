@@ -10,7 +10,7 @@ from .cross_chapter_facts import merge_cross_chapter_delta, writer_critical_even
 from .permanent_facts import merge_permanent_delta, writer_permanent_facts
 from .continuity_contract import extraction_contract
 from .state_values import merge_state_value_delta, writer_state_value_facts
-from .life_status import dead_person_acts
+from .life_status import dead_person_acts, quote_allows_death
 
 
 LEDGER_VERSION = 1
@@ -56,7 +56,20 @@ def _ledger(state, bible):
         result["characters"].setdefault(name, {})
     for key in ("consumed_memories", "accidents"):
         result[key] = result.get(key) if isinstance(result.get(key), list) else []
+    for person in result["characters"].values():
+        if isinstance(person, dict):
+            _drop_captive_death(person)
     return result
+
+
+def _drop_captive_death(person):
+    """Books saved before the captivity rule keep a prisoner recorded dead; read them as still alive."""
+    life, location = person.get("life_status"), person.get("location")
+    if isinstance(life, dict) and life.get("value") == "dead" and not quote_allows_death(life.get("quote") or ""):
+        person.pop("life_status")
+    if isinstance(location, dict) and location.get("travel_status") == "死亡":
+        if not quote_allows_death(location.get("quote") or ""):
+            person["location"] = {**location, "travel_status": "未知"}
 
 
 def _quote(row, text):
@@ -78,13 +91,14 @@ def _merge_character(ledger, row, text, chapter, cards):
     if dead and (field == "life_status" or row.get("travel_status") == "死亡"):
         return  # The first recorded death stands; later chapters cannot move or undo it.
     if field == "life_status" and row.get("value") in _LIFE:
+        if _LIFE[row["value"]] == "dead" and not quote_allows_death(quote):
+            return  # A prison or binding quote once killed a living opponent and stopped the book at chapter 93.
         target["life_status"] = _record(_LIFE[row["value"]], chapter, quote)
     elif field == "location" and isinstance(row.get("value"), str) and row["value"].strip():
-        target["location"] = {
-            **_record(row["value"].strip()[:80], chapter, quote),
-            "travel_status": row.get("travel_status") if row.get("travel_status") in _TRAVEL else "未知",
-        }
-        if row.get("travel_status") == "死亡":
+        travel = row.get("travel_status") if row.get("travel_status") in _TRAVEL else "未知"
+        travel = "未知" if travel == "死亡" and not quote_allows_death(quote) else travel
+        target["location"] = {**_record(row["value"].strip()[:80], chapter, quote), "travel_status": travel}
+        if travel == "死亡":
             target["life_status"] = _record("dead", chapter, quote)
     elif field == "injury":
         value = str(row.get("value") or "")

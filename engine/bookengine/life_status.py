@@ -38,6 +38,14 @@ def dead_person_acts(name: str, sentence: str) -> bool:
     )
 
 
+_CAPTIVE = re.compile(r"锁|关押|关进|囚|押|束缚|捆|绑|擒|拿下|牢|镣|铐|看守|守住|软禁|封住|困住")
+
+
+def quote_allows_death(quote: str) -> bool:
+    """A captivity quote with no death word shows someone held, not dead; other quotes keep the model's reading."""
+    return isinstance(quote, str) and (bool(_DEATH.search(quote)) or not _CAPTIVE.search(quote))
+
+
 def _dies(name: str, sentence: str) -> bool:
     """The death word follows the name closely and is not something the named person merely says."""
     for match in re.finditer(re.escape(name), sentence):
@@ -78,6 +86,7 @@ def premature_death_hits(text: str, bible: dict, chapter: int, delta: dict | Non
         for row in rows if isinstance(rows, list) and isinstance(row, dict)
         if row.get("name") in names and row.get("field") == "life_status" and row.get("value") in ("dead", "死亡")
         and isinstance(row.get("quote"), str) and row["quote"].strip() and row["quote"].strip() in text
+        and quote_allows_death(row["quote"])
     }  # fmt: skip
     hits = []
     for number, (start, end) in enumerate(_sentences(text), 1):

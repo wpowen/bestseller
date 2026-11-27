@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 from tools.chapter_files import chapter_files
 
+from .life_status import quote_allows_death
 from .storage import load
 
 
@@ -69,7 +70,7 @@ def confirmed_deaths(out, state=None, *, chapter):
         if type(number) is not int or number not in records or not isinstance(quote, str) or not quote.strip():
             return
         quote = quote.strip()
-        if quote not in records[number][1]:
+        if quote not in records[number][1] or not quote_allows_death(quote):
             return
         if name not in result or number < result[name]["chapter"]:
             result[name] = {"chapter": number, "quote": quote, "status": "Evidence"}
